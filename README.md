@@ -29,9 +29,7 @@ Windows `start.bat` and Linux/macOS `bash start.sh` open the built application.
 For development, start the API with `--port 8000`, then run `npm run dev` in
 frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy.
 
-The [run guide](README_RUN.md) also covers portable packaging. The builder writes
-under build/ and bundles application code, migrations, frontend assets and docs;
-it excludes local data, dependencies, credentials and model weights.
+See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 ## Configure models
 
@@ -65,10 +63,10 @@ Inventory returns references relative to data/models, for example
 uses model.onnx plus selected_tags.csv. Image input to chat requires an external
 vision-capable LLM; managed llama projector support is not implemented.
 
-Runtime installation supports Windows/Linux x64 CPU variants and Windows x64
-llama CUDA 12.4. CUDA defaults to automatic GPU layers with a fixed context floor;
-manual layers are available. Loading requires a usable NVIDIA device and confirmed
-positive GPU offload. Vulkan, GPU workers and Linux CUDA remain unavailable.
+The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
+lists supported CPU and Windows CUDA variants and platform limits. CUDA defaults
+to automatic GPU layers with a fixed context floor; manual layers are available.
+Loading requires a usable NVIDIA device and confirmed positive GPU offload.
 Install/cancel/retry/uninstall, job progress and bounded logs are available in
 Runtimes, alongside storage accounting and manual cache prune/clean. Shared hard
 links are deduplicated; the displayed cleanup estimate is exclusive logical size,
@@ -116,12 +114,9 @@ a command for arguments/results. General's **Show full processing history** open
 active processing by default; completed processing is collapsed in either mode.
 Approvals remain visible. Cancellation/failure preserves incomplete output.
 Delete/retry applies to the whole reply; retry replaces its later conversation.
-The [presentation plan](docs/CHAT_PRESENTATION_PLAN.md) records this independent update.
-
-Conversation browser checks run with `npm run test:browser` in frontend after a
-build. Install Chromium once with `npx playwright install chromium`. Tests start
-and stop an isolated fixture server on port 18767; WORKBENCH_BROWSER_PORT can
-select a free port. Screenshots and failure traces are under frontend/test-results.
+The [chat contract](docs/contracts/chat-context.md#messages-and-attachments)
+defines reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecycle)
+defines processing visibility and elapsed time.
 
 ## External API
 
@@ -184,8 +179,12 @@ Both commands use the application factory with temporary directories and memory
 stores, without opening the real database, loading models or calling services.
 Export is deterministic UTF-8 JSON. The generated file is a build artifact;
 routes and Pydantic models remain its source, and frontend clients retain their
-existing types. The [implementation record](docs/OPENAPI_IMPLEMENTATION.md) lists
-coverage, validation and remaining boundaries.
+existing types. The check validates every HTTP operation against actual routes,
+request/response schemas, runtime response validation, unique operationIds and
+field-specific JSON exceptions. Missing coverage, unconstrained bodies and stale
+exceptions fail the gate. Tests also validate actual JSON responses and SSE
+frames against the served schema. Cross-field and saved-state checks remain
+domain validators; OpenAPI does not replace them.
 
 ## Settings and storage
 
@@ -199,14 +198,10 @@ The previous Codex Pet and package import are removed. Position settings,
 dragging and task-state interfaces remain for a future Pet; existing Pet files
 are retained without loading or serving them.
 
-Alembic alone manages SQLite. Current head is `0010_runtime_maintenance`. Revision
-0008 resets disposable Personas, sessions, their bindings, messages and runs to
-the reduced configuration schema. Revision 0009 resets General, Core Memory and
-Pet settings. Models, Knowledge, Worldbook and runtime records survive both.
-Revision 0010 recreates disposable runtime job history and clears installation
-job references while preserving installed runtimes and all other business records.
-Empty databases upgrade to head;
+Alembic alone manages SQLite. Empty databases upgrade to head;
 nonempty unversioned databases are rejected and destructive downgrade is unsupported.
+Revisions may reset disposable test records. The current schema revision and
+individual reset effects are documented in [data layout](docs/DATA_LAYOUT.md#database-revisions).
 
 Model files, attachments, runtimes and other data directories are never deleted
 by schema revisions. The default database is data/agent_workbench.db;
@@ -235,13 +230,21 @@ Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
 
-The [runtime maintenance plan](docs/RUNTIME_MAINTENANCE_PLAN.md) records storage,
-cache, CUDA and migration verification. For an explicit installation/GPU check
-using a manually placed GGUF, run `uv run --no-sync python -m
+Browser checks for chat, runtime maintenance and resource management run with
+`npm run test:browser` in frontend after a build. Install Chromium once with
+`npx playwright install chromium`. Tests start and stop an isolated fixture
+server on port 18767; WORKBENCH_BROWSER_PORT can select a free port. Screenshots
+and failure traces are under frontend/test-results.
+
+For an explicit Windows CUDA installation/GPU check using a manually placed
+GGUF, run `uv run --no-sync python -m
 scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. This installs
 CUDA if needed and exercises auto/manual load, chat, streaming and unload using
 temporary in-memory model profiles; runtime installation/jobs remain persisted.
-Stop Workbench before running this explicit smoke command.
+Stop Workbench before running this explicit smoke command. Record the hardware,
+runtime version and model with its results; deterministic tests do not establish
+real-provider behavior or cross-platform runtime compatibility.
 
-Before changing code, read [AI context](docs/AI_CONTEXT.md), the
-[current plan](docs/WORKBENCH_SIMPLIFICATION_PLAN.md) and the owning contract.
+Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract
+and relevant source/tests. [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md)
+defines English-only documentation and active-plan completion rules.

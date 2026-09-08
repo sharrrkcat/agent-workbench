@@ -28,34 +28,41 @@ Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
 
-Earlier phases recorded the baseline, extension pruning, unified model schema,
-managed runtimes, Persona/session members and private harness continuations.
-Phase 5 changes no tables: it deletes only appmetadatarecord's app_settings row.
-This resets General, Core Memory and Pet settings to current defaults.
-Models, harness settings, sessions, messages, pending approvals, Knowledge,
-Worldbook and other records are preserved. No old settings JSON is copied or
-converted. Repeating upgrade at head leaves newly saved settings intact.
+Revisions 0001 through 0006 record the baseline, extension pruning, unified
+models, managed runtimes, Persona/session members and private harness
+continuations. They remain executable history, not alternative current schemas.
 
-Revision 0008 recreates Persona/session tables with session-owned configuration.
-It discards disposable Personas and their bindings, session members/additions,
-messages, runs, steps, events and private snapshots, then seeds reduced Chat and
-Translate records. Knowledge, Worldbook, models, runtimes and settings are
-preserved. No filesystem operations or record conversions are performed.
+Revision `0007_phase5_cleanup` changes no tables: it deletes only
+appmetadatarecord's app_settings row. This resets General, Core Memory and Pet
+settings to current defaults. Models, harness settings, sessions, messages,
+pending approvals, Knowledge, Worldbook and other records are preserved. No old
+settings JSON is copied or converted. Repeating upgrade at head leaves newly
+saved settings intact.
 
-Revision 0009 deletes only appmetadatarecord's app_settings row to remove the
-old Pet presentation schema. General, Core Memory and Pet position reset to
-defaults. Other settings and business records, including new sessions and runs,
-survive. Repeated upgrade preserves subsequently saved settings. Existing Pet
-assets, models, runtimes, attachments and all other file directories are untouched.
+Revision `0008_chat_configuration` recreates Persona/session tables with
+session-owned configuration. It discards disposable Personas and their bindings,
+session members/additions, messages, runs, steps, events and private snapshots,
+then seeds reduced Chat and Translate records. Knowledge, Worldbook, models,
+runtimes and settings are preserved. No filesystem operations or record
+conversions are performed.
 
-Revision 0010 recreates only disposable runtime_jobs and clears runtime installation
-job_id references. Installation identity, version, state and integrity digests,
-other business records and all file directories survive. There is no conversion
-of historical jobs. Repeating upgrade preserves newly recorded maintenance tasks.
+Revision `0009_pet_foundation` deletes only appmetadatarecord's app_settings row
+to remove the old Pet presentation schema. General, Core Memory and Pet position
+reset to defaults. Other settings and business records, including new sessions
+and runs, survive. Repeated upgrade preserves subsequently saved settings.
+Existing Pet assets, models, runtimes, attachments and all other file directories
+are untouched.
 
-The implementation validates protected file paths, sizes and modification times
-around the actual database upgrade. Automated tests use temporary roots;
-the suite additionally checks hashes of repository model files.
+Revision `0010_runtime_maintenance` recreates only disposable runtime_jobs and
+clears runtime installation job_id references. Installation identity, version,
+state and integrity digests, other business records and all file directories
+survive. There is no conversion of historical jobs. Repeating upgrade preserves
+newly recorded maintenance tasks.
+
+For explicit database upgrades, compare protected file paths, sizes and
+modification times before and after. Migration tests use temporary roots and
+cover repeat upgrades and file preservation; the suite additionally checks
+hashes of repository model files.
 `uv run python scripts/audit_workspace.py --check` verifies current schema,
 integrity, foreign keys and absence of the retired root snapshot/test model stubs.
 

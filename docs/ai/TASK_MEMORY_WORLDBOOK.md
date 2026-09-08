@@ -3,14 +3,20 @@
 Read [chat/context](../contracts/chat-context.md) and
 [settings](../contracts/settings.md).
 
-Likely sources are core/memory_context.py, worldbook.py, worldbook_context.py,
-context.py, chat_service.py, settings.py, API worldbook routes and SQLite stores.
-Keep matching deterministic and bounded. Resolve the current speaker's Persona
-bindings plus independent session additions before invoking context services.
-Deduplicate only the effective ids; empty additions never disable Persona resources.
-Match-test is read-only. Metadata stores compact diagnostics, not source bodies.
+## Source map
 
-General owns Core Memory. Phase 5 resets that disposable setting along with
-the rest of app_settings; Worldbook records/settings are unaffected.
-Use temporary roots and test matching, disabled/empty injection, context limits,
-binding resolution and memory/SQL behavior. Update both locales for UI copy.
+Core modules under ai_workbench/core/ include memory_context.py, worldbook.py,
+worldbook_context.py, context.py, chat_service.py and settings.py. HTTP routes
+and persistence are in ai_workbench/api/routes/worldbook.py and ai_workbench/db/stores.py.
+The frontend uses GeneralPanel.tsx, WorldbookPanel.tsx and worldbook/ components
+under frontend/src/components/settings/.
+
+## Verification
+
+Start with tests/test_core_memory_context.py, test_worldbook_context.py,
+test_chat_configuration.py and test_resource_management.py under tests/.
+Check deterministic matching, disabled/empty injection, context bounds, compact
+diagnostics, binding resolution and validation before writes in both stores.
+Resource frontend/browser tests cover independent drafts, enabled-save rollback,
+reordering and matching diagnostics. Use temporary roots and run the
+[repository gates](../../README.md#verification); UI changes update both locales.

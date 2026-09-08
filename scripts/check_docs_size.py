@@ -27,7 +27,6 @@ class CheckResult:
 FIXED_LIMITS = {
     "docs/AI_CONTEXT.md": 150,
     "README.md": 350,
-    "docs/RUNTIME_PROTOCOLS.md": 300,
 }
 
 TASK_LIMIT = 120

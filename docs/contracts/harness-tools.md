@@ -17,6 +17,9 @@ does not load manifests, plugin directories or dynamic modules. Each ToolSpec
 has a lower snake_case name (at most 64 characters), description, Draft 2020-12
 object schema, handler, risk, requires_approval and direct_callable.
 Session allowlists are unique and reference registered names.
+Built-ins support both model and direct invocation through the same handler,
+schema, permissions, approval and persistence paths. MCP clients and ComfyUI
+tools are outside the current catalog and require separate design decisions.
 
 Arguments and results must be finite JSON data. Duplicate object keys in
 model arguments, multi-parameter slash calls and tool REST bodies are rejected.
@@ -136,4 +139,4 @@ OpenAPI describes the catalog, settings, direct calls and approval results with
 validated run/message/session types. Tool parameters and results are explicitly
 finite JSON, with field-specific documented exceptions for their tool-owned
 schemas. Duplicate-key and non-finite input rejection still precedes execution;
-the HTTP schema layer adds no tools, registry loading or execution path.
+domain validation remains responsible for tool execution constraints.

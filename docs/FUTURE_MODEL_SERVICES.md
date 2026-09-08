@@ -1,7 +1,9 @@
 # Future model services
 
-These records identify future boundaries, not active endpoints or frozen wire
-schemas. Neither service is implemented in Phase 5.
+Neither service below is implemented. These notes identify future design
+boundaries, not active tasks or frozen wire schemas. Each requires a separate
+scope decision before implementation; this document grants no implementation
+authority and makes no delivery commitment.
 
 ## Public rerank
 

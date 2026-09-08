@@ -120,8 +120,8 @@ is authoritative over partial drafts. Alembic owns schema revisions; see
 
 Caught failure and controlled cancellation persist accumulated reasoning/text,
 independently of the debug delta-persistence setting. Hard process interruption
-can retain only already-persisted content. This presentation change uses existing
-JSON storage and content_version=2, with no old-record conversion or new migration.
+can retain only already-persisted content. Accumulated parts use JSON storage
+and content_version=2; there is no checkpoint for every streaming token.
 
 ## External SSE
 

@@ -14,7 +14,8 @@ source reindex operation.
 
 Attachment indexing reads complete UTF-8 text under Knowledge's byte/character
 limits, independently of chat's attachment-preview limit. Empty, invalid or
-oversized input is rejected. Source creation and reindex return
+oversized input is rejected. File imports support UTF-8 text attachment types;
+PDF and Office document parsing are unsupported. Source creation and reindex return
 KnowledgeSourceIndexResult (source_id, status, chunks and index metadata), not
 a source record. Listing returns records; previews use content/truncated.
 Preview and reindex resolve the actual attachment. A source reference protects

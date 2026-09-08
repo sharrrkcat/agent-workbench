@@ -1,57 +1,36 @@
 # AI context
 
-Read the [current plan](WORKBENCH_SIMPLIFICATION_PLAN.md), then the smallest
-relevant contract before searching source broadly. Phases 0-5 are complete;
-the [historical roadmap](WORKBENCH_REFACTOR_ROADMAP.md) records that baseline.
-The new plan supersedes its Persona, session-binding and Pet decisions.
-Schema head is `0010_runtime_maintenance`. The current
-[runtime maintenance plan](RUNTIME_MAINTENANCE_PLAN.md) adds storage accounting,
-manual cache cleanup and Windows llama CUDA; its verification is recorded there.
-The independent [conversation presentation plan](CHAT_PRESENTATION_PLAN.md)
-adds one visible reply per run, collapsible processing and whole-reply actions.
-Its verification is recorded separately from the completed roadmap.
-Worldbook and Knowledge management restoration and verification are recorded in
-[resource management](RESOURCE_MANAGEMENT_PLAN.md); Worldbook keeps the old entry
-card structure while Knowledge retains only direct source workflows.
-The [OpenAPI implementation](OPENAPI_IMPLEMENTATION.md) records all HTTP schemas,
-runtime response validation, isolated export and contract verification.
+The [repository instructions](../AGENTS.md) own permanent constraints. Read the
+smallest relevant contract below, then use the task cards to locate source and
+tests before searching broadly. Contracts describe implemented behavior; active
+plans describe ongoing work and do not turn proposed features into current capabilities.
 
-## Fixed constraints
+## Current product
 
-This project is in testing with no users or user data. Prolonged downtime is
-acceptable. Delete abandoned code directly: no compatibility layers, legacy
-implementations, configuration fallbacks, dual writes or data conversions.
-Alembic alone owns schema revisions. SQLite test records may be reset, but
-revisions never delete models, runtimes, attachments or other file directories.
-See [data layout](DATA_LAYOUT.md) for the chat and application-settings resets.
+Agent Workbench provides local chat and a single-key, loopback-only
+OpenAI-compatible model service. Internal and external inference share
+ModelManager. Local execution uses managed llama-server or isolated Python
+workers; external connections use the OpenAI-compatible protocol.
 
-All inference uses core/models. External connections speak only the
-OpenAI-compatible protocol. Local inference runs in managed llama-server or
-isolated Python workers, not the API process. Model weights are placed manually.
-Model release defaults to manual. Auxiliary titles use only the explicitly
-selected model; absence or failure leaves the title unchanged. Reranker remains
-a model kind and RAG operation; preserving RRF order on failure is intentional.
-
-Personas own identity, prompts and resource bindings. Session settings own
-model selection, context, generation and Harness. Nonempty Persona prompts are
-always included. New sessions save the enabled global-default LLM or the first
-enabled LLM; later default changes do not replace a session's selection.
-Resources combine the current speaker's bindings with session
-additions. Harness is opt-in with explicit built-in tools, bounded loops and
-durable approvals. New sessions allow all registered tools. Unknown prefixes are plain text.
-There is no Agent/Action/Capability/Command registry, YAML execution, intent
-router, script SDK, image generation or model downloader to extend.
-The Codex Pet UI and package flows are removed. Only position settings,
-dimension-independent dragging and task-state foundations remain for a future Pet.
+Personas own identity, prompts and resource bindings; sessions own concrete model
+selection, context, generation and opt-in Harness configuration. Chat combines the
+current speaker's resources with session additions. Each run has one visible
+reply, processing history and whole-reply actions. Built-in tools share direct
+and model invocation with bounded execution and durable approvals; `/v1` forwards
+tool data without executing it. Core Memory, Worldbook and Knowledge support chat.
+Pet has position, dragging and task-state foundations only, with no mounted UI.
 
 ## Contracts
 
-- [Models](contracts/models.md): profiles, adapters, lifecycle, runtimes, `/v1`.
-- [Chat/context](contracts/chat-context.md): Personas, sessions, context, parts, titles.
+- [Models](contracts/models.md): profiles, lifecycle, runtimes, CUDA, storage/cache, `/v1`.
+- [Chat/context](contracts/chat-context.md): Personas, sessions, Worldbook, parts, titles.
 - [Harness/tools](contracts/harness-tools.md): direct calls, loops, permissions, approval.
 - [Knowledge](contracts/knowledge.md): sources, indexing, hybrid retrieval and rerank.
-- [Runs/streaming](contracts/runs-streaming.md): status, events, persistence, reconciliation.
+- [Runs/streaming](contracts/runs-streaming.md): status, WS/SSE, persistence, reconciliation.
 - [Settings](contracts/settings.md): strict ownership, six UI entries, Pet foundations.
+
+HTTP schemas and validation belong to these same domain contracts. OpenAPI
+generation and verification commands are in the [README](../README.md#http-contract).
 
 ## Task map
 
@@ -61,9 +40,12 @@ dimension-independent dragging and task-state foundations remain for a future Pe
 - [Settings](ai/TASK_SETTINGS.md)
 - [Frontend](ai/TASK_FRONTEND_UI.md)
 
-Interface/workflow changes update the owning contract. UI text changes update
-both locales. Run backend tests, frontend tests/build and
-`uv run python scripts/check_docs_size.py` for every implementation round.
-Verification commands and startup examples are in the [README](../README.md).
-Deferred work is recorded in [model services](FUTURE_MODEL_SERVICES.md) and the
-new plan's future Pet boundary.
+## Supporting documents
+
+- [README](../README.md): source installation, model setup, API examples and verification.
+- [Run guide](../README_RUN.md): launchers and portable packaging.
+- [Data layout](DATA_LAYOUT.md): storage ownership, schema revisions and maintenance.
+- [Documentation maintenance](ai/DOCS_MAINTENANCE.md): English-only documentation,
+  ownership and active-plan completion rules.
+- [Future model services](FUTURE_MODEL_SERVICES.md): unimplemented design boundaries.
+  Future Pet visuals remain undecided under [Settings](contracts/settings.md#pet-foundations).

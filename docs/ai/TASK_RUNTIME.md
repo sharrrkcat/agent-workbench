@@ -4,28 +4,24 @@ Read [chat/context](../contracts/chat-context.md),
 [runs/streaming](../contracts/runs-streaming.md), [models](../contracts/models.md)
 and [harness/tools](../contracts/harness-tools.md).
 
-The explicit assembly is api/deps.py. core/runtime.py coordinates input and
-cancellation; ChatRunner builds context and calls ModelManager or HarnessAgentLoop.
-Only registered slash tools dispatch directly. Waiting approvals block new
-input and resume solely through the explicit approval API.
+## Source map
 
-core/models owns adapters, queues, lifecycle, status and managed runtime jobs.
-Workers live outside the API process. Runtime jobs are not chat runs. Internal
-and external callers share the manager directly; titles use only the auxiliary
-selector after the main response/lease completes.
+Paths below are under ai_workbench:
 
-Storage scans and manual uv cache maintenance belong to RuntimeSupervisor.
-Cache jobs share installation exclusion/logs but have no runtime identity.
-Windows llama CUDA uses pinned main/DLL artifacts, auto/manual offload and
-positive GPU-layer confirmation before ready. See the
-[runtime maintenance plan](../RUNTIME_MAINTENANCE_PLAN.md) for current verification.
+- api/deps.py assembles services; core/runtime.py coordinates input/cancellation.
+- core/chat_runner.py, core/context.py and core/harness/ handle chat/tool execution.
+- core/models/ owns adapters, queues, lifecycle and status; core/models/runtimes/ owns
+  catalog, supervision, storage accounting and cache maintenance.
+- core/stores.py, core/run_lifecycle.py and core/events.py work with db/stores.py and
+  API message/tool/run/WebSocket routes for persistence and transport.
 
-Run snapshots and continuations are private. Preserve ordered pending calls,
-active-time budgets, restart handling and cancellation across chat/direct/resumed
-execution. Keep public metadata compact and errors structured. RunStep kinds
-remain context/model/save/approval/tool, with bilingual frontend labels.
+## Verification
 
-Relevant sources include core/chat_runner.py, harness/, models/, context.py,
-stores.py, run_lifecycle.py, events.py and api routes/messages/tools/runs/ws.
-Tests cover models, transport, Persona snapshots and harness behavior. Run the
-full backend suite, frontend state tests/build and documentation checks.
+Model tests are tests/test_phase2a_manager.py, test_phase2a_protocol.py and
+test_phase2a_transport.py under tests/. Managed runtime tests are
+test_phase2b_runtime.py, test_runtime_maintenance.py and test_llama_cuda.py.
+Chat/Harness tests cover private snapshots, ordered approvals, active budgets,
+restart handling and cancellation; test_chat_presentation.py covers partial
+output and whole-reply operations. Use the full backend suite, frontend state
+tests/build and documentation gates in the [README](../../README.md#verification).
+That guide also owns isolated browser and explicit CUDA smoke instructions.

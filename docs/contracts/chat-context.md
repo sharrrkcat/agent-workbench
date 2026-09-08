@@ -99,7 +99,8 @@ diagnostics rather than copied content in metadata.
 
 Core Memory injects trimmed core_memory_content when enabled and nonempty,
 wrapped in `<core_memory>` tags. Metadata contains flags, length, skip reason
-and warnings only. The settings and reset boundary are in [settings](settings.md).
+and warnings only. Configuration belongs to [settings](settings.md); reset
+effects belong to [data layout](../DATA_LAYOUT.md#database-revisions).
 
 Worldbook is deterministic matching over current user text and configured
 keywords. Enabled entries obey entry/context limits, case sensitivity,
@@ -110,7 +111,7 @@ are data, never runtime instructions or routing decisions.
 
 Worldbook management opens inside its settings panel, with Configuration,
 Entries and Match test tabs. Existing books and newly saved books open Entries.
-The entry UI preserves the 768b335d card hierarchy: handle, disclosure, enabled
+Each entry card's header contains a handle, disclosure, enabled
 switch, name, dirty marker, mode and delete; the body has name/mode, keywords,
 content, then save/reset/delete. Multiple cards and their drafts are independent.
 Existing-entry switches PATCH only enabled and roll back on failure without

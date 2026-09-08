@@ -31,11 +31,9 @@ rejects them. Font asset routes and startup font scanning are removed.
 `GET /api/runtime/resources` remains a cached diagnostic API, independent of
 display preferences. Existing font files remain untouched.
 
-Revision `0007_phase5_cleanup` deletes the disposable app_settings JSON row.
-General, Core Memory and Pet settings therefore reset to defaults on upgrade;
-new writes use only the current schema. No old JSON filtering/conversion is
-performed. Other settings objects, records and data directories are preserved.
-This irreversible test-state reset is documented in [data layout](../DATA_LAYOUT.md).
+Application settings use only the current schema, with no old JSON filtering
+or conversion. Disposable settings resets and protected data boundaries are
+documented in [data layout](../DATA_LAYOUT.md#database-revisions).
 
 ## Model settings
 
@@ -112,9 +110,6 @@ score filtering. Chunk overlap must be smaller than chunk size. Model kinds,
 paths and backend settings remain under Models. Both forms retain advanced drafts
 when collapsed and preserve nullable override semantics.
 
-Implementation and verification are recorded in
-[resource management](../RESOURCE_MANAGEMENT_PLAN.md).
-
 ## Pet foundations
 
 The Codex Pet overlay, sprite format, package service, settings page and all
@@ -128,7 +123,7 @@ between -20000 and 20000. Default position has null coordinates. GET
 `/api/pets/settings` returns `{settings: {position}}`; PATCH accepts
 `{values: {position?: Partial[PetPosition]}}`. It deep-merges position using the
 same AppSettingsStore as General. Removed fields and null position/mode return
-422. Revision 0009 resets disposable app_settings without filtering old JSON.
+422. Settings reset effects belong to the data-layout document above.
 
 usePetPosition receives saved position, width, height and onCommit. It bounds
 dragging to the viewport, commits rounded coordinates on pointer release and
@@ -152,5 +147,5 @@ JSON responses have runtime validation. Manual PATCH request documentation
 preserves merge-time validation, field omission, explicit null and empty-string
 semantics; keys remain write-only with presence flags in read models.
 All errors use the application's error envelope, including 422, and invalid
-server responses return sanitized 500 INTERNAL_ERROR. Documentation/export adds
-no settings fields, UI entries, database migration or frontend code generation.
+server responses return sanitized 500 INTERNAL_ERROR. Frontend types and clients
+are maintained directly rather than generated from OpenAPI.
