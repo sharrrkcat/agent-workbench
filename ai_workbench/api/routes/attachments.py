@@ -5,6 +5,9 @@ from fastapi.responses import FileResponse, Response
 from starlette.datastructures import UploadFile
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.openapi import ATTACHMENT_RANGE, ATTACHMENT_RESPONSES, request_body
+from ai_workbench.api.schemas.common import error_responses
+from ai_workbench.api.schemas.attachments import AttachmentDeleted, AttachmentResponse, AttachmentUpload
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.attachments import attachment_mime_type, resolve_attachment_uri, save_attachment_from_upload, delete_attachment_if_unreferenced
 
@@ -12,7 +15,8 @@ from ai_workbench.core.attachments import attachment_mime_type, resolve_attachme
 router = APIRouter(prefix="/api/attachments", tags=["attachments"])
 
 
-@router.post("")
+@router.post("", response_model=AttachmentResponse, response_model_exclude_unset=True,
+    openapi_extra=request_body(AttachmentUpload, "multipart/form-data"), responses=error_responses(400, 422))
 async def upload_attachment(request: Request, state: RuntimeState = Depends(get_state)) -> dict:
     form = await request.form()
     items = form.getlist("file")
@@ -31,7 +35,8 @@ async def upload_attachment(request: Request, state: RuntimeState = Depends(get_
         raise_error(400, "INVALID_ATTACHMENT", str(exc) or "Invalid attachment.")
 
 
-@router.get("/{attachment_id:path}")
+@router.get("/{attachment_id:path}", response_class=Response,
+    openapi_extra=ATTACHMENT_RANGE, responses={**ATTACHMENT_RESPONSES, **error_responses(404)})
 def get_attachment(attachment_id: str, request: Request) -> Response:
     try:
         path = resolve_attachment_uri(attachment_id)
@@ -79,7 +84,7 @@ def get_attachment(attachment_id: str, request: Request) -> Response:
     )
 
 
-@router.delete("/{attachment_id}")
+@router.delete("/{attachment_id}", response_model=AttachmentDeleted, responses=error_responses(404, 409))
 async def delete_attachment(attachment_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     try:
         path = resolve_attachment_uri(attachment_id)

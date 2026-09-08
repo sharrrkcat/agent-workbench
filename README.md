@@ -166,6 +166,27 @@ capabilities and unavailable models produce explicit errors without substitution
 [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior.
 Public rerank and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
 
+## HTTP contract
+
+All `/api` and `/v1` HTTP operations are described by OpenAPI 3.1 at
+[/openapi.json](http://127.0.0.1:8765/openapi.json), with interactive documentation
+at [/docs](http://127.0.0.1:8765/docs) and [/redoc](http://127.0.0.1:8765/redoc).
+Ordinary JSON responses are validated at runtime. Public schemas omit keys,
+private run snapshots and runtime log paths. Response validation failures return
+a sanitized `500 INTERNAL_ERROR`. WebSocket behavior remains in the streaming contract.
+
+```powershell
+uv run python scripts/openapi.py check
+uv run python scripts/openapi.py export --output build/openapi.json
+```
+
+Both commands use the application factory with temporary directories and memory
+stores, without opening the real database, loading models or calling services.
+Export is deterministic UTF-8 JSON. The generated file is a build artifact;
+routes and Pydantic models remain its source, and frontend clients retain their
+existing types. The [implementation record](docs/OPENAPI_IMPLEMENTATION.md) lists
+coverage, validation and remaining boundaries.
+
 ## Settings and storage
 
 The six settings entries are General, Models, Personas, Knowledge, Worldbook
@@ -197,6 +218,7 @@ and [.env.example](.env.example) for paths and explicit maintenance commands.
 ```powershell
 uv run pytest -q
 uv run python -m compileall -q ai_workbench
+uv run python scripts/openapi.py check
 uv run python scripts/check_docs_size.py
 uv run python scripts/audit_workspace.py --check
 Push-Location frontend

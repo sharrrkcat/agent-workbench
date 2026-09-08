@@ -7,6 +7,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.schemas.chat import (
+    SessionResponse, SessionPersonasResponse, SessionDeleted, TimelineItem,
+    SessionKnowledgeResponse, NotificationDismissed,
+)
+from ai_workbench.api.openapi import request_body
+from ai_workbench.api.schemas.common import error_responses, patch_model
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.models.schema import GenerationParameters
 from ai_workbench.core.schema.context_policy import ContextPolicy
@@ -31,7 +37,8 @@ class CreateSessionRequest(BaseModel):
     context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
     generation: GenerationParameters = Field(default_factory=GenerationParameters)
     harness_enabled: StrictBool = False
-    tools_allowed: list[str] = Field(default_factory=list, max_length=128)
+    tools_allowed: list[str] = Field(default_factory=list, max_length=128,
+        description="Omission selects all currently registered tools; an explicit empty array selects none.")
 
 
 class UpdateSessionRequest(BaseModel):
@@ -59,23 +66,35 @@ class SessionKnowledgePatch(BaseModel):
     knowledge_base_ids: list[str] = Field(max_length=128)
 
 
-@router.post("")
+SessionPatchRequest = patch_model("SessionPatchRequest", CreateSessionRequest, fields={
+    "title": (str, Field(default_factory=lambda: None, min_length=1, max_length=MAX_SESSION_TITLE_LENGTH,
+        description="A nonempty title after trimming; updates mark the title as manually set.")),
+    "tools_allowed": (list[str], Field(default_factory=lambda: None, max_length=128,
+        description="Omission keeps the saved allowlist; an empty array disables all tools.")),
+})
+
+
+@router.post("", response_model=SessionResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409, 422, 503))
 async def create_session(payload: CreateSessionRequest, state: RuntimeState = Depends(get_state)) -> dict:
     session = state.chat_service.create_session(payload.model_dump(exclude_unset=True))
     return state.chat_service.session_response(session)
 
 
-@router.get("")
+@router.get("", response_model=list[SessionResponse], response_model_exclude_unset=True)
 def list_sessions(state: RuntimeState = Depends(get_state)) -> list[dict]:
     return [state.chat_service.session_response(session) for session in state.sessions.list_sessions()]
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", response_model=SessionResponse, response_model_exclude_unset=True,
+    responses=error_responses(404, 409))
 def get_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     return state.chat_service.session_response(_get_session_or_404(state, session_id))
 
 
-@router.patch("/{session_id}")
+@router.patch("/{session_id}", response_model=SessionResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409, 422, 503), openapi_extra=request_body(SessionPatchRequest,
+        description="Only submitted fields change. null clears model_profile_id; context, generation, members and title are non-nullable."))
 async def update_session(
     session_id: str,
     payload: UpdateSessionRequest,
@@ -112,18 +131,21 @@ async def update_session(
     return response
 
 
-@router.get("/{session_id}/personas")
+@router.get("/{session_id}/personas", response_model=SessionPersonasResponse, response_model_exclude_unset=True,
+    responses=error_responses(404, 409))
 def get_session_personas(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     session = get_session(session_id, state)
     return {"personas": session["personas"], "current_persona_id": session["current_persona_id"]}
 
 
-@router.patch("/{session_id}/personas")
+@router.patch("/{session_id}/personas", response_model=SessionResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409, 422, 503))
 async def update_session_personas(session_id: str, payload: SessionPersonasPatch, state: RuntimeState = Depends(get_state)) -> dict:
     return await update_session(session_id, UpdateSessionRequest(**payload.model_dump()), state)
 
 
-@router.delete("/{session_id}")
+@router.delete("/{session_id}", response_model=SessionDeleted, response_model_exclude_unset=True,
+    responses=error_responses(404, 409))
 async def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     session = _get_session_or_404(state, session_id)
     state.chat_service.assert_idle(session_id)
@@ -142,7 +164,8 @@ async def delete_session(session_id: str, state: RuntimeState = Depends(get_stat
     return {"deleted": True, "session_id": session.session_id}
 
 
-@router.get("/{session_id}/timeline")
+@router.get("/{session_id}/timeline", response_model=list[TimelineItem], response_model_exclude_unset=True,
+    responses=error_responses(404))
 def get_session_timeline(session_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
     _get_session_or_404(state, session_id)
     messages = state.messages.list_messages(session_id)
@@ -191,13 +214,15 @@ def get_session_timeline(session_id: str, state: RuntimeState = Depends(get_stat
     return [item[2] for item in sortable]
 
 
-@router.get("/{session_id}/knowledge-bases")
+@router.get("/{session_id}/knowledge-bases", response_model=SessionKnowledgeResponse, response_model_exclude_unset=True,
+    responses=error_responses(404))
 def get_session_knowledge_bases(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _get_session_or_404(state, session_id)
     return state.chat_service.binding_response(session_id, "knowledge")
 
 
-@router.patch("/{session_id}/knowledge-bases")
+@router.patch("/{session_id}/knowledge-bases", response_model=SessionKnowledgeResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409, 422))
 async def update_session_knowledge_bases(
     session_id: str,
     payload: SessionKnowledgePatch,
@@ -210,7 +235,8 @@ async def update_session_knowledge_bases(
     return state.chat_service.binding_response(session_id, "knowledge")
 
 
-@router.post("/{session_id}/notifications/{notification_id}/dismiss")
+@router.post("/{session_id}/notifications/{notification_id}/dismiss", response_model=NotificationDismissed, response_model_exclude_unset=True,
+    responses=error_responses(404))
 def dismiss_session_notification(
     session_id: str,
     notification_id: str,

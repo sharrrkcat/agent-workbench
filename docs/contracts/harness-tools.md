@@ -131,3 +131,9 @@ Tool-generated paths are relative; rejected absolute arguments are masked.
 URL credentials and authentication query values are not echoed. Provider keys
 are not passed to tools. Tool content is rendered as JSON/text, never executed.
 All workflow labels, risks, results and step kinds have English/Chinese text.
+
+OpenAPI describes the catalog, settings, direct calls and approval results with
+validated run/message/session types. Tool parameters and results are explicitly
+finite JSON, with field-specific documented exceptions for their tool-owned
+schemas. Duplicate-key and non-finite input rejection still precedes execution;
+the HTTP schema layer adds no tools, registry loading or execution path.

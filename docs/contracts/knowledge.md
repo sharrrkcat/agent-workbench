@@ -83,3 +83,10 @@ sources still require rebuilding. Deleting the final source sets the base empty.
 Search forwards threshold, per-source and per-base chunk limits to retrieval.
 
 Request models use `extra="forbid"`; removed fields are rejected with 422.
+OpenAPI and runtime response models cover bases, sources, indexing results,
+partial reindex failures, previews, chunks and search. Retrieval scores, ranks,
+rerank diagnostics and optional debug output have concrete schemas; no vectors
+are exposed. Source/chunk metadata remains documented finite JSON. PATCH schemas
+distinguish omission from nullable overrides; the existing merge validators and
+domain error codes still apply. Memory chunk responses omit embedding_dimension,
+while SQLite responses include the value or null, preserving the existing wire format.

@@ -11,6 +11,9 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.openapi import SSE_RESPONSE, request_body
+from ai_workbench.api.schemas.common import error_responses
+from ai_workbench.api.schemas.inference import ChatCompletion, EmbeddingResponse, ModelList
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_request
 from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest
@@ -18,7 +21,8 @@ from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest
 router = APIRouter(prefix="/v1", tags=["openai-compatible"])
 
 
-@router.get("/models")
+@router.get("/models", response_model=ModelList, response_model_exclude_unset=True,
+            responses=error_responses(401, 403, 503), summary="List externally visible models")
 async def list_models(request: Request, state: RuntimeState = Depends(get_state)):
     guard(request, state.model_settings.get())
     return {"object": "list", "data": [
@@ -27,7 +31,9 @@ async def list_models(request: Request, state: RuntimeState = Depends(get_state)
     ]}
 
 
-@router.post("/chat/completions")
+@router.post("/chat/completions", response_model=ChatCompletion, response_model_exclude_unset=True,
+             openapi_extra=request_body(ChatRequest), summary="Create a chat completion",
+             responses={**error_responses(400, 401, 403, 404, 413, 422, 429, 502, 503, 504), 200: SSE_RESPONSE})
 async def chat(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
@@ -72,7 +78,9 @@ async def chat(request: Request, state: RuntimeState = Depends(get_state)):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@router.post("/embeddings")
+@router.post("/embeddings", response_model=EmbeddingResponse, response_model_exclude_unset=True,
+             openapi_extra=request_body(EmbeddingRequest), summary="Create text embeddings",
+             responses=error_responses(400, 401, 403, 404, 413, 422, 429, 502, 503, 504))
 async def embeddings(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)

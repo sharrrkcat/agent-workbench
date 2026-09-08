@@ -204,3 +204,15 @@ temperature=0. Only an empty/default title is eligible. Missing auxiliary
 selection, failed/empty output or concurrent manual renaming leaves the title
 unchanged and does not affect chat success. The bounded current user text is
 the only input: no history, attachments, Memory, Worldbook or Knowledge.
+
+## HTTP schemas
+
+OpenAPI defines public Personas, resolved session configuration, typed message
+parts, timelines, bindings, history mutations and Worldbook match diagnostics.
+Responses are validated without adding absent optional fields or removing
+explicit nulls. Message/run UTC timestamps retain Z and microsecond precision;
+Worldbook's existing +00:00 timestamps remain unchanged. Manual attachment and
+Persona parsing retain their current error codes and PATCH merge behavior.
+Uploads document one multipart file; downloads document stored-MIME binary bytes,
+the single Range header, 200/206 length/range headers and an empty 416 response.
+Private run continuation and configuration snapshots are absent from public types.

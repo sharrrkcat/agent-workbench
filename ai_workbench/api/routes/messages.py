@@ -5,6 +5,11 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.openapi import request_body
+from ai_workbench.api.schemas.common import error_responses, public_model
+from ai_workbench.api.schemas.attachments import AttachmentInput
+from ai_workbench.api.schemas.chat import ChatResult, HistoryResult, MessageResponse
+from ai_workbench.core.conversation_history import HistoryPruned
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.sessions import _get_session_or_404
 from ai_workbench.core.attachments import validate_attachments
@@ -31,13 +36,22 @@ class EditMessageRequest(BaseModel):
     rerun: bool = True
 
 
-@router.get("/messages")
+CreateMessageBody = public_model("CreateMessageBody", CreateMessageRequest, fields={
+    "attachments": (list[AttachmentInput], Field(default_factory=list,
+        description="Each item contains exactly one of data_url or a saved local URI.")),
+})
+
+
+@router.get("/messages", response_model=list[MessageResponse], response_model_exclude_unset=True,
+    responses=error_responses(404))
 def list_messages(session_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
     _get_session_or_404(state, session_id)
     return [_message_payload(state, item) for item in state.messages.list_messages(session_id)]
 
 
-@router.post("/messages")
+@router.post("/messages", response_model=ChatResult, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409, 422),
+    openapi_extra=request_body(CreateMessageBody, description="Attachment metadata is validated by the attachment service; malformed attachments return INVALID_ATTACHMENTS."))
 async def create_message(
     session_id: str,
     payload: CreateMessageRequest,
@@ -64,13 +78,15 @@ async def create_message(
     return _result_payload(state, session_id, result, before)
 
 
-@message_router.delete("/{message_id}")
+@message_router.delete("/{message_id}", response_model=HistoryPruned, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409))
 async def delete_message(message_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _get_message_or_404(state, message_id)
     return state.history.delete_user(message_id).model_dump()
 
 
-@message_router.post("/{message_id}/edit")
+@message_router.post("/{message_id}/edit", response_model=HistoryResult, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409, 422))
 async def edit_message(
     message_id: str,
     payload: EditMessageRequest,

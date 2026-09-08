@@ -52,3 +52,33 @@ def repository_model_files_are_unchanged():
     if changed:
         details.append(f"changed={changed}")
     pytest.fail("tests modified repository data/models files: " + "; ".join(details), pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def workbench_responses_match_openapi(monkeypatch, request):
+    """Existing domain regressions also verify the actual HTTP response schema."""
+    from fastapi.testclient import TestClient
+    from tests.openapi_assertions import validate_workbench_response
+
+    original = TestClient.request
+    validators = {}
+    coverage = getattr(request.config, "_workbench_openapi_coverage", None)
+    if coverage is None:
+        coverage = request.config._workbench_openapi_coverage = set()
+
+    def checked(client, *args, **kwargs):
+        response = original(client, *args, **kwargs)
+        operation = validate_workbench_response(client.app, response, validators)
+        if operation is not None:
+            coverage.add(operation)
+        return response
+
+    monkeypatch.setattr(TestClient, "request", checked)
+
+
+def pytest_terminal_summary(terminalreporter, config):
+    coverage = getattr(config, "_workbench_openapi_coverage", set())
+    operations = {(path, method) for path, method, _ in coverage}
+    terminalreporter.write_line(
+        f"OpenAPI response validation: {len(operations)} HTTP operations, {len(coverage)} operation/status combinations."
+    )

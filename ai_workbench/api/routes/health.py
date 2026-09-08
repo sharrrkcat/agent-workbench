@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends
 
 from ai_workbench import __version__
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.schemas.system import HealthResponse, HealthDetails
 from ai_workbench.db.migrations import HEAD_REVISION
 
 
 router = APIRouter(tags=["health"])
 
 
-@router.get("/api/health")
+@router.get("/api/health", response_model=HealthResponse, response_model_exclude_unset=True)
 def health(state: RuntimeState = Depends(get_state)) -> dict:
     database = _database_status(state)
     return {
@@ -21,7 +22,7 @@ def health(state: RuntimeState = Depends(get_state)) -> dict:
     }
 
 
-@router.get("/api/health/details")
+@router.get("/api/health/details", response_model=HealthDetails, response_model_exclude_unset=True)
 def health_details(state: RuntimeState = Depends(get_state)) -> dict:
     database = _database_status(state)
     llm = _llm_status(state)

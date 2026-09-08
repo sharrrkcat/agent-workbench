@@ -13,6 +13,8 @@ Its verification is recorded separately from the completed roadmap.
 Worldbook and Knowledge management restoration and verification are recorded in
 [resource management](RESOURCE_MANAGEMENT_PLAN.md); Worldbook keeps the old entry
 card structure while Knowledge retains only direct source workflows.
+The [OpenAPI implementation](OPENAPI_IMPLEMENTATION.md) records all HTTP schemas,
+runtime response validation, isolated export and contract verification.
 
 ## Fixed constraints
 

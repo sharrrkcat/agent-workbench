@@ -258,3 +258,18 @@ or base64 (little-endian float32), with optional dimensions. The manager applies
 the profile's document instruction, batching, dimension validation and
 normalization, shared with Knowledge indexing; queries use query instruction.
 Public rerank and image generation are deferred; see [future services](../FUTURE_MODEL_SERVICES.md).
+
+## HTTP schemas
+
+OpenAPI 3.1 covers management and `/v1`, including per-kind parameters, runtime
+options, storage and 202 job responses. Public models omit provider/service keys,
+installation manifest hashes and job log paths. JSON responses are validated;
+an invalid server result becomes a sanitized 500 INTERNAL_ERROR. Existing
+operationIds, field omission and timestamp precision are preserved.
+Model timestamps read from SQLite may be unzoned UTC; their text is retained.
+Manual `/v1` parsing still authenticates and bounds received bytes before input
+validation. Only `/v1` advertises Bearer or x-api-key security alternatives, with
+matching credentials required when both are supplied. Its JSON and SSE media
+types and X-Request-Id headers share the same operation. Run
+`uv run python scripts/openapi.py check` or `export --output build/openapi.json`;
+generation uses isolated memory state and never performs inference.

@@ -143,3 +143,14 @@ Approval steps take precedence while waiting; terminal states expose no active
 step. It imports no animation states or bubble text. Future visuals subscribe
 to the existing Workbench store; no Pet-specific task endpoint or polling is added.
 New appearance, asset format and animations are explicitly deferred.
+
+## HTTP schemas
+
+OpenAPI covers every retained settings owner, derived General fields, Pet
+position, storage maintenance and cached health/resource diagnostics. Ordinary
+JSON responses have runtime validation. Manual PATCH request documentation
+preserves merge-time validation, field omission, explicit null and empty-string
+semantics; keys remain write-only with presence flags in read models.
+All errors use the application's error envelope, including 422, and invalid
+server responses return sanitized 500 INTERNAL_ERROR. Documentation/export adds
+no settings fields, UI entries, database migration or frontend code generation.

@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.schemas.common import error_responses
+from ai_workbench.api.schemas.system import StorageStats, OrphanScan, OrphanCleanup
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.storage_maintenance import cleanup_orphan_attachments, scan_orphan_attachments, storage_stats
 
@@ -15,12 +17,12 @@ class CleanupOrphansRequest(BaseModel):
     confirm: bool = False
 
 
-@router.get("/storage-stats")
+@router.get("/storage-stats", response_model=StorageStats, response_model_exclude_unset=True)
 def get_storage_stats(state: RuntimeState = Depends(get_state)) -> dict:
     return storage_stats(state.messages, database_url=state.database_url, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
 
 
-@router.post("/attachments/scan-orphans")
+@router.post("/attachments/scan-orphans", response_model=OrphanScan, response_model_exclude_unset=True)
 def scan_attachment_orphans(state: RuntimeState = Depends(get_state)) -> dict:
     scan = scan_orphan_attachments(state.messages, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
     return {
@@ -30,7 +32,8 @@ def scan_attachment_orphans(state: RuntimeState = Depends(get_state)) -> dict:
     }
 
 
-@router.post("/attachments/cleanup-orphans")
+@router.post("/attachments/cleanup-orphans", response_model=OrphanCleanup, response_model_exclude_unset=True,
+    responses=error_responses(400, 422))
 def cleanup_attachment_orphans(payload: CleanupOrphansRequest, state: RuntimeState = Depends(get_state)) -> dict:
     if payload.confirm is not True:
         raise_error(400, "CONFIRMATION_REQUIRED", "Clean orphan attachments requires confirm=true.")

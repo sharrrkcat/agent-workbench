@@ -6,6 +6,9 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.schemas.common import JsonObject, error_responses
+from ai_workbench.api.schemas.chat import ToolCatalogItem, ToolResult
+from ai_workbench.core.harness.settings import HarnessSettings
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.harness.schema import ApprovalDecision, ToolExecutionError
 from ai_workbench.core.message_parts import text_from_parts
@@ -33,20 +36,23 @@ class HarnessSettingsPatch(BaseModel):
 class DirectToolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     session_id: str = Field(min_length=1)
-    arguments: dict[str, Any] = Field(default_factory=dict)
+    arguments: JsonObject = Field(default_factory=dict, description="Finite JSON arguments validated against the named built-in tool's schema.")
 
 
-@router.get("")
+@router.get("", response_model=list[ToolCatalogItem], response_model_exclude_unset=True,
+    responses=error_responses(422))
 def list_tools(state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
     return state.tool_registry.catalog()
 
 
-@router.get("/settings")
+@router.get("/settings", response_model=HarnessSettings, response_model_exclude_unset=True,
+    responses=error_responses(422))
 def get_tool_settings(state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     return state.harness_settings.get().model_dump(mode="json")
 
 
-@router.patch("/settings")
+@router.patch("/settings", response_model=HarnessSettings, response_model_exclude_unset=True,
+    responses=error_responses(422))
 def patch_tool_settings(payload: HarnessSettingsPatch, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         values = payload.model_dump(exclude_unset=True)
@@ -58,7 +64,8 @@ def patch_tool_settings(payload: HarnessSettingsPatch, state: RuntimeState = Dep
         raise_error(422, "INVALID_TOOL_SETTING", "Use a public HTTP(S) SearXNG URL without credentials, query or fragment.")
 
 
-@router.post("/{tool_name}/call")
+@router.post("/{tool_name}/call", response_model=ToolResult, response_model_exclude_unset=True,
+    responses=error_responses(400, 403, 404, 409, 422))
 async def call_tool(tool_name: str, payload: DirectToolRequest, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         session = state.sessions.get_session(payload.session_id)
@@ -68,7 +75,8 @@ async def call_tool(tool_name: str, payload: DirectToolRequest, state: RuntimeSt
     return _tool_result_payload(state, session.session_id, result.run_id)
 
 
-@router.post("/approvals/{run_id}")
+@router.post("/approvals/{run_id}", response_model=ToolResult, response_model_exclude_unset=True,
+    responses=error_responses(404, 409, 422))
 async def resolve_approval(run_id: str, payload: ApprovalDecision, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         run = state.runs.get_run(run_id)
@@ -87,7 +95,8 @@ async def resolve_approval(run_id: str, payload: ApprovalDecision, state: Runtim
         raise_error(409, exc.code, exc.message, exc.details)
 
 
-@router.get("/runs/{run_id}")
+@router.get("/runs/{run_id}", response_model=ToolResult, response_model_exclude_unset=True,
+    responses=error_responses(404, 422))
 def get_tool_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         run = state.runs.get_run(run_id)

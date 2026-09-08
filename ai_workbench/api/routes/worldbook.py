@@ -2,6 +2,15 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.openapi import request_body
+from ai_workbench.api.schemas.common import error_responses, patch_model
+from ai_workbench.api.schemas.chat import SessionWorldbooksResponse
+from ai_workbench.api.schemas.resources import (
+    WorldbookResponse, WorldbookSettingsResponse, WorldbookEntryResponse,
+    WorldbookDeleted, WorldbookEntryDeleted, WorldbookReordered, WorldbookMatchResponse,
+    WorldbookRequest, WorldbookEntryRequest,
+)
+from ai_workbench.core.worldbook import WorldbookSettings
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.worldbook import (
     Worldbook,
@@ -17,6 +26,8 @@ from ai_workbench.core.worldbook import (
 
 
 router = APIRouter(prefix="/api", tags=["worldbook"])
+WorldbookSettingsRequest = patch_model("WorldbookSettingsRequest", WorldbookSettings,
+    omit={"id", "created_at", "updated_at"})
 
 
 class EntryReorderRequest(BaseModel):
@@ -39,13 +50,16 @@ class MatchTestRequest(BaseModel):
     session_id: str | None = None
 
 
-@router.get("/worldbook/settings")
+@router.get("/worldbook/settings", response_model=WorldbookSettingsResponse, response_model_exclude_unset=True,
+    responses=error_responses(400))
 def get_worldbook_settings(state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     return state.worldbooks.get_settings().model_dump()
 
 
-@router.patch("/worldbook/settings")
+@router.patch("/worldbook/settings", response_model=WorldbookSettingsResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 422),
+    openapi_extra=request_body(WorldbookSettingsRequest, description="Only submitted editable fields change. null is invalid for all Worldbook settings."))
 def patch_worldbook_settings(payload: dict, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -55,13 +69,15 @@ def patch_worldbook_settings(payload: dict, state: RuntimeState = Depends(get_st
         _raise_validation(exc)
 
 
-@router.get("/worldbooks")
+@router.get("/worldbooks", response_model=list[WorldbookResponse], response_model_exclude_unset=True,
+    responses=error_responses(400))
 def list_worldbooks(state: RuntimeState = Depends(get_state)) -> list[dict]:
     _require_store(state)
     return [item.model_dump() for item in state.worldbooks.list_worldbooks()]
 
 
-@router.post("/worldbooks")
+@router.post("/worldbooks", response_model=WorldbookResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 422))
 def create_worldbook(payload: WorldbookCreate, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -70,7 +86,8 @@ def create_worldbook(payload: WorldbookCreate, state: RuntimeState = Depends(get
         _raise_validation(exc)
 
 
-@router.get("/worldbooks/{worldbook_id}")
+@router.get("/worldbooks/{worldbook_id}", response_model=WorldbookResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404))
 def get_worldbook(worldbook_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -79,7 +96,9 @@ def get_worldbook(worldbook_id: str, state: RuntimeState = Depends(get_state)) -
         raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
-@router.patch("/worldbooks/{worldbook_id}")
+@router.patch("/worldbooks/{worldbook_id}", response_model=WorldbookResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422), openapi_extra=request_body(WorldbookRequest,
+        description="Only submitted fields change. null clears description; name and enabled are non-nullable."))
 def patch_worldbook(worldbook_id: str, payload: WorldbookPatch, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -90,7 +109,8 @@ def patch_worldbook(worldbook_id: str, payload: WorldbookPatch, state: RuntimeSt
         raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
-@router.delete("/worldbooks/{worldbook_id}")
+@router.delete("/worldbooks/{worldbook_id}", response_model=WorldbookDeleted, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409))
 def delete_worldbook(worldbook_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     if state.personas.references_resource("worldbook", worldbook_id):
@@ -102,7 +122,8 @@ def delete_worldbook(worldbook_id: str, state: RuntimeState = Depends(get_state)
         raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
-@router.get("/worldbooks/{worldbook_id}/entries")
+@router.get("/worldbooks/{worldbook_id}/entries", response_model=list[WorldbookEntryResponse], response_model_exclude_unset=True,
+    responses=error_responses(400, 404))
 def list_entries(worldbook_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
     _require_store(state)
     try:
@@ -111,7 +132,8 @@ def list_entries(worldbook_id: str, state: RuntimeState = Depends(get_state)) ->
         raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
-@router.post("/worldbooks/{worldbook_id}/entries")
+@router.post("/worldbooks/{worldbook_id}/entries", response_model=WorldbookEntryResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422))
 def create_entry(worldbook_id: str, payload: WorldbookEntryCreate, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -127,7 +149,8 @@ def create_entry(worldbook_id: str, payload: WorldbookEntryCreate, state: Runtim
         raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
-@router.get("/worldbook-entries/{entry_id}")
+@router.get("/worldbook-entries/{entry_id}", response_model=WorldbookEntryResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404))
 def get_entry(entry_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -136,7 +159,9 @@ def get_entry(entry_id: str, state: RuntimeState = Depends(get_state)) -> dict:
         raise_error(404, "WORLDBOOK_ENTRY_NOT_FOUND", f"Worldbook entry not found: {entry_id}")
 
 
-@router.patch("/worldbook-entries/{entry_id}")
+@router.patch("/worldbook-entries/{entry_id}", response_model=WorldbookEntryResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422), openapi_extra=request_body(WorldbookEntryRequest,
+        description="Only submitted fields change; entry fields are non-nullable. Empty keywords disable keyword triggers. Name/content must remain nonempty; regexes are validated before saving."))
 def patch_entry(entry_id: str, payload: WorldbookEntryPatch, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -149,7 +174,8 @@ def patch_entry(entry_id: str, payload: WorldbookEntryPatch, state: RuntimeState
         raise_error(404, "WORLDBOOK_ENTRY_NOT_FOUND", f"Worldbook entry not found: {entry_id}")
 
 
-@router.delete("/worldbook-entries/{entry_id}")
+@router.delete("/worldbook-entries/{entry_id}", response_model=WorldbookEntryDeleted, response_model_exclude_unset=True,
+    responses=error_responses(400, 404))
 def delete_entry(entry_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -159,7 +185,8 @@ def delete_entry(entry_id: str, state: RuntimeState = Depends(get_state)) -> dic
         raise_error(404, "WORLDBOOK_ENTRY_NOT_FOUND", f"Worldbook entry not found: {entry_id}")
 
 
-@router.patch("/worldbooks/{worldbook_id}/entries/reorder")
+@router.patch("/worldbooks/{worldbook_id}/entries/reorder", response_model=WorldbookReordered, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422))
 def reorder_entries(worldbook_id: str, payload: EntryReorderRequest, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     try:
@@ -171,14 +198,16 @@ def reorder_entries(worldbook_id: str, payload: EntryReorderRequest, state: Runt
         raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
-@router.get("/sessions/{session_id}/worldbooks")
+@router.get("/sessions/{session_id}/worldbooks", response_model=SessionWorldbooksResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404))
 def get_session_worldbooks(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     _require_session(state, session_id)
     return state.chat_service.binding_response(session_id, "worldbook")
 
 
-@router.patch("/sessions/{session_id}/worldbooks")
+@router.patch("/sessions/{session_id}/worldbooks", response_model=SessionWorldbooksResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 409, 422))
 async def patch_session_worldbooks(session_id: str, payload: SessionWorldbooksPatch, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     _require_session(state, session_id)
@@ -188,7 +217,8 @@ async def patch_session_worldbooks(session_id: str, payload: SessionWorldbooksPa
     return state.chat_service.binding_response(session_id, "worldbook")
 
 
-@router.post("/worldbooks/match-test")
+@router.post("/worldbooks/match-test", response_model=WorldbookMatchResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422))
 def match_test(payload: MatchTestRequest, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     settings = state.worldbooks.get_settings()

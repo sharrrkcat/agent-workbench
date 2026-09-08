@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr
+from typing_extensions import TypeAliasType
+
+
+# Unlike Pydantic's opaque JsonValue schema, this recursive alias documents all
+# JSON shapes in both input and output schemas while rejecting non-finite data.
+JsonValue = TypeAliasType("JsonValue", "None | StrictBool | StrictInt | Annotated[StrictFloat, Field(allow_inf_nan=False)] | StrictStr | list[JsonValue] | dict[str, JsonValue]")
 
 
 def validate_json_data(value: Any) -> Any:

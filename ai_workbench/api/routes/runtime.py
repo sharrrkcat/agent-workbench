@@ -3,12 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.schemas.system import RuntimeResources
 
 
 router = APIRouter(prefix="/api/runtime", tags=["runtime"])
 
 
-@router.get("/resources")
+@router.get("/resources", response_model=RuntimeResources, response_model_exclude_unset=True)
 def get_runtime_resources(state: RuntimeState = Depends(get_state)) -> dict:
     try:
         return state.runtime_resources.resources()

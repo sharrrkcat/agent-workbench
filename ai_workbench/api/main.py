@@ -9,7 +9,8 @@ from starlette.routing import Match
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
+from ai_workbench.api.openapi import install_openapi
 
 from ai_workbench.api.deps import RuntimeState, build_runtime_state
 from ai_workbench.api.routes import attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook, tools
@@ -99,6 +100,11 @@ def create_app(
         _record_inference_error_code(request, {"error": {"code": code}})
         return JSONResponse(status_code=422, content={"error": {"code": code, "message": message}})
 
+    @app.exception_handler(ResponseValidationError)
+    async def response_validation_exception_handler(request, exc: ResponseValidationError):
+        _record_inference_error_code(request, {"error": {"code": "INTERNAL_ERROR"}})
+        return JSONResponse(status_code=500, content={"error": {"code": "INTERNAL_ERROR", "message": "Response validation failed."}})
+
     app.include_router(attachments.router)
     app.include_router(data.router)
     app.include_router(openai_compatible.router)
@@ -118,6 +124,7 @@ def create_app(
     app.include_router(runtime.router)
     app.include_router(ws_router)
     configure_frontend_routes(app, frontend_dist)
+    install_openapi(app)
     return app
 
 

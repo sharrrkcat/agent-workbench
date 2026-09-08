@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 
@@ -20,7 +21,7 @@ class ProviderInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
     protocol: Literal["openai_compatible"] = "openai_compatible"
     base_url: str
-    api_key: str = ""
+    api_key: str = Field(default="", description="PATCH omission retains the key; an empty string clears it.", json_schema_extra={"writeOnly": True})
     timeout_seconds: float = Field(default=60, gt=0, le=3600)
     concurrency: int = Field(default=1, ge=1, le=64)
     queue_size: int = Field(default=32, ge=0, le=1024)
@@ -163,7 +164,7 @@ class ModelSettings(StrictModel):
     default_model_profile_id: str | None = None
     utility_model_profile_id: str | None = None
     external_enabled: bool = False
-    external_api_key: str = ""
+    external_api_key: str = Field(default="", description="PATCH omission retains the key; an empty string clears it.", json_schema_extra={"writeOnly": True})
     max_request_mb: int = Field(default=10, ge=1, le=100)
 
 
@@ -226,7 +227,8 @@ class ChatMessage(StrictModel):
 class FunctionSpec(StrictModel):
     name: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     description: str | None = None
-    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    parameters: dict[str, JsonValue] = Field(default_factory=lambda: {"type": "object", "properties": {}},
+        description="JSON Schema describing the function's arguments; forwarded as data, never executed by /v1.")
     strict: bool | None = None
 
 
@@ -247,7 +249,7 @@ class ToolChoice(StrictModel):
 class JSONSchema(StrictModel):
     name: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     description: str | None = None
-    schema_: dict[str, Any] = Field(alias="schema")
+    schema_: dict[str, JsonValue] = Field(alias="schema", description="Caller-supplied JSON Schema for structured model output.")
     strict: bool | None = None
 
 

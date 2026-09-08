@@ -137,3 +137,13 @@ failures emit an explicit SSE error and DONE. Disconnects close upstream
 streams and release model occupancy. Invalid choices, malformed upstream chunks
 and truncated streams are errors, never silently successful empty responses.
 Access logs record the final outcome after the complete response ends.
+
+OpenAPI describes the chat 200 response as either JSON or text/event-stream.
+The SSE body remains text, with fixed chunk, usage, failure and DONE examples;
+x-event-schemas references the generated chunk/error models for frame validation.
+REST run, step, timeline and stored-event responses have runtime validation and
+typed lifecycle/message/delta/tool/approval payloads. Omitted fields and explicit
+nulls remain distinct, and timestamps retain microseconds. Private snapshots are
+absent from those types. WebSocket transport remains defined here rather than
+being represented as an HTTP operation. Response validation failures produce a
+sanitized 500 INTERNAL_ERROR without internal validation values.

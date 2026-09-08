@@ -16,6 +16,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlmodel import Session as DbSession, select
 
 from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.openapi import request_body
+from ai_workbench.api.schemas.common import error_responses, patch_model
+from ai_workbench.api.schemas.resources import (
+    KnowledgeBaseResponse, KnowledgeSourceResponse, SourceIndexResult, BaseIndexResult,
+    KnowledgeBaseDeleted, KnowledgeSourceDeleted, SourcePreview, SourceChunks,
+    ChunkResponse, KnowledgeSearchResponse,
+    KnowledgeBaseRequest,
+)
+from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.knowledge_indexing import (
     KnowledgeIndexError,
@@ -39,6 +48,7 @@ from ai_workbench.db.models import KnowledgeChunkRecord, KnowledgeEmbeddingRecor
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 SOURCE_PREVIEW_MAX_CHARS = 20_000
 CHUNK_CONTENT_PREVIEW_MAX_CHARS = 2_000
+KnowledgeSettingsRequest = patch_model("KnowledgeSettingsRequest", KnowledgeSettings, omit={"id"})
 
 
 class KnowledgeSourceCreate(BaseModel):
@@ -68,12 +78,14 @@ class KnowledgeSearchRequest(BaseModel):
     debug: bool = False
 
 
-@router.get("/settings")
+@router.get("/settings", response_model=KnowledgeSettings, response_model_exclude_unset=True)
 def get_knowledge_settings(state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     return state.knowledge.get_settings().model_dump(mode="json")
 
 
-@router.patch("/settings")
+@router.patch("/settings", response_model=KnowledgeSettings, response_model_exclude_unset=True,
+    responses=error_responses(404, 422, 503),
+    openapi_extra=request_body(KnowledgeSettingsRequest, description="Omission retains the saved field. Nullable overrides and reranker_model_profile_id accept null to clear."))
 def patch_knowledge_settings(payload: dict[str, Any], state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         patch = KnowledgeSettingsPatch.model_validate(payload)
@@ -84,7 +96,8 @@ def patch_knowledge_settings(payload: dict[str, Any], state: RuntimeState = Depe
         _validation_error(exc, "INVALID_KNOWLEDGE_SETTING")
 
 
-@router.post("/search")
+@router.post("/search", response_model=KnowledgeSearchResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422))
 async def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     query = payload.query.strip()
     if not query:
@@ -113,7 +126,8 @@ async def search(payload: KnowledgeSearchRequest, state: RuntimeState = Depends(
         raise_error(400, exc.code, exc.message)
 
 
-@router.get("/chunks/{chunk_id}")
+@router.get("/chunks/{chunk_id}", response_model=ChunkResponse, response_model_exclude_unset=True,
+    responses=error_responses(404))
 def get_knowledge_chunk(chunk_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     engine = getattr(state.knowledge, "engine", None)
     if engine is None:
@@ -137,7 +151,8 @@ def get_knowledge_chunk(chunk_id: str, state: RuntimeState = Depends(get_state))
         }
 
 
-@router.get("/sources/{source_id}/preview")
+@router.get("/sources/{source_id}/preview", response_model=SourcePreview, response_model_exclude_unset=True,
+    responses=error_responses(404, 422))
 def get_knowledge_source_preview(source_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     source = _source_or_404(state, source_id)
     text = _read_source_text(source, state)
@@ -150,7 +165,8 @@ def get_knowledge_source_preview(source_id: str, state: RuntimeState = Depends(g
     }
 
 
-@router.get("/sources/{source_id}/chunks")
+@router.get("/sources/{source_id}/chunks", response_model=SourceChunks, response_model_exclude_unset=True,
+    responses=error_responses(404))
 def list_knowledge_source_chunks(source_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     source = _source_or_404(state, source_id)
     engine = getattr(state.knowledge, "engine", None)
@@ -169,12 +185,13 @@ def list_knowledge_source_chunks(source_id: str, state: RuntimeState = Depends(g
         return {"source_id": source.id, "chunks": [_chunk_payload(row, db) for row in rows]}
 
 
-@router.get("/bases")
+@router.get("/bases", response_model=list[KnowledgeBaseResponse], response_model_exclude_unset=True)
 def list_knowledge_bases(state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
     return [_base_payload(item) for item in state.knowledge.list_knowledge_bases()]
 
 
-@router.post("/bases")
+@router.post("/bases", response_model=KnowledgeBaseResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422, 503))
 def create_knowledge_base(payload: KnowledgeBaseCreate, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     _require_embedding_profile(state, payload.embedding_model_profile_id)
     try:
@@ -184,7 +201,8 @@ def create_knowledge_base(payload: KnowledgeBaseCreate, state: RuntimeState = De
         _validation_error(exc, "INVALID_KNOWLEDGE_BASE")
 
 
-@router.get("/bases/{knowledge_base_id}")
+@router.get("/bases/{knowledge_base_id}", response_model=KnowledgeBaseResponse, response_model_exclude_unset=True,
+    responses=error_responses(404))
 def get_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         return _base_payload(state.knowledge.get_knowledge_base(knowledge_base_id))
@@ -192,7 +210,9 @@ def get_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
 
 
-@router.patch("/bases/{knowledge_base_id}")
+@router.patch("/bases/{knowledge_base_id}", response_model=KnowledgeBaseResponse, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422, 503), openapi_extra=request_body(KnowledgeBaseRequest,
+        description="Only supplied fields change. null clears aliases and nullable retrieval overrides; other fields are non-nullable."))
 def patch_knowledge_base(knowledge_base_id: str, payload: KnowledgeBasePatch, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     updates = payload.model_dump(exclude_unset=True)
     if updates.get("embedding_model_profile_id"):
@@ -209,7 +229,8 @@ def patch_knowledge_base(knowledge_base_id: str, payload: KnowledgeBasePatch, st
         _validation_error(exc, "INVALID_KNOWLEDGE_BASE")
 
 
-@router.delete("/bases/{knowledge_base_id}")
+@router.delete("/bases/{knowledge_base_id}", response_model=KnowledgeBaseDeleted, response_model_exclude_unset=True,
+    responses=error_responses(404, 409))
 def delete_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     if state.personas.references_resource("knowledge", knowledge_base_id):
         raise_error(409, "KNOWLEDGE_BASE_IN_USE", "Remove persona bindings before deleting this Knowledge Base.")
@@ -220,7 +241,8 @@ def delete_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
 
 
-@router.get("/bases/{knowledge_base_id}/sources")
+@router.get("/bases/{knowledge_base_id}/sources", response_model=list[KnowledgeSourceResponse], response_model_exclude_unset=True,
+    responses=error_responses(404))
 def list_knowledge_sources(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
     try:
         state.knowledge.get_knowledge_base(knowledge_base_id)
@@ -229,7 +251,8 @@ def list_knowledge_sources(knowledge_base_id: str, state: RuntimeState = Depends
         raise_error(404, "KNOWLEDGE_BASE_NOT_FOUND", f"Knowledge base not found: {knowledge_base_id}")
 
 
-@router.post("/bases/{knowledge_base_id}/sources")
+@router.post("/bases/{knowledge_base_id}/sources", response_model=SourceIndexResult, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422))
 async def create_knowledge_source(knowledge_base_id: str, payload: KnowledgeSourceCreate, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         state.knowledge.get_knowledge_base(knowledge_base_id)
@@ -243,12 +266,14 @@ async def create_knowledge_source(knowledge_base_id: str, payload: KnowledgeSour
         raise_error(400, exc.code, exc.message, exc.details)
 
 
-@router.get("/sources/{source_id}")
+@router.get("/sources/{source_id}", response_model=KnowledgeSourceResponse, response_model_exclude_unset=True,
+    responses=error_responses(404))
 def get_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     return _source_or_404(state, source_id).model_dump(mode="json")
 
 
-@router.delete("/sources/{source_id}")
+@router.delete("/sources/{source_id}", response_model=KnowledgeSourceDeleted, response_model_exclude_unset=True,
+    responses=error_responses(404))
 def delete_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         source = state.knowledge.delete_source(source_id)
@@ -257,7 +282,8 @@ def delete_knowledge_source(source_id: str, state: RuntimeState = Depends(get_st
         raise_error(404, "KNOWLEDGE_SOURCE_NOT_FOUND", f"Knowledge source not found: {source_id}")
 
 
-@router.post("/sources/{source_id}/reindex")
+@router.post("/sources/{source_id}/reindex", response_model=SourceIndexResult, response_model_exclude_unset=True,
+    responses=error_responses(400, 404, 422))
 async def reindex_knowledge_source(source_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         return (await state.knowledge_service.reindex(source_id)).model_dump(mode="json")
@@ -269,7 +295,8 @@ async def reindex_knowledge_source(source_id: str, state: RuntimeState = Depends
         raise_error(400, exc.code, exc.message, exc.details)
 
 
-@router.post("/bases/{knowledge_base_id}/reindex")
+@router.post("/bases/{knowledge_base_id}/reindex", response_model=BaseIndexResult, response_model_exclude_unset=True,
+    responses=error_responses(404))
 async def reindex_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
     try:
         state.knowledge.get_knowledge_base(knowledge_base_id)
