@@ -1,8 +1,7 @@
 # Models contract
 
 All inference uses the application-scoped `core/models/ModelManager` and
-`ProviderAdapter`. ChatRunner, Utility LLM, Knowledge and `/v1` call the manager
-directly. Internal callers do not loop back through the application's HTTP API.
+`ProviderAdapter`; ChatRunner, Utility LLM, Knowledge and `/v1` call the manager without HTTP loopback.
 The API process imports no torch, transformers, onnxruntime or llama.cpp binding.
 
 ## Profiles and connections
@@ -40,10 +39,10 @@ LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties,
 seed and stop; explicit request values override defaults. Capabilities are
 streaming, tools, vision, json_object and json_schema; unsupported requests fail.
 
-External connections execute chat/text embeddings; llama-server executes chat.
-Python workers execute embedding, rerank, image embedding, vision and TTS.
-Standalone vision/image_embedding differs from LLM image input. Managed llama
-image input awaits projector support; external vision LLMs accept chat images.
+External connections execute chat/text embeddings; llama-server and Transformers
+execute chat, and ONNX executes Kokoro TTS. Local embedding, rerank, image-embedding
+and WD14 entry points remain pending. Managed image input is unavailable;
+external vision LLMs accept chat images.
 
 ## Lifecycle and status
 
@@ -53,8 +52,8 @@ shares the provider queue. Queue overflow/timeout returns `MODEL_BUSY`.
 Cancellation or stream closure releases upstream responses, slots and tasks.
 
 External aliases share residency/occupancy by `(provider_profile_id, model_ref)`.
-Managed GGUF aliases share normalized reference, process and options. Python
-profiles share a variant queue while loading/unloading independently.
+Managed GGUF aliases share normalized reference, process and options. Transformers
+aliases share a process/queue by path and runtime options; ONNX profiles share a variant queue.
 Release defaults to `manual`; `after_request` and `idle` (300 seconds by default)
 are opt-in. An enabled manual alias keeps a shared model resident; otherwise
 the longest idle timeout wins. Automatic release errors are diagnostic and do
@@ -86,26 +85,29 @@ are defined in [runs/streaming](runs-streaming.md).
 
 ## Managed catalog and installation
 
+The [runtime families plan](../ai/PLAN_RUNTIME_FAMILIES.md) owns remaining accepted work.
 `GET /api/models/runtimes/catalog` exposes a code-owned, version-pinned catalog,
 platform/architecture support, model kinds and strict options schemas. Internal
 catalog records own HTTPS artifact URLs, SHA-256, archive format and executable.
 
-| Enabled variant | Platforms |
+| Variant | Availability |
 | --- | --- |
 | llama-server/cpu | Windows and Linux x64 |
 | llama-server/cuda | Windows x64 |
-| python-worker/torch-cpu | Windows and Linux x64 |
-| python-worker/onnx-cpu | Windows and Linux x64 |
+| python-worker/transformers-cuda | Windows x64 (validated with explicit CPU and CUDA execution) |
+| python-worker/onnx-cpu | Windows and Linux x64 (Kokoro; WD14 remains deferred) |
+| python-worker/infinity-cuda | Placeholder, unsupported |
+| python-worker/audio-cuda | Placeholder, unsupported |
 
-Vulkan, torch-cu128, onnx-gpu and Linux CUDA remain visibly unsupported.
+Separate PyTorch CPU distributions, Vulkan, torch-cu128 and onnx-gpu are removed.
+Linux Transformers, Infinity and Audio remain unsupported.
 
-Llama model_ref is a safe relative GGUF path; Python model_ref is a safe relative
-directory, both under `data/models`. Profiles cannot supply an executable or
-arbitrary command-line argument. Llama options are threads, context_size,
-batch_size and gpu_layers (strict zero on CPU; auto or strict integer 1..999
-on CUDA, default auto); worker options are device=cpu,
-intraop_threads and max_batch_size (fixed 1 for ONNX CPU). Saving before installation is allowed;
-execution reports the missing runtime/model.
+Local model_ref is a safe relative GGUF file or Python model directory under
+`data/models`; profiles cannot supply executables or arbitrary arguments.
+Llama options are threads, context_size, batch_size and gpu_layers (0 on CPU;
+auto or integer 1..999 on CUDA). ONNX options are device=cpu, intraop_threads and
+max_batch_size=1. Transformers options are device=cpu|cuda (default cuda) and
+intraop_threads=4. Profiles may be saved before installation; execution reports missing resources.
 
 `POST /api/models/runtimes/{runtime_id}/{variant}/install` creates a job. Only
 one installation, uninstallation or cache-maintenance job runs application-wide. Artifacts stream to
@@ -117,12 +119,13 @@ data/runtimes/llama-server/<version>/<variant>/
 data/runtimes/py/<variant>/<version>/
 ```
 
-The bundled application uv installs pinned Python into runtime-owned storage,
-creates the worker venv and installs hash-locked dependencies. ONNX CPU permits
-only docopt, jaconv, jieba and unidic-lite source builds with locked build tools;
-native packages require wheels. `--no-bin` and
-`--no-registry` avoid user PATH/registry changes. Download configuration is
-owned by [settings](settings.md); weights are always placed manually.
+The bundled uv installs artifact-pinned Python and hash-locked dependencies in
+separate family environments, then checks dependency consistency and offline imports.
+Transformers pins Python 3.12.11, Transformers 5.16.1, Torch 2.11.0+cu128 and
+Torchvision 0.26.0+cu128. ONNX permits only docopt, jaconv, jieba and unidic-lite
+source builds with locked build tools; native packages require wheels.
+`--no-bin`/`--no-registry` preserve user PATH/registry. [Settings](settings.md)
+owns download configuration; weights are always placed manually.
 
 Windows CUDA uses llama.cpp b10809's CUDA 12.4 main ZIP and separately pinned
 cudart ZIP. Catalog additional_artifacts owns the latter's URL, hash, format
@@ -141,9 +144,8 @@ retry starts a new job. Uninstall stops related workers, removes only the
 matching runtime directory and marks it not_installed. Shared interpreters and
 download cache remain available to other variants.
 
-Read-only routes list installations, per-runtime status, jobs and job details.
-`/api/models/runtimes/jobs/{id}/log` returns a task log; `/cancel` requests
-cancellation. `/api/models/profiles/{id}/log` returns managed process logs.
+Read-only routes list installations, status and jobs. `/api/models/runtimes/jobs/{id}/log`
+returns task logs; `/cancel` requests cancellation. `/api/models/profiles/{id}/log` returns process logs.
 Responses omit absolute paths, ports, process tokens and raw provider errors.
 Runtime failures use `RUNTIME_NOT_INSTALLED`, `RUNTIME_INSTALLING`,
 `RUNTIME_BROKEN`, `RUNTIME_UNSUPPORTED`, `RUNTIME_DEVICE_UNAVAILABLE`, `MODEL_NOT_FOUND`, `MODEL_BUSY` or
@@ -182,18 +184,16 @@ are retained independently of runtime installation logs.
 
 ## Managed processes and workers
 
-Workers bind `127.0.0.1` on dynamically reserved ports. The supervisor owns
-process groups and Windows kill-on-job-close Job Objects, stopping full process
-trees on unload, cancellation or application exit. Logs are sanitized, capped
-at 10 MiB, and retained under `data/logs/runtimes`: latest 20 terminal task logs
-and 20 process logs per runtime.
+Workers bind `127.0.0.1` on reserved ports. Process groups and Windows kill-on-job-close
+Job Objects stop full trees on unload, cancellation or exit. Sanitized logs are capped
+at 10 MiB under `data/logs/runtimes`: latest 20 terminal tasks and 20 process logs per runtime.
 
-Llama-server uses the existing OpenAI-compatible adapter and a per-process key
-stored only in its private process directory. Python workers use token-authenticated
-`GET /health` and `POST /load`, `/unload`, `/embed`, `/rerank`, `/image-embed`,
-`/vision` and binary `/speech` endpoints. Standard-library validation precedes engine imports.
+Llama and Transformers use the OpenAI-compatible adapter and private process keys.
+Transformers exposes authenticated health, a single managed model and chat endpoints;
+ONNX uses token-authenticated health/load/unload and binary speech RPC.
+Standard-library validation precedes engine imports.
 
-CUDA load enumerates devices using the pinned executable and selects the first
+Llama CUDA load enumerates devices using the pinned executable and selects the first
 CUDA device with split-mode=none. No usable device returns RUNTIME_DEVICE_UNAVAILABLE.
 Automatic offload uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx
 equal to the configured context size. Manual layers use fit=off. Before ready,
@@ -201,15 +201,14 @@ the pinned startup log must confirm at least one layer on GPU; zero/missing
 offload or insufficient memory fails loading and stops the process. There is
 no CPU substitution. Cached status/catalog reads do not probe GPU hardware.
 
-Workers set HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE, use local_files_only, reject
-unsafe paths and accept images only as bounded PNG/JPEG/WebP data URLs. They
-fetch neither image URLs nor model weights, and never execute remote model code.
-Supported CPU engines are transformers text embeddings, sequence-classification
-reranking, CLIP, SigLIP2, DINOv2, Florence2 and WD14. Embeddings use attention-mask
-mean pooling with a 512-token limit. Rerank needs a trained classification head;
-WD14 needs model.onnx and selected_tags.csv, without requiring config.json.
-Integrity checks cover the dependency lock, worker source fingerprint and
-installed file list, excluding generated bytecode caches.
+Workers enforce offline/local-only loading without remote model code. Transformers
+uses float32 on CPU and checkpoint dtype on CUDA, with no device substitution.
+Its upstream idle release is disabled; ModelManager owns release and stops the
+model process on cancellation before freeing occupancy. Tools require a supported
+response template and run only through project Harness. Vision, JSON output,
+nonzero presence/frequency penalties and explicit tool-call controls are rejected.
+CLIP, SigLIP2 and WD14 entry points remain; DINOv2 and Florence2 are removed.
+Integrity checks cover family-specific locks/sources and installed files, excluding bytecode caches.
 
 Manual b10809 validation covers Windows x64, RTX 3050 Laptop GPU and MiniMind
 (2026-09-08), not Linux/other GPUs. See [README](../../README.md#verification).

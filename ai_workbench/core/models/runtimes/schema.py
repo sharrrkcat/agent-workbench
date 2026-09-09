@@ -49,17 +49,22 @@ class LlamaCUDAOptions(LlamaOptions):
 
 
 def llama_options(variant: str):
-    return {"cpu": LlamaCPUOptions, "cuda": LlamaCUDAOptions, "vulkan": LlamaOptions}[variant]
+    return {"cpu": LlamaCPUOptions, "cuda": LlamaCUDAOptions}[variant]
 
 
-class PythonOptions(Strict):
+class OnnxCPUOptions(Strict):
     device: Literal["cpu"] = "cpu"
     intraop_threads: int = Field(default=4, ge=1, le=256)
-    max_batch_size: int = Field(default=32, ge=1, le=2048)
-
-
-class OnnxCPUOptions(PythonOptions):
     max_batch_size: int = Field(default=1, ge=1, le=1, strict=True)
+
+
+class TransformersOptions(Strict):
+    device: Literal["cpu", "cuda"] = "cuda"
+    intraop_threads: int = Field(default=4, ge=1, le=256, strict=True)
+
+
+def is_transformers(profile) -> bool:
+    return (profile.runtime_id, profile.runtime_variant) == ("python-worker", "transformers-cuda")
 
 
 class DownloadSettings(Strict):
@@ -111,7 +116,12 @@ class CatalogEntry(Strict):
     executable: str
     requirements: str | None = None
     python_version: str | None = None
+    python_key: str | None = None
+    python_artifact: RuntimeArtifact | None = None
+    pytorch_index_url: str | None = None
     worker_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    worker_files: list[str] = Field(default_factory=list)
+    worker_entrypoint: str | None = None
     kinds: list[str]
     options_schema: dict = Field(default_factory=dict)
 
@@ -121,8 +131,16 @@ class CatalogEntry(Strict):
             raise ValueError("Runtime artifacts require HTTPS")
         if self.supported and self.archive_format != "venv" and not (self.url and self.sha256):
             raise ValueError("Installable archives require a pinned URL and SHA-256")
-        if self.supported and self.archive_format == "venv" and not (self.requirements and self.python_version and self.sha256):
-            raise ValueError("Installable workers require a hashed lock and Python version")
+        if self.supported and self.archive_format == "venv" and not (
+            self.requirements and self.python_version and self.python_key and self.python_artifact
+            and self.sha256 and self.worker_sha256 and self.worker_files
+            and self.worker_entrypoint in self.worker_files
+        ):
+            raise ValueError("Installable workers require a dependency lock, pinned interpreter and worker sources")
+        if len(set(self.worker_files)) != len(self.worker_files) or any(
+            relative_ref(name) != name or "/" in name or not name.endswith(".py") for name in self.worker_files
+        ):
+            raise ValueError("Worker sources must be unique Python filenames")
         if self.additional_artifacts and (self.runtime_id != "llama-server" or self.archive_format == "venv"):
             raise ValueError("Additional artifacts belong to managed llama-server archives")
         return self

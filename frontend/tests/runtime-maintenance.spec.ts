@@ -27,7 +27,7 @@ for (const locale of ['en', 'zh-CN']) {
         await runtimeView(page, locale);
         await page.locator('.runtime-storage-details summary').click();
         await expect(page.locator('.runtime-storage-table')).toContainText('.cache');
-        await expect(page.locator('.runtime-storage-table')).toContainText('py/torch-cpu/1.0.0');
+        await expect(page.locator('.runtime-storage-table')).toContainText('py/transformers-cuda/1.0.0');
         await noRuntimeOverflow(page);
         await page.screenshot({ path: info.outputPath('runtime-storage.png') });
         const clean = locale === 'en' ? 'Clear cache' : '清空缓存';
@@ -56,7 +56,7 @@ for (const locale of ['en', 'zh-CN']) {
         const alias = `runtime-fixture-${locale.toLowerCase()}-${viewport.width}`;
         await dialog.getByLabel(locale === 'en' ? 'Public alias' : '公开别名', { exact: true }).fill(alias);
         await dialog.getByLabel(locale === 'en' ? 'Backend' : '推理后端', { exact: true }).selectOption('managed');
-        await dialog.getByLabel(locale === 'en' ? 'Runtime variant' : '运行环境变体', { exact: true }).selectOption('cuda');
+        await dialog.getByLabel(locale === 'en' ? 'Runtime and build' : '运行环境与构建', { exact: true }).selectOption('llama-server/cuda');
         await dialog.getByLabel(locale === 'en' ? 'Model reference' : '模型引用', { exact: true }).fill('llms/fixture.gguf');
         const automatic = locale === 'en' ? 'Automatic' : '自动';
         const manual = locale === 'en' ? 'Manual' : '手动';
@@ -94,7 +94,8 @@ test('cache task cancellation and failure release installation controls', async 
   await runtimeView(page, 'en');
   await page.getByRole('button', { name: 'Prune cache', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Cancel task', exact: true })).toBeVisible();
-  const cudaRow = page.locator('.runtime-row').filter({ has: page.locator('code').filter({ hasText: /^cuda$/ }) });
+  const cudaRow = page.locator('.runtime-row').filter({ has: page.locator('strong').filter({ hasText: /^llama-server$/ }) })
+    .filter({ has: page.locator('code').filter({ hasText: /^CUDA$/ }) });
   await expect(cudaRow.getByRole('button', { name: 'Install runtime', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Cancel task', exact: true }).click();
   await expect(page.locator('.runtime-cache-task')).toContainText('Cancelled');

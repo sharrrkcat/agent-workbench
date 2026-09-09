@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import os
 from collections.abc import AsyncIterator, Callable
@@ -10,11 +11,12 @@ from dataclasses import dataclass, field
 from ai_workbench.core.models.adapter import ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+from ai_workbench.core.models.runtimes.schema import is_transformers
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
     ImagePart, ModelProfile, ModelStatus, ProviderProfile, SpeechRequest,
 )
-from ai_workbench.workers.protocol import WorkerError
+from ai_workbench.workers.common import WorkerError
 
 
 @dataclass
@@ -81,15 +83,19 @@ class ModelManager:
         if not profile.runtime_id:
             return profile.provider_profile_id
         key = (profile.runtime_id, profile.runtime_variant)
-        if profile.runtime_id == "llama-server":
+        if profile.runtime_id == "llama-server" or is_transformers(profile):
             # Keep identity stable if a weight file/link disappears after loading.
             # Filesystem containment is rechecked at every health/load operation.
             path = self.runtime_supervisor.root / "data" / "models" / profile.model_ref
             key += (os.path.normcase(str(path)),)
+        if is_transformers(profile):
+            key += (json.dumps(profile.runtime_options, sort_keys=True, separators=(",", ":")),)
         return key
 
     def _key(self, profile: ModelProfile) -> tuple:
         backend = self.backend_key(profile)
+        if is_transformers(profile):
+            return backend, backend
         return backend, profile.id if profile.runtime_id == "python-worker" else backend[-1] if profile.runtime_id else profile.model_ref
 
     def validate_binding(self, profile):
@@ -108,12 +114,15 @@ class ModelManager:
             from ai_workbench.core.models.runtimes.schema import model_path
             from ai_workbench.core.models.runtimes.schema import RuntimeStatus
             installation = self.runtime_supervisor.installation(profile.runtime_id, profile.runtime_variant)
+            kind_supported = profile.kind in self.runtime_supervisor.entry(profile.runtime_id, profile.runtime_variant).kinds
             slot = self._slots.get(self.backend_key(profile))
             status = slot.adapter.snapshot(profile) if slot else ModelStatus(state="unloaded", residency="unloaded", unload_supported=True)
             if not slot:
                 status.runtime = RuntimeStatus(runtime_id=installation.runtime_id, variant=installation.variant, version=installation.version,
                     install_state=installation.state, job_id=installation.job_id, process_state="stopped")
-            if installation.state != "installed":
+            if not kind_supported:
+                status.state, status.error_code = "unavailable", "RUNTIME_UNSUPPORTED"
+            elif installation.state != "installed":
                 status.state = "unavailable"
                 status.error_code = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING", "unsupported": "RUNTIME_UNSUPPORTED"}.get(installation.state, "RUNTIME_BROKEN")
             else:
@@ -122,7 +131,7 @@ class ModelManager:
                     if profile.runtime_id == "llama-server" and not path.is_file():
                         raise ValueError()
                     if profile.runtime_id == "python-worker":
-                        from ai_workbench.workers.protocol import local_model
+                        from ai_workbench.workers.common import local_model
                         local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
                             wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
                 except (OSError, ValueError, WorkerError):
@@ -158,10 +167,12 @@ class ModelManager:
             if supervisor.blocked == (profile.runtime_id, profile.runtime_variant):
                 raise ModelError("RUNTIME_INSTALLING", "Runtime maintenance is in progress.", 409)
             if require_runtime:
+                if profile.kind not in supervisor.entry(profile.runtime_id, profile.runtime_variant).kinds:
+                    raise ModelError("RUNTIME_UNSUPPORTED", "This model kind is not implemented by the selected runtime.", 503)
                 supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
             if provider_id not in self._slots:
-                from ai_workbench.core.models.runtimes.adapters import LlamaServerAdapter, PythonWorkerAdapter
-                cls = LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
+                from ai_workbench.core.models.runtimes.adapters import LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
+                cls = TransformersServerAdapter if is_transformers(profile) else LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
                 adapter = cls(supervisor, profile, lambda: self._managed_changed(provider_id))
                 self._slots[provider_id] = ProviderSlot(adapter, asyncio.Semaphore(1))
             return ManagedQueue(), self._slots[provider_id]
@@ -287,6 +298,11 @@ class ModelManager:
             return await slot.adapter.models()
 
     def validate_chat(self, profile: ModelProfile, request: ChatRequest) -> None:
+        if is_transformers(profile) and (
+            any(getattr(request, name) not in (None, 0) for name in ("presence_penalty", "frequency_penalty"))
+            or request.tool_choice not in (None, "auto") or request.parallel_tool_calls is not None
+        ):
+            raise ModelError("UNSUPPORTED_CAPABILITY", "Transformers does not support penalties or explicit tool-call controls.", 422)
         caps = profile.capabilities
         required = {"streaming": request.stream,
                     "tools": bool(request.tools or any(m.tool_calls or m.role == "tool" for m in request.messages)),

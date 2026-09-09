@@ -16,7 +16,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
-from ai_workbench.core.models.runtimes.schema import RuntimeStatus, model_path
+from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
 from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ProviderProfile, RerankResult, VisionResult
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
@@ -42,6 +42,11 @@ class ManagedAdapter:
         self.device_name: str | None = None
         self.gpu_layers_loaded: int | None = None
         self.gpu_layers_total: int | None = None
+        self.tool_calls_supported = False
+
+    @property
+    def single_model(self):
+        return self.entry.runtime_id == "llama-server" or self.entry.variant == "transformers-cuda"
 
     def runtime_status(self):
         value = self.supervisor.installation(self.entry.runtime_id, self.entry.variant)
@@ -51,7 +56,7 @@ class ManagedAdapter:
             gpu_layers_total=self.gpu_layers_total).model_dump()
 
     def snapshot(self, profile):
-        loaded = bool(self.loaded) if profile.runtime_id == "llama-server" else profile.id in self.loaded
+        loaded = bool(self.loaded) if self.single_model else profile.id in self.loaded
         return ModelStatus(state="failed" if self.failed else "ready" if loaded else "unloaded",
             residency="loaded" if loaded else "unloaded", unload_supported=True,
             error_code=(self.error_code or "MODEL_UNAVAILABLE") if self.failed else None, runtime=self.runtime_status())
@@ -62,7 +67,7 @@ class ManagedAdapter:
             if not path.exists() or profile.runtime_id == "llama-server" and not path.is_file() or profile.runtime_id == "python-worker" and not path.is_dir():
                 raise FileNotFoundError()
             if profile.runtime_id == "python-worker":
-                from ai_workbench.workers.protocol import WorkerError, local_model
+                from ai_workbench.workers.common import WorkerError, local_model
                 try:
                     return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
                         wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
@@ -93,7 +98,7 @@ class ManagedAdapter:
             try:
                 if not self.process:
                     await self._start(profile, path, executable)
-                if profile.runtime_id == "python-worker" and profile.id not in self.loaded:
+                if not self.single_model and profile.id not in self.loaded:
                     await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
                         "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.runtime_options})
                 self.loaded.add(profile.id)
@@ -127,7 +132,12 @@ class ManagedAdapter:
             ready = self.run_dir / "ready.json"
             env.update(WORKBENCH_WORKER_TOKEN=self.token, WORKBENCH_WORKER_READY=str(ready),
                        WORKBENCH_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
-            args = [executable, "-I", "-B", target / "worker" / "server.py"]
+            if is_transformers(profile):
+                cache = self.run_dir / "cache"
+                env.update(WORKBENCH_MODEL_REF=profile.model_ref,
+                           WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.runtime_options),
+                           HF_HOME=str(cache), HF_HUB_CACHE=str(cache / "hub"), TORCH_HOME=str(cache / "torch"))
+            args = [executable, "-I", "-B", "-X", "utf8", target / "worker" / self.entry.worker_entrypoint]
             port = None
         else:
             if cuda:
@@ -150,19 +160,28 @@ class ManagedAdapter:
             args.extend(cuda_arguments(options, device_id) if cuda else ["--n-gpu-layers", options["gpu_layers"]])
         self.process = await ManagedProcess.start(args, env=env, cwd=executable.parent, log=log)
         for _ in range(1200):
-            if self.process.process.returncode is not None:
-                raise ModelError("MODEL_UNAVAILABLE", "The managed process exited during startup.", 503)
             if port is None and ready.exists():
                 try:
                     data = json.loads(ready.read_text(encoding="utf-8"))
+                    if data.get("error_code"):
+                        allowed = {"MODEL_UNAVAILABLE", "MODEL_NOT_FOUND", "RUNTIME_DEVICE_UNAVAILABLE", "RUNTIME_BROKEN", "UNSUPPORTED_CAPABILITY"}
+                        code = data["error_code"] if data["error_code"] in allowed else "RUNTIME_BROKEN"
+                        raise ModelError(code, "The managed worker could not load the configured local model.", 503)
                     if data["protocol_version"] != 1 or type(data["port"]) is not int or not 1 <= data["port"] <= 65535:
                         raise ValueError()
                     port = data["port"]
+                    if is_transformers(profile):
+                        if not isinstance(data.get("device_name"), str) or type(data.get("tool_calls")) is not bool:
+                            raise ValueError()
+                        self.device_name = data["device_name"]
+                        self.tool_calls_supported = data["tool_calls"]
                 except (ValueError, KeyError):
                     raise ModelError("RUNTIME_BROKEN", "Worker readiness response was invalid.", 503)
+            if self.process.process.returncode is not None:
+                raise ModelError("MODEL_UNAVAILABLE", "The managed process exited during startup.", 503)
             if port is not None:
                 if not self.client:
-                    headers = {"X-Worker-Token": self.token} if profile.runtime_id == "python-worker" else {"Authorization": f"Bearer {self.token}"}
+                    headers = {"Authorization": f"Bearer {self.token}"} if self.single_model else {"X-Worker-Token": self.token}
                     self.client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=headers, timeout=300, trust_env=False)
                 try:
                     response = await self.client.get("/health", timeout=1)
@@ -175,13 +194,13 @@ class ManagedAdapter:
             await asyncio.sleep(0.25)
         else:
             raise ModelError("MODEL_TIMEOUT", "The managed process did not become healthy in five minutes.", 504)
-        if profile.runtime_id == "llama-server":
+        if self.single_model:
             if cuda:
                 self.gpu_layers_loaded, self.gpu_layers_total = await confirmed_offload(log)
             provider = ProviderProfile(name="managed", base_url=f"http://127.0.0.1:{port}/v1", api_key=self.token, timeout_seconds=300)
             self.openai = OpenAIAdapter(provider)
             if "managed" not in await self.openai.models():
-                raise ModelError("RUNTIME_BROKEN", "llama-server did not advertise the configured model.", 503)
+                raise ModelError("RUNTIME_BROKEN", "The managed server did not advertise the configured model.", 503)
         self.state = "ready"
         self.monitor = asyncio.create_task(self._watch(self.process))
         self.changed()
@@ -193,6 +212,7 @@ class ManagedAdapter:
             self.failed, self.state = True, "failed"
             self.error_code = "MODEL_UNAVAILABLE"
             self.device_name = self.gpu_layers_loaded = self.gpu_layers_total = None
+            self.tool_calls_supported = False
             self.loaded.clear()
             self.changed()
 
@@ -245,7 +265,7 @@ class ManagedAdapter:
 
     async def unload(self, profile):
         async with self.lock:
-            if profile.runtime_id == "python-worker":
+            if not self.single_model:
                 if profile.id in self.loaded and not self.failed:
                     await self._rpc("POST", "/unload", {"profile_id": profile.id})
                     self.loaded.discard(profile.id)
@@ -253,7 +273,7 @@ class ManagedAdapter:
                     self.loaded.clear()
             else:
                 self.loaded.clear()
-            if not self.loaded or profile.runtime_id == "llama-server":
+            if not self.loaded or self.single_model:
                 await self._stop()
                 self.failed = False
             return self.snapshot(profile)
@@ -275,6 +295,7 @@ class ManagedAdapter:
         self.state = "stopped"
         self.error_code = None
         self.device_name = self.gpu_layers_loaded = self.gpu_layers_total = None
+        self.tool_calls_supported = False
         if self.run_dir and self.run_dir.exists():
             remove_owned(self.supervisor.base, self.run_dir)
         self.run_dir = None
@@ -295,6 +316,47 @@ class LlamaServerAdapter(ManagedAdapter):
         async with aclosing(self.openai.chat_stream(profile.model_copy(update={"model_ref": "managed"}), request)) as stream:
             async for chunk in stream:
                 yield chunk
+
+
+class TransformersServerAdapter(LlamaServerAdapter):
+    def _require_tools(self, request):
+        if (request.tools or any(message.tool_calls or message.role == "tool" for message in request.messages)) and not self.tool_calls_supported:
+            raise ModelError("UNSUPPORTED_CAPABILITY", "The local checkpoint has no supported Transformers tool response template.", 422)
+
+    async def _abort(self, error=None):
+        await self._stop()
+        if error is not None:
+            self.failed, self.state = True, "failed"
+            self.error_code = error.code if isinstance(error, ModelError) else "MODEL_UNAVAILABLE"
+        self.changed()
+
+    async def chat(self, profile, request):
+        self._require_tools(request)
+        try:
+            return await super().chat(profile, request)
+        except asyncio.CancelledError:
+            await self._abort()
+            raise
+        except ModelError as exc:
+            await self._abort(exc)
+            raise
+
+    async def chat_stream(self, profile, request):
+        self._require_tools(request)
+        completed, error = False, None
+        try:
+            async with aclosing(super().chat_stream(profile, request)) as stream:
+                async for chunk in stream:
+                    yield chunk
+            completed = True
+        except ModelError as exc:
+            error = exc
+            raise
+        finally:
+            if not completed:
+                # Closing HTTP alone cannot prove a synchronous generation thread
+                # stopped. Terminate this model's process before releasing its lease.
+                await self._abort(error)
 
 
 class PythonWorkerAdapter(ManagedAdapter):

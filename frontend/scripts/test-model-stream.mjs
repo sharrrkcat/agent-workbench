@@ -74,15 +74,15 @@ statusRead.resolve(idle);
 await statusReload;
 assert.equal(modelsStore.getState().statuses.new.active, 2);
 
-mockApi.runtimeCatalog = async () => [{ runtime_id: 'python-worker', variant: 'torch-cpu' }];
-mockApi.runtimeInstallations = async () => [{ id: 'python-worker/torch-cpu', state: 'not_installed' }];
+mockApi.runtimeCatalog = async () => [{ runtime_id: 'python-worker', variant: 'transformers-cuda' }];
+mockApi.runtimeInstallations = async () => [{ id: 'python-worker/transformers-cuda', state: 'not_installed' }];
 const jobsRead = deferred();
 mockApi.runtimeJobs = () => jobsRead.promise;
 const runtimeReload = modelsStore.getState().reloadRuntimes();
 const job = {
   id: 'job',
   runtime_id: 'python-worker',
-  variant: 'torch-cpu',
+  variant: 'transformers-cuda',
   state: 'running',
   stage: 'installing_packages',
   created_at: '2026-09-05T00:00:00Z',
@@ -94,7 +94,7 @@ modelsStore
   .applyModelEvent({
     type: 'runtime_status',
     session_id: '',
-    payload: { installation: { id: 'python-worker/torch-cpu', state: 'installing' } },
+    payload: { installation: { id: 'python-worker/transformers-cuda', state: 'installing' } },
   });
 jobsRead.resolve([{ ...job, state: 'queued', revision: 1 }]);
 await runtimeReload;

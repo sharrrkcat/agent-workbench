@@ -1,59 +1,12 @@
 """Standard-library validation for the private, local worker protocol."""
-from pathlib import Path, PurePosixPath
 import math
 
 if __package__:
-    from .tts_catalog import FORMATS, LANGUAGES, MAX_INPUT_CHARS, VOICE_IDS, model_files
+    from .common import WorkerError, fields, strings, integer, local_model
+    from .tts_catalog import FORMATS, LANGUAGES, MAX_INPUT_CHARS, VOICE_IDS
 else:
-    from tts_catalog import FORMATS, LANGUAGES, MAX_INPUT_CHARS, VOICE_IDS, model_files
-
-
-class WorkerError(Exception):
-    def __init__(self, code, status=422):
-        self.code, self.status = code, status
-
-
-def fields(value, required, optional=()):
-    if not isinstance(value, dict) or not set(required) <= value.keys() or value.keys() - set(required) - set(optional):
-        raise WorkerError("INVALID_REQUEST")
-
-
-def strings(value, limit=2048):
-    if not isinstance(value, list) or not 1 <= len(value) <= limit or any(not isinstance(x, str) or not x.strip() for x in value):
-        raise WorkerError("INVALID_REQUEST")
-    return value
-
-
-def integer(value, low, high):
-    if type(value) is not int or not low <= value <= high:
-        raise WorkerError("INVALID_REQUEST")
-    return value
-
-
-def local_model(root: Path, ref, *, wd14=False, tts=False):
-    if not isinstance(ref, str) or not ref or "\\" in ref or ":" in ref or PurePosixPath(ref).is_absolute() or any(p in {"", ".", ".."} or p.rstrip(" .") != p for p in ref.split("/")):
-        raise WorkerError("INVALID_REQUEST")
-    path = (root / ref).resolve()
-    if not path.is_relative_to(root.resolve()):
-        raise WorkerError("INVALID_REQUEST")
-    if not path.is_dir():
-        raise WorkerError("MODEL_NOT_FOUND", 404)
-    if tts:
-        if not model_files(path):
-            raise WorkerError("MODEL_NOT_FOUND", 404)
-    elif wd14:
-        if not all((path / name).is_file() for name in ("model.onnx", "selected_tags.csv")):
-            raise WorkerError("MODEL_NOT_FOUND", 404)
-    else:
-        if not (path / "config.json").is_file():
-            raise WorkerError("MODEL_NOT_FOUND", 404)
-        if not any(item.is_file() and item.name.startswith(("model", "pytorch_model")) and
-                   item.suffix in {".bin", ".safetensors"} for item in path.iterdir()):
-            raise WorkerError("MODEL_NOT_FOUND", 404)
-    # Tokenizers and weights may follow local links, so validate the full model tree.
-    if any(not p.resolve().is_relative_to(root.resolve()) for p in path.rglob("*")):
-        raise WorkerError("INVALID_REQUEST")
-    return path
+    from common import WorkerError, fields, strings, integer, local_model
+    from tts_catalog import FORMATS, LANGUAGES, MAX_INPUT_CHARS, VOICE_IDS
 
 
 def load_request(body, root):
@@ -85,12 +38,12 @@ def load_request(body, root):
         raise WorkerError("INVALID_REQUEST")
     if any(key in params and not isinstance(params[key], str) for key in ("document_instruction", "query_instruction")):
         raise WorkerError("INVALID_REQUEST")
-    if kind == "image_embedding" and params.get("architecture") not in {"clip", "siglip2", "dinov2"}:
+    if kind == "image_embedding" and params.get("architecture") not in {"clip", "siglip2"}:
         raise WorkerError("UNSUPPORTED_CAPABILITY")
     if kind == "vision":
-        if params.get("architecture") not in {"florence2", "wd14"}:
+        if params.get("architecture") != "wd14":
             raise WorkerError("UNSUPPORTED_CAPABILITY")
-        if params.get("task", "caption") not in {"caption", "detailed_caption", "more_detailed_caption", "ocr", "tags"}:
+        if params.get("task", "tags") != "tags":
             raise WorkerError("UNSUPPORTED_CAPABILITY")
     if kind == "tts":
         integer(options["max_batch_size"], 1, 1)

@@ -21,11 +21,12 @@ MAX_BODY = 32 * 1024 * 1024
 
 
 class Worker:
-    def __init__(self, root, engine_factory=None):
+    def __init__(self, root, engine_factory=None, allowed_kinds=("tts",)):
         self.root = root
         self.models = {}
         self.lock = threading.Lock()
         self.engine_factory = engine_factory
+        self.allowed_kinds = frozenset(allowed_kinds)
 
     def health(self):
         return {"protocol_version": PROTOCOL_VERSION, "loaded": list(self.models)}
@@ -36,6 +37,8 @@ class Worker:
         try:
             if operation == "/load":
                 path = load_request(body, self.root)
+                if body["kind"] not in self.allowed_kinds:
+                    raise WorkerError("UNSUPPORTED_CAPABILITY")
                 model_id = body["profile_id"]
                 if model_id not in self.models:
                     factory = self.engine_factory

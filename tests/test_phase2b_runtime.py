@@ -31,7 +31,8 @@ from ai_workbench.workers.server import Worker
 from ai_workbench.workers.protocol import WorkerError
 from ai_workbench.workers.protocol import local_model
 from tests.model_fixtures import MockOpenAI
-from ai_workbench.core.models.schema import ChatRequest, ProviderProfile
+from ai_workbench.core.models.schema import ChatRequest, ProviderProfile, SpeechRequest
+from tests.test_tts import model_tree, wav_bytes
 
 
 def archive_bytes(files=None):
@@ -56,7 +57,9 @@ def supervisor(tmp_path, *, data=None, store=None):
 def test_catalog_pins_supported_platforms_and_defers_remaining_accelerators():
     for system in ("windows", "linux"):
         entries = catalog(system, "x86_64")
-        assert {entry.variant for entry in entries if entry.supported} == ({"cpu", "cuda", "torch-cpu", "onnx-cpu"} if system == "windows" else {"cpu", "torch-cpu", "onnx-cpu"})
+        assert {entry.variant for entry in entries if entry.supported} == ({"cpu", "cuda", "transformers-cuda", "onnx-cpu"} if system == "windows" else {"cpu", "onnx-cpu"})
+        assert not {"torch-cpu", "torch-cu128", "vulkan", "onnx-gpu"} & {entry.variant for entry in entries}
+        assert all(not entry.supported for entry in entries if entry.variant in {"infinity-cuda", "audio-cuda"})
         assert all(entry.sha256 for entry in entries if entry.supported)
     assert not any(entry.supported for entry in catalog("darwin", "arm64"))
     with pytest.raises(ValidationError):
@@ -71,7 +74,7 @@ def test_catalog_pins_supported_platforms_and_defers_remaining_accelerators():
     {"runtime_options": {"command": "arbitrary"}}, {"runtime_options": {"max_batch_size": 0}},
 ])
 def test_managed_profile_rejects_unsafe_and_incompatible_bindings(patch):
-    values = dict(name="local", alias="local", kind="embedding", model_ref="embeddings/local", runtime_id="python-worker", runtime_variant="torch-cpu")
+    values = dict(name="local", alias="local", kind="embedding", model_ref="embeddings/local", runtime_id="python-worker", runtime_variant="infinity-cuda")
     if patch == {"runtime_variant": "torch-cpu"}:
         values["runtime_id"] = None
     with pytest.raises(ValidationError):
@@ -215,81 +218,72 @@ def test_worker_validates_private_rpc_before_importing_engines(tmp_path):
 FAKE_ENGINE = '''
 import os
 import time
-class Engine:
+import io
+import struct
+import wave
+class TTSEngine:
     def __init__(self, path, kind, params, options):
         self.kind, self.params, self.options = kind, params, options
-    def embed(self, texts):
-        if texts[0] == "crash": os._exit(7)
-        if texts[0] == "wait": time.sleep(60)
-        return {"vectors": [[3.0, 4.0] for _ in texts]}
-    def rerank(self, query, documents):
-        return {"scores": [float(index) for index in range(len(documents))]}
-    def image_embed(self, images):
-        return {"vectors": [[3.0, 4.0] for _ in images]}
-    def vision(self, images):
-        return {"outputs": [{"text": "caption"} for _ in images]}
+    def speech(self, text, voice, speed, response_format, language):
+        if text == "crash": os._exit(7)
+        if text == "wait": time.sleep(60)
+        stream = io.BytesIO()
+        with wave.open(stream, "wb") as audio:
+            audio.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
+            audio.writeframes(struct.pack("<h", 1000) * 200)
+        return stream.getvalue(), "audio/wav"
 '''
 
 
 async def installed_worker(tmp_path):
     service = supervisor(tmp_path)
-    entry = CatalogEntry(runtime_id="python-worker", variant="torch-cpu", version="fixture", platform="windows" if os.name == "nt" else "linux",
-        archive_format="venv", executable="Scripts/python.exe" if os.name == "nt" else "bin/python", requirements="test.lock",
-        python_version=f"{sys.version_info.major}.{sys.version_info.minor}", sha256="0" * 64, supported=True, kinds=["embedding", "reranker", "image_embedding", "vision"])
+    entry = next(item for item in catalog() if item.variant == "onnx-cpu").model_copy(update={"version": "fixture"})
     service.entries = [entry]
     async def install(entry, target, job, log):
         await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target)
         source = Path(__file__).parents[1] / "ai_workbench/workers"
         shutil.copytree(source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
-        (target / "worker/engines.py").write_text(FAKE_ENGINE, encoding="utf-8")
+        (target / "worker/tts_engine.py").write_text(FAKE_ENGINE, encoding="utf-8")
     service._install_python = install
-    await service.submit("python-worker", "torch-cpu", "install")
+    await service.submit("python-worker", "onnx-cpu", "install")
     await service.task
-    assert service.installation("python-worker", "torch-cpu").state == "installed"
+    assert service.installation("python-worker", "onnx-cpu").state == "installed"
     profiles = ModelProfileStore()
     manager = ModelManager(profiles, ProviderProfileStore(), ModelSettingsStore(), service.events, runtime_supervisor=service)
-    path = tmp_path / "data/models/embeddings/fixture"
-    path.mkdir(parents=True)
-    (path / "config.json").write_text("{}", encoding="utf-8")
-    (path / "model.safetensors").write_bytes(b"fixture")
-    profile = profiles.create(ModelProfile(name="embedding", alias="embedding", kind="embedding", runtime_id="python-worker", runtime_variant="torch-cpu", model_ref="embeddings/fixture"))
+    model_tree(tmp_path)
+    profile = profiles.create(ModelProfile(name="speech", alias="speech", kind="tts", runtime_id="python-worker", runtime_variant="onnx-cpu", model_ref="tts/kokoro"))
     return service, manager, profile
 
 
-def test_real_worker_process_rpc_auth_all_kinds_crash_and_explicit_reload(tmp_path):
+def test_real_worker_process_rpc_auth_crash_and_explicit_reload(tmp_path):
     async def scenario():
         service, manager, profile = await installed_worker(tmp_path)
         try:
             assert (await manager.health(profile.id)).residency == "unloaded"
-            result = await manager.embed(profile.id, ["one", "two"])
-            assert result.vectors == [[0.6, 0.8], [0.6, 0.8]]
+            request = SpeechRequest(model=profile.alias, input="hello", voice="af_heart", response_format="wav")
+            result = await manager.speech(profile.id, request)
+            assert result.data == wav_bytes()
             adapter = manager._slots[manager.backend_key(profile)].adapter
             async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(str(adapter.client.base_url) + "/health")
                 assert response.status_code == 401
             before_pid = adapter.process.process.pid
-            for kind in ("reranker", "image_embedding", "vision"):
-                other = manager.profiles.create(ModelProfile(name=kind, alias=kind, kind=kind, runtime_id="python-worker", runtime_variant="torch-cpu", model_ref="embeddings/fixture"))
-                if kind == "reranker":
-                    assert (await manager.rerank(other.id, "q", ["a", "b"])).scores == [0, 1]
-                elif kind == "image_embedding":
-                    assert (await manager.image_embed(other.id, ["image"])).vectors == [[0.6, 0.8]]
-                else:
-                    assert (await manager.vision(other.id, ["image"])).outputs == [{"text": "caption"}]
+            other = manager.profiles.create(ModelProfile(name="other", alias="other", kind="tts", runtime_id="python-worker", runtime_variant="onnx-cpu", model_ref="tts/kokoro"))
+            assert (await manager.speech(other.id, request.model_copy(update={"model": other.alias}))).data == wav_bytes()
             assert adapter.process.process.pid == before_pid
             assert len(manager._slots) == 1
-            unused = manager.profiles.create(ModelProfile(name="unused", alias="unused", kind="embedding", runtime_id="python-worker", runtime_variant="torch-cpu", model_ref="embeddings/fixture"))
+            unused = manager.profiles.create(ModelProfile(name="unused", alias="unused", kind="tts", runtime_id="python-worker", runtime_variant="onnx-cpu", model_ref="tts/kokoro"))
             await manager.unload(unused.id)
             assert adapter.process.process.pid == before_pid
             assert manager.status(profile.id).residency == "loaded"
-            assert len(adapter.loaded) == 4
+            assert len(adapter.loaded) == 2
             with pytest.raises(ModelError):
-                await manager.embed(profile.id, ["crash"])
+                await manager.speech(profile.id, request.model_copy(update={"input": "crash"}))
             assert manager.status(profile.id).runtime.process_state == "failed"
             with pytest.raises(ModelError):
-                await manager.embed(profile.id, ["one"])
+                await manager.speech(profile.id, request)
             await manager.load(profile.id)
-            assert (await manager.embed(profile.id, ["one"])).vectors == [[0.6, 0.8]]
+            assert (await manager.speech(profile.id, request)).data == wav_bytes()
             await manager.unload(profile.id)
             assert manager.status(profile.id).residency == "unloaded"
         finally:
@@ -303,14 +297,14 @@ def test_cancelling_worker_inference_stops_process_before_releasing_queue(tmp_pa
     async def scenario():
         service, manager, profile = await installed_worker(tmp_path)
         await manager.load(profile.id)
-        task = asyncio.create_task(manager.embed(profile.id, ["wait"]))
+        task = asyncio.create_task(manager.speech(profile.id, SpeechRequest(model=profile.alias, input="wait", voice="af_heart", response_format="wav")))
         try:
             for _ in range(100):
                 if manager.status(profile.id).active:
                     break
                 await asyncio.sleep(0.01)
             with pytest.raises(ModelError):
-                await service.submit("python-worker", "torch-cpu", "uninstall")
+                await service.submit("python-worker", "onnx-cpu", "uninstall")
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
@@ -423,8 +417,8 @@ def test_python_installer_uses_only_managed_paths_and_hashed_lock(tmp_path, monk
     from ai_workbench.core.models.runtimes import supervisor as implementation
     async def scenario():
         service = supervisor(tmp_path)
-        service.entries = catalog()
-        entry = service.entry("python-worker", "torch-cpu")
+        service.entries = catalog("windows", "x86_64")
+        entry = service.entry("python-worker", "transformers-cuda")
         calls = []
         async def command(args, env, cwd, log):
             calls.append((list(map(str, args)), env))
@@ -435,11 +429,14 @@ def test_python_installer_uses_only_managed_paths_and_hashed_lock(tmp_path, monk
         uv_dir.mkdir(parents=True)
         (uv_dir / ("uv.exe" if os.name == "nt" else "uv")).write_bytes(b"fixture")
         monkeypatch.setattr(implementation.sysconfig, "get_path", lambda _: str(uv_dir))
-        job = RuntimeJob(runtime_id="python-worker", variant="torch-cpu", version=entry.version, operation="install")
+        job = RuntimeJob(runtime_id="python-worker", variant="transformers-cuda", version=entry.version, operation="install")
         await service._install_python(entry, tmp_path / "payload", job, RuntimeLog(tmp_path / "log", tmp_path))
-        assert len(calls) == 4
+        assert len(calls) == 5
         assert "--no-bin" in calls[0][0] and "--no-registry" in calls[0][0]
         assert "--require-hashes" in calls[2][0] and "--no-deps" in calls[2][0]
+        assert "https://download.pytorch.org/whl/cu128" in calls[2][0]
+        assert calls[3][0][1:3] == ["pip", "check"]
+        assert set(path.name for path in (tmp_path / "payload/worker").iterdir()) == set(entry.worker_files)
         assert all(call[0][0].startswith(str(uv_dir)) for call in calls[:3])
         assert all("sync" not in call[0] for call in calls)
         assert calls[0][1]["UV_PYTHON_INSTALL_DIR"] == str(service.base / "python")

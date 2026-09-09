@@ -6,6 +6,7 @@ import { useModelsStore } from '../../store/useModelsStore';
 import type { RuntimeDownloadSettings, RuntimeJob } from '../../types/models';
 import { AppModal } from '../ui/AppModal';
 import { CacheJobResult, RuntimeStoragePanel } from './RuntimeStoragePanel';
+import { runtimeFamilyKey, runtimeBuild } from './models/profileDefaults';
 
 export function RuntimesPanel() {
   const { t } = useTranslation('llm');
@@ -16,7 +17,7 @@ export function RuntimesPanel() {
   const [log, setLog] = useState<{ job: RuntimeJob; text: string } | null>(null);
   const active = jobs.find((job) => job.state === 'queued' || job.state === 'running');
   const jobLabel = (job: RuntimeJob) => job.runtime_id
-    ? `${job.runtime_id} / ${job.variant} / ${t('runtimeOperations.' + job.operation)}`
+    ? `${t('runtimeFamilies.' + runtimeFamilyKey(job.runtime_id, job.variant!))} / ${runtimeBuild(job.variant!)} / ${t('runtimeOperations.' + job.operation)}`
     : t('runtimeOperations.' + job.operation);
   useEffect(() => {
     void modelsApi
@@ -70,14 +71,14 @@ export function RuntimesPanel() {
         return (
           <div className="runtime-row" key={`${entry.runtime_id}/${entry.variant}`}>
             <div className="model-identity">
-              <strong>{entry.runtime_id}</strong>
-              <code>{entry.variant}</code>
+              <strong>{t('runtimeFamilies.' + runtimeFamilyKey(entry.runtime_id, entry.variant))}</strong>
+              <code>{runtimeBuild(entry.variant)}</code>
               <small>
-                {entry.version} / {entry.platform} / {entry.architecture}
+                {entry.version === 'pending' ? t('runtimePendingVersion') : entry.version} / {entry.platform} / {entry.architecture}
               </small>
             </div>
             <div className="runtime-progress">
-              <span>{t('runtimeStates.' + state)}</span>
+              <span>{t(entry.reason === 'RUNTIME_NOT_IMPLEMENTED' ? 'runtimeNotImplemented' : 'runtimeStates.' + state)}</span>
               {job ? (
                 <small>
                   {t('jobStates.' + job.state)}: {t('runtimeStages.' + job.stage)}

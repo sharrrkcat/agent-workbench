@@ -34,6 +34,11 @@ Pet has position, dragging and task-state foundations only, with no mounted UI.
 HTTP schemas and validation belong to these same domain contracts. OpenAPI
 generation and verification commands are in the [README](../README.md#http-contract).
 
+## Accepted work
+
+- [Runtime families](ai/PLAN_RUNTIME_FAMILIES.md): accepted target and remaining
+  implementation work. Implemented runtime behavior is recorded in the Models contract.
+
 ## Task map
 
 - [Runtime](ai/TASK_RUNTIME.md)

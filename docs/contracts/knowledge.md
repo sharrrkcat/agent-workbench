@@ -73,8 +73,8 @@ Indexing, query embedding and reranking are async calls to the app-scoped
 ModelManager. Model instructions, dimensions, normalization and batch sizes
 belong to the unified profile. Indexing and `/v1/embeddings` use the same
 document preprocessing; retrieval uses query preprocessing. No local runtime
-is imported by Knowledge. Rerank executes in the CPU Python worker when its
-runtime and local model are available; failures retain the documented RRF order.
+is imported by Knowledge. The local reranker backend is deferred to Infinity;
+unavailable reranking retains the documented RRF order.
 
 Changing an embedding profile's provider, runtime binding/options, model reference or parameters, or
 its provider URL, marks associated bases and sources `needs_reindex` in both

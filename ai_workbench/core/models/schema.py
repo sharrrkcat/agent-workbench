@@ -94,15 +94,15 @@ class RerankParameters(StrictModel):
 
 
 class ImageEmbeddingParameters(StrictModel):
-    architecture: Literal["clip", "siglip2", "dinov2"] = "clip"
+    architecture: Literal["clip", "siglip2"] = "clip"
     dimensions: int | None = Field(default=None, ge=1, le=65536)
     normalize: bool = True
     batch_size: int = Field(default=1, ge=1, le=256)
 
 
 class VisionParameters(StrictModel):
-    architecture: Literal["florence2", "wd14"] = "florence2"
-    task: str = "caption"
+    architecture: Literal["wd14"] = "wd14"
+    task: Literal["tags"] = "tags"
     batch_size: int = Field(default=1, ge=1, le=256)
 
 
@@ -122,7 +122,7 @@ class ModelInput(StrictModel):
     kind: ModelKind
     provider_profile_id: str | None = None
     runtime_id: Literal["llama-server", "python-worker"] | None = None
-    runtime_variant: Literal["cpu", "cuda", "vulkan", "torch-cpu", "torch-cu128", "onnx-cpu", "onnx-gpu"] | None = None
+    runtime_variant: Literal["cpu", "cuda", "transformers-cuda", "onnx-cpu", "infinity-cuda", "audio-cuda"] | None = None
     runtime_options: dict[str, Any] = Field(default_factory=dict)
     model_ref: str = Field(min_length=1, max_length=1024)
     capabilities: Capabilities = Field(default_factory=Capabilities)
@@ -133,31 +133,42 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import PythonOptions, OnnxCPUOptions, llama_options, relative_ref
+        from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, TransformersOptions, is_transformers, llama_options, relative_ref
         if self.runtime_id:
             if self.provider_profile_id or not self.runtime_variant:
                 raise ValueError("A managed model requires a runtime variant and no external connection")
             relative_ref(self.model_ref)
             if self.runtime_id == "llama-server":
-                if self.kind != "llm" or self.runtime_variant not in {"cpu", "cuda", "vulkan"}:
-                    raise ValueError("llama-server requires llm kind and cpu/cuda/vulkan variant")
+                if self.kind != "llm" or self.runtime_variant not in {"cpu", "cuda"}:
+                    raise ValueError("llama-server requires llm kind and cpu/cuda variant")
                 self.runtime_options = llama_options(self.runtime_variant).model_validate(self.runtime_options).model_dump()
                 if not self.model_ref.endswith(".gguf"):
                     raise ValueError("llama-server requires a local GGUF file")
                 if self.capabilities.vision:
                     raise ValueError("Managed llama image input requires a future projector configuration")
             else:
-                if self.kind == "llm" or self.runtime_variant not in {"torch-cpu", "torch-cu128", "onnx-cpu", "onnx-gpu"}:
-                    raise ValueError("Python worker requires a non-llm kind and a Python runtime variant")
-                if self.runtime_variant == "onnx-cpu" and self.kind != "tts":
-                    raise ValueError("onnx-cpu currently requires tts kind")
-                options_schema = OnnxCPUOptions if self.runtime_variant == "onnx-cpu" else PythonOptions
+                if is_transformers(self):
+                    if self.kind != "llm":
+                        raise ValueError("transformers-cuda requires llm kind")
+                    if self.capabilities.vision or self.capabilities.json_object or self.capabilities.json_schema:
+                        raise ValueError("Transformers currently supports text and tool calls only")
+                    options_schema = TransformersOptions
+                elif self.runtime_variant == "onnx-cpu" and self.kind in {"tts", "vision"}:
+                    options_schema = OnnxCPUOptions
+                elif self.runtime_variant == "infinity-cuda" and self.kind in {"embedding", "reranker", "image_embedding"}:
+                    options_schema = TransformersOptions
+                elif self.runtime_variant == "audio-cuda" and self.kind == "tts":
+                    options_schema = TransformersOptions
+                else:
+                    raise ValueError("This managed Python backend is not implemented for the model kind")
                 self.runtime_options = options_schema.model_validate(self.runtime_options).model_dump()
         elif self.runtime_variant or self.runtime_options:
             raise ValueError("Runtime variant and options require runtime_id")
         if self.kind == "tts" and (self.provider_profile_id or self.runtime_id and self.runtime_variant != "onnx-cpu"):
             raise ValueError("TTS execution requires the managed onnx-cpu backend")
         self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
+        if is_transformers(self) and any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
+            raise ValueError("Transformers does not support nonzero presence or frequency penalties")
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
         if self.kind != "llm" and any(self.capabilities.model_dump().values()):

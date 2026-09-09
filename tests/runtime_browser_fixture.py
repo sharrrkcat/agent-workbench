@@ -14,7 +14,7 @@ def install_runtime_fixture(app, root):
     cache = supervisor.base / ".cache"
     shared = cache / "shared.bin"
     exclusive = cache / "exclusive.bin"
-    installed = supervisor.base / "py/torch-cpu/1.0.0/Lib/shared.bin"
+    installed = supervisor.base / "py/transformers-cuda/1.0.0/Lib/shared.bin"
     behavior = {"slow": False, "fail": False}
 
     @app.post("/__test__/runtimes")

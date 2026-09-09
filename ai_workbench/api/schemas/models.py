@@ -8,8 +8,8 @@ from ai_workbench.core.models.schema import (
     ModelKind, ModelSettings, ProviderInput, ProviderProfile, RerankParameters, VisionParameters, TTSParameters,
 )
 from ai_workbench.core.models.runtimes.schema import (
-    CatalogEntry, DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions, LlamaOptions,
-    PythonOptions, OnnxCPUOptions, RuntimeJob,
+    CatalogEntry, DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions,
+    TransformersOptions, OnnxCPUOptions, RuntimeJob,
 )
 
 
@@ -17,9 +17,9 @@ class EmptyRuntimeOptions(ApiModel):
     """No managed runtime is bound to this model."""
 
 
-LlamaRuntimeOptions = EmptyRuntimeOptions | LlamaCPUOptions | LlamaCUDAOptions | LlamaOptions
-WorkerRuntimeOptions = EmptyRuntimeOptions | PythonOptions
-RuntimeOptions = LlamaRuntimeOptions | PythonOptions
+LlmRuntimeOptions = EmptyRuntimeOptions | LlamaCPUOptions | LlamaCUDAOptions | TransformersOptions
+WorkerRuntimeOptions = EmptyRuntimeOptions | OnnxCPUOptions | TransformersOptions
+RuntimeOptions = LlmRuntimeOptions | OnnxCPUOptions | TransformersOptions
 Parameters = GenerationParameters | EmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "runtime_options"})
 
@@ -27,8 +27,8 @@ ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "runti
 class LlmModel(ModelFields):
     kind: Literal["llm"]
     parameters: GenerationParameters = Field(default_factory=GenerationParameters)
-    runtime_options: LlamaRuntimeOptions = Field(default_factory=EmptyRuntimeOptions,
-        description="Managed options follow runtime_variant: cpu, cuda or vulkan. External profiles use {}.")
+    runtime_options: LlmRuntimeOptions = Field(default_factory=EmptyRuntimeOptions,
+        description="Managed options follow runtime_variant: cpu, cuda or transformers-cuda. External profiles use {}.")
 
 
 class EmbeddingModel(ModelFields):

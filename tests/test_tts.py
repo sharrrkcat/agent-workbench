@@ -153,7 +153,8 @@ def test_tts_backend_and_catalog_constraints():
     values = dict(name="TTS", alias="tts", kind="tts", model_ref="tts/kokoro")
     assert ModelInput(**values).parameters == {"architecture": "kokoro", "speed": 1.0, "response_format": "mp3"}
     for binding in ({"provider_profile_id": "external"}, {"runtime_id": "python-worker", "runtime_variant": "torch-cpu"},
-                    {"runtime_id": "python-worker", "runtime_variant": "onnx-gpu"}):
+                    {"runtime_id": "python-worker", "runtime_variant": "onnx-gpu"},
+                    {"runtime_id": "python-worker", "runtime_variant": "audio-cuda"}):
         with pytest.raises(ValidationError):
             ModelInput(**values, **binding)
     for system in ("windows", "linux"):

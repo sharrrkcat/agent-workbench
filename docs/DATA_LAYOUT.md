@@ -23,7 +23,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0011_tts`; there are 24 current business tables.
+Alembic head is `0012_runtime_families`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -60,6 +60,10 @@ survive. There is no conversion of historical jobs. Repeating upgrade preserves
 newly recorded maintenance tasks.
 
 Revision `0011_tts` extends model_profiles' kind constraint to include tts.
+
+Revision `0012_runtime_families` discards excluded runtime/model configurations,
+dependent Knowledge indexes and unfinished continuations, and clears affected
+model selections. Unaffected records and all files remain; no records are converted.
 Existing record values remain unchanged. Repeated upgrades preserve new TTS
 profiles. The revision performs no filesystem operations.
 

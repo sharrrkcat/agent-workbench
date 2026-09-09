@@ -142,15 +142,15 @@ def test_model_kinds_runtime_options_and_secret_patch_semantics(api):
         assert result.json()["runtime_options"] == {}
         if kind == "llm":
             assert result.json()["parameters"] == {}
-    for variant, layers in (("cpu", 0), ("cuda", "auto"), ("vulkan", 3)):
+    for variant, layers in (("cpu", 0), ("cuda", "auto")):
         result = client.post("/api/models/profiles", json={"name": variant, "alias": variant, "kind": "llm",
             "model_ref": "llms/fixture.gguf", "runtime_id": "llama-server", "runtime_variant": variant,
             "runtime_options": {"gpu_layers": layers}})
         assert result.status_code == 200, result.text
         assert result.json()["runtime_options"]["gpu_layers"] == layers
-    worker = client.post("/api/models/profiles", json={"name": "Worker", "alias": "worker", "kind": "embedding",
-        "model_ref": "embeddings/fixture", "runtime_id": "python-worker", "runtime_variant": "torch-cpu"})
-    assert worker.status_code == 200 and worker.json()["runtime_options"]["device"] == "cpu"
+    worker = client.post("/api/models/profiles", json={"name": "Worker", "alias": "worker", "kind": "llm",
+        "model_ref": "llms/fixture", "runtime_id": "python-worker", "runtime_variant": "transformers-cuda"})
+    assert worker.status_code == 200 and worker.json()["runtime_options"]["device"] == "cuda"
     assert client.get("/api/models/runtimes/catalog").status_code == 200
 
     settings = "/api/models/settings"

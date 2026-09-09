@@ -10,6 +10,7 @@ import stat
 import ssl
 import sysconfig
 import tarfile
+import threading
 import time
 import zipfile
 
@@ -69,6 +70,56 @@ def installed_file(base: Path, target: Path, name: str, allow_interpreter=False)
     if allow_interpreter and name in {"bin/python", "bin/python3", "bin/python3.12"} and resolved.is_relative_to((base / "python").resolve()):
         return path
     raise ModelError("RUNTIME_BROKEN", "Installed file escapes its runtime directory.", 503)
+
+
+def runtime_inventory(base: Path, target: Path, allow_interpreter, cancelled):
+    from ai_workbench.core.models.runtimes.schema import relative_ref
+    resolved_target = target.resolve()
+    shared_python = (base / "python").resolve()
+    parents = {target: resolved_target}
+    files = {}
+    for path in target.rglob("*"):
+        if cancelled.is_set():
+            raise InterruptedError()
+        name = path.relative_to(target).as_posix()
+        if "__pycache__" in path.relative_to(target).parts:
+            continue
+        relative_ref(name)
+        parent = parents.get(path.parent)
+        if parent is None:
+            parent = parents[path.parent] = path.parent.resolve()
+        info = path.lstat()
+        resolved = path.resolve() if is_link(info) else parent / path.name
+        if not resolved.is_relative_to(resolved_target) and not (
+            allow_interpreter and name in {"bin/python", "bin/python3", "bin/python3.12"}
+            and resolved.is_relative_to(shared_python)
+        ):
+            raise ModelError("RUNTIME_BROKEN", "Installed file escapes its runtime directory.", 503)
+        if path.is_dir():
+            parents[path] = resolved
+        elif path.is_file():
+            files[name] = (path, path.stat())
+    return files
+
+
+async def file_work(work):
+    cancelled = threading.Event()
+    task = asyncio.create_task(asyncio.to_thread(work, cancelled))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        cancelled.set()
+        await asyncio.gather(task, return_exceptions=True)
+        raise
+
+
+def inventory_hashes(base, target, allow_interpreter, cancelled):
+    result = {}
+    for name, (path, _info) in sorted(runtime_inventory(base, target, allow_interpreter, cancelled).items()):
+        if cancelled.is_set():
+            raise InterruptedError()
+        result[name] = sha256(path)
+    return result
 
 
 def extract_archive(archive: Path, target: Path, archive_format: str):
@@ -174,7 +225,8 @@ class RuntimeSupervisor:
     async def verify(self, entry):
         value = self.installation(entry.runtime_id, entry.variant)
         target = self.directory(entry)
-        try:
+
+        def check(cancelled):
             manifest = target / "installation.json"
             if sha256(manifest) != value.manifest_sha256:
                 raise ValueError("manifest mismatch")
@@ -185,27 +237,29 @@ class RuntimeSupervisor:
                 raise ValueError("additional artifacts mismatch")
             if entry.runtime_id == "python-worker" and data.get("worker_sha256") != entry.worker_sha256:
                 raise ValueError("worker code mismatch")
+            if entry.python_artifact and data.get("python_artifact") != entry.python_artifact.model_dump():
+                raise ValueError("interpreter artifact mismatch")
             files = data["files"]
             if not isinstance(files, dict) or not files:
                 raise ValueError("empty installation")
-            actual = {path.relative_to(target).as_posix() for path in target.rglob("*")
-                      if path.is_file() and "__pycache__" not in path.parts and path != manifest}
-            if set(files) != actual:
+            inventory = runtime_inventory(self.base, target, entry.archive_format == "venv", cancelled)
+            inventory.pop("installation.json", None)
+            if set(files) != set(inventory):
                 raise ValueError("installation file inventory changed")
-            snapshot = []
-            for name in files:
-                path = installed_file(self.base, target, name, entry.archive_format == "venv")
-                info = path.stat()
-                snapshot.append((name, info.st_size, info.st_mtime_ns))
+            snapshot = [(name, info.st_size, info.st_mtime_ns) for name, (_path, info) in sorted(inventory.items())]
             signature = (value.manifest_sha256, tuple(snapshot))
             if self._verified.get(value.id) != signature:
                 for name, digest in files.items():
-                    if await file_digest(installed_file(self.base, target, name, entry.archive_format == "venv")) != digest:
+                    if cancelled.is_set():
+                        raise InterruptedError()
+                    if sha256(inventory[name][0]) != digest:
                         raise ValueError("installed file mismatch")
-                self._verified[value.id] = signature
-            executable = installed_file(self.base, target, data["executable"], entry.archive_format == "venv")
-            if not executable.is_file():
-                raise ValueError("entry missing")
+            executable = inventory[data["executable"]][0]
+            return executable, signature
+
+        try:
+            executable, signature = await file_work(check)
+            self._verified[value.id] = signature
             return executable
         except (OSError, ValueError, KeyError, TypeError, ModelError) as exc:
             value.state, value.error_code = "broken", "RUNTIME_BROKEN"
@@ -413,12 +467,12 @@ class RuntimeSupervisor:
                 self._stage(job, "verifying", log)
                 executable = candidates[0].relative_to(payload).as_posix()
                 manifest = {"version": entry.version, "artifact_sha256": entry.sha256, "worker_sha256": entry.worker_sha256, "executable": executable, "files": {}}
+                if entry.python_artifact:
+                    manifest["python_artifact"] = entry.python_artifact.model_dump()
                 if entry.additional_artifacts:
                     manifest["additional_artifact_sha256"] = [artifact.sha256 for artifact in entry.additional_artifacts]
-                for path in sorted(payload.rglob("*")):
-                    installed_file(self.base, payload, path.relative_to(payload).as_posix(), entry.archive_format == "venv")
-                    if path.is_file() and "__pycache__" not in path.parts:
-                        manifest["files"][path.relative_to(payload).as_posix()] = await file_digest(path)
+                manifest["files"] = await file_work(lambda cancelled: inventory_hashes(
+                    self.base, payload, entry.archive_format == "venv", cancelled))
                 marker = payload / "installation.json"
                 marker.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
                 value.manifest_sha256 = sha256(marker)
@@ -576,29 +630,41 @@ class RuntimeSupervisor:
         if settings.http_proxy:
             env.update(HTTP_PROXY=settings.http_proxy, HTTPS_PROXY=settings.http_proxy)
         self._stage(job, "creating_environment", log)
-        await self._command([uv, "python", "install", entry.python_version, "--no-bin", "--no-registry"], env, self.root, log)
-        await self._command([uv, "venv", "--python", entry.python_version, "--python-preference", "only-managed", "--no-python-downloads", str(target)], env, self.root, log)
+        await self._command([uv, "python", "install", entry.python_key, "--no-config", "--no-bin", "--no-registry"], env, self.root, log)
+        await self._command([uv, "venv", "--no-config", "--python", entry.python_key, "--python-preference", "only-managed", "--no-python-downloads", str(target)], env, self.root, log)
         self._stage(job, "installing_packages", log)
         build_options = ["--no-binary", "docopt,jaconv,jieba,unidic-lite", "--build-constraints", lock] if auxiliary else []
-        await self._command([uv, "pip", "install", "--python", target / entry.executable, "--require-hashes", "--no-deps", "--only-binary", ":all:", *build_options,
-            "--index-url", settings.pypi_index_url or "https://pypi.org/simple", "--extra-index-url", settings.pytorch_index_url or "https://download.pytorch.org/whl/cpu",
+        torch_index = ["--extra-index-url", settings.pytorch_index_url or entry.pytorch_index_url] if entry.pytorch_index_url else []
+        await self._command([uv, "pip", "install", "--no-config", "--python", target / entry.executable, "--require-hashes", "--no-deps", "--only-binary", ":all:", *build_options,
+            "--index-url", settings.pypi_index_url or "https://pypi.org/simple", *torch_index,
             "--index-strategy", "unsafe-best-match", "-r", lock], env, self.root, log)
         if auxiliary:
             staged = target / "en_core_web_sm-3.7.1-py3-none-any.whl"
             shutil.copyfile(auxiliary, staged)
-            await self._command([uv, "pip", "install", "--python", target / entry.executable, "--no-deps", "--no-index", staged], env, self.root, log)
+            await self._command([uv, "pip", "install", "--no-config", "--python", target / entry.executable, "--no-deps", "--no-index", staged], env, self.root, log)
             staged.unlink()
         worker_source = Path(__file__).resolve().parents[3] / "workers"
-        if worker_digest(worker_source) != entry.worker_sha256:
+        if worker_digest(entry.worker_files, worker_source) != entry.worker_sha256:
             raise ModelError("RUNTIME_BROKEN", "Worker source fingerprint changed during installation.", 503)
-        shutil.copytree(worker_source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
+        (target / "worker").mkdir()
+        for name in entry.worker_files:
+            shutil.copyfile(worker_source / name, target / "worker" / name)
         self._stage(job, "checking_packages", log)
+        await self._command([uv, "pip", "check", "--no-config", "--python", target / entry.executable], env, self.root, log)
         check = ("import sys, importlib.util; sys.path.insert(0, sys.argv[1]); "
                  "from tts_engine import language_processors, require_offline; require_offline(); language_processors(); "
                  "import onnxruntime, lameenc, tokenizers; "
                  "assert all(importlib.util.find_spec(name) is None for name in ('torch', 'transformers', 'kokoro')); "
                  "print('ONNX worker packages and language resources verified')") if auxiliary else (
-                 "import torch, torchvision, transformers, onnxruntime; from transformers import Florence2ForConditionalGeneration; assert not torch.cuda.is_available(); print('Worker packages verified')")
+                 "import sys; sys.path.insert(0, sys.argv[1]); "
+                 "from transformers_engine import require_offline; require_offline(); "
+                 "import torch, torchvision, transformers; "
+                 "assert torch.__version__ == '2.11.0+cu128' and torch.version.cuda == '12.8'; "
+                 "assert torchvision.__version__ == '0.26.0+cu128' and transformers.__version__ == '5.16.1'; "
+                 "from transformers.cli.serving.chat_completion import ChatCompletionHandler; "
+                 "from transformers.cli.serving.model_manager import ModelManager; "
+                 "from transformers.cli.serving.utils import GenerationState; "
+                 "print('Transformers serve packages verified; CUDA execution is checked at model load')")
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
         await self._command([target / entry.executable, "-I", "-B", "-c", check, target / "worker"], env, self.root, log)
 

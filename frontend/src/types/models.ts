@@ -1,4 +1,5 @@
 export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
+export type ManagedRuntimeVariant = 'cpu' | 'cuda' | 'onnx-cpu' | 'transformers-cuda' | 'infinity-cuda' | 'audio-cuda';
 
 export type PresetVoice = {
   id: string; model: string; source: 'preset'; language: string; expires_at: null; available: boolean;
@@ -24,7 +25,7 @@ export type ModelInput = {
   parameters: Record<string, unknown>;
   lifecycle: { unload: 'manual' | 'after_request' | 'idle'; idle_seconds: number };
   runtime_id: 'llama-server' | 'python-worker' | null;
-  runtime_variant: string | null;
+  runtime_variant: ManagedRuntimeVariant | null;
   runtime_options: Record<string, string | number>;
 };
 
@@ -87,7 +88,7 @@ export type RuntimeInstallState =
 
 export type RuntimeCatalogEntry = {
   runtime_id: 'llama-server' | 'python-worker';
-  variant: string;
+  variant: ManagedRuntimeVariant | 'infinity-cuda' | 'audio-cuda';
   version: string;
   platform: string;
   architecture: string;

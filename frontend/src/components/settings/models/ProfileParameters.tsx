@@ -22,7 +22,7 @@ export function ProfileParameters({
             ['presence_penalty', -2, 2, 0.1],
             ['frequency_penalty', -2, 2, 0.1],
             ['seed', undefined, undefined, 1],
-          ].map(([key, min, max, step]) => (
+          ].filter(([key]) => value.runtime_variant !== 'transformers-cuda' || !['presence_penalty', 'frequency_penalty'].includes(String(key))).map(([key, min, max, step]) => (
             <NumberInput
               key={String(key)}
               label={t('params.' + key)}
@@ -94,10 +94,10 @@ export function ProfileParameters({
           {value.kind === 'image_embedding' || value.kind === 'vision' ? (
             <Field label={t('params.architecture')}>
               <select
-                value={String(value.parameters.architecture || (value.kind === 'vision' ? 'florence2' : 'clip'))}
+                value={String(value.parameters.architecture || (value.kind === 'vision' ? 'wd14' : 'clip'))}
                 onChange={(e) => patchParam('architecture', e.target.value)}
               >
-                {(value.kind === 'vision' ? ['florence2', 'wd14'] : ['clip', 'siglip2', 'dinov2']).map((v) => (
+                {(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => (
                   <option key={v} value={v}>
                     {v}
                   </option>
@@ -107,10 +107,7 @@ export function ProfileParameters({
           ) : null}
           {value.kind === 'vision' ? (
             <Field label={t('params.task')}>
-              <input
-                value={String(value.parameters.task || 'caption')}
-                onChange={(e) => patchParam('task', e.target.value)}
-              />
+              <select value="tags" disabled><option value="tags">{t('visionTags')}</option></select>
             </Field>
           ) : null}
         </>

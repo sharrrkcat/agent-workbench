@@ -52,16 +52,18 @@ selection and remain unchanged when it is missing or fails.
 
 | Kind | Local inventory root | Managed backend |
 | --- | --- | --- |
-| llm | data/models/llms | llama-server, GGUF |
-| embedding | data/models/embeddings | Python worker |
-| reranker | data/models/rerankers | Python worker |
-| image_embedding | data/models/image_embeddings | Python worker |
-| vision | data/models/vision | Python worker |
+| llm | data/models/llms | llama-server GGUF or Windows Transformers |
+| embedding | data/models/embeddings | Infinity pending; external embeddings remain available |
+| reranker | data/models/rerankers | Infinity pending |
+| image_embedding | data/models/image_embeddings | Infinity pending |
+| vision | data/models/vision | WD14 entry retained; ONNX integration pending |
 | tts | data/models/tts | Python worker, ONNX CPU |
 
 Inventory returns references relative to data/models, for example
-`llms/example.gguf`. Most torch-cpu models use native Transformers checkpoints;
-WD14 uses model.onnx plus selected_tags.csv. Kokoro uses the
+`llms/example.gguf`. Native Transformers checkpoints use the managed
+`python-worker/transformers-cuda` runtime and may explicitly select CPU execution;
+the supplied validation model is `llms/Qwen3.5-0.8B-TF`. WD14 uses model.onnx plus
+selected_tags.csv. Kokoro uses the
 [ONNX speech layout](#offline-kokoro-speech). Image input to chat requires an external
 vision-capable LLM; managed llama projector support is not implemented.
 
