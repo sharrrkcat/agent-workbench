@@ -563,6 +563,13 @@ class RuntimeSupervisor:
         lock = CATALOG_ROOT / entry.requirements
         if text_digest(lock) != entry.sha256:
             raise ModelError("RUNTIME_BROKEN", "Worker requirements checksum mismatch.", 503)
+        auxiliary = None
+        if entry.variant == "onnx-cpu":
+            auxiliary = self.root / "data/models/_auxiliary/en_core_web_sm/en_core_web_sm-any-py3-none-any.whl"
+            if not auxiliary.resolve().is_relative_to((self.root / "data/models/_auxiliary").resolve()) or not auxiliary.is_file():
+                raise ModelError("MODEL_NOT_FOUND", "Place en_core_web_sm 3.7.1 in data/models/_auxiliary before installing ONNX CPU.", 404)
+            if await file_digest(auxiliary) != "86cc141f63942d4b2c5fcee06630fd6f904788d2f0ab005cce45aadb8fb73889":
+                raise ModelError("RUNTIME_CHECKSUM_MISMATCH", "The auxiliary language model checksum does not match.", 503)
         env = {key: value for key, value in os.environ.items() if not key.startswith(("UV_", "PIP_", "PYTHON", "VIRTUAL_ENV")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
         env.update(UV_PYTHON_INSTALL_DIR=str(self.base / "python"), UV_CACHE_DIR=str(self.base / ".cache"), UV_NO_PROGRESS="1", UV_NATIVE_TLS="true")
         settings = self.store.settings()
@@ -572,15 +579,28 @@ class RuntimeSupervisor:
         await self._command([uv, "python", "install", entry.python_version, "--no-bin", "--no-registry"], env, self.root, log)
         await self._command([uv, "venv", "--python", entry.python_version, "--python-preference", "only-managed", "--no-python-downloads", str(target)], env, self.root, log)
         self._stage(job, "installing_packages", log)
-        await self._command([uv, "pip", "install", "--python", target / entry.executable, "--require-hashes", "--no-deps", "--only-binary", ":all:",
+        build_options = ["--no-binary", "docopt,jaconv,jieba,unidic-lite", "--build-constraints", lock] if auxiliary else []
+        await self._command([uv, "pip", "install", "--python", target / entry.executable, "--require-hashes", "--no-deps", "--only-binary", ":all:", *build_options,
             "--index-url", settings.pypi_index_url or "https://pypi.org/simple", "--extra-index-url", settings.pytorch_index_url or "https://download.pytorch.org/whl/cpu",
             "--index-strategy", "unsafe-best-match", "-r", lock], env, self.root, log)
+        if auxiliary:
+            staged = target / "en_core_web_sm-3.7.1-py3-none-any.whl"
+            shutil.copyfile(auxiliary, staged)
+            await self._command([uv, "pip", "install", "--python", target / entry.executable, "--no-deps", "--no-index", staged], env, self.root, log)
+            staged.unlink()
         worker_source = Path(__file__).resolve().parents[3] / "workers"
         if worker_digest(worker_source) != entry.worker_sha256:
             raise ModelError("RUNTIME_BROKEN", "Worker source fingerprint changed during installation.", 503)
         shutil.copytree(worker_source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
         self._stage(job, "checking_packages", log)
-        await self._command([target / entry.executable, "-I", "-B", "-c", "import torch, torchvision, transformers, onnxruntime; from transformers import Florence2ForConditionalGeneration; assert not torch.cuda.is_available(); print('Worker packages verified')"], env, self.root, log)
+        check = ("import sys, importlib.util; sys.path.insert(0, sys.argv[1]); "
+                 "from tts_engine import language_processors, require_offline; require_offline(); language_processors(); "
+                 "import onnxruntime, lameenc, tokenizers; "
+                 "assert all(importlib.util.find_spec(name) is None for name in ('torch', 'transformers', 'kokoro')); "
+                 "print('ONNX worker packages and language resources verified')") if auxiliary else (
+                 "import torch, torchvision, transformers, onnxruntime; from transformers import Florence2ForConditionalGeneration; assert not torch.cuda.is_available(); print('Worker packages verified')")
+        env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
+        await self._command([target / entry.executable, "-I", "-B", "-c", check, target / "worker"], env, self.root, log)
 
     def log_text(self, job_id):
         job = self.store.job(job_id)

@@ -1,6 +1,6 @@
 # Future model services
 
-Neither service below is implemented. These notes identify future design
+The services below are not implemented. These notes identify future design
 boundaries, not active tasks or frozen wire schemas. Each requires a separate
 scope decision before implementation; this document grants no implementation
 authority and makes no delivery commitment.
@@ -32,3 +32,20 @@ An eventual `/v1/images/generations` must define bounded inputs/outputs, artifac
 ownership/retention, cancellation, lifecycle, observability and error behavior
 before implementation. Model weights remain manually managed under the current
 product boundary. This note adds no route, runtime variant or model kind.
+
+## Voice cloning and text analysis
+
+Kokoro preset TTS is implemented under [Models](contracts/models.md#kokoro-tts).
+Chatterbox would add per-request reference audio or temporary voice IDs bound to
+the creating credential and model binding, without a voice-profile table.
+Temporary references start with 30 minutes. A valid admitted synthesis request
+sets expires_at=max(expires_at, now+15 minutes); queries do not renew and expired
+IDs cannot reactivate. Admitted requests retain resources until they finish or
+cancel. Restart or key replacement invalidates references; the current single key
+means clients sharing that key share access. Uploads, quotas and storage remain deferred.
+
+The separate en_core_web_sm resource currently serves Misaki's English frontend.
+A future task-based text-analysis kind could support reusable tokenization,
+tagging or entity analysis with its own manager operation. That model would be
+one supported implementation, not a model-kind name. No separate NLP API or
+lifecycle is implemented. ONNX GPU and application speech playback are deferred.

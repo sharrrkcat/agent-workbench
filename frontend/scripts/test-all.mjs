@@ -10,6 +10,7 @@ for (const script of [
   'test-pet-foundation',
   'test-model-stream',
   'test-runtime-maintenance',
+  'test-tts',
   'test-harness',
   'test-chat-presentation',
   'test-knowledge-citations',

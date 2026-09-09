@@ -23,7 +23,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0010_runtime_maintenance`; there are 24 current business tables.
+Alembic head is `0011_tts`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -58,6 +58,16 @@ clears runtime installation job_id references. Installation identity, version,
 state and integrity digests, other business records and all file directories
 survive. There is no conversion of historical jobs. Repeating upgrade preserves
 newly recorded maintenance tasks.
+
+Revision `0011_tts` extends model_profiles' kind constraint to include tts.
+Existing record values remain unchanged. Repeated upgrades preserve new TTS
+profiles. The revision performs no filesystem operations.
+
+Kokoro ONNX files reside under data/models/tts; the fixed voice list uses
+voices/<id>.bin. Auxiliary en_core_web_sm source files live separately under
+data/models/_auxiliary/en_core_web_sm and are excluded from model inventory.
+Runtime installation copies its verified local wheel into the ONNX environment;
+uninstall removes that installed copy but preserves the manually supplied source.
 
 For explicit database upgrades, compare protected file paths, sizes and
 modification times before and after. Migration tests use temporary roots and

@@ -58,6 +58,10 @@ class PythonOptions(Strict):
     max_batch_size: int = Field(default=32, ge=1, le=2048)
 
 
+class OnnxCPUOptions(PythonOptions):
+    max_batch_size: int = Field(default=1, ge=1, le=1, strict=True)
+
+
 class DownloadSettings(Strict):
     http_proxy: str | None = None
     pypi_index_url: str | None = None

@@ -5,6 +5,7 @@ import type {
   ModelProfile,
   ModelSettings,
   ModelStatus,
+  PresetVoice,
   ProviderInput,
   ProviderProfile,
   RuntimeCatalogEntry,
@@ -53,6 +54,7 @@ export const modelsApi = {
   deleteModelProfile: (id: string) =>
     request<{ deleted: boolean }>(`/api/models/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   getModelStatus: (id: string) => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/status`),
+  getModelVoices: (id: string) => request<PresetVoice[]>(`/api/models/profiles/${encodeURIComponent(id)}/voices`),
   modelAction: (id: string, action: 'load' | 'unload' | 'health') =>
     request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
   getModelLog: (id: string) => request<{ text: string }>(`/api/models/profiles/${encodeURIComponent(id)}/log`),

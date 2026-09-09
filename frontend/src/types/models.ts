@@ -1,4 +1,8 @@
-export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision';
+export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
+
+export type PresetVoice = {
+  id: string; model: string; source: 'preset'; language: string; expires_at: null; available: boolean;
+};
 
 export type ModelCapabilities = {
   streaming: boolean;

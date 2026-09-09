@@ -10,8 +10,16 @@ from ai_workbench.api.schemas.models import (
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.inventory import inventory
 from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile
+from ai_workbench.api.schemas.inference import VoiceAvailability
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+@router.get("/profiles/{profile_id}/voices", response_model=list[VoiceAvailability],
+            responses=error_responses(400, 404), summary="Inspect preset voice availability without loading a model")
+async def model_voices(profile_id: str, state: RuntimeState = Depends(get_state)):
+    import asyncio
+    return await asyncio.to_thread(state.model_manager.voice_list, profile_id)
 
 
 def public_provider(profile: ProviderProfile) -> dict:

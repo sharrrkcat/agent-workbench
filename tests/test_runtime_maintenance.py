@@ -341,7 +341,7 @@ def test_runtime_revision_resets_only_jobs_and_preserves_files(tmp_path):
     before_files = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files}
     before_rows = rows()
     migrations.upgrade(engine)
-    assert migrations.current_revision(engine) == migrations.RUNTIME_MAINTENANCE_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     store = RuntimeStore(engine)
     assert store.jobs() == []
     installation = store.installations()[0]

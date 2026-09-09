@@ -11,6 +11,7 @@ import { Field, Check, NumberInput } from './fields';
 import type { ModelFeedbackProps } from './types';
 import { kinds } from './profileDefaults';
 import { CudaLayersField } from './CudaLayersField';
+import { PresetVoices } from './PresetVoices';
 
 export type ProfileDraft = { id?: string; value: ModelInput };
 export function ProfileEditor({
@@ -25,7 +26,7 @@ export function ProfileEditor({
   setModel: Dispatch<SetStateAction<ProfileDraft | null>>;
 }) {
   const { t } = useTranslation('llm');
-  const { providers, catalog } = useModelsStore();
+  const { providers, catalog, profiles } = useModelsStore();
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -103,13 +104,13 @@ export function ProfileEditor({
                             : 'python-worker'
                           : null,
                       runtime_variant:
-                        e.target.value === 'managed' ? (model.value.kind === 'llm' ? 'cpu' : 'torch-cpu') : null,
+                        e.target.value === 'managed' ? (model.value.kind === 'llm' ? 'cpu' : model.value.kind === 'tts' ? 'onnx-cpu' : 'torch-cpu') : null,
                       runtime_options: {},
                       capabilities: { ...model.value.capabilities, vision: false },
                     })
                   }
                 >
-                  <option value="external">OpenAI Compatible</option>
+                  <option value="external">{model.value.kind === 'tts' ? t('unavailableBackend') : 'OpenAI Compatible'}</option>
                   <option value="managed">{t('managedBackend')}</option>
                 </select>
               </Field>
@@ -120,7 +121,7 @@ export function ProfileEditor({
                     onChange={(e) => patchModel({ runtime_variant: e.target.value, runtime_options: {} })}
                   >
                     {catalog
-                      .filter((entry) => entry.runtime_id === model.value.runtime_id)
+                      .filter((entry) => entry.runtime_id === model.value.runtime_id && entry.kinds.includes(model.value.kind))
                       .map((entry) => (
                         <option key={entry.variant} value={entry.variant}>
                           {entry.variant}
@@ -129,7 +130,7 @@ export function ProfileEditor({
                       ))}
                   </select>
                 </Field>
-              ) : (
+              ) : model.value.kind !== 'tts' ? (
                 <Field label={t('provider')}>
                   <select
                     value={model.value.provider_profile_id || ''}
@@ -143,7 +144,7 @@ export function ProfileEditor({
                     ))}
                   </select>
                 </Field>
-              )}
+              ) : null}
               <Field label={t('modelRef')}>
                 <input
                   required
@@ -185,7 +186,7 @@ export function ProfileEditor({
                         ['intraop_threads', 4, 1, 256],
                         ['max_batch_size', 32, 1, 2048],
                       ]
-                  ).filter(([key]) => key !== 'gpu_layers' || model.value.runtime_variant !== 'cuda').map(([key, value, min, max]) => (
+                  ).filter(([key]) => (key !== 'gpu_layers' || model.value.runtime_variant !== 'cuda') && (key !== 'max_batch_size' || model.value.kind !== 'tts')).map(([key, value, min, max]) => (
                     <NumberInput
                       key={key}
                       label={t('runtimeParams.' + key)}
@@ -223,6 +224,8 @@ export function ProfileEditor({
             ) : null}
             <h3>{t('parameters')}</h3>
             <ProfileParameters value={model.value} onChange={(parameters) => patchModel({ parameters })} />
+            {model.value.kind === 'tts' && model.id && profiles.find((profile) => profile.id === model.id)?.model_ref === model.value.model_ref
+              ? <PresetVoices profileId={model.id} /> : null}
             <h3>{t('lifecycle')}</h3>
             <div className="model-form-grid">
               <Field label={t('release')}>

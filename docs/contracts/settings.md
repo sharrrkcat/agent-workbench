@@ -52,6 +52,9 @@ share useModelsStore. Drafts survive switching between Models tabs. Health,
 load, unload, inventory and runtime actions use the common model services.
 Local inventory/provider listing do not load weights. External unknown
 residency/unsupported unload remains visible.
+TTS profiles select Kokoro ONNX, the ONNX CPU runtime, speech speed and MP3/WAV
+defaults. Saved TTS editors show a read-only preset voice list grouped by language
+with local-file availability. Voices are request selections, not profile records.
 
 Provider/settings reads omit secret keys and expose presence flags. PATCH
 omission retains a key; an explicit empty string clears it. External enablement

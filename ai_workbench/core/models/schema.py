@@ -10,7 +10,7 @@ from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 
-ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision"]
+ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts"]
 
 
 class StrictModel(BaseModel):
@@ -106,8 +106,14 @@ class VisionParameters(StrictModel):
     batch_size: int = Field(default=1, ge=1, le=256)
 
 
+class TTSParameters(StrictModel):
+    architecture: Literal["kokoro"] = "kokoro"
+    speed: float = Field(default=1.0, ge=0.25, le=4.0, strict=True)
+    response_format: Literal["mp3", "wav"] = "mp3"
+
+
 PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "reranker": RerankParameters,
-              "image_embedding": ImageEmbeddingParameters, "vision": VisionParameters}
+              "image_embedding": ImageEmbeddingParameters, "vision": VisionParameters, "tts": TTSParameters}
 
 
 class ModelInput(StrictModel):
@@ -116,7 +122,7 @@ class ModelInput(StrictModel):
     kind: ModelKind
     provider_profile_id: str | None = None
     runtime_id: Literal["llama-server", "python-worker"] | None = None
-    runtime_variant: Literal["cpu", "cuda", "vulkan", "torch-cpu", "torch-cu128", "onnx-gpu"] | None = None
+    runtime_variant: Literal["cpu", "cuda", "vulkan", "torch-cpu", "torch-cu128", "onnx-cpu", "onnx-gpu"] | None = None
     runtime_options: dict[str, Any] = Field(default_factory=dict)
     model_ref: str = Field(min_length=1, max_length=1024)
     capabilities: Capabilities = Field(default_factory=Capabilities)
@@ -127,7 +133,7 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import PythonOptions, llama_options, relative_ref
+        from ai_workbench.core.models.runtimes.schema import PythonOptions, OnnxCPUOptions, llama_options, relative_ref
         if self.runtime_id:
             if self.provider_profile_id or not self.runtime_variant:
                 raise ValueError("A managed model requires a runtime variant and no external connection")
@@ -141,11 +147,16 @@ class ModelInput(StrictModel):
                 if self.capabilities.vision:
                     raise ValueError("Managed llama image input requires a future projector configuration")
             else:
-                if self.kind == "llm" or self.runtime_variant not in {"torch-cpu", "torch-cu128", "onnx-gpu"}:
+                if self.kind == "llm" or self.runtime_variant not in {"torch-cpu", "torch-cu128", "onnx-cpu", "onnx-gpu"}:
                     raise ValueError("Python worker requires a non-llm kind and a Python runtime variant")
-                self.runtime_options = PythonOptions.model_validate(self.runtime_options).model_dump()
+                if self.runtime_variant == "onnx-cpu" and self.kind != "tts":
+                    raise ValueError("onnx-cpu currently requires tts kind")
+                options_schema = OnnxCPUOptions if self.runtime_variant == "onnx-cpu" else PythonOptions
+                self.runtime_options = options_schema.model_validate(self.runtime_options).model_dump()
         elif self.runtime_variant or self.runtime_options:
             raise ValueError("Runtime variant and options require runtime_id")
+        if self.kind == "tts" and (self.provider_profile_id or self.runtime_id and self.runtime_variant != "onnx-cpu"):
+            raise ValueError("TTS execution requires the managed onnx-cpu backend")
         self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
@@ -324,6 +335,27 @@ class EmbeddingRequest(StrictModel):
         return value
 
 
+class TTSExtensions(StrictModel):
+    language: Literal["en-US", "en-GB", "ja-JP", "zh-CN", "es-ES", "fr-FR", "hi-IN", "it-IT", "pt-BR"] | None = None
+
+
+class SpeechRequest(StrictModel):
+    model: str = Field(min_length=1)
+    input: str = Field(min_length=1, max_length=4096)
+    voice: str = Field(min_length=1, max_length=128)
+    speed: float | None = Field(default=None, ge=0.25, le=4.0, strict=True)
+    response_format: Literal["mp3", "wav"] | None = None
+    stream_format: Literal["audio"] = "audio"
+    tts: TTSExtensions = Field(default_factory=TTSExtensions)
+
+    @field_validator("input")
+    @classmethod
+    def nonempty_input(cls, value):
+        if not value.strip():
+            raise ValueError("Speech input must not be blank")
+        return value
+
+
 class Usage(BaseModel):
     model_config = ConfigDict(extra="ignore")
     prompt_tokens: int = Field(default=0, ge=0)
@@ -373,6 +405,11 @@ class RerankResult(StrictModel):
 
 class VisionResult(StrictModel):
     outputs: list[dict[str, Any]]
+
+
+class AudioOutput(StrictModel):
+    data: bytes
+    response_format: Literal["mp3", "wav"]
 
 
 class ModelStatus(StrictModel):

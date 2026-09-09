@@ -96,6 +96,12 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { cursor: no
 .model-form { padding: 0; border: 0; margin: 0; min-width: 0; }
 .model-form h3 { font-size: 14px; margin: 20px 0 4px; border-top: 1px solid #363636; padding-top: 14px; }
 .model-form-footer { display: flex; justify-content: flex-end; padding-top: 20px; }
+.tts-voices-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+.model-form .tts-voices-heading h3 { margin: 0; border: 0; padding: 0; }
+.tts-voices-list { max-height: 280px; overflow: auto; margin-top: 10px; }
+.tts-voices-list table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.tts-voices-list th, .tts-voices-list td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #363636; overflow-wrap: anywhere; }
+.tts-voices-list tbody th { color: #aeb3bc; padding-top: 12px; }
 .app-modal-overlay { position: fixed; inset: 0; z-index: 100; background: #0009; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .app-modal-panel { width: min(560px, 100%); max-height: calc(100dvh - 40px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #484848; border-radius: 8px; background: #202020; }
 .app-modal-panel.large { width: min(760px, 100%); }

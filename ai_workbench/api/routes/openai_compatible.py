@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import json
 import struct
 import time
 from contextlib import aclosing
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import SSE_RESPONSE, request_body
 from ai_workbench.api.schemas.common import error_responses
-from ai_workbench.api.schemas.inference import ChatCompletion, EmbeddingResponse, ModelList
+from ai_workbench.api.schemas.inference import ChatCompletion, EmbeddingResponse, ModelList, VoiceList
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_request
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, SpeechRequest
+from ai_workbench.workers.tts_catalog import FORMATS
 
 router = APIRouter(prefix="/v1", tags=["openai-compatible"])
 
@@ -27,8 +30,59 @@ async def list_models(request: Request, state: RuntimeState = Depends(get_state)
     guard(request, state.model_settings.get())
     return {"object": "list", "data": [
         {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "workbench"}
-        for p in state.model_profiles.list() if p.enabled and p.external_enabled and p.kind in {"llm", "embedding"}
+        for p in state.model_profiles.list() if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts"}
     ]}
+
+
+@router.get("/audio/voices", response_model=VoiceList, responses=error_responses(400, 401, 403, 404, 503),
+            summary="List available voices (Workbench extension)")
+async def audio_voices(request: Request, model: str | None = None, source: Literal["preset", "temporary"] | None = None,
+                       state: RuntimeState = Depends(get_state)):
+    guard(request, state.model_settings.get())
+    profiles = [state.model_manager.external_profile(model, "tts")] if model is not None else [
+        p for p in state.model_profiles.list("tts") if p.enabled and p.external_enabled]
+    data = []
+    if source != "temporary":
+        for profile in profiles:
+            for item in await asyncio.to_thread(state.model_manager.voice_list, profile.id):
+                if item["available"]:
+                    data.append({key: value for key, value in item.items() if key != "available"})
+    return {"object": "list", "data": data}
+
+
+async def speech_until_disconnect(request: Request, operation):
+    async def disconnected():
+        while True:
+            if (await request.receive())["type"] == "http.disconnect":
+                return
+    task = asyncio.create_task(operation)
+    watcher = asyncio.create_task(disconnected())
+    try:
+        done, _ = await asyncio.wait({task, watcher}, return_when=asyncio.FIRST_COMPLETED)
+        if watcher in done:
+            request.state.inference_error_code = "REQUEST_CANCELLED"
+            raise ModelError("REQUEST_CANCELLED", "The speech client disconnected.", 499)
+        return await task
+    finally:
+        for pending in (task, watcher):
+            if not pending.done():
+                pending.cancel()
+        await asyncio.gather(task, watcher, return_exceptions=True)
+
+
+@router.post("/audio/speech", response_class=Response, openapi_extra=request_body(SpeechRequest),
+             summary="Synthesize a complete speech file",
+             responses={**error_responses(400, 401, 403, 404, 413, 422, 429, 499, 502, 503, 504),
+                        200: {"description": "Complete audio bytes after synthesis.", "content": {
+                            mime: {"schema": {"type": "string", "format": "binary"}} for mime in FORMATS.values()},
+                              "headers": {"Content-Length": {"schema": {"type": "integer", "minimum": 1}}}}})
+async def speech(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    payload = await read_request(request, settings, SpeechRequest)
+    profile = state.model_manager.external_profile(payload.model, "tts")
+    result = await speech_until_disconnect(request, state.model_manager.speech(profile.id, payload))
+    return Response(result.data, media_type=FORMATS[result.response_format], headers={"Cache-Control": "no-store"})
 
 
 @router.post("/chat/completions", response_model=ChatCompletion, response_model_exclude_unset=True,

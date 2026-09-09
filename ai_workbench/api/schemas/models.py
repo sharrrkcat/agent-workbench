@@ -5,11 +5,11 @@ from pydantic import Field, RootModel
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.core.models.schema import (
     EmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
-    ModelKind, ModelSettings, ProviderInput, ProviderProfile, RerankParameters, VisionParameters,
+    ModelKind, ModelSettings, ProviderInput, ProviderProfile, RerankParameters, VisionParameters, TTSParameters,
 )
 from ai_workbench.core.models.runtimes.schema import (
     CatalogEntry, DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions, LlamaOptions,
-    PythonOptions, RuntimeJob,
+    PythonOptions, OnnxCPUOptions, RuntimeJob,
 )
 
 
@@ -20,7 +20,7 @@ class EmptyRuntimeOptions(ApiModel):
 LlamaRuntimeOptions = EmptyRuntimeOptions | LlamaCPUOptions | LlamaCUDAOptions | LlamaOptions
 WorkerRuntimeOptions = EmptyRuntimeOptions | PythonOptions
 RuntimeOptions = LlamaRuntimeOptions | PythonOptions
-Parameters = GenerationParameters | EmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters
+Parameters = GenerationParameters | EmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "runtime_options"})
 
 
@@ -55,7 +55,13 @@ class VisionModel(ModelFields):
     runtime_options: WorkerRuntimeOptions = Field(default_factory=EmptyRuntimeOptions)
 
 
-class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel,
+class TTSModel(ModelFields):
+    kind: Literal["tts"]
+    parameters: TTSParameters = Field(default_factory=TTSParameters)
+    runtime_options: EmptyRuntimeOptions | OnnxCPUOptions = Field(default_factory=EmptyRuntimeOptions)
+
+
+class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel,
                                     Field(discriminator="kind")]]):
     """At most one backend binding; an unbound profile may be saved but cannot execute.
 
@@ -89,7 +95,11 @@ class VisionProfile(VisionModel, ProfileIdentity):
     pass
 
 
-ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile,
+class TTSProfile(TTSModel, ProfileIdentity):
+    pass
+
+
+ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile | TTSProfile,
                                  Field(discriminator="kind")]
 ModelPatch = patch_model("ModelPatch", ModelInput, fields={
     "parameters": (Parameters, Field(default_factory=lambda: None, description="Replaces parameters; must match the saved model kind.")),

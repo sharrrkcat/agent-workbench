@@ -5,7 +5,7 @@ import platform
 from pathlib import Path
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.runtimes.schema import CatalogEntry, PythonOptions, RuntimeArtifact, llama_options
+from ai_workbench.core.models.runtimes.schema import CatalogEntry, PythonOptions, OnnxCPUOptions, RuntimeArtifact, llama_options
 
 CATALOG_ROOT = Path(__file__).parent
 LLAMA_VERSION = "b10809"
@@ -59,9 +59,9 @@ def catalog(os_name: str | None = None, machine: str | None = None) -> list[Cata
             archive_format="zip" if os_name == "windows" else "tar.gz",
             executable=asset[2] if asset else "llama-server",
             kinds=["llm"], options_schema=llama_options(variant).model_json_schema()))
-    for variant in ("torch-cpu", "torch-cu128", "onnx-gpu"):
-        lock = CATALOG_ROOT / f"requirements-{os_name}.lock"
-        supported = x64 and os_name in {"windows", "linux"} and variant == "torch-cpu" and lock.is_file()
+    for variant in ("torch-cpu", "torch-cu128", "onnx-cpu", "onnx-gpu"):
+        lock = CATALOG_ROOT / (f"requirements-onnx-{os_name}.lock" if variant == "onnx-cpu" else f"requirements-{os_name}.lock")
+        supported = x64 and os_name in {"windows", "linux"} and variant in {"torch-cpu", "onnx-cpu"} and lock.is_file()
         result.append(CatalogEntry(
             runtime_id="python-worker", variant=variant, version=WORKER_VERSION,
             platform=os_name, supported=supported,
@@ -70,8 +70,8 @@ def catalog(os_name: str | None = None, machine: str | None = None) -> list[Cata
             requirements=lock.name if supported else None,
             sha256=text_digest(lock) if supported else None,
             worker_sha256=worker_digest() if supported else None,
-            python_version=PYTHON_VERSION, kinds=["embedding", "reranker", "image_embedding", "vision"],
-            options_schema=PythonOptions.model_json_schema()))
+            python_version=PYTHON_VERSION, kinds=["tts"] if variant == "onnx-cpu" else ["embedding", "reranker", "image_embedding", "vision"],
+            options_schema=(OnnxCPUOptions if variant == "onnx-cpu" else PythonOptions).model_json_schema()))
     return result
 
 

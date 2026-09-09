@@ -1,6 +1,6 @@
 import type { ModelInput, ModelKind, ProviderInput } from '../../../types/models';
 
-export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision'];
+export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts'];
 
 export const newModel = (kind: ModelKind): ModelInput => ({
   name: '',
@@ -11,11 +11,11 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   enabled: true,
   external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
-  parameters: {},
+  parameters: kind === 'tts' ? { architecture: 'kokoro', speed: 1, response_format: 'mp3' } : {},
   lifecycle: { unload: 'manual', idle_seconds: 300 },
-  runtime_id: null,
-  runtime_variant: null,
-  runtime_options: {},
+  runtime_id: kind === 'tts' ? 'python-worker' : null,
+  runtime_variant: kind === 'tts' ? 'onnx-cpu' : null,
+  runtime_options: kind === 'tts' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } : {},
 });
 
 export const newProvider = (): ProviderInput => ({

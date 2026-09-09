@@ -161,5 +161,8 @@ class OpenAIAdapter:
     async def vision(self, profile, images):
         raise ModelError("MODEL_UNAVAILABLE", "Vision models require a managed backend.", 503)
 
+    async def speech(self, profile, text, voice, speed, response_format, language):
+        raise ModelError("MODEL_UNAVAILABLE", "TTS currently requires the managed ONNX CPU backend.", 503)
+
     async def close(self) -> None:
         await self.client.aclose()

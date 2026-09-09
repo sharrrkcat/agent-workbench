@@ -11,10 +11,10 @@ import sys
 import threading
 
 if __package__:
-    from .protocol import WorkerError, fields, integer, load_request, strings
+    from .protocol import WorkerError, fields, integer, load_request, strings, speech_request
 else:
     sys.path.insert(0, str(Path(__file__).parent))
-    from protocol import WorkerError, fields, integer, load_request, strings
+    from protocol import WorkerError, fields, integer, load_request, strings, speech_request
 
 PROTOCOL_VERSION = 1
 MAX_BODY = 32 * 1024 * 1024
@@ -40,11 +40,18 @@ class Worker:
                 if model_id not in self.models:
                     factory = self.engine_factory
                     if factory is None:
-                        if __package__:
+                        if body["kind"] == "tts":
+                            if __package__:
+                                from .tts_engine import TTSEngine
+                            else:
+                                from tts_engine import TTSEngine
+                            factory = TTSEngine
+                        elif __package__:
                             from .engines import Engine
+                            factory = Engine
                         else:
                             from engines import Engine
-                        factory = Engine
+                            factory = Engine
                     self.models[model_id] = factory(path, body["kind"], body["parameters"], body["options"])
                 return self.health()
             if operation == "/unload":
@@ -59,6 +66,7 @@ class Worker:
                 "/rerank": ("reranker", ("query", "documents"), ()),
                 "/image-embed": ("image_embedding", ("images",), ()),
                 "/vision": ("vision", ("images",), ()),
+                "/speech": ("tts", ("input", "voice", "speed", "response_format", "language"), ()),
             }
             if operation not in supported:
                 raise WorkerError("UNSUPPORTED_CAPABILITY", 404)
@@ -69,6 +77,10 @@ class Worker:
                 raise WorkerError("MODEL_UNAVAILABLE", 503)
             if model.kind != kind:
                 raise WorkerError("MODEL_KIND_MISMATCH")
+            if kind == "tts":
+                values = {key: value for key, value in body.items() if key != "profile_id"}
+                speech_request(values)
+                return model.speech(values["input"], values["voice"], values["speed"], values["response_format"], values["language"])
             batch = strings(body["texts"] if kind == "embedding" else body["documents"] if kind == "reranker" else body["images"], model.options["max_batch_size"])
             if kind == "embedding":
                 dimensions = body.get("dimensions")
@@ -92,9 +104,10 @@ def handler(worker, token):
             pass
 
         def _send(self, status, data):
-            payload = json.dumps(data, allow_nan=False).encode("utf-8")
+            binary = isinstance(data, tuple)
+            payload = data[0] if binary else json.dumps(data, allow_nan=False).encode("utf-8")
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", data[1] if binary else "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.send_header("Connection", "close")
             self.end_headers()

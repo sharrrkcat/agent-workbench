@@ -12,7 +12,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
-    ImagePart, ModelProfile, ModelStatus, ProviderProfile,
+    ImagePart, ModelProfile, ModelStatus, ProviderProfile, SpeechRequest,
 )
 from ai_workbench.workers.protocol import WorkerError
 
@@ -124,7 +124,7 @@ class ModelManager:
                     if profile.runtime_id == "python-worker":
                         from ai_workbench.workers.protocol import local_model
                         local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
-                            wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14")
+                            wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
                 except (OSError, ValueError, WorkerError):
                     status.state, status.error_code = "unavailable", "MODEL_NOT_FOUND"
         if not profile.enabled or not profile.runtime_id and (provider is None or not provider.enabled):
@@ -383,6 +383,48 @@ class ModelManager:
             raise ModelError("INVALID_REQUEST", "Vision requires at least one image.")
         async with self._lease(profile) as adapter:
             return await adapter.vision(profile, images)
+
+    def voice_list(self, profile_id: str) -> list[dict]:
+        from ai_workbench.workers.tts_catalog import voices
+        from ai_workbench.core.models.runtimes.schema import model_path
+        profile = self.profiles.get(profile_id)
+        if profile.kind != "tts":
+            raise ModelError("MODEL_KIND_MISMATCH", "Voice discovery requires a tts profile.")
+        path = None
+        if self.runtime_supervisor:
+            try:
+                path = model_path(self.runtime_supervisor.root, profile.model_ref)
+            except ValueError:
+                pass
+        return [{**voice, "model": profile.alias} for voice in voices(path)]
+
+    async def speech(self, profile_id: str, request: SpeechRequest):
+        from ai_workbench.workers.tts_catalog import LANGUAGES, VOICE_IDS, valid_voice
+        from ai_workbench.core.models.runtimes.schema import model_path
+        from ai_workbench.workers.audio import validate_audio
+        profile = self.profile(profile_id, "tts")
+        if request.voice not in VOICE_IDS:
+            raise ModelError("VOICE_UNAVAILABLE", "Voice ID is not supported by this model.", 404)
+        if request.tts.language is not None and request.tts.language != LANGUAGES[request.voice[0]]:
+            raise ModelError("INVALID_REQUEST", "Language does not match the selected voice.")
+        if profile.runtime_id and self.runtime_supervisor:
+            try:
+                path = model_path(self.runtime_supervisor.root, profile.model_ref)
+            except (OSError, ValueError) as exc:
+                raise ModelError("MODEL_NOT_FOUND", "The local model directory is missing or outside data/models.", 404) from exc
+            if not await asyncio.to_thread(valid_voice, path, request.voice):
+                raise ModelError("VOICE_UNAVAILABLE", "The local voice file is missing or invalid.", 404)
+        response_format = request.response_format or profile.parameters["response_format"]
+        speed = request.speed if request.speed is not None else profile.parameters["speed"]
+        async with self._lease(profile) as adapter:
+            result = await adapter.speech(profile, request.input, request.voice, speed, response_format, request.tts.language)
+            try:
+                if result.response_format != response_format:
+                    raise ValueError("Unexpected audio format")
+                validate_audio(result.data, response_format)
+            except (ValueError, EOFError) as exc:
+                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Worker returned invalid audio.", 502) from exc
+            return result
 
     def _managed_changed(self, backend):
         slot = self._slots.get(backend)

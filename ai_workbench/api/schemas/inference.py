@@ -18,6 +18,23 @@ class ModelList(ApiModel):
     data: list[PublicModel]
 
 
+class VoiceItem(ApiModel):
+    id: str
+    model: str
+    source: Literal["preset"]
+    language: str
+    expires_at: None = None
+
+
+class VoiceAvailability(VoiceItem):
+    available: bool
+
+
+class VoiceList(ApiModel):
+    object: Literal["list"]
+    data: list[VoiceItem]
+
+
 class CompletionChoice(ApiModel):
     index: Literal[0]
     message: ChatMessage

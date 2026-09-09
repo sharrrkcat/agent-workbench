@@ -40,6 +40,19 @@ export function ProfileParameters({
             />
           </Field>
         </>
+      ) : value.kind === 'tts' ? (
+        <>
+          <Field label={t('params.architecture')}>
+            <select value="kokoro" disabled><option value="kokoro">Kokoro-82M v1.0 (ONNX)</option></select>
+          </Field>
+          <NumberInput label={t('params.speed')} value={Number(value.parameters.speed ?? 1)} min={0.25} max={4} step={0.05}
+            onChange={(speed) => patchParam('speed', speed ?? 1)} />
+          <Field label={t('params.response_format')}>
+            <select value={String(value.parameters.response_format ?? 'mp3')} onChange={(e) => patchParam('response_format', e.target.value)}>
+              <option value="mp3">MP3</option><option value="wav">WAV</option>
+            </select>
+          </Field>
+        </>
       ) : (
         <>
           <NumberInput

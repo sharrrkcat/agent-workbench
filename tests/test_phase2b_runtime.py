@@ -56,7 +56,7 @@ def supervisor(tmp_path, *, data=None, store=None):
 def test_catalog_pins_supported_platforms_and_defers_remaining_accelerators():
     for system in ("windows", "linux"):
         entries = catalog(system, "x86_64")
-        assert {entry.variant for entry in entries if entry.supported} == ({"cpu", "cuda", "torch-cpu"} if system == "windows" else {"cpu", "torch-cpu"})
+        assert {entry.variant for entry in entries if entry.supported} == ({"cpu", "cuda", "torch-cpu", "onnx-cpu"} if system == "windows" else {"cpu", "torch-cpu", "onnx-cpu"})
         assert all(entry.sha256 for entry in entries if entry.supported)
     assert not any(entry.supported for entry in catalog("darwin", "arm64"))
     with pytest.raises(ValidationError):

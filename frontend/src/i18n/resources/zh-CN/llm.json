@@ -53,7 +53,8 @@
     "embedding": "文本嵌入",
     "reranker": "重排序",
     "image_embedding": "图像嵌入",
-    "vision": "视觉"
+    "vision": "视觉",
+    "tts": "语音合成"
   },
   "states": {
     "unknown": "未检查",
@@ -93,7 +94,13 @@
     "document_instruction": "文档前缀",
     "query_instruction": "查询前缀",
     "architecture": "架构",
-    "task": "任务"
+    "task": "任务",
+    "speed": "语速",
+    "response_format": "音频格式"
+  },
+  "voices": {
+    "title": "预置音色", "id": "Voice ID", "availability": "可用状态", "available": "可用", "missing": "文件缺失或无效", "loading": "正在读取音色…",
+    "languages": { "en-US": "美式英语", "en-GB": "英式英语", "ja-JP": "日语", "zh-CN": "普通话", "es-ES": "西班牙语", "fr-FR": "法语", "hi-IN": "印地语", "it-IT": "意大利语", "pt-BR": "巴西葡萄牙语" }
   },
   "connection": {
     "timeout_seconds": "请求超时（秒）",

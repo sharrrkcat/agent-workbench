@@ -1,9 +1,10 @@
 """Read-only model-file inventory. Scanning never imports an inference runtime."""
 
 from pathlib import Path
+from ai_workbench.workers.tts_catalog import model_files
 
 ROOTS = {"llm": "llms", "embedding": "embeddings", "reranker": "rerankers",
-         "image_embedding": "image_embeddings", "vision": "vision"}
+         "image_embedding": "image_embeddings", "vision": "vision", "tts": "tts"}
 
 
 def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
@@ -21,9 +22,12 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
             if not resolved.is_relative_to(base.resolve()) or not path.is_file():
                 continue
             target = None
-            if path.suffix.lower() == ".gguf" and not path.name.lower().startswith("mmproj"):
+            if model_kind == "tts":
+                if path.name == "model.onnx" and model_files(path.parent):
+                    target = path.parent
+            elif path.suffix.lower() == ".gguf" and not path.name.lower().startswith("mmproj"):
                 target = path
-            elif path.name in {"config.json", "model.onnx"}:
+            elif path.name in {"config.json", "model.onnx"} and model_kind != "tts":
                 target = path.parent
             if target is None or target in seen:
                 continue

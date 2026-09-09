@@ -7,8 +7,8 @@ The API process imports no torch, transformers, onnxruntime or llama.cpp binding
 
 ## Profiles and connections
 
-`model_profiles` has one schema/store with five kinds: `llm`, `embedding`,
-`reranker`, `image_embedding`, `vision`. Internal references use UUID `id`;
+`model_profiles` has one schema/store with six kinds: `llm`, `embedding`,
+`reranker`, `image_embedding`, `vision`, `tts`. Internal references use UUID `id`;
 external requests use the unique lowercase `alias`, without prefixes or UUID
 lookup. Kind is immutable. CRUD uses `/api/models/profiles`, with `?kind=...`.
 
@@ -29,28 +29,21 @@ invalidates associated indexes; see [Knowledge](knowledge.md).
 
 ## Resolution and capabilities
 
-New sessions save the enabled global-default LLM or, when it is unavailable,
-the first enabled LLM in profile-list order (name, then id). Execution uses the
-saved session model. Persona has no model selection. Missing selection returns
-`MODEL_NOT_CONFIGURED`. Disabled, missing or wrong-kind explicitly selected
-profiles fail without substitution. Default selection checks profiles only,
-without model discovery, health calls or inference.
-The LLM summary at `/api/health/details` uses this same default selection and
-cached status, reporting degraded when no enabled LLM exists.
-Persona/session behavior and the auxiliary title selector are owned by
-[chat/context](chat-context.md).
+New sessions save the enabled global-default LLM or first enabled LLM (name, id
+order). Execution uses that selection; Persona has none. Missing selection returns
+MODEL_NOT_CONFIGURED; disabled, missing or wrong-kind selections fail without
+substitution. Default selection never calls providers. `/api/health/details`
+uses the same selection and cached status, degraded without an enabled LLM.
+Persona/session behavior and the title selector belong to [chat/context](chat-context.md).
 
-LLM generation parameters are temperature, top_p, max_tokens, presence/frequency
-penalties, seed and stop. Explicit request fields override profile defaults.
-Capabilities are streaming, tools, vision, json_object and json_schema;
-unsupported requests return `UNSUPPORTED_CAPABILITY`.
+LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties,
+seed and stop; explicit request values override defaults. Capabilities are
+streaming, tools, vision, json_object and json_schema; unsupported requests fail.
 
-External OpenAI-compatible connections execute chat and text embeddings.
-Managed llama-server executes LLM chat. Python workers execute embedding,
-rerank, image embedding and vision. Standalone vision/image_embedding kinds
-are distinct from an LLM's image-input capability. Managed llama image input
-is unavailable until projector support is implemented; external vision-capable
-LLMs accept the current chat image-input protocol.
+External connections execute chat/text embeddings; llama-server executes chat.
+Python workers execute embedding, rerank, image embedding, vision and TTS.
+Standalone vision/image_embedding differs from LLM image input. Managed llama
+image input awaits projector support; external vision LLMs accept chat images.
 
 ## Lifecycle and status
 
@@ -77,8 +70,8 @@ not replace successful inference. Managed crashes require explicit load.
 
 Inventory/status reads never load weights, import heavy runtimes or download
 models. Local roots under `data/models` are `llms`, `embeddings`, `rerankers`,
-`image_embeddings` and `vision`. Inventory recognizes GGUF files and model
-directories containing `config.json` or `model.onnx`.
+`image_embeddings`, `vision` and `tts`. Inventory recognizes GGUF files and model
+directories; TTS requires the Kokoro ONNX layout. Auxiliary models are not listed.
 
 Status contains state (`unknown`, `ready`, `unavailable`, `failed`, `unloaded`),
 residency (`unknown`, `loaded`, `unloaded`), unload_supported, active, queued and
@@ -102,6 +95,7 @@ catalog records own HTTPS artifact URLs, SHA-256, archive format and executable.
 | llama-server/cpu | Windows and Linux x64 |
 | llama-server/cuda | Windows x64 |
 | python-worker/torch-cpu | Windows and Linux x64 |
+| python-worker/onnx-cpu | Windows and Linux x64 |
 
 Vulkan, torch-cu128, onnx-gpu and Linux CUDA remain visibly unsupported.
 
@@ -110,7 +104,7 @@ directory, both under `data/models`. Profiles cannot supply an executable or
 arbitrary command-line argument. Llama options are threads, context_size,
 batch_size and gpu_layers (strict zero on CPU; auto or strict integer 1..999
 on CUDA, default auto); worker options are device=cpu,
-intraop_threads and max_batch_size. Saving before installation is allowed;
+intraop_threads and max_batch_size (fixed 1 for ONNX CPU). Saving before installation is allowed;
 execution reports the missing runtime/model.
 
 `POST /api/models/runtimes/{runtime_id}/{variant}/install` creates a job. Only
@@ -124,7 +118,9 @@ data/runtimes/py/<variant>/<version>/
 ```
 
 The bundled application uv installs pinned Python into runtime-owned storage,
-creates the worker venv and installs hash-locked dependencies. `--no-bin` and
+creates the worker venv and installs hash-locked dependencies. ONNX CPU permits
+only docopt, jaconv, jieba and unidic-lite source builds with locked build tools;
+native packages require wheels. `--no-bin` and
 `--no-registry` avoid user PATH/registry changes. Download configuration is
 owned by [settings](settings.md); weights are always placed manually.
 
@@ -184,8 +180,6 @@ cleanup; before/after figures are never presented as actual disk recovery.
 Startup marks unfinished cache jobs interrupted. Latest 20 terminal cache logs
 are retained independently of runtime installation logs.
 
-Schema reset effects are owned by [data layout](../DATA_LAYOUT.md#database-revisions).
-
 ## Managed processes and workers
 
 Workers bind `127.0.0.1` on dynamically reserved ports. The supervisor owns
@@ -197,7 +191,7 @@ and 20 process logs per runtime.
 Llama-server uses the existing OpenAI-compatible adapter and a per-process key
 stored only in its private process directory. Python workers use token-authenticated
 `GET /health` and `POST /load`, `/unload`, `/embed`, `/rerank`, `/image-embed`,
-`/vision` endpoints. Standard-library request validation precedes engine imports.
+`/vision` and binary `/speech` endpoints. Standard-library validation precedes engine imports.
 
 CUDA load enumerates devices using the pinned executable and selects the first
 CUDA device with split-mode=none. No usable device returns RUNTIME_DEVICE_UNAVAILABLE.
@@ -217,9 +211,33 @@ WD14 needs model.onnx and selected_tags.csv, without requiring config.json.
 Integrity checks cover the dependency lock, worker source fingerprint and
 installed file list, excluding generated bytecode caches.
 
-Manual GPU validation of b10809 covers Windows x64, an RTX 3050 Laptop GPU and
-the MiniMind GGUF (2026-09-08). This does not establish Linux or other GPU
-coverage. Repeatable CUDA smoke instructions are in the [README](../../README.md#verification).
+Manual b10809 validation covers Windows x64, RTX 3050 Laptop GPU and MiniMind
+(2026-09-08), not Linux/other GPUs. See [README](../../README.md#verification).
+
+## Kokoro TTS
+
+TTS supports only managed `python-worker/onnx-cpu`, architecture=kokoro, with
+the v1.0 FP32 model.onnx, config/tokenizer JSON files and voices/<id>.bin.
+The fixed 54-ID catalog intersects with finite float32 [510,1,256] files; extras
+such as af.bin are ignored. No voice-profile records are created. Off-loop file
+checks power GET /api/models/profiles/{id}/voices without model loading.
+
+The ONNX environment uses Misaki, spaCy 3.7.5 and NumPy 1.26.4 without PyTorch or
+Transformers. It installs the checksum-verified local en_core_web_sm 3.7.1 wheel
+from data/models/_auxiliary/en_core_web_sm alongside eSpeak NG and UniDic.
+All language frontends initialize before readiness with Python networking blocked,
+as during execution. Missing resources fail without downloads.
+
+Speech accepts 1..4096 nonblank characters, voice, speed=0.25..4,
+response_format=mp3|wav, stream_format=audio and optional tts.language matching the
+voice. Request values override profile speed=1 and format=mp3. Other fields fail.
+Chunks retain supported text, use at most 510 tokens and voice row N-1; unsplit
+oversized words fail. Complete 24 kHz mono PCM16 WAV or 128 kbps MP3 is returned;
+PCM and encoded data each have a 32 MiB limit. Timeout is 300 seconds. Disconnects
+stop the worker before releasing occupancy and log REQUEST_CANCELLED with 499.
+SSE, cloning, external TTS providers and application playback are unimplemented.
+Real Kokoro installation and inference validation covers Windows x64. Linux x64
+has a pinned dependency lock and catalog entry, without native runtime validation.
 
 ## External inference API
 
@@ -230,9 +248,11 @@ of forwarded headers. The official launcher binds loopback only.
 
 | Endpoint | Supported operation |
 | --- | --- |
-| GET `/v1/models` | Enabled public llm/embedding aliases |
+| GET `/v1/models` | Enabled public llm/embedding/tts aliases |
 | POST `/v1/chat/completions` | Non-streaming or SSE chat |
 | POST `/v1/embeddings` | Text embeddings |
+| POST `/v1/audio/speech` | Complete MP3/WAV speech |
+| GET `/v1/audio/voices` | Preset voice discovery (Workbench extension) |
 
 A public alias must be enabled, externally visible and match the endpoint kind
 and requested capabilities. Stateless calls create no sessions, messages, runs,
@@ -241,6 +261,9 @@ Both Content-Length and actual received bytes are bounded by max_request_mb.
 Strict schemas reject unsupported fields without echoing request values.
 Responses include X-Request-Id. Logs exclude keys, prompts, image/model content
 and raw provider errors, and record final stream outcome and elapsed time.
+Voice discovery accepts model alias and source=preset|temporary (temporary is
+empty). Items contain id, model, source, language and expires_at=null; only enabled
+public TTS profiles and valid preset files appear.
 
 Chat accepts system/developer/user/assistant/tool roles; plain text; user
 image_url parts using HTTP(S) or image data URLs; function tools, tool_choice,
@@ -265,17 +288,13 @@ or base64 (little-endian float32), with optional dimensions. The manager applies
 the profile's document instruction, batching, dimension validation and
 normalization, shared with Knowledge indexing; queries use query instruction.
 Public rerank and image generation are deferred; see [future services](../FUTURE_MODEL_SERVICES.md).
-
 ## HTTP schemas
 
-OpenAPI 3.1 covers management and `/v1`, including per-kind parameters, runtime
-options, storage and 202 job responses. Public models omit provider/service keys,
-installation manifest hashes and job log paths. JSON responses are validated;
-an invalid server result becomes a sanitized 500 INTERNAL_ERROR. HTTP operationIds
-are unique; optional fields retain omission/null distinctions and timestamp precision.
-Model timestamps read from SQLite may be unzoned UTC; their text is retained.
-Manual `/v1` parsing still authenticates and bounds received bytes before input
-validation. Only `/v1` advertises Bearer or x-api-key security alternatives, with
-matching credentials required when both are supplied. Its JSON and SSE media
-types and X-Request-Id headers share the same operation. Isolated check/export
-commands and cross-domain validation rules are in the [README](../../README.md#http-contract).
+OpenAPI 3.1 covers management and `/v1`, strict per-kind/runtime schemas, storage
+and jobs. Public responses omit keys, manifest hashes and log paths. Invalid JSON
+results become sanitized 500 INTERNAL_ERROR. OperationIds are unique; omission,
+null and timestamp precision survive, including SQLite's unzoned UTC text.
+Manual `/v1` parsing authenticates and bounds bytes before validation. Only `/v1`
+advertises Bearer/x-api-key alternatives; matching credentials are required when
+both are supplied. Operations document JSON, SSE or audio and X-Request-Id.
+See [README](../../README.md#http-contract) for isolated check/export commands.

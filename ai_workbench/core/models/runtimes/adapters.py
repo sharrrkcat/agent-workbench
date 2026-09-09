@@ -18,7 +18,9 @@ from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offlo
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.schema import EmbeddingResult, ModelStatus, ProviderProfile, RerankResult, VisionResult
+from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ProviderProfile, RerankResult, VisionResult
+from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
+from ai_workbench.workers.audio import validate_audio
 
 
 class ManagedAdapter:
@@ -63,7 +65,7 @@ class ManagedAdapter:
                 from ai_workbench.workers.protocol import WorkerError, local_model
                 try:
                     return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
-                        wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14")
+                        wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
                 except WorkerError as exc:
                     raise ModelError(exc.code, "The local model directory is incomplete or outside data/models.", exc.status) from exc
             return path
@@ -194,18 +196,35 @@ class ManagedAdapter:
             self.loaded.clear()
             self.changed()
 
-    async def _rpc(self, method, operation, body=None):
+    async def _rpc(self, method, operation, body=None, *, audio_format=None):
         if self.failed or not self.client:
             raise ModelError("MODEL_UNAVAILABLE", "The managed worker is not running.", 503)
         try:
-            response = await self.client.request(method, operation, json=body)
+            if audio_format:
+                async with self.client.stream(method, operation, json=body) as stream:
+                    chunks = bytearray()
+                    async for chunk in stream.aiter_bytes():
+                        if len(chunks) + len(chunk) > MAX_AUDIO_BYTES:
+                            raise ValueError("Audio response exceeds limit")
+                        chunks.extend(chunk)
+                    response = httpx.Response(stream.status_code, headers=stream.headers, content=bytes(chunks))
+            else:
+                response = await self.client.request(method, operation, json=body)
+            if audio_format and response.is_success:
+                if response.headers.get("content-type") != FORMATS[audio_format]:
+                    raise ValueError("Unexpected audio MIME type")
+                validate_audio(response.content, audio_format)
+                return AudioOutput(data=response.content, response_format=audio_format)
             value = response.json()
-            if not response.is_success:
-                code = value.get("error", {}).get("code", "MODEL_UNAVAILABLE")
-                allowed = {"INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE"}
-                raise ModelError(code if code in allowed else "MODEL_UNAVAILABLE", "The managed worker could not complete this operation.", response.status_code)
             if not isinstance(value, dict):
-                raise ValueError()
+                raise ValueError("Invalid worker response")
+            if not response.is_success:
+                error = value.get("error", {})
+                if not isinstance(error, dict) or not isinstance(error.get("code", "MODEL_UNAVAILABLE"), str):
+                    raise ValueError("Invalid worker error")
+                code = error.get("code", "MODEL_UNAVAILABLE")
+                allowed = {"INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE", "VOICE_UNAVAILABLE", "AUDIO_TOO_LARGE", "RUNTIME_BROKEN"}
+                raise ModelError(code if code in allowed else "MODEL_UNAVAILABLE", "The managed worker could not complete this operation.", response.status_code)
             return value
         except asyncio.CancelledError:
             # A synchronous CPU call cannot be cancelled safely within its thread.
@@ -279,6 +298,10 @@ class LlamaServerAdapter(ManagedAdapter):
 
 
 class PythonWorkerAdapter(ManagedAdapter):
+    async def speech(self, profile, text, voice, speed, response_format, language):
+        return await self._rpc("POST", "/speech", {"profile_id": profile.id, "input": text, "voice": voice,
+            "speed": speed, "response_format": response_format, "language": language}, audio_format=response_format)
+
     async def _batches(self, profile, operation, items, input_key, output_key, schema, extra=None):
         results = []
         size = min(profile.parameters.get("batch_size", 1), profile.runtime_options["max_batch_size"])

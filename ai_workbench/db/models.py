@@ -155,7 +155,7 @@ class ProviderProfileRecord(SQLModel, table=True):
 
 class ModelProfileRecord(SQLModel, table=True):
     __tablename__ = "model_profiles"
-    __table_args__ = (CheckConstraint("kind IN ('llm', 'embedding', 'reranker', 'image_embedding', 'vision')", name="ck_model_kind"),)
+    __table_args__ = (CheckConstraint("kind IN ('llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts')", name="ck_model_kind"),)
     id: str = Field(primary_key=True)
     alias: str = Field(index=True, unique=True)
     name: str

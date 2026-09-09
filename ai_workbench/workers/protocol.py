@@ -1,5 +1,11 @@
 """Standard-library validation for the private, local worker protocol."""
 from pathlib import Path, PurePosixPath
+import math
+
+if __package__:
+    from .tts_catalog import FORMATS, LANGUAGES, MAX_INPUT_CHARS, VOICE_IDS, model_files
+else:
+    from tts_catalog import FORMATS, LANGUAGES, MAX_INPUT_CHARS, VOICE_IDS, model_files
 
 
 class WorkerError(Exception):
@@ -24,7 +30,7 @@ def integer(value, low, high):
     return value
 
 
-def local_model(root: Path, ref, *, wd14=False):
+def local_model(root: Path, ref, *, wd14=False, tts=False):
     if not isinstance(ref, str) or not ref or "\\" in ref or ":" in ref or PurePosixPath(ref).is_absolute() or any(p in {"", ".", ".."} or p.rstrip(" .") != p for p in ref.split("/")):
         raise WorkerError("INVALID_REQUEST")
     path = (root / ref).resolve()
@@ -32,7 +38,10 @@ def local_model(root: Path, ref, *, wd14=False):
         raise WorkerError("INVALID_REQUEST")
     if not path.is_dir():
         raise WorkerError("MODEL_NOT_FOUND", 404)
-    if wd14:
+    if tts:
+        if not model_files(path):
+            raise WorkerError("MODEL_NOT_FOUND", 404)
+    elif wd14:
         if not all((path / name).is_file() for name in ("model.onnx", "selected_tags.csv")):
             raise WorkerError("MODEL_NOT_FOUND", 404)
     else:
@@ -57,6 +66,7 @@ def load_request(body, root):
         "reranker": {"batch_size"},
         "image_embedding": {"architecture", "dimensions", "normalize", "batch_size"},
         "vision": {"architecture", "task", "batch_size"},
+        "tts": {"architecture", "speed", "response_format"},
     }
     if kind not in allowed:
         raise WorkerError("MODEL_KIND_MISMATCH")
@@ -82,4 +92,23 @@ def load_request(body, root):
             raise WorkerError("UNSUPPORTED_CAPABILITY")
         if params.get("task", "caption") not in {"caption", "detailed_caption", "more_detailed_caption", "ocr", "tags"}:
             raise WorkerError("UNSUPPORTED_CAPABILITY")
-    return local_model(root, body["model_ref"], wd14=kind == "vision" and params["architecture"] == "wd14")
+    if kind == "tts":
+        integer(options["max_batch_size"], 1, 1)
+        if params.get("architecture") != "kokoro":
+            raise WorkerError("UNSUPPORTED_CAPABILITY")
+        speech_request({"input": "validation", "voice": "af_heart", "speed": params.get("speed"),
+                        "response_format": params.get("response_format"), "language": None})
+    return local_model(root, body["model_ref"], wd14=kind == "vision" and params["architecture"] == "wd14", tts=kind == "tts")
+
+
+def speech_request(body):
+    fields(body, ("input", "voice", "speed", "response_format", "language"))
+    if not isinstance(body["input"], str) or not body["input"].strip() or len(body["input"]) > MAX_INPUT_CHARS:
+        raise WorkerError("INVALID_REQUEST")
+    if not isinstance(body["voice"], str) or body["voice"] not in VOICE_IDS:
+        raise WorkerError("VOICE_UNAVAILABLE", 404)
+    speed = body["speed"]
+    if type(speed) not in {int, float} or not math.isfinite(speed) or not 0.25 <= speed <= 4:
+        raise WorkerError("INVALID_REQUEST")
+    if body["response_format"] not in FORMATS or body["language"] not in (None, LANGUAGES[body["voice"][0]]):
+        raise WorkerError("INVALID_REQUEST")

@@ -27,7 +27,8 @@ PHASE5_REVISION = "0007_phase5_cleanup"
 CHAT_CONFIGURATION_REVISION = "0008_chat_configuration"
 PET_FOUNDATION_REVISION = "0009_pet_foundation"
 RUNTIME_MAINTENANCE_REVISION = "0010_runtime_maintenance"
-HEAD_REVISION = RUNTIME_MAINTENANCE_REVISION
+TTS_REVISION = "0011_tts"
+HEAD_REVISION = TTS_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

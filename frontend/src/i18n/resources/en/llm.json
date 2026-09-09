@@ -53,7 +53,8 @@
     "embedding": "Text embedding",
     "reranker": "Reranker",
     "image_embedding": "Image embedding",
-    "vision": "Vision"
+    "vision": "Vision",
+    "tts": "Text to speech"
   },
   "states": {
     "unknown": "Unchecked",
@@ -93,7 +94,13 @@
     "document_instruction": "Document prefix",
     "query_instruction": "Query prefix",
     "architecture": "Architecture",
-    "task": "Task"
+    "task": "Task",
+    "speed": "Speech speed",
+    "response_format": "Audio format"
+  },
+  "voices": {
+    "title": "Preset voices", "id": "Voice ID", "availability": "Availability", "available": "Available", "missing": "Missing or invalid file", "loading": "Loading voices...",
+    "languages": { "en-US": "American English", "en-GB": "British English", "ja-JP": "Japanese", "zh-CN": "Mandarin Chinese", "es-ES": "Spanish", "fr-FR": "French", "hi-IN": "Hindi", "it-IT": "Italian", "pt-BR": "Brazilian Portuguese" }
   },
   "connection": {
     "timeout_seconds": "Request timeout (seconds)",

@@ -42,7 +42,7 @@ In **Settings > Models**, choose one backend:
    model weights manually under data/models, then create a managed profile with
    that runtime, variant and inventory reference.
 
-Each profile has one of five kinds, an internal UUID, a unique public alias,
+Each profile has one of six kinds, an internal UUID, a unique public alias,
 capabilities, parameters and lifecycle settings. Choose the default chat model
 and optionally a separate auxiliary model. New sessions select and save that
 default, or the first enabled LLM when it is unavailable. Both chat selectors
@@ -57,10 +57,12 @@ selection and remain unchanged when it is missing or fails.
 | reranker | data/models/rerankers | Python worker |
 | image_embedding | data/models/image_embeddings | Python worker |
 | vision | data/models/vision | Python worker |
+| tts | data/models/tts | Python worker, ONNX CPU |
 
 Inventory returns references relative to data/models, for example
-`llms/example.gguf`. Python models use native Transformers checkpoints; WD14
-uses model.onnx plus selected_tags.csv. Image input to chat requires an external
+`llms/example.gguf`. Most torch-cpu models use native Transformers checkpoints;
+WD14 uses model.onnx plus selected_tags.csv. Kokoro uses the
+[ONNX speech layout](#offline-kokoro-speech). Image input to chat requires an external
 vision-capable LLM; managed llama projector support is not implemented.
 
 The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
@@ -121,7 +123,7 @@ defines processing visibility and elapsed time.
 ## External API
 
 In **Models > External service**, configure a key and enable the service. Mark
-LLM/embedding profiles externally visible. Requests use public aliases, not
+LLM/embedding/TTS profiles externally visible. Requests use public aliases, not
 internal UUIDs. The service is disabled by default, accepts loopback clients
 only, and shares inference/lifecycle with internal callers without writing chat
 or Knowledge records. It forwards tool definitions/calls and never executes tools.
@@ -160,6 +162,34 @@ capabilities and unavailable models produce explicit errors without substitution
 [Models](docs/contracts/models.md#external-inference-api) owns request rules;
 [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior.
 Public rerank and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
+
+### Offline Kokoro Speech
+
+Place the Kokoro v1.0 FP32 ONNX model, config/tokenizer JSON files and
+`voices/<id>.bin` under `data/models/tts/Kokoro-82M-onnx`. The fixed catalog has
+54 voices; extra files are ignored and missing/invalid voices are unavailable.
+Place the supplied `en_core_web_sm-any-py3-none-any.whl` (model version 3.7.1)
+under `data/models/_auxiliary/en_core_web_sm`. The installer validates its checksum
+and installs it locally. Model weights and language models are never downloaded.
+
+Install **python-worker / onnx-cpu** in Models > Runtimes, then create a TTS
+profile with architecture Kokoro and model reference `tts/Kokoro-82M-onnx`.
+The separate CPU environment includes language processors and MP3 encoding,
+without PyTorch or Transformers. First load and synthesis work offline.
+
+```powershell
+Invoke-RestMethod "$apiBase/audio/voices?model=kokoro" -Headers $headers
+$speechBody = @{ model = 'kokoro'; input = 'Hello, this is a voice test.';
+  voice = 'af_heart'; response_format = 'wav'; speed = 1.0 } | ConvertTo-Json
+Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
+  -ContentType 'application/json' -Body $speechBody -OutFile speech.wav
+```
+
+Use `response_format=mp3` for MP3 (the default). The response is a complete audio
+file; no chat or attachment record is created. `tts.language`, when supplied,
+must match the voice. SSE, cloning and application playback are deferred.
+`GET /v1/audio/voices` is a Workbench extension; source=temporary returns an empty
+list until cloning is implemented. OpenAI SDK speech calls use the standard fields.
 
 ## HTTP contract
 
@@ -235,6 +265,19 @@ Browser checks for chat, runtime maintenance and resource management run with
 `npx playwright install chromium`. Tests start and stop an isolated fixture
 server on port 18767; WORKBENCH_BROWSER_PORT can select a free port. Screenshots
 and failure traces are under frontend/test-results.
+
+Explicit Kokoro installation and all-voice offline/SDK smoke checks use manually
+placed files and write generated samples under build/tts-smoke:
+
+```powershell
+uv run python -m scripts.smoke_tts_runtime --install-only
+uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
+```
+
+Installation uses the application's bundled uv; run its command before the
+temporary SDK environment. `--voice af_heart` limits the smoke test to one voice.
+The smoke test isolates caches, decodes both formats and checks actual worker
+termination on HTTP disconnect, followed by reload and another SDK request.
 
 For an explicit Windows CUDA installation/GPU check using a manually placed
 GGUF, run `uv run --no-sync python -m
