@@ -69,6 +69,9 @@ class ManagedAdapter:
             if profile.runtime_id == "python-worker":
                 from ai_workbench.workers.common import WorkerError, local_model
                 try:
+                    if self.entry.variant == "audio-cuda":
+                        from ai_workbench.workers.audio_catalog import audio_model
+                        return audio_model(self.supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
                     return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
                         wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
                 except WorkerError as exc:
@@ -99,8 +102,12 @@ class ManagedAdapter:
                 if not self.process:
                     await self._start(profile, path, executable)
                 if not self.single_model and profile.id not in self.loaded:
-                    await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
+                    metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
                         "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.runtime_options})
+                    if self.entry.variant == "audio-cuda":
+                        if not isinstance(metadata.get("device_name"), str):
+                            raise ModelError("RUNTIME_BROKEN", "Audio worker did not report its execution device.", 503)
+                        self.device_name = metadata["device_name"]
                 self.loaded.add(profile.id)
                 return self.snapshot(profile)
             except BaseException as exc:
@@ -132,7 +139,11 @@ class ManagedAdapter:
             ready = self.run_dir / "ready.json"
             env.update(WORKBENCH_WORKER_TOKEN=self.token, WORKBENCH_WORKER_READY=str(ready),
                        WORKBENCH_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
-            if is_transformers(profile):
+            if self.entry.variant == "audio-cuda":
+                env.update(WORKBENCH_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
+                if getattr(self, "validation", False):
+                    env["WORKBENCH_AUDIO_VALIDATION"] = "1"
+            if is_transformers(profile) or self.entry.variant == "audio-cuda":
                 cache = self.run_dir / "cache"
                 env.update(WORKBENCH_MODEL_REF=profile.model_ref,
                            WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.runtime_options),
@@ -243,7 +254,7 @@ class ManagedAdapter:
                 if not isinstance(error, dict) or not isinstance(error.get("code", "MODEL_UNAVAILABLE"), str):
                     raise ValueError("Invalid worker error")
                 code = error.get("code", "MODEL_UNAVAILABLE")
-                allowed = {"INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE", "VOICE_UNAVAILABLE", "AUDIO_TOO_LARGE", "RUNTIME_BROKEN"}
+                allowed = {"INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE", "VOICE_UNAVAILABLE", "AUDIO_TOO_LARGE", "AUDIO_TOO_LONG", "INVALID_AUDIO", "RUNTIME_BROKEN", "RUNTIME_DEVICE_UNAVAILABLE"}
                 raise ModelError(code if code in allowed else "MODEL_UNAVAILABLE", "The managed worker could not complete this operation.", response.status_code)
             return value
         except asyncio.CancelledError:
@@ -391,3 +402,30 @@ class PythonWorkerAdapter(ManagedAdapter):
 
     async def vision(self, profile, images):
         return await self._batches(profile, "/vision", images, "images", "outputs", VisionResult)
+
+
+class AudioWorkerAdapter(ManagedAdapter):
+    async def validate_reference(self, profile, reference):
+        async with self.lock:
+            if self.failed:
+                raise ModelError("MODEL_UNAVAILABLE", "Load the Audio model again after its process failure.", 503)
+            if not self.process:
+                try:
+                    self.supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
+                    executable = await self.supervisor.verify(self.entry)
+                    await self._start(profile, self._model_path(profile), executable)
+                except BaseException:
+                    await self._stop()
+                    self.changed()
+                    raise
+        value = await self._rpc("POST", "/reference", {"reference": reference})
+        if type(value.get("frames")) is not int or value["frames"] < 1 or type(value.get("sample_rate")) is not int or not 8000 <= value["sample_rate"] <= 192000:
+            raise ModelError("PROVIDER_PROTOCOL_ERROR", "Audio worker returned invalid reference metadata.", 502)
+        return value
+
+    async def speech(self, profile, text, voice, speed, response_format, language, *, reference, model_options):
+        return await self._rpc("POST", "/speech", {"profile_id": profile.id, "input": text, "reference": reference,
+            "speed": speed, "response_format": response_format, "language": language, "model_options": model_options}, audio_format=response_format)
+
+    async def transcribe(self, profile, reference):
+        return await self._rpc("POST", "/transcribe", {"profile_id": profile.id, "reference": reference})

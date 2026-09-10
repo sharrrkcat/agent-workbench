@@ -11,8 +11,9 @@ Agent Workbench provides local chat and a single-key, loopback-only
 OpenAI-compatible model service. Internal and external inference share
 ModelManager. Local execution uses managed llama-server or isolated Python
 workers; external connections use the OpenAI-compatible protocol.
-Kokoro ONNX provides offline CPU TTS through `/v1/audio/speech`, with fixed preset
-voice discovery and MP3/WAV output. Chat playback and voice cloning are deferred.
+Kokoro ONNX and Windows PyTorch Audio provide offline MP3/WAV TTS through
+`/v1/audio/speech`. Kokoro uses presets; English Chatterbox uses temporary voice
+references or one-request audio. Chat playback and live capture are deferred.
 
 Personas own identity, prompts and resource bindings; sessions own concrete model
 selection, context, generation and opt-in Harness configuration. Chat combines the

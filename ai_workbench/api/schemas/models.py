@@ -8,7 +8,7 @@ from ai_workbench.core.models.schema import (
     ModelKind, ModelSettings, ProviderInput, ProviderProfile, RerankParameters, VisionParameters, TTSParameters,
 )
 from ai_workbench.core.models.runtimes.schema import (
-    CatalogEntry, DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions,
+    AudioOptions, CatalogEntry, DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions,
     TransformersOptions, OnnxCPUOptions, RuntimeJob,
 )
 
@@ -18,8 +18,8 @@ class EmptyRuntimeOptions(ApiModel):
 
 
 LlmRuntimeOptions = EmptyRuntimeOptions | LlamaCPUOptions | LlamaCUDAOptions | TransformersOptions
-WorkerRuntimeOptions = EmptyRuntimeOptions | OnnxCPUOptions | TransformersOptions
-RuntimeOptions = LlmRuntimeOptions | OnnxCPUOptions | TransformersOptions
+WorkerRuntimeOptions = EmptyRuntimeOptions | AudioOptions | OnnxCPUOptions | TransformersOptions
+RuntimeOptions = LlmRuntimeOptions | AudioOptions | OnnxCPUOptions | TransformersOptions
 Parameters = GenerationParameters | EmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "runtime_options"})
 
@@ -58,7 +58,7 @@ class VisionModel(ModelFields):
 class TTSModel(ModelFields):
     kind: Literal["tts"]
     parameters: TTSParameters = Field(default_factory=TTSParameters)
-    runtime_options: EmptyRuntimeOptions | OnnxCPUOptions = Field(default_factory=EmptyRuntimeOptions)
+    runtime_options: EmptyRuntimeOptions | AudioOptions | OnnxCPUOptions = Field(default_factory=EmptyRuntimeOptions)
 
 
 class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel,

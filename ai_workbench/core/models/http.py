@@ -37,7 +37,7 @@ def guard(request: Request, settings) -> None:
         raise ModelError("AUTH_INVALID", "Invalid API key.", 401)
 
 
-async def read_request(request: Request, settings, schema):
+async def read_body(request: Request, settings):
     limit = settings.max_request_mb * 1024 * 1024
     length = request.headers.get("content-length")
     if length is not None:
@@ -54,6 +54,11 @@ async def read_request(request: Request, settings, schema):
         if len(body) + len(chunk) > limit:
             raise ModelError("REQUEST_TOO_LARGE", "Request exceeds the configured body limit.", 413)
         body.extend(chunk)
+    return bytes(body)
+
+
+async def read_request(request: Request, settings, schema):
+    body = await read_body(request, settings)
     try:
         return schema.model_validate_json(body)
     except ValidationError as exc:

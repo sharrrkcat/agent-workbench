@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from ai_workbench.api.schemas.common import ApiModel
+from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
 from ai_workbench.core.models.schema import ChatDelta, ChatMessage, Usage
 
 
@@ -21,13 +21,30 @@ class ModelList(ApiModel):
 class VoiceItem(ApiModel):
     id: str
     model: str
-    source: Literal["preset"]
+    source: Literal["preset", "temporary"]
     language: str
-    expires_at: None = None
+    expires_at: ApiTimestamp | None = None
 
 
 class VoiceAvailability(VoiceItem):
     available: bool
+
+
+class VoiceReferenceResponse(ApiModel):
+    voice_id: str
+    model: str
+    source: Literal["temporary"] = "temporary"
+    expires_at: ApiTimestamp
+
+
+class VoiceReferenceUpload(ApiModel):
+    model: str = Field(min_length=1)
+    file: bytes = Field(description="One WAV or MP3 reference, at most 8 MiB and 30 decoded seconds.", json_schema_extra={"format": "binary"})
+
+
+class VoiceReferenceDeleted(ApiModel):
+    deleted: bool
+    voice_id: str
 
 
 class VoiceList(ApiModel):

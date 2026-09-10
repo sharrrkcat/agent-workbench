@@ -5,8 +5,9 @@ Freeze date: 2026-09-09.
 
 This plan owns the accepted target for runtime families, dependency maintenance,
 device selection and Whisper duration limits. The [Models contract](../contracts/models.md)
-describes implemented behavior. Windows Transformers and catalog cleanup are the
-current implementation round; Infinity, Audio and WD14 migration remain pending.
+describes implemented behavior. Windows Transformers, Windows Audio and catalog
+cleanup are implemented; Infinity and WD14 migration remain pending. Audio exposes
+English Chatterbox; Qwen3-TTS/Whisper currently have private acceptance tooling only.
 
 Keep this plan active until runtime implementation and acceptance are complete.
 Update owning contracts as each behavior is implemented, then delete this plan
@@ -89,11 +90,11 @@ compatibility: the complete lock and dependency declarations must describe the
 combination actually validated. Do not track unpinned upstream branches or treat
 unresolved dependency constraints as a successful compatibility check.
 
-Python 3.12, Transformers 4.57.3 and NumPy 1.26.4 are starting points for Audio
-compatibility validation, not approved release pins. Torch/Torchaudio, Chatterbox
-and remaining versions must be selected and tested before locking a release.
-The Audio Transformers version is independent of PyTorch Transformers' v5 serve
-environment. No current upstream-version combination is guaranteed by this plan.
+The Windows Audio release has an application-owned full lock and patched Chatterbox
+wheel; its exact pins and current support limits belong to the Models contract.
+The Audio Transformers version remains independent of the v5 serve environment.
+Dependency upgrades require the three-engine matrix together; candidate upstream
+versions do not establish compatibility or extend platform support.
 
 ### Voicebox design evidence
 
@@ -109,8 +110,8 @@ This is evidence for application-owned dependency maintenance and engine
 adaptation, not proof that arbitrary current upstream versions coexist or that
 Voicebox's entire process/packaging design belongs in this project. In
 particular, [Chatterbox 0.1.7][chatterbox-deps] declares Transformers 5.2.0 while
-[Qwen-TTS 0.1.1][qwen-deps] declares 4.57.3. Resolving this for the shared Audio
-environment remains implementation and validation work.
+[Qwen-TTS 0.1.1][qwen-deps] declares 4.57.3. The Windows release resolves this with
+versioned, auditable Chatterbox metadata and validates the installed combination.
 
 ## Whisper duration boundary
 
@@ -124,29 +125,27 @@ Do not silently truncate to the first 30 seconds or automatically segment longer
 recordings. Long-form transcription is outside this frozen scope. The explicit
 duration guard must run before feature extraction can apply its own truncation.
 
-Voice-cloning uploads, temporary voice interfaces, playback and live capture are
-outside this runtime freeze. Their existing boundaries remain in
-[future model services](../FUTURE_MODEL_SERVICES.md#voice-cloning-and-text-analysis)
-and the implemented Models contract; this plan adds no interfaces for them.
+The approved Windows Audio scope also implements English Chatterbox temporary
+references and one-request audio; [Models](../contracts/models.md#chatterbox-and-temporary-references)
+owns those interfaces and TTL semantics. Public Qwen3-TTS/Whisper interfaces,
+multilingual Chatterbox, playback and live capture remain outside this round under
+[future model services](../FUTURE_MODEL_SERVICES.md#voice-cloning-and-text-analysis).
 
 ## Outstanding implementation and acceptance
 
-- Completed in this round: the code-owned catalog now exposes validated
-  llama-server, ONNX CPU, Windows Transformers CUDA and explicit unsupported
-  Infinity/Audio placeholders. Torch CPU, Vulkan, ONNX GPU, DINOv2 and Florence
-  bindings were removed. Windows Transformers has a complete lock, managed
-  offline child server and CPU/CUDA validation with Qwen3.5-0.8B.
+- Implemented: llama-server, ONNX CPU, Windows Transformers and Windows Audio
+  catalog entries, complete locks, offline managed workers and Chatterbox references.
+  Torch CPU, Vulkan, ONNX GPU, DINOv2 and Florence bindings were removed.
+  Infinity remains an unsupported placeholder. Linux Audio is unsupported;
+  no Linux Audio package is built or verified in the Windows implementation round.
 - Remaining: move WD14 into the ONNX environment without a Torch import
-  requirement, and implement Infinity and Audio with complete locks and managed
+  requirement, and implement Infinity with complete locks and managed
   process adaptations. Candidate versions alone do not satisfy acceptance.
-- Run real inference for all three Audio engines on explicit CPU and CUDA paths.
-  Cover loading, repeated inference, manual unloading, cancellation, unavailable
-  CUDA errors and preservation of unrelated workers. Re-run the three-engine
-  matrix together for dependency upgrades.
-- Verify Whisper below 30 seconds and exactly 30 seconds succeeds for valid
-  inputs. An input longer than 30 seconds by one decoded sample must fail before
-  inference, with no transcript, truncation or automatic segmentation. Check
-  that misleading duration metadata cannot bypass the decoded-duration guard.
+- Windows Audio acceptance covers all three engines on explicit CPU/CUDA paths:
+  loading, repeated inference, manual unloading, cancellation, unavailable CUDA
+  errors and preservation of unrelated workers. Whisper accepts below/exactly 30
+  seconds and rejects one decoded sample above; deterministic checks cover
+  misleading duration metadata. Re-run the matrix together for dependency upgrades.
 - Verify Infinity architecture support, embedding index invalidation/rebuilding
   and unavailable-reranker RRF behavior. Validate platform support before exposing
   it in the catalog; retain unverified limits in the owning contract.

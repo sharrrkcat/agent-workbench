@@ -23,7 +23,7 @@ export const runtimeFamilyKey = (runtimeId: string, variant: string) => runtimeI
 export const runtimeBuild = (variant: string) => variant === 'cpu' || variant === 'onnx-cpu' ? 'CPU' : 'CUDA';
 
 export function selectManagedRuntime(value: ModelInput, entry: RuntimeCatalogEntry): ModelInput {
-  if (!entry.supported || !entry.kinds.includes(value.kind) || entry.variant === 'infinity-cuda' || entry.variant === 'audio-cuda') {
+  if (!entry.supported || !entry.kinds.includes(value.kind) || entry.variant === 'infinity-cuda') {
     throw new Error('Unsupported runtime selection');
   }
   const properties = entry.options_schema.properties as Record<string, { default?: unknown }> | undefined;
@@ -31,7 +31,13 @@ export function selectManagedRuntime(value: ModelInput, entry: RuntimeCatalogEnt
   for (const [key, property] of Object.entries(properties || {})) {
     if (typeof property.default === 'number' || typeof property.default === 'string') runtime_options[key] = property.default;
   }
-  const parameters = { ...value.parameters };
+  let parameters = { ...value.parameters };
+  if (value.kind === 'tts') {
+    const architecture = entry.variant === 'audio-cuda' ? 'chatterbox' : 'kokoro';
+    parameters = architecture === value.parameters.architecture ? parameters : {
+      architecture, speed: value.parameters.speed ?? 1, response_format: value.parameters.response_format ?? 'mp3',
+    };
+  }
   const capabilities = { ...value.capabilities, vision: false };
   if (entry.variant === 'transformers-cuda') {
     delete parameters.presence_penalty;

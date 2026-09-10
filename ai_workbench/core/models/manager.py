@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import math
 import os
@@ -55,6 +57,22 @@ class ModelManager:
         self._load_locks: dict[tuple, asyncio.Lock] = {}
         self._invalidating: set[str | tuple | None] = set()
         self._closed = False
+        self._voice_references = None
+
+    @property
+    def voice_references(self):
+        if self._voice_references is None:
+            from ai_workbench.core.models.voice_references import VoiceReferences
+            if not self.runtime_supervisor:
+                raise ModelError("RUNTIME_UNSUPPORTED", "Managed Audio is not configured.", 503)
+            self._voice_references = VoiceReferences(self.runtime_supervisor.root)
+        return self._voice_references
+
+    def voice_binding(self, profile):
+        version = self.runtime_supervisor.entry(profile.runtime_id, profile.runtime_variant).version
+        value = [profile.id, profile.model_ref, profile.runtime_id, profile.runtime_variant,
+                 profile.parameters["architecture"], profile.runtime_options, version]
+        return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
     def profile(self, profile_id: str, kind: str | None = None) -> ModelProfile:
         try:
@@ -83,6 +101,10 @@ class ModelManager:
         if not profile.runtime_id:
             return profile.provider_profile_id
         key = (profile.runtime_id, profile.runtime_variant)
+        if profile.runtime_variant == "audio-cuda":
+            # Audio profiles own independent processes and cancellation scopes.
+            return key + (profile.parameters.get("architecture"), getattr(profile, "id", "draft"), profile.model_ref,
+                          json.dumps(profile.runtime_options, sort_keys=True, separators=(",", ":")))
         if profile.runtime_id == "llama-server" or is_transformers(profile):
             # Keep identity stable if a weight file/link disappears after loading.
             # Filesystem containment is rechecked at every health/load operation.
@@ -132,8 +154,12 @@ class ModelManager:
                         raise ValueError()
                     if profile.runtime_id == "python-worker":
                         from ai_workbench.workers.common import local_model
-                        local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
-                            wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
+                        if profile.runtime_variant == "audio-cuda":
+                            from ai_workbench.workers.audio_catalog import audio_model
+                            audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
+                        else:
+                            local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
+                                wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
                 except (OSError, ValueError, WorkerError):
                     status.state, status.error_code = "unavailable", "MODEL_NOT_FOUND"
         if not profile.enabled or not profile.runtime_id and (provider is None or not provider.enabled):
@@ -171,8 +197,8 @@ class ModelManager:
                     raise ModelError("RUNTIME_UNSUPPORTED", "This model kind is not implemented by the selected runtime.", 503)
                 supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
             if provider_id not in self._slots:
-                from ai_workbench.core.models.runtimes.adapters import LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
-                cls = TransformersServerAdapter if is_transformers(profile) else LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
+                from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
+                cls = AudioWorkerAdapter if profile.runtime_variant == "audio-cuda" else TransformersServerAdapter if is_transformers(profile) else LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
                 adapter = cls(supervisor, profile, lambda: self._managed_changed(provider_id))
                 self._slots[provider_id] = ProviderSlot(adapter, asyncio.Semaphore(1))
             return ManagedQueue(), self._slots[provider_id]
@@ -187,10 +213,12 @@ class ModelManager:
         return provider, self._slots[provider.id]
 
     @asynccontextmanager
-    async def _provider_lease(self, provider_id, key: tuple | None = None, profile=None, require_runtime=True):
+    async def _provider_lease(self, provider_id, key: tuple | None = None, profile=None, require_runtime=True, on_admit=None):
         provider, slot = self._slot(provider_id, profile, require_runtime)
         if slot.active + slot.queued >= provider.concurrency + provider.queue_size:
             raise ModelError("MODEL_BUSY", "Provider queue is full.", 429)
+        if on_admit:
+            on_admit()
         slot.queued += 1
         slot.model_queued[key] = slot.model_queued.get(key, 0) + 1
         self._publish(key)
@@ -221,13 +249,16 @@ class ModelManager:
             self._publish(key)
 
     @asynccontextmanager
-    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True):
+    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None):
         key = self._key(profile)
-        idle = self._idle.pop(key, None)
-        if idle and idle is not asyncio.current_task():
-            idle.cancel()
+        def admitted():
+            if on_admit:
+                on_admit()
+            idle = self._idle.pop(key, None)
+            if idle and idle is not asyncio.current_task():
+                idle.cancel()
         try:
-            async with self._provider_lease(self.backend_key(profile), key, profile, require_runtime) as slot:
+            async with self._provider_lease(self.backend_key(profile), key, profile, require_runtime, admitted) as slot:
                 try:
                     if autoload:
                         async with self._load_locks.setdefault(key, asyncio.Lock()):
@@ -238,7 +269,7 @@ class ModelManager:
                     if release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
                         await self._release_policy(profile, slot.adapter)
         except ModelError as exc:
-            if exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED"}:
+            if exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}:
                 self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
             raise
 
@@ -406,6 +437,8 @@ class ModelManager:
         profile = self.profiles.get(profile_id)
         if profile.kind != "tts":
             raise ModelError("MODEL_KIND_MISMATCH", "Voice discovery requires a tts profile.")
+        if profile.parameters["architecture"] == "chatterbox":
+            return []
         path = None
         if self.runtime_supervisor:
             try:
@@ -414,11 +447,15 @@ class ModelManager:
                 pass
         return [{**voice, "model": profile.alias} for voice in voices(path)]
 
-    async def speech(self, profile_id: str, request: SpeechRequest):
+    async def speech(self, profile_id: str, request: SpeechRequest, *, credential=None):
         from ai_workbench.workers.tts_catalog import LANGUAGES, VOICE_IDS, valid_voice
         from ai_workbench.core.models.runtimes.schema import model_path
         from ai_workbench.workers.audio import validate_audio
         profile = self.profile(profile_id, "tts")
+        if profile.parameters["architecture"] == "chatterbox":
+            return await self._chatterbox_speech(profile, request, credential)
+        if request.tts.reference_audio is not None or request.tts.model_options is not None:
+            raise ModelError("INVALID_REQUEST", "Reference audio and model_options require Chatterbox.")
         if request.voice not in VOICE_IDS:
             raise ModelError("VOICE_UNAVAILABLE", "Voice ID is not supported by this model.", 404)
         if request.tts.language is not None and request.tts.language != LANGUAGES[request.voice[0]]:
@@ -441,6 +478,135 @@ class ModelManager:
             except (ValueError, EOFError) as exc:
                 raise ModelError("PROVIDER_PROTOCOL_ERROR", "Worker returned invalid audio.", 502) from exc
             return result
+
+    def _voice_credential(self, credential):
+        from ai_workbench.core.models.voice_references import credential_id
+        settings = self.settings.get()
+        if credential is not None and not settings.external_enabled:
+            raise ModelError("SERVICE_DISABLED", "The inference service is disabled.", 503)
+        current = credential_id(settings.external_api_key)
+        if credential is not None and credential != current:
+            raise ModelError("AUTH_INVALID", "The inference credential has changed.", 401)
+        return current
+
+    def _chatterbox_profile(self, profile_id):
+        profile = self.profile(profile_id, "tts")
+        if profile.parameters["architecture"] != "chatterbox" or profile.runtime_variant != "audio-cuda":
+            raise ModelError("UNSUPPORTED_CAPABILITY", "Reference audio requires a managed Chatterbox profile.")
+        return profile
+
+    async def _validate_reference(self, profile, entry):
+        async with self._lease(profile, autoload=False) as adapter:
+            return await adapter.validate_reference(profile, entry.path.name)
+
+    async def _stage_reference(self, data, audio_format):
+        references = self.voice_references
+        task = asyncio.create_task(asyncio.to_thread(references.stage, data, audio_format))
+        try:
+            entry = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # A file write cannot be interrupted. Finish it before dropping its lease.
+            try:
+                entry = await task
+            except Exception:
+                pass
+            else:
+                await asyncio.to_thread(references.release, entry)
+            raise
+        if self._closed:
+            await asyncio.to_thread(references.release, entry)
+            raise ModelError("MODEL_UNAVAILABLE", "Model services are shutting down.", 503)
+        return entry
+
+    def _voice_admission(self, profile, binding, credential):
+        self._voice_credential(credential)
+        current = self._chatterbox_profile(profile.id)
+        if self.voice_binding(current) != binding or not current.external_enabled:
+            raise ModelError("VOICE_UNAVAILABLE", "The model binding changed before admission.", 404)
+
+    async def create_voice_reference(self, profile_id, data, audio_format, credential):
+        from ai_workbench.core.time import isoformat_utc
+        profile = self._chatterbox_profile(profile_id)
+        credential = self._voice_credential(credential)
+        binding = self.voice_binding(profile)
+        entry = await self._stage_reference(data, audio_format)
+        published = False
+        try:
+            await self._validate_reference(profile, entry)
+            self._voice_admission(profile, binding, credential)
+            self.voice_references.publish(entry, profile.id, binding, credential)
+            published = True
+            return {"voice_id": entry.id, "model": profile.alias, "source": "temporary", "expires_at": isoformat_utc(entry.expires_at)}
+        finally:
+            if not published:
+                await asyncio.to_thread(self.voice_references.release, entry)
+
+    def temporary_voice_list(self, profile_id, credential):
+        profile = self.profile(profile_id, "tts")
+        credential = self._voice_credential(credential)
+        if self._voice_references is None or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] != "chatterbox":
+            return []
+        return [{**item, "model": profile.alias} for item in self._voice_references.list(profile.id, self.voice_binding(profile), credential)]
+
+    def delete_voice_reference(self, identifier, credential):
+        credential = self._voice_credential(credential)
+        if self._voice_references is not None:
+            for profile in self.profiles.list("tts"):
+                if not profile.enabled or not profile.external_enabled or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] != "chatterbox":
+                    continue
+                try:
+                    self._voice_references.delete(identifier, profile.id, self.voice_binding(profile), credential)
+                    return {"deleted": True, "voice_id": identifier}
+                except ModelError as exc:
+                    if exc.code != "VOICE_UNAVAILABLE":
+                        raise
+        raise ModelError("VOICE_UNAVAILABLE", "Voice ID is unavailable for this credential.", 404)
+
+    def invalidate_voice_references(self, profile_id=None):
+        if self._voice_references:
+            self._voice_references.invalidate(profile_id)
+
+    async def _chatterbox_speech(self, profile, request, credential):
+        from ai_workbench.workers.audio import validate_audio
+        from ai_workbench.workers.audio_catalog import CHATTERBOX_DEFAULTS
+        self._chatterbox_profile(profile.id)
+        credential = self._voice_credential(credential)
+        if request.tts.language not in {None, "en-US"}:
+            raise ModelError("INVALID_REQUEST", "English Chatterbox accepts only en-US.")
+        options = {key: value for key, value in profile.parameters.items() if key in CHATTERBOX_DEFAULTS}
+        if request.tts.model_options:
+            options.update(request.tts.model_options.model_dump(exclude_none=True))
+        binding = self.voice_binding(profile)
+        entry = None
+        staged = request.tts.reference_audio is not None
+        if staged:
+            reference = request.tts.reference_audio
+            entry = await self._stage_reference(base64.b64decode(reference.data_base64, validate=True), reference.format)
+        else:
+            self.voice_references.check(request.voice, profile.id, binding, credential)
+        def admitted():
+            nonlocal entry
+            self._voice_admission(profile, binding, credential)
+            if not staged:
+                entry = self.voice_references.admit(request.voice, profile.id, binding, credential)
+        try:
+            if staged:
+                await self._validate_reference(profile, entry)
+            speed = request.speed if request.speed is not None else profile.parameters["speed"]
+            response_format = request.response_format or profile.parameters["response_format"]
+            async with self._lease(profile, on_admit=admitted) as adapter:
+                result = await adapter.speech(profile, request.input, request.voice, speed, response_format, request.tts.language,
+                    reference=entry.path.name, model_options=options)
+                try:
+                    if result.response_format != response_format:
+                        raise ValueError("Unexpected audio format")
+                    validate_audio(result.data, response_format)
+                except ValueError as exc:
+                    raise ModelError("PROVIDER_PROTOCOL_ERROR", "Worker returned invalid audio.", 502) from exc
+                return result
+        finally:
+            if entry is not None:
+                await asyncio.to_thread(self.voice_references.release, entry)
 
     def _managed_changed(self, backend):
         slot = self._slots.get(backend)
@@ -506,3 +672,5 @@ class ModelManager:
             await slot.adapter.close()
         self._slots.clear()
         self._idle.clear()
+        if self._voice_references:
+            await asyncio.to_thread(self._voice_references.close)

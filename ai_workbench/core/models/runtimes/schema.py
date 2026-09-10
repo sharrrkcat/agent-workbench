@@ -63,6 +63,13 @@ class TransformersOptions(Strict):
     intraop_threads: int = Field(default=4, ge=1, le=256, strict=True)
 
 
+class AudioOptions(Strict):
+    """Options for the shared Windows CUDA-build Audio worker."""
+
+    device: Literal["cpu", "cuda"] = "cuda"
+    intraop_threads: int = Field(default=4, ge=1, le=256, strict=True)
+
+
 def is_transformers(profile) -> bool:
     return (profile.runtime_id, profile.runtime_variant) == ("python-worker", "transformers-cuda")
 

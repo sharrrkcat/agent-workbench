@@ -43,8 +43,20 @@ export function ProfileParameters({
       ) : value.kind === 'tts' ? (
         <>
           <Field label={t('params.architecture')}>
-            <select value="kokoro" disabled><option value="kokoro">Kokoro-82M v1.0 (ONNX)</option></select>
+            <select value={String(value.parameters.architecture ?? 'kokoro')} disabled>
+              <option value="kokoro">Kokoro-82M v1.0 (ONNX)</option>
+              <option value="chatterbox">{t('chatterboxEnglish')}</option>
+            </select>
           </Field>
+          {value.parameters.architecture === 'chatterbox' ? [
+            ['exaggeration', 0.5, 0, 2, 0.05], ['cfg_weight', 0.5, 0, 1, 0.05],
+            ['temperature', 0.8, 0.01, 5, 0.01], ['repetition_penalty', 1.2, 1, 2, 0.05],
+            ['min_p', 0.05, 0, 1, 0.01], ['top_p', 1, 0.01, 1, 0.01],
+          ].map(([key, initial, min, max, step]) => (
+            <NumberInput key={String(key)} label={t('params.' + key)}
+              value={Number(value.parameters[String(key)] ?? initial)} min={Number(min)} max={Number(max)} step={Number(step)}
+              onChange={(next) => patchParam(String(key), next ?? initial)} />
+          )) : null}
           <NumberInput label={t('params.speed')} value={Number(value.parameters.speed ?? 1)} min={0.25} max={4} step={0.05}
             onChange={(speed) => patchParam('speed', speed ?? 1)} />
           <Field label={t('params.response_format')}>

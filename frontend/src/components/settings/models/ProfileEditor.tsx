@@ -30,6 +30,7 @@ export function ProfileEditor({
   const runtimeEntries = catalog.filter((entry) => entry.kinds.includes(model?.value.kind as ModelInput['kind'])
     || entry.runtime_id === model?.value.runtime_id && entry.variant === model?.value.runtime_variant);
   const transformers = model?.value.runtime_variant === 'transformers-cuda';
+  const audio = model?.value.runtime_variant === 'audio-cuda';
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -192,7 +193,7 @@ export function ProfileEditor({
                       }
                     />
                   ))}
-                  {transformers ? (
+                  {transformers || audio ? (
                     <Field label={t('runtimeDevice')}>
                       <select value={String(model.value.runtime_options.device ?? 'cuda')}
                         onChange={(e) => patchModel({ runtime_options: { ...model.value.runtime_options, device: e.target.value } })}>
@@ -207,6 +208,7 @@ export function ProfileEditor({
                   ) : null}
                 </div>
                 {transformers ? <p className="model-empty">{t('transformersDeviceHint')}</p> : null}
+                {audio ? <p className="model-empty">{t('audioDeviceHint')}</p> : null}
               </>
             ) : null}
             {model.value.kind === 'llm' ? (
@@ -227,7 +229,11 @@ export function ProfileEditor({
             ) : null}
             <h3>{t('parameters')}</h3>
             <ProfileParameters value={model.value} onChange={(parameters) => patchModel({ parameters })} />
-            {model.value.kind === 'tts' && model.id && profiles.find((profile) => profile.id === model.id)?.model_ref === model.value.model_ref
+            {model.value.kind === 'tts' && model.value.parameters.architecture === 'chatterbox'
+              ? <p className="model-empty">{t('chatterboxReferenceHint')}</p> : null}
+            {model.value.kind === 'tts' && model.value.parameters.architecture === 'kokoro' && model.id
+              && profiles.find((profile) => profile.id === model.id)?.parameters.architecture === 'kokoro'
+              && profiles.find((profile) => profile.id === model.id)?.model_ref === model.value.model_ref
               ? <PresetVoices profileId={model.id} /> : null}
             <h3>{t('lifecycle')}</h3>
             <div className="model-form-grid">

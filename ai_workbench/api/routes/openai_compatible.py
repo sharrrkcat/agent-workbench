@@ -8,17 +8,22 @@ import time
 from contextlib import aclosing
 from uuid import uuid4
 from typing import Literal
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, StreamingResponse
+from starlette.datastructures import UploadFile
+from starlette.formparsers import MultiPartException, MultiPartParser
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import SSE_RESPONSE, request_body
 from ai_workbench.api.schemas.common import error_responses
-from ai_workbench.api.schemas.inference import ChatCompletion, EmbeddingResponse, ModelList, VoiceList
+from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ModelList, VoiceList,
+    VoiceReferenceDeleted, VoiceReferenceResponse, VoiceReferenceUpload)
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.http import guard, read_request
+from ai_workbench.core.models.http import guard, read_body, read_request
 from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, SpeechRequest
+from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
 router = APIRouter(prefix="/v1", tags=["openai-compatible"])
@@ -27,7 +32,8 @@ router = APIRouter(prefix="/v1", tags=["openai-compatible"])
 @router.get("/models", response_model=ModelList, response_model_exclude_unset=True,
             responses=error_responses(401, 403, 503), summary="List externally visible models")
 async def list_models(request: Request, state: RuntimeState = Depends(get_state)):
-    guard(request, state.model_settings.get())
+    settings = state.model_settings.get()
+    guard(request, settings)
     return {"object": "list", "data": [
         {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "workbench"}
         for p in state.model_profiles.list() if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts"}
@@ -38,7 +44,8 @@ async def list_models(request: Request, state: RuntimeState = Depends(get_state)
             summary="List available voices (Workbench extension)")
 async def audio_voices(request: Request, model: str | None = None, source: Literal["preset", "temporary"] | None = None,
                        state: RuntimeState = Depends(get_state)):
-    guard(request, state.model_settings.get())
+    settings = state.model_settings.get()
+    guard(request, settings)
     profiles = [state.model_manager.external_profile(model, "tts")] if model is not None else [
         p for p in state.model_profiles.list("tts") if p.enabled and p.external_enabled]
     data = []
@@ -47,7 +54,46 @@ async def audio_voices(request: Request, model: str | None = None, source: Liter
             for item in await asyncio.to_thread(state.model_manager.voice_list, profile.id):
                 if item["available"]:
                     data.append({key: value for key, value in item.items() if key != "available"})
+    if source != "preset":
+        for profile in profiles:
+            data.extend(await asyncio.to_thread(state.model_manager.temporary_voice_list, profile.id, credential_id(settings.external_api_key)))
     return {"object": "list", "data": data}
+
+
+@router.post("/audio/voice-references", response_model=VoiceReferenceResponse,
+             openapi_extra=request_body(VoiceReferenceUpload, "multipart/form-data"),
+             responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 502, 503, 504),
+             summary="Create a temporary voice ID (Workbench extension)")
+async def create_voice_reference(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    raw = await read_body(request, settings)
+    async def stream():
+        yield raw
+    try:
+        form = await MultiPartParser(request.headers, stream(), max_files=1, max_fields=1,
+            max_part_size=settings.max_request_mb * 1024 * 1024).parse()
+    except (MultiPartException, ValueError) as exc:
+        raise ModelError("INVALID_REQUEST", "Upload model and exactly one WAV or MP3 file.") from exc
+    try:
+        if len(form.multi_items()) != 2 or set(form) != {"model", "file"} or not isinstance(form["model"], str) or not isinstance(form["file"], UploadFile):
+            raise ModelError("INVALID_REQUEST", "Upload model and exactly one file field.")
+        profile = state.model_manager.external_profile(form["model"], "tts")
+        audio_format = Path(form["file"].filename or "").suffix.lower().removeprefix(".")
+        data = await form["file"].read(8 * 1024 * 1024 + 1)
+        return await speech_until_disconnect(request, state.model_manager.create_voice_reference(
+            profile.id, data, audio_format, credential_id(settings.external_api_key)))
+    finally:
+        await form.close()
+
+
+@router.delete("/audio/voice-references/{voice_id}", response_model=VoiceReferenceDeleted,
+               responses=error_responses(400, 401, 403, 404, 409, 503),
+               summary="Delete an unused temporary voice ID (Workbench extension)")
+async def delete_voice_reference(voice_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    return await asyncio.to_thread(state.model_manager.delete_voice_reference, voice_id, credential_id(settings.external_api_key))
 
 
 async def speech_until_disconnect(request: Request, operation):
@@ -81,7 +127,7 @@ async def speech(request: Request, state: RuntimeState = Depends(get_state)):
     guard(request, settings)
     payload = await read_request(request, settings, SpeechRequest)
     profile = state.model_manager.external_profile(payload.model, "tts")
-    result = await speech_until_disconnect(request, state.model_manager.speech(profile.id, payload))
+    result = await speech_until_disconnect(request, state.model_manager.speech(profile.id, payload, credential=credential_id(settings.external_api_key)))
     return Response(result.data, media_type=FORMATS[result.response_format], headers={"Cache-Control": "no-store"})
 
 

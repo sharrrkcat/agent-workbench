@@ -52,9 +52,12 @@ share useModelsStore. Drafts survive switching between Models tabs. Health,
 load, unload, inventory and runtime actions use the common model services.
 Local inventory/provider listing do not load weights. External unknown
 residency/unsupported unload remains visible.
-TTS profiles select Kokoro ONNX, the ONNX CPU runtime, speech speed and MP3/WAV
-defaults. Saved TTS editors show a read-only preset voice list grouped by language
-with local-file availability. Voices are request selections, not profile records.
+TTS profiles select Kokoro with ONNX CPU or English Chatterbox with Windows Audio,
+speech speed and MP3/WAV defaults. Audio exposes explicit CPU/CUDA selection and
+Chatterbox generation defaults. Switching runtimes changes architecture and clears
+incompatible parameters. Saved Kokoro editors show preset availability by language;
+Chatterbox explains reference-based API usage. Voices are request selections, not
+profile records. Temporary-reference ownership/expiry belong to [Models](models.md#chatterbox-and-temporary-references).
 
 Provider/settings reads omit secret keys and expose presence flags. PATCH
 omission retains a key; an explicit empty string clears it. External enablement

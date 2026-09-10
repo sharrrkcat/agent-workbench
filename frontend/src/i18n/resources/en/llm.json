@@ -96,7 +96,11 @@
     "architecture": "Architecture",
     "task": "Task",
     "speed": "Speech speed",
-    "response_format": "Audio format"
+    "response_format": "Audio format",
+    "exaggeration": "Expressiveness",
+    "cfg_weight": "Voice guidance (CFG)",
+    "repetition_penalty": "Repetition penalty",
+    "min_p": "Min P"
   },
   "voices": {
     "title": "Preset voices", "id": "Voice ID", "availability": "Availability", "available": "Available", "missing": "Missing or invalid file", "loading": "Loading voices...",
@@ -178,5 +182,8 @@
   "runtimeParams": { "threads": "CPU threads", "context_size": "Context size", "batch_size": "Prompt batch size", "gpu_layers": "GPU layers", "intraop_threads": "CPU threads", "max_batch_size": "Worker batch limit" },
   "runtimeStates": { "not_installed": "Not installed", "installing": "Maintenance in progress", "installed": "Installed", "broken": "Broken", "unsupported": "Unsupported", "interrupted": "Interrupted" },
   "jobStates": { "queued": "Queued", "running": "Running", "completed": "Completed", "failed": "Failed", "cancelled": "Cancelled", "interrupted": "Interrupted" },
-  "runtimeStages": { "queued": "Queued", "downloading": "Downloading", "extracting": "Extracting", "creating_environment": "Creating environment", "installing_packages": "Installing packages", "checking_packages": "Checking packages", "checking_program": "Checking executable", "verifying": "Verifying files", "scanning_cache": "Scanning cache", "pruning_cache": "Pruning cache", "cleaning_cache": "Clearing cache", "completed": "Completed", "already_installed": "Already installed" }
+  "runtimeStages": { "queued": "Queued", "downloading": "Downloading", "extracting": "Extracting", "creating_environment": "Creating environment", "installing_packages": "Installing packages", "checking_packages": "Checking packages", "checking_program": "Checking executable", "verifying": "Verifying files", "scanning_cache": "Scanning cache", "pruning_cache": "Pruning cache", "cleaning_cache": "Clearing cache", "completed": "Completed", "already_installed": "Already installed" },
+  "audioDeviceHint": "Windows Audio supports CPU or NVIDIA CUDA execution. CUDA must be available when selected.",
+  "chatterboxEnglish": "Chatterbox (English)",
+  "chatterboxReferenceHint": "English speech requires a temporary voice ID or reference audio through the speech API. Temporary voices expire after 30 minutes; admitted requests extend their remaining lifetime to at least 15 minutes."
 }

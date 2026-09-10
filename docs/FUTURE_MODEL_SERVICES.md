@@ -35,17 +35,15 @@ product boundary. This note adds no route, runtime variant or model kind.
 
 ## Voice cloning and text analysis
 
-Kokoro preset TTS is implemented under [Models](contracts/models.md#kokoro-tts).
-Chatterbox would add per-request reference audio or temporary voice IDs bound to
-the creating credential and model binding, without a voice-profile table.
-Temporary references start with 30 minutes. A valid admitted synthesis request
-sets expires_at=max(expires_at, now+15 minutes); queries do not renew and expired
-IDs cannot reactivate. Admitted requests retain resources until they finish or
-cancel. Restart or key replacement invalidates references; the current single key
-means clients sharing that key share access. Uploads, quotas and storage remain deferred.
+Kokoro presets and English Chatterbox references are implemented under
+[Models](contracts/models.md#chatterbox-and-temporary-references), which owns uploads,
+quotas, credential/profile binding and expiry. Public Qwen3-TTS/Whisper interfaces,
+multilingual Chatterbox, live capture and application playback remain deferred.
+The Windows Audio package includes Qwen3-TTS/Whisper only for shared-environment
+acceptance; their presence does not add public model kinds or API routes.
 
 The separate en_core_web_sm resource currently serves Misaki's English frontend.
 A future task-based text-analysis kind could support reusable tokenization,
 tagging or entity analysis with its own manager operation. That model would be
 one supported implementation, not a model-kind name. No separate NLP API or
-lifecycle is implemented. ONNX GPU and application speech playback are deferred.
+lifecycle is implemented. ONNX GPU remains excluded from the runtime families.

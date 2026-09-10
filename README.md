@@ -57,7 +57,7 @@ selection and remain unchanged when it is missing or fails.
 | reranker | data/models/rerankers | Infinity pending |
 | image_embedding | data/models/image_embeddings | Infinity pending |
 | vision | data/models/vision | WD14 entry retained; ONNX integration pending |
-| tts | data/models/tts | Python worker, ONNX CPU |
+| tts | data/models/tts | Kokoro ONNX CPU or English Chatterbox Windows Audio |
 
 Inventory returns references relative to data/models, for example
 `llms/example.gguf`. Native Transformers checkpoints use the managed
@@ -189,9 +189,36 @@ Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
 
 Use `response_format=mp3` for MP3 (the default). The response is a complete audio
 file; no chat or attachment record is created. `tts.language`, when supplied,
-must match the voice. SSE, cloning and application playback are deferred.
-`GET /v1/audio/voices` is a Workbench extension; source=temporary returns an empty
-list until cloning is implemented. OpenAI SDK speech calls use the standard fields.
+must match the voice. SSE and application playback are deferred.
+`GET /v1/audio/voices` is a Workbench extension; source=preset selects Kokoro voices.
+OpenAI SDK speech calls use the standard fields.
+
+### Offline Chatterbox Speech
+
+On Windows x64, install **python-worker / audio-cuda** in Models > Runtimes.
+Place the English ve.safetensors, t3_cfg.safetensors, s3gen.safetensors and
+tokenizer.json files under `data/models/tts/chatterbox`. Create a TTS profile
+using PyTorch Audio, model reference `tts/chatterbox`, and explicit CPU or NVIDIA
+CUDA execution. Chatterbox has generation defaults in the editor and no preset voices.
+
+Upload one WAV/MP3 reference (8 MiB, at most 30 decoded seconds) through the API:
+
+```powershell
+$voice = Invoke-RestMethod "$apiBase/audio/voice-references" -Method Post -Headers $headers `
+  -Form @{ model = 'chatterbox'; file = Get-Item './reference.wav' }
+$speechBody = @{ model = 'chatterbox'; input = 'Hello from my local voice.';
+  voice = $voice.voice_id; response_format = 'wav' } | ConvertTo-Json
+Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
+  -ContentType 'application/json' -Body $speechBody -OutFile speech.wav
+Invoke-RestMethod "$apiBase/audio/voice-references/$($voice.voice_id)" -Method Delete -Headers $headers
+```
+
+Temporary IDs are scoped to the key/profile, start with 30 minutes and gain at
+least 15 remaining minutes when admitted for speech. Listing does not renew them.
+Alternatively, omit voice and send `tts.reference_audio={format,data_base64}` for
+one request. `tts.language` only accepts en-US; `tts.model_options` overrides
+Chatterbox defaults. See [reference ownership and limits](docs/contracts/models.md#chatterbox-and-temporary-references).
+Qwen3-TTS/Whisper are package acceptance engines; public APIs and Linux Audio are deferred.
 
 ## HTTP contract
 
@@ -280,6 +307,16 @@ Installation uses the application's bundled uv; run its command before the
 temporary SDK environment. `--voice af_heart` limits the smoke test to one voice.
 The smoke test isolates caches, decodes both formats and checks actual worker
 termination on HTTP disconnect, followed by reload and another SDK request.
+
+Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
+`uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav`.
+Use a mono PCM16 24 kHz speech reference, stop Workbench first, and provide enough
+RAM/VRAM. The command installs/verifies the pinned package, then checks both CPU
+and CUDA, offline loading, MP3/WAV, references, cancellation/isolation and Whisper's
+30-second boundary. `--install-only`, `--skip-install`, `--device cpu|cuda` and
+`--engine chatterbox|qwen3tts|whisper` select stages. Reports/samples go to
+build/audio-smoke; Linux is rejected. Rebuild the metadata-patched wheel with
+`uv run python scripts/build_audio_wheel.py`; dependency upgrades require the full matrix.
 
 For an explicit Windows CUDA installation/GPU check using a manually placed
 GGUF, run `uv run --no-sync python -m

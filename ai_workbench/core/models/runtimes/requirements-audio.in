@@ -1,0 +1,25 @@
+# Voicebox 51f49dea Audio dependency strategy, restricted to these three engines.
+# Reproduce the local wheel with scripts/build_audio_wheel.py.
+chatterbox-tts==0.1.7+workbench.1
+qwen-tts==0.1.1
+torch==2.6.0+cu124
+torchaudio==2.6.0+cu124
+transformers==4.57.3
+accelerate==1.12.0
+numpy==1.26.4
+numba==0.60.0
+librosa==0.11.0
+soundfile==0.13.1
+onnxruntime==1.23.2
+conformer==0.3.2
+diffusers==0.29.0
+omegaconf==2.3.0
+pykakasi==2.3.0
+resemble-perth==1.0.1
+s3tokenizer==0.3.0
+spacy-pkuseg==1.0.1
+pyloudnorm==0.1.1
+safetensors==0.5.3
+lameenc==1.8.1
+setuptools==80.9.0
+wheel==0.45.1

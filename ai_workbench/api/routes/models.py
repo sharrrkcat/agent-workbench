@@ -112,6 +112,10 @@ async def update_profile(profile_id: str, payload: dict, state: RuntimeState = D
     state.model_manager.require_idle(state.model_manager.backend_key(updated))
     await state.model_manager.invalidate(state.model_manager.backend_key(current))
     result = state.model_profiles.update(profile_id, payload)
+    if current.kind == "tts" and (not result.enabled or not result.external_enabled or
+            (current.model_ref, current.runtime_id, current.runtime_variant, current.runtime_options, current.parameters.get("architecture")) !=
+            (result.model_ref, result.runtime_id, result.runtime_variant, result.runtime_options, result.parameters.get("architecture"))):
+        state.model_manager.invalidate_voice_references(profile_id)
     if current.kind == "embedding" and (current.provider_profile_id, current.model_ref, current.parameters, current.runtime_id, current.runtime_variant, current.runtime_options) != (result.provider_profile_id, result.model_ref, result.parameters, result.runtime_id, result.runtime_variant, result.runtime_options):
         _invalidate_profile_indexes(state, profile_id)
     return result.model_dump(mode="json")
@@ -137,6 +141,7 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
         raise ModelError("MODEL_IN_USE", "Remove session, unfinished run, default or Knowledge references before deleting this model.", 409)
     await state.model_manager.invalidate(state.model_manager.backend_key(profile))
     state.model_profiles.delete(profile_id)
+    state.model_manager.invalidate_voice_references(profile_id)
     return {"deleted": True}
 
 
@@ -182,10 +187,14 @@ async def model_settings(state: RuntimeState = Depends(get_state)):
 @router.patch("/settings", response_model=ModelSettingsResponse, response_model_exclude_unset=True,
               openapi_extra=request_body(ModelSettingsPatch), responses=error_responses(404, 422, 503))
 async def update_model_settings(payload: dict, state: RuntimeState = Depends(get_state)):
-    values = ModelSettings.model_validate({**state.model_settings.get().model_dump(), **payload})
+    current = state.model_settings.get()
+    values = ModelSettings.model_validate({**current.model_dump(), **payload})
     for profile_id in (values.default_model_profile_id, values.utility_model_profile_id):
         if profile_id:
             state.model_manager.profile(profile_id, "llm")
     if values.external_enabled and not values.external_api_key.strip():
         raise ModelError("SERVICE_MISCONFIGURED", "Set an API key before enabling the external service.", 422)
-    return public_settings(state.model_settings.patch(payload))
+    result = state.model_settings.patch(payload)
+    if result.external_api_key != current.external_api_key or not result.external_enabled:
+        state.model_manager.invalidate_voice_references()
+    return public_settings(result)

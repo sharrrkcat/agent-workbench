@@ -634,6 +634,9 @@ class RuntimeSupervisor:
         await self._command([uv, "venv", "--no-config", "--python", entry.python_key, "--python-preference", "only-managed", "--no-python-downloads", str(target)], env, self.root, log)
         self._stage(job, "installing_packages", log)
         build_options = ["--no-binary", "docopt,jaconv,jieba,unidic-lite", "--build-constraints", lock] if auxiliary else []
+        if entry.variant == "audio-cuda":
+            build_options = ["--no-binary", "antlr4-python3-runtime,sox", "--build-constraints", lock,
+                             "--find-links", CATALOG_ROOT / "wheels"]
         torch_index = ["--extra-index-url", settings.pytorch_index_url or entry.pytorch_index_url] if entry.pytorch_index_url else []
         await self._command([uv, "pip", "install", "--no-config", "--python", target / entry.executable, "--require-hashes", "--no-deps", "--only-binary", ":all:", *build_options,
             "--index-url", settings.pypi_index_url or "https://pypi.org/simple", *torch_index,
@@ -665,6 +668,17 @@ class RuntimeSupervisor:
                  "from transformers.cli.serving.model_manager import ModelManager; "
                  "from transformers.cli.serving.utils import GenerationState; "
                  "print('Transformers serve packages verified; CUDA execution is checked at model load')")
+        if entry.variant == "audio-cuda":
+            check = ("import sys, importlib.metadata; sys.path.insert(0, sys.argv[1]); "
+                     "from audio_engine import require_offline; require_offline(); "
+                     "import torch, torchaudio, transformers, numpy, onnxruntime, soundfile, lameenc; "
+                     "from chatterbox.tts import ChatterboxTTS; from qwen_tts import Qwen3TTSModel; "
+                     "from transformers import WhisperForConditionalGeneration, WhisperProcessor; "
+                     "assert torch.__version__ == torchaudio.__version__ == '2.6.0+cu124'; "
+                     "assert torch.version.cuda == '12.4' and transformers.__version__ == '4.57.3'; "
+                     "assert numpy.__version__ == '1.26.4'; "
+                     "assert importlib.metadata.version('chatterbox-tts') == '0.1.7+workbench.1'; "
+                     "print('Audio packages verified; CUDA execution is checked at model load')")
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
         await self._command([target / entry.executable, "-I", "-B", "-c", check, target / "worker"], env, self.root, log)
 

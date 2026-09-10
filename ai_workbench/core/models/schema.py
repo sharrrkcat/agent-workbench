@@ -107,9 +107,15 @@ class VisionParameters(StrictModel):
 
 
 class TTSParameters(StrictModel):
-    architecture: Literal["kokoro"] = "kokoro"
+    architecture: Literal["kokoro", "chatterbox"] = "kokoro"
     speed: float = Field(default=1.0, ge=0.25, le=4.0, strict=True)
     response_format: Literal["mp3", "wav"] = "mp3"
+    exaggeration: float | None = Field(default=None, ge=0.0, le=2.0, strict=True)
+    cfg_weight: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
+    temperature: float | None = Field(default=None, gt=0.0, le=5.0, strict=True)
+    repetition_penalty: float | None = Field(default=None, ge=1.0, le=2.0, strict=True)
+    min_p: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0, strict=True)
 
 
 PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "reranker": RerankParameters,
@@ -133,7 +139,7 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, TransformersOptions, is_transformers, llama_options, relative_ref
+        from ai_workbench.core.models.runtimes.schema import AudioOptions, OnnxCPUOptions, TransformersOptions, is_transformers, llama_options, relative_ref
         if self.runtime_id:
             if self.provider_profile_id or not self.runtime_variant:
                 raise ValueError("A managed model requires a runtime variant and no external connection")
@@ -158,15 +164,31 @@ class ModelInput(StrictModel):
                 elif self.runtime_variant == "infinity-cuda" and self.kind in {"embedding", "reranker", "image_embedding"}:
                     options_schema = TransformersOptions
                 elif self.runtime_variant == "audio-cuda" and self.kind == "tts":
-                    options_schema = TransformersOptions
+                    options_schema = AudioOptions
                 else:
                     raise ValueError("This managed Python backend is not implemented for the model kind")
                 self.runtime_options = options_schema.model_validate(self.runtime_options).model_dump()
         elif self.runtime_variant or self.runtime_options:
             raise ValueError("Runtime variant and options require runtime_id")
-        if self.kind == "tts" and (self.provider_profile_id or self.runtime_id and self.runtime_variant != "onnx-cpu"):
-            raise ValueError("TTS execution requires the managed onnx-cpu backend")
+        if self.kind == "tts":
+            if self.provider_profile_id:
+                raise ValueError("TTS execution requires a managed local backend")
+            if self.runtime_id and self.runtime_variant not in {"onnx-cpu", "audio-cuda"}:
+                raise ValueError("TTS execution requires the managed onnx-cpu or audio-cuda backend")
+        parameter_fields = set(self.parameters)
         self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
+        if self.kind == "tts" and self.parameters["architecture"] == "kokoro" and any(
+            key in parameter_fields
+            for key in ("exaggeration", "cfg_weight", "temperature", "repetition_penalty", "min_p", "top_p")
+        ):
+            raise ValueError("Chatterbox parameters require the chatterbox architecture")
+        if self.kind == "tts" and self.parameters["architecture"] == "chatterbox":
+            from ai_workbench.workers.audio_catalog import CHATTERBOX_DEFAULTS
+            self.parameters = {**CHATTERBOX_DEFAULTS, **self.parameters}
+        if self.kind == "tts" and self.runtime_variant == "audio-cuda" and self.parameters["architecture"] != "chatterbox":
+            raise ValueError("audio-cuda requires the chatterbox architecture")
+        if self.kind == "tts" and self.runtime_variant == "onnx-cpu" and self.parameters["architecture"] != "kokoro":
+            raise ValueError("onnx-cpu requires the kokoro architecture")
         if is_transformers(self) and any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
             raise ValueError("Transformers does not support nonzero presence or frequency penalties")
         if not self.name.strip() or not self.model_ref.strip():
@@ -346,14 +368,42 @@ class EmbeddingRequest(StrictModel):
         return value
 
 
+class ReferenceAudio(StrictModel):
+    format: Literal["wav", "mp3"]
+    data_base64: str = Field(min_length=4, max_length=16 * 1024 * 1024)
+
+    @field_validator("data_base64")
+    @classmethod
+    def valid_base64(cls, value: str):
+        import base64
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("reference audio must be valid base64") from exc
+        if not decoded or len(decoded) > 8 * 1024 * 1024:
+            raise ValueError("reference audio is empty or too large")
+        return value
+
+
+class ChatterboxRequestOptions(StrictModel):
+    exaggeration: float | None = Field(default=None, ge=0.0, le=2.0, strict=True)
+    cfg_weight: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
+    temperature: float | None = Field(default=None, gt=0.0, le=5.0, strict=True)
+    repetition_penalty: float | None = Field(default=None, ge=1.0, le=2.0, strict=True)
+    min_p: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0, strict=True)
+
+
 class TTSExtensions(StrictModel):
     language: Literal["en-US", "en-GB", "ja-JP", "zh-CN", "es-ES", "fr-FR", "hi-IN", "it-IT", "pt-BR"] | None = None
+    model_options: ChatterboxRequestOptions | None = None
+    reference_audio: ReferenceAudio | None = None
 
 
 class SpeechRequest(StrictModel):
     model: str = Field(min_length=1)
     input: str = Field(min_length=1, max_length=4096)
-    voice: str = Field(min_length=1, max_length=128)
+    voice: str | None = Field(default=None, min_length=1, max_length=128)
     speed: float | None = Field(default=None, ge=0.25, le=4.0, strict=True)
     response_format: Literal["mp3", "wav"] | None = None
     stream_format: Literal["audio"] = "audio"
@@ -365,6 +415,12 @@ class SpeechRequest(StrictModel):
         if not value.strip():
             raise ValueError("Speech input must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def valid_voice_source(self):
+        if (self.voice is None) == (self.tts.reference_audio is None):
+            raise ValueError("Provide exactly one of voice or tts.reference_audio")
+        return self
 
 
 class Usage(BaseModel):

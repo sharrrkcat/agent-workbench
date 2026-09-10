@@ -96,7 +96,11 @@
     "architecture": "架构",
     "task": "任务",
     "speed": "语速",
-    "response_format": "音频格式"
+    "response_format": "音频格式",
+    "exaggeration": "表现力",
+    "cfg_weight": "音色引导（CFG）",
+    "repetition_penalty": "重复惩罚",
+    "min_p": "最小概率 Min P"
   },
   "voices": {
     "title": "预置音色", "id": "Voice ID", "availability": "可用状态", "available": "可用", "missing": "文件缺失或无效", "loading": "正在读取音色…",
@@ -178,5 +182,8 @@
   "runtimeParams": { "threads": "CPU 线程数", "context_size": "上下文长度", "batch_size": "提示词批次大小", "gpu_layers": "GPU 层数", "intraop_threads": "CPU 线程数", "max_batch_size": "Worker 批次上限" },
   "runtimeStates": { "not_installed": "未安装", "installing": "维护中", "installed": "已安装", "broken": "已损坏", "unsupported": "不支持", "interrupted": "已中断" },
   "jobStates": { "queued": "排队中", "running": "执行中", "completed": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断" },
-  "runtimeStages": { "queued": "排队中", "downloading": "下载中", "extracting": "解压中", "creating_environment": "创建环境", "installing_packages": "安装依赖", "checking_packages": "检查依赖", "checking_program": "检查程序", "verifying": "校验文件", "scanning_cache": "统计缓存", "pruning_cache": "清理无效缓存", "cleaning_cache": "清空缓存", "completed": "已完成", "already_installed": "已经安装" }
+  "runtimeStages": { "queued": "排队中", "downloading": "下载中", "extracting": "解压中", "creating_environment": "创建环境", "installing_packages": "安装依赖", "checking_packages": "检查依赖", "checking_program": "检查程序", "verifying": "校验文件", "scanning_cache": "统计缓存", "pruning_cache": "清理无效缓存", "cleaning_cache": "清空缓存", "completed": "已完成", "already_installed": "已经安装" },
+  "audioDeviceHint": "Windows Audio 支持 CPU 或 NVIDIA CUDA 执行。选择 CUDA 时必须有可用设备。",
+  "chatterboxEnglish": "Chatterbox（仅英语）",
+  "chatterboxReferenceHint": "英语语音合成需要通过语音 API 提供临时音色 ID 或参考音频。临时音色在 30 分钟后过期；已进入执行或等待队列的请求会将剩余有效期延长至至少 15 分钟。"
 }

@@ -5,12 +5,13 @@ import platform
 from pathlib import Path
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.runtimes.schema import CatalogEntry, OnnxCPUOptions, TransformersOptions, RuntimeArtifact, llama_options
+from ai_workbench.core.models.runtimes.schema import AudioOptions, CatalogEntry, OnnxCPUOptions, TransformersOptions, RuntimeArtifact, llama_options
 
 CATALOG_ROOT = Path(__file__).parent
 LLAMA_VERSION = "b10809"
 ONNX_VERSION = "1.0.0"
 TRANSFORMERS_VERSION = "1.0.0"
+AUDIO_VERSION = "1.0.0"
 PYTHON_VERSION = "3.12.11"
 # Exact interpreter artifacts selected by the application's pinned uv 0.11.8.
 PYTHON_ARTIFACTS = {
@@ -23,6 +24,8 @@ PYTHON_ARTIFACTS = {
 }
 ONNX_FILES = ["common.py", "server.py", "protocol.py", "tts_engine.py", "tts_catalog.py", "audio.py"]
 TRANSFORMERS_FILES = ["common.py", "transformers_server.py", "transformers_engine.py"]
+AUDIO_FILES = ["common.py", "server.py", "protocol.py", "tts_catalog.py", "audio.py",
+               "audio_catalog.py", "audio_engine.py", "audio_server.py"]
 # GitHub release asset digests, verified from ggml-org/llama.cpp b10809.
 LLAMA_ASSETS = {
     "windows": ("llama-b10809-bin-win-cpu-x64.zip", "9df3158ed228a641a4b127942d7f459f24c9e13f04682659d05c00c80099b6b5", "llama-server.exe"),
@@ -75,28 +78,30 @@ def catalog(os_name: str | None = None, machine: str | None = None) -> list[Cata
     for variant in ("onnx-cpu", "transformers-cuda", "infinity-cuda", "audio-cuda"):
         onnx = variant == "onnx-cpu"
         transformers = variant == "transformers-cuda"
-        implemented = onnx or transformers
-        lock = CATALOG_ROOT / f"requirements-{'onnx' if onnx else 'transformers'}-{os_name}.lock"
-        supported = x64 and lock.is_file() and (onnx and os_name in {"windows", "linux"} or transformers and os_name == "windows")
-        files = ONNX_FILES if onnx else TRANSFORMERS_FILES if transformers else []
+        audio = variant == "audio-cuda"
+        implemented = onnx or transformers or audio
+        family = "onnx" if onnx else "audio" if audio else "transformers"
+        lock = CATALOG_ROOT / f"requirements-{family}-{os_name}.lock"
+        supported = x64 and lock.is_file() and (onnx and os_name in {"windows", "linux"} or (transformers or audio) and os_name == "windows")
+        files = ONNX_FILES if onnx else TRANSFORMERS_FILES if transformers else AUDIO_FILES if audio else []
         kinds = {"onnx-cpu": ["tts"], "transformers-cuda": ["llm"],
                  "infinity-cuda": ["embedding", "reranker", "image_embedding"], "audio-cuda": ["tts"]}[variant]
         result.append(CatalogEntry(
             runtime_id="python-worker", variant=variant,
-            version=ONNX_VERSION if onnx else TRANSFORMERS_VERSION if transformers else "pending",
+            version=ONNX_VERSION if onnx else TRANSFORMERS_VERSION if transformers else AUDIO_VERSION if audio else "pending",
             platform=os_name, supported=supported,
             reason=None if supported else "RUNTIME_UNSUPPORTED" if implemented else "RUNTIME_NOT_IMPLEMENTED", archive_format="venv",
             executable="Scripts/python.exe" if os_name == "windows" else "bin/python",
             requirements=lock.name if supported else None,
             sha256=text_digest(lock) if supported else None,
             worker_sha256=worker_digest(files) if supported else None,
-            worker_files=files, worker_entrypoint="server.py" if onnx else "transformers_server.py" if transformers else None,
+            worker_files=files, worker_entrypoint="server.py" if onnx else "transformers_server.py" if transformers else "audio_server.py" if audio else None,
             python_version=PYTHON_VERSION if implemented else None,
             python_key=f"cpython-{PYTHON_VERSION}-{os_name}-x86_64-{'none' if os_name == 'windows' else 'gnu'}" if supported else None,
             python_artifact=PYTHON_ARTIFACTS.get(os_name) if supported else None,
-            pytorch_index_url="https://download.pytorch.org/whl/cu128" if transformers else None,
+            pytorch_index_url="https://download.pytorch.org/whl/cu128" if transformers else "https://download.pytorch.org/whl/cu124" if audio else None,
             kinds=kinds,
-            options_schema=(OnnxCPUOptions if onnx else TransformersOptions).model_json_schema() if implemented else {}))
+            options_schema=(OnnxCPUOptions if onnx else AudioOptions if audio else TransformersOptions).model_json_schema() if implemented else {}))
     return result
 
 
