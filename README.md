@@ -57,7 +57,7 @@ selection and remain unchanged when it is missing or fails.
 | reranker | data/models/rerankers | Infinity pending |
 | image_embedding | data/models/image_embeddings | Infinity pending |
 | vision | data/models/vision | WD14 entry retained; ONNX integration pending |
-| tts | data/models/tts | Kokoro ONNX CPU or English Chatterbox Windows Audio |
+| tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
 
 Inventory returns references relative to data/models, for example
 `llms/example.gguf`. Native Transformers checkpoints use the managed
@@ -215,10 +215,31 @@ Invoke-RestMethod "$apiBase/audio/voice-references/$($voice.voice_id)" -Method D
 
 Temporary IDs are scoped to the key/profile, start with 30 minutes and gain at
 least 15 remaining minutes when admitted for speech. Listing does not renew them.
-Alternatively, omit voice and send `tts.reference_audio={format,data_base64}` for
-one request. `tts.language` only accepts en-US; `tts.model_options` overrides
-Chatterbox defaults. See [reference ownership and limits](docs/contracts/models.md#chatterbox-and-temporary-references).
-Qwen3-TTS/Whisper are package acceptance engines; public APIs and Linux Audio are deferred.
+Alternatively, omit voice and send `tts.reference_audio={format,data_base64}` for one request. `tts.language`
+accepts only en-US; `tts.model_options` overrides defaults. See [reference limits](docs/contracts/models.md#audio-tts-and-temporary-references).
+
+### Offline Qwen3-TTS Base Speech
+
+Install Windows **python-worker / audio-cuda 1.1.0**, select **Qwen3-TTS (12Hz Base)**
+and explicit CPU/CUDA execution. Place the complete checkpoint, including generation config,
+text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is
+`tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
+
+Qwen shares Chatterbox's reference APIs/TTL. Optional reference_text in the upload form or
+tts.reference_audio enables full conditioning; absence uses speaker-embedding cloning.
+Supply the recording's actual words; the service does not transcribe or persist transcripts.
+
+```powershell
+$voice = Invoke-RestMethod "$apiBase/audio/voice-references" -Method Post -Headers $headers `
+  -Form @{ model = 'qwen'; file = Get-Item './reference.wav'; reference_text = 'Hello, this is a voice test.' }
+$speechBody = @{ model = 'qwen'; input = 'Hello from Qwen.'; voice = $voice.voice_id;
+  tts = @{ language = 'en-US'; model_options = @{ max_new_tokens = 2048 } } } | ConvertTo-Json -Depth 5
+Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
+  -ContentType 'application/json' -Body $speechBody -OutFile speech.mp3
+```
+
+Language omission/auto selects automatically; ten languages are supported, excluding Hindi. The editor/OpenAPI describe
+six generation controls; token limits can stop speech early. Qwen has no presets; temporary voices have language=null.
 
 ## HTTP contract
 
@@ -282,9 +303,8 @@ Pop-Location
 git diff --check
 ```
 
-Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS
-transport. Frontend tests cover API payloads, settings, translation, streaming,
-Persona/session isolation, model/runtime events, tool approval and Pet foundations.
+Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS. Frontend tests cover API
+payloads, settings, translation, streaming, isolation, model/runtime events, approvals and Pet foundations.
 Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
@@ -309,14 +329,12 @@ The smoke test isolates caches, decodes both formats and checks actual worker
 termination on HTTP disconnect, followed by reload and another SDK request.
 
 Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
-`uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav`.
-Use a mono PCM16 24 kHz speech reference, stop Workbench first, and provide enough
-RAM/VRAM. The command installs/verifies the pinned package, then checks both CPU
-and CUDA, offline loading, MP3/WAV, references, cancellation/isolation and Whisper's
-30-second boundary. `--install-only`, `--skip-install`, `--device cpu|cuda` and
-`--engine chatterbox|qwen3tts|whisper` select stages. Reports/samples go to
-build/audio-smoke; Linux is rejected. Rebuild the metadata-patched wheel with
-`uv run python scripts/build_audio_wheel.py`; dependency upgrades require the full matrix.
+`uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
+Use mono PCM16 24 kHz speech, stop Workbench first, and provide enough RAM/VRAM. The command installs/verifies
+the package, then checks CPU/CUDA, offline loading, MP3/WAV, Qwen cloning modes/languages, references,
+cancellation/isolation and Whisper's 30-second boundary. `--install-only`, `--skip-install`, `--device cpu|cuda`
+and `--engine chatterbox|qwen3tts|whisper` select stages. Reports/samples go to build/audio-smoke; Linux is rejected.
+Rebuild the patched wheel with `uv run python scripts/build_audio_wheel.py`; dependency upgrades require the full matrix.
 
 For an explicit Windows CUDA installation/GPU check using a manually placed
 GGUF, run `uv run --no-sync python -m

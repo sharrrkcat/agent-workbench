@@ -8,12 +8,12 @@ import wave
 
 if __package__:
     from .audio import validate_audio
-    from .audio_catalog import CHATTERBOX_DEFAULTS, MAX_DECODED_BYTES, MAX_REFERENCE_SECONDS
+    from .audio_catalog import CHATTERBOX_DEFAULTS, MAX_DECODED_BYTES, MAX_REFERENCE_SECONDS, QWEN3TTS_DEFAULTS, QWEN3TTS_LANGUAGES, QWEN3TTS_SUBTALKER
     from .common import WorkerError
     from .tts_catalog import MAX_AUDIO_BYTES, SAMPLE_RATE
 else:
     from audio import validate_audio
-    from audio_catalog import CHATTERBOX_DEFAULTS, MAX_DECODED_BYTES, MAX_REFERENCE_SECONDS
+    from audio_catalog import CHATTERBOX_DEFAULTS, MAX_DECODED_BYTES, MAX_REFERENCE_SECONDS, QWEN3TTS_DEFAULTS, QWEN3TTS_LANGUAGES, QWEN3TTS_SUBTALKER
     from common import WorkerError
     from tts_catalog import MAX_AUDIO_BYTES, SAMPLE_RATE
 
@@ -193,7 +193,7 @@ class ChatterboxEngine:
 
 
 class QwenTTSEngine:
-    """Package acceptance engine; not exposed through public model profiles."""
+    """Qwen3-TTS 12Hz Base with request-scoped voice conditioning."""
     def __init__(self, path, options):
         require_offline()
         import torch
@@ -201,13 +201,14 @@ class QwenTTSEngine:
         self.device, self.device_name = device_for(options)
         self.model = Qwen3TTSModel.from_pretrained(str(path), device_map=self.device,
             dtype=torch.float32 if self.device == "cpu" else torch.bfloat16,
-            attn_implementation="sdpa", local_files_only=True, trust_remote_code=False)
+            attn_implementation="sdpa", local_files_only=True, trust_remote_code=False, use_safetensors=True)
         self.dtype = self.model.model.dtype
 
-    def speech(self, text, reference, speed, response_format, model_options):
-        decode_audio(reference)
-        waves, rate = self.model.generate_voice_clone(text=text, language="English",
-            ref_audio=str(reference), x_vector_only_mode=True, max_new_tokens=1024)
+    def speech(self, text, reference, speed, response_format, model_options, *, language=None, reference_text=None):
+        audio, reference_rate = decode_audio(reference)
+        waves, rate = self.model.generate_voice_clone(text=text, language=QWEN3TTS_LANGUAGES[language or "auto"],
+            ref_audio=(audio, reference_rate), ref_text=reference_text, x_vector_only_mode=reference_text is None,
+            **{**QWEN3TTS_DEFAULTS, **model_options, **QWEN3TTS_SUBTALKER})
         return encode_waveform(waves[0], rate, speed, response_format)
 
 

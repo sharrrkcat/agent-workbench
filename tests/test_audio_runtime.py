@@ -250,7 +250,7 @@ class ChatterboxEngine:
     device_name = 'CPU'
     dtype = 'torch.float32'
     def __init__(self, path, options): pass
-    def speech(self, text, reference, speed, response_format, model_options):
+    def speech(self, text, reference, speed, response_format, model_options, **conditioning):
         if text == 'wait': time.sleep(60)
         if text == 'crash': os._exit(7)
         stream = io.BytesIO()
@@ -262,7 +262,8 @@ QwenTTSEngine = WhisperEngine = ChatterboxEngine
 '''
 
 
-def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(tmp_path):
+@pytest.mark.parametrize("architectures", [("chatterbox", "chatterbox"), ("qwen3tts", "chatterbox"), ("qwen3tts", "qwen3tts")])
+def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(tmp_path, architectures):
     async def scenario():
         service = supervisor(tmp_path)
         entry = next(item for item in catalog("windows", "x86_64") if item.variant == "audio-cuda").model_copy(update={"version": "fixture"})
@@ -285,8 +286,11 @@ def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(
         for name in CHATTERBOX_FILES:
             (path / name).write_bytes(b"fixture")
         assert audio_model(tmp_path / "data/models", "tts/chatterbox", "chatterbox") == path
-        first = manager.profiles.create(profile(runtime_options={"device": "cpu"}))
-        second = manager.profiles.create(profile(alias="second", runtime_options={"device": "cpu"}))
+        from tests.audio_fixtures import qwen_model
+        qwen_model(tmp_path / "data/models/tts/qwen")
+        first, second = [manager.profiles.create(profile(alias=alias, runtime_options={"device": "cpu"},
+            model_ref="tts/qwen" if architecture == "qwen3tts" else "tts/chatterbox", parameters={"architecture": architecture}))
+            for alias, architecture in zip(("first", "second"), architectures)]
         try:
             voices = [await manager.create_voice_reference(value.id, wav_bytes(), "wav", credential_id("test-key")) for value in (first, second)]
             for value in (first, second):

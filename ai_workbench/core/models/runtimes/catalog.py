@@ -11,7 +11,7 @@ CATALOG_ROOT = Path(__file__).parent
 LLAMA_VERSION = "b10809"
 ONNX_VERSION = "1.0.0"
 TRANSFORMERS_VERSION = "1.0.0"
-AUDIO_VERSION = "1.0.0"
+AUDIO_VERSION = "1.1.0"
 PYTHON_VERSION = "3.12.11"
 # Exact interpreter artifacts selected by the application's pinned uv 0.11.8.
 PYTHON_ARTIFACTS = {

@@ -231,6 +231,8 @@ export function ProfileEditor({
             <ProfileParameters value={model.value} onChange={(parameters) => patchModel({ parameters })} />
             {model.value.kind === 'tts' && model.value.parameters.architecture === 'chatterbox'
               ? <p className="model-empty">{t('chatterboxReferenceHint')}</p> : null}
+            {model.value.kind === 'tts' && model.value.parameters.architecture === 'qwen3tts'
+              ? <p className="model-empty">{t('qwenReferenceHint')}</p> : null}
             {model.value.kind === 'tts' && model.value.parameters.architecture === 'kokoro' && model.id
               && profiles.find((profile) => profile.id === model.id)?.parameters.architecture === 'kokoro'
               && profiles.find((profile) => profile.id === model.id)?.model_ref === model.value.model_ref

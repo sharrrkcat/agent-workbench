@@ -7,7 +7,7 @@ This plan owns the accepted target for runtime families, dependency maintenance,
 device selection and Whisper duration limits. The [Models contract](../contracts/models.md)
 describes implemented behavior. Windows Transformers, Windows Audio and catalog
 cleanup are implemented; Infinity and WD14 migration remain pending. Audio exposes
-English Chatterbox; Qwen3-TTS/Whisper currently have private acceptance tooling only.
+English Chatterbox and Qwen3-TTS Base; Whisper has private acceptance tooling only.
 
 Keep this plan active until runtime implementation and acceptance are complete.
 Update owning contracts as each behavior is implemented, then delete this plan
@@ -125,16 +125,16 @@ Do not silently truncate to the first 30 seconds or automatically segment longer
 recordings. Long-form transcription is outside this frozen scope. The explicit
 duration guard must run before feature extraction can apply its own truncation.
 
-The approved Windows Audio scope also implements English Chatterbox temporary
-references and one-request audio; [Models](../contracts/models.md#chatterbox-and-temporary-references)
-owns those interfaces and TTL semantics. Public Qwen3-TTS/Whisper interfaces,
-multilingual Chatterbox, playback and live capture remain outside this round under
+Windows Audio implements English Chatterbox and Qwen Base temporary references,
+one-request audio and optional Qwen transcripts; [Models](../contracts/models.md#audio-tts-and-temporary-references)
+owns those interfaces and TTL semantics. Qwen CustomVoice/VoiceDesign, public Whisper,
+multilingual Chatterbox, playback and live capture remain deferred under
 [future model services](../FUTURE_MODEL_SERVICES.md#voice-cloning-and-text-analysis).
 
 ## Outstanding implementation and acceptance
 
 - Implemented: llama-server, ONNX CPU, Windows Transformers and Windows Audio
-  catalog entries, complete locks, offline managed workers and Chatterbox references.
+  catalog entries, complete locks, offline workers and Chatterbox/Qwen Base references.
   Torch CPU, Vulkan, ONNX GPU, DINOv2 and Florence bindings were removed.
   Infinity remains an unsupported placeholder. Linux Audio is unsupported;
   no Linux Audio package is built or verified in the Windows implementation round.

@@ -114,7 +114,7 @@ def test_restart_cleanup_limits_and_shutdown_preserve_active_files(tmp_path):
 @pytest.mark.parametrize("patch", [
     {"runtime_variant": "onnx-cpu"}, {"provider_profile_id": "external"}, {"runtime_options": {"device": "auto"}},
     {"runtime_options": {"intraop_threads": True}}, {"kind": "asr"},
-    {"parameters": {"architecture": "qwen3tts"}}, {"parameters": {"architecture": "chatterbox", "temperature": 0}},
+    {"parameters": {"architecture": "chatterbox", "temperature": 0}},
     {"parameters": {"architecture": "chatterbox", "cfg_weight": 1.01}},
     {"parameters": {"architecture": "chatterbox", "exaggeration": True}},
     {"parameters": {"architecture": "chatterbox", "repetition_penalty": 0.5}},

@@ -24,30 +24,27 @@ reference or preprocessing changes invalidate indexes; see [Knowledge](knowledge
 
 ## Resolution and capabilities
 
-New sessions save the enabled global-default LLM or first enabled LLM (name/id order).
-Execution uses that selection; Persona has none. Missing selection returns
-MODEL_NOT_CONFIGURED; disabled/missing/wrong-kind selections fail without substitution.
-Default selection and `/api/health/details` use cached state, degraded without an
-enabled LLM. [Chat/context](chat-context.md) owns Persona/session/title selection.
+New sessions save the enabled default LLM or first enabled LLM (name/id order).
+Execution uses that selection; absence returns MODEL_NOT_CONFIGURED, and disabled/missing/wrong-kind
+selections fail without substitution. Default selection and `/api/health/details` are cached,
+degraded without an enabled LLM. [Chat/context](chat-context.md) owns Persona/session/title selection.
 
 LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties,
 seed and stop; explicit request values override defaults. Capabilities are
 streaming, tools, vision, json_object and json_schema; unsupported requests fail.
 
 External connections execute chat/text embeddings; llama-server and Transformers
-execute chat, ONNX executes Kokoro TTS and Audio executes English Chatterbox. Local embedding, rerank, image-embedding
-and WD14 entry points remain pending. Managed image input is unavailable;
+execute chat, ONNX executes Kokoro TTS and Audio executes Chatterbox/Qwen3-TTS Base.
+Local embedding, rerank, image-embedding and WD14 entry points remain pending. Managed image input is unavailable;
 external vision LLMs accept chat images.
 
 ## Lifecycle and status
 
-The manager owns health/load/unload, queues and cleanup: concurrency 1, 32 waiting
-slots, 30-second queue timeout. Discovery shares the queue; overflow/timeout returns
-`MODEL_BUSY`. Cancellation/stream closure releases responses, slots and tasks.
+The manager owns health/load/unload and queues: concurrency 1, 32 waiting slots, 30-second timeout.
+Discovery shares the queue; overflow/timeout returns `MODEL_BUSY`. Cancellation/stream closure releases resources.
 
-External aliases share residency/occupancy by `(provider_profile_id, model_ref)`.
-Managed GGUF aliases share normalized reference, process and options. Transformers
-aliases share a process/queue by path and runtime options; ONNX profiles share a variant queue.
+External aliases share residency/occupancy by `(provider_profile_id, model_ref)`; GGUF aliases share
+normalized reference, process and options. Transformers share by path/options; ONNX profiles share a variant queue.
 Audio profiles have separate processes, queues and cancellation scopes, even for the same model path.
 Release defaults to `manual`; opt-ins are `after_request` and `idle` (300 seconds).
 An enabled manual alias retains shared models; otherwise the longest idle timeout
@@ -61,25 +58,22 @@ wins. Release errors never replace successful inference. Crashes require explici
 | Connection inventory | GET `/providers/{id}/models` | Queued upstream list |
 | Local inventory | GET `/inventory?kind=...` | Relative file references only |
 
-Inventory/status never load weights, import heavy runtimes or download models.
-Roots under `data/models`: `llms`, `embeddings`, `rerankers`, `image_embeddings`,
-`vision`, `tts`. Inventory recognizes GGUF/model directories, including Kokoro ONNX
-and English Chatterbox. Auxiliary resources are excluded.
+Inventory/status never load weights, import heavy runtimes or download models. Roots under `data/models`:
+`llms`, `embeddings`, `rerankers`, `image_embeddings`, `vision`, `tts`. Inventory recognizes GGUF/model directories,
+Kokoro ONNX and Chatterbox/Qwen3-TTS 12Hz Base. Qwen requires checkpoint, generation config, text-tokenizer
+and nested speech-tokenizer files; unsupported types fail before engine imports. Auxiliary resources/tokenizers are excluded.
 
-Status contains state (`unknown`, `ready`, `unavailable`, `failed`, `unloaded`),
-residency (`unknown`, `loaded`, `unloaded`), unload_supported, active, queued and
-optional error_code. External health/load requires the advertised model_ref,
-reports unknown residency and returns `UNLOAD_UNSUPPORTED` on unload.
-Managed status adds runtime id/variant/version, installation/process state,
-latest job id and device_name. CUDA layer counts clear when the process stops.
-UI controls reflect these limits; [runs/streaming](runs-streaming.md) owns status events.
-`GET /api/runtime/resources` remains a cached CPU/RAM/GPU diagnostic snapshot.
+Status contains state (`unknown`, `ready`, `unavailable`, `failed`, `unloaded`), residency
+(`unknown`, `loaded`, `unloaded`), unload_supported, active, queued and optional error_code.
+External health/load requires the advertised model_ref, reports unknown residency and cannot unload (`UNLOAD_UNSUPPORTED`).
+Managed status adds runtime id/variant/version, installation/process state, latest job id and device_name.
+CUDA layer counts clear when the process stops; [runs/streaming](runs-streaming.md) owns status events.
+`GET /api/runtime/resources` is a cached CPU/RAM/GPU diagnostic snapshot.
 
 ## Managed catalog and installation
 
-The [runtime plan](../ai/PLAN_RUNTIME_FAMILIES.md) owns remaining work. Catalog reads at
-`GET /api/models/runtimes/catalog` expose pinned platforms, kinds and strict options;
-internal records own HTTPS URLs, SHA-256, archive format and executable.
+The [runtime plan](../ai/PLAN_RUNTIME_FAMILIES.md) owns remaining work. `GET /api/models/runtimes/catalog`
+exposes pinned platforms, kinds and strict options; internal records own HTTPS URLs, SHA-256, archive format and executable.
 
 | Variant | Availability |
 | --- | --- |
@@ -88,7 +82,7 @@ internal records own HTTPS URLs, SHA-256, archive format and executable.
 | python-worker/transformers-cuda | Windows x64 (validated with explicit CPU and CUDA execution) |
 | python-worker/onnx-cpu | Windows and Linux x64 (Kokoro; WD14 remains deferred) |
 | python-worker/infinity-cuda | Placeholder, unsupported |
-| python-worker/audio-cuda | Windows x64; Chatterbox, with private Qwen3-TTS/Whisper acceptance tooling |
+| python-worker/audio-cuda | Windows x64, version 1.1.0; Chatterbox and Qwen3-TTS Base; private Whisper acceptance |
 
 Separate PyTorch CPU distributions, Vulkan, torch-cu128 and onnx-gpu are removed.
 Linux Transformers, Infinity and Audio remain unsupported.
@@ -106,8 +100,7 @@ install/uninstall/cache job runs application-wide. Downloads stage under
 promote to `data/runtimes/llama-server/<version>/<variant>/` or
 `data/runtimes/py/<variant>/<version>/`.
 
-The bundled uv installs artifact-pinned Python and hash-locked dependencies in
-separate family environments, then checks dependency consistency and offline imports.
+Bundled uv installs artifact-pinned Python/hash-locked dependencies per family, then checks dependencies and offline imports.
 Transformers pins Python 3.12.11, Transformers 5.16.1, Torch 2.11.0+cu128 and
 Torchvision 0.26.0+cu128. Audio pins Python 3.12.11, Torch/Torchaudio 2.6.0+cu124,
 Transformers 4.57.3, Qwen-TTS 0.1.1 and NumPy 1.26.4. Its versioned Chatterbox
@@ -144,12 +137,10 @@ complete, totals, groups, warnings and skipped_links. Groups cover installations
 shared Python, cache, staging, process and other files. Paths are relative to
 data/runtimes; symlinks and Windows junctions are not followed.
 
-Usage fields are file_count, logical_bytes, unique_bytes, shared_bytes and
-exclusive_bytes. File identities deduplicate hard links; exclusive size excludes
-files with any link outside the group, including outside the scanned root. Totals
-deduplicate independently. Logical sizes omit compression/copy-on-write effects
-and do not predict disk recovery. Unreadable/changing metadata produces incomplete
-groups/totals and null unknown values. Reads never load models.
+Usage fields are file_count, logical_bytes, unique_bytes, shared_bytes and exclusive_bytes.
+File identities deduplicate hard links; exclusive size excludes files linked outside the group/root.
+Totals deduplicate independently; logical sizes omit compression/copy-on-write and do not predict disk recovery.
+Unreadable/changing metadata yields incomplete groups/totals and null unknown values. Reads never load models.
 
 POST /api/models/runtimes/cache/cleanup accepts mode=prune|clean and returns 202
 with a RuntimeJob. Bundled uv uses the explicit .cache directory, --no-config and
@@ -187,11 +178,10 @@ is disabled. ModelManager stops cancelled processes before freeing occupancy.
 Transformers tools require a supported response template and run only via Harness;
 vision, JSON output, nonzero presence/frequency penalties and explicit tool controls fail.
 Audio blocks Python networking, uses Chatterbox from_local with float32/attention
-adaptations, and shares its environment across three isolated engines. Qwen3-TTS
-and Whisper are private acceptance engines, without public kinds or endpoints.
-Whisper counts decoded samples before resampling/feature extraction: at most 30
-seconds, including exactly 30, with explicit rejection above it and no truncation,
-segmentation or partial transcript. Audio has no Linux package or validation.
+adaptations, and Qwen local-only loading with float32 CPU/bfloat16 CUDA and SDPA.
+Whisper remains a private acceptance engine without a public kind or endpoint.
+Whisper counts decoded samples before resampling/features: at most 30 seconds, including exactly 30;
+longer audio is rejected without truncation, segmentation or partial transcripts.
 CLIP, SigLIP2 and WD14 entry points remain; DINOv2 and Florence2 are removed.
 Integrity checks cover family-specific locks/sources and installed files, excluding bytecode caches.
 
@@ -218,33 +208,44 @@ workers before releasing occupancy and log REQUEST_CANCELLED with 499.
 SSE, external TTS providers and playback are unimplemented. Real Kokoro validation
 covers Windows x64; Linux has a pinned lock/catalog entry without native validation.
 
-## Chatterbox and temporary references
+## Audio TTS and temporary references
 
 English Chatterbox uses architecture=chatterbox and `python-worker/audio-cuda`.
 Local files are ve.safetensors, t3_cfg.safetensors, s3gen.safetensors and tokenizer.json.
-Speech shares Kokoro's text/speed/format/output-size/300-second timeout contract;
-tts.language may only be en-US. Profile defaults and tts.model_options overrides
-accept exaggeration=0.5 [0,2], cfg_weight=0.5 [0,1], temperature=0.8 (0,5],
-repetition_penalty=1.2 [1,2], min_p=0.05 [0,1], top_p=1 (0,1]. Unknown options fail
-before queue admission. Kokoro rejects Chatterbox options and reference audio.
+Speech shares Kokoro's text/speed/format/output-size/timeout contract; tts.language is en-US only.
+Profile defaults and tts.model_options accept exaggeration=0.5 [0,2], cfg_weight=0.5 [0,1], temperature=0.8 (0,5],
+repetition_penalty=1.2 [1,2], min_p=0.05 [0,1], top_p=1 (0,1]. Chatterbox has no presets.
 
-Chatterbox requires exactly one temporary voice ID or tts.reference_audio with
-format=wav|mp3 and data_base64. Multipart uploads contain model alias and one file;
-the response contains voice_id, model, source=temporary and expires_at. Both paths
-validate format and decoded samples before synthesis: 8 MiB encoded, 32 MiB
-decoded, 1/2 channels, 8..192 kHz and at most 30 seconds. Uploaded names never
-choose storage paths. One-request files are removed on completion/cancellation.
+Qwen3-TTS 12Hz Base uses architecture=qwen3tts and the same Audio backend/output
+contract. Main generation defaults are do_sample=true, temperature=0.9, top_p=1,
+top_k=50, repetition_penalty=1.05 and max_new_tokens=2048. Temperature/penalty are
+finite and positive, top_p is (0,1], top_k is an integer >=0, and max_new_tokens
+is 1..8192. The token cap may end speech before the text ends; input is passed whole.
+Secondary-codebook sampling stays enabled with temperature=0.9, top_p=1, top_k=50.
+Strict architecture-specific profile/request schemas reject other-architecture options before staging/admission.
+Omitted/null request options inherit the profile. OpenAPI describes defaults, meanings and restrictions.
+Qwen accepts en-US/en-GB (English), zh-CN, ja-JP, ko-KR, de-DE, fr-FR, ru-RU,
+pt-BR, es-ES and it-IT; omission/null/auto selects Auto. Hindi is unsupported.
+Base has no presets. Real validation covers the 0.6B Base checkpoint on CPU/CUDA
+with English/Chinese; other Base sizes are unverified. CustomVoice/VoiceDesign are deferred.
 
-References are bound to the creating key and model profile/binding. Clients sharing
-the service key share access. Creation grants 30 minutes; a valid execution/queue
-admission atomically applies max(expires_at, now+15 minutes). Overflow, discovery
-and rejected pre-admission requests do not renew. Expired IDs cannot reactivate.
+Chatterbox/Qwen require exactly one temporary voice ID or tts.reference_audio={format=wav|mp3,data_base64}.
+Multipart uploads contain model alias and one file; responses contain voice_id, model, source=temporary and expires_at.
+Both validate format/decoded samples before synthesis: 8 MiB encoded, 32 MiB decoded,
+1/2 channels, 8..192 kHz and at most 30 seconds. Uploaded names never choose storage paths.
+One-request files are removed on completion/cancellation. Kokoro rejects references and model_options.
+Qwen optionally accepts reference_text (1..4096 nonblank characters) in the upload form or inline reference_audio.
+Absence uses speaker-embedding cloning; presence uses full audio/transcript conditioning. Transcripts stay
+in reference memory until cleanup, are never returned/logged, and are not generated by ASR.
+
+References bind to the creating key and model profile/binding; clients sharing the key share access.
+Creation grants 30 minutes; valid execution/queue admission atomically applies max(expires_at, now+15 minutes).
+Overflow, discovery and pre-admission rejection do not renew. Expired IDs cannot reactivate.
 Active/queued requests pin files until completion or worker cancellation; deleting
 an unexpired active ID returns 409. Key replacement, service/profile disablement, profile
 removal/binding changes and restart invalidate IDs. Cleanup runs on reference
 access/release and restart. Limits are 64 files and 128 MiB per service, including
-one-request files. Storage is temporary under [data layout](../DATA_LAYOUT.md),
-without attachment, voice-profile or database records. Chatterbox has no presets.
+one-request files. Temporary storage follows [data layout](../DATA_LAYOUT.md), without attachment, voice-profile or database records.
 
 ## External inference API
 
@@ -259,7 +260,7 @@ credentials fail. Address checks ignore forwarded headers; the launcher binds lo
 | POST `/v1/embeddings` | Text embeddings |
 | POST `/v1/audio/speech` | Complete MP3/WAV speech |
 | GET `/v1/audio/voices` | Preset/temporary voice discovery (Workbench extension) |
-| POST `/v1/audio/voice-references` | Upload a temporary Chatterbox reference |
+| POST `/v1/audio/voice-references` | Upload a temporary Chatterbox/Qwen Base reference |
 | DELETE `/v1/audio/voice-references/{voice_id}` | Delete an unused reference |
 
 A public alias must be enabled, externally visible and match endpoint kind/capabilities.
@@ -267,9 +268,9 @@ Stateless calls create no sessions, messages, runs, attachments or Knowledge row
 Content-Length and received bytes obey max_request_mb. Strict schemas reject
 unsupported fields without echoing values. Responses include X-Request-Id; logs
 record final outcome/elapsed time without keys, prompts, content or raw provider errors.
-Voice discovery accepts optional model alias and source=preset|temporary. Items
-contain id, model, source, language and expires_at (null for presets). Only enabled
-public TTS profiles, valid preset files and the current key's unexpired references appear.
+Voice discovery accepts optional model alias and source=preset|temporary. Items contain id, model, source,
+language (null for Qwen references) and expires_at (null for presets). Only enabled public TTS profiles,
+valid preset files and the current key's unexpired references appear.
 
 Chat accepts system/developer/user/assistant/tool roles, text, user image_url
 parts (HTTP(S)/data URLs), function tools, tool_choice, parallel_tool_calls,
@@ -292,9 +293,8 @@ Public rerank and image generation are deferred; see [future services](../FUTURE
 
 ## HTTP schemas
 
-OpenAPI 3.1 covers management and `/v1` with strict kind/runtime/storage/job schemas.
-Responses omit keys, manifest hashes and log paths; invalid results become sanitized
-500 INTERNAL_ERROR. OperationIds are unique; omission/null/timestamp precision
-survive, including SQLite UTC text. `/v1` authenticates/bounds bytes before parsing
-and alone advertises Bearer/x-api-key alternatives. Operations document JSON/SSE/audio
-and X-Request-Id. See [check/export commands](../../README.md#http-contract).
+OpenAPI 3.1 covers management and `/v1` with strict schemas and unique OperationIds.
+Responses omit keys, manifest hashes and log paths; invalid results become sanitized 500 INTERNAL_ERROR.
+Omission/null/timestamp precision survive, including SQLite UTC text. `/v1` authenticates/bounds bytes before
+parsing and alone advertises Bearer/x-api-key alternatives. JSON/SSE/audio and X-Request-Id are documented;
+see [check/export commands](../../README.md#http-contract).

@@ -1,5 +1,5 @@
 """Ephemeral, credential-scoped audio files; no persistent voice records."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import hashlib
 from pathlib import Path
@@ -22,6 +22,7 @@ class VoiceReference:
     id: str
     path: Path
     size: int
+    reference_text: str | None = field(default=None, repr=False)
     profile_id: str = ""
     binding: str = ""
     credential: str = ""
@@ -52,7 +53,7 @@ class VoiceReferences:
         self.base = parent / ("session-" + secrets.token_hex(16))
         self.base.mkdir()
 
-    def stage(self, data: bytes, audio_format: str) -> VoiceReference:
+    def stage(self, data: bytes, audio_format: str, reference_text: str | None = None) -> VoiceReference:
         if audio_format not in {"wav", "mp3"} or not isinstance(data, bytes) or not data:
             raise ModelError("INVALID_AUDIO", "Provide a nonempty WAV or MP3 reference.")
         if len(data) > MAX_REFERENCE_BYTES:
@@ -71,7 +72,7 @@ class VoiceReferences:
             except OSError as exc:
                 path.unlink(missing_ok=True)
                 raise ModelError("VOICE_STORAGE_UNAVAILABLE", "Reference audio could not be stored.", 503) from exc
-            entry = VoiceReference(identifier, path, len(data))
+            entry = VoiceReference(identifier, path, len(data), reference_text=reference_text)
             self._entries[identifier] = entry
             return entry
 
@@ -121,11 +122,11 @@ class VoiceReferences:
             entry.valid = False
             self._cleanup()
 
-    def list(self, profile_id, binding, credential):
+    def list(self, profile_id, binding, credential, *, language="en-US"):
         with self._lock:
             now = self.clock()
             self._cleanup(now)
-            return [{"id": entry.id, "source": "temporary", "language": "en-US",
+            return [{"id": entry.id, "source": "temporary", "language": language,
                      "expires_at": isoformat_utc(entry.expires_at)} for entry in self._entries.values()
                     if entry.valid and entry.published and entry.expires_at > now
                     and (entry.profile_id, entry.binding, entry.credential) == (profile_id, binding, credential)]
@@ -144,6 +145,7 @@ class VoiceReferences:
                 entry.valid = False
             if not entry.active and (not entry.valid or not entry.published):
                 entry.path.unlink(missing_ok=True)
+                entry.reference_text = None
                 del self._entries[identifier]
         if self._closed and not self._entries and self.base.exists():
             self.base.rmdir()

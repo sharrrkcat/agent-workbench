@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
-from ai_workbench.core.models.schema import ChatDelta, ChatMessage, Usage
+from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ReferenceTranscript, Usage
 
 
 class PublicModel(ApiModel):
@@ -22,7 +22,7 @@ class VoiceItem(ApiModel):
     id: str
     model: str
     source: Literal["preset", "temporary"]
-    language: str
+    language: str | None = Field(description="Preset/architecture language, or null for Qwen references with no fixed synthesis language.")
     expires_at: ApiTimestamp | None = None
 
 
@@ -37,7 +37,7 @@ class VoiceReferenceResponse(ApiModel):
     expires_at: ApiTimestamp
 
 
-class VoiceReferenceUpload(ApiModel):
+class VoiceReferenceUpload(ReferenceTranscript, ApiModel):
     model: str = Field(min_length=1)
     file: bytes = Field(description="One WAV or MP3 reference, at most 8 MiB and 30 decoded seconds.", json_schema_extra={"format": "binary"})
 

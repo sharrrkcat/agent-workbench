@@ -12,8 +12,9 @@ OpenAI-compatible model service. Internal and external inference share
 ModelManager. Local execution uses managed llama-server or isolated Python
 workers; external connections use the OpenAI-compatible protocol.
 Kokoro ONNX and Windows PyTorch Audio provide offline MP3/WAV TTS through
-`/v1/audio/speech`. Kokoro uses presets; English Chatterbox uses temporary voice
-references or one-request audio. Chat playback and live capture are deferred.
+`/v1/audio/speech`. Kokoro uses presets; English Chatterbox and multilingual
+Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optional
+reference transcripts. Chat playback and live capture are deferred.
 
 Personas own identity, prompts and resource bindings; sessions own concrete model
 selection, context, generation and opt-in Harness configuration. Chat combines the

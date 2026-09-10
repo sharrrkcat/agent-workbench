@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, StreamingResponse
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
+from pydantic import ValidationError
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import SSE_RESPONSE, request_body
@@ -71,18 +72,25 @@ async def create_voice_reference(request: Request, state: RuntimeState = Depends
     async def stream():
         yield raw
     try:
-        form = await MultiPartParser(request.headers, stream(), max_files=1, max_fields=1,
+        form = await MultiPartParser(request.headers, stream(), max_files=1, max_fields=2,
             max_part_size=settings.max_request_mb * 1024 * 1024).parse()
     except (MultiPartException, ValueError) as exc:
         raise ModelError("INVALID_REQUEST", "Upload model and exactly one WAV or MP3 file.") from exc
     try:
-        if len(form.multi_items()) != 2 or set(form) != {"model", "file"} or not isinstance(form["model"], str) or not isinstance(form["file"], UploadFile):
-            raise ModelError("INVALID_REQUEST", "Upload model and exactly one file field.")
+        if (len(form.multi_items()) != len(form) or not {"model", "file"} <= set(form)
+                or set(form) - {"model", "file", "reference_text"}
+                or not isinstance(form["model"], str) or not isinstance(form["file"], UploadFile)):
+            raise ModelError("INVALID_REQUEST", "Upload model, exactly one file, and an optional Qwen reference_text.")
         profile = state.model_manager.external_profile(form["model"], "tts")
         audio_format = Path(form["file"].filename or "").suffix.lower().removeprefix(".")
         data = await form["file"].read(8 * 1024 * 1024 + 1)
+        try:
+            payload = VoiceReferenceUpload.model_validate({"model": form["model"], "file": data,
+                **({"reference_text": form["reference_text"]} if "reference_text" in form else {})})
+        except ValidationError as exc:
+            raise ModelError("INVALID_REQUEST", "Reference transcript must contain 1 to 4096 nonblank characters.") from exc
         return await speech_until_disconnect(request, state.model_manager.create_voice_reference(
-            profile.id, data, audio_format, credential_id(settings.external_api_key)))
+            profile.id, data, audio_format, credential_id(settings.external_api_key), reference_text=payload.reference_text))
     finally:
         await form.close()
 

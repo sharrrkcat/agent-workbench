@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from ai_workbench.workers.tts_catalog import model_files
-from ai_workbench.workers.audio_catalog import chatterbox_files
+from ai_workbench.workers.audio_catalog import chatterbox_files, qwen3tts_files
 
 ROOTS = {"llm": "llms", "embedding": "embeddings", "reranker": "rerankers",
          "image_embedding": "image_embeddings", "vision": "vision", "tts": "tts"}
@@ -27,6 +27,8 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
                 if path.name == "model.onnx" and model_files(path.parent):
                     target = path.parent
                 elif path.name == "t3_cfg.safetensors" and chatterbox_files(path.parent):
+                    target = path.parent
+                elif path.name == "config.json" and qwen3tts_files(path.parent):
                     target = path.parent
             elif path.suffix.lower() == ".gguf" and not path.name.lower().startswith("mmproj"):
                 target = path

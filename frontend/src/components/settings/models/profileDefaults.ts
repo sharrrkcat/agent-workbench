@@ -22,6 +22,18 @@ export const newModel = (kind: ModelKind): ModelInput => ({
 export const runtimeFamilyKey = (runtimeId: string, variant: string) => runtimeId === 'llama-server' ? runtimeId : variant;
 export const runtimeBuild = (variant: string) => variant === 'cpu' || variant === 'onnx-cpu' ? 'CPU' : 'CUDA';
 
+export const ttsGenerationDefaults = {
+  kokoro: {},
+  chatterbox: { exaggeration: 0.5, cfg_weight: 0.5, temperature: 0.8, repetition_penalty: 1.2, min_p: 0.05, top_p: 1 },
+  qwen3tts: { do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 },
+};
+
+export function selectTTSArchitecture(parameters: ModelInput['parameters'], architecture: keyof typeof ttsGenerationDefaults) {
+  if (parameters.architecture === architecture) return { ...parameters };
+  return { architecture, speed: parameters.speed ?? 1, response_format: parameters.response_format ?? 'mp3',
+    ...ttsGenerationDefaults[architecture] };
+}
+
 export function selectManagedRuntime(value: ModelInput, entry: RuntimeCatalogEntry): ModelInput {
   if (!entry.supported || !entry.kinds.includes(value.kind) || entry.variant === 'infinity-cuda') {
     throw new Error('Unsupported runtime selection');
@@ -33,10 +45,9 @@ export function selectManagedRuntime(value: ModelInput, entry: RuntimeCatalogEnt
   }
   let parameters = { ...value.parameters };
   if (value.kind === 'tts') {
-    const architecture = entry.variant === 'audio-cuda' ? 'chatterbox' : 'kokoro';
-    parameters = architecture === value.parameters.architecture ? parameters : {
-      architecture, speed: value.parameters.speed ?? 1, response_format: value.parameters.response_format ?? 'mp3',
-    };
+    const architecture = entry.variant === 'audio-cuda'
+      ? value.parameters.architecture === 'qwen3tts' ? 'qwen3tts' : 'chatterbox' : 'kokoro';
+    parameters = selectTTSArchitecture(parameters, architecture);
   }
   const capabilities = { ...value.capabilities, vision: false };
   if (entry.variant === 'transformers-cuda') {

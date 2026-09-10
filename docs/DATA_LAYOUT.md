@@ -101,7 +101,8 @@ It removes abandoned owned session directories when reference storage initialize
 after restart. Key/profile changes invalidate published references; expired and
 one-request files are removed on reference access or final lease release. Active
 requests keep files until inference/cancellation finishes. Reference limits and TTL
-are owned by [Models](contracts/models.md#chatterbox-and-temporary-references).
+are owned by [Models](contracts/models.md#audio-tts-and-temporary-references).
+Optional Qwen transcripts exist only in reference memory and are discarded with it.
 These files are separate from attachments and manually supplied model resources;
 no schema revision, model uninstall or runtime cache job deletes them.
 

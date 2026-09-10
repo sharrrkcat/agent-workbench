@@ -437,7 +437,7 @@ class ModelManager:
         profile = self.profiles.get(profile_id)
         if profile.kind != "tts":
             raise ModelError("MODEL_KIND_MISMATCH", "Voice discovery requires a tts profile.")
-        if profile.parameters["architecture"] == "chatterbox":
+        if profile.parameters["architecture"] != "kokoro":
             return []
         path = None
         if self.runtime_supervisor:
@@ -452,10 +452,10 @@ class ModelManager:
         from ai_workbench.core.models.runtimes.schema import model_path
         from ai_workbench.workers.audio import validate_audio
         profile = self.profile(profile_id, "tts")
-        if profile.parameters["architecture"] == "chatterbox":
-            return await self._chatterbox_speech(profile, request, credential)
+        if profile.parameters["architecture"] in {"chatterbox", "qwen3tts"}:
+            return await self._reference_speech(profile, request, credential)
         if request.tts.reference_audio is not None or request.tts.model_options is not None:
-            raise ModelError("INVALID_REQUEST", "Reference audio and model_options require Chatterbox.")
+            raise ModelError("INVALID_REQUEST", "Reference audio and model_options require Chatterbox or Qwen3-TTS Base.")
         if request.voice not in VOICE_IDS:
             raise ModelError("VOICE_UNAVAILABLE", "Voice ID is not supported by this model.", 404)
         if request.tts.language is not None and request.tts.language != LANGUAGES[request.voice[0]]:
@@ -489,19 +489,19 @@ class ModelManager:
             raise ModelError("AUTH_INVALID", "The inference credential has changed.", 401)
         return current
 
-    def _chatterbox_profile(self, profile_id):
+    def _reference_profile(self, profile_id):
         profile = self.profile(profile_id, "tts")
-        if profile.parameters["architecture"] != "chatterbox" or profile.runtime_variant != "audio-cuda":
-            raise ModelError("UNSUPPORTED_CAPABILITY", "Reference audio requires a managed Chatterbox profile.")
+        if profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"} or profile.runtime_variant != "audio-cuda":
+            raise ModelError("UNSUPPORTED_CAPABILITY", "Reference audio requires a managed Chatterbox or Qwen3-TTS Base profile.")
         return profile
 
     async def _validate_reference(self, profile, entry):
         async with self._lease(profile, autoload=False) as adapter:
             return await adapter.validate_reference(profile, entry.path.name)
 
-    async def _stage_reference(self, data, audio_format):
+    async def _stage_reference(self, data, audio_format, reference_text=None):
         references = self.voice_references
-        task = asyncio.create_task(asyncio.to_thread(references.stage, data, audio_format))
+        task = asyncio.create_task(asyncio.to_thread(references.stage, data, audio_format, reference_text))
         try:
             entry = await asyncio.shield(task)
         except asyncio.CancelledError:
@@ -520,16 +520,24 @@ class ModelManager:
 
     def _voice_admission(self, profile, binding, credential):
         self._voice_credential(credential)
-        current = self._chatterbox_profile(profile.id)
+        current = self._reference_profile(profile.id)
         if self.voice_binding(current) != binding or not current.external_enabled:
             raise ModelError("VOICE_UNAVAILABLE", "The model binding changed before admission.", 404)
 
-    async def create_voice_reference(self, profile_id, data, audio_format, credential):
+    async def create_voice_reference(self, profile_id, data, audio_format, credential, *, reference_text=None):
         from ai_workbench.core.time import isoformat_utc
-        profile = self._chatterbox_profile(profile_id)
+        from pydantic import ValidationError
+        from ai_workbench.core.models.schema import ReferenceTranscript
+        profile = self._reference_profile(profile_id)
+        try:
+            ReferenceTranscript(reference_text=reference_text)
+        except ValidationError as exc:
+            raise ModelError("INVALID_REQUEST", "Reference transcript must contain 1 to 4096 nonblank characters.") from exc
+        if reference_text is not None and profile.parameters["architecture"] != "qwen3tts":
+            raise ModelError("INVALID_REQUEST", "Reference transcripts require Qwen3-TTS Base.")
         credential = self._voice_credential(credential)
         binding = self.voice_binding(profile)
-        entry = await self._stage_reference(data, audio_format)
+        entry = await self._stage_reference(data, audio_format, reference_text)
         published = False
         try:
             await self._validate_reference(profile, entry)
@@ -544,15 +552,17 @@ class ModelManager:
     def temporary_voice_list(self, profile_id, credential):
         profile = self.profile(profile_id, "tts")
         credential = self._voice_credential(credential)
-        if self._voice_references is None or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] != "chatterbox":
+        if self._voice_references is None or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
             return []
-        return [{**item, "model": profile.alias} for item in self._voice_references.list(profile.id, self.voice_binding(profile), credential)]
+        language = None if profile.parameters["architecture"] == "qwen3tts" else "en-US"
+        return [{**item, "model": profile.alias} for item in self._voice_references.list(
+            profile.id, self.voice_binding(profile), credential, language=language)]
 
     def delete_voice_reference(self, identifier, credential):
         credential = self._voice_credential(credential)
         if self._voice_references is not None:
             for profile in self.profiles.list("tts"):
-                if not profile.enabled or not profile.external_enabled or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] != "chatterbox":
+                if not profile.enabled or not profile.external_enabled or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
                     continue
                 try:
                     self._voice_references.delete(identifier, profile.id, self.voice_binding(profile), credential)
@@ -566,22 +576,32 @@ class ModelManager:
         if self._voice_references:
             self._voice_references.invalidate(profile_id)
 
-    async def _chatterbox_speech(self, profile, request, credential):
+    async def _reference_speech(self, profile, request, credential):
+        from pydantic import ValidationError
+        from ai_workbench.core.models.schema import AUDIO_REQUEST_OPTIONS
         from ai_workbench.workers.audio import validate_audio
-        from ai_workbench.workers.audio_catalog import CHATTERBOX_DEFAULTS
-        self._chatterbox_profile(profile.id)
+        from ai_workbench.workers.audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES
+        self._reference_profile(profile.id)
         credential = self._voice_credential(credential)
-        if request.tts.language not in {None, "en-US"}:
-            raise ModelError("INVALID_REQUEST", "English Chatterbox accepts only en-US.")
-        options = {key: value for key, value in profile.parameters.items() if key in CHATTERBOX_DEFAULTS}
-        if request.tts.model_options:
-            options.update(request.tts.model_options.model_dump(exclude_none=True))
+        architecture = profile.parameters["architecture"]
+        languages = QWEN3TTS_LANGUAGES if architecture == "qwen3tts" else {"en-US"}
+        if request.tts.language is not None and request.tts.language not in languages:
+            raise ModelError("INVALID_REQUEST", "The selected TTS architecture does not support this language.")
+        reference = request.tts.reference_audio
+        if reference is not None and "reference_text" in reference.model_fields_set and architecture != "qwen3tts":
+            raise ModelError("INVALID_REQUEST", "Reference transcripts require Qwen3-TTS Base.")
+        options = {key: value for key, value in profile.parameters.items() if key in AUDIO_DEFAULTS[architecture]}
+        if request.tts.model_options is not None:
+            try:
+                overrides = AUDIO_REQUEST_OPTIONS[architecture].model_validate(request.tts.model_options.model_dump(exclude_unset=True))
+            except ValidationError as exc:
+                raise ModelError("INVALID_REQUEST", "model_options do not match the selected TTS architecture.") from exc
+            options.update(overrides.model_dump(exclude_none=True))
         binding = self.voice_binding(profile)
         entry = None
         staged = request.tts.reference_audio is not None
         if staged:
-            reference = request.tts.reference_audio
-            entry = await self._stage_reference(base64.b64decode(reference.data_base64, validate=True), reference.format)
+            entry = await self._stage_reference(base64.b64decode(reference.data_base64, validate=True), reference.format, reference.reference_text)
         else:
             self.voice_references.check(request.voice, profile.id, binding, credential)
         def admitted():
@@ -596,7 +616,7 @@ class ModelManager:
             response_format = request.response_format or profile.parameters["response_format"]
             async with self._lease(profile, on_admit=admitted) as adapter:
                 result = await adapter.speech(profile, request.input, request.voice, speed, response_format, request.tts.language,
-                    reference=entry.path.name, model_options=options)
+                    reference=entry.path.name, reference_text=entry.reference_text, model_options=options)
                 try:
                     if result.response_format != response_format:
                         raise ValueError("Unexpected audio format")

@@ -83,6 +83,9 @@
   "params": {
     "temperature": "Temperature",
     "top_p": "Top P",
+    "top_k": "Top K",
+    "do_sample": "Sample main speech tokens",
+    "max_new_tokens": "Maximum speech tokens",
     "max_tokens": "Maximum output tokens",
     "presence_penalty": "Presence penalty",
     "frequency_penalty": "Frequency penalty",
@@ -185,5 +188,7 @@
   "runtimeStages": { "queued": "Queued", "downloading": "Downloading", "extracting": "Extracting", "creating_environment": "Creating environment", "installing_packages": "Installing packages", "checking_packages": "Checking packages", "checking_program": "Checking executable", "verifying": "Verifying files", "scanning_cache": "Scanning cache", "pruning_cache": "Pruning cache", "cleaning_cache": "Clearing cache", "completed": "Completed", "already_installed": "Already installed" },
   "audioDeviceHint": "Windows Audio supports CPU or NVIDIA CUDA execution. CUDA must be available when selected.",
   "chatterboxEnglish": "Chatterbox (English)",
-  "chatterboxReferenceHint": "English speech requires a temporary voice ID or reference audio through the speech API. Temporary voices expire after 30 minutes; admitted requests extend their remaining lifetime to at least 15 minutes."
+  "chatterboxReferenceHint": "English speech requires a temporary voice ID or reference audio through the speech API. Temporary voices expire after 30 minutes; admitted requests extend their remaining lifetime to at least 15 minutes.",
+  "qwen3TTSBase": "Qwen3-TTS (12Hz Base)",
+  "qwenReferenceHint": "Multilingual Base cloning uses a temporary voice ID or reference audio through the speech API. Include the reference transcript for full conditioning, or omit it for audio-only cloning. Language defaults to automatic. The token limit can stop speech before the text ends. Disabling main-token sampling does not guarantee identical audio."
 }

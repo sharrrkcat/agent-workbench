@@ -13,7 +13,7 @@ await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } })
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { kinds, newModel, selectManagedRuntime } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
+const { kinds, newModel, selectManagedRuntime, selectTTSArchitecture } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
 assert.ok(kinds.includes('tts'));
 const profile = newModel('tts');
@@ -34,6 +34,15 @@ assert.equal(kokoro.parameters.architecture, 'kokoro');
 assert.equal(kokoro.parameters.speed, 0.8);
 assert.ok(!('cfg_weight' in kokoro.parameters));
 assert.throws(() => selectManagedRuntime(profile, { ...audioEntry, supported: false }));
+const qwen = { ...chatterbox, parameters: selectTTSArchitecture(chatterbox.parameters, 'qwen3tts') };
+assert.deepEqual(qwen.parameters, { architecture: 'qwen3tts', speed: 0.8, response_format: 'mp3',
+  do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 });
+const editedQwen = { ...qwen, parameters: { ...qwen.parameters, top_k: 0, max_new_tokens: 4096 } };
+assert.deepEqual(selectManagedRuntime(editedQwen, audioEntry).parameters, editedQwen.parameters);
+const back = selectTTSArchitecture(editedQwen.parameters, 'chatterbox');
+assert.equal(back.temperature, 0.8);
+assert.equal(back.speed, 0.8);
+assert.ok(!('top_k' in back) && !('max_new_tokens' in back) && !('do_sample' in back));
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');
@@ -47,6 +56,14 @@ for (const locale of ['en', 'zh-CN']) {
   }
   assert.ok(audioMarkup.includes(t('chatterboxEnglish')));
   assert.match(audioMarkup, /min="0.01" max="5"/);
+  const qwenMarkup = renderToStaticMarkup(React.createElement(ProfileParameters, { value: qwen, onChange: () => {} }));
+  for (const key of ['do_sample', 'temperature', 'top_p', 'top_k', 'repetition_penalty', 'max_new_tokens']) {
+    assert.ok(qwenMarkup.includes(t('params.' + key)), `${locale}: Qwen ${key}`);
+  }
+  assert.ok(!qwenMarkup.includes(t('params.exaggeration')) && !qwenMarkup.includes(t('params.cfg_weight')));
+  assert.ok(qwenMarkup.includes(t('qwen3TTSBase')));
+  assert.match(qwenMarkup, /value="qwen3tts" selected=""/);
+  assert.match(qwenMarkup, /max="8192"/);
 }
 let requested;
 globalThis.fetch = async (url) => { requested = url; return new Response('[]', { headers: { 'Content-Type': 'application/json' } }); };

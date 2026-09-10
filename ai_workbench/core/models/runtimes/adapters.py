@@ -423,9 +423,10 @@ class AudioWorkerAdapter(ManagedAdapter):
             raise ModelError("PROVIDER_PROTOCOL_ERROR", "Audio worker returned invalid reference metadata.", 502)
         return value
 
-    async def speech(self, profile, text, voice, speed, response_format, language, *, reference, model_options):
+    async def speech(self, profile, text, voice, speed, response_format, language, *, reference, reference_text=None, model_options):
         return await self._rpc("POST", "/speech", {"profile_id": profile.id, "input": text, "reference": reference,
-            "speed": speed, "response_format": response_format, "language": language, "model_options": model_options}, audio_format=response_format)
+            "reference_text": reference_text, "speed": speed, "response_format": response_format,
+            "language": language, "model_options": model_options}, audio_format=response_format)
 
     async def transcribe(self, profile, reference):
         return await self._rpc("POST", "/transcribe", {"profile_id": profile.id, "reference": reference})

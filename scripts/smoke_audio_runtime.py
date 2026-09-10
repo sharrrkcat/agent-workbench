@@ -119,17 +119,26 @@ def offline_files(adapter):
     assert "network access rejected" not in adapter.log_path.read_text(encoding="utf-8", errors="replace")
 
 
-async def chatterbox(state, client, args, device, reference, output, keeper):
+async def reference_tts(state, client, args, architecture, device, reference, output, keeper):
     manager = state.model_manager
-    profile = manager.profiles.create(ModelProfile(name=f"Chatterbox {device}", alias=f"chatterbox-{device}",
-        kind="tts", runtime_id="python-worker", runtime_variant="audio-cuda", model_ref=args.chatterbox,
-        runtime_options={"device": device}, parameters={"architecture": "chatterbox", "response_format": "wav"},
-        external_enabled=True))
+    qwen = architecture == "qwen3tts"
+    created = (await checked(client, "POST", "/api/models/profiles", json={
+        "name": f"{architecture} {device}", "alias": f"{architecture}-{device}", "kind": "tts",
+        "runtime_id": "python-worker", "runtime_variant": "audio-cuda", "model_ref": getattr(args, architecture),
+        "runtime_options": {"device": device}, "parameters": {"architecture": architecture, "response_format": "wav"},
+        "external_enabled": True})).json()
+    profile = manager.profiles.get(created["id"])
     uploaded = (await checked(client, "POST", "/v1/audio/voice-references", data={"model": profile.alias},
         files={"file": (reference.name, reference.read_bytes())})).json()
     voice_id = uploaded["voice_id"]
+    transcript_voice = None
+    if qwen:
+        transcript_voice = (await checked(client, "POST", "/v1/audio/voice-references",
+            data={"model": profile.alias, "reference_text": args.reference_text},
+            files={"file": (reference.name, reference.read_bytes())})).json()["voice_id"]
     voices = (await checked(client, "GET", "/v1/audio/voices", params={"model": profile.alias, "source": "temporary"})).json()
     assert voices["data"][0]["id"] == voice_id
+    assert all(item["language"] == (None if qwen else "en-US") and "reference_text" not in item for item in voices["data"])
     assert (await checked(client, "GET", "/v1/audio/voices", params={"model": profile.alias, "source": "preset"})).json()["data"] == []
     adapter = manager._slots[manager.backend_key(profile)].adapter
     # Unavailable-device validation must start a fresh process with hidden GPUs.
@@ -141,11 +150,15 @@ async def chatterbox(state, client, args, device, reference, output, keeper):
     check_device(metadata, device)
     results = {}
     for audio_format in ("wav", "mp3"):
+        conditioning = qwen and audio_format == "mp3"
+        extensions = {"language": "zh-CN" if conditioning else "en-US", "model_options": {"max_new_tokens": 128}} if qwen else {}
         response = await checked(client, "POST", "/v1/audio/speech", json={"model": profile.alias,
-            "input": "Hello from the local audio runtime.", "voice": voice_id, "response_format": audio_format})
+            "input": "你好，世界。" if conditioning else "Hello from the local audio runtime.",
+            "voice": transcript_voice if conditioning else voice_id, "response_format": audio_format,
+            "speed": 0.9 if conditioning else 1, "tts": extensions})
         assert response.headers["x-request-id"]
         results[audio_format] = await save_audio(manager, adapter, profile,
-            output / f"chatterbox-{device}.{audio_format}", response.content, audio_format)
+            output / f"{architecture}-{device}.{audio_format}", response.content, audio_format)
     assert manager.status(profile.id).residency == "loaded"
     offline_files(adapter)
     process = adapter.process
@@ -161,24 +174,34 @@ async def chatterbox(state, client, args, device, reference, output, keeper):
     assert process.process.returncode is not None and adapter.process is None
     assert keeper.process and keeper.process.process.returncode is None
     await manager.load(profile.id)
-    one_shot = await checked(client, "POST", "/v1/audio/speech", json={"model": profile.alias, "input": "Hello again.",
-        "tts": {"reference_audio": {"format": reference.suffix[1:], "data_base64": base64.b64encode(reference.read_bytes()).decode()},
-                "language": "en-US", "model_options": {"exaggeration": 0.4}}})
-    await save_audio(manager, adapter, profile, output / f"chatterbox-{device}-reload.wav", one_shot.content, "wav")
+    for transcript in ([None, args.reference_text] if qwen else [None]):
+        reference_audio = {"format": reference.suffix[1:], "data_base64": base64.b64encode(reference.read_bytes()).decode()}
+        if transcript is not None:
+            reference_audio["reference_text"] = transcript
+        one_shot = await checked(client, "POST", "/v1/audio/speech", json={"model": profile.alias, "input": "Hello again.",
+            "tts": {"reference_audio": reference_audio, "language": "auto" if qwen else "en-US",
+                    "model_options": {"max_new_tokens": 128, "temperature": 0.8, "top_k": 40} if qwen else {"exaggeration": 0.4}}})
+        mode = "transcript" if transcript is not None else "audio-only"
+        results[f"inline-{mode}"] = await save_audio(manager, adapter, profile,
+            output / f"{architecture}-{device}-reload-{mode}.wav", one_shot.content, "wav")
     await checked(client, "DELETE", f"/v1/audio/voice-references/{voice_id}")
+    if transcript_voice:
+        await checked(client, "DELETE", f"/v1/audio/voice-references/{transcript_voice}")
+    assert (await checked(client, "GET", "/v1/audio/voices", params={"model": profile.alias})).json()["data"] == []
     process = adapter.process
     await manager.unload(profile.id)
     assert process.process.returncode is not None
     return {"metadata": metadata, "outputs": results, "http_disconnect": "passed", "reference_api": "passed",
-            "manual_unload": "passed", "unrelated_worker": "preserved"}
+            "manual_unload": "passed", "unrelated_worker": "preserved",
+            **({"cloning_modes": ["audio-only", "audio-and-transcript"], "languages": ["en-US", "zh-CN", "auto"]} if qwen else {})}
 
 
-async def validation_engine(state, args, architecture, device, reference, output, keeper):
+async def whisper(state, args, device, reference, output, keeper):
     manager = state.model_manager
-    # These private acceptance descriptors are never persisted or accepted by ModelInput.
-    profile = SimpleNamespace(id=f"acceptance-{architecture}-{device}", kind="asr" if architecture == "whisper" else "tts",
-        runtime_id="python-worker", runtime_variant="audio-cuda", model_ref=getattr(args, architecture),
-        parameters={"architecture": architecture}, runtime_options={"device": device, "intraop_threads": 4})
+    # Whisper alone remains private acceptance tooling, outside public ModelInput.
+    profile = SimpleNamespace(id=f"acceptance-whisper-{device}", kind="asr",
+        runtime_id="python-worker", runtime_variant="audio-cuda", model_ref=args.whisper,
+        parameters={"architecture": "whisper"}, runtime_options={"device": device, "intraop_threads": 4})
     adapter = AudioWorkerAdapter(state.runtime_supervisor, profile, lambda: None)
     adapter.validation = True
     backend = manager.backend_key(profile)
@@ -196,33 +219,24 @@ async def validation_engine(state, args, architecture, device, reference, output
         check_device(metadata, device)
         results = {}
         async with reference_file(manager, reference.read_bytes(), reference.suffix[1:]) as entry:
-            if architecture == "qwen3tts":
-                for index in range(2):
-                    result = await call(adapter.speech(profile, "Hello from the local audio runtime.", None, 1, "wav", "en-US",
-                        reference=entry.path.name, model_options={}))
-                    results[str(index)] = await save_audio(manager, adapter, profile,
-                        output / f"qwen3tts-{device}-{index}.wav", result.data, "wav")
-                operation = adapter.speech(profile, "This request will be cancelled. " * 60, None, 1, "wav", "en-US",
-                    reference=entry.path.name, model_options={})
-            else:
-                for label, frames in (("below", 29 * 24000), ("exactly", 30 * 24000), ("above", 30 * 24000 + 1)):
-                    path = output / f"whisper-{label}.wav"
-                    with wave.open(str(reference), "rb") as source:
-                        assert source.getparams()[:3] == (1, 2, 24000), "Whisper acceptance reference must be mono PCM16 at 24 kHz"
-                        pcm = source.readframes(source.getnframes())
-                    with wave.open(str(path), "wb") as target:
-                        target.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
-                        target.writeframes((pcm * (frames * 2 // len(pcm) + 1))[:frames * 2])
-                    async with reference_file(manager, path.read_bytes(), "wav") as bounded:
-                        try:
-                            result = await call(adapter.transcribe(profile, bounded.path.name))
-                        except ModelError as exc:
-                            assert label == "above" and exc.code == "AUDIO_TOO_LONG", exc.code
-                            results[label] = "AUDIO_TOO_LONG"
-                        else:
-                            assert label != "above" and isinstance(result["text"], str), result
-                            results[label] = result
-                operation = adapter.transcribe(profile, entry.path.name)
+            for label, frames in (("below", 29 * 24000), ("exactly", 30 * 24000), ("above", 30 * 24000 + 1)):
+                path = output / f"whisper-{label}.wav"
+                with wave.open(str(reference), "rb") as source:
+                    assert source.getparams()[:3] == (1, 2, 24000), "Whisper acceptance reference must be mono PCM16 at 24 kHz"
+                    pcm = source.readframes(source.getnframes())
+                with wave.open(str(path), "wb") as target:
+                    target.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
+                    target.writeframes((pcm * (frames * 2 // len(pcm) + 1))[:frames * 2])
+                async with reference_file(manager, path.read_bytes(), "wav") as bounded:
+                    try:
+                        result = await call(adapter.transcribe(profile, bounded.path.name))
+                    except ModelError as exc:
+                        assert label == "above" and exc.code == "AUDIO_TOO_LONG", exc.code
+                        results[label] = "AUDIO_TOO_LONG"
+                    else:
+                        assert label != "above" and isinstance(result["text"], str), result
+                        results[label] = result
+            operation = adapter.transcribe(profile, entry.path.name)
             offline_files(adapter)
             process = adapter.process
             pending = asyncio.create_task(call(operation))
@@ -250,6 +264,8 @@ async def validate_engines(state, args):
     reference = (args.reference or root / "build/tts-smoke/af_heart.wav").resolve()
     if not reference.is_file():
         raise RuntimeError("Supply --reference with a local speech WAV; no audio is downloaded")
+    if (not args.engine or "qwen3tts" in args.engine) and (not args.reference_text or not args.reference_text.strip()):
+        raise RuntimeError("Qwen acceptance requires --reference-text matching the reference recording")
     output = root / "build/audio-smoke"
     output.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(32)
@@ -280,8 +296,8 @@ async def validate_engines(state, args):
                         print(json.dumps({"engine": architecture, "device": device, "state": "running"}), flush=True)
                         result = {"engine": architecture, "device": device}
                         try:
-                            result.update(await chatterbox(state, client, args, device, reference, output, keeper) if architecture == "chatterbox"
-                                else await validation_engine(state, args, architecture, device, reference, output, keeper))
+                            result.update(await whisper(state, args, device, reference, output, keeper) if architecture == "whisper"
+                                else await reference_tts(state, client, args, architecture, device, reference, output, keeper))
                             result["state"] = "passed"
                         except Exception as exc:
                             result.update(state="failed", error=str(exc))
@@ -309,6 +325,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", choices=("cpu", "cuda"), action="append")
     parser.add_argument("--engine", choices=("chatterbox", "qwen3tts", "whisper"), action="append")
     parser.add_argument("--reference", type=Path)
+    parser.add_argument("--reference-text", help="Transcript of --reference; required for Qwen Base full-conditioning acceptance")
     parser.add_argument("--chatterbox", default="tts/chatterbox")
     parser.add_argument("--qwen3tts", default="tts/Qwen3-TTS-12Hz-0.6B-Base")
     parser.add_argument("--whisper", default="asr/whisper-base")

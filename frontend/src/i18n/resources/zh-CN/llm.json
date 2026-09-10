@@ -83,6 +83,9 @@
   "params": {
     "temperature": "温度",
     "top_p": "Top P",
+    "top_k": "Top K",
+    "do_sample": "对主语音 Token 进行采样",
+    "max_new_tokens": "最大语音 Token 数",
     "max_tokens": "最大输出 Token",
     "presence_penalty": "存在惩罚",
     "frequency_penalty": "频率惩罚",
@@ -185,5 +188,7 @@
   "runtimeStages": { "queued": "排队中", "downloading": "下载中", "extracting": "解压中", "creating_environment": "创建环境", "installing_packages": "安装依赖", "checking_packages": "检查依赖", "checking_program": "检查程序", "verifying": "校验文件", "scanning_cache": "统计缓存", "pruning_cache": "清理无效缓存", "cleaning_cache": "清空缓存", "completed": "已完成", "already_installed": "已经安装" },
   "audioDeviceHint": "Windows Audio 支持 CPU 或 NVIDIA CUDA 执行。选择 CUDA 时必须有可用设备。",
   "chatterboxEnglish": "Chatterbox（仅英语）",
-  "chatterboxReferenceHint": "英语语音合成需要通过语音 API 提供临时音色 ID 或参考音频。临时音色在 30 分钟后过期；已进入执行或等待队列的请求会将剩余有效期延长至至少 15 分钟。"
+  "chatterboxReferenceHint": "英语语音合成需要通过语音 API 提供临时音色 ID 或参考音频。临时音色在 30 分钟后过期；已进入执行或等待队列的请求会将剩余有效期延长至至少 15 分钟。",
+  "qwen3TTSBase": "Qwen3-TTS（12Hz Base）",
+  "qwenReferenceHint": "多语言 Base 音色克隆通过语音 API 使用临时音色 ID 或参考音频。提供参考音频的转录文本可启用完整条件克隆，省略时仅使用音频克隆。语言默认为自动判断。Token 上限可能使语音在文本读完前结束。关闭主 Token 采样不保证每次生成的音频相同。"
 }

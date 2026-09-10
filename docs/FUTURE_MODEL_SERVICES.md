@@ -35,12 +35,12 @@ product boundary. This note adds no route, runtime variant or model kind.
 
 ## Voice cloning and text analysis
 
-Kokoro presets and English Chatterbox references are implemented under
-[Models](contracts/models.md#chatterbox-and-temporary-references), which owns uploads,
-quotas, credential/profile binding and expiry. Public Qwen3-TTS/Whisper interfaces,
-multilingual Chatterbox, live capture and application playback remain deferred.
-The Windows Audio package includes Qwen3-TTS/Whisper only for shared-environment
-acceptance; their presence does not add public model kinds or API routes.
+Kokoro presets, English Chatterbox and Qwen3-TTS Base references are implemented
+under [Models](contracts/models.md#audio-tts-and-temporary-references), which owns
+uploads, optional Qwen transcripts, quotas, credential/profile binding and expiry.
+Qwen CustomVoice/VoiceDesign, public Whisper, multilingual Chatterbox, live capture
+and application playback remain deferred. Whisper is included in the Windows Audio
+package only for shared-environment acceptance, without a public kind or endpoint.
 
 The separate en_core_web_sm resource currently serves Misaki's English frontend.
 A future task-based text-analysis kind could support reusable tokenization,

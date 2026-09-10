@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
@@ -106,16 +106,48 @@ class VisionParameters(StrictModel):
     batch_size: int = Field(default=1, ge=1, le=256)
 
 
-class TTSParameters(StrictModel):
-    architecture: Literal["kokoro", "chatterbox"] = "kokoro"
-    speed: float = Field(default=1.0, ge=0.25, le=4.0, strict=True)
-    response_format: Literal["mp3", "wav"] = "mp3"
-    exaggeration: float | None = Field(default=None, ge=0.0, le=2.0, strict=True)
-    cfg_weight: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
-    temperature: float | None = Field(default=None, gt=0.0, le=5.0, strict=True)
-    repetition_penalty: float | None = Field(default=None, ge=1.0, le=2.0, strict=True)
-    min_p: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
-    top_p: float | None = Field(default=None, gt=0.0, le=1.0, strict=True)
+class SpeechOutputParameters(StrictModel):
+    speed: float = Field(default=1.0, ge=0.25, le=4.0, strict=True, description="Speech rate multiplier; 1 is the original speed.")
+    response_format: Literal["mp3", "wav"] = Field(default="mp3", description="Complete 24 kHz mono audio file format.")
+
+
+class KokoroParameters(SpeechOutputParameters):
+    """Kokoro ONNX uses preset voices and has no generation model_options."""
+    architecture: Literal["kokoro"] = "kokoro"
+
+
+class ChatterboxParameters(SpeechOutputParameters):
+    """English Chatterbox uses a temporary voice ID or one-request reference audio."""
+    architecture: Literal["chatterbox"] = "chatterbox"
+    exaggeration: float = Field(default=0.5, ge=0.0, le=2.0, strict=True, description="Expressiveness of the reference-conditioned voice.")
+    cfg_weight: float = Field(default=0.5, ge=0.0, le=1.0, strict=True, description="Classifier-free conditioning guidance strength.")
+    temperature: float = Field(default=0.8, gt=0.0, le=5.0, strict=True, description="Sampling temperature; higher values increase randomness.")
+    repetition_penalty: float = Field(default=1.2, ge=1.0, le=2.0, strict=True, description="Penalty for repeated tokens; 1 disables the penalty.")
+    min_p: float = Field(default=0.05, ge=0.0, le=1.0, strict=True, description="Minimum token probability relative to the most likely token.")
+    top_p: float = Field(default=1.0, gt=0.0, le=1.0, strict=True, description="Cumulative probability cutoff for nucleus sampling.")
+
+
+class Qwen3TTSParameters(SpeechOutputParameters):
+    """Qwen3-TTS 12Hz Base cloning; request model_options override these saved defaults."""
+    architecture: Literal["qwen3tts"] = "qwen3tts"
+    do_sample: bool = Field(default=True, strict=True, description="Enable main talker sampling; false uses greedy decoding. Secondary-codebook sampling stays enabled.")
+    temperature: float = Field(default=0.9, gt=0.0, strict=True, description="Main talker sampling temperature; used when do_sample is true.")
+    top_p: float = Field(default=1.0, gt=0.0, le=1.0, strict=True, description="Main talker nucleus sampling cutoff; used when do_sample is true.")
+    top_k: int = Field(default=50, ge=0, strict=True, description="Main talker sampling candidate count; 0 disables top-k filtering. Used when do_sample is true.")
+    repetition_penalty: float = Field(default=1.05, gt=0.0, strict=True, description="Codec-token repetition penalty; 1 is neutral, values above 1 discourage repetition.")
+    max_new_tokens: int = Field(default=2048, ge=1, le=8192, strict=True, description="Maximum generated codec tokens; reaching this limit can end speech before the full text is spoken.")
+
+
+class TTSParameters(RootModel):
+    root: Annotated[KokoroParameters | ChatterboxParameters | Qwen3TTSParameters,
+                    Field(discriminator="architecture")] = Field(default_factory=KokoroParameters)
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_architecture(cls, value):
+        if isinstance(value, dict) and "architecture" not in value:
+            return {"architecture": "kokoro", **value}
+        return value
 
 
 PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "reranker": RerankParameters,
@@ -175,18 +207,9 @@ class ModelInput(StrictModel):
                 raise ValueError("TTS execution requires a managed local backend")
             if self.runtime_id and self.runtime_variant not in {"onnx-cpu", "audio-cuda"}:
                 raise ValueError("TTS execution requires the managed onnx-cpu or audio-cuda backend")
-        parameter_fields = set(self.parameters)
         self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
-        if self.kind == "tts" and self.parameters["architecture"] == "kokoro" and any(
-            key in parameter_fields
-            for key in ("exaggeration", "cfg_weight", "temperature", "repetition_penalty", "min_p", "top_p")
-        ):
-            raise ValueError("Chatterbox parameters require the chatterbox architecture")
-        if self.kind == "tts" and self.parameters["architecture"] == "chatterbox":
-            from ai_workbench.workers.audio_catalog import CHATTERBOX_DEFAULTS
-            self.parameters = {**CHATTERBOX_DEFAULTS, **self.parameters}
-        if self.kind == "tts" and self.runtime_variant == "audio-cuda" and self.parameters["architecture"] != "chatterbox":
-            raise ValueError("audio-cuda requires the chatterbox architecture")
+        if self.kind == "tts" and self.runtime_variant == "audio-cuda" and self.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
+            raise ValueError("audio-cuda requires the chatterbox or qwen3tts architecture")
         if self.kind == "tts" and self.runtime_variant == "onnx-cpu" and self.parameters["architecture"] != "kokoro":
             raise ValueError("onnx-cpu requires the kokoro architecture")
         if is_transformers(self) and any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
@@ -368,7 +391,19 @@ class EmbeddingRequest(StrictModel):
         return value
 
 
-class ReferenceAudio(StrictModel):
+class ReferenceTranscript(StrictModel):
+    reference_text: str | None = Field(default=None, min_length=1, max_length=4096, strict=True,
+        description="Qwen Base only: the reference audio's transcript. Omit for speaker-embedding cloning; provide nonblank text for full audio-and-transcript conditioning. Never transcribed automatically.")
+
+    @field_validator("reference_text")
+    @classmethod
+    def nonblank_transcript(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("Reference transcript must not be blank")
+        return value
+
+
+class ReferenceAudio(ReferenceTranscript):
     format: Literal["wav", "mp3"]
     data_base64: str = Field(min_length=4, max_length=16 * 1024 * 1024)
 
@@ -386,17 +421,33 @@ class ReferenceAudio(StrictModel):
 
 
 class ChatterboxRequestOptions(StrictModel):
-    exaggeration: float | None = Field(default=None, ge=0.0, le=2.0, strict=True)
-    cfg_weight: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
-    temperature: float | None = Field(default=None, gt=0.0, le=5.0, strict=True)
-    repetition_penalty: float | None = Field(default=None, ge=1.0, le=2.0, strict=True)
-    min_p: float | None = Field(default=None, ge=0.0, le=1.0, strict=True)
-    top_p: float | None = Field(default=None, gt=0.0, le=1.0, strict=True)
+    """Chatterbox-only overrides. Omitted/null values inherit the saved profile."""
+    exaggeration: float | None = Field(default=None, ge=0.0, le=2.0, strict=True, description="Expressiveness override; profile default 0.5.")
+    cfg_weight: float | None = Field(default=None, ge=0.0, le=1.0, strict=True, description="Conditioning guidance override; profile default 0.5.")
+    temperature: float | None = Field(default=None, gt=0.0, le=5.0, strict=True, description="Sampling temperature override; profile default 0.8.")
+    repetition_penalty: float | None = Field(default=None, ge=1.0, le=2.0, strict=True, description="Repetition penalty override; profile default 1.2.")
+    min_p: float | None = Field(default=None, ge=0.0, le=1.0, strict=True, description="Relative probability cutoff override; profile default 0.05.")
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0, strict=True, description="Nucleus sampling cutoff override; profile default 1.")
+
+
+class Qwen3TTSRequestOptions(StrictModel):
+    """Qwen Base-only overrides. Omitted/null values inherit the saved profile. Secondary-codebook settings are fixed: sampling=true, temperature=0.9, top_p=1, top_k=50."""
+    do_sample: bool | None = Field(default=None, strict=True, description="Main talker sampling override; profile default true. Does not disable secondary-codebook sampling.")
+    temperature: float | None = Field(default=None, gt=0.0, strict=True, description="Main talker sampling temperature override; profile default 0.9. Used when do_sample is true.")
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0, strict=True, description="Main talker nucleus cutoff override; profile default 1. Used when do_sample is true.")
+    top_k: int | None = Field(default=None, ge=0, strict=True, description="Main talker candidate count override; profile default 50, 0 disables filtering. Used when do_sample is true.")
+    repetition_penalty: float | None = Field(default=None, gt=0.0, strict=True, description="Codec-token repetition penalty override; profile default 1.05, 1 is neutral.")
+    max_new_tokens: int | None = Field(default=None, ge=1, le=8192, strict=True, description="Codec-token output limit override; profile default 2048. Reaching the limit can stop speech before the text ends.")
+
+
+AUDIO_REQUEST_OPTIONS = {"chatterbox": ChatterboxRequestOptions, "qwen3tts": Qwen3TTSRequestOptions}
 
 
 class TTSExtensions(StrictModel):
-    language: Literal["en-US", "en-GB", "ja-JP", "zh-CN", "es-ES", "fr-FR", "hi-IN", "it-IT", "pt-BR"] | None = None
-    model_options: ChatterboxRequestOptions | None = None
+    language: Literal["auto", "en-US", "en-GB", "ja-JP", "zh-CN", "es-ES", "fr-FR", "hi-IN", "it-IT", "pt-BR", "de-DE", "ko-KR", "ru-RU"] | None = Field(default=None,
+        description="Kokoro: must match the preset. Chatterbox: en-US only. Qwen: ten languages, excluding hi-IN; en-US/en-GB both select English without an accent guarantee. Qwen omission/null/auto selects Auto.")
+    model_options: ChatterboxRequestOptions | Qwen3TTSRequestOptions | None = Field(default=None,
+        description="Overrides validated against the selected model architecture before queue admission. Kokoro rejects this field when non-null. Omitted/null option values inherit profile defaults.")
     reference_audio: ReferenceAudio | None = None
 
 

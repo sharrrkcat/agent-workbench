@@ -10,12 +10,12 @@ from http.server import ThreadingHTTPServer
 
 if __package__:
     from .common import WorkerError, fields, integer
-    from .audio_catalog import CHATTERBOX_DEFAULTS, reference_path, audio_model
+    from .audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
     from .server import handler
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from common import WorkerError, fields, integer
-    from audio_catalog import CHATTERBOX_DEFAULTS, reference_path, audio_model
+    from audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
     from server import handler
 
 
@@ -27,8 +27,21 @@ def options_request(value):
     return value
 
 
-def generation_options(value):
-    fields(value, (), CHATTERBOX_DEFAULTS)
+def generation_options(value, architecture):
+    fields(value, (), AUDIO_DEFAULTS.get(architecture, {}))
+    if architecture == "qwen3tts":
+        for key, number in value.items():
+            if key == "do_sample":
+                valid = type(number) is bool
+            elif key in {"top_k", "max_new_tokens"}:
+                valid = type(number) is int and (number >= 0 if key == "top_k" else 1 <= number <= 8192)
+            else:
+                valid = type(number) in {int, float} and math.isfinite(number) and number > 0
+                if key == "top_p":
+                    valid = valid and number <= 1
+            if not valid:
+                raise WorkerError("INVALID_REQUEST")
+        return value
     bounds = {"exaggeration": (0, 2), "cfg_weight": (0, 1), "temperature": (0, 5),
               "repetition_penalty": (1, 2), "min_p": (0, 1), "top_p": (0, 1)}
     for key, number in value.items():
@@ -70,13 +83,20 @@ class AudioWorker:
                 if not isinstance(body["profile_id"], str) or not 1 <= len(body["profile_id"]) <= 128:
                     raise WorkerError("INVALID_REQUEST")
                 parameters = body["parameters"]
-                fields(parameters, ("architecture",), ("speed", "response_format", *CHATTERBOX_DEFAULTS))
-                architecture = parameters["architecture"]
-                allowed = {"chatterbox", "qwen3tts", "whisper"} if self.validation else {"chatterbox"}
-                if architecture not in allowed or body["kind"] != ("asr" if architecture == "whisper" else "tts"):
+                if not isinstance(parameters, dict):
+                    raise WorkerError("INVALID_REQUEST")
+                architecture = parameters.get("architecture")
+                allowed = {*AUDIO_DEFAULTS, "whisper"} if self.validation else AUDIO_DEFAULTS
+                if not isinstance(architecture, str) or architecture not in allowed or body["kind"] != ("asr" if architecture == "whisper" else "tts"):
                     raise WorkerError("UNSUPPORTED_CAPABILITY")
+                defaults = AUDIO_DEFAULTS.get(architecture, {})
+                fields(parameters, ("architecture",), ("speed", "response_format", *defaults))
                 options = options_request(body["options"])
-                generation_options({key: value for key, value in parameters.items() if key in CHATTERBOX_DEFAULTS})
+                generation_options({key: value for key, value in parameters.items() if key in defaults}, architecture)
+                speed = parameters.get("speed", 1)
+                if (type(speed) not in {int, float} or not math.isfinite(speed) or not 0.25 <= speed <= 4
+                        or parameters.get("response_format", "mp3") not in {"mp3", "wav"}):
+                    raise WorkerError("INVALID_REQUEST")
                 path = audio_model(self.root, body["model_ref"], architecture)
                 if self.engine and self.profile_id != body["profile_id"]:
                     raise WorkerError("MODEL_BUSY", 409)
@@ -99,18 +119,26 @@ class AudioWorker:
                 gc.collect()
                 return self.health()
             if operation == "/speech":
-                fields(body, ("profile_id", "input", "reference", "speed", "response_format", "language", "model_options"))
+                fields(body, ("profile_id", "input", "reference", "reference_text", "speed", "response_format", "language", "model_options"))
                 if not isinstance(body["input"], str) or not body["input"].strip() or len(body["input"]) > 4096:
                     raise WorkerError("INVALID_REQUEST")
                 speed = body["speed"]
                 if type(speed) not in {int, float} or not math.isfinite(speed) or not 0.25 <= speed <= 4:
                     raise WorkerError("INVALID_REQUEST")
-                if body["response_format"] not in {"mp3", "wav"} or body["language"] not in {None, "en-US"}:
+                if body["response_format"] not in {"mp3", "wav"}:
                     raise WorkerError("INVALID_REQUEST")
-                values = generation_options(body["model_options"])
                 self.require_model(body["profile_id"], {"chatterbox", "qwen3tts"})
+                language, transcript = body["language"], body["reference_text"]
+                languages = QWEN3TTS_LANGUAGES if self.architecture == "qwen3tts" else {"en-US"}
+                if language is not None and (not isinstance(language, str) or language not in languages):
+                    raise WorkerError("INVALID_REQUEST")
+                if transcript is not None and (self.architecture != "qwen3tts" or not isinstance(transcript, str)
+                        or not transcript.strip() or len(transcript) > 4096):
+                    raise WorkerError("INVALID_REQUEST")
+                values = generation_options(body["model_options"], self.architecture)
+                conditioning = {"language": language, "reference_text": transcript} if self.architecture == "qwen3tts" else {}
                 return self.engine.speech(body["input"], reference_path(self.references, body["reference"]),
-                    speed, body["response_format"], values)
+                    speed, body["response_format"], values, **conditioning)
             if operation == "/transcribe" and self.validation:
                 fields(body, ("profile_id", "reference"))
                 self.require_model(body["profile_id"], {"whisper"})

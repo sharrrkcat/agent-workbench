@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { ModelInput } from '../../../types/models';
 import { Check, Field, NumberInput } from './fields';
+import { selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
 
 export function ProfileParameters({
   value,
@@ -43,9 +44,11 @@ export function ProfileParameters({
       ) : value.kind === 'tts' ? (
         <>
           <Field label={t('params.architecture')}>
-            <select value={String(value.parameters.architecture ?? 'kokoro')} disabled>
-              <option value="kokoro">Kokoro-82M v1.0 (ONNX)</option>
-              <option value="chatterbox">{t('chatterboxEnglish')}</option>
+            <select value={String(value.parameters.architecture ?? 'kokoro')} disabled={value.runtime_variant !== 'audio-cuda'}
+              onChange={(e) => onChange(selectTTSArchitecture(value.parameters, e.target.value as keyof typeof ttsGenerationDefaults))}>
+              <option value="kokoro" disabled={value.runtime_variant === 'audio-cuda'}>Kokoro-82M v1.0 (ONNX)</option>
+              <option value="chatterbox" disabled={value.runtime_variant !== 'audio-cuda'}>{t('chatterboxEnglish')}</option>
+              <option value="qwen3tts" disabled={value.runtime_variant !== 'audio-cuda'}>{t('qwen3TTSBase')}</option>
             </select>
           </Field>
           {value.parameters.architecture === 'chatterbox' ? [
@@ -57,6 +60,19 @@ export function ProfileParameters({
               value={Number(value.parameters[String(key)] ?? initial)} min={Number(min)} max={Number(max)} step={Number(step)}
               onChange={(next) => patchParam(String(key), next ?? initial)} />
           )) : null}
+          {value.parameters.architecture === 'qwen3tts' ? <>
+            <Check label={t('params.do_sample')} checked={value.parameters.do_sample !== false}
+              onChange={(next) => patchParam('do_sample', next)} />
+            {([
+              ['temperature', 0.01, undefined, 0.01], ['top_p', 0.01, 1, 0.01],
+              ['top_k', 0, undefined, 1], ['repetition_penalty', 0.01, undefined, 0.01],
+              ['max_new_tokens', 1, 8192, 1],
+            ] as const).map(([key, min, max, step]) => (
+              <NumberInput key={key} label={t('params.' + key)}
+                value={Number(value.parameters[key] ?? ttsGenerationDefaults.qwen3tts[key])} min={min} max={max} step={step}
+                onChange={(next) => patchParam(key, next ?? ttsGenerationDefaults.qwen3tts[key])} />
+            ))}
+          </> : null}
           <NumberInput label={t('params.speed')} value={Number(value.parameters.speed ?? 1)} min={0.25} max={4} step={0.05}
             onChange={(speed) => patchParam('speed', speed ?? 1)} />
           <Field label={t('params.response_format')}>
