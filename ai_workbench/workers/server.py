@@ -12,9 +12,11 @@ import threading
 
 if __package__:
     from .protocol import WorkerError, fields, integer, load_request, strings, speech_request
+    from .timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from protocol import WorkerError, fields, integer, load_request, strings, speech_request
+    from timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 
 PROTOCOL_VERSION = 1
 MAX_BODY = 32 * 1024 * 1024
@@ -36,10 +38,14 @@ class Worker:
             raise WorkerError("MODEL_BUSY", 409)
         try:
             if operation == "/load":
-                path = load_request(body, self.root)
+                with stage("model_resources"):
+                    path = load_request(body, self.root)
                 if body["kind"] not in self.allowed_kinds:
                     raise WorkerError("UNSUPPORTED_CAPABILITY")
                 model_id = body["profile_id"]
+                trace = current_trace()
+                if trace:
+                    trace.reused["model_reused"] = model_id in self.models
                 if model_id not in self.models:
                     factory = self.engine_factory
                     if factory is None:
@@ -55,8 +61,10 @@ class Worker:
                         else:
                             from engines import Engine
                             factory = Engine
-                    self.models[model_id] = factory(path, body["kind"], body["parameters"], body["options"])
-                return self.health()
+                    with stage("engine_init"):
+                        self.models[model_id] = factory(path, body["kind"], body["parameters"], body["options"])
+                with stage("worker_ready"):
+                    return self.health()
             if operation == "/unload":
                 fields(body, ("profile_id",))
                 if not isinstance(body["profile_id"], str) or not body["profile_id"] or len(body["profile_id"]) > 128:
@@ -141,7 +149,10 @@ def handler(worker, token):
                 if len(raw) != size:
                     raise WorkerError("INVALID_REQUEST")
                 data = json.loads(raw, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-                self._send(200, worker.dispatch(self.path, data))
+                trace = worker_trace(self.headers.get(TRACE_HEADER), "worker_load" if self.path == "/load" else "reference_validate") if self.path in {"/load", "/reference"} else None
+                with tracing(trace):
+                    result = worker.dispatch(self.path, data)
+                self._send(200, result)
             except WorkerError as exc:
                 self._send(exc.status, {"error": {"code": exc.code}})
             except (ValueError, TypeError, KeyError):
@@ -156,13 +167,16 @@ def handler(worker, token):
 
 def main():
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
-    token = os.environ["WORKBENCH_WORKER_TOKEN"]
-    if len(token) < 32:
-        raise RuntimeError("Worker token is invalid")
-    worker = Worker(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve())
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
-    server.daemon_threads = True
-    Path(os.environ["WORKBENCH_WORKER_READY"]).write_text(json.dumps({"port": server.server_port, "protocol_version": PROTOCOL_VERSION}), encoding="utf-8")
+    with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
+        with stage("worker_setup"):
+            token = os.environ["WORKBENCH_WORKER_TOKEN"]
+            if len(token) < 32:
+                raise RuntimeError("Worker token is invalid")
+            worker = Worker(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve())
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
+            server.daemon_threads = True
+        with stage("ready_file"):
+            Path(os.environ["WORKBENCH_WORKER_READY"]).write_text(json.dumps({"port": server.server_port, "protocol_version": PROTOCOL_VERSION}), encoding="utf-8")
     try:
         server.serve_forever()
     finally:

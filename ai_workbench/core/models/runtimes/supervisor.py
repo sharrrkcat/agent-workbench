@@ -222,6 +222,27 @@ class RuntimeSupervisor:
                 {"runtime_id": runtime_id, "variant": variant, "action": "install" if value.state in {"not_installed", "broken", "interrupted"} else "view_runtime"})
         return self.entry(runtime_id, variant)
 
+    def executable(self, entry):
+        """Resolve the installed entry point without running an integrity check."""
+        self.assert_available(entry.runtime_id, entry.variant)
+        target = self.directory(entry)
+        try:
+            marker = installed_file(self.base, target, "installation.json")
+            data = json.loads(marker.read_text(encoding="utf-8"))
+            name = data["executable"]
+            if not isinstance(name, str):
+                raise ValueError("Invalid entry point")
+            path = installed_file(self.base, target, name, allow_interpreter=entry.archive_format == "venv")
+            if not path.is_file():
+                raise ValueError("Missing entry point")
+            if entry.runtime_id == "python-worker":
+                worker = installed_file(self.base, target, "worker/" + entry.worker_entrypoint)
+                if not worker.is_file():
+                    raise ValueError("Missing worker entry point")
+            return path
+        except (OSError, ValueError, KeyError, TypeError, ModelError) as exc:
+            raise ModelError("RUNTIME_BROKEN", "The installed runtime entry point is missing or invalid. Reinstall it from Models settings.", 503) from exc
+
     async def verify(self, entry):
         value = self.installation(entry.runtime_id, entry.variant)
         target = self.directory(entry)

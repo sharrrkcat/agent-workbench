@@ -12,9 +12,11 @@ from uuid import uuid4
 
 if __package__:
     from .common import WorkerError, fields, integer, local_model
+    from .timing import TRACE_ENV, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from common import WorkerError, fields, integer, local_model
+    from timing import TRACE_ENV, stage, tracing, worker_trace
 
 MAX_BODY = 32 * 1024 * 1024
 PROTOCOL_VERSION = 1
@@ -132,28 +134,32 @@ def main():
     ready = Path(os.environ["WORKBENCH_WORKER_READY"])
     listener, loop = None, None
     try:
-        token = os.environ["WORKBENCH_WORKER_TOKEN"]
-        if len(token) < 32:
-            raise WorkerError("INVALID_REQUEST")
-        options = options_request(json.loads(os.environ["WORKBENCH_RUNTIME_OPTIONS"]))
-        path = local_model(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve(), os.environ["WORKBENCH_MODEL_REF"])
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        listener.bind(("127.0.0.1", 0))
-        listener.listen(128)
-        listener.setblocking(False)
-        # Windows creates a loopback socket pair for its event loop. Establish
-        # that infrastructure before the engine prohibits all outbound connects.
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        if __package__:
-            from .transformers_engine import TransformersEngine
-        else:
-            from transformers_engine import TransformersEngine
-        engine = TransformersEngine(path, options)
-        app = build_app(engine, token)
-        import uvicorn
-        server = uvicorn.Server(uvicorn.Config(app, access_log=False, log_level="warning"))
-        ready.write_text(json.dumps({**engine.metadata, "port": listener.getsockname()[1]}), encoding="utf-8")
+        with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
+            with stage("worker_setup"):
+                token = os.environ["WORKBENCH_WORKER_TOKEN"]
+                if len(token) < 32:
+                    raise WorkerError("INVALID_REQUEST")
+                options = options_request(json.loads(os.environ["WORKBENCH_RUNTIME_OPTIONS"]))
+                path = local_model(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve(), os.environ["WORKBENCH_MODEL_REF"])
+                listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                listener.bind(("127.0.0.1", 0))
+                listener.listen(128)
+                listener.setblocking(False)
+                # Establish Windows event-loop sockets before blocking networking.
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            with stage("engine_init"):
+                if __package__:
+                    from .transformers_engine import TransformersEngine
+                else:
+                    from transformers_engine import TransformersEngine
+                engine = TransformersEngine(path, options)
+            with stage("http_setup"):
+                app = build_app(engine, token)
+                import uvicorn
+                server = uvicorn.Server(uvicorn.Config(app, access_log=False, log_level="warning"))
+            with stage("ready_file"):
+                ready.write_text(json.dumps({**engine.metadata, "port": listener.getsockname()[1]}), encoding="utf-8")
         loop.run_until_complete(server.serve(sockets=[listener]))
     except Exception as exc:
         code = exc.code if isinstance(exc, WorkerError) else "MODEL_UNAVAILABLE"

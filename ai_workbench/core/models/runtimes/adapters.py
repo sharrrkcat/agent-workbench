@@ -21,6 +21,7 @@ from ai_workbench.core.models.runtimes.supervisor import remove_owned
 from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ProviderProfile, RerankResult, VisionResult
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
+from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing
 
 
 class ManagedAdapter:
@@ -38,11 +39,64 @@ class ManagedAdapter:
         self.lock = asyncio.Lock()
         self.token = ""
         self.log_path: Path | None = None
+        self.log_paths: dict[str, Path] = {}
+        self._trace_logs: dict[str, RuntimeLog] = {}
         self.error_code: str | None = None
         self.device_name: str | None = None
         self.gpu_layers_loaded: int | None = None
         self.gpu_layers_total: int | None = None
         self.tool_calls_supported = False
+
+    def begin_trace(self, profile, trigger):
+        load_id = str(uuid4())
+        path = self.supervisor.logs / f"process-{profile.runtime_id}-{load_id}.log"
+        log_type = LlamaCudaLog if self.entry.runtime_id == "llama-server" and self.entry.variant == "cuda" else RuntimeLog
+        log = log_type(path, self.supervisor.root, (self.token,) if self.token else ())
+        self.log_path = self.log_paths[profile.id] = path
+        self._trace_logs[load_id] = log
+        self._prune_logs()
+
+        def finished():
+            self._trace_logs.pop(load_id, None)
+            self._prune_logs()
+
+        operation = {"health": "health", "reference": "reference_prepare"}.get(trigger, "load")
+        return LoadTrace({"load_id": load_id, "model_profile_id": profile.id,
+                          "runtime_id": self.entry.runtime_id, "variant": self.entry.variant,
+                          "version": self.entry.version, "device": profile.runtime_options.get("device", self.entry.variant),
+                          "trigger": trigger, "operation": operation},
+                         log.write, total_stage=operation + "_total", on_finish=finished)
+
+    def _prune_logs(self):
+        try:
+            active = {log.path for log in self._trace_logs.values()}
+            manager = self.supervisor.manager
+            for slot in manager._slots.values() if manager else ():
+                adapter = slot.adapter
+                if isinstance(adapter, ManagedAdapter):
+                    active.update(log.path for log in adapter._trace_logs.values())
+                    if adapter.process:
+                        log = getattr(adapter.process, "log", None)
+                        if log:
+                            active.add(log.path)
+            terminal = sorted((path for path in self.supervisor.logs.glob(f"process-{self.entry.runtime_id}-*.log")
+                               if path not in active), key=lambda path: path.stat().st_mtime_ns, reverse=True)
+            for path in terminal[20:]:
+                path.unlink()
+        except OSError:
+            pass
+
+    def _trace(self, profile, trigger):
+        trace = current_trace()
+        return trace if trace and trace.metadata["load_id"] in self._trace_logs else self.begin_trace(profile, trigger)
+
+    def _activate_trace(self, trace):
+        log = self._trace_logs[trace.metadata["load_id"]]
+        if self.token:
+            log.secrets = (self.token,)
+        if self.process:
+            self.process.log = log
+        return log
 
     @property
     def single_model(self):
@@ -81,41 +135,54 @@ class ManagedAdapter:
             raise ModelError("MODEL_NOT_FOUND", "The local model file or directory is missing or outside data/models.", 404) from exc
 
     async def health(self, profile):
-        self.supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
-        await self.supervisor.verify(self.entry)
-        self._model_path(profile)
-        if self.client and self.process and self.process.process.returncode is None:
-            await self._rpc("GET", "/health")
-        return self.snapshot(profile)
+        with tracing(self._trace(profile, "health")) as trace:
+            self._activate_trace(trace)
+            with stage("execution_entry"):
+                self.supervisor.executable(self.entry)
+            with stage("model_resources"):
+                self._model_path(profile)
+            if self.client and self.process and self.process.process.returncode is None:
+                with stage("health_rpc"):
+                    await self._rpc("GET", "/health")
+            return self.snapshot(profile)
 
     async def load(self, profile, *, explicit=False):
-        async with self.lock:
-            if self.failed and not explicit:
-                raise ModelError("MODEL_UNAVAILABLE", "The managed process failed. Load the model again from Models settings.", 503)
-            self.supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
-            executable = await self.supervisor.verify(self.entry)
-            path = self._model_path(profile)
-            if self.failed:
-                await self._stop()
-                self.failed = False
-            try:
-                if not self.process:
-                    await self._start(profile, path, executable)
-                if not self.single_model and profile.id not in self.loaded:
-                    metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
-                        "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.runtime_options})
-                    if self.entry.variant == "audio-cuda":
-                        if not isinstance(metadata.get("device_name"), str):
-                            raise ModelError("RUNTIME_BROKEN", "Audio worker did not report its execution device.", 503)
-                        self.device_name = metadata["device_name"]
-                self.loaded.add(profile.id)
-                return self.snapshot(profile)
-            except BaseException as exc:
-                await self._stop()
-                self.failed, self.state = True, "failed"
-                self.error_code = exc.code if isinstance(exc, ModelError) else "MODEL_UNAVAILABLE"
-                self.changed()
-                raise
+        with tracing(self._trace(profile, "explicit" if explicit else "autoload")) as trace:
+            async with self.lock:
+                self._activate_trace(trace)
+                trace.reused.update(process_reused=self.process is not None,
+                                    model_reused=bool(self.loaded) if self.single_model else profile.id in self.loaded)
+                if self.failed and not explicit:
+                    raise ModelError("MODEL_UNAVAILABLE", "The managed process failed. Load the model again from Models settings.", 503)
+                with stage("execution_entry"):
+                    executable = self.supervisor.executable(self.entry)
+                with stage("model_resources"):
+                    path = self._model_path(profile)
+                if self.failed:
+                    with stage("failure_cleanup"):
+                        await self._stop()
+                    self.failed = False
+                try:
+                    if not self.process:
+                        await self._start(profile, path, executable)
+                    if not self.single_model and profile.id not in self.loaded:
+                        with stage("worker_load_rpc"):
+                            metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
+                                "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.runtime_options})
+                            if self.entry.variant == "audio-cuda":
+                                if not isinstance(metadata.get("device_name"), str):
+                                    raise ModelError("RUNTIME_BROKEN", "Audio worker did not report its execution device.", 503)
+                                self.device_name = metadata["device_name"]
+                    self.loaded.add(profile.id)
+                    return self.snapshot(profile)
+                except BaseException as exc:
+                    if self.process or self.run_dir:
+                        with stage("failure_cleanup"):
+                            await self._stop()
+                    self.failed, self.state = True, "failed"
+                    self.error_code = exc.code if isinstance(exc, ModelError) else "MODEL_UNAVAILABLE"
+                    self.changed()
+                    raise
 
     async def _start(self, profile, path, executable):
         self.state = "starting"
@@ -124,14 +191,9 @@ class ManagedAdapter:
         self.run_dir = self.supervisor.base / ".processes" / run_id
         self.run_dir.mkdir(parents=True)
         self.token = secrets.token_urlsafe(32)
-        self.log_path = self.supervisor.logs / f"process-{profile.runtime_id}-{run_id}.log"
         cuda = self.entry.runtime_id == "llama-server" and self.entry.variant == "cuda"
-        log = (LlamaCudaLog if cuda else RuntimeLog)(self.log_path, self.supervisor.root, (self.token,))
-        active_logs = {slot.adapter.log_path for slot in self.supervisor.manager._slots.values()
-                       if isinstance(slot.adapter, ManagedAdapter) and slot.adapter.process}
-        finished_logs = sorted((path for path in self.supervisor.logs.glob(f"process-{profile.runtime_id}-*.log") if path not in active_logs), key=lambda path: path.stat().st_mtime, reverse=True)
-        for old_log in finished_logs[19:]:
-            old_log.unlink()
+        trace = current_trace()
+        log = self._activate_trace(trace)
         env = {key: value for key, value in os.environ.items() if not key.startswith(("PYTHON", "VIRTUAL_ENV", "LLAMA_ARG_")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
         target = self.supervisor.directory(self.entry)
@@ -139,6 +201,7 @@ class ManagedAdapter:
             ready = self.run_dir / "ready.json"
             env.update(WORKBENCH_WORKER_TOKEN=self.token, WORKBENCH_WORKER_READY=str(ready),
                        WORKBENCH_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
+            env[TRACE_ENV] = trace.transport_value()
             if self.entry.variant == "audio-cuda":
                 env.update(WORKBENCH_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
                 if getattr(self, "validation", False):
@@ -153,7 +216,8 @@ class ManagedAdapter:
         else:
             if cuda:
                 env = llama_environment(executable.parent)
-                device_id, self.device_name = await probe_cuda_device(executable, env, log)
+                with stage("cuda_probe"):
+                    device_id, self.device_name = await probe_cuda_device(executable, env, log)
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", 0))
                 port = reservation.getsockname()[1]
@@ -169,7 +233,24 @@ class ManagedAdapter:
             if cuda:
                 args.extend(["--log-colors", "off"])
             args.extend(cuda_arguments(options, device_id) if cuda else ["--n-gpu-layers", options["gpu_layers"]])
-        self.process = await ManagedProcess.start(args, env=env, cwd=executable.parent, log=log)
+        with stage("process_spawn"):
+            self.process = await ManagedProcess.start(args, env=env, cwd=executable.parent, log=log)
+        with stage("ready_wait"):
+            await self._wait_ready(profile, port, ready if profile.runtime_id == "python-worker" else None)
+        if self.single_model:
+            if cuda:
+                with stage("cuda_offload_confirmation"):
+                    self.gpu_layers_loaded, self.gpu_layers_total = await confirmed_offload(log)
+            with stage("model_advertisement"):
+                provider = ProviderProfile(name="managed", base_url=str(self.client.base_url).rstrip("/") + "/v1", api_key=self.token, timeout_seconds=300)
+                self.openai = OpenAIAdapter(provider)
+                if "managed" not in await self.openai.models():
+                    raise ModelError("RUNTIME_BROKEN", "The managed server did not advertise the configured model.", 503)
+        self.state = "ready"
+        self.monitor = asyncio.create_task(self._watch(self.process))
+        self.changed()
+
+    async def _wait_ready(self, profile, port, ready):
         for _ in range(1200):
             if port is None and ready.exists():
                 try:
@@ -205,16 +286,6 @@ class ManagedAdapter:
             await asyncio.sleep(0.25)
         else:
             raise ModelError("MODEL_TIMEOUT", "The managed process did not become healthy in five minutes.", 504)
-        if self.single_model:
-            if cuda:
-                self.gpu_layers_loaded, self.gpu_layers_total = await confirmed_offload(log)
-            provider = ProviderProfile(name="managed", base_url=f"http://127.0.0.1:{port}/v1", api_key=self.token, timeout_seconds=300)
-            self.openai = OpenAIAdapter(provider)
-            if "managed" not in await self.openai.models():
-                raise ModelError("RUNTIME_BROKEN", "The managed server did not advertise the configured model.", 503)
-        self.state = "ready"
-        self.monitor = asyncio.create_task(self._watch(self.process))
-        self.changed()
 
     async def _watch(self, process):
         await process.process.wait()
@@ -231,6 +302,8 @@ class ManagedAdapter:
         if self.failed or not self.client:
             raise ModelError("MODEL_UNAVAILABLE", "The managed worker is not running.", 503)
         try:
+            trace = current_trace()
+            headers = {TRACE_HEADER: trace.transport_value()} if trace and operation in {"/load", "/reference"} else None
             if audio_format:
                 async with self.client.stream(method, operation, json=body) as stream:
                     chunks = bytearray()
@@ -240,7 +313,7 @@ class ManagedAdapter:
                         chunks.extend(chunk)
                     response = httpx.Response(stream.status_code, headers=stream.headers, content=bytes(chunks))
             else:
-                response = await self.client.request(method, operation, json=body)
+                response = await self.client.request(method, operation, json=body, headers=headers)
             if audio_format and response.is_success:
                 if response.headers.get("content-type") != FORMATS[audio_format]:
                     raise ValueError("Unexpected audio MIME type")
@@ -260,16 +333,19 @@ class ManagedAdapter:
         except asyncio.CancelledError:
             # A synchronous CPU call cannot be cancelled safely within its thread.
             # Stop the shared worker before the manager releases its queue slot.
-            await self._stop()
+            with stage("failure_cleanup"):
+                await self._stop()
             self.changed()
             raise
         except httpx.TimeoutException as exc:
-            await self._stop()
+            with stage("failure_cleanup"):
+                await self._stop()
             self.failed, self.state = True, "failed"
             self.changed()
             raise ModelError("MODEL_TIMEOUT", "The managed worker timed out and was stopped.", 504) from exc
         except (httpx.HTTPError, ValueError) as exc:
-            await self._stop()
+            with stage("failure_cleanup"):
+                await self._stop()
             self.failed, self.state = True, "failed"
             self.changed()
             raise ModelError("MODEL_UNAVAILABLE", "The managed worker disconnected or returned an invalid response.", 503) from exc
@@ -406,22 +482,30 @@ class PythonWorkerAdapter(ManagedAdapter):
 
 class AudioWorkerAdapter(ManagedAdapter):
     async def validate_reference(self, profile, reference):
-        async with self.lock:
-            if self.failed:
-                raise ModelError("MODEL_UNAVAILABLE", "Load the Audio model again after its process failure.", 503)
-            if not self.process:
-                try:
-                    self.supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
-                    executable = await self.supervisor.verify(self.entry)
-                    await self._start(profile, self._model_path(profile), executable)
-                except BaseException:
-                    await self._stop()
-                    self.changed()
-                    raise
-        value = await self._rpc("POST", "/reference", {"reference": reference})
-        if type(value.get("frames")) is not int or value["frames"] < 1 or type(value.get("sample_rate")) is not int or not 8000 <= value["sample_rate"] <= 192000:
-            raise ModelError("PROVIDER_PROTOCOL_ERROR", "Audio worker returned invalid reference metadata.", 502)
-        return value
+        with tracing(self._trace(profile, "reference")) as trace:
+            async with self.lock:
+                self._activate_trace(trace)
+                trace.reused.update(process_reused=self.process is not None, model_reused=profile.id in self.loaded)
+                if self.failed:
+                    raise ModelError("MODEL_UNAVAILABLE", "Load the Audio model again after its process failure.", 503)
+                if not self.process:
+                    try:
+                        with stage("execution_entry"):
+                            executable = self.supervisor.executable(self.entry)
+                        with stage("model_resources"):
+                            path = self._model_path(profile)
+                        await self._start(profile, path, executable)
+                    except BaseException:
+                        if self.process or self.run_dir:
+                            with stage("failure_cleanup"):
+                                await self._stop()
+                        self.changed()
+                        raise
+            with stage("reference_rpc"):
+                value = await self._rpc("POST", "/reference", {"reference": reference})
+                if type(value.get("frames")) is not int or value["frames"] < 1 or type(value.get("sample_rate")) is not int or not 8000 <= value["sample_rate"] <= 192000:
+                    raise ModelError("PROVIDER_PROTOCOL_ERROR", "Audio worker returned invalid reference metadata.", 502)
+            return value
 
     async def speech(self, profile, text, voice, speed, response_format, language, *, reference, reference_text=None, model_options):
         return await self._rpc("POST", "/speech", {"profile_id": profile.id, "input": text, "reference": reference,

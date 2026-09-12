@@ -9,9 +9,9 @@ from ai_workbench.core.models.runtimes.schema import AudioOptions, CatalogEntry,
 
 CATALOG_ROOT = Path(__file__).parent
 LLAMA_VERSION = "b10809"
-ONNX_VERSION = "1.0.0"
-TRANSFORMERS_VERSION = "1.0.0"
-AUDIO_VERSION = "1.1.0"
+ONNX_VERSION = "1.0.2"
+TRANSFORMERS_VERSION = "1.0.2"
+AUDIO_VERSION = "1.1.2"
 PYTHON_VERSION = "3.12.11"
 # Exact interpreter artifacts selected by the application's pinned uv 0.11.8.
 PYTHON_ARTIFACTS = {
@@ -22,9 +22,9 @@ PYTHON_ARTIFACTS = {
         url="https://github.com/astral-sh/python-build-standalone/releases/download/20251007/cpython-3.12.11%2B20251007-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
         sha256="f98121eb1fb2b05a25c1f3d2fe7cf08c3a2468c350785df3d84c2516e7280d3f", archive_format="tar.gz"),
 }
-ONNX_FILES = ["common.py", "server.py", "protocol.py", "tts_engine.py", "tts_catalog.py", "audio.py"]
-TRANSFORMERS_FILES = ["common.py", "transformers_server.py", "transformers_engine.py"]
-AUDIO_FILES = ["common.py", "server.py", "protocol.py", "tts_catalog.py", "audio.py",
+ONNX_FILES = ["common.py", "timing.py", "server.py", "protocol.py", "tts_engine.py", "tts_catalog.py", "audio.py"]
+TRANSFORMERS_FILES = ["common.py", "timing.py", "transformers_server.py", "transformers_engine.py"]
+AUDIO_FILES = ["common.py", "timing.py", "server.py", "protocol.py", "tts_catalog.py", "audio.py",
                "audio_catalog.py", "audio_engine.py", "audio_server.py"]
 # GitHub release asset digests, verified from ggml-org/llama.cpp b10809.
 LLAMA_ASSETS = {

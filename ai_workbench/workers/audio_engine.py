@@ -11,11 +11,13 @@ if __package__:
     from .audio_catalog import CHATTERBOX_DEFAULTS, MAX_DECODED_BYTES, MAX_REFERENCE_SECONDS, QWEN3TTS_DEFAULTS, QWEN3TTS_LANGUAGES, QWEN3TTS_SUBTALKER
     from .common import WorkerError
     from .tts_catalog import MAX_AUDIO_BYTES, SAMPLE_RATE
+    from .timing import stage
 else:
     from audio import validate_audio
     from audio_catalog import CHATTERBOX_DEFAULTS, MAX_DECODED_BYTES, MAX_REFERENCE_SECONDS, QWEN3TTS_DEFAULTS, QWEN3TTS_LANGUAGES, QWEN3TTS_SUBTALKER
     from common import WorkerError
     from tts_catalog import MAX_AUDIO_BYTES, SAMPLE_RATE
+    from timing import stage
 
 _network_blocked = False
 
@@ -89,18 +91,19 @@ def decode_audio(path: Path, *, max_seconds=MAX_REFERENCE_SECONDS):
 
 
 def device_for(options):
-    import torch
-    torch.set_num_threads(options["intraop_threads"])
-    if options["device"] == "cpu":
-        return "cpu", "CPU"
-    try:
-        if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
-            raise RuntimeError("CUDA unavailable")
-        torch.cuda.set_device(0)
-        torch.empty(1, device="cuda:0")
-        return "cuda", torch.cuda.get_device_name(0)
-    except Exception as exc:
-        raise WorkerError("RUNTIME_DEVICE_UNAVAILABLE", 503) from exc
+    with stage("device_init"):
+        import torch
+        torch.set_num_threads(options["intraop_threads"])
+        if options["device"] == "cpu":
+            return "cpu", "CPU"
+        try:
+            if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
+                raise RuntimeError("CUDA unavailable")
+            torch.cuda.set_device(0)
+            torch.empty(1, device="cuda:0")
+            return "cuda", torch.cuda.get_device_name(0)
+        except Exception as exc:
+            raise WorkerError("RUNTIME_DEVICE_UNAVAILABLE", 503) from exc
 
 
 def text_chunks(text, limit=250):
@@ -155,20 +158,23 @@ def patch_chatterbox_f32(model):
 class ChatterboxEngine:
     def __init__(self, path, options):
         require_offline()
-        from chatterbox.tts import ChatterboxTTS
+        with stage("engine_imports"):
+            from chatterbox.tts import ChatterboxTTS
         self.device, self.device_name = device_for(options)
-        self.model = ChatterboxTTS.from_local(path, device=self.device)
-        if self.device == "cpu":
-            self.model.t3.float()
-            self.model.s3gen.float()
-            self.model.ve.float()
-        transformer = self.model.t3.tfmr
-        transformer.config._attn_implementation = "eager"
-        for layer in getattr(transformer, "layers", []):
-            layer.self_attn._attn_implementation = "eager"
-        patch_chatterbox_f32(self.model)
-        self.model.conds = None
-        self.dtype = next(self.model.t3.parameters()).dtype
+        with stage("model_from_local"):
+            self.model = ChatterboxTTS.from_local(path, device=self.device)
+        with stage("post_load"):
+            if self.device == "cpu":
+                self.model.t3.float()
+                self.model.s3gen.float()
+                self.model.ve.float()
+            transformer = self.model.t3.tfmr
+            transformer.config._attn_implementation = "eager"
+            for layer in getattr(transformer, "layers", []):
+                layer.self_attn._attn_implementation = "eager"
+            patch_chatterbox_f32(self.model)
+            self.model.conds = None
+            self.dtype = next(self.model.t3.parameters()).dtype
 
     def speech(self, text, reference, speed, response_format, model_options):
         import numpy as np
@@ -196,13 +202,16 @@ class QwenTTSEngine:
     """Qwen3-TTS 12Hz Base with request-scoped voice conditioning."""
     def __init__(self, path, options):
         require_offline()
-        import torch
-        from qwen_tts import Qwen3TTSModel
+        with stage("engine_imports"):
+            import torch
+            from qwen_tts import Qwen3TTSModel
         self.device, self.device_name = device_for(options)
-        self.model = Qwen3TTSModel.from_pretrained(str(path), device_map=self.device,
-            dtype=torch.float32 if self.device == "cpu" else torch.bfloat16,
-            attn_implementation="sdpa", local_files_only=True, trust_remote_code=False, use_safetensors=True)
-        self.dtype = self.model.model.dtype
+        with stage("model_from_pretrained"):
+            self.model = Qwen3TTSModel.from_pretrained(str(path), device_map=self.device,
+                dtype=torch.float32 if self.device == "cpu" else torch.bfloat16,
+                attn_implementation="sdpa", local_files_only=True, trust_remote_code=False, use_safetensors=True)
+        with stage("post_load"):
+            self.dtype = self.model.model.dtype
 
     def speech(self, text, reference, speed, response_format, model_options, *, language=None, reference_text=None):
         audio, reference_rate = decode_audio(reference)
@@ -216,13 +225,16 @@ class WhisperEngine:
     """Short-form package acceptance engine; no public ASR endpoint."""
     def __init__(self, path, options):
         require_offline()
-        import torch
-        from transformers import WhisperForConditionalGeneration, WhisperProcessor
+        with stage("engine_imports"):
+            import torch
+            from transformers import WhisperForConditionalGeneration, WhisperProcessor
         self.device, self.device_name = device_for(options)
         self.dtype = torch.float32 if self.device == "cpu" else torch.float16
-        self.processor = WhisperProcessor.from_pretrained(path, local_files_only=True)
-        self.model = WhisperForConditionalGeneration.from_pretrained(path, local_files_only=True,
-            torch_dtype=self.dtype, attn_implementation="eager").to(self.device).eval()
+        with stage("processor"):
+            self.processor = WhisperProcessor.from_pretrained(path, local_files_only=True)
+        with stage("weights"):
+            self.model = WhisperForConditionalGeneration.from_pretrained(path, local_files_only=True,
+                torch_dtype=self.dtype, attn_implementation="eager").to(self.device).eval()
 
     def transcribe(self, reference):
         import librosa

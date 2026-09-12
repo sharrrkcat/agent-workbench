@@ -79,10 +79,10 @@ exposes pinned platforms, kinds and strict options; internal records own HTTPS U
 | --- | --- |
 | llama-server/cpu | Windows and Linux x64 |
 | llama-server/cuda | Windows x64 |
-| python-worker/transformers-cuda | Windows x64 (validated with explicit CPU and CUDA execution) |
-| python-worker/onnx-cpu | Windows and Linux x64 (Kokoro; WD14 remains deferred) |
+| python-worker/transformers-cuda | Windows x64, version 1.0.2; explicit CPU and CUDA execution |
+| python-worker/onnx-cpu | Windows and Linux x64, version 1.0.2; Kokoro; WD14 deferred |
 | python-worker/infinity-cuda | Placeholder, unsupported |
-| python-worker/audio-cuda | Windows x64, version 1.1.0; Chatterbox and Qwen3-TTS Base; private Whisper acceptance |
+| python-worker/audio-cuda | Windows x64, version 1.1.2; Chatterbox and Qwen3-TTS Base; private Whisper acceptance |
 
 Separate PyTorch CPU distributions, Vulkan, torch-cu128 and onnx-gpu are removed.
 Linux Transformers, Infinity and Audio remain unsupported.
@@ -156,34 +156,34 @@ independently of installation logs.
 
 ## Managed processes and workers
 
-Workers bind `127.0.0.1` on reserved ports. Process groups and Windows kill-on-job-close
-Job Objects stop full trees on unload, cancellation or exit. Sanitized logs are capped
-at 10 MiB under `data/logs/runtimes`: latest 20 terminal tasks and 20 process logs per runtime.
-
-Llama and Transformers use the OpenAI-compatible adapter and private process keys.
-Transformers exposes authenticated health, a single managed model and chat endpoints;
-ONNX and Audio use token-authenticated health/load/unload and binary speech RPC;
-Audio also validates reference files without loading model weights.
-Standard-library validation precedes engine imports.
-
-Llama CUDA enumerates devices with the pinned executable and selects the first
-with split-mode=none; none returns RUNTIME_DEVICE_UNAVAILABLE. Auto uses
-gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx=context_size; manual uses
-fit=off. Startup logs must confirm positive GPU offload; missing/zero layers or
-insufficient memory stops loading without CPU substitution. Cached reads do not probe GPUs.
-
-Workers enforce offline/local-only loading without remote model code or device substitution.
-Transformers uses float32 on CPU and checkpoint dtype on CUDA; upstream idle release
-is disabled. ModelManager stops cancelled processes before freeing occupancy.
-Transformers tools require a supported response template and run only via Harness;
-vision, JSON output, nonzero presence/frequency penalties and explicit tool controls fail.
-Audio blocks Python networking, uses Chatterbox from_local with float32/attention
-adaptations, and Qwen local-only loading with float32 CPU/bfloat16 CUDA and SDPA.
-Whisper remains a private acceptance engine without a public kind or endpoint.
-Whisper counts decoded samples before resampling/features: at most 30 seconds, including exactly 30;
-longer audio is rejected without truncation, segmentation or partial transcripts.
+Workers bind reserved loopback ports. Process groups and Windows kill-on-job-close Job Objects stop
+full trees on unload, cancellation or exit. Sanitized logs under `data/logs/runtimes` have a 10 MiB cap;
+retention keeps 20 terminal tasks and 20 terminal process/load-attempt logs per runtime, plus active logs.
+Load/autoload, health and Audio reference preparation resolve installation metadata's executable,
+checking availability, entry paths and model resources without installation inventory, hashes or verification-cache access.
+Full integrity checks remain in installation: family locks/sources and installed files, excluding bytecode caches.
+The model log endpoint returns the latest attempt, including pre-spawn failures; UTC records share load_id through startup environment/private headers.
+`duration_ms`/`elapsed_ms` measure monotonic wall time; `cpu_duration_ms`/`cpu_elapsed_ms` measure CPU time for all threads
+in the emitting process, excluding child processes. Concurrent work is included; CPU time can exceed wall time and is not an I/O measurement.
+Totals include queueing/cleanup and end before inference; nested stages overlap and must not be summed.
+Host stages cover entry/resources, CUDA probe, spawn/readiness, load RPC and advertisement. Workers time device,
+processor/model loading and post-load setup; import sub-stages separate Transformers symbols/serving and Kokoro libraries.
+Kokoro also times language resource checks, ONNX sessions and each language build/warmup. Imports include transitive work/cache effects.
+Reuse, success, failure, timeout and cancellation are recorded without content or credentials; logging failures are nonfatal.
+Llama/Transformers use private-key OpenAI-compatible health/models/chat; ONNX/Audio use private-token
+health/load/unload/speech RPC. Audio reference validation needs no weights; stdlib validation precedes engine imports.
+Llama CUDA selects the first enumerated device with split-mode=none; none returns RUNTIME_DEVICE_UNAVAILABLE.
+Auto uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx=context_size; manual uses fit=off.
+Logs must confirm positive GPU offload; missing/zero layers or insufficient memory stop loading without CPU substitution.
+Cached reads do not probe GPUs. Workers enforce offline/local-only loading without remote code or device substitution.
+Transformers uses float32 CPU/checkpoint dtype CUDA and disables upstream idle release. Cancellation stops processes
+before freeing occupancy. Tools require a supported response template and Harness; vision, JSON output,
+nonzero presence/frequency penalties and explicit tool controls fail.
+Audio blocks Python networking; Chatterbox uses from_local with float32/attention adaptations,
+and Qwen uses local-only loading with float32 CPU/bfloat16 CUDA and SDPA.
+Whisper is private acceptance only. Decoded samples are counted before resampling/features: at most 30 seconds,
+including exactly 30; longer audio fails without truncation, segmentation or partial transcripts.
 CLIP, SigLIP2 and WD14 entry points remain; DINOv2 and Florence2 are removed.
-Integrity checks cover family-specific locks/sources and installed files, excluding bytecode caches.
 
 ## Kokoro TTS
 

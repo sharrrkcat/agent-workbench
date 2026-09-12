@@ -141,6 +141,10 @@ class Adapter:
         self.loaded = False
         self.calls = []
 
+    def begin_trace(self, _profile, _trigger):
+        # These API tests replace execution; real-worker tests cover its logs.
+        return None
+
     def snapshot(self, _profile):
         return ModelStatus(state="ready" if self.loaded else "unloaded", residency="loaded" if self.loaded else "unloaded", unload_supported=True)
 

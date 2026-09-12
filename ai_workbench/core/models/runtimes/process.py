@@ -7,10 +7,13 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import threading
 
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.workers.timing import utc_timestamp
 
 LOG_LIMIT = 10 * 1024 * 1024
+_write_lock = threading.Lock()
 
 
 class RuntimeLog:
@@ -18,7 +21,10 @@ class RuntimeLog:
         self.path = path
         self.root = root
         self.secrets = secrets
-        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
 
     def sanitize(self, text: str):
         text = text.replace(str(self.root), "<workspace>").replace(self.root.as_posix(), "<workspace>")
@@ -26,18 +32,26 @@ class RuntimeLog:
             if secret:
                 text = text.replace(secret, "<redacted>")
         text = re.sub(r"https?://\S+", "<url>", text)
+        text = re.sub(r"\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+\b", "<loopback>", text)
+        text = re.sub(r"(?i)\bport\s*[:=]\s*\d+", "port=<redacted>", text)
         text = re.sub(r"(?i)(authorization|api[_-]key|token)\s*[:=]\s*\S+", r"\1=<redacted>", text)
         text = re.sub(r"[A-Za-z]:[\\/][^\s'\"`]+", "<path>", text)
         text = re.sub(r"(?<![\w<])/(?:home|Users|tmp|opt|var)/[^\s'\"`]+", "<path>", text)
         return text
 
     def write(self, text: str):
-        text = self.sanitize(text)
-        data = (text.rstrip() + "\n").encode("utf-8", errors="replace")
-        size = self.path.stat().st_size if self.path.exists() else 0
-        if size < LOG_LIMIT:
-            with self.path.open("ab") as stream:
-                stream.write(data[:LOG_LIMIT - size])
+        try:
+            text = self.sanitize(text)
+            stamp = utc_timestamp()
+            data = "".join(f"[{stamp}] {line}\n" for line in text.rstrip().splitlines()).encode("utf-8", errors="replace")
+            with _write_lock:
+                size = self.path.stat().st_size if self.path.exists() else 0
+                if size < LOG_LIMIT:
+                    with self.path.open("ab") as stream:
+                        stream.write(data[:LOG_LIMIT - size])
+        except Exception:
+            # Log storage is diagnostic, including when a runtime cannot start.
+            pass
 
 
 def _windows_job(pid):

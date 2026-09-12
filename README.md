@@ -71,13 +71,13 @@ The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
 lists supported CPU and Windows CUDA variants and platform limits. CUDA defaults
 to automatic GPU layers with a fixed context floor; manual layers are available.
 Loading requires a usable NVIDIA device and confirmed positive GPU offload.
-Install/cancel/retry/uninstall, job progress and bounded logs are available in
-Runtimes, alongside storage accounting and manual cache prune/clean. Shared hard
-links are deduplicated; the displayed cleanup estimate is exclusive logical size,
-not an exact disk-space promise. Clear cache preserves installed environments.
-Download settings
-configure runtime dependencies and artifact proxies only. No model weights are
-downloaded. See [models](docs/contracts/models.md) for engine and platform limits.
+Runtimes provides install/cancel/retry/uninstall, progress, logs and cache prune/clean.
+Storage deduplicates hard links; exclusive logical size is an estimate, not exact disk recovery.
+Cache cleanup preserves installations. Download settings affect dependencies/proxies, never model weights.
+Model load, health and reference preparation check entry/model availability, without installation integrity or cache scans.
+Model logs correlate UTC host/worker stages, package imports and wall/process CPU times, including pre-spawn failures.
+Totals include queueing but exclude inference; nested stage durations overlap. See [models](docs/contracts/models.md).
+Reinstall Python runtimes to update bundled workers: ONNX/Transformers 1.0.2, Audio 1.1.2.
 
 Release defaults to manual. External health/load verifies the advertised model,
 but standard OpenAI-compatible connections cannot report weight residency or
@@ -220,7 +220,7 @@ accepts only en-US; `tts.model_options` overrides defaults. See [reference limit
 
 ### Offline Qwen3-TTS Base Speech
 
-Install Windows **python-worker / audio-cuda 1.1.0**, select **Qwen3-TTS (12Hz Base)**
+Install Windows **python-worker / audio-cuda 1.1.2**, select **Qwen3-TTS (12Hz Base)**
 and explicit CPU/CUDA execution. Place the complete checkpoint, including generation config,
 text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is
 `tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
@@ -336,14 +336,14 @@ cancellation/isolation and Whisper's 30-second boundary. `--install-only`, `--sk
 and `--engine chatterbox|qwen3tts|whisper` select stages. Reports/samples go to build/audio-smoke; Linux is rejected.
 Rebuild the patched wheel with `uv run python scripts/build_audio_wheel.py`; dependency upgrades require the full matrix.
 
-For an explicit Windows CUDA installation/GPU check using a manually placed
-GGUF, run `uv run --no-sync python -m
-scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. This installs
+For a Windows CUDA check with an existing GGUF, run
+`uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. This installs
 CUDA if needed and exercises auto/manual load, chat, streaming and unload using
 temporary in-memory model profiles; runtime installation/jobs remain persisted.
-Stop Workbench before running this explicit smoke command. Record the hardware,
-runtime version and model with its results; deterministic tests do not establish
-real-provider behavior or cross-platform runtime compatibility.
+Stop Workbench before real-model checks. Record hardware, runtime version and model;
+deterministic tests do not establish real-provider or cross-platform runtime compatibility.
+`uv run python -m scripts.smoke_model_loading --install-only` updates the three Python runtimes.
+Run it without `--install-only` for first/reload timing and minimal inference; logs/report go to build/model-loading-smoke.
 
 Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract
 and relevant source/tests. [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md)

@@ -19,6 +19,7 @@ from ai_workbench.core.models.schema import (
     ImagePart, ModelProfile, ModelStatus, ProviderProfile, SpeechRequest,
 )
 from ai_workbench.workers.common import WorkerError
+from ai_workbench.workers.timing import current_trace, tracing
 
 
 @dataclass
@@ -196,12 +197,7 @@ class ModelManager:
                 if profile.kind not in supervisor.entry(profile.runtime_id, profile.runtime_variant).kinds:
                     raise ModelError("RUNTIME_UNSUPPORTED", "This model kind is not implemented by the selected runtime.", 503)
                 supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
-            if provider_id not in self._slots:
-                from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
-                cls = AudioWorkerAdapter if profile.runtime_variant == "audio-cuda" else TransformersServerAdapter if is_transformers(profile) else LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
-                adapter = cls(supervisor, profile, lambda: self._managed_changed(provider_id))
-                self._slots[provider_id] = ProviderSlot(adapter, asyncio.Semaphore(1))
-            return ManagedQueue(), self._slots[provider_id]
+            return ManagedQueue(), self._managed_slot(profile)
         try:
             provider = self.providers.get(provider_id)
         except KeyError as exc:
@@ -212,20 +208,34 @@ class ModelManager:
             self._slots[provider.id] = ProviderSlot(self.adapter_factory(provider), asyncio.Semaphore(provider.concurrency))
         return provider, self._slots[provider.id]
 
+    def _managed_slot(self, profile):
+        provider_id = self.backend_key(profile)
+        if provider_id not in self._slots:
+            from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
+            cls = AudioWorkerAdapter if profile.runtime_variant == "audio-cuda" else TransformersServerAdapter if is_transformers(profile) else LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
+            adapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(provider_id))
+            self._slots[provider_id] = ProviderSlot(adapter, asyncio.Semaphore(1))
+        return self._slots[provider_id]
+
     @asynccontextmanager
     async def _provider_lease(self, provider_id, key: tuple | None = None, profile=None, require_runtime=True, on_admit=None):
-        provider, slot = self._slot(provider_id, profile, require_runtime)
-        if slot.active + slot.queued >= provider.concurrency + provider.queue_size:
-            raise ModelError("MODEL_BUSY", "Provider queue is full.", 429)
-        if on_admit:
-            on_admit()
-        slot.queued += 1
-        slot.model_queued[key] = slot.model_queued.get(key, 0) + 1
-        self._publish(key)
+        trace = current_trace()
+        queue = trace.start_stage("queue_wait") if trace else None
         task = asyncio.current_task()
-        slot.tasks.add(task)
+        slot = None
+        registered = False
         acquired = False
         try:
+            provider, slot = self._slot(provider_id, profile, require_runtime)
+            if slot.active + slot.queued >= provider.concurrency + provider.queue_size:
+                raise ModelError("MODEL_BUSY", "Provider queue is full.", 429)
+            if on_admit:
+                on_admit()
+            slot.queued += 1
+            slot.model_queued[key] = slot.model_queued.get(key, 0) + 1
+            slot.tasks.add(task)
+            registered = True
+            self._publish(key)
             try:
                 await asyncio.wait_for(slot.semaphore.acquire(), timeout=provider.queue_timeout_seconds)
             except asyncio.TimeoutError as exc:
@@ -236,42 +246,60 @@ class ModelManager:
             slot.active += 1
             slot.model_active[key] = slot.model_active.get(key, 0) + 1
             self._publish(key)
+            if queue:
+                queue.finish()
             yield slot
+        except BaseException as exc:
+            if queue:
+                queue.finish(exc)
+            raise
         finally:
-            if acquired:
-                slot.active -= 1
-                slot.model_active[key] -= 1
-                slot.semaphore.release()
-            else:
-                slot.queued -= 1
-                slot.model_queued[key] -= 1
-            slot.tasks.discard(task)
-            self._publish(key)
+            if registered:
+                if acquired:
+                    slot.active -= 1
+                    slot.model_active[key] -= 1
+                    slot.semaphore.release()
+                else:
+                    slot.queued -= 1
+                    slot.model_queued[key] -= 1
+                slot.tasks.discard(task)
+                self._publish(key)
 
     @asynccontextmanager
-    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None):
+    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None, load_trigger=None):
         key = self._key(profile)
+        trace = None
+        if profile.runtime_id and self.runtime_supervisor and not self._closed and (
+            load_trigger or autoload and self._statuses.get(key, ModelStatus()).state != "ready"
+        ):
+            trace = self._managed_slot(profile).adapter.begin_trace(profile, load_trigger or "autoload")
         def admitted():
             if on_admit:
                 on_admit()
             idle = self._idle.pop(key, None)
             if idle and idle is not asyncio.current_task():
                 idle.cancel()
-        try:
-            async with self._provider_lease(self.backend_key(profile), key, profile, require_runtime, admitted) as slot:
-                try:
-                    if autoload:
-                        async with self._load_locks.setdefault(key, asyncio.Lock()):
-                            if self._statuses.get(key, ModelStatus()).state != "ready":
-                                self._notify(profile, await slot.adapter.load(profile))
-                    yield slot.adapter
-                finally:
-                    if release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
-                        await self._release_policy(profile, slot.adapter)
-        except ModelError as exc:
-            if exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}:
-                self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
-            raise
+        with tracing(trace):
+            try:
+                async with self._provider_lease(self.backend_key(profile), key, profile, require_runtime, admitted) as slot:
+                    try:
+                        if autoload:
+                            async with self._load_locks.setdefault(key, asyncio.Lock()):
+                                if self._statuses.get(key, ModelStatus()).state != "ready":
+                                    self._notify(profile, await slot.adapter.load(profile))
+                                    if trace:
+                                        trace.finish()
+                                elif trace:
+                                    trace.reused.update(process_reused=True, model_reused=True)
+                                    trace.finish()
+                        yield slot.adapter
+                    finally:
+                        if release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
+                            await self._release_policy(profile, slot.adapter)
+            except ModelError as exc:
+                if exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}:
+                    self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
+                raise
 
     async def _release_policy(self, profile, adapter):
         key = self._key(profile)
@@ -302,14 +330,14 @@ class ModelManager:
 
     async def health(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
-        async with self._lease(profile, autoload=False, release=False) as adapter:
+        async with self._lease(profile, autoload=False, release=False, load_trigger="health") as adapter:
             result = await adapter.health(profile)
             self._notify(profile, result)
             return result
 
     async def load(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
-        async with self._lease(profile, autoload=False, release=False) as adapter:
+        async with self._lease(profile, autoload=False, release=False, load_trigger="explicit") as adapter:
             result = await adapter.load(profile, explicit=True) if profile.runtime_id else await adapter.load(profile)
             self._notify(profile, result)
             return result
@@ -496,7 +524,7 @@ class ModelManager:
         return profile
 
     async def _validate_reference(self, profile, entry):
-        async with self._lease(profile, autoload=False) as adapter:
+        async with self._lease(profile, autoload=False, load_trigger="reference") as adapter:
             return await adapter.validate_reference(profile, entry.path.name)
 
     async def _stage_reference(self, data, audio_format, reference_text=None):
@@ -643,7 +671,12 @@ class ModelManager:
     def process_log(self, profile):
         slot = self._slots.get(self.backend_key(profile))
         path = getattr(slot.adapter, "log_path", None) if slot else None
-        return path.read_text(encoding="utf-8", errors="replace") if path and path.is_file() else ""
+        if slot:
+            path = getattr(slot.adapter, "log_paths", {}).get(profile.id, path)
+        try:
+            return path.read_text(encoding="utf-8", errors="replace") if path and path.is_file() else ""
+        except OSError:
+            return ""
 
     def require_runtime_idle(self, runtime_id, variant):
         for key in set(self._slots) | self._invalidating:

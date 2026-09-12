@@ -12,11 +12,13 @@ if __package__:
     from .common import WorkerError, fields, integer
     from .audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
     from .server import handler
+    from .timing import TRACE_ENV, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from common import WorkerError, fields, integer
     from audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
     from server import handler
+    from timing import TRACE_ENV, current_trace, stage, tracing, worker_trace
 
 
 def options_request(value):
@@ -97,9 +99,13 @@ class AudioWorker:
                 if (type(speed) not in {int, float} or not math.isfinite(speed) or not 0.25 <= speed <= 4
                         or parameters.get("response_format", "mp3") not in {"mp3", "wav"}):
                     raise WorkerError("INVALID_REQUEST")
-                path = audio_model(self.root, body["model_ref"], architecture)
+                with stage("model_resources"):
+                    path = audio_model(self.root, body["model_ref"], architecture)
                 if self.engine and self.profile_id != body["profile_id"]:
                     raise WorkerError("MODEL_BUSY", 409)
+                trace = current_trace()
+                if trace:
+                    trace.reused["model_reused"] = self.engine is not None
                 if not self.engine:
                     factory = self.engine_factory
                     if factory is None:
@@ -108,9 +114,11 @@ class AudioWorker:
                         else:
                             from audio_engine import ChatterboxEngine, QwenTTSEngine, WhisperEngine
                         factory = {"chatterbox": ChatterboxEngine, "qwen3tts": QwenTTSEngine, "whisper": WhisperEngine}[architecture]
-                    self.engine = factory(path, options)
+                    with stage("engine_init"):
+                        self.engine = factory(path, options)
                     self.profile_id, self.architecture = body["profile_id"], architecture
-                return self.health()
+                with stage("worker_ready"):
+                    return self.health()
             if operation == "/unload":
                 fields(body, ("profile_id",))
                 if body["profile_id"] != self.profile_id:
@@ -156,14 +164,17 @@ class AudioWorker:
 
 def main():
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
-    token = os.environ["WORKBENCH_WORKER_TOKEN"]
-    if len(token) < 32:
-        raise RuntimeError("Worker token is invalid")
-    worker = AudioWorker(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve(),
-        Path(os.environ["WORKBENCH_AUDIO_REFERENCES_ROOT"]).resolve(), validation=os.environ.get("WORKBENCH_AUDIO_VALIDATION") == "1")
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
-    server.daemon_threads = True
-    Path(os.environ["WORKBENCH_WORKER_READY"]).write_text(json.dumps({"port": server.server_port, "protocol_version": 1}), encoding="utf-8")
+    with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
+        with stage("worker_setup"):
+            token = os.environ["WORKBENCH_WORKER_TOKEN"]
+            if len(token) < 32:
+                raise RuntimeError("Worker token is invalid")
+            worker = AudioWorker(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve(),
+                Path(os.environ["WORKBENCH_AUDIO_REFERENCES_ROOT"]).resolve(), validation=os.environ.get("WORKBENCH_AUDIO_VALIDATION") == "1")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
+            server.daemon_threads = True
+        with stage("ready_file"):
+            Path(os.environ["WORKBENCH_WORKER_READY"]).write_text(json.dumps({"port": server.server_port, "protocol_version": 1}), encoding="utf-8")
     try:
         server.serve_forever()
     finally:
