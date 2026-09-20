@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import os
 from pathlib import Path
 import shutil
@@ -17,10 +16,10 @@ import zipfile
 import httpx
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, text_digest, worker_digest, worker_entrypoint
+from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, text_digest, worker_digest
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import (
-    CacheCleanupResult, Installation, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
+    CacheCleanupResult, Installation, InstallationManifest, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
 )
 from ai_workbench.core.models.runtimes.storage import is_link, scan_storage
 from ai_workbench.core.time import utc_now
@@ -69,32 +68,6 @@ def installed_file(target: Path, name: str) -> Path:
     raise ModelError("RUNTIME_BROKEN", "Installed file escapes its runtime directory.", 503)
 
 
-def runtime_inventory(target: Path, cancelled):
-    from ai_workbench.core.models.runtimes.schema import relative_ref
-    resolved_target = target.resolve()
-    parents = {target: resolved_target}
-    files = {}
-    for path in target.rglob("*"):
-        if cancelled.is_set():
-            raise InterruptedError()
-        name = path.relative_to(target).as_posix()
-        if "__pycache__" in path.relative_to(target).parts:
-            continue
-        relative_ref(name)
-        parent = parents.get(path.parent)
-        if parent is None:
-            parent = parents[path.parent] = path.parent.resolve()
-        info = path.lstat()
-        resolved = path.resolve() if is_link(info) else parent / path.name
-        if not resolved.is_relative_to(resolved_target):
-            raise ModelError("RUNTIME_BROKEN", "Installed file escapes its runtime directory.", 503)
-        if path.is_dir():
-            parents[path] = resolved
-        elif path.is_file():
-            files[name] = (path, path.stat())
-    return files
-
-
 async def file_work(work):
     cancelled = threading.Event()
     task = asyncio.create_task(asyncio.to_thread(work, cancelled))
@@ -104,15 +77,6 @@ async def file_work(work):
         cancelled.set()
         await asyncio.gather(task, return_exceptions=True)
         raise
-
-
-def inventory_hashes(target, cancelled):
-    result = {}
-    for name, (path, _info) in sorted(runtime_inventory(target, cancelled).items()):
-        if cancelled.is_set():
-            raise InterruptedError()
-        result[name] = sha256(path)
-    return result
 
 
 def extract_archive(archive: Path, target: Path, archive_format: str):
@@ -178,95 +142,69 @@ class RuntimeSupervisor:
         self.blocked = False
         self.closed = False
         self.manager = None
-        self._verified: dict[str, tuple] = {}
         self.store.interrupt_unfinished()
         for job in self.store.jobs():
             if job.state == "interrupted":
                 staging = self.base / ".staging" / job.id
                 if staging.exists():
                     remove_owned(self.base, staging)
+        self.installation()
 
     def directory(self):
         return contained(self.base, self.base / "local" / self.release.version)
 
-    def installation(self):
+    def _entry_paths(self, target, manifest):
+        if manifest.release != self.release:
+            raise ValueError("Installation release identity changed")
+        paths = {key: installed_file(target, name) for key, name in manifest.executables.model_dump().items()}
+        workers = [installed_file(target, "worker/" + name) for name in self.release.worker_files]
+        if not all(path.is_file() for path in [*paths.values(), *workers]):
+            raise ValueError("An installed entry point or worker source is missing")
+        return paths
+
+    def _inspect_installation(self, check=True):
         entry = self.release
         records = self.store.installations()
         value = records[0] if records else Installation(version=entry.version)
+        paths = None
         if not entry.supported:
             value.state, value.error_code = "unsupported", "RUNTIME_UNSUPPORTED"
-        elif value.version != entry.version or value.state == "installed" and not (self.directory() / "installation.json").is_file():
+        elif value.version != entry.version:
             value.state, value.error_code = "broken", "RUNTIME_BROKEN"
-        return value
+        elif check and value.state == "installed":
+            try:
+                target = self.directory()
+                contents = installed_file(target, "installation.json").read_bytes()
+                if hashlib.sha256(contents).hexdigest() != value.manifest_sha256:
+                    raise ValueError("Installation metadata digest changed")
+                paths = self._entry_paths(target, InstallationManifest.model_validate_json(contents, strict=True))
+            except (OSError, ValueError, ModelError):
+                value.state, value.error_code = "broken", "RUNTIME_BROKEN"
+                self.store.save_installation(value)
+                self._emit_installation(value)
+        return value, paths
 
-    def assert_available(self):
-        value = self.installation()
+    def installation(self, *, check=True):
+        return self._inspect_installation(check)[0]
+
+    @staticmethod
+    def _require_available(value):
         codes = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING",
                  "broken": "RUNTIME_BROKEN", "unsupported": "RUNTIME_UNSUPPORTED", "interrupted": "RUNTIME_BROKEN"}
         if value.state != "installed":
             raise ModelError(codes[value.state], "Install or repair the local backend in Models settings.", 503,
-                {"backend_profile_id": "local", "action": "install" if value.state in {"not_installed", "broken", "interrupted"} else "view_runtime"})
+                {"backend_profile_id": "local", "action": "repair" if value.state in {"broken", "interrupted"}
+                 else "install" if value.state == "not_installed" else "view_runtime"})
+
+    def assert_available(self, *, check=True):
+        self._require_available(self.installation(check=check))
         return self.release
 
     def executable(self, engine, device="cpu"):
-        """Resolve one installed entry point without inventory or integrity scans."""
-        self.assert_available()
-        target = self.directory()
-        try:
-            marker = installed_file(target, "installation.json")
-            data = json.loads(marker.read_text(encoding="utf-8"))
-            name = data["executables"][device if engine == "llama-server" else "python"]
-            if not isinstance(name, str):
-                raise ValueError("Invalid entry point")
-            path = installed_file(target, name)
-            if not path.is_file():
-                raise ValueError("Missing entry point")
-            if engine != "llama-server":
-                worker = installed_file(target, "worker/" + worker_entrypoint(engine))
-                if not worker.is_file():
-                    raise ValueError("Missing worker entry point")
-            return path
-        except (OSError, ValueError, KeyError, TypeError, ModelError) as exc:
-            raise ModelError("RUNTIME_BROKEN", "The installed entry point is missing or invalid. Repair the local backend.", 503) from exc
-
-    async def verify(self):
-        value = self.installation()
-        target = self.directory()
-
-        def check(cancelled):
-            manifest = target / "installation.json"
-            if sha256(manifest) != value.manifest_sha256:
-                raise ValueError("manifest mismatch")
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-            if data["release"] != self.release.model_dump():
-                raise ValueError("release mismatch")
-            files = data["files"]
-            if not isinstance(files, dict) or not files:
-                raise ValueError("empty installation")
-            inventory = runtime_inventory(target, cancelled)
-            inventory.pop("installation.json", None)
-            if set(files) != set(inventory):
-                raise ValueError("installation file inventory changed")
-            snapshot = [(name, info.st_size, info.st_mtime_ns) for name, (_path, info) in sorted(inventory.items())]
-            signature = (value.manifest_sha256, tuple(snapshot))
-            if self._verified.get("local") != signature:
-                for name, digest in files.items():
-                    if cancelled.is_set():
-                        raise InterruptedError()
-                    if sha256(inventory[name][0]) != digest:
-                        raise ValueError("installed file mismatch")
-            for name in data["executables"].values():
-                if name not in inventory:
-                    raise ValueError("missing executable")
-            return signature
-
-        try:
-            self._verified["local"] = await file_work(check)
-        except (OSError, ValueError, KeyError, TypeError, ModelError) as exc:
-            value.state, value.error_code = "broken", "RUNTIME_BROKEN"
-            self.store.save_installation(value)
-            self._emit_installation(value)
-            raise ModelError("RUNTIME_BROKEN", "Runtime integrity check failed. Repair the local backend.", 503) from exc
+        """Check fixed installation metadata and entry points before starting a process."""
+        value, paths = self._inspect_installation()
+        self._require_available(value)
+        return paths[device if engine == "llama-server" else "python"]
 
     def _emit_installation(self, value):
         if self.events:
@@ -397,22 +335,19 @@ class RuntimeSupervisor:
         if self.manager:
             self.manager.require_local_idle()
         value = self.installation()
+        if operation == "install" and value.state != "not_installed":
+            self._require_available(value)
         job = RuntimeJob(backend_profile_id="local", version=entry.version, operation=operation)
         job.log_path = f"{job.id}.log"
         self.active_job = job.id
         self.blocked = True
         try:
             if operation == "install" and value.state == "installed":
-                try:
-                    await self.verify()
-                except ModelError:
-                    value = self.installation()
-                else:
-                    job.state, job.stage, job.finished_at = "completed", "already_installed", utc_now()
-                    self._save_job(job)
-                    self.active_job = None
-                    self.blocked = False
-                    return job
+                job.state, job.stage, job.finished_at = "completed", "already_installed", utc_now()
+                self._save_job(job)
+                self.active_job = None
+                self.blocked = False
+                return job
             if self.manager:
                 await self.manager.invalidate_local()
             value.state, value.job_id, value.error_code = "installing", job.id, None
@@ -449,7 +384,6 @@ class RuntimeSupervisor:
             log = RuntimeLog(self.logs / job.log_path, self.root)
             job.state = "running"
             self._save_job(job)
-            self._verified.pop("local", None)
             if job.operation == "uninstall":
                 if target.exists():
                     await file_work(lambda _: remove_owned(self.base, target))
@@ -461,11 +395,11 @@ class RuntimeSupervisor:
                 executables = {"python": entry.python_executable}
                 for device, native in (("cpu", entry.native_cpu), ("cuda", entry.native_cuda)):
                     executables[device] = await self._install_native(native, payload, staging, device, job, log)
-                self._stage(job, "verifying", log)
-                manifest = {"release": entry.model_dump(), "executables": executables,
-                    "files": await file_work(lambda cancelled: inventory_hashes(payload, cancelled))}
+                self._stage(job, "finalizing", log)
+                manifest = InstallationManifest(release=entry, executables=executables)
+                self._entry_paths(payload, manifest)
                 marker = payload / "installation.json"
-                marker.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+                marker.write_text(manifest.model_dump_json(), encoding="utf-8")
                 value.manifest_sha256 = sha256(marker)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists():

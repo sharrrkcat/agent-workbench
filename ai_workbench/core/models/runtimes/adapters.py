@@ -105,7 +105,7 @@ class ManagedAdapter:
         return self.engine == "llama-server" or self.engine == "transformers"
 
     def runtime_status(self):
-        value = self.supervisor.installation()
+        value = self.supervisor.installation(check=False)
         return RuntimeStatus(engine=self.engine, version=value.version,
             install_state=value.state, process_state=self.state, job_id=value.job_id,
             device_name=self.device_name, gpu_layers_loaded=self.gpu_layers_loaded,

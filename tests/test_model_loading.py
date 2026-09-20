@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,18 +25,25 @@ from tests.test_tts import wav_bytes
 
 
 def forbidden(*_args, **_kwargs):
-    raise AssertionError("A model operation must not check runtime installation integrity or its cache")
+    raise AssertionError("A model operation must not scan or hash the installed environment")
 
 
-class ForbiddenCache(dict):
-    get = __getitem__ = __contains__ = __setitem__ = pop = forbidden
-
-
-def forbid_install_checks(monkeypatch, service):
-    monkeypatch.setattr(service, "verify", AsyncMock(side_effect=forbidden))
-    monkeypatch.setattr(implementation, "runtime_inventory", forbidden)
+def forbid_install_scans(monkeypatch, service):
+    original = Path.rglob
+    target = service.directory()
+    def rglob(path, *args, **kwargs):
+        if path.is_relative_to(target):
+            forbidden()
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "rglob", rglob)
     monkeypatch.setattr(implementation, "sha256", forbidden)
-    service._verified = ForbiddenCache()
+
+
+def save_manifest(service, data):
+    marker = service.directory() / "installation.json"
+    marker.write_text(json.dumps(data), encoding="utf-8")
+    service.store.save_installation(Installation(version=service.release.version, state="installed",
+        manifest_sha256=hashlib.sha256(marker.read_bytes()).hexdigest()))
 
 
 async def until(predicate):
@@ -54,16 +62,9 @@ def test_entry_resolution_reads_only_execution_metadata_and_preserves_nested_pat
         service = supervisor(tmp_path)
         await service.submit('install')
         await service.task
-        entry = service.release
         target = service.directory()
-        marker = target / "installation.json"
-        # A changed file list/hash is intentionally irrelevant to execution.
-        data = json.loads(marker.read_text())
-        data["files"] = None
-        data["artifact_sha256"] = "not-checked-on-load"
-        marker.write_text(json.dumps(data))
         (target / "unused.txt").write_text("not part of the manifest")
-        forbid_install_checks(monkeypatch, service)
+        forbid_install_scans(monkeypatch, service)
         assert service.executable("llama-server", "cpu") == target / "native/cpu/bin/llama-server.exe"
         assert service.installation().state == "installed"
         await service.close()
@@ -76,9 +77,10 @@ def test_invalid_or_missing_entry_fails_without_full_verification(tmp_path, monk
         service = supervisor(tmp_path)
         await service.submit('install')
         await service.task
-        entry = service.release
-        (service.directory() / "installation.json").write_text(json.dumps({"executables": {"cpu": name}}))
-        forbid_install_checks(monkeypatch, service)
+        data = json.loads((service.directory() / "installation.json").read_text())
+        data["executables"]["cpu"] = name
+        save_manifest(service, data)
+        forbid_install_scans(monkeypatch, service)
         with pytest.raises(ModelError) as error:
             service.executable("llama-server", "cpu")
         assert error.value.code == "RUNTIME_BROKEN"
@@ -89,15 +91,19 @@ def test_invalid_or_missing_entry_fails_without_full_verification(tmp_path, monk
 @pytest.mark.parametrize("owned", [True, False])
 def test_entry_links_cannot_escape_the_release(tmp_path, monkeypatch, owned):
     service = supervisor(tmp_path)
+    async def install():
+        await service.submit('install')
+        await service.task
+    asyncio.run(install())
     target = service.directory()
-    target.mkdir(parents=True)
     interpreter = service.base / "python/shared" if owned else tmp_path / "outside"
     interpreter.mkdir(parents=True)
     (interpreter / "python.exe").write_bytes(b"fixture")
     link_directory(target / "bin", interpreter)
-    (target / "installation.json").write_text(json.dumps({"executables": {"cpu": "bin/python.exe"}}))
-    service.store.save_installation(Installation(version="fixture", state="installed"))
-    forbid_install_checks(monkeypatch, service)
+    data = json.loads((target / "installation.json").read_text())
+    data["executables"]["cpu"] = "bin/python.exe"
+    save_manifest(service, data)
+    forbid_install_scans(monkeypatch, service)
     with pytest.raises(ModelError) as error:
         service.executable("llama-server", "cpu")
     assert error.value.code == "RUNTIME_BROKEN"
@@ -118,9 +124,12 @@ def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, m
         target = service.directory()
         target.mkdir(parents=True)
         (target / "llama-server.exe").write_bytes(b"fixture")
-        (target / "installation.json").write_text(json.dumps({"executables": {"cpu": "llama-server.exe"}}))
-        service.store.save_installation(Installation(version=entry.version, state='installed', backend_profile_id='local'))
-        forbid_install_checks(monkeypatch, service)
+        (target / "worker").mkdir()
+        for name in entry.worker_files:
+            (target / "worker" / name).write_text("# fixture")
+        save_manifest(service, {"release": entry.model_dump(),
+            "executables": dict.fromkeys(["cpu", "cuda", "python"], "llama-server.exe")})
+        forbid_install_scans(monkeypatch, service)
         response = client.post(f"/api/models/profiles/{value.id}/load")
         assert response.status_code == 404 and response.json()["error"]["code"] == "MODEL_NOT_FOUND"
         records = events(client.get(f"/api/models/profiles/{value.id}/log").json()["text"])
@@ -128,10 +137,10 @@ def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, m
         assert terminal(records, "model_resources")[0]["result"] == "failed"
 
 
-def test_onnx_explicit_auto_shared_and_repeat_loads_never_check_installation(tmp_path, monkeypatch):
+def test_onnx_explicit_auto_shared_and_repeat_loads_never_scan_installation(tmp_path, monkeypatch):
     async def scenario():
         service, manager, profile = await installed_worker(tmp_path)
-        forbid_install_checks(monkeypatch, service)
+        forbid_install_scans(monkeypatch, service)
         try:
             assert (await manager.health(profile.id)).residency == "unloaded"
             assert (await manager.load(profile.id)).residency == "loaded"
@@ -167,15 +176,11 @@ def test_onnx_explicit_auto_shared_and_repeat_loads_never_check_installation(tmp
 
 
 @pytest.mark.parametrize("variant", ["cpu", "cuda", "transformers-cuda"])
-def test_single_model_families_skip_verification_on_health_load_and_reload(tmp_path, monkeypatch, variant):
+def test_single_model_families_use_only_fast_checks_on_health_load_and_reload(tmp_path, monkeypatch, variant):
     async def scenario():
         service = supervisor(tmp_path)
         await service.submit('install')
         await service.task
-        entry = service.release
-        target = service.directory()
-        (target / "entry.exe").write_bytes(b"fixture")
-        (target / "installation.json").write_text(json.dumps({"executables": dict.fromkeys(["cpu", "cuda", "python"], "entry.exe")}))
         if variant == "transformers-cuda":
             model = tmp_path / "data/models/llms/local"
             model.mkdir(parents=True)
@@ -185,7 +190,6 @@ def test_single_model_families_skip_verification_on_health_load_and_reload(tmp_p
             model = tmp_path / "data/models/llms/local.gguf"
             model.parent.mkdir(parents=True)
             model.write_bytes(b"fixture")
-        service.store.save_installation(Installation(version=entry.version, state='installed', backend_profile_id='local'))
         manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
         profile = manager.profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref=model.relative_to(tmp_path / 'data/models').as_posix(), backend_profile_id='local', execution_options={'device': 'cpu' if variant == 'cpu' else 'cuda'}))
         adapter = manager._managed_slot(profile).adapter
@@ -194,7 +198,7 @@ def test_single_model_families_skip_verification_on_health_load_and_reload(tmp_p
             starts.append(args)
             adapter.state = "ready"
         monkeypatch.setattr(adapter, "_start", start)
-        forbid_install_checks(monkeypatch, service)
+        forbid_install_scans(monkeypatch, service)
         try:
             assert (await manager.health(profile.id)).residency == "unloaded"
             assert (await manager.load(profile.id)).residency == "loaded"
@@ -214,7 +218,7 @@ def test_queue_timeout_is_timed_without_starting_worker(tmp_path, monkeypatch):
         await slot.semaphore.acquire()
         monkeypatch.setattr("ai_workbench.core.models.manager.ManagedQueue",
                             lambda: SimpleNamespace(concurrency=1, queue_size=1, queue_timeout_seconds=0.05))
-        forbid_install_checks(monkeypatch, service)
+        forbid_install_scans(monkeypatch, service)
         try:
             pending = asyncio.create_task(manager.load(profile.id))
             await until(lambda: bool(events(manager.process_log(profile))))
@@ -237,7 +241,7 @@ def test_queue_timeout_is_timed_without_starting_worker(tmp_path, monkeypatch):
 def test_autoload_finishes_before_inference_and_later_cancel_does_not_rewrite_it(tmp_path, monkeypatch):
     async def scenario():
         service, manager, profile = await installed_worker(tmp_path)
-        forbid_install_checks(monkeypatch, service)
+        forbid_install_scans(monkeypatch, service)
         pending = asyncio.create_task(manager.speech(profile.id, SpeechRequest(model=profile.alias,
             input="wait", voice="af_heart", response_format="wav")))
         try:
@@ -278,7 +282,7 @@ def test_load_failures_record_cleanup_and_one_terminal_result(tmp_path, monkeypa
                 kwargs["env"] = {**kwargs["env"], "WORKBENCH_WORKER_TOKEN": "short"}
                 return await start(args, **kwargs)
             monkeypatch.setattr(ManagedProcess, "start", broken_start)
-        forbid_install_checks(monkeypatch, service)
+        forbid_install_scans(monkeypatch, service)
         pending = asyncio.create_task(manager.load(profile.id))
         try:
             if failure == "cancel":

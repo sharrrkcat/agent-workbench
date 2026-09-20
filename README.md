@@ -313,38 +313,38 @@ Browser checks for chat, runtime maintenance and resource management run with
 server on port 18767; WORKBENCH_BROWSER_PORT can select a free port. Screenshots
 and failure traces are under frontend/test-results.
 
-Explicit Kokoro installation and all-voice offline/SDK smoke checks use manually
-placed files and write generated samples under build/tts-smoke:
+All local-runtime smoke commands reuse an installed release by default and fail if it needs installation
+or repair. Only --install-only installs (or confirms a healthy installation), without inference.
+Old file-inventory metadata requires explicit Repair in Models > Backends > Local; model settings are retained.
+Kokoro uses manually placed files and writes all-voice offline/SDK samples under build/tts-smoke:
 
 ```powershell
 uv run python -m scripts.smoke_tts_runtime --install-only
-uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime --skip-install
+uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
 ```
 
-Installation uses the application's bundled uv; run its command before the
-temporary SDK environment. `--voice af_heart` selects one voice; `--skip-install` reuses a verified installation.
+Installation uses bundled uv; run it before the temporary SDK environment. `--voice af_heart` selects one voice.
 The smoke test isolates caches, decodes both formats and checks actual worker
 termination on HTTP disconnect, followed by reload and another SDK request.
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
-`uv run python -m scripts.smoke_audio_runtime --skip-install --device cuda --reference ./reference.wav --reference-text "Words in the recording"`.
-Use mono PCM16 24 kHz speech, stop Workbench first, and provide enough RAM/VRAM. This reuses a verified installation.
+`uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
+Use mono PCM16 24 kHz speech, stop Workbench first, and provide enough RAM/VRAM. CUDA is the default.
 The three CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, references, cancellation/isolation
 and Whisper's 30-second boundary. `--engine chatterbox|qwen3tts|whisper` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected.
 Use `--device cpu` only for affected changes under the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU.
-`--install-only` installs/verifies the release. Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`.
+Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`.
 Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
 
 For a Windows CUDA check with an existing GGUF, run
-`uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. This installs
-the local backend if needed and exercises auto/manual load, chat, streaming and unload using
-temporary in-memory model profiles; runtime installation/jobs remain persisted.
+`uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`.
+It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload
+with temporary model profiles. Runtime installation/jobs remain persisted.
 Stop Workbench before real-model checks. Record hardware, runtime version and model;
 deterministic tests do not establish real-provider or cross-platform runtime compatibility.
-`uv run python -m scripts.smoke_llm_runtime --engine transformers --skip-install` checks CPU/CUDA, streaming, tools and cancellation;
-use `--engine llama-server` for GGUF. `smoke_model_loading --install-only` installs/verifies the local release.
-Run it without `--install-only` for first/reload timing and minimal inference; logs/report go to build/model-loading-smoke.
+`uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation;
+use --engine llama-server for GGUF. smoke_model_loading measures first/reload and minimal inference, writing build/model-loading-smoke.
+Its defaults retain LLM CPU/CUDA and Kokoro CPU; Audio CPU requires --backend chatterbox-cpu or --backend qwen3tts-cpu.
 
-Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract
-and relevant source/tests. [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md)
-defines English-only documentation and active-plan completion rules.
+Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests.
+[Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md) defines English-only documentation and active-plan completion rules.

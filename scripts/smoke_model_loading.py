@@ -9,10 +9,8 @@ from pathlib import Path
 import platform
 import secrets
 import time
-from unittest.mock import patch
 
 from ai_workbench.core.models.manager import ModelManager
-from ai_workbench.core.models.runtimes import supervisor as runtime_module
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile, SpeechRequest
@@ -27,12 +25,7 @@ BACKENDS = ("llama-cpu", "llama-cuda", "transformers-cpu", "transformers-cuda", 
             "chatterbox-cpu", "chatterbox-cuda", "qwen3tts-cpu", "qwen3tts-cuda")
 
 
-def forbidden(*_args, **_kwargs):
-    raise AssertionError("Installation verification or cache access occurred during model execution")
-
-
-class ForbiddenCache(dict):
-    get = __getitem__ = __contains__ = __setitem__ = pop = forbidden
+DEFAULT_BACKENDS = tuple(name for name in BACKENDS if name not in {"chatterbox-cpu", "qwen3tts-cpu"})
 
 
 def timing_records(text):
@@ -139,32 +132,31 @@ async def validate(root, engine, backend, args, output):
     profile = manager.profiles.create(profile_for(backend, args))
     result = {"backend": backend, "model_ref": profile.model_ref,
               "runtime_version": supervisor.release.version, "rounds": []}
-    supervisor._verified = ForbiddenCache()
     voice = None
     try:
-        with patch.object(supervisor, "verify", side_effect=forbidden), patch.object(runtime_module, "runtime_inventory", forbidden), patch.object(runtime_module, "sha256", forbidden):
-            for name in ("first", "reload"):
-                print(json.dumps({"backend": backend, "round": name, "state": "loading"}), flush=True)
-                started = time.perf_counter()
-                loaded = await manager.load(profile.id)
-                wall_seconds = time.perf_counter() - started
-                assert loaded.state == "ready" and loaded.residency == "loaded"
-                if backend == "llama-cuda":
-                    assert loaded.runtime.gpu_layers_loaded > 0
-                adapter = manager._managed_slot(profile).adapter
-                log_path = adapter.log_paths[profile.id]
-                inference, voice = await minimal_inference(manager, profile, args, voice)
-                await manager.unload(profile.id)
-                assert manager.status(profile.id).residency == "unloaded" and adapter.process is None
-                text = log_path.read_text(encoding="utf-8")
-                target = output / f"{backend}-{name}.log"
-                target.write_text(text, encoding="utf-8")
-                measured = {"round": name, "wall_seconds": round(wall_seconds, 3), **summarize(text, backend),
-                            "inference": inference, "log": target.relative_to(root).as_posix()}
-                result["rounds"].append(measured)
-                print(json.dumps({"backend": backend, "round": name, "state": "passed",
-                                  "load_seconds": measured["load_seconds"]}), flush=True)
-        result.update(state="passed", installation_verification="not_called")
+        supervisor.assert_available()
+        for name in ("first", "reload"):
+            print(json.dumps({"backend": backend, "round": name, "state": "loading"}), flush=True)
+            started = time.perf_counter()
+            loaded = await manager.load(profile.id)
+            wall_seconds = time.perf_counter() - started
+            assert loaded.state == "ready" and loaded.residency == "loaded"
+            if backend == "llama-cuda":
+                assert loaded.runtime.gpu_layers_loaded > 0
+            adapter = manager._managed_slot(profile).adapter
+            log_path = adapter.log_paths[profile.id]
+            inference, voice = await minimal_inference(manager, profile, args, voice)
+            await manager.unload(profile.id)
+            assert manager.status(profile.id).residency == "unloaded" and adapter.process is None
+            text = log_path.read_text(encoding="utf-8")
+            target = output / f"{backend}-{name}.log"
+            target.write_text(text, encoding="utf-8")
+            measured = {"round": name, "wall_seconds": round(wall_seconds, 3), **summarize(text, backend),
+                        "inference": inference, "log": target.relative_to(root).as_posix()}
+            result["rounds"].append(measured)
+            print(json.dumps({"backend": backend, "round": name, "state": "passed",
+                              "load_seconds": measured["load_seconds"]}), flush=True)
+        result.update(state="passed", installation="reused")
     except Exception as exc:
         result.update(state="failed", error_code=getattr(exc, "code", None), error_type=type(exc).__name__)
         text = manager.process_log(profile)
@@ -193,7 +185,7 @@ async def main(args):
         output.mkdir(parents=True, exist_ok=True)
         report = {"platform": "windows", "results": [], "timing_note":
                   "Nested stages overlap; load totals exclude inference. CPU time includes all process threads, excludes child processes, and may exceed wall time."}
-        for backend in args.backend or BACKENDS:
+        for backend in args.backend:
             report["results"].append(await validate(args.root, engine, backend, args, output))
             (output / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         if any(item["state"] != "passed" for item in report["results"]):
@@ -202,7 +194,7 @@ async def main(args):
         engine.dispose()
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--install-only", action="store_true")
@@ -213,4 +205,10 @@ if __name__ == "__main__":
     parser.add_argument("--kokoro-model", default="tts/Kokoro-82M-onnx")
     parser.add_argument("--chatterbox-model", default="tts/chatterbox")
     parser.add_argument("--qwen3tts-model", default="tts/Qwen3-TTS-12Hz-0.6B-Base")
-    asyncio.run(main(parser.parse_args()))
+    args = parser.parse_args(argv)
+    args.backend = args.backend or DEFAULT_BACKENDS
+    return args
+
+
+if __name__ == "__main__":
+    asyncio.run(main(parse_args()))

@@ -94,22 +94,23 @@ requires every local request to be idle, blocks new local requests and stops loc
 processes. Bulk file operations run off-loop; external inference continues independently. Shared dependencies do not
 create a global inference queue. Cache cleanup allows loaded models to remain.
 
-Downloads stage under data/runtimes/.staging/{job_id}; a complete checked payload
-promotes to data/runtimes/local/<version> with env/, worker/, native/cpu/ and
-native/cuda/. One manifest records release/source/lock identity, entry points and
-every installed file. Existing directories from other layouts are not executable
-installations. Repair rebuilds the release; there is no installation fallback.
+Downloads stage under data/runtimes/.staging/{job_id}; checked payloads promote to
+data/runtimes/local/<version> with env/, worker/, native/cpu/ and native/cuda/.
+Small installation.json records release/source/lock identity and Python/CPU/CUDA entry paths;
+manifest_sha256 binds this metadata. Startup, installation reads, repeat install and process
+entry resolution check its strict schema/digest/release, entry boundaries and fixed worker files.
+Checks do not traverse the environment, import engines or probe GPUs; other dependency edits are not detected.
+Finalizing validates entries, records metadata and promotes. Healthy install returns already_installed;
+broken/interrupted states and old files inventories require explicit repair. Repair rebuilds the
+release without conversion or database/model resets; absent installations use install.
 
-Bundled uv installs artifact-pinned Python 3.12.11 and one complete hash lock:
-Torch/Torchaudio 2.11.0+cu128, Torchvision 0.26.0+cu128, Transformers 5.16.1,
-NumPy 1.26.4 and ONNX Runtime 1.23.2, including Misaki/spaCy/Thinc language dependencies.
-Versioned Chatterbox metadata, Qwen source/metadata and Misaki offline-input patches
-are reproduced by scripts/build_runtime_wheels.py with embedded patch records.
-Only docopt, jieba, unidic-lite, antlr4-python3-runtime and sox may use source builds
-with locked build tools; native packages require wheels. Installation runs full
-dependency checks, five separate offline engine-import processes and native program
-checks without loading weights or requiring GPU availability. User PATH/registry
-are untouched; [Settings](settings.md) owns download configuration.
+Bundled uv installs pinned Python 3.12.11 and one hash lock: Torch/Torchaudio 2.11.0+cu128,
+Torchvision 0.26.0+cu128, Transformers 5.16.1, NumPy 1.26.4, ONNX Runtime 1.23.2 and Misaki/spaCy/Thinc dependencies.
+scripts/build_runtime_wheels.py reproduces Chatterbox metadata, Qwen source/metadata and Misaki offline-input patches with embedded records.
+Only docopt, jieba, unidic-lite, antlr4-python3-runtime and sox may use source builds with locked
+build tools; native packages require wheels. Installation runs dependency checks, five separate
+offline engine-import processes and native program checks without weights or a GPU.
+User PATH/registry are untouched; [Settings](settings.md) owns download configuration.
 
 Both llama.cpp b10809 CPU and CUDA programs are included. CUDA's pinned main and
 cudart ZIPs use combined byte progress and SHA-256 checks before extraction.
@@ -159,9 +160,8 @@ independently of installation logs.
 Workers bind reserved loopback ports. Process groups and Windows kill-on-job-close Job Objects stop
 full trees on unload, cancellation or exit. Sanitized logs under `data/logs/runtimes` have a 10 MiB cap;
 retention keeps 20 terminal tasks and 20 terminal process/load-attempt logs per runtime, plus active logs.
-Load/autoload, health and Audio reference preparation resolve installation metadata's executable,
-checking availability, entry paths and model resources without installation inventory, hashes or verification-cache access.
-Installation still hashes the shared lock/sources and installed files except bytecode caches; [inventory removal](../FUTURE_MODEL_SERVICES.md#installation-verification) is pending.
+Load/autoload, health and Audio reference preparation use the fixed installation check above.
+Loaded inference and model-status snapshots read stored state without rechecking installation files.
 The model log endpoint returns the latest attempt, including pre-spawn failures; UTC records share load_id through startup environment/private headers.
 `duration_ms`/`elapsed_ms` measure monotonic wall time; `cpu_duration_ms`/`cpu_elapsed_ms` measure CPU time for all threads
 in the emitting process, excluding child processes. Concurrent work is included; CPU time can exceed wall time and is not an I/O measurement.

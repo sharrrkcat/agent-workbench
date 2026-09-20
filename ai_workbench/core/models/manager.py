@@ -133,7 +133,7 @@ class ModelManager:
         engine = local_engine(profile)
         if engine and self.runtime_supervisor:
             from ai_workbench.core.models.runtimes.schema import model_path, RuntimeStatus
-            installation = self.runtime_supervisor.installation()
+            installation = self.runtime_supervisor.installation(check=False)
             slot = self._slots.get(self.backend_key(profile))
             status = slot.adapter.snapshot(profile) if slot else ModelStatus(state="unloaded", residency="unloaded", unload_supported=True)
             if not slot:
@@ -197,7 +197,7 @@ class ModelManager:
             if supervisor.blocked:
                 raise ModelError("RUNTIME_INSTALLING", "Local runtime maintenance is in progress.", 409)
             if require_runtime:
-                supervisor.assert_available()
+                supervisor.assert_available(check=False)
             return ManagedQueue(), self._managed_slot(profile)
         if backend.id not in self._slots:
             self._slots[backend.id] = BackendSlot(self.adapter_factory(backend.connection), asyncio.Semaphore(backend.connection.concurrency))

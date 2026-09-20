@@ -151,6 +151,22 @@ class LocalRelease(Strict):
         return self
 
 
+class InstallationExecutables(Strict):
+    python: str
+    cpu: str
+    cuda: str
+
+    @field_validator("python", "cpu", "cuda")
+    @classmethod
+    def relative_entry(cls, value):
+        return relative_ref(value)
+
+
+class InstallationManifest(Strict):
+    release: LocalRelease
+    executables: InstallationExecutables
+
+
 InstallState = Literal["not_installed", "installing", "installed", "broken", "unsupported", "interrupted"]
 JobState = Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"]
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}

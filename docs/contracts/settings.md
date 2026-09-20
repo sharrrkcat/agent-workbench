@@ -70,6 +70,9 @@ The fixed Local backend row cannot be added or deleted. Its details expose
 enablement, one install/repair/uninstall workflow, task cancellation/history,
 logs, storage and cache maintenance. External backends can be added, edited and
 deleted when unreferenced. Backend type is immutable.
+Installation reads check fixed metadata and entries. Invalid or old metadata shows
+Repair required; interrupted installations also require explicit repair. Install
+does not rebuild either state. Installation ends with the Finalizing installation stage.
 The local backend's nested download object owns http_proxy, pypi_index_url,
 pytorch_index_url and github_release_proxy_url, patched at `/api/models/backends/local`.
 Index/release

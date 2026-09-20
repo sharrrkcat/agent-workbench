@@ -95,6 +95,10 @@ uninstall removes only data/runtimes/local/<version>, containing the shared
 env/, worker/ and separate native/cpu and native/cuda programs. Pinned Python
 archives under python/archives and dependency/native caches under .cache remain.
 Task/process logs are bounded and retained under data/logs/runtimes.
+installation.json contains only release identity and executable paths; the database's
+manifest_sha256 binds this small metadata file. It contains no environment file inventory.
+Old metadata with a files inventory is rejected and retained until explicit repair
+rebuilds the current release. This change does not reset the database or model profiles.
 Runtime storage accounting covers ordinary files across runtimes, deduplicates
 hard links and reports exclusive logical size rather than physical disk recovery.
 Manual uv prune/clean acts only on .cache, through the shared runtime task lock.

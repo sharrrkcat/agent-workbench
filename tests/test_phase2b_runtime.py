@@ -106,24 +106,27 @@ def test_archive_traversal_never_writes_outside_staging(tmp_path, name):
     assert not (tmp_path / "escape").exists()
 
 
-def test_install_checksum_integrity_retry_idempotence_and_uninstall(tmp_path):
+def test_install_entry_checks_explicit_repair_idempotence_and_uninstall(tmp_path):
     async def scenario():
         service = supervisor(tmp_path)
         job = await service.submit('install')
         await service.task
         assert service.store.job(job.id).state == "completed"
         target = service.directory()
-        await service.verify()
+        service.assert_available()
         executable = service.executable("llama-server", "cpu")
         assert executable.read_bytes() == b"test executable"
         again = await service.submit('install')
         assert again.stage == "already_installed"
         assert service.active_job is None
-        executable.write_bytes(b"corrupt")
+        executable.unlink()
         with pytest.raises(ModelError) as error:
-            await service.verify()
+            service.assert_available()
         assert error.value.code == "RUNTIME_BROKEN"
-        retry = await service.submit('install')
+        with pytest.raises(ModelError) as error:
+            await service.submit('install')
+        assert error.value.code == "RUNTIME_BROKEN" and error.value.details["action"] == "repair"
+        retry = await service.submit('repair')
         await service.task
         assert retry.id != job.id
         assert service.store.job(retry.id).state == "completed"
@@ -151,7 +154,7 @@ def test_bad_checksum_and_https_downgrade_are_terminal_failures(tmp_path):
         assert not service.directory().exists()
         assert "RUNTIME_CHECKSUM_MISMATCH" in service.log_text(job.id)
         service.transport = httpx.MockTransport(lambda request: httpx.Response(302, headers={"Location": "http://unsafe.test/"}))
-        retry = await service.submit('install')
+        retry = await service.submit('repair')
         await service.task
         assert service.store.job(retry.id).error_code == "RUNTIME_BROKEN"
         await service.close()
@@ -382,15 +385,15 @@ def test_weight_preflight_accepts_wd14_without_transformers_config(tmp_path):
     assert missing.value.code == "MODEL_NOT_FOUND"
 
 
-def test_unlisted_installed_code_fails_integrity_check(tmp_path):
+def test_unlisted_installed_code_does_not_change_availability(tmp_path):
     async def scenario():
         service = supervisor(tmp_path)
         await service.submit('install')
         await service.task
         (service.directory() / "unexpected.dll").write_bytes(b"extra")
-        with pytest.raises(ModelError) as broken:
-            await service.verify()
-        assert broken.value.code == "RUNTIME_BROKEN"
+        service.assert_available()
+        assert (await service.submit('install')).stage == "already_installed"
+        await service.close()
     asyncio.run(scenario())
 
 

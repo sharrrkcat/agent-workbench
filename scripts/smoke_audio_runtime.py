@@ -41,7 +41,7 @@ async def smoke(args):
     supervisor.store = RuntimeStore(engine)
     state.backend_profiles = supervisor.backends = state.model_manager.backends = BackendProfileStore(engine)
     try:
-        if not args.skip_install:
+        if args.install_only:
             job = await supervisor.submit('install')
             previous = None
             while supervisor.task and not supervisor.task.done():
@@ -56,8 +56,9 @@ async def smoke(args):
             if result.state != "completed":
                 print(supervisor.log_text(result.id), flush=True)
                 raise RuntimeError("Local backend installation failed")
-        if not args.install_only:
-            await validate_engines(state, args)
+            return
+        supervisor.assert_available()
+        await validate_engines(state, args)
     finally:
         await state.model_manager.close()
         await supervisor.close()
@@ -284,7 +285,7 @@ async def validate_engines(state, args):
             await until(lambda: server.started)
             async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=360, trust_env=False,
                     headers={"Authorization": f"Bearer {token}"}) as client:
-                for device in args.device or ["cpu", "cuda"]:
+                for device in args.device:
                     for architecture in args.engine or ["chatterbox", "qwen3tts", "whisper"]:
                         started = time.monotonic()
                         print(json.dumps({"engine": architecture, "device": device, "state": "running"}), flush=True)
@@ -311,11 +312,10 @@ async def validate_engines(state, args):
         raise RuntimeError("Audio acceptance failed; see build/audio-smoke/report.json")
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--install-only", action="store_true")
-    parser.add_argument("--skip-install", action="store_true")
     parser.add_argument("--device", choices=("cpu", "cuda"), action="append")
     parser.add_argument("--engine", choices=("chatterbox", "qwen3tts", "whisper"), action="append")
     parser.add_argument("--reference", type=Path)
@@ -323,5 +323,10 @@ if __name__ == "__main__":
     parser.add_argument("--chatterbox", default="tts/chatterbox")
     parser.add_argument("--qwen3tts", default="tts/Qwen3-TTS-12Hz-0.6B-Base")
     parser.add_argument("--whisper", default="asr/whisper-base")
-    args = parser.parse_args()
-    asyncio.run(smoke(args))
+    args = parser.parse_args(argv)
+    args.device = args.device or ["cuda"]
+    return args
+
+
+if __name__ == "__main__":
+    asyncio.run(smoke(parse_args()))

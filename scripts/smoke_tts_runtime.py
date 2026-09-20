@@ -57,13 +57,13 @@ async def check_disconnect(manager, profile, port, token, voice):
     assert process.process.returncode is not None and adapter.process is None
 
 
-async def smoke(root, model_ref, install_only, selected, skip_install=False):
+async def smoke(root, model_ref, install_only, selected):
     engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
     init_db(engine)
     supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
     manager = ModelManager(ModelProfileStore(), supervisor.backends, ModelSettingsStore(), runtime_supervisor=supervisor)
     try:
-        if not skip_install:
+        if install_only:
             job = await supervisor.submit('install')
             last = None
             while supervisor.task and not supervisor.task.done():
@@ -77,8 +77,8 @@ async def smoke(root, model_ref, install_only, selected, skip_install=False):
             if result.state != "completed":
                 print(supervisor.log_text(result.id), flush=True)
                 raise RuntimeError("Local backend installation failed")
-            if install_only:
-                return
+            return
+        supervisor.assert_available()
         from fastapi import FastAPI
         from fastapi.responses import JSONResponse
         import miniaudio
@@ -144,16 +144,18 @@ async def smoke(root, model_ref, install_only, selected, skip_install=False):
         engine.dispose()
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--model-ref", default="tts/Kokoro-82M-onnx")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--install-only", action="store_true")
-    mode.add_argument("--skip-install", action="store_true", help="Use a previously installed and verified local release")
+    parser.add_argument("--install-only", action="store_true")
     parser.add_argument("--voice", action="append", choices=VOICE_IDS)
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+if __name__ == "__main__":
+    args = parse_args()
     with TemporaryDirectory(prefix="workbench-tts-cache-") as cache:
         with patch.dict(os.environ, {"HF_HOME": str(Path(cache) / "hf"), "XDG_CACHE_HOME": str(Path(cache) / "xdg"),
                                      "TMPDIR": cache, "TMP": cache, "TEMP": cache}):
-            asyncio.run(smoke(args.root.resolve(), args.model_ref, args.install_only, args.voice, args.skip_install))
+            asyncio.run(smoke(args.root.resolve(), args.model_ref, args.install_only, args.voice))

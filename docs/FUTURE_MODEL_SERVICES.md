@@ -5,15 +5,6 @@ boundaries, not active tasks or frozen wire schemas. Each requires a separate
 scope decision before implementation; this document grants no implementation
 authority and makes no delivery commitment.
 
-## Installation verification
-
-The [verification policy](../AGENTS.md#runtime-verification-and-acceptance) requires
-removing full installed-environment hash inventories while retaining artifact and
-installation-boundary checks. The current installer still creates and compares
-these inventories, as documented by [Models](contracts/models.md#managed-catalog-and-installation).
-Their removal is not implemented; it requires a separate installer change and
-matching tests. This note records the boundary without claiming the optimization exists.
-
 ## Local engine and platform expansion
 
 The shared local release supports Windows x64 GGUF, Transformers LLM, Kokoro,

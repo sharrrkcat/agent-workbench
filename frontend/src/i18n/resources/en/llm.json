@@ -211,7 +211,7 @@
     "not_installed": "Not installed",
     "installing": "Maintenance in progress",
     "installed": "Installed",
-    "broken": "Broken",
+    "broken": "Repair required",
     "unsupported": "Unsupported",
     "interrupted": "Interrupted"
   },
@@ -231,7 +231,7 @@
     "installing_packages": "Installing packages",
     "checking_packages": "Checking packages",
     "checking_program": "Checking executable",
-    "verifying": "Verifying files",
+    "finalizing": "Finalizing installation",
     "scanning_cache": "Scanning cache",
     "pruning_cache": "Pruning cache",
     "cleaning_cache": "Clearing cache",

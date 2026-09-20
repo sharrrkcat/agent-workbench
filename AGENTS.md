@@ -47,8 +47,6 @@ frontend tests/build and relevant checks, and `scripts/check_docs_size.py`.
   archives and locked dependencies, dependency consistency, offline engine imports,
   native programs, release identity, entry points and path containment.
 - Do not require full installed-environment per-file hash inventories or comparisons.
-  Removing the current implementation remains pending under
-  [future services](docs/FUTURE_MODEL_SERVICES.md#installation-verification).
   Do not replace it with another whole-environment scanning subsystem.
 - Routine Chatterbox, Qwen3-TTS and Whisper acceptance uses CUDA only. Add CPU
   checks only for affected CPU execution, device selection, dtype or inference

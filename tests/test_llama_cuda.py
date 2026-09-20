@@ -100,16 +100,15 @@ def test_cuda_dual_artifact_install_progress_manifest_and_uninstall(tmp_path):
         assert all(value["progress_total"] == total for value in progress)
         assert [value["progress_current"] for value in progress] == sorted(value["progress_current"] for value in progress)
         assert progress[-1]["progress_current"] == total
-        await service.verify()
+        service.assert_available()
         executable = service.executable("llama-server", "cuda")
         assert (executable.parent / "cublas64_12.dll").read_bytes() == b"cuda"
         manifest = json.loads((service.directory() / "installation.json").read_text())
         assert manifest["release"]["native_cuda"]["dependencies"][0]["sha256"] == service.release.native_cuda.dependencies[0].sha256
-        assert "native/cuda/bin/cublas64_12.dll" in manifest["files"] and "native/cuda/dependencies/1/LICENSE" in manifest["files"]
+        assert set(manifest) == {"release", "executables"}
+        assert (service.directory() / "native/cuda/dependencies/1/LICENSE").is_file()
         (executable.parent / "cublas64_12.dll").write_bytes(b"changed")
-        with pytest.raises(ModelError) as invalid:
-            await service.verify()
-        assert invalid.value.code == "RUNTIME_BROKEN"
+        service.assert_available()
         await service.submit('uninstall')
         await service.task
         assert not executable.exists() and preserved.read_bytes() == b"cpu"

@@ -140,7 +140,7 @@ async def validate_device(state, client, model_ref, device, engine_name):
     return result
 
 
-async def smoke(root, model_ref, devices, install_only, engine_name, skip_install=False):
+async def smoke(root, model_ref, devices, install_only, engine_name):
     engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
@@ -150,7 +150,7 @@ async def smoke(root, model_ref, devices, install_only, engine_name, skip_instal
     server, server_task = None, None
     started = time.monotonic()
     try:
-        if not skip_install:
+        if install_only:
             job = await supervisor.submit('install')
             last_stage = None
             while supervisor.task and not supervisor.task.done():
@@ -164,8 +164,8 @@ async def smoke(root, model_ref, devices, install_only, engine_name, skip_instal
             if result.state != "completed":
                 print(supervisor.log_text(job.id), flush=True)
                 raise RuntimeError("Local backend installation failed")
-            if install_only:
-                return
+            return
+        supervisor.assert_available()
         state.app_settings.patch({"auto_generate_session_titles": False})
         token = secrets.token_urlsafe(32)
         state.model_settings.patch({"external_enabled": True, "external_api_key": token})
@@ -194,15 +194,17 @@ async def smoke(root, model_ref, devices, install_only, engine_name, skip_instal
         engine.dispose()
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--engine", choices=("transformers", "llama-server"), default="transformers")
     parser.add_argument("--model-ref")
     parser.add_argument("--device", choices=("cpu", "cuda", "both"), default="both")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--install-only", action="store_true")
-    mode.add_argument("--skip-install", action="store_true", help="Use a previously installed and verified local release")
-    args = parser.parse_args()
+    parser.add_argument("--install-only", action="store_true")
+    return parser.parse_args(argv)
+
+
+if __name__ == "__main__":
+    args = parse_args()
     reference = args.model_ref or ("llms/Qwen3.5-0.8B-TF" if args.engine == "transformers" else "llms/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf")
-    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.skip_install))
+    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine))

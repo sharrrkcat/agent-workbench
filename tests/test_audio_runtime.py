@@ -235,10 +235,10 @@ def test_private_whisper_uses_audio_process_and_manager_admission(tmp_path):
 
 @pytest.mark.parametrize("architectures", [("chatterbox", "chatterbox"), ("qwen3tts", "chatterbox"), ("qwen3tts", "qwen3tts")])
 def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(tmp_path, monkeypatch, architectures):
-    from tests.test_model_loading import forbid_install_checks
+    from tests.test_model_loading import forbid_install_scans
     async def scenario():
         service = await installed_audio(tmp_path)
-        forbid_install_checks(monkeypatch, service)
+        forbid_install_scans(monkeypatch, service)
         manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
         manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
         path = tmp_path / "data/models/tts/chatterbox"

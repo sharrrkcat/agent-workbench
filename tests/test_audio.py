@@ -178,7 +178,7 @@ def api(tmp_path):
         (path / name).write_bytes(b"fixture")
     with TestClient(create_app(use_memory=True, root=tmp_path), client=("127.0.0.1", 40001)) as client:
         manager = client.app.state.runtime_state.model_manager
-        manager.runtime_supervisor.assert_available = lambda *args: None
+        manager.runtime_supervisor.assert_available = lambda *args, **kwargs: None
         value = manager.profiles.create(profile(parameters={"architecture": "chatterbox", "response_format": "wav"}))
         manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
         adapter = Adapter(manager)
@@ -290,7 +290,7 @@ def make_manager(root):
     supervisor = RuntimeSupervisor(root, RuntimeStore(), BackendProfileStore())
     manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
-    supervisor.assert_available = lambda *args: None
+    supervisor.assert_available = lambda *args, **kwargs: None
     return manager
 
 

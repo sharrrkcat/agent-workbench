@@ -1,4 +1,4 @@
-"""Install the local backend and optionally verify GGUF CUDA offload through ModelManager."""
+"""Verify GGUF CUDA offload using the installed local backend; installation is explicit."""
 from __future__ import annotations
 
 import argparse
@@ -15,30 +15,31 @@ from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 
 
-async def smoke(root: Path, model_ref: str | None):
+async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
     engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
     if migrations.current_revision(engine) != migrations.HEAD_REVISION:
         raise RuntimeError("Upgrade the database to Alembic head before running this smoke test")
     supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
     manager = ModelManager(ModelProfileStore(), supervisor.backends, ModelSettingsStore(), runtime_supervisor=supervisor)
     try:
-        job = await supervisor.submit('install')
-        last = None
-        while supervisor.task and not supervisor.task.done():
-            current = supervisor.store.job(job.id)
-            bucket = int(current.progress_current * 10 / current.progress_total) if current.progress_total else None
-            key = current.stage, bucket
-            if key != last:
-                print(json.dumps({"stage": current.stage, "bytes": current.progress_current, "total": current.progress_total}), flush=True)
-                last = key
-            await asyncio.wait({supervisor.task}, timeout=1)
-        result = supervisor.store.job(job.id)
-        print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
-        if result.state != "completed":
-            print(supervisor.log_text(result.id), flush=True)
-            raise RuntimeError("Local backend installation failed")
-        if model_ref is None:
+        if install_only:
+            job = await supervisor.submit('install')
+            last = None
+            while supervisor.task and not supervisor.task.done():
+                current = supervisor.store.job(job.id)
+                bucket = int(current.progress_current * 10 / current.progress_total) if current.progress_total else None
+                key = current.stage, bucket
+                if key != last:
+                    print(json.dumps({"stage": current.stage, "bytes": current.progress_current, "total": current.progress_total}), flush=True)
+                    last = key
+                await asyncio.wait({supervisor.task}, timeout=1)
+            result = supervisor.store.job(job.id)
+            print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
+            if result.state != "completed":
+                print(supervisor.log_text(result.id), flush=True)
+                raise RuntimeError("Local backend installation failed")
             return
+        supervisor.assert_available()
         profile = manager.profiles.create(ModelProfile(name='CUDA smoke', alias='cuda-smoke', kind='llm', model_ref=model_ref, capabilities={'streaming': True}, execution_options={'gpu_layers': 'auto', 'context_size': 4096}, backend_profile_id='local'))
         loaded = await manager.load(profile.id)
         assert loaded.state == "ready" and loaded.runtime.gpu_layers_loaded > 0
@@ -67,9 +68,17 @@ async def smoke(root: Path, model_ref: str | None):
         engine.dispose()
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--model-ref", help="An existing GGUF reference relative to data/models; omission installs only")
-    args = parser.parse_args()
-    asyncio.run(smoke(args.root.resolve(), args.model_ref))
+    parser.add_argument("--model-ref", help="An existing GGUF reference relative to data/models")
+    parser.add_argument("--install-only", action="store_true")
+    args = parser.parse_args(argv)
+    if not args.install_only and not args.model_ref:
+        parser.error("--model-ref is required for CUDA acceptance; use --install-only to install")
+    return args
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    asyncio.run(smoke(args.root.resolve(), args.model_ref, args.install_only))
