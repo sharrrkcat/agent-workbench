@@ -1,5 +1,5 @@
 export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
-export type ManagedRuntimeVariant = 'cpu' | 'cuda' | 'onnx-cpu' | 'transformers-cuda' | 'infinity-cuda' | 'audio-cuda';
+export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'chatterbox' | 'qwen3tts';
 
 export type PresetVoice = {
   id: string; model: string; source: 'preset'; language: string; expires_at: null; available: boolean;
@@ -17,35 +17,43 @@ export type ModelInput = {
   alias: string;
   name: string;
   kind: ModelKind;
-  provider_profile_id: string | null;
+  backend_profile_id: string | null;
   model_ref: string;
   enabled: boolean;
   external_enabled: boolean;
   capabilities: ModelCapabilities;
   parameters: Record<string, unknown>;
   lifecycle: { unload: 'manual' | 'after_request' | 'idle'; idle_seconds: number };
-  runtime_id: 'llama-server' | 'python-worker' | null;
-  runtime_variant: ManagedRuntimeVariant | null;
-  runtime_options: Record<string, string | number>;
+  execution_options: Record<string, string | number>;
 };
 
 export type ModelProfile = ModelInput & { id: string; created_at: string; updated_at: string };
 
-export type ProviderInput = {
-  name: string;
-  protocol: 'openai_compatible';
+export type ExternalConnection = {
   base_url: string;
   api_key?: string;
   timeout_seconds: number;
   concurrency: number;
   queue_size: number;
   queue_timeout_seconds: number;
-  enabled: boolean;
 };
 
-export type ProviderProfile = Omit<ProviderInput, 'api_key'> & {
+export type BackendInput = {
+  name: string;
+  type: 'local' | 'openai_compatible';
+  enabled: boolean;
+  connection: ExternalConnection | null;
+  download: RuntimeDownloadSettings | null;
+};
+
+export type ExternalBackendInput = BackendInput & { type: 'openai_compatible'; connection: ExternalConnection };
+export type BackendPatch = Partial<Omit<BackendInput, 'connection' | 'download'>> & {
+  connection?: Partial<ExternalConnection> | null;
+  download?: Partial<RuntimeDownloadSettings> | null;
+};
+export type BackendProfile = Omit<BackendInput, 'connection'> & {
   id: string;
-  has_api_key: boolean;
+  connection: (Omit<ExternalConnection, 'api_key'> & { has_api_key: boolean }) | null;
   created_at: string;
   updated_at: string;
 };
@@ -66,8 +74,8 @@ export type ModelStatus = {
   queued: number;
   error_code: string | null;
   runtime?: {
-    runtime_id: string;
-    variant: string;
+    backend_profile_id: 'local';
+    engine: LocalEngine;
     version: string;
     install_state: RuntimeInstallState;
     process_state: 'stopped' | 'starting' | 'ready' | 'failed';
@@ -86,22 +94,17 @@ export type RuntimeInstallState =
   | 'unsupported'
   | 'interrupted';
 
-export type RuntimeCatalogEntry = {
-  runtime_id: 'llama-server' | 'python-worker';
-  variant: ManagedRuntimeVariant | 'infinity-cuda' | 'audio-cuda';
+export type RuntimeCatalog = {
   version: string;
   platform: string;
   architecture: string;
   supported: boolean;
   reason: string | null;
-  kinds: ModelKind[];
-  options_schema: Record<string, unknown>;
+  engines: { engine: LocalEngine; kind: 'llm' | 'tts'; options_schema: Record<string, unknown> }[];
 };
 
 export type RuntimeInstallation = {
-  id: string;
-  runtime_id: string;
-  variant: string;
+  backend_profile_id: 'local';
   version: string;
   state: RuntimeInstallState;
   job_id: string | null;
@@ -111,10 +114,9 @@ export type RuntimeInstallation = {
 
 export type RuntimeJob = {
   id: string;
-  runtime_id: string | null;
-  variant: string | null;
+  backend_profile_id: 'local' | null;
   version: string | null;
-  operation: 'install' | 'uninstall' | 'cache_prune' | 'cache_clean';
+  operation: 'install' | 'repair' | 'uninstall' | 'cache_prune' | 'cache_clean';
   result: { before: StorageUsage | null; after: StorageUsage | null } | null;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   stage: string;
@@ -141,8 +143,7 @@ export type StorageGroup = StorageUsage & {
   id: string;
   category: 'runtime' | 'python' | 'cache' | 'staging' | 'processes' | 'other';
   relative_path: string;
-  runtime_id: string | null;
-  variant: string | null;
+  backend_profile_id: 'local' | null;
   version: string | null;
 };
 

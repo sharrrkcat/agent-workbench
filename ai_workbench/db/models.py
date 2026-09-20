@@ -137,18 +137,15 @@ class RunEventRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
-class ProviderProfileRecord(SQLModel, table=True):
-    __tablename__ = "provider_profiles"
+class BackendProfileRecord(SQLModel, table=True):
+    __tablename__ = "backend_profiles"
+    __table_args__ = (CheckConstraint("(type = 'local' AND id = 'local') OR (type = 'openai_compatible' AND id != 'local')", name="ck_backend_identity"),)
     id: str = Field(primary_key=True)
     name: str
-    protocol: str = "openai_compatible"
-    base_url: str
-    api_key: str = ""
-    timeout_seconds: float = 60
-    concurrency: int = 1
-    queue_size: int = 32
-    queue_timeout_seconds: float = 30
+    type: str
     enabled: bool = True
+    connection_json: Optional[str] = None
+    download_json: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -160,18 +157,16 @@ class ModelProfileRecord(SQLModel, table=True):
     alias: str = Field(index=True, unique=True)
     name: str
     kind: str = Field(index=True)
-    provider_profile_id: Optional[str] = Field(default=None, foreign_key="provider_profiles.id", index=True)
+    backend_profile_id: Optional[str] = Field(default=None, foreign_key="backend_profiles.id", index=True)
     model_ref: str
     capabilities_json: str = "{}"
     parameters_json: str = "{}"
     lifecycle_json: str = "{}"
+    execution_options_json: str = Field(default="{}", sa_column=Column(String, nullable=False, server_default="{}"))
     enabled: bool = True
     external_enabled: bool = False
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-    runtime_id: Optional[str] = None
-    runtime_variant: Optional[str] = None
-    runtime_options_json: str = Field(default="{}", sa_column=Column(String, nullable=False, server_default="{}"))
 
 
 class AppMetadataRecord(SQLModel, table=True):
@@ -182,9 +177,7 @@ class AppMetadataRecord(SQLModel, table=True):
 
 class RuntimeInstallationRecord(SQLModel, table=True):
     __tablename__ = "runtime_installations"
-    id: str = Field(primary_key=True)
-    runtime_id: str
-    variant: str
+    backend_profile_id: str = Field(primary_key=True, foreign_key="backend_profiles.id")
     version: str
     state: str
     job_id: Optional[str] = None
@@ -196,8 +189,7 @@ class RuntimeInstallationRecord(SQLModel, table=True):
 class RuntimeJobRecord(SQLModel, table=True):
     __tablename__ = "runtime_jobs"
     id: str = Field(primary_key=True)
-    runtime_id: Optional[str] = None
-    variant: Optional[str] = None
+    backend_profile_id: Optional[str] = Field(default=None, foreign_key="backend_profiles.id")
     version: Optional[str] = None
     operation: str
     result_json: Optional[str] = None

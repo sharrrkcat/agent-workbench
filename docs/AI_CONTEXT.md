@@ -9,10 +9,11 @@ plans describe ongoing work and do not turn proposed features into current capab
 
 Agent Workbench provides local chat and a single-key, loopback-only
 OpenAI-compatible model service. Internal and external inference share
-ModelManager. Local execution uses managed llama-server or isolated Python
-workers; external connections use the OpenAI-compatible protocol.
-Kokoro ONNX and Windows PyTorch Audio provide offline MP3/WAV TTS through
-`/v1/audio/speech`. Kokoro uses presets; English Chatterbox and multilingual
+ModelManager. One Windows x64 local backend installs shared Python dependencies
+and separate CPU/CUDA llama-server components. Models run in independent processes;
+external backends use the OpenAI-compatible protocol.
+Kokoro ONNX and PyTorch Audio provide offline MP3/WAV TTS through
+`/v1/audio/speech`. Kokoro uses local language resources and presets; English Chatterbox and multilingual
 Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optional
 reference transcripts. Chat playback and live capture are deferred.
 
@@ -35,11 +36,6 @@ Pet has position, dragging and task-state foundations only, with no mounted UI.
 
 HTTP schemas and validation belong to these same domain contracts. OpenAPI
 generation and verification commands are in the [README](../README.md#http-contract).
-
-## Accepted work
-
-- [Runtime families](ai/PLAN_RUNTIME_FAMILIES.md): accepted target and remaining
-  implementation work. Implemented runtime behavior is recorded in the Models contract.
 
 ## Task map
 

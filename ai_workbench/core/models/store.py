@@ -7,11 +7,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.schema import ModelInput, ModelProfile, ModelSettings, ProviderInput, ProviderProfile
+from ai_workbench.core.models.schema import ModelInput, ModelProfile, ModelSettings, BackendInput, BackendProfile
 from ai_workbench.core.time import utc_now
-from ai_workbench.db.models import AppMetadataRecord, ModelProfileRecord, ProviderProfileRecord
+from ai_workbench.db.models import AppMetadataRecord, ModelProfileRecord, BackendProfileRecord
 
-T = TypeVar("T", ModelProfile, ProviderProfile)
+T = TypeVar("T", ModelProfile, BackendProfile)
 
 
 class _Store(Generic[T]):
@@ -24,16 +24,18 @@ class _Store(Generic[T]):
 
     def _decode(self, record) -> T:
         data = record.model_dump()
-        for key in ("capabilities", "parameters", "lifecycle", "runtime_options"):
+        for key in ("capabilities", "parameters", "lifecycle", "execution_options", "connection", "download"):
             if key + "_json" in data:
-                data[key] = json.loads(data.pop(key + "_json"))
+                raw = data.pop(key + "_json")
+                data[key] = json.loads(raw) if raw is not None else None
         return self.schema.model_validate(data)
 
     def _encode(self, profile) -> dict:
         data = profile.model_dump()
-        for key in ("capabilities", "parameters", "lifecycle", "runtime_options"):
+        for key in ("capabilities", "parameters", "lifecycle", "execution_options", "connection", "download"):
             if key in data:
-                data[key + "_json"] = json.dumps(data.pop(key))
+                value = data.pop(key)
+                data[key + "_json"] = json.dumps(value) if value is not None else None
         return data
 
     def get(self, profile_id: str) -> T:
@@ -64,7 +66,7 @@ class _Store(Generic[T]):
                     db.commit()
                 except IntegrityError as exc:
                     db.rollback()
-                    raise ModelError("MODEL_CONFLICT", "Profile alias, id or provider reference conflicts.", 409) from exc
+                    raise ModelError("MODEL_CONFLICT", "Profile alias, id or backend reference conflicts.", 409) from exc
         return profile.model_copy(deep=True)
 
     def update(self, profile_id: str, values: dict) -> T:
@@ -85,7 +87,7 @@ class _Store(Generic[T]):
                     db.commit()
                 except IntegrityError as exc:
                     db.rollback()
-                    raise ModelError("MODEL_CONFLICT", "Profile alias or provider reference conflicts.", 409) from exc
+                    raise ModelError("MODEL_CONFLICT", "Profile alias or backend reference conflicts.", 409) from exc
         return updated.model_copy(deep=True)
 
     def delete(self, profile_id: str) -> T:
@@ -114,9 +116,27 @@ class ModelProfileStore(_Store[ModelProfile]):
             return self._decode(record) if record else None
 
 
-class ProviderProfileStore(_Store[ProviderProfile]):
+class BackendProfileStore(_Store[BackendProfile]):
     def __init__(self, engine=None):
-        super().__init__(ProviderProfile, ProviderProfileRecord, ProviderInput, engine)
+        super().__init__(BackendProfile, BackendProfileRecord, BackendInput, engine)
+        if engine is None:
+            self._records["local"] = BackendProfile(id="local", name="Local backend", type="local")
+
+    def create(self, profile: BackendProfile) -> BackendProfile:
+        if profile.type == "local":
+            raise ModelError("BACKEND_CONFLICT", "The local backend already exists.", 409)
+        return super().create(profile)
+
+    def update(self, profile_id: str, values: dict) -> BackendProfile:
+        current = self.get(profile_id)
+        if values.get("type", current.type) != current.type:
+            raise ModelError("BACKEND_TYPE_IMMUTABLE", "Backend type cannot be changed.", 409)
+        return super().update(profile_id, values)
+
+    def delete(self, profile_id: str) -> BackendProfile:
+        if profile_id == "local":
+            raise ModelError("BACKEND_IN_USE", "The local backend cannot be deleted; uninstall its runtime instead.", 409)
+        return super().delete(profile_id)
 
 
 class ModelSettingsStore:

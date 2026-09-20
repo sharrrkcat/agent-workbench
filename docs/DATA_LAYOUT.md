@@ -5,12 +5,12 @@ are never removed by schema revisions.
 
 | Path | Contents and owner |
 | --- | --- |
-| data/agent_workbench.db | Application test state: Personas, sessions/messages/runs, settings, models/providers, Knowledge/Worldbook, runtime jobs |
+| data/agent_workbench.db | Application test state: Personas, sessions/messages/runs, settings, models/backends, Knowledge/Worldbook, runtime jobs |
 | data/attachments/ | Uploaded files and Persona avatars; explicit orphan cleanup |
 | data/tmp/voice-references/ | Model-service temporary reference audio; no database records |
 | data/knowledge/ | Knowledge service source/index working files |
 | data/models/ | Manually managed model weights; no application downloader |
-| data/runtimes/ | Supervisor-owned pinned binaries, Python interpreters/venvs, caches/staging |
+| data/runtimes/ | Supervisor-owned local inference release, caches and staging |
 | data/logs/ | Operational diagnostics and inference/runtime logs |
 | data/assets/ | Existing local files, including retired font assets; untouched by cleanup |
 | data/pet/ | Retired Pet packages; untouched and no longer scanned or served |
@@ -24,7 +24,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0012_runtime_families`; there are 24 current business tables.
+Alembic head is `0013_unified_backend`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -68,11 +68,17 @@ model selections. Unaffected records and all files remain; no records are conver
 Existing record values remain unchanged. Repeated upgrades preserve new TTS
 profiles. The revision performs no filesystem operations.
 
-Kokoro ONNX files reside under data/models/tts; the fixed voice list uses
-voices/<id>.bin. Auxiliary en_core_web_sm source files live separately under
-data/models/_auxiliary/en_core_web_sm and are excluded from model inventory.
-Runtime installation copies its verified local wheel into the ONNX environment;
-uninstall removes that installed copy but preserves the manually supplied source.
+Revision `0013_unified_backend` rebuilds backend/model/runtime configuration and
+seeds the reserved local backend. It clears model selections, dependent Knowledge
+records/bindings and unfinished model-backed continuations, preserving completed
+history and unrelated settings. It does not convert records or touch files.
+Old installation directories remain on disk but are not executable backends.
+Repeated upgrades preserve newly saved configuration.
+
+Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
+The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under
+data/models/_auxiliary/en_core_web_sm and is excluded from inventory. Kokoro
+reads it at model load; installation and uninstall never copy or alter it.
 
 For explicit database upgrades, compare protected file paths, sizes and
 modification times before and after. Migration tests use temporary roots and
@@ -85,13 +91,14 @@ integrity, foreign keys and absence of the retired root snapshot/test model stub
 
 Installation directories and process ownership are defined in
 [models](contracts/models.md#managed-catalog-and-installation). Explicit runtime
-uninstall removes only its catalog entry's directory. Shared Python
-distributions and download cache remain available for other variants.
+uninstall removes only data/runtimes/local/<version>, containing the shared
+env/, worker/ and separate native/cpu and native/cuda programs. Pinned Python
+archives under python/archives and dependency/native caches under .cache remain.
 Task/process logs are bounded and retained under data/logs/runtimes.
 Runtime storage accounting covers ordinary files across runtimes, deduplicates
 hard links and reports exclusive logical size rather than physical disk recovery.
 Manual uv prune/clean acts only on .cache, through the shared runtime task lock.
-It does not uninstall runtimes or remove interpreters. Retained hard links keep
+It does not uninstall the local release or remove Python archives. Retained hard links keep
 installed files alive; a later installation may need to download cache entries again.
 
 ## Temporary voice references
@@ -112,7 +119,7 @@ no schema revision, model uninstall or runtime cache job deletes them.
 - AGENT_WORKBENCH_ATTACHMENTS_DIR overrides attachment storage.
 - AGENT_WORKBENCH_FILE_ALLOWED_DIRS controls permitted attachment file access;
   harness read_file has its own narrower allowlist.
-- Model/provider configuration is stored in the database, not environment fallback.
+- Model/backend configuration is stored in the database, not environment fallback.
 
 `scripts/reset_data.py` is an explicit SQLite-file reset command; its default is
 a dry run and `--yes` deletes only the selected database file.

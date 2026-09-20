@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import gc
+from functools import partial
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -11,11 +12,11 @@ import sys
 import threading
 
 if __package__:
-    from .protocol import WorkerError, fields, integer, load_request, strings, speech_request
+    from .protocol import WorkerError, fields, load_request, speech_request
     from .timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
-    from protocol import WorkerError, fields, integer, load_request, strings, speech_request
+    from protocol import WorkerError, fields, load_request, speech_request
     from timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 
 PROTOCOL_VERSION = 1
@@ -23,12 +24,11 @@ MAX_BODY = 32 * 1024 * 1024
 
 
 class Worker:
-    def __init__(self, root, engine_factory=None, allowed_kinds=("tts",)):
+    def __init__(self, root, engine_factory=None):
         self.root = root
         self.models = {}
         self.lock = threading.Lock()
         self.engine_factory = engine_factory
-        self.allowed_kinds = frozenset(allowed_kinds)
 
     def health(self):
         return {"protocol_version": PROTOCOL_VERSION, "loaded": list(self.models)}
@@ -40,8 +40,6 @@ class Worker:
             if operation == "/load":
                 with stage("model_resources"):
                     path = load_request(body, self.root)
-                if body["kind"] not in self.allowed_kinds:
-                    raise WorkerError("UNSUPPORTED_CAPABILITY")
                 model_id = body["profile_id"]
                 trace = current_trace()
                 if trace:
@@ -49,18 +47,11 @@ class Worker:
                 if model_id not in self.models:
                     factory = self.engine_factory
                     if factory is None:
-                        if body["kind"] == "tts":
-                            if __package__:
-                                from .tts_engine import TTSEngine
-                            else:
-                                from tts_engine import TTSEngine
-                            factory = TTSEngine
-                        elif __package__:
-                            from .engines import Engine
-                            factory = Engine
+                        if __package__:
+                            from .tts_engine import TTSEngine
                         else:
-                            from engines import Engine
-                            factory = Engine
+                            from tts_engine import TTSEngine
+                        factory = partial(TTSEngine, models_root=self.root)
                     with stage("engine_init"):
                         self.models[model_id] = factory(path, body["kind"], body["parameters"], body["options"])
                 with stage("worker_ready"):
@@ -72,39 +63,15 @@ class Worker:
                 self.models.pop(body["profile_id"], None)
                 gc.collect()
                 return self.health()
-            supported = {
-                "/embed": ("embedding", ("texts",), ("dimensions",)),
-                "/rerank": ("reranker", ("query", "documents"), ()),
-                "/image-embed": ("image_embedding", ("images",), ()),
-                "/vision": ("vision", ("images",), ()),
-                "/speech": ("tts", ("input", "voice", "speed", "response_format", "language"), ()),
-            }
-            if operation not in supported:
+            if operation != "/speech":
                 raise WorkerError("UNSUPPORTED_CAPABILITY", 404)
-            kind, required, optional = supported[operation]
-            fields(body, ("profile_id", *required), optional)
+            fields(body, ("profile_id", "input", "voice", "speed", "response_format", "language"))
+            values = {key: value for key, value in body.items() if key != "profile_id"}
+            speech_request(values)
             model = self.models.get(body["profile_id"])
             if model is None:
                 raise WorkerError("MODEL_UNAVAILABLE", 503)
-            if model.kind != kind:
-                raise WorkerError("MODEL_KIND_MISMATCH")
-            if kind == "tts":
-                values = {key: value for key, value in body.items() if key != "profile_id"}
-                speech_request(values)
-                return model.speech(values["input"], values["voice"], values["speed"], values["response_format"], values["language"])
-            batch = strings(body["texts"] if kind == "embedding" else body["documents"] if kind == "reranker" else body["images"], model.options["max_batch_size"])
-            if kind == "embedding":
-                dimensions = body.get("dimensions")
-                if dimensions is not None:
-                    integer(dimensions, 1, 65536)
-                result = model.embed(batch)
-                if dimensions and any(len(vector) != dimensions for vector in result["vectors"]):
-                    raise WorkerError("EMBEDDING_DIMENSION_MISMATCH")
-                return result
-            if kind == "reranker":
-                strings([body["query"]], 1)
-                return model.rerank(body["query"], batch)
-            return model.image_embed(batch) if kind == "image_embedding" else model.vision(batch)
+            return model.speech(values["input"], values["voice"], values["speed"], values["response_format"], values["language"])
         finally:
             self.lock.release()
 

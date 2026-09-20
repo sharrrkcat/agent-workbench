@@ -46,31 +46,35 @@ default option. Model selection and
 profile parameters are defined in [models](models.md); title behavior belongs
 to [chat/context](chat-context.md#auxiliary-tasks-and-titles).
 
-Models has Profiles, Connections, Runtimes and External service tabs. The kind
-filter, profile and connection editors, external-service form and runtime view
-share useModelsStore. Drafts survive switching between Models tabs. Health,
+Models has Models, Backends and External API tabs. The kind filter, model and
+external-backend editors, service form and local installation details share
+useModelsStore. Drafts survive switching between Models tabs. Health,
 load, unload, inventory and runtime actions use the common model services.
-Local inventory/provider listing do not load weights. External unknown
+Local inventory/backend discovery do not load weights. External unknown
 residency/unsupported unload remains visible.
-TTS profiles select Kokoro with ONNX CPU or Chatterbox/Qwen3-TTS Base with Windows
-Audio, speech speed and MP3/WAV defaults. Audio exposes explicit CPU/CUDA selection,
-architecture choice and its generation defaults. Switching architecture preserves
-speed/format and clears incompatible generation settings; reselecting Audio retains
-Qwen. Saved Kokoro editors show preset availability by language; Audio editors
+Models select a configured backend without choosing runtime packages. Local engine
+selection follows the model reference and architecture; execution options expose CPU/CUDA.
+TTS profiles select Kokoro, Chatterbox or Qwen3-TTS Base, speed and MP3/WAV defaults.
+Switching architecture preserves speed/format and clears incompatible generation
+and execution settings; reselecting the backend retains the selected architecture.
+Saved Kokoro editors show preset availability by language; Audio editors
 explain reference-based API usage and Qwen's optional transcripts. Voices are request
 selections, not profile records. Ownership/expiry belong to [Models](models.md#audio-tts-and-temporary-references).
 
-Provider/settings reads omit secret keys and expose presence flags. PATCH
+Backend/settings reads omit secret keys and expose presence flags. PATCH
 omission retains a key; an explicit empty string clears it. External enablement
 requires a nonempty key. Local key storage is unencrypted. Busy connection
 edits, referenced deletion and invalid model combinations return errors.
 
-Runtime download settings at `/api/models/runtime/settings` own http_proxy,
-pypi_index_url, pytorch_index_url and github_release_proxy_url. Index/release
+The fixed Local backend row cannot be added or deleted. Its details expose
+enablement, one install/repair/uninstall workflow, task cancellation/history,
+logs, storage and cache maintenance. External backends can be added, edited and
+deleted when unreferenced. Backend type is immutable.
+The local backend's nested download object owns http_proxy, pypi_index_url,
+pytorch_index_url and github_release_proxy_url, patched at `/api/models/backends/local`.
+Index/release
 proxy URLs require HTTPS; HTTP is allowed for the explicit proxy. URL credentials
 are rejected. These settings serve runtime artifacts/dependencies only.
-Runtimes exposes install/cancel/reinstall/uninstall, job history and bounded logs.
-It also shows runtime storage totals/details and manual cache prune/clean.
 Storage is fetched on entry, explicit refresh and maintenance completion, with
 no timer. Incomplete scans show unknown values; cache recovery uses an exclusive
 logical-size estimate. Clear cache requires confirmation, including the estimate

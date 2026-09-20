@@ -14,106 +14,10 @@ from ai_workbench.core.models.runtimes.process import RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeJob
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
+from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.workers import tts_engine
 from ai_workbench.workers.protocol import WorkerError
 from tests.test_tts import HEADERS, PAYLOAD, api, model_tree, wav_bytes
-
-
-def onnx_entry(system=None):
-    return next(entry for entry in catalog(system, "x86_64") if entry.variant == "onnx-cpu")
-
-
-@pytest.mark.parametrize("resource, code", [
-    ("missing", "MODEL_NOT_FOUND"),
-    ("corrupt", "RUNTIME_CHECKSUM_MISMATCH"),
-    ("corrupt-lock", "RUNTIME_BROKEN"),
-])
-def test_onnx_install_rejects_missing_or_changed_resources_before_commands(tmp_path, resource, code):
-    async def scenario():
-        entry = onnx_entry()
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), entries=[entry])
-        service._uv = lambda: "fixture-uv"
-        service._command = AsyncMock()
-        if resource == "corrupt":
-            wheel = tmp_path / "data/models/_auxiliary/en_core_web_sm/en_core_web_sm-any-py3-none-any.whl"
-            wheel.parent.mkdir(parents=True)
-            wheel.write_bytes(b"incorrect auxiliary wheel")
-        elif resource == "corrupt-lock":
-            entry.sha256 = "0" * 64
-        job = RuntimeJob(runtime_id="python-worker", variant="onnx-cpu", version=entry.version, operation="install")
-        try:
-            with pytest.raises(ModelError) as error:
-                await service._install_python(entry, tmp_path / "payload", job, RuntimeLog(tmp_path / "log", tmp_path))
-            assert error.value.code == code
-            service._command.assert_not_awaited()
-        finally:
-            await service.close()
-    asyncio.run(scenario())
-
-
-def test_onnx_install_uses_verified_local_wheel_and_bounded_source_builds(tmp_path, monkeypatch):
-    from ai_workbench.core.models.runtimes import supervisor as implementation
-
-    async def scenario():
-        entry = onnx_entry()
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), entries=[entry])
-        service._uv = lambda: "fixture-uv"
-        wheel = tmp_path / "data/models/_auxiliary/en_core_web_sm/en_core_web_sm-any-py3-none-any.whl"
-        wheel.parent.mkdir(parents=True)
-        wheel.write_bytes(b"verified local wheel fixture")
-        digest = AsyncMock(return_value="86cc141f63942d4b2c5fcee06630fd6f904788d2f0ab005cce45aadb8fb73889")
-        monkeypatch.setattr(implementation, "file_digest", digest)
-        calls = []
-
-        async def command(args, env, cwd, log):
-            args = list(map(str, args))
-            calls.append((args, dict(env)))
-            if "venv" in args:
-                Path(args[-1]).mkdir(parents=True)
-            if "--no-index" in args:
-                staged = Path(args[-1])
-                assert staged.name == "en_core_web_sm-3.7.1-py3-none-any.whl"
-                assert staged.read_bytes() == wheel.read_bytes()
-
-        service._command = command
-        job = RuntimeJob(runtime_id="python-worker", variant="onnx-cpu", version=entry.version, operation="install")
-        try:
-            await service._install_python(entry, tmp_path / "payload", job, RuntimeLog(tmp_path / "log", tmp_path))
-            digest.assert_awaited_once_with(wheel)
-            packages = next(args for args, _ in calls if "--require-hashes" in args)
-            assert "--no-deps" in packages
-            assert packages[packages.index("--only-binary") + 1] == ":all:"
-            assert set(packages[packages.index("--no-binary") + 1].split(",")) == {"docopt", "jaconv", "jieba", "unidic-lite"}
-            assert packages[packages.index("--build-constraints") + 1] == str(CATALOG_ROOT / entry.requirements)
-            local = next(args for args, _ in calls if "--no-index" in args)
-            assert "--no-deps" in local and not Path(local[-1]).exists()
-            assert wheel.read_bytes() == b"verified local wheel fixture"
-            assert calls[-1][1]["HF_HUB_OFFLINE"] == "1"
-            assert (tmp_path / "payload/worker/tts_engine.py").is_file()
-        finally:
-            await service.close()
-    asyncio.run(scenario())
-
-
-@pytest.mark.parametrize("system", ["windows", "linux"])
-def test_onnx_locks_pin_the_cpu_stack_without_torch(system):
-    lock = (CATALOG_ROOT / onnx_entry(system).requirements).read_text(encoding="utf-8")
-    packages = {}
-    current = None
-    for line in lock.splitlines():
-        if not line or line.lstrip().startswith("#"):
-            continue
-        if line[0].isspace():
-            assert current and line.strip().startswith("--hash=sha256:")
-            packages[current][1] += 1
-        else:
-            current, version = line.rstrip(" \\").split("==")
-            packages[current] = [version, 0]
-    assert all(hashes for _, hashes in packages.values())
-    assert {name: packages[name][0] for name in ("onnxruntime", "numpy", "misaki", "spacy")} == {
-        "onnxruntime": "1.23.2", "numpy": "1.26.4", "misaki": "0.9.4", "spacy": "3.7.5",
-    }
-    assert not {"torch", "torchvision", "transformers", "kokoro", "kokoro-onnx"} & packages.keys()
 
 
 def inference_spy(tmp_path):
@@ -169,8 +73,8 @@ def test_worker_audio_failures_stop_execution_and_sanitize_errors(monkeypatch, f
     from ai_workbench.core.models.runtimes import adapters
 
     async def scenario():
-        adapter = PythonWorkerAdapter(SimpleNamespace(entry=lambda *args: onnx_entry()),
-            SimpleNamespace(runtime_id="python-worker", runtime_variant="onnx-cpu"), lambda: None)
+        adapter = PythonWorkerAdapter(SimpleNamespace(release=catalog("windows", "x86_64")),
+            ModelProfile(name="speech", alias="speech", kind="tts", model_ref="tts/kokoro", backend_profile_id="local"), lambda: None)
         adapter._stop = AsyncMock()
 
         async def handle(request):

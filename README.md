@@ -33,51 +33,49 @@ See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 ## Configure models
 
-In **Settings > Models**, choose one backend:
+In **Settings > Models**, configure Backends, then bind a model:
 
-1. **External connection:** add an OpenAI-compatible base URL, optional key and
-   queue/timeout settings under Connections. Create a profile with the exact
-   model reference advertised by that connection.
-2. **Managed runtime:** install a supported runtime under Runtimes, place
-   model weights manually under data/models, then create a managed profile with
-   that runtime, variant and inventory reference.
+1. **Local backend:** open its details under Backends and install the shared
+   Windows x64 release once. Place model files manually under data/models and
+   select Local backend in each model. The reference/architecture selects its engine.
+2. **External backend:** add an OpenAI-compatible base URL, optional key and
+   queue/timeout settings under Backends. Bind models using the exact references
+   advertised by that service. Multiple external backends can coexist with Local.
 
 Each profile has one of six kinds, an internal UUID, a unique public alias,
 capabilities, parameters and lifecycle settings. Choose the default chat model
 and optionally a separate auxiliary model. New sessions select and save that
 default, or the first enabled LLM when it is unavailable. Both chat selectors
 show concrete models; changing the default preserves existing session selections.
-Titles use only the auxiliary
-selection and remain unchanged when it is missing or fails.
+Titles use only the auxiliary selection and remain unchanged when it is missing or fails.
 
-| Kind | Local inventory root | Managed backend |
+| Kind | Local inventory root | Local execution |
 | --- | --- | --- |
 | llm | data/models/llms | llama-server GGUF or Windows Transformers |
-| embedding | data/models/embeddings | Infinity pending; external embeddings remain available |
-| reranker | data/models/rerankers | Infinity pending |
-| image_embedding | data/models/image_embeddings | Infinity pending |
-| vision | data/models/vision | WD14 entry retained; ONNX integration pending |
+| embedding | data/models/embeddings | Deferred; external embeddings remain available |
+| reranker | data/models/rerankers | Deferred |
+| image_embedding | data/models/image_embeddings | Deferred |
+| vision | data/models/vision | WD14 deferred |
 | tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
 
 Inventory returns references relative to data/models, for example
-`llms/example.gguf`. Native Transformers checkpoints use the managed
-`python-worker/transformers-cuda` runtime and may explicitly select CPU execution;
-the supplied validation model is `llms/Qwen3.5-0.8B-TF`. WD14 uses model.onnx plus
-selected_tags.csv. Kokoro uses the
-[ONNX speech layout](#offline-kokoro-speech). Image input to chat requires an external
+`llms/example.gguf`. Transformers checkpoints use a model directory and may
+explicitly select CPU execution. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
+Image input to chat requires an external
 vision-capable LLM; managed llama projector support is not implemented.
 
 The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
-lists supported CPU and Windows CUDA variants and platform limits. CUDA defaults
-to automatic GPU layers with a fixed context floor; manual layers are available.
-Loading requires a usable NVIDIA device and confirmed positive GPU offload.
-Runtimes provides install/cancel/retry/uninstall, progress, logs and cache prune/clean.
+describes the shared Python environment and both native llama-server builds.
+Execution options select CPU or NVIDIA CUDA; capable engines default to CUDA,
+Kokoro to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
+CUDA requires a usable NVIDIA device and GGUF must confirm positive offload.
+Local backend details provide install/repair/uninstall, cancellation, progress, logs and cache prune/clean.
 Storage deduplicates hard links; exclusive logical size is an estimate, not exact disk recovery.
 Cache cleanup preserves installations. Download settings affect dependencies/proxies, never model weights.
 Model load, health and reference preparation check entry/model availability, without installation integrity or cache scans.
 Model logs correlate UTC host/worker stages, package imports and wall/process CPU times, including pre-spawn failures.
 Totals include queueing but exclude inference; nested stage durations overlap. See [models](docs/contracts/models.md).
-Reinstall Python runtimes to update bundled workers: ONNX/Transformers 1.0.2, Audio 1.1.2.
+Repair installs the current release's dependencies and workers together.
 
 Release defaults to manual. External health/load verifies the advertised model,
 but standard OpenAI-compatible connections cannot report weight residency or
@@ -170,14 +168,15 @@ Public rerank and image generation remain [future design records](docs/FUTURE_MO
 Place the Kokoro v1.0 FP32 ONNX model, config/tokenizer JSON files and
 `voices/<id>.bin` under `data/models/tts/Kokoro-82M-onnx`. The fixed catalog has
 54 voices; extra files are ignored and missing/invalid voices are unavailable.
-Place the supplied `en_core_web_sm-any-py3-none-any.whl` (model version 3.7.1)
-under `data/models/_auxiliary/en_core_web_sm`. The installer validates its checksum
-and installs it locally. Model weights and language models are never downloaded.
+Manually unpack the en_core_web_sm 3.7.1 pipeline into
+`data/models/_auxiliary/en_core_web_sm`, with meta.json, config.cfg, tokenizer,
+tok2vec/, tagger/ and vocab/ directly inside it. Kokoro reads this directory at
+load time. Missing or corrupt resources fail Kokoro without changing the shared
+environment or blocking installation/other engines. No language models are downloaded.
 
-Install **python-worker / onnx-cpu** in Models > Runtimes, then create a TTS
-profile with architecture Kokoro and model reference `tts/Kokoro-82M-onnx`.
-The separate CPU environment includes language processors and MP3 encoding,
-without PyTorch or Transformers. First load and synthesis work offline.
+Install Local backend under Models > Backends, then create a TTS model with
+architecture Kokoro and reference `tts/Kokoro-82M-onnx`. Its ONNX execution stays
+on CPU; language processors and MP3 encoding use the shared environment.
 
 ```powershell
 Invoke-RestMethod "$apiBase/audio/voices?model=kokoro" -Headers $headers
@@ -191,14 +190,13 @@ Use `response_format=mp3` for MP3 (the default). The response is a complete audi
 file; no chat or attachment record is created. `tts.language`, when supplied,
 must match the voice. SSE and application playback are deferred.
 `GET /v1/audio/voices` is a Workbench extension; source=preset selects Kokoro voices.
-OpenAI SDK speech calls use the standard fields.
 
 ### Offline Chatterbox Speech
 
-On Windows x64, install **python-worker / audio-cuda** in Models > Runtimes.
+On Windows x64, install Local backend in Models > Backends.
 Place the English ve.safetensors, t3_cfg.safetensors, s3gen.safetensors and
 tokenizer.json files under `data/models/tts/chatterbox`. Create a TTS profile
-using PyTorch Audio, model reference `tts/chatterbox`, and explicit CPU or NVIDIA
+using architecture Chatterbox, model reference `tts/chatterbox`, and CPU or NVIDIA
 CUDA execution. Chatterbox has generation defaults in the editor and no preset voices.
 
 Upload one WAV/MP3 reference (8 MiB, at most 30 decoded seconds) through the API:
@@ -220,7 +218,7 @@ accepts only en-US; `tts.model_options` overrides defaults. See [reference limit
 
 ### Offline Qwen3-TTS Base Speech
 
-Install Windows **python-worker / audio-cuda 1.1.2**, select **Qwen3-TTS (12Hz Base)**
+Install the Windows Local backend, select **Qwen3-TTS (12Hz Base)**
 and explicit CPU/CUDA execution. Place the complete checkpoint, including generation config,
 text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is
 `tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
@@ -268,8 +266,8 @@ domain validators; OpenAPI does not replace them.
 
 ## Settings and storage
 
-The six settings entries are General, Models, Personas, Knowledge, Worldbook
-and Tools. Each has one owner; [settings](docs/contracts/settings.md) lists
+The six settings entries are General, Models, Personas, Knowledge, Worldbook and Tools.
+The [settings contract](docs/contracts/settings.md) lists
 APIs, editable fields and key omission/clearing semantics. Keys are omitted from
 management reads but remain unencrypted in local storage. Logs omit credentials
 and request/model content.
@@ -320,29 +318,31 @@ placed files and write generated samples under build/tts-smoke:
 
 ```powershell
 uv run python -m scripts.smoke_tts_runtime --install-only
-uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
+uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime --skip-install
 ```
 
 Installation uses the application's bundled uv; run its command before the
-temporary SDK environment. `--voice af_heart` limits the smoke test to one voice.
+temporary SDK environment. `--voice af_heart` selects one voice; `--skip-install` reuses a verified installation.
 The smoke test isolates caches, decodes both formats and checks actual worker
 termination on HTTP disconnect, followed by reload and another SDK request.
 
-Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
-`uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
-Use mono PCM16 24 kHz speech, stop Workbench first, and provide enough RAM/VRAM. The command installs/verifies
-the package, then checks CPU/CUDA, offline loading, MP3/WAV, Qwen cloning modes/languages, references,
-cancellation/isolation and Whisper's 30-second boundary. `--install-only`, `--skip-install`, `--device cpu|cuda`
-and `--engine chatterbox|qwen3tts|whisper` select stages. Reports/samples go to build/audio-smoke; Linux is rejected.
-Rebuild the patched wheel with `uv run python scripts/build_audio_wheel.py`; dependency upgrades require the full matrix.
+Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
+`uv run python -m scripts.smoke_audio_runtime --skip-install --device cuda --reference ./reference.wav --reference-text "Words in the recording"`.
+Use mono PCM16 24 kHz speech, stop Workbench first, and provide enough RAM/VRAM. This reuses a verified installation.
+The three CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, references, cancellation/isolation
+and Whisper's 30-second boundary. `--engine chatterbox|qwen3tts|whisper` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected.
+Use `--device cpu` only for affected changes under the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU.
+`--install-only` installs/verifies the release. Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`.
+Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
 
 For a Windows CUDA check with an existing GGUF, run
 `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. This installs
-CUDA if needed and exercises auto/manual load, chat, streaming and unload using
+the local backend if needed and exercises auto/manual load, chat, streaming and unload using
 temporary in-memory model profiles; runtime installation/jobs remain persisted.
 Stop Workbench before real-model checks. Record hardware, runtime version and model;
 deterministic tests do not establish real-provider or cross-platform runtime compatibility.
-`uv run python -m scripts.smoke_model_loading --install-only` updates the three Python runtimes.
+`uv run python -m scripts.smoke_llm_runtime --engine transformers --skip-install` checks CPU/CUDA, streaming, tools and cancellation;
+use `--engine llama-server` for GGUF. `smoke_model_loading --install-only` installs/verifies the local release.
 Run it without `--install-only` for first/reload timing and minimal inference; logs/report go to build/model-loading-smoke.
 
 Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract

@@ -17,7 +17,7 @@ import zipfile
 import httpx
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, find_entry, text_digest, worker_digest
+from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, text_digest, worker_digest, worker_entrypoint
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import (
     CacheCleanupResult, Installation, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
@@ -59,23 +59,19 @@ def remove_owned(root: Path, path: Path):
         path.unlink()
 
 
-def installed_file(base: Path, target: Path, name: str, allow_interpreter=False) -> Path:
-    # Linux venv entry points link to the shared, runtime-owned Python install.
+def installed_file(target: Path, name: str) -> Path:
     from ai_workbench.core.models.runtimes.schema import relative_ref
     relative_ref(name)
     path = target / name
     resolved = path.resolve()
     if resolved.is_relative_to(target.resolve()):
         return path
-    if allow_interpreter and name in {"bin/python", "bin/python3", "bin/python3.12"} and resolved.is_relative_to((base / "python").resolve()):
-        return path
     raise ModelError("RUNTIME_BROKEN", "Installed file escapes its runtime directory.", 503)
 
 
-def runtime_inventory(base: Path, target: Path, allow_interpreter, cancelled):
+def runtime_inventory(target: Path, cancelled):
     from ai_workbench.core.models.runtimes.schema import relative_ref
     resolved_target = target.resolve()
-    shared_python = (base / "python").resolve()
     parents = {target: resolved_target}
     files = {}
     for path in target.rglob("*"):
@@ -90,10 +86,7 @@ def runtime_inventory(base: Path, target: Path, allow_interpreter, cancelled):
             parent = parents[path.parent] = path.parent.resolve()
         info = path.lstat()
         resolved = path.resolve() if is_link(info) else parent / path.name
-        if not resolved.is_relative_to(resolved_target) and not (
-            allow_interpreter and name in {"bin/python", "bin/python3", "bin/python3.12"}
-            and resolved.is_relative_to(shared_python)
-        ):
+        if not resolved.is_relative_to(resolved_target):
             raise ModelError("RUNTIME_BROKEN", "Installed file escapes its runtime directory.", 503)
         if path.is_dir():
             parents[path] = resolved
@@ -113,9 +106,9 @@ async def file_work(work):
         raise
 
 
-def inventory_hashes(base, target, allow_interpreter, cancelled):
+def inventory_hashes(target, cancelled):
     result = {}
-    for name, (path, _info) in sorted(runtime_inventory(base, target, allow_interpreter, cancelled).items()):
+    for name, (path, _info) in sorted(runtime_inventory(target, cancelled).items()):
         if cancelled.is_set():
             raise InterruptedError()
         result[name] = sha256(path)
@@ -171,17 +164,18 @@ def extract_archive(archive: Path, target: Path, archive_format: str):
 
 
 class RuntimeSupervisor:
-    def __init__(self, root, store, events=None, entries=None, transport=None):
+    def __init__(self, root, store, backends, events=None, release=None, transport=None):
         self.root = Path(root).resolve()
         self.base = self.root / "data" / "runtimes"
         self.logs = self.root / "data" / "logs" / "runtimes"
         self.store = store
         self.events = events
-        self.entries = entries if entries is not None else catalog()
+        self.backends = backends
+        self.release = release if release is not None else catalog()
         self.transport = transport
         self.task: asyncio.Task | None = None
         self.active_job: str | None = None
-        self.blocked: tuple | None = None
+        self.blocked = False
         self.closed = False
         self.manager = None
         self._verified: dict[str, tuple] = {}
@@ -192,107 +186,93 @@ class RuntimeSupervisor:
                 if staging.exists():
                     remove_owned(self.base, staging)
 
-    def entry(self, runtime_id, variant):
-        return find_entry(self.entries, runtime_id, variant)
+    def directory(self):
+        return contained(self.base, self.base / "local" / self.release.version)
 
-    def directory(self, entry):
-        path = self.base / (f"llama-server/{entry.version}/{entry.variant}" if entry.runtime_id == "llama-server" else f"py/{entry.variant}/{entry.version}")
-        return contained(self.base, path)
-
-    def installation(self, runtime_id, variant):
-        entry = self.entry(runtime_id, variant)
-        key = f"{runtime_id}/{variant}"
-        value = next((item for item in self.store.installations() if item.id == key), None)
-        value = value or Installation(id=key, runtime_id=runtime_id, variant=variant, version=entry.version)
+    def installation(self):
+        entry = self.release
+        records = self.store.installations()
+        value = records[0] if records else Installation(version=entry.version)
         if not entry.supported:
             value.state, value.error_code = "unsupported", "RUNTIME_UNSUPPORTED"
-        elif value.version != entry.version or value.state == "installed" and not (self.directory(entry) / "installation.json").is_file():
+        elif value.version != entry.version or value.state == "installed" and not (self.directory() / "installation.json").is_file():
             value.state, value.error_code = "broken", "RUNTIME_BROKEN"
         return value
 
-    def installations(self):
-        return [self.installation(entry.runtime_id, entry.variant) for entry in self.entries]
-
-    def assert_available(self, runtime_id, variant):
-        value = self.installation(runtime_id, variant)
+    def assert_available(self):
+        value = self.installation()
         codes = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING",
                  "broken": "RUNTIME_BROKEN", "unsupported": "RUNTIME_UNSUPPORTED", "interrupted": "RUNTIME_BROKEN"}
         if value.state != "installed":
-            raise ModelError(codes[value.state], "Install or repair the selected runtime in Models settings.", 503,
-                {"runtime_id": runtime_id, "variant": variant, "action": "install" if value.state in {"not_installed", "broken", "interrupted"} else "view_runtime"})
-        return self.entry(runtime_id, variant)
+            raise ModelError(codes[value.state], "Install or repair the local backend in Models settings.", 503,
+                {"backend_profile_id": "local", "action": "install" if value.state in {"not_installed", "broken", "interrupted"} else "view_runtime"})
+        return self.release
 
-    def executable(self, entry):
-        """Resolve the installed entry point without running an integrity check."""
-        self.assert_available(entry.runtime_id, entry.variant)
-        target = self.directory(entry)
+    def executable(self, engine, device="cpu"):
+        """Resolve one installed entry point without inventory or integrity scans."""
+        self.assert_available()
+        target = self.directory()
         try:
-            marker = installed_file(self.base, target, "installation.json")
+            marker = installed_file(target, "installation.json")
             data = json.loads(marker.read_text(encoding="utf-8"))
-            name = data["executable"]
+            name = data["executables"][device if engine == "llama-server" else "python"]
             if not isinstance(name, str):
                 raise ValueError("Invalid entry point")
-            path = installed_file(self.base, target, name, allow_interpreter=entry.archive_format == "venv")
+            path = installed_file(target, name)
             if not path.is_file():
                 raise ValueError("Missing entry point")
-            if entry.runtime_id == "python-worker":
-                worker = installed_file(self.base, target, "worker/" + entry.worker_entrypoint)
+            if engine != "llama-server":
+                worker = installed_file(target, "worker/" + worker_entrypoint(engine))
                 if not worker.is_file():
                     raise ValueError("Missing worker entry point")
             return path
         except (OSError, ValueError, KeyError, TypeError, ModelError) as exc:
-            raise ModelError("RUNTIME_BROKEN", "The installed runtime entry point is missing or invalid. Reinstall it from Models settings.", 503) from exc
+            raise ModelError("RUNTIME_BROKEN", "The installed entry point is missing or invalid. Repair the local backend.", 503) from exc
 
-    async def verify(self, entry):
-        value = self.installation(entry.runtime_id, entry.variant)
-        target = self.directory(entry)
+    async def verify(self):
+        value = self.installation()
+        target = self.directory()
 
         def check(cancelled):
             manifest = target / "installation.json"
             if sha256(manifest) != value.manifest_sha256:
                 raise ValueError("manifest mismatch")
             data = json.loads(manifest.read_text(encoding="utf-8"))
-            if data["artifact_sha256"] != entry.sha256 or data["version"] != entry.version:
-                raise ValueError("artifact mismatch")
-            if entry.additional_artifacts and data["additional_artifact_sha256"] != [artifact.sha256 for artifact in entry.additional_artifacts]:
-                raise ValueError("additional artifacts mismatch")
-            if entry.runtime_id == "python-worker" and data.get("worker_sha256") != entry.worker_sha256:
-                raise ValueError("worker code mismatch")
-            if entry.python_artifact and data.get("python_artifact") != entry.python_artifact.model_dump():
-                raise ValueError("interpreter artifact mismatch")
+            if data["release"] != self.release.model_dump():
+                raise ValueError("release mismatch")
             files = data["files"]
             if not isinstance(files, dict) or not files:
                 raise ValueError("empty installation")
-            inventory = runtime_inventory(self.base, target, entry.archive_format == "venv", cancelled)
+            inventory = runtime_inventory(target, cancelled)
             inventory.pop("installation.json", None)
             if set(files) != set(inventory):
                 raise ValueError("installation file inventory changed")
             snapshot = [(name, info.st_size, info.st_mtime_ns) for name, (_path, info) in sorted(inventory.items())]
             signature = (value.manifest_sha256, tuple(snapshot))
-            if self._verified.get(value.id) != signature:
+            if self._verified.get("local") != signature:
                 for name, digest in files.items():
                     if cancelled.is_set():
                         raise InterruptedError()
                     if sha256(inventory[name][0]) != digest:
                         raise ValueError("installed file mismatch")
-            executable = inventory[data["executable"]][0]
-            return executable, signature
+            for name in data["executables"].values():
+                if name not in inventory:
+                    raise ValueError("missing executable")
+            return signature
 
         try:
-            executable, signature = await file_work(check)
-            self._verified[value.id] = signature
-            return executable
+            self._verified["local"] = await file_work(check)
         except (OSError, ValueError, KeyError, TypeError, ModelError) as exc:
             value.state, value.error_code = "broken", "RUNTIME_BROKEN"
             self.store.save_installation(value)
             self._emit_installation(value)
-            raise ModelError("RUNTIME_BROKEN", "Runtime integrity check failed. Reinstall it from Models settings.", 503) from exc
+            raise ModelError("RUNTIME_BROKEN", "Runtime integrity check failed. Repair the local backend.", 503) from exc
 
     def _emit_installation(self, value):
         if self.events:
             self.events.emit("runtime_status", session_id="", payload={"installation": value.model_dump(mode="json")})
         if self.manager:
-            self.manager.runtime_changed(value.runtime_id, value.variant)
+            self.manager.runtime_changed()
 
     def _save_job(self, job):
         self.store.save_job(job)
@@ -406,36 +386,35 @@ class RuntimeSupervisor:
                 self.active_job = None
             self._prune_logs(None)
 
-    async def submit(self, runtime_id, variant, operation):
+    async def submit(self, operation):
         if self.closed:
             raise ModelError("MODEL_UNAVAILABLE", "Runtime supervisor is shutting down.", 503)
         if self.active_job is not None:
             raise ModelError("RUNTIME_INSTALLING", "Another runtime task is in progress.", 409)
-        entry = self.entry(runtime_id, variant)
+        entry = self.release
         if not entry.supported:
-            raise ModelError("RUNTIME_UNSUPPORTED", "This runtime variant is not enabled on this platform.", 422)
+            raise ModelError("RUNTIME_UNSUPPORTED", "The local runtime is not supported on this platform.", 422)
         if self.manager:
-            self.manager.require_runtime_idle(runtime_id, variant)
-        value = self.installation(runtime_id, variant)
-        job = RuntimeJob(runtime_id=runtime_id, variant=variant, version=entry.version, operation=operation)
+            self.manager.require_local_idle()
+        value = self.installation()
+        job = RuntimeJob(backend_profile_id="local", version=entry.version, operation=operation)
         job.log_path = f"{job.id}.log"
-        # Reserve the global slot before any await, including integrity checks.
         self.active_job = job.id
-        self.blocked = (runtime_id, variant)
+        self.blocked = True
         try:
             if operation == "install" and value.state == "installed":
                 try:
-                    await self.verify(entry)
+                    await self.verify()
                 except ModelError:
-                    value = self.installation(runtime_id, variant)
+                    value = self.installation()
                 else:
                     job.state, job.stage, job.finished_at = "completed", "already_installed", utc_now()
                     self._save_job(job)
                     self.active_job = None
-                    self.blocked = None
+                    self.blocked = False
                     return job
             if self.manager:
-                await self.manager.invalidate_runtime(runtime_id, variant)
+                await self.manager.invalidate_local()
             value.state, value.job_id, value.error_code = "installing", job.id, None
             self.store.save_installation(value)
             self._save_job(job)
@@ -444,7 +423,7 @@ class RuntimeSupervisor:
             return job
         except BaseException:
             self.active_job = None
-            self.blocked = None
+            self.blocked = False
             raise
 
     async def cancel(self, job_id):
@@ -463,43 +442,34 @@ class RuntimeSupervisor:
 
     async def _execute(self, job, entry):
         staging = self.base / ".staging" / job.id
-        target = self.directory(entry)
+        target = self.directory()
         log = None
-        value = self.installation(entry.runtime_id, entry.variant)
+        value = self.installation()
         try:
             log = RuntimeLog(self.logs / job.log_path, self.root)
             job.state = "running"
             self._save_job(job)
-            self._verified.pop(value.id, None)
+            self._verified.pop("local", None)
             if job.operation == "uninstall":
                 if target.exists():
-                    remove_owned(self.base, target)
+                    await file_work(lambda _: remove_owned(self.base, target))
                 value.state, value.manifest_sha256 = "not_installed", None
             else:
                 staging.mkdir(parents=True)
                 payload = staging / "payload"
-                if entry.archive_format == "venv":
-                    await self._install_python(entry, payload, job, log)
-                else:
-                    await self._install_archives(entry, payload, staging, job, log)
-                candidates = list(payload.rglob(entry.executable)) if entry.runtime_id == "llama-server" else [payload / entry.executable]
-                if len(candidates) != 1 or not candidates[0].is_file():
-                    raise ModelError("RUNTIME_BROKEN", "Runtime entry program was not found.", 503)
+                await self._install_python(entry, payload, job, log)
+                executables = {"python": entry.python_executable}
+                for device, native in (("cpu", entry.native_cpu), ("cuda", entry.native_cuda)):
+                    executables[device] = await self._install_native(native, payload, staging, device, job, log)
                 self._stage(job, "verifying", log)
-                executable = candidates[0].relative_to(payload).as_posix()
-                manifest = {"version": entry.version, "artifact_sha256": entry.sha256, "worker_sha256": entry.worker_sha256, "executable": executable, "files": {}}
-                if entry.python_artifact:
-                    manifest["python_artifact"] = entry.python_artifact.model_dump()
-                if entry.additional_artifacts:
-                    manifest["additional_artifact_sha256"] = [artifact.sha256 for artifact in entry.additional_artifacts]
-                manifest["files"] = await file_work(lambda cancelled: inventory_hashes(
-                    self.base, payload, entry.archive_format == "venv", cancelled))
+                manifest = {"release": entry.model_dump(), "executables": executables,
+                    "files": await file_work(lambda cancelled: inventory_hashes(payload, cancelled))}
                 marker = payload / "installation.json"
                 marker.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
                 value.manifest_sha256 = sha256(marker)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists():
-                    remove_owned(self.base, target)
+                    await file_work(lambda _: remove_owned(self.base, target))
                 payload.replace(target)
                 value.version, value.state = entry.version, "installed"
             job.state, job.stage = "completed", "completed"
@@ -520,7 +490,7 @@ class RuntimeSupervisor:
         finally:
             try:
                 if staging.exists():
-                    remove_owned(self.base, staging)
+                    await file_work(lambda _: remove_owned(self.base, staging))
             except OSError:
                 job.state, job.error_code = "failed", "RUNTIME_CLEANUP_FAILED"
                 value.state, value.error_code = "broken", job.error_code
@@ -534,27 +504,37 @@ class RuntimeSupervisor:
                 self._emit_installation(value)
             finally:
                 self.active_job = None
-                self.blocked = None
-            self._prune_logs(job.runtime_id)
+                self.blocked = False
+            self._prune_logs(job.backend_profile_id)
 
-    async def _install_archives(self, entry, payload, staging, job, log):
-        artifacts = [RuntimeArtifact(url=entry.url, sha256=entry.sha256,
-                                     archive_format=entry.archive_format, size_bytes=entry.size_bytes), *entry.additional_artifacts]
+    async def _install_native(self, native, payload, staging, device, job, log):
+        artifacts = [native.artifact, *native.dependencies]
+        target_root = payload / "native" / device
         total = sum(artifact.size_bytes for artifact in artifacts) if all(artifact.size_bytes is not None for artifact in artifacts) else None
         offset = 0
+        archives = []
+        self._stage(job, "native_" + device, log)
         for index, artifact in enumerate(artifacts):
-            log.write(f"Downloading artifact {index + 1}/{len(artifacts)}.")
-            await self._download(artifact, staging / f"download-{index}", job, offset=offset,
-                                 total_bytes=total, final=index == len(artifacts) - 1)
+            archive = contained(self.base, self.base / ".cache" / "workbench-artifacts" / artifact.sha256)
+            if not archive.is_file() or await file_digest(archive) != artifact.sha256:
+                staged_archive = staging / f"{device}-{index}"
+                await self._download(artifact, staged_archive, job, offset=offset,
+                                     total_bytes=total, final=index == len(artifacts) - 1)
+                archive.parent.mkdir(parents=True, exist_ok=True)
+                staged_archive.replace(archive)
+            else:
+                log.write("Using a checksum-verified native archive from cache.")
+                job.progress_current, job.progress_total = offset + archive.stat().st_size, total
+                self._save_job(job)
+            archives.append(archive)
             offset = job.progress_current
-        self._stage(job, "extracting", log)
-        extract_archive(staging / "download-0", payload, entry.archive_format)
-        candidates = list(payload.rglob(entry.executable))
+        await file_work(lambda _: extract_archive(archives[0], target_root, native.artifact.archive_format))
+        candidates = list(target_root.rglob(native.executable))
         if len(candidates) != 1 or not candidates[0].is_file():
-            raise ModelError("RUNTIME_BROKEN", "Runtime entry program was not found.", 503)
-        for index, artifact in enumerate(entry.additional_artifacts, 1):
-            extra = staging / f"additional-{index}"
-            extract_archive(staging / f"download-{index}", extra, artifact.archive_format)
+            raise ModelError("RUNTIME_BROKEN", "Native runtime entry program was not found.", 503)
+        for index, artifact in enumerate(native.dependencies, 1):
+            extra = staging / f"{device}-dependency-{index}"
+            await file_work(lambda _: extract_archive(archives[index], extra, artifact.archive_format))
             dll_count = 0
             for source in sorted(extra.rglob("*")):
                 if is_link(source.lstat()):
@@ -562,23 +542,23 @@ class RuntimeSupervisor:
                 if not source.is_file():
                     continue
                 if source.suffix.lower() == ".dll":
-                    target = candidates[0].parent / source.name
+                    destination = candidates[0].parent / source.name
                     dll_count += 1
                 else:
-                    target = payload / "dependencies" / str(index) / source.relative_to(extra)
-                contained(payload, target)
-                if target.exists():
-                    if not target.is_file() or target.is_symlink() or await file_digest(target) != await file_digest(source):
+                    destination = target_root / "dependencies" / str(index) / source.relative_to(extra)
+                contained(target_root, destination)
+                if destination.exists():
+                    if not destination.is_file() or destination.is_symlink() or await file_digest(destination) != await file_digest(source):
                         raise ModelError("RUNTIME_BROKEN", "Runtime artifacts contain conflicting files.", 503)
                 else:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    source.replace(target)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    source.replace(destination)
             if not dll_count:
                 raise ModelError("RUNTIME_BROKEN", "Additional CUDA runtime DLLs are missing.", 503)
-        if entry.variant == "cuda":
-            from ai_workbench.core.models.runtimes.cuda import llama_environment
-            self._stage(job, "checking_program", log)
-            await self._command([candidates[0], "--version"], llama_environment(candidates[0].parent), candidates[0].parent, log)
+        from ai_workbench.core.models.runtimes.cuda import llama_environment
+        self._stage(job, "checking_program", log)
+        await self._command([candidates[0], "--version"], llama_environment(candidates[0].parent), candidates[0].parent, log)
+        return candidates[0].relative_to(payload).as_posix()
 
     def _stage(self, job, stage, log):
         job.stage, job.progress_current, job.progress_total = stage, 0, None
@@ -586,7 +566,7 @@ class RuntimeSupervisor:
         self._save_job(job)
 
     async def _download(self, entry, target, job, *, offset=0, total_bytes=None, final=True):
-        settings = self.store.settings()
+        settings = self.backends.get("local").download
         url = entry.url
         if settings.github_release_proxy_url:
             url = settings.github_release_proxy_url + "/" + url
@@ -636,37 +616,34 @@ class RuntimeSupervisor:
     async def _install_python(self, entry, target, job, log):
         uv = self._uv()
         lock = CATALOG_ROOT / entry.requirements
-        if text_digest(lock) != entry.sha256:
+        if text_digest(lock) != entry.lock_sha256:
             raise ModelError("RUNTIME_BROKEN", "Worker requirements checksum mismatch.", 503)
-        auxiliary = None
-        if entry.variant == "onnx-cpu":
-            auxiliary = self.root / "data/models/_auxiliary/en_core_web_sm/en_core_web_sm-any-py3-none-any.whl"
-            if not auxiliary.resolve().is_relative_to((self.root / "data/models/_auxiliary").resolve()) or not auxiliary.is_file():
-                raise ModelError("MODEL_NOT_FOUND", "Place en_core_web_sm 3.7.1 in data/models/_auxiliary before installing ONNX CPU.", 404)
-            if await file_digest(auxiliary) != "86cc141f63942d4b2c5fcee06630fd6f904788d2f0ab005cce45aadb8fb73889":
-                raise ModelError("RUNTIME_CHECKSUM_MISMATCH", "The auxiliary language model checksum does not match.", 503)
         env = {key: value for key, value in os.environ.items() if not key.startswith(("UV_", "PIP_", "PYTHON", "VIRTUAL_ENV")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
-        env.update(UV_PYTHON_INSTALL_DIR=str(self.base / "python"), UV_CACHE_DIR=str(self.base / ".cache"), UV_NO_PROGRESS="1", UV_NATIVE_TLS="true")
-        settings = self.store.settings()
+        env.update(UV_CACHE_DIR=str(self.base / ".cache"), UV_NO_PROGRESS="1", UV_NATIVE_TLS="true", UV_PYTHON_DOWNLOADS="never")
+        settings = self.backends.get("local").download
         if settings.http_proxy:
             env.update(HTTP_PROXY=settings.http_proxy, HTTPS_PROXY=settings.http_proxy)
         self._stage(job, "creating_environment", log)
-        await self._command([uv, "python", "install", entry.python_key, "--no-config", "--no-bin", "--no-registry"], env, self.root, log)
-        await self._command([uv, "venv", "--no-config", "--python", entry.python_key, "--python-preference", "only-managed", "--no-python-downloads", str(target)], env, self.root, log)
+        artifact = entry.python_artifact
+        archive = contained(self.base, self.base / "python" / "archives" / (artifact.sha256 + ".tar.gz"))
+        if not archive.is_file() or await file_digest(archive) != artifact.sha256:
+            staged_archive = target.parent / "python.tar.gz"
+            await self._download(artifact, staged_archive, job)
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            staged_archive.replace(archive)
+        extracted = target.parent / "python-extracted"
+        await file_work(lambda _: extract_archive(archive, extracted, artifact.archive_format))
+        target.mkdir(parents=True)
+        (extracted / "python").replace(target / "env")
+        await self._command([target / entry.python_executable, "-I", "-B", "-c",
+            f"import platform; assert platform.python_version() == {entry.python_version!r}"], env, self.root, log)
         self._stage(job, "installing_packages", log)
-        build_options = ["--no-binary", "docopt,jaconv,jieba,unidic-lite", "--build-constraints", lock] if auxiliary else []
-        if entry.variant == "audio-cuda":
-            build_options = ["--no-binary", "antlr4-python3-runtime,sox", "--build-constraints", lock,
-                             "--find-links", CATALOG_ROOT / "wheels"]
-        torch_index = ["--extra-index-url", settings.pytorch_index_url or entry.pytorch_index_url] if entry.pytorch_index_url else []
-        await self._command([uv, "pip", "install", "--no-config", "--python", target / entry.executable, "--require-hashes", "--no-deps", "--only-binary", ":all:", *build_options,
-            "--index-url", settings.pypi_index_url or "https://pypi.org/simple", *torch_index,
-            "--index-strategy", "unsafe-best-match", "-r", lock], env, self.root, log)
-        if auxiliary:
-            staged = target / "en_core_web_sm-3.7.1-py3-none-any.whl"
-            shutil.copyfile(auxiliary, staged)
-            await self._command([uv, "pip", "install", "--no-config", "--python", target / entry.executable, "--no-deps", "--no-index", staged], env, self.root, log)
-            staged.unlink()
+        await self._command([uv, "pip", "sync", "--no-config", "--python", target / entry.python_executable,
+            "--require-hashes", "--only-binary", ":all:", "--no-binary", "docopt,jieba,unidic-lite,antlr4-python3-runtime,sox",
+            "--build-constraints", lock, "--find-links", CATALOG_ROOT / "wheels",
+            "--index-url", settings.pypi_index_url or "https://pypi.org/simple",
+            "--extra-index-url", settings.pytorch_index_url or entry.pytorch_index_url,
+            "--index-strategy", "unsafe-best-match", lock], env, self.root, log)
         worker_source = Path(__file__).resolve().parents[3] / "workers"
         if worker_digest(entry.worker_files, worker_source) != entry.worker_sha256:
             raise ModelError("RUNTIME_BROKEN", "Worker source fingerprint changed during installation.", 503)
@@ -674,42 +651,26 @@ class RuntimeSupervisor:
         for name in entry.worker_files:
             shutil.copyfile(worker_source / name, target / "worker" / name)
         self._stage(job, "checking_packages", log)
-        await self._command([uv, "pip", "check", "--no-config", "--python", target / entry.executable], env, self.root, log)
-        check = ("import sys, importlib.util; sys.path.insert(0, sys.argv[1]); "
-                 "from tts_engine import language_processors, require_offline; require_offline(); language_processors(); "
-                 "import onnxruntime, lameenc, tokenizers; "
-                 "assert all(importlib.util.find_spec(name) is None for name in ('torch', 'transformers', 'kokoro')); "
-                 "print('ONNX worker packages and language resources verified')") if auxiliary else (
-                 "import sys; sys.path.insert(0, sys.argv[1]); "
-                 "from transformers_engine import require_offline; require_offline(); "
-                 "import torch, torchvision, transformers; "
-                 "assert torch.__version__ == '2.11.0+cu128' and torch.version.cuda == '12.8'; "
-                 "assert torchvision.__version__ == '0.26.0+cu128' and transformers.__version__ == '5.16.1'; "
-                 "from transformers.cli.serving.chat_completion import ChatCompletionHandler; "
-                 "from transformers.cli.serving.model_manager import ModelManager; "
-                 "from transformers.cli.serving.utils import GenerationState; "
-                 "print('Transformers serve packages verified; CUDA execution is checked at model load')")
-        if entry.variant == "audio-cuda":
-            check = ("import sys, importlib.metadata; sys.path.insert(0, sys.argv[1]); "
-                     "from audio_engine import require_offline; require_offline(); "
-                     "import torch, torchaudio, transformers, numpy, onnxruntime, soundfile, lameenc; "
-                     "from chatterbox.tts import ChatterboxTTS; from qwen_tts import Qwen3TTSModel; "
-                     "from transformers import WhisperForConditionalGeneration, WhisperProcessor; "
-                     "assert torch.__version__ == torchaudio.__version__ == '2.6.0+cu124'; "
-                     "assert torch.version.cuda == '12.4' and transformers.__version__ == '4.57.3'; "
-                     "assert numpy.__version__ == '1.26.4'; "
-                     "assert importlib.metadata.version('chatterbox-tts') == '0.1.7+workbench.1'; "
-                     "print('Audio packages verified; CUDA execution is checked at model load')")
+        await self._command([uv, "pip", "check", "--no-config", "--python", target / entry.python_executable], env, self.root, log)
+        checks = [
+            "from tts_engine import require_offline; require_offline(); import onnxruntime, spacy, thinc, lameenc, tokenizers; from misaki import en, espeak, zh; from misaki.cutlet import Cutlet",
+            "from transformers_engine import require_offline; require_offline(); import torch, torchvision, transformers; from transformers.cli.serving.chat_completion import ChatCompletionHandler; from transformers.cli.serving.model_manager import ModelManager; from transformers.cli.serving.utils import GenerationState; assert torch.__version__ == '2.11.0+cu128' and torch.version.cuda == '12.8'; assert torchvision.__version__ == '0.26.0+cu128' and transformers.__version__ == '5.16.1'",
+            "from audio_engine import require_offline; require_offline(); import torch, torchaudio, numpy; from chatterbox.tts import ChatterboxTTS; assert torch.__version__ == torchaudio.__version__ == '2.11.0+cu128' and numpy.__version__ == '1.26.4'",
+            "from audio_engine import require_offline; require_offline(); from qwen_tts import Qwen3TTSModel",
+            "from audio_engine import require_offline; require_offline(); from transformers import WhisperForConditionalGeneration, WhisperProcessor",
+        ]
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
-        await self._command([target / entry.executable, "-I", "-B", "-c", check, target / "worker"], env, self.root, log)
+        for check in checks:
+            script = "import sys; sys.path.insert(0, sys.argv[1]); " + check
+            await self._command([target / entry.python_executable, "-I", "-B", "-c", script, target / "worker"], env, self.root, log)
 
     def log_text(self, job_id):
         job = self.store.job(job_id)
         path = contained(self.logs, self.logs / job.log_path)
         return RuntimeLog(path, self.root).sanitize(path.read_text(encoding="utf-8", errors="replace")) if path.is_file() else ""
 
-    def _prune_logs(self, runtime_id):
-        jobs = [job for job in self.store.jobs() if job.runtime_id == runtime_id and job.state in TERMINAL]
+    def _prune_logs(self, backend_profile_id):
+        jobs = [job for job in self.store.jobs() if job.backend_profile_id == backend_profile_id and job.state in TERMINAL]
         for job in jobs[20:]:
             path = contained(self.logs, self.logs / job.log_path)
             if path.is_file():

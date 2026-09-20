@@ -16,7 +16,7 @@ from ai_workbench.core.models.runtimes import supervisor as runtime_module
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile, SpeechRequest
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
@@ -44,43 +44,37 @@ def timing_records(text):
 
 
 async def install(root, engine):
-    supervisor = RuntimeSupervisor(root, RuntimeStore(engine))
+    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
     try:
-        for variant in ("onnx-cpu", "transformers-cuda", "audio-cuda"):
-            job = await supervisor.submit("python-worker", variant, "install")
-            previous = None
-            while supervisor.task and not supervisor.task.done():
-                current = supervisor.store.job(job.id)
-                progress = (current.stage, current.progress_current // (64 * 1024 * 1024))
-                if progress != previous:
-                    print(json.dumps({"variant": variant, "stage": current.stage, "bytes": current.progress_current}), flush=True)
-                    previous = progress
-                await asyncio.wait({supervisor.task}, timeout=1)
-            result = supervisor.store.job(job.id)
-            print(json.dumps({"variant": variant, "version": result.version, "job_id": result.id,
-                              "state": result.state, "error_code": result.error_code}), flush=True)
-            if result.state != "completed":
-                print(supervisor.log_text(job.id)[-6000:], flush=True)
-                raise RuntimeError("Runtime installation failed")
+        job = await supervisor.submit('install')
+        previous = None
+        while supervisor.task and not supervisor.task.done():
+            current = supervisor.store.job(job.id)
+            progress = (current.stage, current.progress_current // (64 * 1024 * 1024))
+            if progress != previous:
+                print(json.dumps({"stage": current.stage, "bytes": current.progress_current}), flush=True)
+                previous = progress
+            await asyncio.wait({supervisor.task}, timeout=1)
+        result = supervisor.store.job(job.id)
+        print(json.dumps({"version": result.version, "job_id": result.id,
+                          "state": result.state, "error_code": result.error_code}), flush=True)
+        if result.state != "completed":
+            print(supervisor.log_text(job.id)[-6000:], flush=True)
+            raise RuntimeError("Local backend installation failed")
     finally:
         await supervisor.close()
 
 
 def profile_for(backend, args):
     if backend.startswith("llama-"):
-        return ModelProfile(name=backend, alias=backend, kind="llm", runtime_id="llama-server",
-            runtime_variant=backend.removeprefix("llama-"), model_ref=args.gguf_model)
+        return ModelProfile(name=backend, alias=backend, kind='llm', model_ref=args.gguf_model,
+                            execution_options={'device': backend.removeprefix('llama-')}, backend_profile_id='local')
     if backend.startswith("transformers-"):
-        return ModelProfile(name=backend, alias=backend, kind="llm", runtime_id="python-worker",
-            runtime_variant="transformers-cuda", runtime_options={"device": backend.removeprefix("transformers-")},
-            model_ref=args.transformers_model)
+        return ModelProfile(name=backend, alias=backend, kind='llm', execution_options={'device': backend.removeprefix('transformers-')}, model_ref=args.transformers_model, backend_profile_id='local')
     if backend == "kokoro":
-        return ModelProfile(name=backend, alias=backend, kind="tts", runtime_id="python-worker",
-            runtime_variant="onnx-cpu", model_ref=args.kokoro_model)
+        return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=args.kokoro_model, backend_profile_id='local')
     architecture, device = backend.rsplit("-", 1)
-    return ModelProfile(name=backend, alias=backend, kind="tts", runtime_id="python-worker",
-        runtime_variant="audio-cuda", model_ref=getattr(args, architecture + "_model"),
-        runtime_options={"device": device}, parameters={"architecture": architecture}, external_enabled=True)
+    return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=getattr(args, architecture + '_model'), execution_options={'device': device}, parameters={'architecture': architecture}, external_enabled=True, backend_profile_id='local')
 
 
 async def minimal_inference(manager, profile, args, voice):
@@ -89,7 +83,7 @@ async def minimal_inference(manager, profile, args, voice):
             messages=[{"role": "user", "content": "Say hello."}]))
         assert reply.message.content or reply.message.reasoning_content
         return {"kind": "chat", "state": "passed"}, voice
-    if profile.runtime_variant == "audio-cuda" and voice is None:
+    if profile.kind == "tts" and profile.parameters["architecture"] in {"chatterbox", "qwen3tts"} and voice is None:
         reference = (args.reference or args.root / "build/tts-smoke/af_heart.wav").resolve()
         created = await manager.create_voice_reference(profile.id, reference.read_bytes(), reference.suffix[1:],
             credential_id(manager.settings.get().external_api_key))
@@ -139,12 +133,12 @@ def summarize(text, backend):
 
 
 async def validate(root, engine, backend, args, output):
-    supervisor = RuntimeSupervisor(root, RuntimeStore(engine))
-    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
+    manager = ModelManager(ModelProfileStore(), supervisor.backends, ModelSettingsStore(), runtime_supervisor=supervisor)
     manager.settings.patch({"external_enabled": True, "external_api_key": secrets.token_urlsafe(32)})
     profile = manager.profiles.create(profile_for(backend, args))
     result = {"backend": backend, "model_ref": profile.model_ref,
-              "runtime_version": supervisor.entry(profile.runtime_id, profile.runtime_variant).version, "rounds": []}
+              "runtime_version": supervisor.release.version, "rounds": []}
     supervisor._verified = ForbiddenCache()
     voice = None
     try:

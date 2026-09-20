@@ -13,32 +13,28 @@ await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } })
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { kinds, newModel, selectManagedRuntime, selectTTSArchitecture } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
+const { kinds, newModel, updateModel, localEngine, selectTTSArchitecture } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
 assert.ok(kinds.includes('tts'));
 const profile = newModel('tts');
-assert.equal(profile.runtime_variant, 'onnx-cpu');
-assert.equal(profile.runtime_id, 'python-worker');
-assert.equal(profile.runtime_options.max_batch_size, 1);
+assert.equal(profile.backend_profile_id, 'local');
+assert.equal(localEngine(profile), 'kokoro');
+assert.equal(profile.execution_options.max_batch_size, 1);
 assert.deepEqual(profile.parameters, { architecture: 'kokoro', speed: 1, response_format: 'mp3' });
-const audioEntry = { runtime_id: 'python-worker', variant: 'audio-cuda', supported: true, kinds: ['tts'],
-  options_schema: { properties: { device: { default: 'cuda' }, intraop_threads: { default: 4 } } } };
-const chatterbox = selectManagedRuntime({ ...profile, parameters: { ...profile.parameters, speed: 0.8 } }, audioEntry);
+const chatterbox = updateModel(profile, { parameters: selectTTSArchitecture({ ...profile.parameters, speed: 0.8 }, 'chatterbox') });
 assert.equal(chatterbox.parameters.architecture, 'chatterbox');
 assert.equal(chatterbox.parameters.speed, 0.8);
-assert.deepEqual(chatterbox.runtime_options, { device: 'cuda', intraop_threads: 4 });
-const kokoro = selectManagedRuntime({ ...chatterbox, parameters: { ...chatterbox.parameters, cfg_weight: 0.3 } }, {
-  ...audioEntry, variant: 'onnx-cpu', options_schema: { properties: { device: { default: 'cpu' }, max_batch_size: { default: 1 } } },
-});
+assert.deepEqual(chatterbox.execution_options, { device: 'cuda', intraop_threads: 4 });
+const kokoro = updateModel(chatterbox, { parameters: selectTTSArchitecture({ ...chatterbox.parameters, cfg_weight: 0.3 }, 'kokoro') });
 assert.equal(kokoro.parameters.architecture, 'kokoro');
 assert.equal(kokoro.parameters.speed, 0.8);
 assert.ok(!('cfg_weight' in kokoro.parameters));
-assert.throws(() => selectManagedRuntime(profile, { ...audioEntry, supported: false }));
-const qwen = { ...chatterbox, parameters: selectTTSArchitecture(chatterbox.parameters, 'qwen3tts') };
+assert.deepEqual(kokoro.execution_options, { device: 'cpu', intraop_threads: 4, max_batch_size: 1 });
+const qwen = updateModel(chatterbox, { parameters: selectTTSArchitecture(chatterbox.parameters, 'qwen3tts') });
 assert.deepEqual(qwen.parameters, { architecture: 'qwen3tts', speed: 0.8, response_format: 'mp3',
   do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 });
 const editedQwen = { ...qwen, parameters: { ...qwen.parameters, top_k: 0, max_new_tokens: 4096 } };
-assert.deepEqual(selectManagedRuntime(editedQwen, audioEntry).parameters, editedQwen.parameters);
+assert.deepEqual(updateModel(editedQwen, { backend_profile_id: 'local' }).parameters, editedQwen.parameters);
 const back = selectTTSArchitecture(editedQwen.parameters, 'chatterbox');
 assert.equal(back.temperature, 0.8);
 assert.equal(back.speed, 0.8);

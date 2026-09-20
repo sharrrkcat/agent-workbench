@@ -290,8 +290,8 @@ def test_cancel_registered_execution_and_claim_approval_once(tmp_path, entry):
         state = app.state.runtime_state
         state.tool_registry.register(ToolSpec("blocking", "Blocking", {"type": "object"}, blocking, requires_approval=entry == "approval"))
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
-            provider = ok(await client.post("/api/models/providers", json={"name": "provider", "base_url": "http://provider.test/v1"}))
-            profile = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "provider_profile_id": provider["id"], "capabilities": {"tools": True}}))
+            provider = ok(await client.post("/api/models/backends", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}, 'type': 'openai_compatible'}))
+            profile = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "backend_profile_id": provider["id"], "capabilities": {"tools": True}}))
             persona = ok(await client.post("/api/personas", json={"name": "persona"}))
             session = ok(await client.post("/api/sessions", json={"current_persona_id": persona["id"], "personas": [{"persona_id": persona["id"]}], "model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["blocking"]}))
             if entry == "chat":
@@ -445,8 +445,8 @@ def test_harness_stream_is_visible_before_completion_and_cancels_model(tmp_path)
         upstream = Upstream(completion(tool_call()))
         app = create_app(root=tmp_path, use_memory=True, adapter_factory=upstream.factory)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
-            provider = ok(await client.post("/api/models/providers", json={"name": "p", "base_url": "http://provider.test/v1"}))
-            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "provider_profile_id": provider["id"], "capabilities": {"tools": True, "streaming": True}}))
+            provider = ok(await client.post("/api/models/backends", json={'name': 'p', 'connection': {'base_url': 'http://provider.test/v1'}, 'type': 'openai_compatible'}))
+            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "backend_profile_id": provider["id"], "capabilities": {"tools": True, "streaming": True}}))
             session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["base64_encode"]}))
             task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "go"}))
             try:

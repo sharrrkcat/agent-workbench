@@ -25,7 +25,7 @@ def test_phase2a_recreates_all_test_data_and_matches_orm(tmp_path):
     assert files.read_bytes() == b"model"
     signature = migrations.inspect_schema(engine)
     assert migrations.current_revision(engine) == migrations.HEAD_REVISION
-    assert "model_profiles" in signature.tables and "provider_profiles" in signature.tables
+    assert "model_profiles" in signature.tables and "backend_profiles" in signature.tables
     assert not {"llm_profiles", "embedding_model_profiles", "vision_model_profiles", "multimodal_embedding_model_profiles"} & set(signature.tables)
     assert "model_profile_id" in signature.columns["sessionrecord"]
     assert "llm_profile_id" not in signature.columns["sessionrecord"]
@@ -68,21 +68,21 @@ def test_unified_store_crud_references_and_secret_redaction(tmp_path, memory):
     app = create_app(use_memory=memory, database_url=f"sqlite:///{tmp_path / 'app.db'}", root=tmp_path, adapter_factory=upstream.factory)
     with TestClient(app) as client:
         profile = configure_model(client)
-        provider_id = profile["provider_profile_id"]
-        assert "provider-private-key" not in client.get("/api/models/providers").text
-        assert client.get(f"/api/models/providers/{provider_id}").json()["has_api_key"]
-        assert client.patch(f"/api/models/providers/{provider_id}", json={"name": "Renamed"}).status_code == 200
-        assert app.state.runtime_state.provider_profiles.get(provider_id).api_key == "provider-private-key"
+        provider_id = profile["backend_profile_id"]
+        assert "provider-private-key" not in client.get("/api/models/backends").text
+        assert client.get(f"/api/models/backends/{provider_id}").json()["connection"]["has_api_key"]
+        assert client.patch(f"/api/models/backends/{provider_id}", json={"name": "Renamed"}).status_code == 200
+        assert app.state.runtime_state.backend_profiles.get(provider_id).connection.api_key == "provider-private-key"
         assert client.post("/api/models/profiles", json={"kind": "embedding", "name": "dup", "alias": "local", "model_ref": "x"}).status_code == 409
         assert client.patch(f"/api/models/profiles/{profile['id']}", json={"kind": "vision"}).status_code == 409
-        assert client.delete(f"/api/models/providers/{provider_id}").status_code == 409
+        assert client.delete(f"/api/models/backends/{provider_id}").status_code == 409
         assert client.delete(f"/api/models/profiles/{profile['id']}").status_code == 409
         session = client.post("/api/sessions", json={"model_profile_id": profile["id"]}).json()
         client.patch("/api/models/settings", json={"default_model_profile_id": None})
         assert client.delete(f"/api/models/profiles/{profile['id']}").status_code == 409
         client.patch(f"/api/sessions/{session['session_id']}", json={"model_profile_id": None})
         assert client.delete(f"/api/models/profiles/{profile['id']}").status_code == 200
-        assert client.delete(f"/api/models/providers/{provider_id}").status_code == 200
+        assert client.delete(f"/api/models/backends/{provider_id}").status_code == 200
 
 
 def test_sql_restart_preserves_only_current_configuration(tmp_path):

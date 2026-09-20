@@ -16,8 +16,8 @@ export function ProfilesTab({
   busy,
   feedback,
   setError,
-  onOpenRuntimes,
-}: ModelFeedbackProps & { onOpenRuntimes: () => void }) {
+  onOpenBackends,
+}: ModelFeedbackProps & { onOpenBackends: () => void }) {
   const { t } = useTranslation('llm');
   const { profiles, statuses, setStatus, loading } = useModelsStore();
   const [kind, setKind] = useState<ModelKind>('llm');
@@ -90,14 +90,14 @@ export function ProfilesTab({
                   <div className="model-actions">
                     <Icon
                       label={t('health')}
-                      disabled={busy || !p.enabled || !(p.provider_profile_id || p.runtime_id)}
+                      disabled={busy || !p.enabled || !p.backend_profile_id}
                       onClick={() => void statusAction(p.id, 'health')}
                     >
                       <Activity size={15} />
                     </Icon>
                     <Icon
                       label={t('load')}
-                      disabled={busy || !p.enabled || !(p.provider_profile_id || p.runtime_id)}
+                      disabled={busy || !p.enabled || !p.backend_profile_id}
                       onClick={() => void statusAction(p.id, 'load')}
                     >
                       <Play size={15} />
@@ -115,7 +115,7 @@ export function ProfilesTab({
                     >
                       <Square size={14} />
                     </Icon>
-                    {p.runtime_id ? (
+                    {p.backend_profile_id === 'local' ? (
                       <Icon
                         label={t('processLog')}
                         disabled={busy}
@@ -159,7 +159,7 @@ export function ProfilesTab({
                   {status?.runtime ? (
                     <div className="model-runtime-state">
                       <span>
-                        {status.runtime.runtime_id} / {status.runtime.variant} / {status.runtime.version}:{' '}
+                        {t('engines.' + status.runtime.engine)} / {status.runtime.version}:{' '}
                         {t('runtimeStates.' + status.runtime.install_state)}
                       </span>
                       {status.runtime.device_name ? <span>{status.runtime.device_name}</span> : null}
@@ -168,8 +168,8 @@ export function ProfilesTab({
                       })}</span> : null}
                       {status.error_code ? <code className="error-text">{status.error_code}</code> : null}
                       {status.runtime.install_state !== 'installed' ? (
-                        <button type="button" className="text-button" onClick={() => onOpenRuntimes()}>
-                          {t('manageRuntime')}
+                        <button type="button" className="text-button" onClick={() => onOpenBackends()}>
+                          {t('manageBackend')}
                         </button>
                       ) : null}
                     </div>

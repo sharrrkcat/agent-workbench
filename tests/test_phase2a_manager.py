@@ -6,8 +6,8 @@ import pytest
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.models.manager import ModelManager
-from ai_workbench.core.models.schema import ChatChunk, ChatRequest, ChatResult, ModelProfile, ModelStatus, ProviderProfile
-from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore, ModelSettingsStore
+from ai_workbench.core.models.schema import ChatChunk, ChatRequest, ChatResult, ModelProfile, ModelStatus, BackendProfile
+from ai_workbench.core.models.store import ModelProfileStore, BackendProfileStore, ModelSettingsStore
 
 
 class ControlledAdapter:
@@ -55,9 +55,9 @@ class ControlledAdapter:
 
 def manager_fixture(*, queue_size=1, timeout=1, lifecycle=None):
     profiles = ModelProfileStore()
-    providers = ProviderProfileStore()
-    provider = providers.create(ProviderProfile(name="test", base_url="http://test/v1", queue_size=queue_size, queue_timeout_seconds=timeout))
-    profile = profiles.create(ModelProfile(name="chat", alias="chat", kind="llm", provider_profile_id=provider.id,
+    providers = BackendProfileStore()
+    provider = providers.create(BackendProfile(name='test', type='openai_compatible', connection={'base_url': 'http://test/v1', 'queue_size': queue_size, 'queue_timeout_seconds': timeout}))
+    profile = profiles.create(ModelProfile(name="chat", alias="chat", kind="llm", backend_profile_id=provider.id,
                                           model_ref="weights", capabilities={"streaming": True}, lifecycle=lifecycle or {}))
     adapter = ControlledAdapter()
     manager = ModelManager(profiles, providers, ModelSettingsStore(), adapter_factory=lambda _: adapter)
@@ -80,7 +80,7 @@ def test_shared_alias_occupation_queue_limit_cancel_and_manual_default():
     async def scenario():
         manager, profile, adapter = manager_fixture()
         manager.events = EventBus()
-        alias = manager.profiles.create(ModelProfile(name="alias", alias="alias", kind="llm", provider_profile_id=profile.provider_profile_id, model_ref=profile.model_ref))
+        alias = manager.profiles.create(ModelProfile(name="alias", alias="alias", kind="llm", backend_profile_id=profile.backend_profile_id, model_ref=profile.model_ref))
         first = asyncio.create_task(manager.chat(profile.id, request()))
         await adapter.started.wait()
         queued = asyncio.create_task(manager.chat(alias.id, request()))
@@ -152,7 +152,7 @@ def test_stream_close_releases_model_and_upstream_without_background_leak():
             assert manager.status(profile.id).active == 1
         assert adapter.stream_closed
         assert manager.status(profile.id).active == 0
-        assert not manager._slots[profile.provider_profile_id].tasks
+        assert not manager._slots[profile.backend_profile_id].tasks
         await manager.close()
     asyncio.run(scenario())
 
@@ -164,7 +164,7 @@ def test_opt_in_release_and_shared_manual_alias(mode):
         adapter.release.set()
         await manager.chat(profile.id, request())
         await wait_until(lambda: adapter.unloads == 1)
-        manager.profiles.create(ModelProfile(name="manual", alias="manual", kind="llm", provider_profile_id=profile.provider_profile_id, model_ref=profile.model_ref))
+        manager.profiles.create(ModelProfile(name="manual", alias="manual", kind="llm", backend_profile_id=profile.backend_profile_id, model_ref=profile.model_ref))
         await manager.chat(profile.id, request())
         await asyncio.sleep(0.02)
         assert adapter.unloads == 1
@@ -180,7 +180,7 @@ def test_release_error_does_not_leak_semaphore_or_active_task():
         await manager.chat(profile.id, request())
         assert manager.status(profile.id).error_code == "MODEL_UNAVAILABLE"
         assert manager.status(profile.id).active == 0
-        assert not manager._slots[profile.provider_profile_id].tasks
+        assert not manager._slots[profile.backend_profile_id].tasks
         await manager.chat(profile.id, request())
         await manager.close()
     asyncio.run(scenario())
@@ -189,10 +189,10 @@ def test_release_error_does_not_leak_semaphore_or_active_task():
 def test_model_discovery_shares_queue_and_shutdown_tracking():
     async def scenario():
         manager, profile, adapter = manager_fixture()
-        discovery = asyncio.create_task(manager.provider_models(profile.provider_profile_id))
+        discovery = asyncio.create_task(manager.backend_models(profile.backend_profile_id))
         await adapter.started.wait()
         with pytest.raises(ModelError, match="before editing"):
-            manager.require_idle(profile.provider_profile_id)
+            manager.require_idle(profile.backend_profile_id)
         request_task = asyncio.create_task(manager.chat(profile.id, request()))
         await wait_until(lambda: manager.status(profile.id).queued == 1)
         await manager.close()
@@ -214,7 +214,7 @@ def test_changing_connection_blocks_new_requests_until_old_client_closes():
             closing.set()
             await release_close.wait()
         adapter.close = close
-        change = asyncio.create_task(manager.invalidate(profile.provider_profile_id))
+        change = asyncio.create_task(manager.invalidate(profile.backend_profile_id))
         await closing.wait()
         with pytest.raises(ModelError) as busy:
             await manager.chat(profile.id, request())

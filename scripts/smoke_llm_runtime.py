@@ -1,4 +1,4 @@
-"""Install and validate a local Transformers checkpoint without persistent model/chat records."""
+"""Validate local llama-server or Transformers inference without persistent chat records."""
 from __future__ import annotations
 
 import argparse
@@ -19,6 +19,7 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile
+from ai_workbench.core.models.store import BackendProfileStore
 from ai_workbench.db.database import get_engine, init_db
 
 
@@ -36,19 +37,23 @@ async def checked_json(client, method, path, **kwargs):
     return response.json()
 
 
-async def validate_device(state, client, model_ref, device):
+async def validate_device(state, client, model_ref, device, engine_name):
     manager = state.model_manager
-    profile = manager.profiles.create(ModelProfile(name=f"Transformers {device} smoke", alias=f"transformers-{device}",
-        kind="llm", model_ref=model_ref, runtime_id="python-worker", runtime_variant="transformers-cuda",
-        runtime_options={"device": device}, capabilities={"streaming": True, "tools": True},
-        parameters={"temperature": 0, "max_tokens": 128}, external_enabled=True))
+    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, execution_options={'device': device}, capabilities={'streaming': True, 'tools': True}, parameters={'temperature': 0, 'max_tokens': 128}, external_enabled=True, backend_profile_id='local'))
     manager.settings.patch({"utility_model_profile_id": profile.id})
     loaded = await manager.load(profile.id)
-    assert loaded.residency == "loaded" and loaded.runtime.device_name
+    assert loaded.residency == "loaded"
+    if engine_name == "transformers" or device == "cuda":
+        assert loaded.runtime.device_name
     adapter = manager._slots[manager.backend_key(profile)].adapter
     metadata = (await adapter.client.get("/health")).json()
-    assert metadata["device"] == ("cpu" if device == "cpu" else "cuda:0")
-    assert metadata["dtype"] == "torch.float32" if device == "cpu" else metadata["dtype"] in {"torch.bfloat16", "torch.float16", "torch.float32"}
+    if engine_name == "transformers":
+        assert metadata["device"] == ("cpu" if device == "cpu" else "cuda:0")
+        assert metadata["dtype"] == "torch.float32" if device == "cpu" else metadata["dtype"] in {"torch.bfloat16", "torch.float16", "torch.float32"}
+    elif device == "cuda":
+        assert loaded.runtime.gpu_layers_loaded > 0
+    else:
+        assert profile.execution_options["gpu_layers"] == 0
     request = {"model": profile.alias, "messages": [{"role": "user", "content": "Say hello in a short sentence."}],
                "temperature": 0, "max_tokens": 32}
     reply = await checked_json(client, "POST", "/v1/chat/completions", json=request)
@@ -92,7 +97,11 @@ async def validate_device(state, client, model_ref, device):
         async for chunk in stream:
             if chunk.delta.content:
                 break
-    assert original_process.process.returncode is not None and adapter.process is None
+    if engine_name == "transformers":
+        assert original_process.process.returncode is not None and adapter.process is None
+    else:
+        assert adapter.process is original_process and original_process.process.returncode is None
+        assert (await manager.chat(profile.id, ChatRequest(**request))).message.content
     assert manager.status(profile.id).active == 0 and manager.status(profile.id).queued == 0
     await manager.load(profile.id)
     adapter.process.process.kill()
@@ -109,7 +118,7 @@ async def validate_device(state, client, model_ref, device):
 
     if device == "cuda":
         old = os.environ.get("CUDA_VISIBLE_DEVICES")
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         try:
             try:
                 await manager.load(profile.id)
@@ -123,37 +132,40 @@ async def validate_device(state, client, model_ref, device):
             else:
                 os.environ["CUDA_VISIBLE_DEVICES"] = old
         await manager.unload(profile.id)
-    result = {"device": device, "device_name": metadata["device_name"], "dtype": metadata["dtype"],
+    result = {"engine": engine_name, "device": device, "device_name": loaded.runtime.device_name, "dtype": metadata.get("dtype"),
               "text": "passed", "stream": "passed", "chat": "passed", "title": "passed", "harness": "passed",
-              "cancellation": "passed", "crash_reload": "passed", "manual_unload": "passed"}
+              "cancellation": "passed", "cancel_effect": "worker_stopped" if engine_name == "transformers" else "request_closed",
+              "crash_reload": "passed", "manual_unload": "passed"}
     print(json.dumps(result), flush=True)
     return result
 
 
-async def smoke(root, model_ref, devices, install_only):
+async def smoke(root, model_ref, devices, install_only, engine_name, skip_install=False):
     engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor
     supervisor.store = RuntimeStore(engine)
+    state.backend_profiles = supervisor.backends = state.model_manager.backends = BackendProfileStore(engine)
     server, server_task = None, None
     started = time.monotonic()
     try:
-        job = await supervisor.submit("python-worker", "transformers-cuda", "install")
-        last_stage = None
-        while supervisor.task and not supervisor.task.done():
-            current = supervisor.store.job(job.id)
-            if current.stage != last_stage:
-                last_stage = current.stage
-                print(json.dumps({"stage": current.stage}), flush=True)
-            await asyncio.wait({supervisor.task}, timeout=1)
-        result = supervisor.store.job(job.id)
-        print(json.dumps({"installation_job": job.id, "state": result.state, "error_code": result.error_code}), flush=True)
-        if result.state != "completed":
-            print(supervisor.log_text(job.id), flush=True)
-            raise RuntimeError("Transformers installation failed")
-        if install_only:
-            return
+        if not skip_install:
+            job = await supervisor.submit('install')
+            last_stage = None
+            while supervisor.task and not supervisor.task.done():
+                current = supervisor.store.job(job.id)
+                if current.stage != last_stage:
+                    last_stage = current.stage
+                    print(json.dumps({"stage": current.stage}), flush=True)
+                await asyncio.wait({supervisor.task}, timeout=1)
+            result = supervisor.store.job(job.id)
+            print(json.dumps({"installation_job": job.id, "state": result.state, "error_code": result.error_code}), flush=True)
+            if result.state != "completed":
+                print(supervisor.log_text(job.id), flush=True)
+                raise RuntimeError("Local backend installation failed")
+            if install_only:
+                return
         state.app_settings.patch({"auto_generate_session_titles": False})
         token = secrets.token_urlsafe(32)
         state.model_settings.patch({"external_enabled": True, "external_api_key": token})
@@ -166,10 +178,10 @@ async def smoke(root, model_ref, devices, install_only):
             await until(lambda: server.started)
             async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=360,
                     headers={"Authorization": f"Bearer {token}"}, trust_env=False) as client:
-                results = [await validate_device(state, client, model_ref, device) for device in devices]
-            output = root / "build/transformers-smoke"
+                results = [await validate_device(state, client, model_ref, device, engine_name) for device in devices]
+            output = root / "build/llm-smoke" / engine_name
             output.mkdir(parents=True, exist_ok=True)
-            report = {"model_ref": model_ref, "runtime_version": supervisor.entry("python-worker", "transformers-cuda").version,
+            report = {"model_ref": model_ref, "runtime_version": supervisor.release.version,
                       "results": results, "elapsed_seconds": round(time.monotonic() - started, 2)}
             (output / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     finally:
@@ -185,8 +197,12 @@ async def smoke(root, model_ref, devices, install_only):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--model-ref", default="llms/Qwen3.5-0.8B-TF")
+    parser.add_argument("--engine", choices=("transformers", "llama-server"), default="transformers")
+    parser.add_argument("--model-ref")
     parser.add_argument("--device", choices=("cpu", "cuda", "both"), default="both")
-    parser.add_argument("--install-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--install-only", action="store_true")
+    mode.add_argument("--skip-install", action="store_true", help="Use a previously installed and verified local release")
     args = parser.parse_args()
-    asyncio.run(smoke(args.root.resolve(), args.model_ref, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only))
+    reference = args.model_ref or ("llms/Qwen3.5-0.8B-TF" if args.engine == "transformers" else "llms/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf")
+    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.skip_install))

@@ -1,3 +1,4 @@
+from ai_workbench.core.models.schema import ExternalConnection
 import asyncio
 import hashlib
 import io
@@ -21,17 +22,17 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.catalog import catalog
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
-from ai_workbench.core.models.runtimes.schema import CatalogEntry, DownloadSettings, Installation, RuntimeJob
+from ai_workbench.core.models.runtimes.schema import NativeRuntime, RuntimeArtifact, DownloadSettings, Installation, RuntimeJob
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor, extract_archive, sha256
 from ai_workbench.core.models.schema import ModelProfile
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.workers.server import Worker
 from ai_workbench.workers.protocol import WorkerError
 from ai_workbench.workers.protocol import local_model
 from tests.model_fixtures import MockOpenAI
-from ai_workbench.core.models.schema import ChatRequest, ProviderProfile, SpeechRequest
+from ai_workbench.core.models.schema import ChatRequest, BackendProfile, SpeechRequest
 from tests.test_tts import model_tree, wav_bytes
 
 
@@ -47,36 +48,42 @@ def archive_bytes(files=None):
 
 def supervisor(tmp_path, *, data=None, store=None):
     data = data if data is not None else archive_bytes()
-    entry = CatalogEntry(runtime_id="llama-server", variant="cpu", version="fixture", platform="windows",
-        supported=True, url="https://runtime.test/cpu.zip", sha256=hashlib.sha256(data).hexdigest(),
-        archive_format="zip", executable="llama-server.exe", kinds=["llm"])
+    native = NativeRuntime(artifact=RuntimeArtifact(url="https://runtime.test/native.zip",
+        sha256=hashlib.sha256(data).hexdigest(), archive_format="zip"))
+    release = catalog("windows", "x86_64").model_copy(update={"version": "fixture", "native_cpu": native, "native_cuda": native})
     transport = httpx.MockTransport(lambda request: httpx.Response(200, content=data))
-    return RuntimeSupervisor(tmp_path, store or RuntimeStore(), EventBus(), [entry], transport)
+    backends = BackendProfileStore(store.engine if store else None)
+    service = RuntimeSupervisor(tmp_path, store or RuntimeStore(), backends, EventBus(), release, transport)
+    async def install(entry, target, job, log):
+        (target / "env").mkdir(parents=True)
+        (target / "env/python.exe").write_bytes(b"test interpreter")
+        (target / "worker").mkdir()
+        for name in entry.worker_files:
+            (target / "worker" / name).write_text("# worker fixture")
+    async def command(args, env, cwd, log):
+        assert args[1:] == ["--version"] and Path(args[0]).is_file()
+    service._install_python = install
+    service._command = command
+    return service
 
 
-def test_catalog_pins_supported_platforms_and_defers_remaining_accelerators():
-    for system in ("windows", "linux"):
-        entries = catalog(system, "x86_64")
-        assert {entry.variant for entry in entries if entry.supported} == ({"cpu", "cuda", "transformers-cuda", "audio-cuda", "onnx-cpu"} if system == "windows" else {"cpu", "onnx-cpu"})
-        assert not {"torch-cpu", "torch-cu128", "vulkan", "onnx-gpu"} & {entry.variant for entry in entries}
-        assert all(not entry.supported for entry in entries if entry.variant == "infinity-cuda")
-        assert all(entry.sha256 for entry in entries if entry.supported)
-    assert not any(entry.supported for entry in catalog("darwin", "arm64"))
-    with pytest.raises(ValidationError):
-        CatalogEntry(runtime_id="llama-server", variant="cpu", version="x", platform="windows", supported=True,
-                     archive_format="zip", executable="x", kinds=["llm"], url="https://example.com/file")
+def test_catalog_is_one_pinned_windows_release():
+    release = catalog("windows", "amd64")
+    assert release.supported and release.python_version == "3.12.11"
+    assert release.python_artifact.sha256 and release.lock_sha256 and release.worker_sha256
+    assert release.native_cpu.artifact.sha256 and release.native_cuda.dependencies[0].sha256
+    for system, machine in (("linux", "x86_64"), ("windows", "arm64"), ("darwin", "arm64")):
+        assert not catalog(system, machine).supported
 
 
 @pytest.mark.parametrize("patch", [
-    {"runtime_variant": "torch-cpu"}, {"runtime_id": "llama-server", "runtime_variant": "cpu"},
-    {"provider_profile_id": "external"}, {"model_ref": "../outside"}, {"model_ref": "C:/weights"},
-    {"model_ref": "vision\\file"}, {"model_ref": "/abs/model"}, {"model_ref": "https://hf.co/model"},
-    {"runtime_options": {"command": "arbitrary"}}, {"runtime_options": {"max_batch_size": 0}},
+    {"runtime_variant": "cpu"}, {"runtime_id": "llama-server"}, {"provider_profile_id": "external"},
+    {"model_ref": "../outside"}, {"model_ref": "C:/weights"}, {"model_ref": "vision\\file"},
+    {"model_ref": "/abs/model"}, {"model_ref": "https://hf.co/model"},
+    {"execution_options": {"command": "arbitrary"}}, {"execution_options": {"max_batch_size": 0}},
 ])
-def test_managed_profile_rejects_unsafe_and_incompatible_bindings(patch):
-    values = dict(name="local", alias="local", kind="embedding", model_ref="embeddings/local", runtime_id="python-worker", runtime_variant="infinity-cuda")
-    if patch == {"runtime_variant": "torch-cpu"}:
-        values["runtime_id"] = None
+def test_managed_profile_rejects_unsafe_and_removed_fields(patch):
+    values = dict(name="local", alias="local", kind="llm", model_ref="llms/local.gguf", backend_profile_id="local")
     with pytest.raises(ValidationError):
         ModelProfile(**{**values, **patch})
 
@@ -102,32 +109,33 @@ def test_archive_traversal_never_writes_outside_staging(tmp_path, name):
 def test_install_checksum_integrity_retry_idempotence_and_uninstall(tmp_path):
     async def scenario():
         service = supervisor(tmp_path)
-        job = await service.submit("llama-server", "cpu", "install")
+        job = await service.submit('install')
         await service.task
         assert service.store.job(job.id).state == "completed"
-        target = service.directory(service.entries[0])
-        executable = await service.verify(service.entries[0])
+        target = service.directory()
+        await service.verify()
+        executable = service.executable("llama-server", "cpu")
         assert executable.read_bytes() == b"test executable"
-        again = await service.submit("llama-server", "cpu", "install")
+        again = await service.submit('install')
         assert again.stage == "already_installed"
         assert service.active_job is None
         executable.write_bytes(b"corrupt")
         with pytest.raises(ModelError) as error:
-            await service.verify(service.entries[0])
+            await service.verify()
         assert error.value.code == "RUNTIME_BROKEN"
-        retry = await service.submit("llama-server", "cpu", "install")
+        retry = await service.submit('install')
         await service.task
         assert retry.id != job.id
         assert service.store.job(retry.id).state == "completed"
         protected = tmp_path / "data/models/llms/keep.gguf"
         protected.parent.mkdir(parents=True)
         protected.write_bytes(b"untouched")
-        uninstall = await service.submit("llama-server", "cpu", "uninstall")
+        uninstall = await service.submit('uninstall')
         await service.task
         assert service.store.job(uninstall.id).state == "completed"
         assert not target.exists()
         assert protected.read_bytes() == b"untouched"
-        assert service.installation("llama-server", "cpu").state == "not_installed"
+        assert service.installation().state == "not_installed"
         assert {event.type for event in service.events.list_events()} >= {"runtime_job_updated", "runtime_status"}
         await service.close()
     asyncio.run(scenario())
@@ -136,16 +144,40 @@ def test_install_checksum_integrity_retry_idempotence_and_uninstall(tmp_path):
 def test_bad_checksum_and_https_downgrade_are_terminal_failures(tmp_path):
     async def scenario():
         service = supervisor(tmp_path)
-        service.entries[0].sha256 = "0" * 64
-        job = await service.submit("llama-server", "cpu", "install")
+        service.release.native_cpu.artifact.sha256 = "0" * 64
+        job = await service.submit('install')
         await service.task
         assert service.store.job(job.id).error_code == "RUNTIME_CHECKSUM_MISMATCH"
-        assert not service.directory(service.entries[0]).exists()
+        assert not service.directory().exists()
         assert "RUNTIME_CHECKSUM_MISMATCH" in service.log_text(job.id)
         service.transport = httpx.MockTransport(lambda request: httpx.Response(302, headers={"Location": "http://unsafe.test/"}))
-        retry = await service.submit("llama-server", "cpu", "install")
+        retry = await service.submit('install')
         await service.task
         assert service.store.job(retry.id).error_code == "RUNTIME_BROKEN"
+        await service.close()
+    asyncio.run(scenario())
+
+
+def test_repair_reuses_checked_native_cache_and_redownloads_corruption(tmp_path):
+    async def scenario():
+        service = supervisor(tmp_path)
+        calls = []
+        data = archive_bytes()
+        def download(request):
+            calls.append(request.url)
+            return httpx.Response(200, content=data)
+        service.transport = httpx.MockTransport(download)
+        for operation in ("install", "repair"):
+            await service.submit(operation)
+            await service.task
+            assert service.installation().state == "installed"
+        assert len(calls) == 1
+        archive = service.base / ".cache/workbench-artifacts" / service.release.native_cpu.artifact.sha256
+        archive.write_bytes(b"broken cache")
+        await service.submit("repair")
+        await service.task
+        assert service.installation().state == "installed" and len(calls) == 2
+        assert archive.read_bytes() == data
         await service.close()
     asyncio.run(scenario())
 
@@ -162,10 +194,10 @@ def test_cancel_mutual_exclusion_and_shutdown_release_installation(tmp_path):
             finally:
                 cancelled.set()
         service._download = download
-        job = await service.submit("llama-server", "cpu", "install")
+        job = await service.submit('install')
         await started.wait()
         with pytest.raises(ModelError) as busy:
-            await service.submit("llama-server", "cpu", "uninstall")
+            await service.submit('uninstall')
         assert busy.value.code == "RUNTIME_INSTALLING"
         await service.close()
         assert cancelled.is_set()
@@ -179,25 +211,25 @@ def test_sql_jobs_settings_and_interrupted_recovery(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'runtime.db'}")
     init_db(engine)
     store = RuntimeStore(engine)
-    job = RuntimeJob(runtime_id="llama-server", variant="cpu", version="fixture", operation="install", state="running")
+    job = RuntimeJob(version='fixture', operation='install', state='running', backend_profile_id='local')
     store.save_job(job)
-    store.save_installation(Installation(id="llama-server/cpu", runtime_id="llama-server", variant="cpu", version="fixture", state="installing", job_id=job.id))
-    store.patch_settings({"http_proxy": "http://127.0.0.1:9999"})
+    store.save_installation(Installation(version='fixture', state='installing', job_id=job.id, backend_profile_id='local'))
+    BackendProfileStore(engine).update("local", {"download": {"http_proxy": "http://127.0.0.1:9999"}})
     service = supervisor(tmp_path, store=RuntimeStore(engine))
     assert service.store.job(job.id).state == "interrupted"
-    assert service.installation("llama-server", "cpu").state == "interrupted"
-    assert service.store.settings().http_proxy == "http://127.0.0.1:9999"
+    assert service.installation().state == "interrupted"
+    assert service.backends.get("local").download.http_proxy == "http://127.0.0.1:9999"
     engine.dispose()
 
 
 def test_api_install_actions_global_events_and_missing_runtime_details(tmp_path):
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
-        model = client.post("/api/models/profiles", json={"name": "managed", "alias": "managed", "kind": "llm", "model_ref": "llms/missing.gguf", "runtime_id": "llama-server", "runtime_variant": "cpu"}).json()
+        model = client.post("/api/models/profiles", json={'name': 'managed', 'alias': 'managed', 'kind': 'llm', 'model_ref': 'llms/missing.gguf', 'backend_profile_id': 'local', 'execution_options': {'device': 'cpu'}}).json()
         response = client.post(f"/api/models/profiles/{model['id']}/load")
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "RUNTIME_NOT_INSTALLED"
         assert response.json()["error"]["details"]["action"] == "install"
-        assert client.post("/api/models/runtimes/llama-server/vulkan/install").status_code == 422
+        assert client.post("/api/models/runtimes/llama-server/vulkan/install").status_code == 404
         with client.websocket_connect("/api/models/runtimes/events") as socket:
             socket.send_json({"type": "next_event"})
             client.app.state.runtime_state.events.emit("runtime_job_updated", session_id="", payload={"job": {"id": "example"}})
@@ -222,7 +254,7 @@ import io
 import struct
 import wave
 class TTSEngine:
-    def __init__(self, path, kind, params, options):
+    def __init__(self, path, kind, params, options, *, models_root):
         self.kind, self.params, self.options = kind, params, options
     def speech(self, text, voice, speed, response_format, language):
         if text == "crash": os._exit(7)
@@ -237,21 +269,20 @@ class TTSEngine:
 
 async def installed_worker(tmp_path):
     service = supervisor(tmp_path)
-    entry = next(item for item in catalog() if item.variant == "onnx-cpu").model_copy(update={"version": "fixture"})
-    service.entries = [entry]
+    service.release.python_executable = "env/Scripts/python.exe" if os.name == "nt" else "env/bin/python"
     async def install(entry, target, job, log):
-        await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target)
+        await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target / "env")
         source = Path(__file__).parents[1] / "ai_workbench/workers"
         shutil.copytree(source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
         (target / "worker/tts_engine.py").write_text(FAKE_ENGINE, encoding="utf-8")
     service._install_python = install
-    await service.submit("python-worker", "onnx-cpu", "install")
+    await service.submit('install')
     await service.task
-    assert service.installation("python-worker", "onnx-cpu").state == "installed"
+    assert service.installation().state == "installed"
     profiles = ModelProfileStore()
-    manager = ModelManager(profiles, ProviderProfileStore(), ModelSettingsStore(), service.events, runtime_supervisor=service)
+    manager = ModelManager(profiles, BackendProfileStore(), ModelSettingsStore(), service.events, runtime_supervisor=service)
     model_tree(tmp_path)
-    profile = profiles.create(ModelProfile(name="speech", alias="speech", kind="tts", runtime_id="python-worker", runtime_variant="onnx-cpu", model_ref="tts/kokoro"))
+    profile = profiles.create(ModelProfile(name='speech', alias='speech', kind='tts', model_ref='tts/kokoro', backend_profile_id='local'))
     return service, manager, profile
 
 
@@ -268,11 +299,11 @@ def test_real_worker_process_rpc_auth_crash_and_explicit_reload(tmp_path):
                 response = await client.get(str(adapter.client.base_url) + "/health")
                 assert response.status_code == 401
             before_pid = adapter.process.process.pid
-            other = manager.profiles.create(ModelProfile(name="other", alias="other", kind="tts", runtime_id="python-worker", runtime_variant="onnx-cpu", model_ref="tts/kokoro"))
+            other = manager.profiles.create(ModelProfile(name='other', alias='other', kind='tts', model_ref='tts/kokoro', backend_profile_id='local'))
             assert (await manager.speech(other.id, request.model_copy(update={"model": other.alias}))).data == wav_bytes()
             assert adapter.process.process.pid == before_pid
             assert len(manager._slots) == 1
-            unused = manager.profiles.create(ModelProfile(name="unused", alias="unused", kind="tts", runtime_id="python-worker", runtime_variant="onnx-cpu", model_ref="tts/kokoro"))
+            unused = manager.profiles.create(ModelProfile(name='unused', alias='unused', kind='tts', model_ref='tts/kokoro', backend_profile_id='local'))
             await manager.unload(unused.id)
             assert adapter.process.process.pid == before_pid
             assert manager.status(profile.id).residency == "loaded"
@@ -304,7 +335,7 @@ def test_cancelling_worker_inference_stops_process_before_releasing_queue(tmp_pa
                     break
                 await asyncio.sleep(0.01)
             with pytest.raises(ModelError):
-                await service.submit("python-worker", "onnx-cpu", "uninstall")
+                await service.submit('uninstall')
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
@@ -330,7 +361,7 @@ def test_runtime_logs_are_bounded_and_redacted(tmp_path):
 
 def test_cancel_and_progress_writers_keep_job_revisions_monotonic():
     store = RuntimeStore()
-    job = RuntimeJob(runtime_id="llama-server", variant="cpu", version="fixture", operation="install")
+    job = RuntimeJob(version='fixture', operation='install', backend_profile_id='local')
     store.save_job(job)
     cancellation = store.job(job.id)
     store.save_job(cancellation)
@@ -354,11 +385,11 @@ def test_weight_preflight_accepts_wd14_without_transformers_config(tmp_path):
 def test_unlisted_installed_code_fails_integrity_check(tmp_path):
     async def scenario():
         service = supervisor(tmp_path)
-        await service.submit("llama-server", "cpu", "install")
+        await service.submit('install')
         await service.task
-        (service.directory(service.entries[0]) / "unexpected.dll").write_bytes(b"extra")
+        (service.directory() / "unexpected.dll").write_bytes(b"extra")
         with pytest.raises(ModelError) as broken:
-            await service.verify(service.entries[0])
+            await service.verify()
         assert broken.value.code == "RUNTIME_BROKEN"
     asyncio.run(scenario())
 
@@ -367,7 +398,7 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
     from ai_workbench.core.models.runtimes.adapters import LlamaServerAdapter
     async def scenario():
         service = supervisor(tmp_path)
-        await service.submit("llama-server", "cpu", "install")
+        await service.submit('install')
         await service.task
         path = tmp_path / "data/models/llms/fixture.gguf"
         path.parent.mkdir(parents=True)
@@ -376,15 +407,15 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
         starts = []
         async def start(adapter, profile, path, executable):
             starts.append(profile.id)
-            adapter.openai = upstream.factory(ProviderProfile(name="managed", base_url="http://worker.test/v1"))
+            adapter.openai = upstream.factory(ExternalConnection(base_url='http://worker.test/v1'))
             adapter.state = "ready"
         monkeypatch.setattr(LlamaServerAdapter, "_start", start)
         profiles = ModelProfileStore()
-        manager = ModelManager(profiles, ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        first = profiles.create(ModelProfile(name="first", alias="first", kind="llm", model_ref="llms/fixture.gguf", runtime_id="llama-server", runtime_variant="cpu", capabilities={"streaming": True}, parameters={"temperature": 0.4}))
-        alias = profiles.create(ModelProfile(name="alias", alias="alias", kind="llm", model_ref=first.model_ref, runtime_id=first.runtime_id, runtime_variant=first.runtime_variant, capabilities={"streaming": True}))
-        bad = alias.model_copy(update={"runtime_options": {**alias.runtime_options, "threads": 8}})
-        with pytest.raises(ModelError, match="identical runtime options"):
+        manager = ModelManager(profiles, BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        first = profiles.create(ModelProfile(name='first', alias='first', kind='llm', model_ref='llms/fixture.gguf', capabilities={'streaming': True}, parameters={'temperature': 0.4}, backend_profile_id='local', execution_options={'device': 'cpu'}))
+        alias = profiles.create(ModelProfile(name='alias', alias='alias', kind='llm', model_ref=first.model_ref, capabilities={'streaming': True}, backend_profile_id='local', execution_options=first.execution_options))
+        bad = alias.model_copy(update={"execution_options": {**alias.execution_options, "threads": 8}})
+        with pytest.raises(ModelError, match="identical execution options"):
             manager.validate_binding(bad)
         request = ChatRequest(model="first", messages=[{"role": "user", "content": "hello"}])
         result = await manager.chat(first.id, request)
@@ -405,39 +436,49 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
 def test_logs_retain_twenty_terminal_jobs(tmp_path):
     service = supervisor(tmp_path)
     for index in range(25):
-        job = RuntimeJob(runtime_id="llama-server", variant="cpu", version="fixture", operation="install", state="completed")
+        job = RuntimeJob(version='fixture', operation='install', state='completed', backend_profile_id='local')
         job.log_path = job.id + ".log"
         RuntimeLog(service.logs / job.log_path, tmp_path).write(str(index))
         service.store.save_job(job)
-    service._prune_logs("llama-server")
+    service._prune_logs("local")
     assert len(list(service.logs.glob("*.log"))) == 20
 
 
-def test_python_installer_uses_only_managed_paths_and_hashed_lock(tmp_path, monkeypatch):
-    from ai_workbench.core.models.runtimes import supervisor as implementation
+def test_python_installer_uses_pinned_artifact_and_offline_checks_without_models(tmp_path, monkeypatch):
+    import tarfile
     async def scenario():
         service = supervisor(tmp_path)
-        service.entries = catalog("windows", "x86_64")
-        entry = service.entry("python-worker", "transformers-cuda")
+        service.release = catalog("windows", "x86_64")
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            info = tarfile.TarInfo("python/python.exe")
+            info.size = 7
+            archive.addfile(info, io.BytesIO(b"fixture"))
+        data = buffer.getvalue()
+        service.release.python_artifact = RuntimeArtifact(url="https://runtime.test/python.tar.gz",
+            sha256=hashlib.sha256(data).hexdigest(), archive_format="tar.gz")
+        service.transport = httpx.MockTransport(lambda _: httpx.Response(200, content=data))
         calls = []
         async def command(args, env, cwd, log):
-            calls.append((list(map(str, args)), env))
-            if "venv" in args:
-                Path(args[-1]).mkdir(parents=True)
+            calls.append((list(map(str, args)), dict(env)))
         service._command = command
-        uv_dir = tmp_path / "app/Scripts"
-        uv_dir.mkdir(parents=True)
-        (uv_dir / ("uv.exe" if os.name == "nt" else "uv")).write_bytes(b"fixture")
-        monkeypatch.setattr(implementation.sysconfig, "get_path", lambda _: str(uv_dir))
-        job = RuntimeJob(runtime_id="python-worker", variant="transformers-cuda", version=entry.version, operation="install")
-        await service._install_python(entry, tmp_path / "payload", job, RuntimeLog(tmp_path / "log", tmp_path))
-        assert len(calls) == 5
-        assert "--no-bin" in calls[0][0] and "--no-registry" in calls[0][0]
-        assert "--require-hashes" in calls[2][0] and "--no-deps" in calls[2][0]
-        assert "https://download.pytorch.org/whl/cu128" in calls[2][0]
-        assert calls[3][0][1:3] == ["pip", "check"]
-        assert set(path.name for path in (tmp_path / "payload/worker").iterdir()) == set(entry.worker_files)
-        assert all(call[0][0].startswith(str(uv_dir)) for call in calls[:3])
-        assert all("sync" not in call[0] for call in calls)
-        assert calls[0][1]["UV_PYTHON_INSTALL_DIR"] == str(service.base / "python")
+        monkeypatch.setattr(service, "_uv", lambda: "bundled-uv")
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+        job = RuntimeJob(backend_profile_id="local", version=service.release.version, operation="install")
+        await RuntimeSupervisor._install_python(service, service.release, tmp_path / "payload", job, RuntimeLog(tmp_path / "log", tmp_path))
+        assert not (tmp_path / "data/models").exists()
+        install = next(args for args, _ in calls if "sync" in args)
+        assert "--require-hashes" in install and "--no-deps" not in install
+        assert "--build-constraints" in install and "--find-links" in install
+        assert set(install[install.index("--no-binary") + 1].split(",")) == {"docopt", "jieba", "unidic-lite", "antlr4-python3-runtime", "sox"}
+        assert any(args[1:3] == ["pip", "check"] for args, _ in calls)
+        checks = [(args, env) for args, env in calls if "require_offline" in " ".join(args)]
+        assert len(checks) == 5
+        assert all(env["CUDA_VISIBLE_DEVICES"] == "" and env["HF_HUB_OFFLINE"] == "1" for _, env in checks)
+        assert ["ChatterboxTTS" in " ".join(args) for args, _ in checks].count(True) == 1
+        assert ["Qwen3TTSModel" in " ".join(args) for args, _ in checks].count(True) == 1
+        assert set(path.name for path in (tmp_path / "payload/worker").iterdir()) == set(service.release.worker_files)
+        assert (tmp_path / "payload/env/python.exe").read_bytes() == b"fixture"
+        assert not any("en_core_web_sm" in " ".join(args) for args, _ in calls)
+        await service.close()
     asyncio.run(scenario())

@@ -13,20 +13,18 @@ from pydantic import ValidationError
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.manager import ModelManager, ProviderSlot
+from ai_workbench.core.models.manager import ModelManager, BackendSlot
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.schema import AudioOutput, ModelProfile, ModelStatus, SpeechRequest
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
 from ai_workbench.core.models.voice_references import VoiceReferences, credential_id
 from ai_workbench.workers.audio_catalog import CHATTERBOX_DEFAULTS, CHATTERBOX_FILES, MAX_REFERENCE_BYTES
 from tests.test_tts import HEADERS, wav_bytes
 
 
 def profile(**values):
-    return ModelProfile(**{**dict(name="Chatterbox", alias="chatterbox", kind="tts", model_ref="tts/chatterbox",
-        runtime_id="python-worker", runtime_variant="audio-cuda", parameters={"architecture": "chatterbox"},
-        external_enabled=True), **values})
+    return ModelProfile(**{**dict(name='Chatterbox', alias='chatterbox', kind='tts', model_ref='tts/chatterbox', parameters={'architecture': 'chatterbox'}, external_enabled=True, backend_profile_id='local'), **values})
 
 
 class Clock:
@@ -112,8 +110,8 @@ def test_restart_cleanup_limits_and_shutdown_preserve_active_files(tmp_path):
 
 
 @pytest.mark.parametrize("patch", [
-    {"runtime_variant": "onnx-cpu"}, {"provider_profile_id": "external"}, {"runtime_options": {"device": "auto"}},
-    {"runtime_options": {"intraop_threads": True}}, {"kind": "asr"},
+    {"runtime_variant": "onnx-cpu"}, {"backend_profile_id": "external"}, {"execution_options": {"device": "auto"}},
+    {"execution_options": {"intraop_threads": True}}, {"kind": "asr"},
     {"parameters": {"architecture": "chatterbox", "temperature": 0}},
     {"parameters": {"architecture": "chatterbox", "cfg_weight": 1.01}},
     {"parameters": {"architecture": "chatterbox", "exaggeration": True}},
@@ -130,7 +128,7 @@ def test_strict_audio_profiles(patch):
 def test_chatterbox_defaults_and_no_kokoro_option_leakage():
     value = profile()
     assert value.parameters == {"architecture": "chatterbox", "speed": 1.0, "response_format": "mp3", **CHATTERBOX_DEFAULTS}
-    assert value.runtime_options == {"device": "cuda", "intraop_threads": 4}
+    assert value.execution_options == {"device": "cuda", "intraop_threads": 4}
     with pytest.raises(ValidationError):
         profile(runtime_variant="onnx-cpu", parameters={"architecture": "kokoro", "cfg_weight": None})
 
@@ -184,7 +182,7 @@ def api(tmp_path):
         value = manager.profiles.create(profile(parameters={"architecture": "chatterbox", "response_format": "wav"}))
         manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
         adapter = Adapter(manager)
-        manager._slots[manager.backend_key(value)] = ProviderSlot(adapter, asyncio.Semaphore(1))
+        manager._slots[manager.backend_key(value)] = BackendSlot(adapter, asyncio.Semaphore(1))
         yield client, manager, value, adapter
 
 
@@ -259,7 +257,7 @@ def test_upload_limits_malformed_inputs_and_authentication(api):
 
 def test_backendless_chatterbox_does_not_break_reference_discovery_or_deletion(api):
     client, manager, _, _ = api
-    manager.profiles.create(profile(name="A draft", alias="draft", runtime_id=None, runtime_variant=None))
+    manager.profiles.create(profile(name="A draft", alias="draft", backend_profile_id=None))
     voice_id = upload(client).json()["voice_id"]
     result = client.get("/v1/audio/voices?source=temporary", headers=HEADERS)
     assert result.status_code == 200, result.text
@@ -289,8 +287,8 @@ def test_disabling_or_replacing_ownership_invalidates_voice_ids(api, change):
 
 
 def make_manager(root):
-    supervisor = RuntimeSupervisor(root, RuntimeStore())
-    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(root, RuntimeStore(), BackendProfileStore())
+    manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
     supervisor.assert_available = lambda *args: None
     return manager
@@ -314,7 +312,7 @@ def test_waiting_admission_renews_but_overflow_does_not_and_cancellation_release
                 stopped.set()
 
         adapter.speech = speech
-        slot = ProviderSlot(adapter, asyncio.Semaphore(1))
+        slot = BackendSlot(adapter, asyncio.Semaphore(1))
         manager._slots[manager.backend_key(value)] = slot
         manager._slot = lambda *args: (SimpleNamespace(concurrency=1, queue_size=1, queue_timeout_seconds=0.05), slot)
         entry = published(manager.voice_references, value.id, manager.voice_binding(value), credential_id("test-key"))

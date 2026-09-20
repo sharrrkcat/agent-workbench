@@ -6,10 +6,10 @@ import type {
   ModelSettings,
   ModelStatus,
   PresetVoice,
-  ProviderInput,
-  ProviderProfile,
-  RuntimeCatalogEntry,
-  RuntimeDownloadSettings,
+  BackendInput,
+  BackendProfile,
+  RuntimeCatalog,
+  BackendPatch,
   RuntimeInstallation,
   RuntimeJob,
   RuntimeStorage,
@@ -17,8 +17,8 @@ import type {
 import { request } from './http';
 
 export const modelsApi = {
-  runtimeCatalog: () => request<RuntimeCatalogEntry[]>('/api/models/runtimes/catalog'),
-  runtimeInstallations: () => request<RuntimeInstallation[]>('/api/models/runtimes'),
+  runtimeCatalog: () => request<RuntimeCatalog>('/api/models/backends/local/runtime/catalog'),
+  runtimeInstallation: () => request<RuntimeInstallation>('/api/models/backends/local/runtime'),
   runtimeJobs: () => request<RuntimeJob[]>('/api/models/runtimes/jobs'),
   runtimeStorage: () => request<RuntimeStorage>('/api/models/runtimes/storage'),
   cleanupRuntimeCache: (mode: 'prune' | 'clean') => request<RuntimeJob>('/api/models/runtimes/cache/cleanup', {
@@ -28,17 +28,8 @@ export const modelsApi = {
   runtimeJobLog: (id: string) => request<{ text: string }>(`/api/models/runtimes/jobs/${encodeURIComponent(id)}/log`),
   cancelRuntimeJob: (id: string) =>
     request<RuntimeJob>(`/api/models/runtimes/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
-  runtimeAction: (runtime: string, variant: string, action: 'install' | 'uninstall') =>
-    request<RuntimeJob>(
-      `/api/models/runtimes/${encodeURIComponent(runtime)}/${encodeURIComponent(variant)}/${action}`,
-      { method: 'POST' },
-    ),
-  runtimeSettings: () => request<RuntimeDownloadSettings>('/api/models/runtime/settings'),
-  patchRuntimeSettings: (settings: RuntimeDownloadSettings) =>
-    request<RuntimeDownloadSettings>('/api/models/runtime/settings', {
-      method: 'PATCH',
-      body: JSON.stringify(settings),
-    }),
+  runtimeAction: (action: 'install' | 'repair' | 'uninstall') =>
+    request<RuntimeJob>(`/api/models/backends/local/runtime/${action}`, { method: 'POST' }),
   getModelSettings: () => request<ModelSettings>('/api/models/settings'),
   updateModelSettings: (patch: Partial<Omit<ModelSettings, 'has_external_api_key'>> & { external_api_key?: string }) =>
     request<ModelSettings>('/api/models/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
@@ -60,16 +51,16 @@ export const modelsApi = {
   getModelLog: (id: string) => request<{ text: string }>(`/api/models/profiles/${encodeURIComponent(id)}/log`),
   listModelInventory: (kind?: ModelKind) =>
     request<ModelInventoryItem[]>('/api/models/inventory' + (kind ? '?kind=' + kind : '')),
-  listProviderProfiles: () => request<ProviderProfile[]>('/api/models/providers'),
-  createProviderProfile: (profile: ProviderInput) =>
-    request<ProviderProfile>('/api/models/providers', { method: 'POST', body: JSON.stringify(profile) }),
-  patchProviderProfile: (id: string, patch: Partial<ProviderInput>) =>
-    request<ProviderProfile>(`/api/models/providers/${encodeURIComponent(id)}`, {
+  listBackendProfiles: () => request<BackendProfile[]>('/api/models/backends'),
+  createBackendProfile: (profile: BackendInput) =>
+    request<BackendProfile>('/api/models/backends', { method: 'POST', body: JSON.stringify(profile) }),
+  patchBackendProfile: (id: string, patch: BackendPatch) =>
+    request<BackendProfile>(`/api/models/backends/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
-  deleteProviderProfile: (id: string) =>
-    request<{ deleted: boolean }>(`/api/models/providers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  listProviderModels: (id: string) =>
-    request<{ models: string[] }>(`/api/models/providers/${encodeURIComponent(id)}/models`),
+  deleteBackendProfile: (id: string) =>
+    request<{ deleted: boolean }>(`/api/models/backends/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listBackendModels: (id: string) =>
+    request<{ models: string[] }>(`/api/models/backends/${encodeURIComponent(id)}/models`),
 };

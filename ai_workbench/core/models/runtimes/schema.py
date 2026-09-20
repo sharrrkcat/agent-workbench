@@ -33,7 +33,11 @@ def model_path(root: Path, ref: str) -> Path:
     return path
 
 
+LocalEngine = Literal["llama-server", "transformers", "kokoro", "chatterbox", "qwen3tts", "whisper"]
+
+
 class LlamaOptions(Strict):
+    device: Literal["cpu", "cuda"] = "cuda"
     threads: int = Field(default=4, ge=1, le=256)
     context_size: int = Field(default=4096, ge=512, le=1048576)
     batch_size: int = Field(default=512, ge=1, le=4096)
@@ -41,15 +45,17 @@ class LlamaOptions(Strict):
 
 
 class LlamaCPUOptions(LlamaOptions):
+    device: Literal["cpu"] = "cpu"
     gpu_layers: Annotated[int, Field(strict=True, ge=0, le=0)] = 0
 
 
 class LlamaCUDAOptions(LlamaOptions):
+    device: Literal["cuda"] = "cuda"
     gpu_layers: Literal["auto"] | Annotated[int, Field(strict=True, ge=1, le=999)] = "auto"
 
 
-def llama_options(variant: str):
-    return {"cpu": LlamaCPUOptions, "cuda": LlamaCUDAOptions}[variant]
+def llama_options(device: str):
+    return {"cpu": LlamaCPUOptions, "cuda": LlamaCUDAOptions}[device]
 
 
 class OnnxCPUOptions(Strict):
@@ -58,20 +64,23 @@ class OnnxCPUOptions(Strict):
     max_batch_size: int = Field(default=1, ge=1, le=1, strict=True)
 
 
-class TransformersOptions(Strict):
+class PythonOptions(Strict):
     device: Literal["cpu", "cuda"] = "cuda"
     intraop_threads: int = Field(default=4, ge=1, le=256, strict=True)
 
 
-class AudioOptions(Strict):
-    """Options for the shared Windows CUDA-build Audio worker."""
-
-    device: Literal["cpu", "cuda"] = "cuda"
-    intraop_threads: int = Field(default=4, ge=1, le=256, strict=True)
+def local_engine(profile) -> LocalEngine | None:
+    if profile.backend_profile_id != "local":
+        return None
+    if profile.kind == "llm":
+        return "llama-server" if profile.model_ref.endswith(".gguf") else "transformers"
+    if profile.kind in {"tts", "asr"}:
+        return profile.parameters["architecture"]
+    return None
 
 
 def is_transformers(profile) -> bool:
-    return (profile.runtime_id, profile.runtime_variant) == ("python-worker", "transformers-cuda")
+    return local_engine(profile) == "transformers"
 
 
 class DownloadSettings(Strict):
@@ -107,49 +116,38 @@ class RuntimeArtifact(Strict):
         return value
 
 
-class CatalogEntry(Strict):
-    runtime_id: Literal["llama-server", "python-worker"]
-    variant: str
+class NativeRuntime(Strict):
+    artifact: RuntimeArtifact
+    dependencies: list[RuntimeArtifact] = Field(default_factory=list)
+    executable: str = "llama-server.exe"
+
+
+class LocalRelease(Strict):
     version: str
     platform: str
     architecture: str = "x86_64"
     supported: bool = False
     reason: str | None = None
-    url: str | None = None
-    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
-    size_bytes: int | None = Field(default=None, gt=0)
-    additional_artifacts: list[RuntimeArtifact] = Field(default_factory=list)
-    archive_format: Literal["zip", "tar.gz", "venv"]
-    executable: str
     requirements: str | None = None
-    python_version: str | None = None
-    python_key: str | None = None
+    lock_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    python_version: str
     python_artifact: RuntimeArtifact | None = None
-    pytorch_index_url: str | None = None
+    python_executable: str = "env/python.exe"
+    pytorch_index_url: str = "https://download.pytorch.org/whl/cu128"
     worker_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     worker_files: list[str] = Field(default_factory=list)
-    worker_entrypoint: str | None = None
-    kinds: list[str]
-    options_schema: dict = Field(default_factory=dict)
+    native_cpu: NativeRuntime | None = None
+    native_cuda: NativeRuntime | None = None
 
     @model_validator(mode="after")
-    def valid_artifact(self):
-        if self.url and (urlsplit(self.url).scheme != "https" or not urlsplit(self.url).hostname):
-            raise ValueError("Runtime artifacts require HTTPS")
-        if self.supported and self.archive_format != "venv" and not (self.url and self.sha256):
-            raise ValueError("Installable archives require a pinned URL and SHA-256")
-        if self.supported and self.archive_format == "venv" and not (
-            self.requirements and self.python_version and self.python_key and self.python_artifact
-            and self.sha256 and self.worker_sha256 and self.worker_files
-            and self.worker_entrypoint in self.worker_files
-        ):
-            raise ValueError("Installable workers require a dependency lock, pinned interpreter and worker sources")
+    def valid_release(self):
+        if self.supported and not all((self.requirements, self.lock_sha256,
+                self.python_artifact, self.worker_sha256, self.worker_files, self.native_cpu, self.native_cuda)):
+            raise ValueError("An installable local release requires pinned Python, packages, workers and native components")
         if len(set(self.worker_files)) != len(self.worker_files) or any(
             relative_ref(name) != name or "/" in name or not name.endswith(".py") for name in self.worker_files
         ):
             raise ValueError("Worker sources must be unique Python filenames")
-        if self.additional_artifacts and (self.runtime_id != "llama-server" or self.archive_format == "venv"):
-            raise ValueError("Additional artifacts belong to managed llama-server archives")
         return self
 
 
@@ -159,9 +157,7 @@ TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
 
 
 class Installation(Strict):
-    id: str
-    runtime_id: str
-    variant: str
+    backend_profile_id: Literal["local"] = "local"
     version: str
     state: InstallState = "not_installed"
     job_id: str | None = None
@@ -183,8 +179,7 @@ class StorageGroup(StorageUsage):
     id: str
     category: Literal["runtime", "python", "cache", "staging", "processes", "other"]
     relative_path: str
-    runtime_id: str | None = None
-    variant: str | None = None
+    backend_profile_id: Literal["local"] | None = None
     version: str | None = None
 
 
@@ -213,10 +208,9 @@ class CacheCleanupResult(Strict):
 
 class RuntimeJob(Strict):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    runtime_id: str | None = None
-    variant: str | None = None
+    backend_profile_id: Literal["local"] | None = None
     version: str | None = None
-    operation: Literal["install", "uninstall", "cache_prune", "cache_clean"]
+    operation: Literal["install", "repair", "uninstall", "cache_prune", "cache_clean"]
     result: CacheCleanupResult | None = None
     state: JobState = "queued"
     stage: str = "queued"
@@ -232,18 +226,18 @@ class RuntimeJob(Strict):
 
     @model_validator(mode="after")
     def valid_target(self):
-        identity = (self.runtime_id, self.variant, self.version)
-        if self.operation in {"install", "uninstall"}:
+        identity = (self.backend_profile_id, self.version)
+        if self.operation in {"install", "repair", "uninstall"}:
             if not all(identity) or self.result is not None:
-                raise ValueError("Installation jobs require a runtime identity and no cache result")
+                raise ValueError("Installation jobs require a local backend release and no cache result")
         elif any(value is not None for value in identity):
-            raise ValueError("Cache jobs have no runtime identity")
+            raise ValueError("Cache jobs have no installation identity")
         return self
 
 
 class RuntimeStatus(Strict):
-    runtime_id: str
-    variant: str
+    backend_profile_id: Literal["local"] = "local"
+    engine: LocalEngine
     version: str
     install_state: InstallState
     process_state: Literal["stopped", "starting", "ready", "failed"] = "stopped"

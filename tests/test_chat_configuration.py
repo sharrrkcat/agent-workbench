@@ -11,7 +11,7 @@ from ai_workbench.core.schema.persona import CHAT_PERSONA_ID
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import (
-    AppMetadataRecord, KnowledgeBaseRecord, MessageRecord, ModelProfileRecord,
+    AppMetadataRecord, KnowledgeBaseRecord, MessageRecord,
     RunEventRecord, RunRecord, RunStepRecord, WorldbookRecord,
 )
 from tests.model_fixtures import MockOpenAI, configure_model
@@ -246,9 +246,12 @@ def test_configuration_revision_discards_chat_only_and_preserves_files(tmp_path)
             VALUES ('old', '', 'single_assistant', :persona, 'inherit', 'override', 'pending', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"""),
             {"persona": CHAT_PERSONA_ID})
         db.execute(text("INSERT INTO session_personas VALUES ('old', :persona, 0, 1)"), {"persona": CHAT_PERSONA_ID})
+        db.exec_driver_sql("""INSERT INTO model_profiles
+            (id,alias,name,kind,model_ref,capabilities_json,parameters_json,lifecycle_json,
+             enabled,external_enabled,created_at,updated_at)
+            VALUES ('model','model','Model','embedding','manual','{}','{}','{}',1,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""")
     with DbSession(engine) as db:
         db.add(AppMetadataRecord(key="app_settings", value='{"core_memory_content":"Keep"}'))
-        db.add(ModelProfileRecord(id="model", alias="model", name="Model", kind="embedding", model_ref="manual"))
         db.add(KnowledgeBaseRecord(id="base", name="Keep", embedding_model_profile_id="model"))
         db.add(WorldbookRecord(id="book", name="Keep"))
         db.add(RunRecord(run_id="run", session_id="old", persona_id=CHAT_PERSONA_ID, kind="chat", status="WAITING_FOR_USER",

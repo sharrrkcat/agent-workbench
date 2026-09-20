@@ -14,7 +14,7 @@ def install_runtime_fixture(app, root):
     cache = supervisor.base / ".cache"
     shared = cache / "shared.bin"
     exclusive = cache / "exclusive.bin"
-    installed = supervisor.base / "py/transformers-cuda/1.0.0/Lib/shared.bin"
+    installed = supervisor.base / "local/1.0.0/env/Lib/shared.bin"
     behavior = {"slow": False, "fail": False}
 
     @app.post("/__test__/runtimes")
@@ -22,7 +22,7 @@ def install_runtime_fixture(app, root):
         if supervisor.active_job:
             await supervisor.cancel(supervisor.active_job)
         supervisor.store._jobs.clear()
-        supervisor.entries = catalog("windows", "x86_64")
+        supervisor.release = catalog("windows", "x86_64")
         behavior.update(slow=bool(values.get("slow")), fail=bool(values.get("fail")))
         cache.mkdir(parents=True, exist_ok=True)
         installed.parent.mkdir(parents=True, exist_ok=True)

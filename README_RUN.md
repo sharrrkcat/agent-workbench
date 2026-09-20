@@ -20,10 +20,11 @@ For a source checkout, install dependencies and build the frontend using the
 
 ## Model setup
 
-Follow [model setup](README.md#configure-models) for external connections,
-managed runtimes and manual model placement. The
+Follow [model setup](README.md#configure-models) for configured backends,
+the shared local installation and manual model placement. The
 [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
-owns the supported platform/variant matrix, including Windows CUDA.
+owns Windows x64 engine and CPU/CUDA support. Local installation requires neither
+model files nor a GPU; model execution checks its selected device and resources.
 
 ## Portable packages and data
 

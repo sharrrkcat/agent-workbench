@@ -11,7 +11,7 @@ const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale, { 
 const i18n = i18next.createInstance();
 await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } });
 const usage = { complete: true, file_count: 2, logical_bytes: 1024, unique_bytes: 1024, shared_bytes: 1000, exclusive_bytes: 24 };
-const cacheJob = { id: 'cache', runtime_id: null, variant: null, version: null, operation: 'cache_clean',
+const cacheJob = { id: 'cache', backend_profile_id: null, version: null, operation: 'cache_clean',
   state: 'completed', stage: 'completed', revision: 3, created_at: '2026-09-08T00:00:00Z', error_code: null,
   result: { before: usage, after: { ...usage, file_count: 0, logical_bytes: 0, unique_bytes: 0, shared_bytes: 0, exclusive_bytes: 0 } },
 };
@@ -31,7 +31,7 @@ for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');
   const panel = renderToStaticMarkup(React.createElement(RuntimeStoragePanel, {
-    busy: false, active: undefined, onCleanup: async () => {}, onCancel: () => {},
+    busy: false, activeView: true, active: undefined, onCleanup: async () => {}, onCancel: () => {},
   }));
   for (const key of ['storage.title', 'storage.reclaimable', 'cachePrune', 'cacheClean', 'jobStates.completed']) {
     assert.ok(panel.includes(t(key)), key);

@@ -24,6 +24,21 @@ VOICE_IDS = tuple(sorted((
 FORMATS = {"mp3": "audio/mpeg", "wav": "audio/wav"}
 
 
+def language_model(models_root: Path) -> Path:
+    """Resolve the manually supplied English pipeline without importing spaCy."""
+    path = models_root / "_auxiliary" / "en_core_web_sm"
+    if not path.resolve().is_relative_to(models_root.resolve()):
+        raise ValueError("Language model escapes data/models")
+    for name in ("meta.json", "config.cfg", "tokenizer", "tok2vec/model", "tagger/model", "vocab/strings.json"):
+        source = path / name
+        if not source.resolve().is_relative_to(path.resolve()) or not source.is_file():
+            raise ValueError("Place the complete en_core_web_sm 3.7.1 directory under data/models/_auxiliary")
+    metadata = json.loads((path / "meta.json").read_text(encoding="utf-8"))
+    if not isinstance(metadata, dict) or metadata.get("version") != "3.7.1" or metadata.get("lang") != "en":
+        raise ValueError("Kokoro requires the en_core_web_sm 3.7.1 language model")
+    return path
+
+
 def model_files(path: Path) -> bool:
     try:
         for name in ("config.json", "tokenizer.json", "tokenizer_config.json", "model.onnx"):

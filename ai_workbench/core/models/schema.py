@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, m
 
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
-from ai_workbench.core.models.runtimes.schema import RuntimeStatus
+from ai_workbench.core.models.runtimes.schema import DownloadSettings, RuntimeStatus
 
 ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts"]
 
@@ -17,16 +17,13 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
-class ProviderInput(StrictModel):
-    name: str = Field(min_length=1, max_length=128)
-    protocol: Literal["openai_compatible"] = "openai_compatible"
+class ExternalConnection(StrictModel):
     base_url: str
     api_key: str = Field(default="", description="PATCH omission retains the key; an empty string clears it.", json_schema_extra={"writeOnly": True})
     timeout_seconds: float = Field(default=60, gt=0, le=3600)
     concurrency: int = Field(default=1, ge=1, le=64)
     queue_size: int = Field(default=32, ge=0, le=1024)
     queue_timeout_seconds: float = Field(default=30, gt=0, le=3600)
-    enabled: bool = True
 
     @field_validator("base_url")
     @classmethod
@@ -37,6 +34,23 @@ class ProviderInput(StrictModel):
             raise ValueError("base_url must be an HTTP(S) API root without credentials, query or fragment")
         return value.rstrip("/")
 
+class BackendInput(StrictModel):
+    name: str = Field(min_length=1, max_length=128)
+    type: Literal["local", "openai_compatible"]
+    enabled: bool = True
+    connection: ExternalConnection | None = None
+    download: DownloadSettings | None = None
+
+    @model_validator(mode="after")
+    def validate_configuration(self):
+        if self.type == "local":
+            if self.connection is not None:
+                raise ValueError("The local backend has no external connection")
+            self.download = self.download or DownloadSettings()
+        elif self.connection is None or self.download is not None:
+            raise ValueError("An external backend requires a connection and has no download settings")
+        return self
+
     @field_validator("name")
     @classmethod
     def valid_name(cls, value: str) -> str:
@@ -45,10 +59,16 @@ class ProviderInput(StrictModel):
         return value.strip()
 
 
-class ProviderProfile(ProviderInput):
+class BackendProfile(BackendInput):
     id: str = Field(default_factory=lambda: str(uuid4()))
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def local_identity(self):
+        if (self.type == "local") != (self.id == "local"):
+            raise ValueError("The single local backend has the reserved id 'local'")
+        return self
 
 
 class Capabilities(StrictModel):
@@ -158,10 +178,8 @@ class ModelInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
     alias: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$")
     kind: ModelKind
-    provider_profile_id: str | None = None
-    runtime_id: Literal["llama-server", "python-worker"] | None = None
-    runtime_variant: Literal["cpu", "cuda", "transformers-cuda", "onnx-cpu", "infinity-cuda", "audio-cuda"] | None = None
-    runtime_options: dict[str, Any] = Field(default_factory=dict)
+    backend_profile_id: str | None = None
+    execution_options: dict[str, Any] = Field(default_factory=dict)
     model_ref: str = Field(min_length=1, max_length=1024)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -171,49 +189,34 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import AudioOptions, OnnxCPUOptions, TransformersOptions, is_transformers, llama_options, relative_ref
-        if self.runtime_id:
-            if self.provider_profile_id or not self.runtime_variant:
-                raise ValueError("A managed model requires a runtime variant and no external connection")
+        from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, PythonOptions, local_engine, llama_options, relative_ref
+        self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
+        engine = local_engine(self)
+        if self.backend_profile_id == "local":
             relative_ref(self.model_ref)
-            if self.runtime_id == "llama-server":
-                if self.kind != "llm" or self.runtime_variant not in {"cpu", "cuda"}:
-                    raise ValueError("llama-server requires llm kind and cpu/cuda variant")
-                self.runtime_options = llama_options(self.runtime_variant).model_validate(self.runtime_options).model_dump()
-                if not self.model_ref.endswith(".gguf"):
-                    raise ValueError("llama-server requires a local GGUF file")
+            if engine is None:
+                raise ValueError("This model kind has no implemented local engine")
+            if engine == "llama-server":
+                device = self.execution_options.get("device", "cuda")
+                if device not in {"cpu", "cuda"}:
+                    raise ValueError("The local device must be cpu or cuda")
+                options_schema = llama_options(device)
                 if self.capabilities.vision:
                     raise ValueError("Managed llama image input requires a future projector configuration")
+            elif engine == "kokoro":
+                options_schema = OnnxCPUOptions
             else:
-                if is_transformers(self):
-                    if self.kind != "llm":
-                        raise ValueError("transformers-cuda requires llm kind")
-                    if self.capabilities.vision or self.capabilities.json_object or self.capabilities.json_schema:
-                        raise ValueError("Transformers currently supports text and tool calls only")
-                    options_schema = TransformersOptions
-                elif self.runtime_variant == "onnx-cpu" and self.kind in {"tts", "vision"}:
-                    options_schema = OnnxCPUOptions
-                elif self.runtime_variant == "infinity-cuda" and self.kind in {"embedding", "reranker", "image_embedding"}:
-                    options_schema = TransformersOptions
-                elif self.runtime_variant == "audio-cuda" and self.kind == "tts":
-                    options_schema = AudioOptions
-                else:
-                    raise ValueError("This managed Python backend is not implemented for the model kind")
-                self.runtime_options = options_schema.model_validate(self.runtime_options).model_dump()
-        elif self.runtime_variant or self.runtime_options:
-            raise ValueError("Runtime variant and options require runtime_id")
-        if self.kind == "tts":
-            if self.provider_profile_id:
-                raise ValueError("TTS execution requires a managed local backend")
-            if self.runtime_id and self.runtime_variant not in {"onnx-cpu", "audio-cuda"}:
-                raise ValueError("TTS execution requires the managed onnx-cpu or audio-cuda backend")
-        self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
-        if self.kind == "tts" and self.runtime_variant == "audio-cuda" and self.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
-            raise ValueError("audio-cuda requires the chatterbox or qwen3tts architecture")
-        if self.kind == "tts" and self.runtime_variant == "onnx-cpu" and self.parameters["architecture"] != "kokoro":
-            raise ValueError("onnx-cpu requires the kokoro architecture")
-        if is_transformers(self) and any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
-            raise ValueError("Transformers does not support nonzero presence or frequency penalties")
+                options_schema = PythonOptions
+            self.execution_options = options_schema.model_validate(self.execution_options).model_dump()
+            if engine == "transformers":
+                if self.capabilities.vision or self.capabilities.json_object or self.capabilities.json_schema:
+                    raise ValueError("Transformers currently supports text and tool calls only")
+                if any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
+                    raise ValueError("Transformers does not support nonzero presence or frequency penalties")
+        elif self.execution_options:
+            raise ValueError("Execution options require the local backend")
+        if self.kind == "tts" and self.backend_profile_id not in {None, "local"}:
+            raise ValueError("TTS execution requires the local backend")
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
         if self.kind != "llm" and any(self.capabilities.model_dump().values()):

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { ModelInput } from '../../../types/models';
 import { Check, Field, NumberInput } from './fields';
-import { selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
+import { localEngine, selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
 
 export function ProfileParameters({
   value,
@@ -23,7 +23,7 @@ export function ProfileParameters({
             ['presence_penalty', -2, 2, 0.1],
             ['frequency_penalty', -2, 2, 0.1],
             ['seed', undefined, undefined, 1],
-          ].filter(([key]) => value.runtime_variant !== 'transformers-cuda' || !['presence_penalty', 'frequency_penalty'].includes(String(key))).map(([key, min, max, step]) => (
+          ].filter(([key]) => localEngine(value) !== 'transformers' || !['presence_penalty', 'frequency_penalty'].includes(String(key))).map(([key, min, max, step]) => (
             <NumberInput
               key={String(key)}
               label={t('params.' + key)}
@@ -44,11 +44,11 @@ export function ProfileParameters({
       ) : value.kind === 'tts' ? (
         <>
           <Field label={t('params.architecture')}>
-            <select value={String(value.parameters.architecture ?? 'kokoro')} disabled={value.runtime_variant !== 'audio-cuda'}
+            <select value={String(value.parameters.architecture ?? 'kokoro')}
               onChange={(e) => onChange(selectTTSArchitecture(value.parameters, e.target.value as keyof typeof ttsGenerationDefaults))}>
-              <option value="kokoro" disabled={value.runtime_variant === 'audio-cuda'}>Kokoro-82M v1.0 (ONNX)</option>
-              <option value="chatterbox" disabled={value.runtime_variant !== 'audio-cuda'}>{t('chatterboxEnglish')}</option>
-              <option value="qwen3tts" disabled={value.runtime_variant !== 'audio-cuda'}>{t('qwen3TTSBase')}</option>
+              <option value="kokoro">Kokoro-82M v1.0 (ONNX)</option>
+              <option value="chatterbox">{t('chatterboxEnglish')}</option>
+              <option value="qwen3tts">{t('qwen3TTSBase')}</option>
             </select>
           </Field>
           {value.parameters.architecture === 'chatterbox' ? [

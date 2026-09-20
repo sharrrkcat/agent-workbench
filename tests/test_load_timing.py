@@ -15,8 +15,8 @@ from ai_workbench.workers import timing, transformers_engine, tts_engine
 
 
 def metadata(**patch):
-    return {"load_id": str(uuid4()), "model_profile_id": str(uuid4()), "runtime_id": "python-worker",
-            "variant": "onnx-cpu", "version": "1.0.2", "device": "cpu", "trigger": "explicit",
+    return {"load_id": str(uuid4()), "model_profile_id": str(uuid4()), "backend_profile_id": "local",
+            "engine": "kokoro", "version": "1.0.2", "device": "cpu", "trigger": "explicit",
             "operation": "load", **patch}
 
 
@@ -152,7 +152,7 @@ def test_raw_logs_have_utc_receipt_times_and_cuda_parses_original_records(tmp_pa
 
 
 @pytest.mark.parametrize("resources_valid", [True, False])
-def test_kokoro_times_imports_and_checks_resources_before_building_languages(monkeypatch, resources_valid):
+def test_kokoro_times_imports_and_checks_resources_before_building_languages(monkeypatch, tmp_path, resources_valid):
     import importlib.metadata
     import sys
     builds, warmups, lines = [], [], []
@@ -164,26 +164,30 @@ def test_kokoro_times_imports_and_checks_resources_before_building_languages(mon
             return "phonemes", None
         return process
 
-    monkeypatch.setattr(importlib.metadata, "version", lambda _: "3.7.1")
-    monkeypatch.setitem(sys.modules, "spacy", SimpleNamespace(util=SimpleNamespace(is_package=lambda _: resources_valid)))
+    def load(path, *, enable):
+        assert path == tmp_path and enable == ["tok2vec", "tagger"]
+        if not resources_valid:
+            raise OSError("Invalid local pipeline")
+        return object()
+    monkeypatch.setitem(sys.modules, "spacy", SimpleNamespace(load=load))
     en = SimpleNamespace(G2P=lambda **kw: build("en-GB" if kw["british"] else "en-US"))
     espeak = SimpleNamespace(EspeakFallback=lambda **_: object(), EspeakG2P=lambda language: build(language))
     zh = SimpleNamespace(ZHG2P=lambda **_: build("zh-CN"))
     monkeypatch.setitem(sys.modules, "misaki", SimpleNamespace(en=en, espeak=espeak, zh=zh))
     monkeypatch.setitem(sys.modules, "misaki.cutlet", SimpleNamespace(Cutlet=lambda: build("ja-JP")))
     monkeypatch.setitem(sys.modules, "jieba", SimpleNamespace(setLogLevel=lambda _: None))
-    with nullcontext() if resources_valid else pytest.raises(tts_engine.WorkerError):
+    with nullcontext() if resources_valid else pytest.raises(OSError):
         with timing.tracing(timing.LoadTrace(metadata(), lines.append, scope="worker", total_stage="worker_load")):
-            processors = tts_engine.language_processors()
+            processors = tts_engine.language_processors(tmp_path)
     records = events("\n".join(lines))
     imports = [f"language_imports.{name}" for name in
-               ("importlib_metadata", "spacy", "misaki.en", "misaki.espeak", "misaki.zh", "misaki.cutlet", "jieba")]
+               ("spacy", "misaki.en", "misaki.espeak", "misaki.zh", "misaki.cutlet", "jieba")]
     assert [item["stage"] for item in records if item["stage"] in imports and item["result"] == "completed"] == imports
     assert all(0 <= item["cpu_duration_ms"] <= item["cpu_elapsed_ms"] for item in records)
     if not resources_valid:
         assert not builds and not warmups
         assert [(item["stage"], item["error_code"]) for item in records if item["result"] == "failed"] == [
-            ("language_resources", "RUNTIME_BROKEN"), ("worker_load", "RUNTIME_BROKEN")]
+            ("language_resources", "MODEL_UNAVAILABLE"), ("worker_load", "MODEL_UNAVAILABLE")]
         return
     assert list(processors) == ["a", "b", "j", "z", "e", "f", "h", "i", "p"]
     assert builds == warmups == ["en-US", "en-GB", "ja-JP", "zh-CN", "es", "fr-fr", "hi", "it", "pt-br"]
@@ -233,7 +237,7 @@ def test_transformers_import_timings_attribute_failures_before_model_loading(mon
     monkeypatch.setattr(transformers_engine, "require_offline", lambda: None)
     monkeypatch.setattr(builtins, "__import__", traced_import)
     with pytest.raises(ImportError if failed_import else DeviceReached):
-        with timing.tracing(timing.LoadTrace(metadata(variant="transformers-cuda"), lines.append,
+        with timing.tracing(timing.LoadTrace(metadata(engine="transformers"), lines.append,
                                             scope="worker", total_stage="worker_startup", clock=wall, cpu_clock=cpu)):
             transformers_engine.TransformersEngine("unused", {"device": "cpu", "intraop_threads": 4})
     count = names.index(failed_import) + 1 if failed_import else len(names)

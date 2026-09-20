@@ -9,7 +9,7 @@ import type { ModelInput } from '../../../types/models';
 import { AppModal } from '../../ui/AppModal';
 import { Field, Check, NumberInput } from './fields';
 import type { ModelFeedbackProps } from './types';
-import { kinds, runtimeFamilyKey, runtimeBuild, selectManagedRuntime } from './profileDefaults';
+import { kinds, localEngine, updateModel } from './profileDefaults';
 import { CudaLayersField } from './CudaLayersField';
 import { PresetVoices } from './PresetVoices';
 
@@ -26,19 +26,18 @@ export function ProfileEditor({
   setModel: Dispatch<SetStateAction<ProfileDraft | null>>;
 }) {
   const { t } = useTranslation('llm');
-  const { providers, catalog, profiles } = useModelsStore();
-  const runtimeEntries = catalog.filter((entry) => entry.kinds.includes(model?.value.kind as ModelInput['kind'])
-    || entry.runtime_id === model?.value.runtime_id && entry.variant === model?.value.runtime_variant);
-  const transformers = model?.value.runtime_variant === 'transformers-cuda';
-  const audio = model?.value.runtime_variant === 'audio-cuda';
+  const { backends, profiles } = useModelsStore();
+  const engine = model ? localEngine(model.value) : null;
+  const transformers = engine === 'transformers';
+  const audio = engine === 'chatterbox' || engine === 'qwen3tts';
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
     setRemoteModels([]);
-    const id = model?.value.provider_profile_id;
-    if (id)
+    const id = model?.value.backend_profile_id;
+    if (id && id !== 'local')
       void modelsApi
-        .listProviderModels(id)
+        .listBackendModels(id)
         .then((value) => {
           if (!cancelled) setRemoteModels(value.models);
         })
@@ -48,9 +47,9 @@ export function ProfileEditor({
     return () => {
       cancelled = true;
     };
-  }, [model?.value.provider_profile_id, setError]);
+  }, [model?.value.backend_profile_id, setError]);
   const patchModel = (patch: Partial<ModelInput>) =>
-    setModel((draft) => (draft ? { ...draft, value: { ...draft.value, ...patch } } : null));
+    setModel((draft) => (draft ? { ...draft, value: updateModel(draft.value, patch) } : null));
   return (
     <AppModal
       open={!!model}
@@ -96,60 +95,26 @@ export function ProfileEditor({
                 </select>
               </Field>
               <Field label={t('backend')}>
-                <select
-                  value={model.value.runtime_id ? 'managed' : 'external'}
-                  onChange={(e) => {
-                    if (e.target.value === 'managed') {
-                      const entry = runtimeEntries.find((entry) => entry.supported && entry.kinds.includes(model.value.kind));
-                      if (entry) patchModel(selectManagedRuntime(model.value, entry));
-                    } else patchModel({ provider_profile_id: null, runtime_id: null, runtime_variant: null, runtime_options: {} });
-                  }}
-                >
-                  <option value="external">{model.value.kind === 'tts' ? t('unavailableBackend') : 'OpenAI Compatible'}</option>
-                  <option value="managed" disabled={!runtimeEntries.some((entry) => entry.supported && entry.kinds.includes(model.value.kind))}>{t('managedBackend')}</option>
+                <select value={model.value.backend_profile_id || ''}
+                  onChange={(e) => patchModel({ backend_profile_id: e.target.value || null })}>
+                  <option value="">{t('unavailableBackend')}</option>
+                  {backends.filter((backend) => backend.type === 'local'
+                    ? ['llm', 'tts'].includes(model.value.kind) : model.value.kind !== 'tts').map((backend) => (
+                    <option value={backend.id} key={backend.id}>
+                      {backend.type === 'local' ? t('localBackend') : backend.name}{backend.enabled ? '' : ` (${t('disabled')})`}
+                    </option>
+                  ))}
                 </select>
               </Field>
-              {model.value.runtime_id ? (
-                <Field label={t('runtimeVariant')}>
-                  <select
-                    value={`${model.value.runtime_id}/${model.value.runtime_variant}`}
-                    onChange={(e) => {
-                      const entry = runtimeEntries.find((entry) => `${entry.runtime_id}/${entry.variant}` === e.target.value);
-                      if (entry) patchModel(selectManagedRuntime(model.value, entry));
-                    }}
-                  >
-                    {runtimeEntries.map((entry) => (
-                        <option key={`${entry.runtime_id}/${entry.variant}`} value={`${entry.runtime_id}/${entry.variant}`} disabled={!entry.supported || !entry.kinds.includes(model.value.kind)}>
-                          {t('runtimeFamilies.' + runtimeFamilyKey(entry.runtime_id, entry.variant))} / {runtimeBuild(entry.variant)}
-                          {entry.supported && entry.kinds.includes(model.value.kind) ? '' : ` (${t(entry.reason === 'RUNTIME_NOT_IMPLEMENTED' ? 'runtimeNotImplemented' : 'runtimeStates.unsupported')})`}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-              ) : model.value.kind !== 'tts' ? (
-                <Field label={t('provider')}>
-                  <select
-                    value={model.value.provider_profile_id || ''}
-                    onChange={(e) => patchModel({ provider_profile_id: e.target.value || null })}
-                  >
-                    <option value="">{t('unavailableBackend')}</option>
-                    {providers.map((p) => (
-                      <option value={p.id} key={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              ) : null}
               <Field label={t('modelRef')}>
                 <input
                   required
-                  list="provider-models"
+                  list="backend-models"
                   value={model.value.model_ref}
                   onChange={(e) => patchModel({ model_ref: e.target.value })}
                 />
               </Field>
-              <datalist id="provider-models">
+              <datalist id="backend-models">
                 {remoteModels.map((id) => (
                   <option key={id} value={id} />
                 ))}
@@ -167,44 +132,30 @@ export function ProfileEditor({
                 />
               </div>
             </div>
-            {model.value.runtime_id ? (
+            {engine ? (
               <>
-                <h3>{t('runtimeOptions')}</h3>
+                <h3>{t('executionOptions')}</h3>
+                <p className="model-empty">{t('engine')}: {t('engines.' + engine)}</p>
                 <div className="model-form-grid">
-                  {(model.value.runtime_id === 'llama-server'
-                    ? [
-                        ['threads', 4, 1, 256],
-                        ['context_size', 4096, 512, 1048576],
-                        ['batch_size', 512, 1, 4096],
-                        ['gpu_layers', 0, 0, model.value.runtime_variant === 'cpu' ? 0 : 999],
-                      ]
-                    : [['intraop_threads', 4, 1, 256]]
-                  ).filter(([key]) => key !== 'gpu_layers' || model.value.runtime_variant !== 'cuda').map(([key, value, min, max]) => (
-                    <NumberInput
-                      key={key}
-                      label={t('runtimeParams.' + key)}
-                      value={Number(model.value.runtime_options[String(key)] ?? value)}
-                      min={Number(min)}
-                      max={Number(max)}
-                      onChange={(v) =>
-                        patchModel({
-                          runtime_options: { ...model.value.runtime_options, [String(key)]: v ?? Number(value) },
-                        })
-                      }
-                    />
+                  <Field label={t('runtimeDevice')}>
+                    <select value={String(model.value.execution_options.device)} disabled={engine === 'kokoro'}
+                      onChange={(e) => patchModel({ execution_options: {
+                        ...model.value.execution_options, device: e.target.value,
+                        ...(engine === 'llama-server' ? { gpu_layers: e.target.value === 'cpu' ? 0 : 'auto' } : {}),
+                      } })}>
+                      <option value="cuda">NVIDIA CUDA</option><option value="cpu">CPU</option>
+                    </select>
+                  </Field>
+                  {(engine === 'llama-server'
+                    ? [['threads', 4, 1, 256], ['context_size', 4096, 512, 1048576], ['batch_size', 512, 1, 4096]]
+                    : [['intraop_threads', 4, 1, 256]]).map(([key, initial, min, max]) => (
+                    <NumberInput key={String(key)} label={t('runtimeParams.' + key)}
+                      value={Number(model.value.execution_options[String(key)] ?? initial)} min={Number(min)} max={Number(max)}
+                      onChange={(value) => patchModel({ execution_options: { ...model.value.execution_options, [String(key)]: value ?? Number(initial) } })} />
                   ))}
-                  {transformers || audio ? (
-                    <Field label={t('runtimeDevice')}>
-                      <select value={String(model.value.runtime_options.device ?? 'cuda')}
-                        onChange={(e) => patchModel({ runtime_options: { ...model.value.runtime_options, device: e.target.value } })}>
-                        <option value="cuda">NVIDIA CUDA</option>
-                        <option value="cpu">CPU</option>
-                      </select>
-                    </Field>
-                  ) : null}
-                  {model.value.runtime_variant === 'cuda' ? (
-                    <CudaLayersField value={typeof model.value.runtime_options.gpu_layers === 'number' ? model.value.runtime_options.gpu_layers : 'auto'}
-                      onChange={(gpu_layers) => patchModel({ runtime_options: { ...model.value.runtime_options, gpu_layers } })} />
+                  {engine === 'llama-server' && model.value.execution_options.device === 'cuda' ? (
+                    <CudaLayersField value={typeof model.value.execution_options.gpu_layers === 'number' ? model.value.execution_options.gpu_layers : 'auto'}
+                      onChange={(gpu_layers) => patchModel({ execution_options: { ...model.value.execution_options, gpu_layers } })} />
                   ) : null}
                 </div>
                 {transformers ? <p className="model-empty">{t('transformersDeviceHint')}</p> : null}
@@ -220,7 +171,7 @@ export function ProfileEditor({
                       key={key}
                       label={t('cap.' + key)}
                       checked={model.value.capabilities[key]}
-                      disabled={(model.value.runtime_id === 'llama-server' && key === 'vision') || (transformers && ['vision', 'json_object', 'json_schema'].includes(key))}
+                      disabled={(engine === 'llama-server' && key === 'vision') || (transformers && ['vision', 'json_object', 'json_schema'].includes(key))}
                       onChange={(v) => patchModel({ capabilities: { ...model.value.capabilities, [key]: v } })}
                     />
                   ))}

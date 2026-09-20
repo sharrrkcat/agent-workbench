@@ -40,3 +40,20 @@ and the plan lifecycle.
 Each implementation round reports changed files, commands and results,
 API/settings/workflow changes, and remaining limitations. Run backend tests,
 frontend tests/build and relevant checks, and `scripts/check_docs_size.py`.
+
+## Runtime verification and acceptance
+
+- Keep installation checks at artifact and installation boundaries: downloaded
+  archives and locked dependencies, dependency consistency, offline engine imports,
+  native programs, release identity, entry points and path containment.
+- Do not require full installed-environment per-file hash inventories or comparisons.
+  Removing the current implementation remains pending under
+  [future services](docs/FUTURE_MODEL_SERVICES.md#installation-verification).
+  Do not replace it with another whole-environment scanning subsystem.
+- Routine Chatterbox, Qwen3-TTS and Whisper acceptance uses CUDA only. Add CPU
+  checks only for affected CPU execution, device selection, dtype or inference
+  dependency changes; CUDA results do not establish CPU compatibility. Kokoro
+  retains its CPU checks.
+- Reuse a verified installation for routine inference acceptance. Exercise
+  installation/repair/uninstall when their behavior or artifacts change, or when
+  explicitly required. The [README](README.md#verification) owns commands.

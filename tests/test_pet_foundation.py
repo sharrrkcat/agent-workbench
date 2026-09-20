@@ -9,7 +9,7 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
-from ai_workbench.db.models import AppMetadataRecord, ModelProfileRecord, PersonaRecord, RunRecord
+from ai_workbench.db.models import AppMetadataRecord, PersonaRecord, RunRecord
 from ai_workbench.db.stores import SqlAppSettingsStore
 
 
@@ -64,11 +64,15 @@ def test_position_api_is_strict_shared_and_has_no_package_flow(tmp_path, use_mem
 def test_pet_revision_resets_settings_only_and_new_position_survives_restart(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     migrations.upgrade(engine, migrations.CHAT_CONFIGURATION_REVISION)
+    with engine.begin() as db:
+        db.exec_driver_sql("""INSERT INTO model_profiles
+            (id,alias,name,kind,model_ref,capabilities_json,parameters_json,lifecycle_json,
+             enabled,external_enabled,created_at,updated_at)
+            VALUES ('model','model','Model','llm','manual','{}','{}','{}',1,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""")
     with Session(engine) as db:
         db.add(AppMetadataRecord(key="app_settings", value=json.dumps({"core_memory_content": "Disposable",
             "pet": {"pet_enabled": True, "default_pet_id": "old", "bubble_texts": {"done": "Done"}}})))
         db.add(AppMetadataRecord(key="model_settings", value='{"external_enabled":false}'))
-        db.add(ModelProfileRecord(id="model", name="Model", alias="model", kind="llm", model_ref="manual"))
         db.add(PersonaRecord(id="persona", name="Keep", system_prompt="Keep"))
         db.add(RunRecord(run_id="run", kind="chat", session_id="session", persona_id="persona", status="DONE"))
         db.commit()

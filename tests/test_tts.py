@@ -35,7 +35,18 @@ def wav_bytes():
     return stream.getvalue()
 
 
+def language_tree(root):
+    path = root / "data/models/_auxiliary/en_core_web_sm"
+    for name in ("config.cfg", "tokenizer", "tok2vec/model", "tagger/model", "vocab/strings.json"):
+        file = path / name
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_bytes(b"fixture")
+    (path / "meta.json").write_text(json.dumps({"version": "3.7.1", "lang": "en"}))
+    return path
+
+
 def model_tree(root):
+    language_tree(root)
     path = root / "data/models/tts/kokoro"
     (path / "voices").mkdir(parents=True)
     (path / "config.json").write_text(json.dumps({"model_type": "style_text_to_speech_2"}))
@@ -51,8 +62,7 @@ def model_tree(root):
 def api(tmp_path):
     path = model_tree(tmp_path)
     with TestClient(create_app(use_memory=True, root=tmp_path), client=("127.0.0.1", 40001)) as client:
-        response = client.post("/api/models/profiles", json={"name": "Kokoro", "alias": "kokoro", "kind": "tts",
-            "runtime_id": "python-worker", "runtime_variant": "onnx-cpu", "model_ref": "tts/kokoro", "external_enabled": True})
+        response = client.post("/api/models/profiles", json={'name': 'Kokoro', 'alias': 'kokoro', 'kind': 'tts', 'model_ref': 'tts/kokoro', 'external_enabled': True, 'backend_profile_id': 'local'})
         assert response.status_code == 200, response.text
         client.patch("/api/models/settings", json={"external_enabled": True, "external_api_key": "test-key"})
         yield client, response.json(), path
@@ -152,14 +162,13 @@ def test_long_phonemes_are_complete_and_bounded():
 def test_tts_backend_and_catalog_constraints():
     values = dict(name="TTS", alias="tts", kind="tts", model_ref="tts/kokoro")
     assert ModelInput(**values).parameters == {"architecture": "kokoro", "speed": 1.0, "response_format": "mp3"}
-    for binding in ({"provider_profile_id": "external"}, {"runtime_id": "python-worker", "runtime_variant": "torch-cpu"},
-                    {"runtime_id": "python-worker", "runtime_variant": "onnx-gpu"},
-                    {"runtime_id": "python-worker", "runtime_variant": "audio-cuda"}):
+    assert ModelInput(**values, backend_profile_id="local").execution_options["device"] == "cpu"
+    for binding in ({"backend_profile_id": "external"}, {"runtime_id": "python-worker"},
+                    {"backend_profile_id": "local", "execution_options": {"device": "cuda"}}):
         with pytest.raises(ValidationError):
             ModelInput(**values, **binding)
-    for system in ("windows", "linux"):
-        entry = next(item for item in catalog(system, "x86_64") if item.variant == "onnx-cpu")
-        assert entry.supported and entry.kinds == ["tts"]
+    assert catalog("windows", "x86_64").supported
+    assert not catalog("linux", "x86_64").supported
     speech_request({"input": "Hello", "voice": "af_heart", "speed": 0.25, "response_format": "wav", "language": "en-US"})
     with pytest.raises(WorkerError):
         speech_request({"input": "Hello", "voice": "af_heart", "speed": True, "response_format": "wav", "language": None})
@@ -177,9 +186,9 @@ def test_binary_validation():
 
 def test_worker_binary_transport_and_cancellation():
     async def scenario():
-        entry = next(item for item in catalog() if item.variant == "onnx-cpu")
-        adapter = PythonWorkerAdapter(SimpleNamespace(entry=lambda *args: entry),
-            SimpleNamespace(runtime_id="python-worker", runtime_variant="onnx-cpu"), lambda: None)
+        entry = catalog()
+        adapter = PythonWorkerAdapter(SimpleNamespace(release=entry),
+            ModelInput(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", backend_profile_id="local"), lambda: None)
         started = asyncio.Event()
         release = asyncio.Event()
         async def handle(request):
@@ -226,8 +235,7 @@ def test_real_http_disconnect_cancels_speech_before_lease_release(tmp_path):
     with serve(app) as base:
         with httpx.Client(base_url=base) as client:
             client.patch('/api/models/settings', json={"external_enabled": True, "external_api_key": "test-key"}).raise_for_status()
-            client.post('/api/models/profiles', json={"name": "Kokoro", "alias": "kokoro", "kind": "tts", "model_ref": "tts/kokoro",
-                "runtime_id": "python-worker", "runtime_variant": "onnx-cpu", "external_enabled": True}).raise_for_status()
+            client.post('/api/models/profiles', json={'name': 'Kokoro', 'alias': 'kokoro', 'kind': 'tts', 'model_ref': 'tts/kokoro', 'external_enabled': True, 'backend_profile_id': 'local'}).raise_for_status()
         body = json.dumps(PAYLOAD).encode()
         with socket.create_connection(('127.0.0.1', urlsplit(base).port), timeout=5) as connection:
             connection.sendall((f'POST /v1/audio/speech HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-key\r\n'
@@ -238,26 +246,3 @@ def test_real_http_disconnect_cancels_speech_before_lease_release(tmp_path):
         wait_until(lambda: log.exists() and "REQUEST_CANCELLED" in log.read_text())
         record = json.loads(log.read_text().splitlines()[-1])
         assert record["status_code"] == 499 and record["error_code"] == "REQUEST_CANCELLED"
-
-
-def test_tts_migration_preserves_profiles_and_files(tmp_path):
-    from ai_workbench.db import migrations
-    from ai_workbench.db.database import get_engine
-    from ai_workbench.core.models.store import ModelProfileStore
-    from ai_workbench.core.models.schema import ModelProfile
-    engine = get_engine(f'sqlite:///{tmp_path / "migration.db"}')
-    migrations.upgrade(engine, migrations.RUNTIME_MAINTENANCE_REVISION)
-    store = ModelProfileStore(engine)
-    original = store.create(ModelProfile(name="Existing", alias="existing", kind="llm", model_ref="existing"))
-    original = store.get(original.id)
-    file = tmp_path / 'protected.bin'
-    file.write_bytes(b'preserved')
-    before = file.stat().st_mtime_ns
-    migrations.upgrade(engine)
-    assert store.get(original.id) == original
-    tts = store.create(ModelProfile(name="TTS", alias="tts", kind="tts", model_ref="tts/kokoro"))
-    tts = store.get(tts.id)
-    migrations.upgrade(engine)
-    assert store.get(tts.id) == tts
-    assert file.read_bytes() == b'preserved' and file.stat().st_mtime_ns == before
-    engine.dispose()

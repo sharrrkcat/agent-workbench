@@ -9,12 +9,12 @@ import wave
 
 if __package__:
     from .protocol import WorkerError
-    from .tts_catalog import FORMATS, LANGUAGES, MAX_AUDIO_BYTES, MAX_TOKENS, SAMPLE_RATE, valid_voice, voice_file
+    from .tts_catalog import FORMATS, LANGUAGES, MAX_AUDIO_BYTES, MAX_TOKENS, SAMPLE_RATE, language_model, valid_voice, voice_file
     from .audio import validate_audio
     from .timing import stage
 else:
     from protocol import WorkerError
-    from tts_catalog import FORMATS, LANGUAGES, MAX_AUDIO_BYTES, MAX_TOKENS, SAMPLE_RATE, valid_voice, voice_file
+    from tts_catalog import FORMATS, LANGUAGES, MAX_AUDIO_BYTES, MAX_TOKENS, SAMPLE_RATE, language_model, valid_voice, voice_file
     from audio import validate_audio
     from timing import stage
 
@@ -50,10 +50,8 @@ def phoneme_chunks(phonemes: str, encode):
         yield encode(current)
 
 
-def language_processors():
+def language_processors(path):
     with stage("language_imports"):
-        with stage("language_imports.importlib_metadata"):
-            import importlib.metadata
         with stage("language_imports.spacy"):
             import spacy
         with stage("language_imports.misaki.en"):
@@ -67,14 +65,13 @@ def language_processors():
         with stage("language_imports.jieba"):
             import jieba
     with stage("language_resources"):
-        if importlib.metadata.version("en-core-web-sm") != "3.7.1" or not spacy.util.is_package("en_core_web_sm"):
-            raise WorkerError("RUNTIME_BROKEN", 503)
+        nlp = spacy.load(path, enable=["tok2vec", "tagger"])
     logging.getLogger("jieba").setLevel(logging.ERROR)
     jieba.setLogLevel(logging.ERROR)
     processors = {}
     for code, build in (
-        ("a", lambda: en.G2P(trf=False, british=False, fallback=espeak.EspeakFallback(british=False))),
-        ("b", lambda: en.G2P(trf=False, british=True, fallback=espeak.EspeakFallback(british=True))),
+        ("a", lambda: en.G2P(nlp=nlp, british=False, fallback=espeak.EspeakFallback(british=False))),
+        ("b", lambda: en.G2P(nlp=nlp, british=True, fallback=espeak.EspeakFallback(british=True))),
         ("j", Cutlet), ("z", lambda: zh.ZHG2P(version=None)),
     ):
         with stage(f"language.{LANGUAGES[code]}.build"):
@@ -92,8 +89,12 @@ def language_processors():
 
 
 class TTSEngine:
-    def __init__(self, path: Path, kind, params, options):
+    def __init__(self, path: Path, kind, params, options, *, models_root: Path):
         require_offline()
+        try:
+            language_path = language_model(models_root)
+        except (OSError, ValueError) as exc:
+            raise WorkerError("MODEL_NOT_FOUND", 404) from exc
         with stage("engine_imports"):
             with stage("engine_imports.numpy"):
                 import numpy as np
@@ -128,7 +129,7 @@ class TTSEngine:
                     or len(outputs[0].shape) != 2 or outputs[0].shape[0] != 1):
                 raise WorkerError("MODEL_UNAVAILABLE", 503)
         with stage("language_frontends"):
-            self.processors = language_processors()
+            self.processors = language_processors(language_path)
         self.voices = {}
 
     def speech(self, text, voice, speed, response_format, language):

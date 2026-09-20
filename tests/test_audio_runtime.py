@@ -23,98 +23,15 @@ from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, wor
 from ai_workbench.core.models.runtimes.process import RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeJob
 from ai_workbench.core.models.schema import SpeechRequest
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers import audio_engine
 from ai_workbench.workers.audio_catalog import CHATTERBOX_FILES, audio_model, reference_path
 from ai_workbench.workers.audio_server import AudioWorker
 from ai_workbench.workers.common import WorkerError
-from scripts.build_audio_wheel import VERSION, patched_wheel
 from tests.test_audio import profile
 from tests.test_phase2b_runtime import supervisor
 from tests.test_tts import wav_bytes
-
-
-def test_audio_catalog_lock_and_patched_artifact_are_auditable(tmp_path):
-    entries = {entry.variant: entry for entry in catalog("windows", "x86_64")}
-    entry = entries["audio-cuda"]
-    assert entry.supported and entry.python_version == "3.12.11" and entry.kinds == ["tts"]
-    assert entry.python_artifact.sha256 and entry.worker_entrypoint == "audio_server.py"
-    assert entry.pytorch_index_url == "https://download.pytorch.org/whl/cu124"
-    assert not next(e for e in catalog("linux", "x86_64") if e.variant == "audio-cuda").supported
-    assert not set(entries["onnx-cpu"].worker_files) & {"audio_catalog.py", "audio_engine.py", "audio_server.py"}
-    for name in entry.worker_files:
-        (tmp_path / name).write_text(name)
-    digest = worker_digest(entry.worker_files, tmp_path)
-    (tmp_path / "transformers_engine.py").write_text("unrelated")
-    assert worker_digest(entry.worker_files, tmp_path) == digest
-    (tmp_path / "audio_engine.py").write_text("changed")
-    assert worker_digest(entry.worker_files, tmp_path) != digest
-    lock = (CATALOG_ROOT / entry.requirements).read_text(encoding="utf-8")
-    packages, current = {}, None
-    for line in lock.splitlines():
-        if not line or line.lstrip().startswith("#"):
-            continue
-        if line[0].isspace():
-            assert current and line.strip().startswith("--hash=sha256:")
-            packages[current][1].append(line.strip().removeprefix("--hash=sha256:").rstrip(" \\"))
-        else:
-            current, version = line.rstrip(" \\").split("==")
-            packages[current] = (version, [])
-    expected = {"torch": "2.6.0+cu124", "torchaudio": "2.6.0+cu124", "transformers": "4.57.3", "numpy": "1.26.4",
-                "chatterbox-tts": VERSION, "qwen-tts": "0.1.1"}
-    assert {name: packages[name][0] for name in expected} == expected
-    assert all(hashes and all(len(value) == 64 for value in hashes) for _, hashes in packages.values())
-    assert {"conformer", "diffusers", "omegaconf", "pykakasi", "resemble-perth", "s3tokenizer", "spacy-pkuseg",
-            "pyloudnorm", "librosa", "soundfile", "onnxruntime", "setuptools", "wheel"} <= packages.keys()
-    wheel = CATALOG_ROOT / "wheels" / f"chatterbox_tts-{VERSION}-py3-none-any.whl"
-    assert hashlib.sha256(wheel.read_bytes()).hexdigest() in packages["chatterbox-tts"][1]
-    with zipfile.ZipFile(wheel) as archive:
-        metadata = BytesParser().parsebytes(archive.read(f"chatterbox_tts-{VERSION}.dist-info/METADATA"))
-        assert metadata["Version"] == VERSION
-        assert "transformers==4.57.3" in metadata.get_all("Requires-Dist")
-        patch = json.loads(archive.read(f"chatterbox_tts-{VERSION}.dist-info/WORKBENCH_PATCH.json"))
-        assert patch["upstream_sha256"] and not patch["source_changes"]
-        record = archive.read(f"chatterbox_tts-{VERSION}.dist-info/RECORD").decode()
-        for name, digest, size in csv.reader(StringIO(record)):
-            if not digest:
-                continue
-            data = archive.read(name)
-            assert len(data) == int(size)
-            assert digest == "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
-    with pytest.raises(ValueError, match="checksum"):
-        patched_wheel(b"unverified input")
-
-
-def test_audio_installer_checks_dependencies_and_offline_imports(tmp_path, monkeypatch):
-    async def scenario():
-        service = supervisor(tmp_path)
-        service.entries = catalog("windows", "x86_64")
-        entry = service.entry("python-worker", "audio-cuda")
-        calls = []
-
-        async def command(args, env, cwd, log):
-            args = list(map(str, args))
-            calls.append((args, dict(env)))
-            if "venv" in args:
-                Path(args[-1]).mkdir(parents=True)
-
-        service._command = command
-        monkeypatch.setattr(service, "_uv", lambda: "bundled-uv")
-        job = RuntimeJob(runtime_id="python-worker", variant="audio-cuda", version=entry.version, operation="install")
-        await service._install_python(entry, tmp_path / "payload", job, RuntimeLog(tmp_path / "log", tmp_path))
-        assert len(calls) == 5
-        install = calls[2][0]
-        assert "--require-hashes" in install and install[install.index("--only-binary") + 1] == ":all:"
-        assert set(install[install.index("--no-binary") + 1].split(",")) == {"antlr4-python3-runtime", "sox"}
-        assert install[install.index("--find-links") + 1] == str(CATALOG_ROOT / "wheels")
-        assert install[install.index("--build-constraints") + 1] == str(CATALOG_ROOT / entry.requirements)
-        assert calls[3][0][1:3] == ["pip", "check"]
-        assert calls[4][1]["HF_HUB_OFFLINE"] == calls[4][1]["TRANSFORMERS_OFFLINE"] == "1"
-        assert all(name in calls[4][0][-2] for name in ("require_offline", "ChatterboxTTS", "Qwen3TTSModel", "WhisperProcessor"))
-        assert set(path.name for path in (tmp_path / "payload/worker").iterdir()) == set(entry.worker_files)
-        await service.close()
-    asyncio.run(scenario())
 
 
 def fake_decoder(monkeypatch, frames, *, rate=16000, file_format="WAV", finite=True):
@@ -250,6 +167,8 @@ class ChatterboxEngine:
     device_name = 'CPU'
     dtype = 'torch.float32'
     def __init__(self, path, options): pass
+    def transcribe(self, path):
+        return {'text': 'private worker transcript'}
     def speech(self, text, reference, speed, response_format, model_options, **conditioning):
         if text == 'wait': time.sleep(60)
         if text == 'crash': os._exit(7)
@@ -262,26 +181,65 @@ QwenTTSEngine = WhisperEngine = ChatterboxEngine
 '''
 
 
+async def installed_audio(tmp_path):
+    service = supervisor(tmp_path)
+    service.release.python_executable = "env/Scripts/python.exe" if sys.platform == "win32" else "env/bin/python"
+
+    async def install(entry, target, job, log):
+        await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target / "env")
+        source = Path(__file__).parents[1] / "ai_workbench/workers"
+        shutil.copytree(source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
+        (target / "worker/audio_engine.py").write_text(FAKE_AUDIO, encoding="utf-8")
+
+    service._install_python = install
+    await service.submit('install')
+    await service.task
+    assert service.installation().state == "installed"
+    return service
+
+
+def test_private_whisper_uses_audio_process_and_manager_admission(tmp_path):
+    async def scenario():
+        service = await installed_audio(tmp_path)
+        manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        private = SimpleNamespace(id="private-asr", kind="asr", backend_profile_id="local",
+            model_ref="asr/whisper", parameters={"architecture": "whisper"},
+            execution_options={"device": "cpu", "intraop_threads": 4})
+        path = tmp_path / "data/models/asr/whisper"
+        path.mkdir(parents=True)
+        (path / "config.json").write_text('{}')
+        (path / "model.safetensors").write_bytes(b'fixture')
+        backend = manager.backend_key(private)
+        other = SimpleNamespace(**{**vars(private), "id": "other-asr"})
+        assert manager.backend_key(other) != backend
+        try:
+            async with manager._provider_lease(backend, (backend, private.id), private) as slot:
+                slot.adapter.validation = True
+                loaded = await slot.adapter.load(private, explicit=True)
+                assert loaded.runtime.engine == 'whisper' and loaded.residency == 'loaded'
+                assert slot.active == 1
+                reference = await manager._stage_reference(wav_bytes(), 'wav')
+                try:
+                    assert await slot.adapter.transcribe(private, reference.path.name) == {'text': 'private worker transcript'}
+                finally:
+                    manager.voice_references.release(reference)
+                process = slot.adapter.process
+                await slot.adapter.unload(private)
+                assert process.process.returncode is not None
+            assert slot.active == 0
+        finally:
+            await manager.close()
+            await service.close()
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("architectures", [("chatterbox", "chatterbox"), ("qwen3tts", "chatterbox"), ("qwen3tts", "qwen3tts")])
 def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(tmp_path, monkeypatch, architectures):
     from tests.test_model_loading import forbid_install_checks
     async def scenario():
-        service = supervisor(tmp_path)
-        entry = next(item for item in catalog("windows", "x86_64") if item.variant == "audio-cuda").model_copy(update={"version": "fixture"})
-        service.entries = [entry]
-
-        async def install(entry, target, job, log):
-            await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target)
-            source = Path(__file__).parents[1] / "ai_workbench/workers"
-            shutil.copytree(source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
-            (target / "worker/audio_engine.py").write_text(FAKE_AUDIO, encoding="utf-8")
-
-        service._install_python = install
-        await service.submit("python-worker", "audio-cuda", "install")
-        await service.task
-        assert service.installation("python-worker", "audio-cuda").state == "installed"
+        service = await installed_audio(tmp_path)
         forbid_install_checks(monkeypatch, service)
-        manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
         manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
         path = tmp_path / "data/models/tts/chatterbox"
         path.mkdir(parents=True)
@@ -290,7 +248,7 @@ def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(
         assert audio_model(tmp_path / "data/models", "tts/chatterbox", "chatterbox") == path
         from tests.audio_fixtures import qwen_model
         qwen_model(tmp_path / "data/models/tts/qwen")
-        first, second = [manager.profiles.create(profile(alias=alias, runtime_options={"device": "cpu"},
+        first, second = [manager.profiles.create(profile(alias=alias, execution_options={"device": "cpu"},
             model_ref="tts/qwen" if architecture == "qwen3tts" else "tts/chatterbox", parameters={"architecture": architecture}))
             for alias, architecture in zip(("first", "second"), architectures)]
         try:
@@ -307,7 +265,7 @@ def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(
             while not manager.status(first.id).active:
                 await asyncio.sleep(0.01)
             with pytest.raises(ModelError) as busy:
-                await service.submit("python-worker", "audio-cuda", "uninstall")
+                await service.submit('uninstall')
             assert busy.value.code == "MODEL_BUSY"
             old_process = left.process
             pending.cancel()
@@ -325,7 +283,7 @@ def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(
             await manager.load(first.id)
             await manager.unload(first.id)
             assert left.process is None and right.process is right_process
-            await manager.invalidate_runtime("python-worker", "audio-cuda")
+            await manager.invalidate_local()
             assert right.process is None and right_process.process.returncode is not None
         finally:
             await manager.close()

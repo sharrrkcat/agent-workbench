@@ -42,13 +42,11 @@ def scan_storage(base: Path) -> RuntimeStorage:
         parts = path.relative_to(base).parts
         if parts and parts[0] in groups:
             return parts[0]
-        if len(parts) >= 3 and parts[0] in {"llama-server", "py"}:
-            key = "/".join(parts[:3])
+        if len(parts) >= 2 and parts[0] == "local":
+            key = "/".join(parts[:2])
             if key not in groups:
-                is_llama = parts[0] == "llama-server"
                 groups[key] = StorageGroup(id=key, category="runtime", relative_path=key,
-                    runtime_id="llama-server" if is_llama else "python-worker",
-                    version=parts[1] if is_llama else parts[2], variant=parts[2] if is_llama else parts[1])
+                    backend_profile_id="local", version=parts[1])
             return key
         return "other"
 

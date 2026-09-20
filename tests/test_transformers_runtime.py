@@ -19,7 +19,7 @@ from ai_workbench.core.models.runtimes.catalog import catalog, worker_digest
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatChunk, ChatRequest, ModelProfile
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeSettingsRecord, SessionRecord
@@ -29,34 +29,13 @@ from ai_workbench.workers.transformers_server import build_app, chat_request, op
 
 
 def profile(**values):
-    return ModelProfile(**{**dict(name="Transformers", alias="transformers", kind="llm",
-        runtime_id="python-worker", runtime_variant="transformers-cuda", model_ref="llms/local",
-        capabilities={"streaming": True, "tools": True}), **values})
-
-
-def test_family_catalog_pins_complete_windows_release_and_isolates_sources(tmp_path):
-    entries = {entry.variant: entry for entry in catalog("windows", "x86_64")}
-    entry = entries["transformers-cuda"]
-    assert entry.supported and entry.python_version == "3.12.11"
-    assert entry.python_artifact.sha256 and entry.python_key == "cpython-3.12.11-windows-x86_64-none"
-    assert entry.pytorch_index_url == "https://download.pytorch.org/whl/cu128"
-    assert entry.worker_entrypoint == "transformers_server.py"
-    assert not {"tts_engine.py", "engines.py"} & set(entry.worker_files)
-    assert "transformers_engine.py" not in entries["onnx-cpu"].worker_files
-    assert not next(e for e in catalog("linux", "x86_64") if e.variant == "transformers-cuda").supported
-    for name in entry.worker_files:
-        (tmp_path / name).write_text(name)
-    before = worker_digest(entry.worker_files, tmp_path)
-    (tmp_path / "tts_engine.py").write_text("unrelated")
-    assert worker_digest(entry.worker_files, tmp_path) == before
-    (tmp_path / "transformers_engine.py").write_text("changed")
-    assert worker_digest(entry.worker_files, tmp_path) != before
+    return ModelProfile(**{**dict(name='Transformers', alias='transformers', kind='llm', model_ref='llms/local', capabilities={'streaming': True, 'tools': True}, backend_profile_id='local'), **values})
 
 
 @pytest.mark.parametrize("patch", [
     {"runtime_variant": "torch-cpu"}, {"runtime_variant": "torch-cu128"},
-    {"kind": "embedding"}, {"runtime_options": {"device": "auto"}},
-    {"runtime_options": {"intraop_threads": True}}, {"runtime_options": {"dtype": "float16"}},
+    {"kind": "embedding"}, {"execution_options": {"device": "auto"}},
+    {"execution_options": {"intraop_threads": True}}, {"execution_options": {"dtype": "float16"}},
     {"capabilities": {"vision": True}}, {"capabilities": {"json_schema": True}},
     {"parameters": {"presence_penalty": 0.1}}, {"parameters": {"frequency_penalty": -0.1}},
 ])
@@ -66,14 +45,14 @@ def test_transformers_profile_rejects_unimplemented_combinations(patch):
 
 
 def test_alias_identity_devices_and_request_limits(tmp_path):
-    supervisor = RuntimeSupervisor(tmp_path, RuntimeStore())
-    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
+    manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     first, alias = profile(), profile(alias="alias")
-    cpu = profile(alias="cpu", runtime_options={"device": "cpu"})
+    cpu = profile(alias="cpu", execution_options={"device": "cpu"})
     assert manager.backend_key(first) == manager.backend_key(alias)
     assert manager._key(first) == manager._key(alias)
     assert manager.backend_key(first) != manager.backend_key(cpu)
-    assert first.runtime_options == {"device": "cuda", "intraop_threads": 4}
+    assert first.execution_options == {"device": "cuda", "intraop_threads": 4}
     request = ChatRequest(model=first.alias, messages=[{"role": "user", "content": "hello"}])
     manager.validate_chat(first, request)
     for values in ({"presence_penalty": 0.2}, {"frequency_penalty": -0.1},
@@ -139,8 +118,8 @@ def test_private_server_authentication_and_local_text_boundary():
 
 def test_transformers_stream_closure_stops_process_before_returning():
     async def scenario():
-        entry = next(e for e in catalog("windows", "x86_64") if e.variant == "transformers-cuda")
-        adapter = TransformersServerAdapter(SimpleNamespace(entry=lambda *_: entry), profile(), lambda: None)
+        entry = catalog("windows", "x86_64")
+        adapter = TransformersServerAdapter(SimpleNamespace(release=entry), profile(), lambda: None)
         stopped = asyncio.Event()
         adapter._stop = AsyncMock(side_effect=lambda: stopped.set())
         adapter.tool_calls_supported = True
@@ -157,37 +136,3 @@ def test_transformers_stream_closure_stops_process_before_returning():
         assert stopped.is_set()
         adapter._stop.assert_awaited_once()
     asyncio.run(scenario())
-
-
-def test_runtime_migration_discards_only_excluded_configuration_and_preserves_files(tmp_path):
-    engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
-    migrations.upgrade(engine, migrations.TTS_REVISION)
-    profiles = ModelProfileStore(engine)
-    removed = profiles.create(ModelProfile(name="Old", alias="old", kind="embedding", model_ref="embeddings/old"))
-    kept = profiles.create(ModelProfile(name="Kept", alias="kept", kind="llm", model_ref="external"))
-    settings = ModelSettingsStore(engine)
-    settings.patch({"default_model_profile_id": removed.id, "utility_model_profile_id": kept.id})
-    with Session(engine) as db:
-        db.add(KnowledgeBaseRecord(id="old-base", name="Old", embedding_model_profile_id=removed.id))
-        db.add(KnowledgeSettingsRecord(id=1, reranker_model_profile_id=removed.id))
-        db.add(SessionRecord(session_id="session", current_persona_id="00000000-0000-4000-8000-000000000001",
-                             model_profile_id=removed.id, context_policy_json='{"mode":"session"}'))
-        db.exec(text("UPDATE model_profiles SET runtime_id='python-worker',runtime_variant='torch-cpu' WHERE id=:id").bindparams(id=removed.id))
-        db.commit()
-    protected = []
-    for directory in ("models", "attachments", "runtimes"):
-        path = tmp_path / "data" / directory / "keep.bin"
-        path.parent.mkdir(parents=True)
-        path.write_bytes(b"protected")
-        protected.append((path, path.stat().st_mtime_ns))
-    migrations.upgrade(engine)
-    assert [p.id for p in profiles.list()] == [kept.id]
-    assert settings.get().default_model_profile_id is None and settings.get().utility_model_profile_id == kept.id
-    with Session(engine) as db:
-        assert db.get(KnowledgeBaseRecord, "old-base") is None
-        assert db.get(KnowledgeSettingsRecord, 1).reranker_model_profile_id is None
-        assert db.get(SessionRecord, "session").model_profile_id is None
-    assert all(path.read_bytes() == b"protected" and path.stat().st_mtime_ns == stamp for path, stamp in protected)
-    migrations.upgrade(engine)
-    assert profiles.get(kept.id).alias == "kept"
-    engine.dispose()

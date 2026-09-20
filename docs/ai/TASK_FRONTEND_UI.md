@@ -13,7 +13,8 @@ Paths below are under frontend/src:
   hooks/useModelEvents.ts handle global events.
 - components/ChatView.tsx and components/messages/ compose replies and approvals.
 - components/SettingsPage.tsx composes components/settings/ domain panels;
-  components/settings/models/ and components/personas/ contain model/session editors.
+  components/settings/models/ contains model/backend editors; LocalBackendPanel.tsx
+  owns installation details. components/personas/ contains session editors.
 - components/pet/usePetPosition.ts and components/pet/petState.ts contain
   dragging and task-state foundations.
 
@@ -24,6 +25,8 @@ Run `npm test` and `npm run build` in frontend. The scripts load actual TypeScri
 module graphs through scripts/module-loader.mjs and mock API/component boundaries;
 do not match source formatting as behavior. Focused scripts cover session settings,
 resource management, chat presentation, model streams, runtime maintenance and Harness.
+Browser cases backends.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
+cover singleton/key editing, architecture defaults and installation/cache workflows.
 Check stale responses, session isolation, approval visibility, draft persistence
 and nullable/empty values when affected. Layout/workflow changes also require
 desktop/mobile browser checks in both locales; fixture setup and commands are

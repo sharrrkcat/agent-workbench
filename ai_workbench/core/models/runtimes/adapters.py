@@ -10,15 +10,15 @@ import socket
 from uuid import uuid4
 
 import httpx
-from pydantic import ValidationError
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
-from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, model_path
+from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ProviderProfile, RerankResult, VisionResult
+from ai_workbench.core.models.runtimes.catalog import worker_entrypoint
+from ai_workbench.core.models.schema import AudioOutput, ModelStatus, ExternalConnection
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
 from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing
@@ -27,7 +27,9 @@ from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, curr
 class ManagedAdapter:
     def __init__(self, supervisor, profile, changed):
         self.supervisor, self.profile, self.changed = supervisor, profile, changed
-        self.entry = supervisor.entry(profile.runtime_id, profile.runtime_variant)
+        self.entry = supervisor.release
+        self.engine = local_engine(profile)
+        self.device = profile.execution_options["device"]
         self.process: ManagedProcess | None = None
         self.monitor: asyncio.Task | None = None
         self.client: httpx.AsyncClient | None = None
@@ -49,8 +51,8 @@ class ManagedAdapter:
 
     def begin_trace(self, profile, trigger):
         load_id = str(uuid4())
-        path = self.supervisor.logs / f"process-{profile.runtime_id}-{load_id}.log"
-        log_type = LlamaCudaLog if self.entry.runtime_id == "llama-server" and self.entry.variant == "cuda" else RuntimeLog
+        path = self.supervisor.logs / f"process-{self.engine}-{load_id}.log"
+        log_type = LlamaCudaLog if self.engine == "llama-server" and self.device == "cuda" else RuntimeLog
         log = log_type(path, self.supervisor.root, (self.token,) if self.token else ())
         self.log_path = self.log_paths[profile.id] = path
         self._trace_logs[load_id] = log
@@ -62,8 +64,8 @@ class ManagedAdapter:
 
         operation = {"health": "health", "reference": "reference_prepare"}.get(trigger, "load")
         return LoadTrace({"load_id": load_id, "model_profile_id": profile.id,
-                          "runtime_id": self.entry.runtime_id, "variant": self.entry.variant,
-                          "version": self.entry.version, "device": profile.runtime_options.get("device", self.entry.variant),
+                          "backend_profile_id": "local", "engine": self.engine,
+                          "version": self.entry.version, "device": self.device,
                           "trigger": trigger, "operation": operation},
                          log.write, total_stage=operation + "_total", on_finish=finished)
 
@@ -79,7 +81,7 @@ class ManagedAdapter:
                         log = getattr(adapter.process, "log", None)
                         if log:
                             active.add(log.path)
-            terminal = sorted((path for path in self.supervisor.logs.glob(f"process-{self.entry.runtime_id}-*.log")
+            terminal = sorted((path for path in self.supervisor.logs.glob(f"process-{self.engine}-*.log")
                                if path not in active), key=lambda path: path.stat().st_mtime_ns, reverse=True)
             for path in terminal[20:]:
                 path.unlink()
@@ -100,11 +102,11 @@ class ManagedAdapter:
 
     @property
     def single_model(self):
-        return self.entry.runtime_id == "llama-server" or self.entry.variant == "transformers-cuda"
+        return self.engine == "llama-server" or self.engine == "transformers"
 
     def runtime_status(self):
-        value = self.supervisor.installation(self.entry.runtime_id, self.entry.variant)
-        return RuntimeStatus(runtime_id=value.runtime_id, variant=value.variant, version=value.version,
+        value = self.supervisor.installation()
+        return RuntimeStatus(engine=self.engine, version=value.version,
             install_state=value.state, process_state=self.state, job_id=value.job_id,
             device_name=self.device_name, gpu_layers_loaded=self.gpu_layers_loaded,
             gpu_layers_total=self.gpu_layers_total).model_dump()
@@ -118,16 +120,16 @@ class ManagedAdapter:
     def _model_path(self, profile):
         try:
             path = model_path(self.supervisor.root, profile.model_ref)
-            if not path.exists() or profile.runtime_id == "llama-server" and not path.is_file() or profile.runtime_id == "python-worker" and not path.is_dir():
+            if not path.exists() or self.engine == "llama-server" and not path.is_file() or self.engine != "llama-server" and not path.is_dir():
                 raise FileNotFoundError()
-            if profile.runtime_id == "python-worker":
+            if self.engine != "llama-server":
                 from ai_workbench.workers.common import WorkerError, local_model
                 try:
-                    if self.entry.variant == "audio-cuda":
+                    if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                         from ai_workbench.workers.audio_catalog import audio_model
                         return audio_model(self.supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
                     return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
-                        wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
+                        tts=self.engine == "kokoro")
                 except WorkerError as exc:
                     raise ModelError(exc.code, "The local model directory is incomplete or outside data/models.", exc.status) from exc
             return path
@@ -138,7 +140,7 @@ class ManagedAdapter:
         with tracing(self._trace(profile, "health")) as trace:
             self._activate_trace(trace)
             with stage("execution_entry"):
-                self.supervisor.executable(self.entry)
+                self.supervisor.executable(self.engine, self.device)
             with stage("model_resources"):
                 self._model_path(profile)
             if self.client and self.process and self.process.process.returncode is None:
@@ -155,7 +157,7 @@ class ManagedAdapter:
                 if self.failed and not explicit:
                     raise ModelError("MODEL_UNAVAILABLE", "The managed process failed. Load the model again from Models settings.", 503)
                 with stage("execution_entry"):
-                    executable = self.supervisor.executable(self.entry)
+                    executable = self.supervisor.executable(self.engine, self.device)
                 with stage("model_resources"):
                     path = self._model_path(profile)
                 if self.failed:
@@ -168,8 +170,8 @@ class ManagedAdapter:
                     if not self.single_model and profile.id not in self.loaded:
                         with stage("worker_load_rpc"):
                             metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
-                                "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.runtime_options})
-                            if self.entry.variant == "audio-cuda":
+                                "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.execution_options})
+                            if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                                 if not isinstance(metadata.get("device_name"), str):
                                     raise ModelError("RUNTIME_BROKEN", "Audio worker did not report its execution device.", 503)
                                 self.device_name = metadata["device_name"]
@@ -191,27 +193,27 @@ class ManagedAdapter:
         self.run_dir = self.supervisor.base / ".processes" / run_id
         self.run_dir.mkdir(parents=True)
         self.token = secrets.token_urlsafe(32)
-        cuda = self.entry.runtime_id == "llama-server" and self.entry.variant == "cuda"
+        cuda = self.engine == "llama-server" and self.device == "cuda"
         trace = current_trace()
         log = self._activate_trace(trace)
         env = {key: value for key, value in os.environ.items() if not key.startswith(("PYTHON", "VIRTUAL_ENV", "LLAMA_ARG_")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
-        target = self.supervisor.directory(self.entry)
-        if profile.runtime_id == "python-worker":
+        target = self.supervisor.directory()
+        if self.engine != "llama-server":
             ready = self.run_dir / "ready.json"
             env.update(WORKBENCH_WORKER_TOKEN=self.token, WORKBENCH_WORKER_READY=str(ready),
                        WORKBENCH_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
             env[TRACE_ENV] = trace.transport_value()
-            if self.entry.variant == "audio-cuda":
+            if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                 env.update(WORKBENCH_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
                 if getattr(self, "validation", False):
                     env["WORKBENCH_AUDIO_VALIDATION"] = "1"
-            if is_transformers(profile) or self.entry.variant == "audio-cuda":
+            if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                 cache = self.run_dir / "cache"
                 env.update(WORKBENCH_MODEL_REF=profile.model_ref,
-                           WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.runtime_options),
+                           WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.execution_options),
                            HF_HOME=str(cache), HF_HUB_CACHE=str(cache / "hub"), TORCH_HOME=str(cache / "torch"))
-            args = [executable, "-I", "-B", "-X", "utf8", target / "worker" / self.entry.worker_entrypoint]
+            args = [executable, "-I", "-B", "-X", "utf8", target / "worker" / worker_entrypoint(self.engine)]
             port = None
         else:
             if cuda:
@@ -224,7 +226,7 @@ class ManagedAdapter:
             key_file = self.run_dir / "api-key"
             key_file.write_text(self.token, encoding="utf-8")
             key_file.chmod(0o600)
-            options = profile.runtime_options
+            options = profile.execution_options
             # b10809 exposes core llama INFO records, including offload, at trace verbosity.
             args = [executable, "--host", "127.0.0.1", "--port", port, "--model", path, "--alias", "managed",
                     "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],
@@ -236,13 +238,13 @@ class ManagedAdapter:
         with stage("process_spawn"):
             self.process = await ManagedProcess.start(args, env=env, cwd=executable.parent, log=log)
         with stage("ready_wait"):
-            await self._wait_ready(profile, port, ready if profile.runtime_id == "python-worker" else None)
+            await self._wait_ready(profile, port, ready if self.engine != "llama-server" else None)
         if self.single_model:
             if cuda:
                 with stage("cuda_offload_confirmation"):
                     self.gpu_layers_loaded, self.gpu_layers_total = await confirmed_offload(log)
             with stage("model_advertisement"):
-                provider = ProviderProfile(name="managed", base_url=str(self.client.base_url).rstrip("/") + "/v1", api_key=self.token, timeout_seconds=300)
+                provider = ExternalConnection(base_url=str(self.client.base_url).rstrip("/") + "/v1", api_key=self.token, timeout_seconds=300)
                 self.openai = OpenAIAdapter(provider)
                 if "managed" not in await self.openai.models():
                     raise ModelError("RUNTIME_BROKEN", "The managed server did not advertise the configured model.", 503)
@@ -278,7 +280,7 @@ class ManagedAdapter:
                 try:
                     response = await self.client.get("/health", timeout=1)
                     if response.status_code == 200:
-                        if profile.runtime_id == "python-worker" and response.json().get("protocol_version") != 1:
+                        if self.engine != "llama-server" and response.json().get("protocol_version") != 1:
                             raise ModelError("RUNTIME_BROKEN", "Worker protocol version mismatch.", 503)
                         break
                 except (httpx.RequestError, ValueError):
@@ -451,33 +453,6 @@ class PythonWorkerAdapter(ManagedAdapter):
         return await self._rpc("POST", "/speech", {"profile_id": profile.id, "input": text, "voice": voice,
             "speed": speed, "response_format": response_format, "language": language}, audio_format=response_format)
 
-    async def _batches(self, profile, operation, items, input_key, output_key, schema, extra=None):
-        results = []
-        size = min(profile.parameters.get("batch_size", 1), profile.runtime_options["max_batch_size"])
-        for offset in range(0, len(items), size):
-            batch = items[offset:offset + size]
-            value = await self._rpc("POST", operation, {"profile_id": profile.id, input_key: batch, **(extra or {})})
-            try:
-                result = schema.model_validate(value)
-            except ValidationError as exc:
-                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Worker returned an invalid result.", 502) from exc
-            rows = getattr(result, output_key)
-            if len(rows) != len(batch):
-                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Worker result count did not match input.", 502)
-            results.extend(rows)
-        return schema(**{output_key: results})
-
-    async def embed(self, profile, texts, dimensions):
-        return await self._batches(profile, "/embed", texts, "texts", "vectors", EmbeddingResult, {"dimensions": dimensions})
-
-    async def rerank(self, profile, query, documents):
-        return await self._batches(profile, "/rerank", documents, "documents", "scores", RerankResult, {"query": query})
-
-    async def image_embed(self, profile, images):
-        return await self._batches(profile, "/image-embed", images, "images", "vectors", EmbeddingResult)
-
-    async def vision(self, profile, images):
-        return await self._batches(profile, "/vision", images, "images", "outputs", VisionResult)
 
 
 class AudioWorkerAdapter(ManagedAdapter):
@@ -491,7 +466,7 @@ class AudioWorkerAdapter(ManagedAdapter):
                 if not self.process:
                     try:
                         with stage("execution_entry"):
-                            executable = self.supervisor.executable(self.entry)
+                            executable = self.supervisor.executable(self.engine, self.device)
                         with stage("model_resources"):
                             path = self._model_path(profile)
                         await self._start(profile, path, executable)

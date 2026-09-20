@@ -1,4 +1,4 @@
-"""Install ONNX CPU and exercise all local Kokoro voices through the public API."""
+"""Install the local backend and exercise all Kokoro voices through the public API."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +16,7 @@ from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ModelProfile
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.workers.tts_catalog import VOICE_IDS
 
@@ -57,27 +57,28 @@ async def check_disconnect(manager, profile, port, token, voice):
     assert process.process.returncode is not None and adapter.process is None
 
 
-async def smoke(root, model_ref, install_only, selected):
+async def smoke(root, model_ref, install_only, selected, skip_install=False):
     engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
     init_db(engine)
-    supervisor = RuntimeSupervisor(root, RuntimeStore(engine))
-    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
+    manager = ModelManager(ModelProfileStore(), supervisor.backends, ModelSettingsStore(), runtime_supervisor=supervisor)
     try:
-        job = await supervisor.submit("python-worker", "onnx-cpu", "install")
-        last = None
-        while supervisor.task and not supervisor.task.done():
-            current = supervisor.store.job(job.id)
-            if current.stage != last:
-                print(json.dumps({"stage": current.stage}), flush=True)
-                last = current.stage
-            await asyncio.wait({supervisor.task}, timeout=1)
-        result = supervisor.store.job(job.id)
-        print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
-        if result.state != "completed":
-            print(supervisor.log_text(result.id), flush=True)
-            raise RuntimeError("ONNX CPU installation failed")
-        if install_only:
-            return
+        if not skip_install:
+            job = await supervisor.submit('install')
+            last = None
+            while supervisor.task and not supervisor.task.done():
+                current = supervisor.store.job(job.id)
+                if current.stage != last:
+                    print(json.dumps({"stage": current.stage}), flush=True)
+                    last = current.stage
+                await asyncio.wait({supervisor.task}, timeout=1)
+            result = supervisor.store.job(job.id)
+            print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
+            if result.state != "completed":
+                print(supervisor.log_text(result.id), flush=True)
+                raise RuntimeError("Local backend installation failed")
+            if install_only:
+                return
         from fastapi import FastAPI
         from fastapi.responses import JSONResponse
         import miniaudio
@@ -87,8 +88,7 @@ async def smoke(root, model_ref, install_only, selected):
         from ai_workbench.core.models.errors import ModelError
         from ai_workbench.core.models.http import InferenceObservabilityMiddleware
 
-        profile = manager.profiles.create(ModelProfile(name="Kokoro smoke", alias="kokoro-smoke", kind="tts",
-            runtime_id="python-worker", runtime_variant="onnx-cpu", model_ref=model_ref, external_enabled=True))
+        profile = manager.profiles.create(ModelProfile(name='Kokoro smoke', alias='kokoro-smoke', kind='tts', model_ref=model_ref, external_enabled=True, backend_profile_id='local'))
         token = secrets.token_urlsafe(32)
         manager.settings.patch({"external_enabled": True, "external_api_key": token})
         app = FastAPI()
@@ -148,10 +148,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--model-ref", default="tts/Kokoro-82M-onnx")
-    parser.add_argument("--install-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--install-only", action="store_true")
+    mode.add_argument("--skip-install", action="store_true", help="Use a previously installed and verified local release")
     parser.add_argument("--voice", action="append", choices=VOICE_IDS)
     args = parser.parse_args()
     with TemporaryDirectory(prefix="workbench-tts-cache-") as cache:
         with patch.dict(os.environ, {"HF_HOME": str(Path(cache) / "hf"), "XDG_CACHE_HOME": str(Path(cache) / "xdg"),
                                      "TMPDIR": cache, "TMP": cache, "TEMP": cache}):
-            asyncio.run(smoke(args.root.resolve(), args.model_ref, args.install_only, args.voice))
+            asyncio.run(smoke(args.root.resolve(), args.model_ref, args.install_only, args.voice, args.skip_install))

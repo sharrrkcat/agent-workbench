@@ -47,11 +47,11 @@ assert.deepEqual(requests.at(-1), {
   method: 'PATCH',
   body: { values: { position: { x: 12 } } },
 });
-await modelsApi.patchProviderProfile('provider/1', { name: 'Renamed' });
-assert.equal(requests.at(-1).url, '/api/models/providers/provider%2F1');
-assert.equal('api_key' in requests.at(-1).body, false);
-await modelsApi.patchProviderProfile('provider/1', { api_key: '' });
-assert.equal(requests.at(-1).body.api_key, '');
+await modelsApi.patchBackendProfile('backend/1', { name: 'Renamed' });
+assert.equal(requests.at(-1).url, '/api/models/backends/backend%2F1');
+assert.equal('connection' in requests.at(-1).body, false);
+await modelsApi.patchBackendProfile('backend/1', { connection: { api_key: '' } });
+assert.deepEqual(requests.at(-1).body.connection, { api_key: '' });
 await toolsApi.callTool('read_file', 'session', { path: 'data/knowledge/note.txt' });
 assert.deepEqual(requests.at(-1).body, { session_id: 'session', arguments: { path: 'data/knowledge/note.txt' } });
 await toolsApi.resolveToolApproval('run/1', 'reject');

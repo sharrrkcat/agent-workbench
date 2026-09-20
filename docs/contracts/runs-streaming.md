@@ -76,8 +76,9 @@ empty session_id, create no business rows and share alias occupancy. Models
 subscriptions remain active without a session and across settings navigation.
 Runtime jobs use their own store, not chat runs.
 The same global runtime_job_updated event carries cache_prune/cache_clean jobs,
-including null runtime identity and optional before/after accounting. Cache
-maintenance never emits an installation-state update. The Runtimes view refreshes
+including null backend_profile_id/version and optional before/after accounting.
+Installation events identify the single local backend. Cache maintenance never
+emits an installation-state update. Local backend details refresh
 storage when a newer terminal maintenance job arrives, without periodic polling.
 
 ## Client reconciliation

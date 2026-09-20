@@ -193,7 +193,7 @@ class HarnessAgentLoop:
                               **config.generation.model_dump(exclude_none=True))
         self.model_manager.validate_chat(profile, request)
         resolution = {"model_profile_id": profile.id, "alias": profile.alias,
-                      "provider_profile_id": profile.provider_profile_id, "model_ref": profile.model_ref}
+                      "backend_profile_id": profile.backend_profile_id, "model_ref": profile.model_ref}
         self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "model_resolution": resolution})
         draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
                                run_id=run.run_id, message_id=str(uuid4()), config=config,

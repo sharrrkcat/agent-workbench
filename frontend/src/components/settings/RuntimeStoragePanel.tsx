@@ -29,8 +29,9 @@ export function CacheJobResult({ job }: { job: RuntimeJob }) {
   );
 }
 
-export function RuntimeStoragePanel({ busy, active, onCleanup, onCancel }: {
+export function RuntimeStoragePanel({ busy, active, activeView, onCleanup, onCancel }: {
   busy: boolean;
+  activeView: boolean;
   active: RuntimeJob | undefined;
   onCleanup: (mode: 'prune' | 'clean') => Promise<void>;
   onCancel: (job: RuntimeJob) => void;
@@ -40,7 +41,7 @@ export function RuntimeStoragePanel({ busy, active, onCleanup, onCancel }: {
   const [confirm, setConfirm] = useState(false);
   const terminal = jobs.find((job) => job.state !== 'queued' && job.state !== 'running');
   const terminalKey = terminal ? `${terminal.id}:${terminal.revision}` : '';
-  useEffect(() => { void reloadStorage().catch(() => undefined); }, [reloadStorage, terminalKey]);
+  useEffect(() => { if (activeView) void reloadStorage().catch(() => undefined); }, [activeView, reloadStorage, terminalKey]);
   const cache = storage?.groups.find((group) => group.category === 'cache');
   const latestCache = jobs.find((job) => job.operation === 'cache_prune' || job.operation === 'cache_clean');
   const bytes = (value: number | null | undefined) => runtimeBytes(value, t('storage.unknown'));
@@ -86,7 +87,7 @@ export function RuntimeStoragePanel({ busy, active, onCleanup, onCancel }: {
             <thead><tr><th>{t('storage.directory')}</th>{['files', 'logical', 'unique', 'shared', 'exclusive'].map((key) => <th key={key}>{t('storage.' + key)}</th>)}</tr></thead>
             <tbody>{storage.groups.map((group) => (
               <tr key={group.id}>
-                <th scope="row"><span>{group.category === 'runtime' ? `${group.runtime_id} / ${group.variant}` : t('storage.categories.' + group.category)}</span>
+                <th scope="row"><span>{group.category === 'runtime' ? t('localBackend') : t('storage.categories.' + group.category)}</span>
                   <code>{group.category === 'other' ? '' : group.relative_path}</code></th>
                 <td data-label={t('storage.files')}>{group.file_count == null ? t('storage.unknown') : group.file_count.toLocaleString()}</td>
                 {(['logical_bytes', 'unique_bytes', 'shared_bytes', 'exclusive_bytes'] as const).map((key) => (

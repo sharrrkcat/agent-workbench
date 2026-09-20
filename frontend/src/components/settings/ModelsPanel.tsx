@@ -3,17 +3,16 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../api/models';
 import { useModelsStore } from '../../store/useModelsStore';
-import { RuntimesPanel } from './RuntimesPanel';
 import { Field, Icon } from './models/fields';
 import { ProfilesTab } from './models/ProfilesTab';
-import { ConnectionsTab } from './models/ConnectionsTab';
+import { BackendsTab } from './models/BackendsTab';
 import { ExternalServicePanel } from './models/ExternalServicePanel';
 import { useModelFeedback } from './models/useModelFeedback';
 
 export function ModelsPanel() {
   const { t } = useTranslation('llm');
   const { profiles, settings, reloadRuntimes, loading, error: loadError, reload } = useModelsStore();
-  const [tab, setTab] = useState<'profiles' | 'providers' | 'runtimes' | 'service'>('profiles');
+  const [tab, setTab] = useState<'profiles' | 'backends' | 'service'>('profiles');
   const { busy, error, notice, run, setError } = useModelFeedback(reload);
   useEffect(() => {
     void reload().catch(() => undefined);
@@ -74,22 +73,21 @@ export function ModelsPanel() {
         </Field>
       </div>
       <div className="model-tabs" role="tablist">
-        {(['profiles', 'providers', 'runtimes', 'service'] as const).map((value) => (
+        {(['profiles', 'backends', 'service'] as const).map((value) => (
           <button role="tab" aria-selected={tab === value} key={value} onClick={() => setTab(value)}>
             {t(value)}
           </button>
         ))}
       </div>
       <div hidden={tab !== 'profiles'}>
-        <ProfilesTab {...editorProps} onOpenRuntimes={() => setTab('runtimes')} />
+        <ProfilesTab {...editorProps} onOpenBackends={() => setTab('backends')} />
       </div>
-      <div hidden={tab !== 'providers'}>
-        <ConnectionsTab {...editorProps} />
+      <div hidden={tab !== 'backends'}>
+        <BackendsTab {...editorProps} active={tab === 'backends'} />
       </div>
       <div hidden={tab !== 'service'}>
         <ExternalServicePanel run={run} busy={busy} />
       </div>
-      {tab === 'runtimes' ? <RuntimesPanel /> : null}
     </section>
   );
 }

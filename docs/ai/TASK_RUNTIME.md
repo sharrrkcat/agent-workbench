@@ -20,11 +20,15 @@ Paths below are under ai_workbench:
 Model tests are tests/test_phase2a_manager.py, test_phase2a_protocol.py and
 test_phase2a_transport.py under tests/. Managed runtime tests are
 test_phase2b_runtime.py, test_runtime_maintenance.py and test_llama_cuda.py.
+test_unified_backend.py covers backend identity, strict bindings, maintenance isolation,
+configuration reset and the shared lock/wheel audit. scripts/build_runtime_wheels.py
+reproduces upstream patches; scripts/check_qwen_rope.py checks checkpoint buffer restoration.
 Kokoro API, engine boundaries and installation use test_tts.py and test_tts_runtime.py.
 Audio references, queue admission and key/profile invalidation use test_audio.py;
-test_audio_runtime.py covers locks, offline workers, isolation and Whisper's decoded
-duration boundary. test_qwen_tts.py covers Base layouts, transcripts, generation,
-languages and API/reference validation. scripts/smoke_audio_runtime.py runs the Windows three-engine matrix.
+test_audio_runtime.py covers locks, offline workers, isolation, private Whisper
+dispatch and its decoded-duration boundary. test_qwen_tts.py covers Base layouts, transcripts, generation,
+languages and API/reference validation. scripts/smoke_audio_runtime.py runs the Windows three-engine matrix;
+scripts/smoke_llm_runtime.py covers real llama-server/Transformers CPU/CUDA, streaming and tools.
 Chat/Harness tests cover private snapshots, ordered approvals, active budgets,
 restart handling and cancellation; test_chat_presentation.py covers partial
 output and whole-reply operations. Use the full backend suite, frontend state

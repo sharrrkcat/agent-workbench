@@ -222,8 +222,8 @@ def test_cancelled_stream_retains_received_content(tmp_path, use_memory, harness
         app = create_app(root=tmp_path, database_url=f"sqlite:///{tmp_path / 'cancel.db'}",
                          use_memory=use_memory, adapter_factory=upstream.factory)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
-            provider = ok(await client.post("/api/models/providers", json={"name": "p", "base_url": "http://provider.test/v1"}))
-            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "provider_profile_id": provider["id"], "capabilities": {"tools": True, "streaming": True}}))
+            provider = ok(await client.post("/api/models/backends", json={'name': 'p', 'connection': {'base_url': 'http://provider.test/v1'}, 'type': 'openai_compatible'}))
+            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "backend_profile_id": provider["id"], "capabilities": {"tools": True, "streaming": True}}))
             session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": harness}))
             task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "go"}))
             try:

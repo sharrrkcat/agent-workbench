@@ -39,15 +39,15 @@ class MockOpenAI:
 
 
 def configure_model(client, *, kind="llm", alias="local", **overrides):
-    providers = client.get("/api/models/providers").json()
+    providers = [backend for backend in client.get("/api/models/backends").json() if backend["type"] == "openai_compatible"]
     if providers:
         provider_id = providers[0]["id"]
     else:
-        provider = client.post("/api/models/providers", json={"name": "Test", "base_url": "http://provider.test/v1", "api_key": "provider-private-key"})
+        provider = client.post("/api/models/backends", json={'name': 'Test', 'connection': {'base_url': 'http://provider.test/v1', 'api_key': 'provider-private-key'}, 'type': 'openai_compatible'})
         assert provider.status_code == 200, provider.text
         provider_id = provider.json()["id"]
     payload = {"alias": alias, "name": alias, "kind": kind, "model_ref": "fake" if kind == "llm" else "embed",
-               "provider_profile_id": provider_id, "external_enabled": True, **overrides}
+               "backend_profile_id": provider_id, "external_enabled": True, **overrides}
     profile = client.post("/api/models/profiles", json=payload)
     assert profile.status_code == 200, profile.text
     if kind == "llm":

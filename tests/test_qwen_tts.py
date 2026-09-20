@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.inventory import inventory
-from ai_workbench.core.models.manager import ProviderSlot
+from ai_workbench.core.models.manager import BackendSlot
 from ai_workbench.core.models.schema import ModelProfile, Qwen3TTSParameters, SpeechRequest
 from ai_workbench.core.models.voice_references import VoiceReferences, credential_id
 from ai_workbench.workers.audio_catalog import QWEN3TTS_DEFAULTS, QWEN3TTS_LANGUAGES, QWEN3TTS_SUBTALKER, audio_model, qwen3tts_files
@@ -24,9 +24,7 @@ from tests.test_tts import HEADERS, wav_bytes
 
 
 def qwen_profile(**values):
-    return ModelProfile(**{**dict(name="Qwen", alias="qwen", kind="tts", model_ref="tts/qwen",
-        runtime_id="python-worker", runtime_variant="audio-cuda", external_enabled=True,
-        parameters={"architecture": "qwen3tts", "response_format": "wav"}), **values})
+    return ModelProfile(**{**dict(name='Qwen', alias='qwen', kind='tts', model_ref='tts/qwen', external_enabled=True, parameters={'architecture': 'qwen3tts', 'response_format': 'wav'}, backend_profile_id='local'), **values})
 
 
 @pytest.fixture
@@ -37,7 +35,7 @@ def qwen_api(api, tmp_path):
     assert response.status_code == 200, response.text
     profile = manager.profiles.get(response.json()["id"])
     adapter = Adapter(manager)
-    manager._slots[manager.backend_key(profile)] = ProviderSlot(adapter, asyncio.Semaphore(1))
+    manager._slots[manager.backend_key(profile)] = BackendSlot(adapter, asyncio.Semaphore(1))
     return client, manager, profile, adapter
 
 
@@ -67,10 +65,10 @@ def test_strict_qwen_profile_options(options):
 def test_qwen_defaults_and_binding():
     profile = qwen_profile()
     assert profile.parameters == {"architecture": "qwen3tts", "speed": 1, "response_format": "wav", **QWEN3TTS_DEFAULTS}
-    assert profile.runtime_options == {"device": "cuda", "intraop_threads": 4}
+    assert profile.execution_options == {"device": "cuda", "intraop_threads": 4}
     assert profile.lifecycle.unload == "manual"
     assert Qwen3TTSParameters(top_k=0, repetition_penalty=0.5, temperature=6, max_new_tokens=8192).top_k == 0
-    for patch in ({"runtime_variant": "onnx-cpu"}, {"provider_profile_id": "external"},
+    for patch in ({"runtime_variant": "onnx-cpu"}, {"backend_profile_id": "external"},
                   {"parameters": {"architecture": "custom_voice"}}, {"parameters": {"architecture": "voice_design"}}):
         with pytest.raises(ValidationError):
             qwen_profile(**patch)
@@ -202,7 +200,7 @@ def test_qwen_worker_is_public_and_validates_before_engine_calls(tmp_path):
     worker = AudioWorker(tmp_path, tmp_path, engine_factory=factory)
     profile = qwen_profile()
     load = {"profile_id": profile.id, "kind": "tts", "model_ref": profile.model_ref,
-            "parameters": profile.parameters, "options": profile.runtime_options}
+            "parameters": profile.parameters, "options": profile.execution_options}
     assert worker.dispatch("/load", load)["loaded"] == [profile.id]
     body = {"profile_id": profile.id, "input": "你好", "reference": "voice.wav", "reference_text": "Hello",
             "speed": 1, "response_format": "wav", "language": "zh-CN", "model_options": {"top_k": 0}}
@@ -227,7 +225,7 @@ def test_qwen_reference_queue_expiry_and_cancellation_keep_transcript_scoped(tmp
         manager._voice_references = VoiceReferences(tmp_path, clock=clock)
         profile = manager.profiles.create(qwen_profile())
         adapter = Adapter(manager)
-        slot = ProviderSlot(adapter, asyncio.Semaphore(1))
+        slot = BackendSlot(adapter, asyncio.Semaphore(1))
         manager._slots[manager.backend_key(profile)] = slot
         manager._slot = lambda *args: (SimpleNamespace(concurrency=1, queue_size=1, queue_timeout_seconds=0.05), slot)
         store = manager.voice_references

@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function runtimeView(page: Page, locale: string) {
   await page.goto('/settings?tab=models');
   const scanned = page.waitForResponse((response) => response.url().endsWith('/api/models/runtimes/storage'));
-  await page.getByRole('tab', { name: locale === 'en' ? 'Runtimes' : '运行环境', exact: true }).click();
+  await page.getByRole('tab', { name: locale === 'en' ? 'Backends' : '后端', exact: true }).click();
   await scanned;
   await expect(page.locator('.runtime-storage')).toHaveAttribute('aria-busy', 'false');
 }
@@ -27,7 +27,7 @@ for (const locale of ['en', 'zh-CN']) {
         await runtimeView(page, locale);
         await page.locator('.runtime-storage-details summary').click();
         await expect(page.locator('.runtime-storage-table')).toContainText('.cache');
-        await expect(page.locator('.runtime-storage-table')).toContainText('py/transformers-cuda/1.0.0');
+        await expect(page.locator('.runtime-storage-table')).toContainText('local/1.0.0');
         await noRuntimeOverflow(page);
         await page.screenshot({ path: info.outputPath('runtime-storage.png') });
         const clean = locale === 'en' ? 'Clear cache' : '清空缓存';
@@ -42,7 +42,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.runtime-storage-summary').locator('dd').nth(1)).toHaveText('0 B');
         expect((await (await request.post('/__test__/runtimes/files')).json()).installed_preserved).toBe(true);
         const jobs = await (await request.get('/api/models/runtimes/jobs')).json();
-        expect(jobs[0].runtime_id).toBeNull();
+        expect(jobs[0].backend_profile_id).toBeNull();
         expect(jobs[0].result.after.logical_bytes).toBe(0);
         await noRuntimeOverflow(page);
         await page.screenshot({ path: info.outputPath('cache-cleared.png') });
@@ -55,8 +55,7 @@ for (const locale of ['en', 'zh-CN']) {
         await dialog.getByLabel(locale === 'en' ? 'Name' : '名称', { exact: true }).fill('Runtime fixture CUDA');
         const alias = `runtime-fixture-${locale.toLowerCase()}-${viewport.width}`;
         await dialog.getByLabel(locale === 'en' ? 'Public alias' : '公开别名', { exact: true }).fill(alias);
-        await dialog.getByLabel(locale === 'en' ? 'Backend' : '推理后端', { exact: true }).selectOption('managed');
-        await dialog.getByLabel(locale === 'en' ? 'Runtime and build' : '运行环境与构建', { exact: true }).selectOption('llama-server/cuda');
+        await dialog.getByLabel(locale === 'en' ? 'Backend' : '推理后端', { exact: true }).selectOption('local');
         await dialog.getByLabel(locale === 'en' ? 'Model reference' : '模型引用', { exact: true }).fill('llms/fixture.gguf');
         const automatic = locale === 'en' ? 'Automatic' : '自动';
         const manual = locale === 'en' ? 'Manual' : '手动';
@@ -74,7 +73,7 @@ for (const locale of ['en', 'zh-CN']) {
         await dialog.getByRole('button', { name: locale === 'en' ? 'Save' : '保存', exact: true }).click();
         await expect(dialog).toHaveCount(0);
         let profile = (await (await request.get('/api/models/profiles')).json()).find((value: { alias: string }) => value.alias === alias);
-        expect(profile.runtime_options.gpu_layers).toBe('auto');
+        expect(profile.execution_options.gpu_layers).toBe('auto');
         const row = page.locator('.model-list .model-row').filter({ hasText: alias });
         await row.getByRole('button', { name: locale === 'en' ? 'Edit' : '编辑', exact: true }).click();
         await page.getByRole('dialog').locator('.runtime-gpu-mode').getByRole('button', { name: manual, exact: true }).click();
@@ -82,7 +81,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Save' : '保存', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
         profile = (await (await request.get('/api/models/profiles')).json()).find((value: { alias: string }) => value.alias === alias);
-        expect(profile.runtime_options.gpu_layers).toBe(3);
+        expect(profile.execution_options.gpu_layers).toBe(3);
       });
     });
   }
@@ -94,18 +93,17 @@ test('cache task cancellation and failure release installation controls', async 
   await runtimeView(page, 'en');
   await page.getByRole('button', { name: 'Prune cache', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Cancel task', exact: true })).toBeVisible();
-  const cudaRow = page.locator('.runtime-row').filter({ has: page.locator('strong').filter({ hasText: /^llama-server$/ }) })
-    .filter({ has: page.locator('code').filter({ hasText: /^CUDA$/ }) });
-  await expect(cudaRow.getByRole('button', { name: 'Install runtime', exact: true })).toBeDisabled();
+  const installation = page.locator('.runtime-row');
+  await expect(installation.getByRole('button', { name: 'Install local backend', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Cancel task', exact: true }).click();
   await expect(page.locator('.runtime-cache-task')).toContainText('Cancelled');
-  await expect(cudaRow.getByRole('button', { name: 'Install runtime', exact: true })).toBeEnabled();
+  await expect(installation.getByRole('button', { name: 'Install local backend', exact: true })).toBeEnabled();
   await request.post('/__test__/runtimes', { data: { fail: true } });
   await page.reload();
-  await page.getByRole('tab', { name: 'Runtimes', exact: true }).click();
+  await page.getByRole('tab', { name: 'Backends', exact: true }).click();
   await page.getByRole('button', { name: 'Prune cache', exact: true }).click();
   await expect(page.locator('.runtime-cache-task')).toContainText('RUNTIME_CLEANUP_FAILED');
-  await expect(cudaRow.getByRole('button', { name: 'Install runtime', exact: true })).toBeEnabled();
+  await expect(installation.getByRole('button', { name: 'Install local backend', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Prune cache', exact: true }).click();
   await expect(page.locator('.runtime-cache-task')).toContainText('Completed');
 });

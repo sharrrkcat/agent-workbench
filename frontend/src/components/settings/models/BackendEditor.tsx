@@ -4,66 +4,68 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import type { ProviderInput } from '../../../types/models';
+import type { ExternalBackendInput, ExternalConnection } from '../../../types/models';
 import { AppModal } from '../../ui/AppModal';
 import { Field, Check, NumberInput } from './fields';
 import type { ModelFeedbackProps } from './types';
 
-export type ConnectionDraft = { id?: string; value: ProviderInput };
-export function ConnectionEditor({
-  provider,
-  setProvider,
+export type BackendDraft = { id?: string; value: ExternalBackendInput };
+export function BackendEditor({
+  backend,
+  setBackend,
   run,
   busy,
   feedback,
 }: ModelFeedbackProps & {
-  provider: ConnectionDraft | null;
-  setProvider: Dispatch<SetStateAction<ConnectionDraft | null>>;
+  backend: BackendDraft | null;
+  setBackend: Dispatch<SetStateAction<BackendDraft | null>>;
 }) {
   const { t } = useTranslation('llm');
-  const providers = useModelsStore((state) => state.providers);
-  const patchProvider = (patch: Partial<ProviderInput>) =>
-    setProvider((draft) => (draft ? { ...draft, value: { ...draft.value, ...patch } } : null));
+  const backends = useModelsStore((state) => state.backends);
+  const patchBackend = (patch: Partial<ExternalBackendInput>) =>
+    setBackend((draft) => (draft ? { ...draft, value: { ...draft.value, ...patch } } : null));
+  const patchConnection = (patch: Partial<ExternalConnection>) =>
+    setBackend((draft) => draft ? { ...draft, value: { ...draft.value, connection: { ...draft.value.connection, ...patch } } } : null);
   return (
     <AppModal
-      open={!!provider}
-      title={provider?.id ? t('editProvider') : t('addProvider')}
+      open={!!backend}
+      title={backend?.id ? t('editBackend') : t('addBackend')}
       closeLabel={t('close')}
       onClose={() => {
-        if (!busy) setProvider(null);
+        if (!busy) setBackend(null);
       }}
     >
-      {provider ? (
+      {backend ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              if (provider.id) await modelsApi.patchProviderProfile(provider.id, provider.value);
-              else await modelsApi.createProviderProfile(provider.value);
-              setProvider(null);
+              if (backend.id) await modelsApi.patchBackendProfile(backend.id, backend.value);
+              else await modelsApi.createBackendProfile(backend.value);
+              setBackend(null);
             });
           }}
         >
           {feedback}
           <fieldset disabled={busy} className="model-form">
             <Field label={t('name')}>
-              <input required value={provider.value.name} onChange={(e) => patchProvider({ name: e.target.value })} />
+              <input required value={backend.value.name} onChange={(e) => patchBackend({ name: e.target.value })} />
             </Field>
             <Field label={t('baseUrl')}>
               <input
                 required
                 type="url"
-                value={provider.value.base_url}
-                onChange={(e) => patchProvider({ base_url: e.target.value })}
+                value={backend.value.connection.base_url}
+                onChange={(e) => patchConnection({ base_url: e.target.value })}
               />
             </Field>
             <Field label={t('apiKey')}>
               <input
                 type="password"
                 autoComplete="new-password"
-                value={provider.value.api_key ?? ''}
-                placeholder={providers.find((p) => p.id === provider.id)?.has_api_key ? t('keySet') : ''}
-                onChange={(e) => patchProvider({ api_key: e.target.value })}
+                value={backend.value.connection.api_key ?? ''}
+                placeholder={backends.find((p) => p.id === backend.id)?.connection?.has_api_key ? t('keySet') : ''}
+                onChange={(e) => patchConnection({ api_key: e.target.value })}
               />
             </Field>
             <div className="model-form-grid">
@@ -71,16 +73,16 @@ export function ConnectionEditor({
                 <NumberInput
                   key={key}
                   label={t('connection.' + key)}
-                  value={provider.value[key]}
+                  value={backend.value.connection[key]}
                   min={key === 'queue_size' ? 0 : 1}
-                  onChange={(v) => patchProvider({ [key]: v ?? 1 })}
+                  onChange={(v) => patchConnection({ [key]: v ?? 1 })}
                 />
               ))}
             </div>
             <Check
               label={t('enabled')}
-              checked={provider.value.enabled}
-              onChange={(enabled) => patchProvider({ enabled })}
+              checked={backend.value.enabled}
+              onChange={(enabled) => patchBackend({ enabled })}
             />
             <div className="model-form-footer">
               <button className="primary-button" type="submit">

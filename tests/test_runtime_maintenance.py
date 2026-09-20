@@ -11,6 +11,7 @@ from sqlalchemy import inspect
 from ai_workbench.api.main import create_app
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.store import BackendProfileStore
 from ai_workbench.core.models.runtimes.schema import CacheCleanupResult, Installation, RuntimeJob, StorageUsage
 from ai_workbench.core.models.runtimes.storage import scan_storage
 from ai_workbench.core.models.runtimes.store import RuntimeStore
@@ -37,7 +38,7 @@ def test_storage_deduplicates_links_and_excludes_external_references(tmp_path, m
     base = tmp_path / "data/runtimes"
     shared = put(base / ".cache/shared", b"0123456789")
     os.link(shared, base / ".cache/shared-again")
-    worker = base / "py/torch-cpu/test/Lib/shared"
+    worker = base / "local/test/env/Lib/shared"
     worker.parent.mkdir(parents=True)
     os.link(shared, worker)
     put(base / ".cache/only", b"only")
@@ -49,7 +50,7 @@ def test_storage_deduplicates_links_and_excludes_external_references(tmp_path, m
     cache = next(group for group in value.groups if group.id == ".cache")
     assert (cache.file_count, cache.logical_bytes, cache.unique_bytes, cache.shared_bytes, cache.exclusive_bytes) == (4, 32, 22, 18, 4)
     runtime = next(group for group in value.groups if group.category == "runtime")
-    assert (runtime.runtime_id, runtime.variant, runtime.version) == ("python-worker", "torch-cpu", "test")
+    assert (runtime.backend_profile_id, runtime.version) == ("local", "test")
     assert runtime.unique_bytes == runtime.shared_bytes == 10
     assert runtime.exclusive_bytes == 0
     total = value.totals
@@ -59,7 +60,7 @@ def test_storage_deduplicates_links_and_excludes_external_references(tmp_path, m
 def test_storage_empty_roots_and_environment_directories(tmp_path):
     base = tmp_path / "data/runtimes"
     assert scan_storage(base).totals == StorageUsage()
-    (base / "llama-server/version/cuda").mkdir(parents=True)
+    (base / "local/version").mkdir(parents=True)
     put(base / "python/shared/python", b"python")
     put(base / ".staging/job/part", b"part")
     put(base / ".processes/process/ready", b"ready")
@@ -68,7 +69,7 @@ def test_storage_empty_roots_and_environment_directories(tmp_path):
     assert value.complete
     assert {group.category for group in value.groups} == {"runtime", "python", "cache", "staging", "processes", "other"}
     runtime = next(group for group in value.groups if group.category == "runtime")
-    assert (runtime.runtime_id, runtime.variant, runtime.version, runtime.file_count) == ("llama-server", "cuda", "version", 0)
+    assert (runtime.backend_profile_id, runtime.version, runtime.file_count) == ("local", "version", 0)
 
 
 def test_storage_does_not_follow_symlinks_or_junctions(tmp_path):
@@ -132,15 +133,14 @@ def test_cache_jobs_preserve_installed_hardlinks_and_use_scoped_uv(tmp_path, mod
     async def scenario():
         events = EventBus()
         store = RuntimeStore()
-        service = RuntimeSupervisor(tmp_path, store, events, entries=[])
+        service = RuntimeSupervisor(tmp_path, store, BackendProfileStore(), events)
         cached = put(service.base / ".cache/package", b"immutable package")
-        installed = service.base / "py/torch-cpu/test/Lib/package"
+        installed = service.base / "local/test/env/Lib/package"
         installed.parent.mkdir(parents=True)
         os.link(cached, installed)
         put(service.base / ".cache/exclusive", b"cache")
         protected = put(tmp_path / "data/models/keep", b"weights")
-        store.save_installation(Installation(id="python-worker/torch-cpu", runtime_id="python-worker",
-            variant="torch-cpu", version="test", state="installed", manifest_sha256="a" * 64))
+        store.save_installation(Installation(version='test', state='installed', manifest_sha256='a' * 64, backend_profile_id='local'))
         before = store.installations()
         calls = []
 
@@ -156,7 +156,7 @@ def test_cache_jobs_preserve_installed_hardlinks_and_use_scoped_uv(tmp_path, mod
         await service.task
         value = store.job(job.id)
         assert value.state == "completed" and value.operation == f"cache_{mode}"
-        assert value.runtime_id is value.variant is value.version is None
+        assert value.backend_profile_id is value.version is None
         assert value.result.before.exclusive_bytes == 5
         assert value.result.after.logical_bytes == 0
         assert installed.read_bytes() == b"immutable package" and protected.read_bytes() == b"weights"
@@ -164,7 +164,7 @@ def test_cache_jobs_preserve_installed_hardlinks_and_use_scoped_uv(tmp_path, mod
         assert calls[0][1:] == ["cache", mode, "--cache-dir", str(service.base / ".cache"), "--no-config", "--offline"]
         assert "Cache accounting" in service.log_text(job.id)
         assert {event.type for event in events.list_events()} == {"runtime_job_updated"}
-        assert service.active_job is None and service.blocked is None
+        assert service.active_job is None and service.blocked is False
         await service.close()
 
     asyncio.run(scenario())
@@ -172,7 +172,7 @@ def test_cache_jobs_preserve_installed_hardlinks_and_use_scoped_uv(tmp_path, mod
 
 def test_cache_partial_failure_and_cancel_release_global_slot(tmp_path):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), entries=[])
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
         first = put(service.base / ".cache/first", b"first")
         second = put(service.base / ".cache/second", b"second")
 
@@ -201,7 +201,7 @@ def test_cache_partial_failure_and_cancel_release_global_slot(tmp_path):
         cancelled = await service.submit_cache("prune")
         await started.wait()
         with pytest.raises(ModelError) as busy:
-            await service.submit("llama-server", "cpu", "install")
+            await service.submit('install')
         assert busy.value.status == 409
         with pytest.raises(ModelError):
             await service.submit_cache("clean")
@@ -216,7 +216,7 @@ def test_cache_partial_failure_and_cancel_release_global_slot(tmp_path):
 
 def test_native_uv_cache_clean_preserves_the_installed_file(tmp_path):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), entries=[])
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
         cached = put(service.base / ".cache/archive-v0/fixture/module.py", b"VALUE = 42\n")
         installed = service.base / "py/fixture/1.0.0/module.py"
         installed.parent.mkdir(parents=True)
@@ -236,7 +236,7 @@ def test_native_uv_cache_clean_preserves_the_installed_file(tmp_path):
 
 def test_shutdown_waits_for_an_already_requested_cache_cancellation(tmp_path):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), entries=[])
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
         started, accounting, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
         calls = 0
 
@@ -271,7 +271,7 @@ def test_shutdown_waits_for_an_already_requested_cache_cancellation(tmp_path):
 @pytest.mark.parametrize("root_link", [False, True])
 def test_cache_rejects_redirected_roots_and_escaping_links(tmp_path, root_link):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), entries=[])
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
         cache = service.base / ".cache"
         outside = put(tmp_path / "outside/keep", b"protected").parent
         cache.parent.mkdir(parents=True)
@@ -301,7 +301,7 @@ def test_cache_result_persistence_restart_and_job_targets(tmp_path):
     job = RuntimeJob(operation="cache_clean", state="running",
                      result=CacheCleanupResult(before=StorageUsage(logical_bytes=19)))
     store.save_job(job)
-    service = RuntimeSupervisor(tmp_path, RuntimeStore(engine), entries=[])
+    service = RuntimeSupervisor(tmp_path, RuntimeStore(engine), BackendProfileStore(engine))
     restored = service.store.job(job.id)
     assert restored.state == "interrupted" and restored.result.before.logical_bytes == 19
     assert service.store.installations() == []
@@ -319,41 +319,3 @@ def test_storage_api_and_cleanup_request_are_strict(tmp_path):
         for payload in ({}, {"mode": "unknown"}, {"mode": None}, {"mode": "clean", "path": "outside"}):
             assert client.post("/api/models/runtimes/cache/cleanup", json=payload).status_code == 422
         assert client.get("/api/models/runtimes/jobs").json() == []
-
-
-def test_runtime_revision_resets_only_jobs_and_preserves_files(tmp_path):
-    engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
-    migrations.upgrade(engine, migrations.PET_FOUNDATION_REVISION)
-    with engine.begin() as db:
-        db.exec_driver_sql("INSERT INTO runtime_installations (id,runtime_id,variant,version,state,job_id,manifest_sha256,updated_at) "
-                           "VALUES ('llama-server/cpu','llama-server','cpu','test','installed','old','digest',CURRENT_TIMESTAMP)")
-        db.exec_driver_sql("INSERT INTO runtime_jobs (id,runtime_id,variant,version,operation,state,stage,progress_current,"
-                           "cancel_requested,log_path,revision,created_at,updated_at) VALUES "
-                           "('old','llama-server','cpu','test','install','completed','completed',0,0,'old.log',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
-
-    def rows():
-        with engine.connect() as db:
-            return {table: db.exec_driver_sql(f'SELECT * FROM "{table}"').fetchall()
-                    for table in inspect(engine).get_table_names() if table not in {"alembic_version", "runtime_jobs", "runtime_installations"}}
-
-    files = [put(tmp_path / "data" / folder / "keep", b"protected")
-             for folder in ("runtimes", "models", "attachments", "knowledge", "logs")]
-    before_files = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files}
-    before_rows = rows()
-    migrations.upgrade(engine)
-    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
-    store = RuntimeStore(engine)
-    assert store.jobs() == []
-    installation = store.installations()[0]
-    assert installation.job_id is None and installation.state == "installed" and installation.manifest_sha256 == "digest"
-    assert rows() == before_rows
-    job = RuntimeJob(operation="cache_prune", state="completed", result=CacheCleanupResult(after=StorageUsage()))
-    store.save_job(job)
-    persisted = store.job(job.id)
-    migrations.upgrade(engine)
-    assert store.job(job.id) == persisted
-    assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files} == before_files
-    with engine.connect() as db:
-        assert db.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
-        assert db.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
-    engine.dispose()

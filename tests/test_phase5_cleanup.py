@@ -12,7 +12,7 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
-from ai_workbench.db.models import AppMetadataRecord, ModelProfileRecord, ProviderProfileRecord
+from ai_workbench.db.models import AppMetadataRecord
 from ai_workbench.db.stores import SqlAppSettingsStore
 from scripts import build_portable
 
@@ -29,14 +29,19 @@ def business_rows(engine):
 def test_settings_revision_resets_only_application_json_and_preserves_files(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'test.db'}")
     migrations.upgrade(engine, migrations.PHASE4_REVISION)
+    with engine.begin() as db:
+        db.exec_driver_sql("""INSERT INTO provider_profiles
+            VALUES ('p','Connection','openai_compatible','http://localhost:1234/v1','',60,1,32,30,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""")
+        db.exec_driver_sql("""INSERT INTO model_profiles
+            (id,alias,name,kind,model_ref,capabilities_json,parameters_json,lifecycle_json,
+             enabled,external_enabled,created_at,updated_at)
+            VALUES ('m','local','Model','llm','manual','{}','{}','{}',1,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""")
     with Session(engine) as db:
         db.add(AppMetadataRecord(key="app_settings", value=json.dumps({
             "appearance_font_ui_family": "Retired", "resource_status_panel_enabled": True,
             "core_memory_content": "Disposable", "pet": {"pet_scale": 2},
         })))
         db.add(AppMetadataRecord(key="models", value='{"external_enabled":false}'))
-        db.add(ProviderProfileRecord(id="p", name="Connection", base_url="http://localhost:1234/v1"))
-        db.add(ModelProfileRecord(id="m", alias="local", name="Model", kind="llm", model_ref="manual"))
         db.commit()
     protected = [tmp_path / "data" / directory / "keep.bin" for directory in
                  ("models", "runtimes", "attachments", "knowledge", "assets/fonts", "logs")]

@@ -13,17 +13,17 @@ from dataclasses import dataclass, field
 from ai_workbench.core.models.adapter import ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
-from ai_workbench.core.models.runtimes.schema import is_transformers
+from ai_workbench.core.models.runtimes.schema import is_transformers, local_engine
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
-    ImagePart, ModelProfile, ModelStatus, ProviderProfile, SpeechRequest,
+    ImagePart, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
 
 
 @dataclass
-class ProviderSlot:
+class BackendSlot:
     adapter: ProviderAdapter
     semaphore: asyncio.Semaphore
     active: int = 0
@@ -41,18 +41,18 @@ class ManagedQueue:
 
 
 class ModelManager:
-    def __init__(self, profiles, providers, settings, events=None,
-                 adapter_factory: Callable[[ProviderProfile], ProviderAdapter] = OpenAIAdapter,
+    def __init__(self, profiles, backends, settings, events=None,
+                 adapter_factory: Callable[[ExternalConnection], ProviderAdapter] = OpenAIAdapter,
                  runtime_supervisor=None):
         self.profiles = profiles
-        self.providers = providers
+        self.backends = backends
         self.settings = settings
         self.events = events
         self.adapter_factory = adapter_factory
         self.runtime_supervisor = runtime_supervisor
         if runtime_supervisor:
             runtime_supervisor.manager = self
-        self._slots: dict[str | tuple, ProviderSlot] = {}
+        self._slots: dict[str | tuple, BackendSlot] = {}
         self._statuses: dict[tuple, ModelStatus] = {}
         self._idle: dict[tuple, asyncio.Task] = {}
         self._load_locks: dict[tuple, asyncio.Lock] = {}
@@ -70,9 +70,9 @@ class ModelManager:
         return self._voice_references
 
     def voice_binding(self, profile):
-        version = self.runtime_supervisor.entry(profile.runtime_id, profile.runtime_variant).version
-        value = [profile.id, profile.model_ref, profile.runtime_id, profile.runtime_variant,
-                 profile.parameters["architecture"], profile.runtime_options, version]
+        version = self.runtime_supervisor.release.version
+        value = [profile.id, profile.model_ref, profile.backend_profile_id, local_engine(profile),
+                 profile.parameters["architecture"], profile.execution_options, version]
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
     def profile(self, profile_id: str, kind: str | None = None) -> ModelProfile:
@@ -99,71 +99,68 @@ class ModelManager:
                     profiles[0] if profiles else None)
 
     def backend_key(self, profile: ModelProfile):
-        if not profile.runtime_id:
-            return profile.provider_profile_id
-        key = (profile.runtime_id, profile.runtime_variant)
-        if profile.runtime_variant == "audio-cuda":
-            # Audio profiles own independent processes and cancellation scopes.
-            return key + (profile.parameters.get("architecture"), getattr(profile, "id", "draft"), profile.model_ref,
-                          json.dumps(profile.runtime_options, sort_keys=True, separators=(",", ":")))
-        if profile.runtime_id == "llama-server" or is_transformers(profile):
-            # Keep identity stable if a weight file/link disappears after loading.
-            # Filesystem containment is rechecked at every health/load operation.
+        if profile.backend_profile_id != "local":
+            return profile.backend_profile_id
+        engine = local_engine(profile)
+        key = ("local", engine)
+        if engine in {"chatterbox", "qwen3tts", "whisper"}:
+            return key + (getattr(profile, "id", "draft"), profile.model_ref,
+                          json.dumps(profile.execution_options, sort_keys=True, separators=(",", ":")))
+        if engine in {"llama-server", "transformers"}:
             path = self.runtime_supervisor.root / "data" / "models" / profile.model_ref
-            key += (os.path.normcase(str(path)),)
-        if is_transformers(profile):
-            key += (json.dumps(profile.runtime_options, sort_keys=True, separators=(",", ":")),)
+            key += (profile.execution_options["device"], os.path.normcase(str(path)))
+        if engine == "transformers":
+            key += (json.dumps(profile.execution_options, sort_keys=True, separators=(",", ":")),)
         return key
 
     def _key(self, profile: ModelProfile) -> tuple:
         backend = self.backend_key(profile)
-        if is_transformers(profile):
-            return backend, backend
-        return backend, profile.id if profile.runtime_id == "python-worker" else backend[-1] if profile.runtime_id else profile.model_ref
+        engine = local_engine(profile)
+        return backend, backend if engine in {"llama-server", "transformers"} else profile.id if engine else profile.model_ref
 
     def validate_binding(self, profile):
-        if profile.runtime_id:
-            self.runtime_supervisor.entry(profile.runtime_id, profile.runtime_variant)
-        if profile.runtime_id == "llama-server":
+        if profile.backend_profile_id:
+            self.backends.get(profile.backend_profile_id)
+        if local_engine(profile) == "llama-server":
             for alias in self.profiles.list("llm"):
-                if alias.id != getattr(profile, "id", None) and self.backend_key(alias) == self.backend_key(profile) and alias.runtime_options != profile.runtime_options:
-                    raise ModelError("MODEL_CONFLICT", "Aliases of a managed GGUF must use identical runtime options.", 409)
+                if alias.id != getattr(profile, "id", None) and self.backend_key(alias) == self.backend_key(profile) and alias.execution_options != profile.execution_options:
+                    raise ModelError("MODEL_CONFLICT", "Aliases of a managed GGUF must use identical execution options.", 409)
 
     def status(self, profile_id: str) -> ModelStatus:
         profile = self.profiles.get(profile_id)
         status = self._statuses.get(self._key(profile), ModelStatus()).model_copy()
-        provider = next((p for p in self.providers.list() if p.id == profile.provider_profile_id), None)
-        if profile.runtime_id and self.runtime_supervisor:
-            from ai_workbench.core.models.runtimes.schema import model_path
-            from ai_workbench.core.models.runtimes.schema import RuntimeStatus
-            installation = self.runtime_supervisor.installation(profile.runtime_id, profile.runtime_variant)
-            kind_supported = profile.kind in self.runtime_supervisor.entry(profile.runtime_id, profile.runtime_variant).kinds
+        backend = next((p for p in self.backends.list() if p.id == profile.backend_profile_id), None)
+        engine = local_engine(profile)
+        if engine and self.runtime_supervisor:
+            from ai_workbench.core.models.runtimes.schema import model_path, RuntimeStatus
+            installation = self.runtime_supervisor.installation()
             slot = self._slots.get(self.backend_key(profile))
             status = slot.adapter.snapshot(profile) if slot else ModelStatus(state="unloaded", residency="unloaded", unload_supported=True)
             if not slot:
-                status.runtime = RuntimeStatus(runtime_id=installation.runtime_id, variant=installation.variant, version=installation.version,
+                status.runtime = RuntimeStatus(engine=engine, version=installation.version,
                     install_state=installation.state, job_id=installation.job_id, process_state="stopped")
-            if not kind_supported:
-                status.state, status.error_code = "unavailable", "RUNTIME_UNSUPPORTED"
-            elif installation.state != "installed":
+            if installation.state != "installed":
                 status.state = "unavailable"
                 status.error_code = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING", "unsupported": "RUNTIME_UNSUPPORTED"}.get(installation.state, "RUNTIME_BROKEN")
             else:
                 try:
                     path = model_path(self.runtime_supervisor.root, profile.model_ref)
-                    if profile.runtime_id == "llama-server" and not path.is_file():
-                        raise ValueError()
-                    if profile.runtime_id == "python-worker":
+                    if engine == "llama-server":
+                        if not path.is_file():
+                            raise ValueError()
+                    elif engine in {"chatterbox", "qwen3tts", "whisper"}:
+                        from ai_workbench.workers.audio_catalog import audio_model
+                        audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
+                    else:
                         from ai_workbench.workers.common import local_model
-                        if profile.runtime_variant == "audio-cuda":
-                            from ai_workbench.workers.audio_catalog import audio_model
-                            audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
-                        else:
-                            local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
-                                wd14=profile.kind == "vision" and profile.parameters["architecture"] == "wd14", tts=profile.kind == "tts")
+                        local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, tts=engine == "kokoro")
+                        if engine == "kokoro":
+                            from ai_workbench.workers.tts_catalog import language_model
+                            language_model(self.runtime_supervisor.root / "data" / "models")
                 except (OSError, ValueError, WorkerError):
-                    status.state, status.error_code = "unavailable", "MODEL_NOT_FOUND"
-        if not profile.enabled or not profile.runtime_id and (provider is None or not provider.enabled):
+                    status.state = "unavailable"
+                    status.error_code = "MODEL_NOT_FOUND"
+        if not profile.enabled or backend is None or not backend.enabled:
             status.state = "unavailable"
             status.error_code = "MODEL_UNAVAILABLE"
         slot = self._slots.get(self.backend_key(profile))
@@ -184,38 +181,37 @@ class ModelManager:
                         "model_profile_id": profile.id, "status": self.status(profile.id).model_dump(),
                     })
 
-    def _slot(self, provider_id, profile=None, require_runtime=True):
+    def _slot(self, backend_key, profile=None, require_runtime=True):
         if self._closed:
             raise ModelError("MODEL_UNAVAILABLE", "Model manager is shutting down.", 503)
-        if provider_id in self._invalidating:
-            raise ModelError("MODEL_BUSY", "Provider configuration is changing.", 409)
-        if profile and profile.runtime_id:
-            supervisor = self.runtime_supervisor
-            if supervisor.blocked == (profile.runtime_id, profile.runtime_variant):
-                raise ModelError("RUNTIME_INSTALLING", "Runtime maintenance is in progress.", 409)
-            if require_runtime:
-                if profile.kind not in supervisor.entry(profile.runtime_id, profile.runtime_variant).kinds:
-                    raise ModelError("RUNTIME_UNSUPPORTED", "This model kind is not implemented by the selected runtime.", 503)
-                supervisor.assert_available(profile.runtime_id, profile.runtime_variant)
-            return ManagedQueue(), self._managed_slot(profile)
+        if backend_key in self._invalidating or profile and profile.backend_profile_id in self._invalidating:
+            raise ModelError("MODEL_BUSY", "Backend configuration is changing.", 409)
         try:
-            provider = self.providers.get(provider_id)
+            backend = self.backends.get(profile.backend_profile_id if profile else backend_key)
         except KeyError as exc:
-            raise ModelError("MODEL_UNAVAILABLE", "Configure an executable provider for this model.", 503) from exc
-        if not provider.enabled:
-            raise ModelError("MODEL_UNAVAILABLE", "Provider is disabled.", 503)
-        if provider.id not in self._slots:
-            self._slots[provider.id] = ProviderSlot(self.adapter_factory(provider), asyncio.Semaphore(provider.concurrency))
-        return provider, self._slots[provider.id]
+            raise ModelError("MODEL_UNAVAILABLE", "Configure an executable backend for this model.", 503) from exc
+        if not backend.enabled:
+            raise ModelError("MODEL_UNAVAILABLE", "Backend is disabled.", 503)
+        if backend.type == "local":
+            supervisor = self.runtime_supervisor
+            if supervisor.blocked:
+                raise ModelError("RUNTIME_INSTALLING", "Local runtime maintenance is in progress.", 409)
+            if require_runtime:
+                supervisor.assert_available()
+            return ManagedQueue(), self._managed_slot(profile)
+        if backend.id not in self._slots:
+            self._slots[backend.id] = BackendSlot(self.adapter_factory(backend.connection), asyncio.Semaphore(backend.connection.concurrency))
+        return backend.connection, self._slots[backend.id]
 
     def _managed_slot(self, profile):
-        provider_id = self.backend_key(profile)
-        if provider_id not in self._slots:
+        key = self.backend_key(profile)
+        if key not in self._slots:
             from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
-            cls = AudioWorkerAdapter if profile.runtime_variant == "audio-cuda" else TransformersServerAdapter if is_transformers(profile) else LlamaServerAdapter if profile.runtime_id == "llama-server" else PythonWorkerAdapter
-            adapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(provider_id))
-            self._slots[provider_id] = ProviderSlot(adapter, asyncio.Semaphore(1))
-        return self._slots[provider_id]
+            engine = local_engine(profile)
+            cls = AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
+            adapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
+            self._slots[key] = BackendSlot(adapter, asyncio.Semaphore(1))
+        return self._slots[key]
 
     @asynccontextmanager
     async def _provider_lease(self, provider_id, key: tuple | None = None, profile=None, require_runtime=True, on_admit=None):
@@ -269,7 +265,7 @@ class ModelManager:
     async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None, load_trigger=None):
         key = self._key(profile)
         trace = None
-        if profile.runtime_id and self.runtime_supervisor and not self._closed and (
+        if profile.backend_profile_id == "local" and self.runtime_supervisor and not self._closed and (
             load_trigger or autoload and self._statuses.get(key, ModelStatus()).state != "ready"
         ):
             trace = self._managed_slot(profile).adapter.begin_trace(profile, load_trigger or "autoload")
@@ -338,7 +334,7 @@ class ModelManager:
     async def load(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
         async with self._lease(profile, autoload=False, release=False, load_trigger="explicit") as adapter:
-            result = await adapter.load(profile, explicit=True) if profile.runtime_id else await adapter.load(profile)
+            result = await adapter.load(profile, explicit=True) if profile.backend_profile_id == "local" else await adapter.load(profile)
             self._notify(profile, result)
             return result
 
@@ -352,7 +348,9 @@ class ModelManager:
             self._notify(profile, result)
             return result
 
-    async def provider_models(self, provider_id: str) -> list[str]:
+    async def backend_models(self, provider_id: str) -> list[str]:
+        if self.backends.get(provider_id).type != "openai_compatible":
+            raise ModelError("UNSUPPORTED_CAPABILITY", "Use local inventory for the local backend.", 422)
         async with self._provider_lease(provider_id) as slot:
             return await slot.adapter.models()
 
@@ -488,7 +486,7 @@ class ModelManager:
             raise ModelError("VOICE_UNAVAILABLE", "Voice ID is not supported by this model.", 404)
         if request.tts.language is not None and request.tts.language != LANGUAGES[request.voice[0]]:
             raise ModelError("INVALID_REQUEST", "Language does not match the selected voice.")
-        if profile.runtime_id and self.runtime_supervisor:
+        if profile.backend_profile_id == "local" and self.runtime_supervisor:
             try:
                 path = model_path(self.runtime_supervisor.root, profile.model_ref)
             except (OSError, ValueError) as exc:
@@ -519,7 +517,7 @@ class ModelManager:
 
     def _reference_profile(self, profile_id):
         profile = self.profile(profile_id, "tts")
-        if profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"} or profile.runtime_variant != "audio-cuda":
+        if profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"} or local_engine(profile) not in {"chatterbox", "qwen3tts"}:
             raise ModelError("UNSUPPORTED_CAPABILITY", "Reference audio requires a managed Chatterbox or Qwen3-TTS Base profile.")
         return profile
 
@@ -580,7 +578,7 @@ class ModelManager:
     def temporary_voice_list(self, profile_id, credential):
         profile = self.profile(profile_id, "tts")
         credential = self._voice_credential(credential)
-        if self._voice_references is None or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
+        if self._voice_references is None or local_engine(profile) not in {"chatterbox", "qwen3tts"} or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
             return []
         language = None if profile.parameters["architecture"] == "qwen3tts" else "en-US"
         return [{**item, "model": profile.alias} for item in self._voice_references.list(
@@ -590,7 +588,7 @@ class ModelManager:
         credential = self._voice_credential(credential)
         if self._voice_references is not None:
             for profile in self.profiles.list("tts"):
-                if not profile.enabled or not profile.external_enabled or profile.runtime_variant != "audio-cuda" or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
+                if not profile.enabled or not profile.external_enabled or local_engine(profile) not in {"chatterbox", "qwen3tts"} or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
                     continue
                 try:
                     self._voice_references.delete(identifier, profile.id, self.voice_binding(profile), credential)
@@ -663,9 +661,9 @@ class ModelManager:
                 if self.backend_key(profile) == backend:
                     self._notify(profile, slot.adapter.snapshot(profile))
 
-    def runtime_changed(self, runtime_id, variant):
+    def runtime_changed(self):
         for profile in self.profiles.list():
-            if (profile.runtime_id, profile.runtime_variant) == (runtime_id, variant):
+            if profile.backend_profile_id == "local":
                 self._publish(self._key(profile))
 
     def process_log(self, profile):
@@ -678,16 +676,22 @@ class ModelManager:
         except OSError:
             return ""
 
-    def require_runtime_idle(self, runtime_id, variant):
+    def require_local_idle(self):
+        self.require_idle("local")
         for key in set(self._slots) | self._invalidating:
-            if isinstance(key, tuple) and key[:2] == (runtime_id, variant):
+            if isinstance(key, tuple) and key[0] == "local":
                 self.require_idle(key)
 
-    async def invalidate_runtime(self, runtime_id, variant):
-        self.require_runtime_idle(runtime_id, variant)
-        for key in list(self._slots):
-            if isinstance(key, tuple) and key[:2] == (runtime_id, variant):
-                await self.invalidate(key)
+    async def invalidate_local(self):
+        self.require_local_idle()
+        self._invalidating.add("local")
+        try:
+            self.invalidate_voice_references()
+            for key in list(self._slots):
+                if isinstance(key, tuple) and key[0] == "local":
+                    await self.invalidate(key)
+        finally:
+            self._invalidating.discard("local")
 
     def require_idle(self, provider_id: str | None) -> None:
         slot = self._slots.get(provider_id)

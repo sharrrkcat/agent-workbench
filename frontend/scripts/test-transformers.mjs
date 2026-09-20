@@ -13,27 +13,25 @@ await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } })
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { newModel, selectManagedRuntime, runtimeFamilyKey } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
+const { newModel, updateModel, localEngine } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
-const entry = { runtime_id: 'python-worker', variant: 'transformers-cuda', supported: true, kinds: ['llm'],
-  options_schema: { properties: { device: { default: 'cuda' }, intraop_threads: { default: 4 } } } };
-const original = { ...newModel('llm'), provider_profile_id: 'external', parameters: { max_tokens: 128, presence_penalty: 1 },
+const original = { ...newModel('llm'), backend_profile_id: 'external', model_ref: 'llms/model', parameters: { max_tokens: 128, presence_penalty: 1 },
   capabilities: { streaming: true, tools: true, vision: true, json_object: true, json_schema: true } };
-const selected = selectManagedRuntime(original, entry);
-assert.equal(selected.provider_profile_id, null);
-assert.equal(selected.runtime_id, 'python-worker');
-assert.equal(selected.runtime_variant, 'transformers-cuda');
-assert.deepEqual(selected.runtime_options, { device: 'cuda', intraop_threads: 4 });
+const selected = updateModel(original, { backend_profile_id: 'local' });
+assert.equal(selected.backend_profile_id, 'local');
+assert.equal(localEngine(selected), 'transformers');
+assert.deepEqual(selected.execution_options, { device: 'cuda', intraop_threads: 4 });
 assert.deepEqual(selected.parameters, { max_tokens: 128 });
 assert.deepEqual(selected.capabilities, { streaming: true, tools: true, vision: false, json_object: false, json_schema: false });
 assert.equal(selected.lifecycle.unload, 'manual');
 assert.equal(original.parameters.presence_penalty, 1);
-assert.throws(() => selectManagedRuntime(original, { ...entry, variant: 'infinity-cuda', supported: false }));
-const llama = selectManagedRuntime(selected, { runtime_id: 'llama-server', variant: 'cuda', supported: true, kinds: ['llm'],
-  options_schema: { properties: { gpu_layers: { default: 'auto' }, threads: { default: 4 } } } });
-assert.equal(llama.runtime_id, 'llama-server');
-assert.deepEqual(llama.runtime_options, { gpu_layers: 'auto', threads: 4 });
-assert.equal(runtimeFamilyKey('python-worker', 'transformers-cuda'), 'transformers-cuda');
+const llama = updateModel(selected, { model_ref: 'llms/model.gguf' });
+assert.equal(localEngine(llama), 'llama-server');
+assert.deepEqual(llama.execution_options, { device: 'cuda', gpu_layers: 'auto', threads: 4, context_size: 4096, batch_size: 512 });
+const external = updateModel(llama, { backend_profile_id: 'external' });
+assert.equal(localEngine(external), null);
+assert.deepEqual(external.execution_options, {});
+assert.equal(updateModel(selected, { name: 'Renamed' }).execution_options, selected.execution_options);
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');

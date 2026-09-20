@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 OPAQUE_SCHEMA_PATHS: dict[str, str] = {
     "components/schemas/ApprovalRequestedPayload/properties/arguments": "Arguments of the tool awaiting approval.",
     "components/schemas/AttachmentResponse/properties/metadata": "Optional attachment metadata.",
-    "components/schemas/CatalogEntryResponse/properties/options_schema": "JSON Schema for code-owned runtime options.",
+    "components/schemas/EngineCatalogResponse/properties/options_schema": "JSON Schema for code-owned execution options.",
     "components/schemas/ChatResult/properties/data": "Direct tool results may have tool-specific JSON keys.",
     "components/schemas/HistoryResult/properties/data": "A retried chat may produce a direct tool result.",
     "components/schemas/ChunkPreview/properties/metadata": "Chunk provenance and location metadata.",

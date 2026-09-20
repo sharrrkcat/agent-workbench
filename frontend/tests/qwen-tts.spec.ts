@@ -13,10 +13,9 @@ for (const locale of ['en', 'zh-CN']) {
     await page.getByRole('button', { name: labels.addModel, exact: true }).click();
     const dialog = page.getByRole('dialog');
     const architecture = dialog.getByLabel(labels.params.architecture, { exact: true });
-    await expect(architecture).toBeDisabled();
-    await dialog.getByLabel(labels.runtimeVariant, { exact: true }).selectOption('python-worker/audio-cuda');
     await expect(architecture).toBeEnabled();
-    await expect(architecture).toHaveValue('chatterbox');
+    await expect(architecture).toHaveValue('kokoro');
+    await expect(dialog.getByLabel(labels.backend, { exact: true })).toHaveValue('local');
     await architecture.selectOption('qwen3tts');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('50');
     await expect(dialog.getByLabel(labels.params.temperature, { exact: true })).toHaveValue('0.9');
@@ -45,11 +44,12 @@ for (const locale of ['en', 'zh-CN']) {
     const saved = profiles.find((profile: { alias: string }) => profile.alias === alias);
     expect(saved.parameters).toEqual({ architecture: 'qwen3tts', speed: 0.85, response_format: 'wav', do_sample: false,
       temperature: 0.9, top_p: 1, top_k: 0, repetition_penalty: 1.05, max_new_tokens: 512 });
-    expect(saved.runtime_variant).toBe('audio-cuda');
+    expect(saved.backend_profile_id).toBe('local');
+    expect(saved.execution_options.device).toBe('cuda');
     const row = page.locator('.model-list .model-row').filter({ hasText: alias });
     await row.getByRole('button', { name: labels.edit, exact: true }).click();
     await expect(architecture).toHaveValue('qwen3tts');
-    await dialog.getByLabel(labels.runtimeVariant, { exact: true }).selectOption('python-worker/audio-cuda');
+    await dialog.getByLabel(labels.backend, { exact: true }).selectOption('local');
     await expect(architecture).toHaveValue('qwen3tts');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('0');
     await expect(dialog.getByLabel(labels.params.do_sample, { exact: true })).not.toBeChecked();

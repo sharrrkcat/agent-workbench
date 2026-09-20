@@ -8,7 +8,7 @@ from httpx_sse import aconnect_sse, SSEError
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingResult,
-    ModelProfile, ModelStatus, ProviderProfile, Usage,
+    ModelProfile, ModelStatus, ExternalConnection, Usage,
 )
 
 
@@ -24,7 +24,7 @@ def transport_error(exc: Exception) -> ModelError:
 
 
 class OpenAIAdapter:
-    def __init__(self, provider: ProviderProfile, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(self, provider: ExternalConnection, transport: httpx.AsyncBaseTransport | None = None):
         self.client = httpx.AsyncClient(
             base_url=provider.base_url + "/",
             headers={"Authorization": f"Bearer {provider.api_key}"} if provider.api_key else {},

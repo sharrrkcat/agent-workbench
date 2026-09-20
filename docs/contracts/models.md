@@ -4,20 +4,23 @@ All inference uses the application-scoped `core/models/ModelManager` and
 `ProviderAdapter`; ChatRunner, Utility LLM, Knowledge and `/v1` call the manager without HTTP loopback.
 The API process imports no torch, transformers, onnxruntime or llama.cpp binding.
 
-## Profiles and connections
+## Profiles and backends
 
 `model_profiles` has six immutable kinds: `llm`, `embedding`, `reranker`,
 `image_embedding`, `vision`, `tts`. References use UUID `id` internally and unique
 lowercase aliases externally. CRUD: `/api/models/profiles`, with `?kind=...`.
 
-`provider_profiles` owns OpenAI-compatible URL/key, timeouts, concurrency, queue and enablement.
-CRUD: `/api/models/providers`; discovery: `/{id}/models`. Brand-specific protocols are absent.
+`backend_profiles` uses one strict BackendProfile type: local or openai_compatible.
+The seeded local backend has reserved id=local; database and service constraints
+prevent a second local identity. Its type is immutable and it cannot be deleted.
+Local configuration owns enablement/download settings. External backends own nested
+connection URL/key, timeouts, concurrency and queue settings, with no brand-specific protocols.
+CRUD: `/api/models/backends`; external discovery: `/{id}/models`.
 
-A model selects mutually exclusive `provider_profile_id` or `runtime_id` plus
-`runtime_variant`/`runtime_options`. It owns `model_ref`, capabilities, per-kind
-parameters, lifecycle, `enabled` and `external_enabled`. Backend-less profiles
-can be saved but cannot execute. Unknown/invalid fields fail before persistence;
-referenced deletion and busy connection edits return errors.
+A model selects `backend_profile_id` and `execution_options`. It owns `model_ref`,
+capabilities, architecture/per-kind parameters, lifecycle, enabled and external_enabled.
+Unbound profiles can be saved but cannot execute. Unknown/removed fields fail before
+persistence; referenced deletion and busy backend edits return errors.
 
 [Settings](settings.md#model-settings) owns key/PATCH semantics. Embedding backend,
 reference or preprocessing changes invalidate indexes; see [Knowledge](knowledge.md).
@@ -43,8 +46,8 @@ external vision LLMs accept chat images.
 The manager owns health/load/unload and queues: concurrency 1, 32 waiting slots, 30-second timeout.
 Discovery shares the queue; overflow/timeout returns `MODEL_BUSY`. Cancellation/stream closure releases resources.
 
-External aliases share residency/occupancy by `(provider_profile_id, model_ref)`; GGUF aliases share
-normalized reference, process and options. Transformers share by path/options; ONNX profiles share a variant queue.
+External aliases share residency/occupancy by `(backend_profile_id, model_ref)`; GGUF aliases share
+normalized reference, process and options. Transformers share by path/options; Kokoro profiles share an engine queue.
 Audio profiles have separate processes, queues and cancellation scopes, even for the same model path.
 Release defaults to `manual`; opt-ins are `after_request` and `idle` (300 seconds).
 An enabled manual alias retains shared models; otherwise the longest idle timeout
@@ -55,7 +58,7 @@ wins. Release errors never replace successful inference. Crashes require explici
 | Cached status | GET `/profiles/{id}/status` | No provider call |
 | Health | POST `/profiles/{id}/health` | Explicit provider/model check |
 | Load/unload | POST `/profiles/{id}/load` or `/unload` | Manager lifecycle |
-| Connection inventory | GET `/providers/{id}/models` | Queued upstream list |
+| Backend inventory | GET `/backends/{id}/models` | Queued upstream list |
 | Local inventory | GET `/inventory?kind=...` | Relative file references only |
 
 Inventory/status never load weights, import heavy runtimes or download models. Roots under `data/models`:
@@ -66,65 +69,62 @@ and nested speech-tokenizer files; unsupported types fail before engine imports.
 Status contains state (`unknown`, `ready`, `unavailable`, `failed`, `unloaded`), residency
 (`unknown`, `loaded`, `unloaded`), unload_supported, active, queued and optional error_code.
 External health/load requires the advertised model_ref, reports unknown residency and cannot unload (`UNLOAD_UNSUPPORTED`).
-Managed status adds runtime id/variant/version, installation/process state, latest job id and device_name.
+Managed status adds backend_profile_id, engine, release version, installation/process state, latest job id and device_name.
 CUDA layer counts clear when the process stops; [runs/streaming](runs-streaming.md) owns status events.
-`GET /api/runtime/resources` is a cached CPU/RAM/GPU diagnostic snapshot.
 
 ## Managed catalog and installation
 
-The [runtime plan](../ai/PLAN_RUNTIME_FAMILIES.md) owns remaining work. `GET /api/models/runtimes/catalog`
-exposes pinned platforms, kinds and strict options; internal records own HTTPS URLs, SHA-256, archive format and executable.
+`GET /api/models/backends/local/runtime/catalog` exposes one Windows x64 release
+(1.0.0), its engines and strict option schemas. Linux and local embedding/rerank/image-embedding/WD14 remain deferred;
+see [future services](../FUTURE_MODEL_SERVICES.md#local-engine-and-platform-expansion).
 
-| Variant | Availability |
-| --- | --- |
-| llama-server/cpu | Windows and Linux x64 |
-| llama-server/cuda | Windows x64 |
-| python-worker/transformers-cuda | Windows x64, version 1.0.2; explicit CPU and CUDA execution |
-| python-worker/onnx-cpu | Windows and Linux x64, version 1.0.2; Kokoro; WD14 deferred |
-| python-worker/infinity-cuda | Placeholder, unsupported |
-| python-worker/audio-cuda | Windows x64, version 1.1.2; Chatterbox and Qwen3-TTS Base; private Whisper acceptance |
+The model determines its engine: GGUF uses llama-server, an LLM directory uses
+Transformers, and TTS architecture selects Kokoro, Chatterbox or Qwen3-TTS Base.
+model_ref is a safe relative path under data/models. Profiles cannot supply
+executables or arbitrary arguments and may be saved before installation.
+execution_options selects CPU or CUDA; capable engines default to CUDA, Kokoro to
+CPU only. Llama also accepts threads, context_size, batch_size and gpu_layers
+(0 on CPU; auto or integer 1..999 on CUDA). Python options are intraop_threads=4;
+Kokoro adds max_batch_size=1. Unavailable CUDA fails without CPU substitution.
 
-Separate PyTorch CPU distributions, Vulkan, torch-cu128 and onnx-gpu are removed.
-Linux Transformers, Infinity and Audio remain unsupported.
+GET `/api/models/backends/local/runtime` returns the single installation.
+POST to its `/install`, `/repair` or `/uninstall` returns a RuntimeJob. One
+installation/cache maintenance task runs application-wide. Changing the installation
+requires every local request to be idle, blocks new local requests and stops local
+processes. Bulk file operations run off-loop; external inference continues independently. Shared dependencies do not
+create a global inference queue. Cache cleanup allows loaded models to remain.
 
-Local model_ref is a safe relative GGUF file or Python model directory under
-`data/models`; profiles cannot supply executables or arbitrary arguments.
-Llama options are threads, context_size, batch_size and gpu_layers (0 on CPU;
-auto or integer 1..999 on CUDA). ONNX options are device=cpu, intraop_threads and
-max_batch_size=1. Transformers and Audio options are device=cpu|cuda (default cuda) and
-intraop_threads=4. Profiles may be saved before installation; execution reports missing resources.
+Downloads stage under data/runtimes/.staging/{job_id}; a complete checked payload
+promotes to data/runtimes/local/<version> with env/, worker/, native/cpu/ and
+native/cuda/. One manifest records release/source/lock identity, entry points and
+every installed file. Existing directories from other layouts are not executable
+installations. Repair rebuilds the release; there is no installation fallback.
 
-`POST /api/models/runtimes/{runtime_id}/{variant}/install` creates a job; only one
-install/uninstall/cache job runs application-wide. Downloads stage under
-`data/runtimes/.staging/{job_id}` with checksum/path checks and a manifest, then
-promote to `data/runtimes/llama-server/<version>/<variant>/` or
-`data/runtimes/py/<variant>/<version>/`.
+Bundled uv installs artifact-pinned Python 3.12.11 and one complete hash lock:
+Torch/Torchaudio 2.11.0+cu128, Torchvision 0.26.0+cu128, Transformers 5.16.1,
+NumPy 1.26.4 and ONNX Runtime 1.23.2, including Misaki/spaCy/Thinc language dependencies.
+Versioned Chatterbox metadata, Qwen source/metadata and Misaki offline-input patches
+are reproduced by scripts/build_runtime_wheels.py with embedded patch records.
+Only docopt, jieba, unidic-lite, antlr4-python3-runtime and sox may use source builds
+with locked build tools; native packages require wheels. Installation runs full
+dependency checks, five separate offline engine-import processes and native program
+checks without loading weights or requiring GPU availability. User PATH/registry
+are untouched; [Settings](settings.md) owns download configuration.
 
-Bundled uv installs artifact-pinned Python/hash-locked dependencies per family, then checks dependencies and offline imports.
-Transformers pins Python 3.12.11, Transformers 5.16.1, Torch 2.11.0+cu128 and
-Torchvision 0.26.0+cu128. Audio pins Python 3.12.11, Torch/Torchaudio 2.6.0+cu124,
-Transformers 4.57.3, Qwen-TTS 0.1.1 and NumPy 1.26.4. Its versioned Chatterbox
-0.1.7+workbench.1 wheel adjusts the upstream Transformers requirement; the build
-script, embedded patch record, complete lock and dependency check make this auditable.
-Only docopt, jaconv, jieba and unidic-lite (ONNX), or antlr4-python3-runtime and
-sox (Audio), may use source builds with locked build tools; native packages require wheels.
-`--no-bin`/`--no-registry` preserve user PATH/registry. [Settings](settings.md)
-owns download configuration; weights are always placed manually.
-
-Windows llama.cpp b10809 CUDA uses separately pinned main and cudart ZIPs, with
-catalog URLs/hashes/formats/sizes and combined byte progress. Both pass SHA-256
-before extraction. DLLs join the executable directory; different-content name
-collisions fail. Other dependencies retain a namespace. The manifest records both
-artifact hashes and every file; --version precedes promotion. Child-only dependency
-paths leave system PATH, registry and drivers unchanged.
+Both llama.cpp b10809 CPU and CUDA programs are included. CUDA's pinned main and
+cudart ZIPs use combined byte progress and SHA-256 checks before extraction.
+Native archives are cached under .cache/workbench-artifacts and rechecked on reuse.
+CUDA 12.4 DLLs stay beside that llama-server, separate from Torch's CUDA 12.8 files.
+Different-content DLL collisions fail. --version precedes promotion; dependency
+paths apply only to child processes.
 
 Jobs expose queued/running/completed/failed/cancelled/interrupted states, stage,
-byte progress, error code, revision and bounded logs. Cancellation stops subprocesses
-and clears staging. Restart marks unfinished work interrupted and clears staging.
+byte progress, error code, revision and bounded logs. Cancellation stops subprocesses and waits
+for active file operations before clearing staging. Restart interrupts unfinished work and clears staging.
 Failure/cancellation retains logs; retry creates a job. Uninstall stops related
-workers and removes only the matching runtime, retaining shared interpreters/cache.
+workers and removes only the current local release directory, retaining download caches and all model files.
 
-Read-only routes list installations/status/jobs. `/api/models/runtimes/jobs/{id}/log`
+Read-only routes expose installation/status/jobs. `/api/models/runtimes/jobs/{id}/log`
 returns task logs; `/cancel` cancels. `/api/models/profiles/{id}/log` returns process logs.
 Responses omit absolute paths, ports, tokens and raw provider errors. Failures use
 `RUNTIME_NOT_INSTALLED`, `RUNTIME_INSTALLING`, `RUNTIME_BROKEN`, `RUNTIME_UNSUPPORTED`,
@@ -147,7 +147,7 @@ with a RuntimeJob. Bundled uv uses the explicit .cache directory, --no-config an
 normal locking. Redirected roots/escaping links fail. Models stay loaded;
 filesystem occupancy failures retain retry diagnostics.
 
-Cache jobs use operation=cache_prune|cache_clean and null runtime_id/variant/version.
+Cache jobs use operation=cache_prune|cache_clean and null backend_profile_id/version.
 Optional result.before/after contain strict usage snapshots (null when unavailable).
 They reuse job/log/cancel routes/events without installation-state writes. Partial
 cleanup may survive failure/cancellation; figures never claim actual disk recovery.
@@ -161,7 +161,7 @@ full trees on unload, cancellation or exit. Sanitized logs under `data/logs/runt
 retention keeps 20 terminal tasks and 20 terminal process/load-attempt logs per runtime, plus active logs.
 Load/autoload, health and Audio reference preparation resolve installation metadata's executable,
 checking availability, entry paths and model resources without installation inventory, hashes or verification-cache access.
-Full integrity checks remain in installation: family locks/sources and installed files, excluding bytecode caches.
+Installation still hashes the shared lock/sources and installed files except bytecode caches; [inventory removal](../FUTURE_MODEL_SERVICES.md#installation-verification) is pending.
 The model log endpoint returns the latest attempt, including pre-spawn failures; UTC records share load_id through startup environment/private headers.
 `duration_ms`/`elapsed_ms` measure monotonic wall time; `cpu_duration_ms`/`cpu_elapsed_ms` measure CPU time for all threads
 in the emitting process, excluding child processes. Concurrent work is included; CPU time can exceed wall time and is not an I/O measurement.
@@ -176,27 +176,28 @@ Llama CUDA selects the first enumerated device with split-mode=none; none return
 Auto uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx=context_size; manual uses fit=off.
 Logs must confirm positive GPU offload; missing/zero layers or insufficient memory stop loading without CPU substitution.
 Cached reads do not probe GPUs. Workers enforce offline/local-only loading without remote code or device substitution.
-Transformers uses float32 CPU/checkpoint dtype CUDA and disables upstream idle release. Cancellation stops processes
-before freeing occupancy. Tools require a supported response template and Harness; vision, JSON output,
+Transformers uses float32 CPU/checkpoint dtype CUDA and disables upstream idle release. Its cancellation stops the process
+before freeing occupancy; llama-server cancellation closes only the request. Tools require a supported response template and Harness; vision, JSON output,
 nonzero presence/frequency penalties and explicit tool controls fail.
 Audio blocks Python networking; Chatterbox uses from_local with float32/attention adaptations,
 and Qwen uses local-only loading with float32 CPU/bfloat16 CUDA and SDPA.
 Whisper is private acceptance only. Decoded samples are counted before resampling/features: at most 30 seconds,
 including exactly 30; longer audio fails without truncation, segmentation or partial transcripts.
-CLIP, SigLIP2 and WD14 entry points remain; DINOv2 and Florence2 are removed.
 
 ## Kokoro TTS
 
-Kokoro TTS uses managed `python-worker/onnx-cpu`, architecture=kokoro, with
+Kokoro TTS uses the local backend's CPU ONNX engine, architecture=kokoro, with
 the v1.0 FP32 model.onnx, config/tokenizer JSON files and voices/<id>.bin.
 The fixed 54-ID catalog intersects with finite float32 [510,1,256] files; extras
 such as af.bin are ignored. No voice-profile records are created. Off-loop file
 checks power GET /api/models/profiles/{id}/voices without model loading.
 
-ONNX uses Misaki, spaCy 3.7.5 and NumPy 1.26.4 without PyTorch/Transformers, plus
-the verified local en_core_web_sm 3.7.1 wheel from data/models/_auxiliary/en_core_web_sm,
-eSpeak NG and UniDic. All language frontends initialize before readiness with
-Python networking blocked throughout execution. Missing resources fail without downloads.
+The shared environment supplies Misaki, spaCy 3.7.5, NumPy 1.26.4, eSpeak NG and
+UniDic. Kokoro loads the manually supplied en_core_web_sm 3.7.1 pipeline directory
+under data/models/_auxiliary/en_core_web_sm and passes it explicitly to Misaki.
+All language frontends initialize before readiness with Python networking blocked.
+Missing/corrupt language resources fail Kokoro loading without downloading files,
+changing the shared environment or preventing other engines from running.
 
 Speech accepts 1..4096 nonblank characters, voice, speed=0.25..4,
 response_format=mp3|wav, stream_format=audio and optional tts.language matching the
@@ -205,12 +206,11 @@ Chunks retain supported text, use at most 510 tokens and voice row N-1; unsplit
 oversized words fail. Complete 24 kHz mono PCM16 WAV or 128 kbps MP3 is returned;
 PCM/encoded data each have a 32 MiB limit; timeout is 300 seconds. Disconnects stop
 workers before releasing occupancy and log REQUEST_CANCELLED with 499.
-SSE, external TTS providers and playback are unimplemented. Real Kokoro validation
-covers Windows x64; Linux has a pinned lock/catalog entry without native validation.
+SSE, external TTS backends and playback are unimplemented. Local execution supports Windows x64 only.
 
 ## Audio TTS and temporary references
 
-English Chatterbox uses architecture=chatterbox and `python-worker/audio-cuda`.
+English Chatterbox uses architecture=chatterbox and the local backend's Audio worker.
 Local files are ve.safetensors, t3_cfg.safetensors, s3gen.safetensors and tokenizer.json.
 Speech shares Kokoro's text/speed/format/output-size/timeout contract; tts.language is en-US only.
 Profile defaults and tts.model_options accept exaggeration=0.5 [0,2], cfg_weight=0.5 [0,1], temperature=0.8 (0,5],
@@ -228,6 +228,7 @@ Qwen accepts en-US/en-GB (English), zh-CN, ja-JP, ko-KR, de-DE, fr-FR, ru-RU,
 pt-BR, es-ES and it-IT; omission/null/auto selects Auto. Hindi is unsupported.
 Base has no presets. Real validation covers the 0.6B Base checkpoint on CPU/CUDA
 with English/Chinese; other Base sizes are unverified. CustomVoice/VoiceDesign are deferred.
+Automatic transcripts can be ambiguous for short Chinese clones; pronunciation fidelity still needs listening review.
 
 Chatterbox/Qwen require exactly one temporary voice ID or tts.reference_audio={format=wav|mp3,data_base64}.
 Multipart uploads contain model alias and one file; responses contain voice_id, model, source=temporary and expires_at.
@@ -238,7 +239,8 @@ Qwen optionally accepts reference_text (1..4096 nonblank characters) in the uplo
 Absence uses speaker-embedding cloning; presence uses full audio/transcript conditioning. Transcripts stay
 in reference memory until cleanup, are never returned/logged, and are not generated by ASR.
 
-References bind to the creating key and model profile/binding; clients sharing the key share access.
+References bind to the key, model profile/reference, backend, engine, execution options and
+release version; clients sharing the key share access.
 Creation grants 30 minutes; valid execution/queue admission atomically applies max(expires_at, now+15 minutes).
 Overflow, discovery and pre-admission rejection do not renew. Expired IDs cannot reactivate.
 Active/queued requests pin files until completion or worker cancellation; deleting
@@ -293,8 +295,6 @@ Public rerank and image generation are deferred; see [future services](../FUTURE
 
 ## HTTP schemas
 
-OpenAPI 3.1 covers management and `/v1` with strict schemas and unique OperationIds.
-Responses omit keys, manifest hashes and log paths; invalid results become sanitized 500 INTERNAL_ERROR.
-Omission/null/timestamp precision survive, including SQLite UTC text. `/v1` authenticates/bounds bytes before
-parsing and alone advertises Bearer/x-api-key alternatives. JSON/SSE/audio and X-Request-Id are documented;
-see [check/export commands](../../README.md#http-contract).
+OpenAPI 3.1 covers management and `/v1`; [check/export commands](../../README.md#http-contract)
+verify schemas and JSON/SSE/audio responses. Reads omit keys, manifest hashes and log paths;
+invalid results become sanitized 500 INTERNAL_ERROR. Omission/null and timestamp precision survive.

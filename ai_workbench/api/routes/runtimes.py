@@ -1,36 +1,29 @@
 from fastapi import APIRouter, Depends, Query
 
 from ai_workbench.api.deps import get_state
-from ai_workbench.api.openapi import request_body
 from ai_workbench.api.schemas.common import TextResponse, error_responses
-from ai_workbench.api.schemas.models import CatalogEntryResponse, DownloadSettingsPatch, InstallationResponse, RuntimeJobResponse
-from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.runtimes.schema import CacheCleanupRequest, DownloadSettings, RuntimeStorage
+from ai_workbench.api.schemas.models import InstallationResponse, RuntimeCatalogResponse, RuntimeJobResponse
+from ai_workbench.core.models.runtimes.schema import (
+    CacheCleanupRequest, LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, RuntimeStorage,
+)
+from pydantic import TypeAdapter
 
 router = APIRouter(prefix="/api/models", tags=["runtimes"])
 
 
-@router.get("/runtime/settings", response_model=DownloadSettings, response_model_exclude_unset=True)
-def settings(state=Depends(get_state)):
-    return state.runtime_supervisor.store.settings().model_dump()
-
-
-@router.patch("/runtime/settings", response_model=DownloadSettings, response_model_exclude_unset=True,
-              openapi_extra=request_body(DownloadSettingsPatch), responses=error_responses(409, 422))
-def patch_settings(payload: dict, state=Depends(get_state)):
-    if state.runtime_supervisor.active_job:
-        raise ModelError("RUNTIME_INSTALLING", "Wait for the runtime task before editing download settings.", 409)
-    return state.runtime_supervisor.store.patch_settings(payload).model_dump()
-
-
-@router.get("/runtimes/catalog", response_model=list[CatalogEntryResponse], response_model_exclude_unset=True)
+@router.get("/backends/local/runtime/catalog", response_model=RuntimeCatalogResponse)
 def catalog(state=Depends(get_state)):
-    return [entry.model_dump() for entry in state.runtime_supervisor.entries]
+    release = state.runtime_supervisor.release
+    schemas = {"llama-server": LlamaCPUOptions | LlamaCUDAOptions, "transformers": PythonOptions,
+               "kokoro": OnnxCPUOptions, "chatterbox": PythonOptions, "qwen3tts": PythonOptions}
+    return {**release.model_dump(include={"version", "platform", "architecture", "supported", "reason"}),
+            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "tts",
+                         "options_schema": TypeAdapter(schema).json_schema()} for engine, schema in schemas.items()]}
 
 
-@router.get("/runtimes", response_model=list[InstallationResponse], response_model_exclude_unset=True)
-def installations(state=Depends(get_state)):
-    return [value.model_dump(mode="json", exclude={"manifest_sha256"}) for value in state.runtime_supervisor.installations()]
+@router.get("/backends/local/runtime", response_model=InstallationResponse, response_model_exclude_unset=True)
+def installation(state=Depends(get_state)):
+    return state.runtime_supervisor.installation().model_dump(mode="json", exclude={"manifest_sha256"})
 
 
 @router.get("/runtimes/storage", response_model=RuntimeStorage)
@@ -69,21 +62,22 @@ def log(job_id: str, state=Depends(get_state)):
     return {"text": state.runtime_supervisor.log_text(job_id)}
 
 
-@router.get("/runtimes/{runtime_id}/{variant}", response_model=InstallationResponse, response_model_exclude_unset=True,
-            responses=error_responses(404, 422))
-def installation(runtime_id: str, variant: str, state=Depends(get_state)):
-    return state.runtime_supervisor.installation(runtime_id, variant).model_dump(mode="json", exclude={"manifest_sha256"})
-
-
-@router.post("/runtimes/{runtime_id}/{variant}/install", status_code=202, response_model=RuntimeJobResponse,
+@router.post("/backends/local/runtime/install", status_code=202, response_model=RuntimeJobResponse,
              response_model_exclude_unset=True, responses=error_responses(404, 409, 422, 503))
-async def install(runtime_id: str, variant: str, state=Depends(get_state)):
+async def install(state=Depends(get_state)):
     supervisor = state.runtime_supervisor
-    return supervisor.public_job(await supervisor.submit(runtime_id, variant, "install"))
+    return supervisor.public_job(await supervisor.submit("install"))
 
 
-@router.post("/runtimes/{runtime_id}/{variant}/uninstall", status_code=202, response_model=RuntimeJobResponse,
+@router.post("/backends/local/runtime/repair", status_code=202, response_model=RuntimeJobResponse,
              response_model_exclude_unset=True, responses=error_responses(404, 409, 422, 503))
-async def uninstall(runtime_id: str, variant: str, state=Depends(get_state)):
+async def repair(state=Depends(get_state)):
     supervisor = state.runtime_supervisor
-    return supervisor.public_job(await supervisor.submit(runtime_id, variant, "uninstall"))
+    return supervisor.public_job(await supervisor.submit("repair"))
+
+
+@router.post("/backends/local/runtime/uninstall", status_code=202, response_model=RuntimeJobResponse,
+             response_model_exclude_unset=True, responses=error_responses(404, 409, 422, 503))
+async def uninstall(state=Depends(get_state)):
+    supervisor = state.runtime_supervisor
+    return supervisor.public_job(await supervisor.submit("uninstall"))

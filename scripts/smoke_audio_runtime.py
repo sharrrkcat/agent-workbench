@@ -1,4 +1,4 @@
-"""Windows Audio installation and offline three-engine acceptance."""
+"""Unified Windows installation and offline Audio engine acceptance."""
 from __future__ import annotations
 
 import argparse
@@ -21,12 +21,13 @@ import uvicorn
 from ai_workbench.api.deps import build_runtime_state
 from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.manager import ProviderSlot
+from ai_workbench.core.models.manager import BackendSlot
 from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.schema import ModelProfile
+from ai_workbench.core.models.store import BackendProfileStore
 from ai_workbench.db.database import get_engine, init_db
-from scripts.smoke_transformers_runtime import until
+from scripts.smoke_llm_runtime import until
 
 
 async def smoke(args):
@@ -38,9 +39,10 @@ async def smoke(args):
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor
     supervisor.store = RuntimeStore(engine)
+    state.backend_profiles = supervisor.backends = state.model_manager.backends = BackendProfileStore(engine)
     try:
         if not args.skip_install:
-            job = await supervisor.submit("python-worker", "audio-cuda", "install")
+            job = await supervisor.submit('install')
             previous = None
             while supervisor.task and not supervisor.task.done():
                 current = supervisor.store.job(job.id)
@@ -53,7 +55,7 @@ async def smoke(args):
             print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
             if result.state != "completed":
                 print(supervisor.log_text(result.id), flush=True)
-                raise RuntimeError("Audio installation failed")
+                raise RuntimeError("Local backend installation failed")
         if not args.install_only:
             await validate_engines(state, args)
     finally:
@@ -122,11 +124,7 @@ def offline_files(adapter):
 async def reference_tts(state, client, args, architecture, device, reference, output, keeper):
     manager = state.model_manager
     qwen = architecture == "qwen3tts"
-    created = (await checked(client, "POST", "/api/models/profiles", json={
-        "name": f"{architecture} {device}", "alias": f"{architecture}-{device}", "kind": "tts",
-        "runtime_id": "python-worker", "runtime_variant": "audio-cuda", "model_ref": getattr(args, architecture),
-        "runtime_options": {"device": device}, "parameters": {"architecture": architecture, "response_format": "wav"},
-        "external_enabled": True})).json()
+    created = (await checked(client, "POST", "/api/models/profiles", json={'name': f'{architecture} {device}', 'alias': f'{architecture}-{device}', 'kind': 'tts', 'model_ref': getattr(args, architecture), 'execution_options': {'device': device}, 'parameters': {'architecture': architecture, 'response_format': 'wav'}, 'external_enabled': True, 'backend_profile_id': 'local'})).json()
     profile = manager.profiles.get(created["id"])
     uploaded = (await checked(client, "POST", "/v1/audio/voice-references", data={"model": profile.alias},
         files={"file": (reference.name, reference.read_bytes())})).json()
@@ -199,13 +197,11 @@ async def reference_tts(state, client, args, architecture, device, reference, ou
 async def whisper(state, args, device, reference, output, keeper):
     manager = state.model_manager
     # Whisper alone remains private acceptance tooling, outside public ModelInput.
-    profile = SimpleNamespace(id=f"acceptance-whisper-{device}", kind="asr",
-        runtime_id="python-worker", runtime_variant="audio-cuda", model_ref=args.whisper,
-        parameters={"architecture": "whisper"}, runtime_options={"device": device, "intraop_threads": 4})
+    profile = SimpleNamespace(id=f'acceptance-whisper-{device}', kind='asr', model_ref=args.whisper, parameters={'architecture': 'whisper'}, execution_options={'device': device, 'intraop_threads': 4}, backend_profile_id='local')
     adapter = AudioWorkerAdapter(state.runtime_supervisor, profile, lambda: None)
     adapter.validation = True
     backend = manager.backend_key(profile)
-    manager._slots[backend] = ProviderSlot(adapter, asyncio.Semaphore(1))
+    manager._slots[backend] = BackendSlot(adapter, asyncio.Semaphore(1))
 
     async def call(operation):
         async with manager._provider_lease(backend, (backend, profile.id), profile, require_runtime=False):
@@ -270,11 +266,9 @@ async def validate_engines(state, args):
     output.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(32)
     manager.settings.patch({"external_enabled": True, "external_api_key": token})
-    report = {"platform": "windows", "runtime_version": state.runtime_supervisor.entry("python-worker", "audio-cuda").version,
+    report = {"platform": "windows", "runtime_version": state.runtime_supervisor.release.version,
               "models": {name: getattr(args, name) for name in ("chatterbox", "qwen3tts", "whisper")}, "results": []}
-    keeper_profile = manager.profiles.create(ModelProfile(name="Audio isolation witness", alias="audio-witness", kind="tts",
-        runtime_id="python-worker", runtime_variant="audio-cuda", model_ref=args.chatterbox,
-        parameters={"architecture": "chatterbox"}, runtime_options={"device": "cpu"}))
+    keeper_profile = manager.profiles.create(ModelProfile(name='Audio isolation witness', alias='audio-witness', kind='tts', model_ref=args.chatterbox, parameters={'architecture': 'chatterbox'}, execution_options={'device': 'cpu'}, backend_profile_id='local'))
     # Start only the reference decoder in this witness, keeping its process alive without weights.
     _, keeper_slot = manager._slot(manager.backend_key(keeper_profile), keeper_profile)
     keeper = keeper_slot.adapter

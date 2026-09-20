@@ -16,7 +16,7 @@ from ai_workbench.core.models.runtimes.catalog import catalog
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import Installation
 from ai_workbench.core.models.schema import ModelProfile, SpeechRequest
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
 from tests.test_load_timing import events
 from tests.test_phase2b_runtime import installed_worker, supervisor
 from tests.test_runtime_maintenance import link_directory
@@ -52,10 +52,10 @@ def terminal(records, stage="load_total", scope="host"):
 def test_entry_resolution_reads_only_execution_metadata_and_preserves_nested_paths(tmp_path, monkeypatch):
     async def scenario():
         service = supervisor(tmp_path)
-        await service.submit("llama-server", "cpu", "install")
+        await service.submit('install')
         await service.task
-        entry = service.entries[0]
-        target = service.directory(entry)
+        entry = service.release
+        target = service.directory()
         marker = target / "installation.json"
         # A changed file list/hash is intentionally irrelevant to execution.
         data = json.loads(marker.read_text())
@@ -64,8 +64,8 @@ def test_entry_resolution_reads_only_execution_metadata_and_preserves_nested_pat
         marker.write_text(json.dumps(data))
         (target / "unused.txt").write_text("not part of the manifest")
         forbid_install_checks(monkeypatch, service)
-        assert service.executable(entry) == target / "bin/llama-server.exe"
-        assert service.installation("llama-server", "cpu").state == "installed"
+        assert service.executable("llama-server", "cpu") == target / "native/cpu/bin/llama-server.exe"
+        assert service.installation().state == "installed"
         await service.close()
     asyncio.run(scenario())
 
@@ -74,47 +74,39 @@ def test_entry_resolution_reads_only_execution_metadata_and_preserves_nested_pat
 def test_invalid_or_missing_entry_fails_without_full_verification(tmp_path, monkeypatch, name):
     async def scenario():
         service = supervisor(tmp_path)
-        await service.submit("llama-server", "cpu", "install")
+        await service.submit('install')
         await service.task
-        entry = service.entries[0]
-        (service.directory(entry) / "installation.json").write_text(json.dumps({"executable": name}))
+        entry = service.release
+        (service.directory() / "installation.json").write_text(json.dumps({"executables": {"cpu": name}}))
         forbid_install_checks(monkeypatch, service)
         with pytest.raises(ModelError) as error:
-            service.executable(entry)
+            service.executable("llama-server", "cpu")
         assert error.value.code == "RUNTIME_BROKEN"
         await service.close()
     asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("owned", [True, False])
-def test_linux_venv_entry_may_only_link_to_owned_shared_python(tmp_path, monkeypatch, owned):
+def test_entry_links_cannot_escape_the_release(tmp_path, monkeypatch, owned):
     service = supervisor(tmp_path)
-    entry = next(item for item in catalog("linux", "x86_64") if item.variant == "onnx-cpu").model_copy(update={"version": "fixture"})
-    service.entries = [entry]
-    target = service.directory(entry)
-    (target / "worker").mkdir(parents=True)
-    (target / "worker/server.py").write_text("# fixture")
-    interpreter = (service.base / "python/shared" if owned else tmp_path / "outside")
+    target = service.directory()
+    target.mkdir(parents=True)
+    interpreter = service.base / "python/shared" if owned else tmp_path / "outside"
     interpreter.mkdir(parents=True)
-    (interpreter / "python").write_bytes(b"fixture")
+    (interpreter / "python.exe").write_bytes(b"fixture")
     link_directory(target / "bin", interpreter)
-    (target / "installation.json").write_text(json.dumps({"executable": "bin/python"}))
-    service.store.save_installation(Installation(id="python-worker/onnx-cpu", runtime_id="python-worker",
-        variant="onnx-cpu", version="fixture", state="installed"))
+    (target / "installation.json").write_text(json.dumps({"executables": {"cpu": "bin/python.exe"}}))
+    service.store.save_installation(Installation(version="fixture", state="installed"))
     forbid_install_checks(monkeypatch, service)
-    if owned:
-        assert service.executable(entry) == target / "bin/python"
-    else:
-        with pytest.raises(ModelError) as error:
-            service.executable(entry)
-        assert error.value.code == "RUNTIME_BROKEN"
+    with pytest.raises(ModelError) as error:
+        service.executable("llama-server", "cpu")
+    assert error.value.code == "RUNTIME_BROKEN"
 
 
 def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, monkeypatch):
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
         state = client.app.state.runtime_state
-        value = state.model_profiles.create(ModelProfile(name="local", alias="local", kind="llm",
-            runtime_id="llama-server", runtime_variant="cpu", model_ref="llms/missing.gguf"))
+        value = state.model_profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref='llms/missing.gguf', backend_profile_id='local', execution_options={'device': 'cpu'}))
         monkeypatch.setattr(ManagedProcess, "start", AsyncMock(side_effect=AssertionError("Unexpected process start")))
         response = client.post(f"/api/models/profiles/{value.id}/load")
         assert response.status_code == 503 and response.json()["error"]["code"] == "RUNTIME_NOT_INSTALLED"
@@ -122,13 +114,12 @@ def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, m
         assert terminal(records)[0]["error_code"] == "RUNTIME_NOT_INSTALLED"
         assert terminal(records, "queue_wait")[0]["result"] == "failed"
         service = state.runtime_supervisor
-        entry = service.entry("llama-server", "cpu")
-        target = service.directory(entry)
+        entry = service.release
+        target = service.directory()
         target.mkdir(parents=True)
         (target / "llama-server.exe").write_bytes(b"fixture")
-        (target / "installation.json").write_text(json.dumps({"executable": "llama-server.exe"}))
-        service.store.save_installation(Installation(id="llama-server/cpu", runtime_id="llama-server",
-            variant="cpu", version=entry.version, state="installed"))
+        (target / "installation.json").write_text(json.dumps({"executables": {"cpu": "llama-server.exe"}}))
+        service.store.save_installation(Installation(version=entry.version, state='installed', backend_profile_id='local'))
         forbid_install_checks(monkeypatch, service)
         response = client.post(f"/api/models/profiles/{value.id}/load")
         assert response.status_code == 404 and response.json()["error"]["code"] == "MODEL_NOT_FOUND"
@@ -179,20 +170,13 @@ def test_onnx_explicit_auto_shared_and_repeat_loads_never_check_installation(tmp
 def test_single_model_families_skip_verification_on_health_load_and_reload(tmp_path, monkeypatch, variant):
     async def scenario():
         service = supervisor(tmp_path)
-        await service.submit("llama-server", "cpu", "install")
+        await service.submit('install')
         await service.task
-        original = service.entries[0]
-        runtime_id = "python-worker" if variant == "transformers-cuda" else "llama-server"
-        entry = original.model_copy(update={"runtime_id": runtime_id, "variant": variant})
-        service.entries = [entry]
-        target = service.directory(entry)
-        target.mkdir(parents=True, exist_ok=True)
+        entry = service.release
+        target = service.directory()
         (target / "entry.exe").write_bytes(b"fixture")
-        (target / "installation.json").write_text(json.dumps({"executable": "entry.exe"}))
-        if runtime_id == "python-worker":
-            entry.worker_entrypoint = "transformers_server.py"
-            (target / "worker").mkdir()
-            (target / "worker/transformers_server.py").write_text("# fixture")
+        (target / "installation.json").write_text(json.dumps({"executables": dict.fromkeys(["cpu", "cuda", "python"], "entry.exe")}))
+        if variant == "transformers-cuda":
             model = tmp_path / "data/models/llms/local"
             model.mkdir(parents=True)
             (model / "config.json").write_text("{}")
@@ -201,11 +185,9 @@ def test_single_model_families_skip_verification_on_health_load_and_reload(tmp_p
             model = tmp_path / "data/models/llms/local.gguf"
             model.parent.mkdir(parents=True)
             model.write_bytes(b"fixture")
-        service.store.save_installation(Installation(id=f"{runtime_id}/{variant}", runtime_id=runtime_id,
-            variant=variant, version=entry.version, state="installed"))
-        manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        profile = manager.profiles.create(ModelProfile(name="local", alias="local", kind="llm", runtime_id=runtime_id,
-            runtime_variant=variant, model_ref=model.relative_to(tmp_path / "data/models").as_posix()))
+        service.store.save_installation(Installation(version=entry.version, state='installed', backend_profile_id='local'))
+        manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        profile = manager.profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref=model.relative_to(tmp_path / 'data/models').as_posix(), backend_profile_id='local', execution_options={'device': 'cpu' if variant == 'cpu' else 'cuda'}))
         adapter = manager._managed_slot(profile).adapter
         starts = []
         async def start(*args):
@@ -279,9 +261,9 @@ def test_autoload_finishes_before_inference_and_later_cancel_does_not_rewrite_it
 def test_load_failures_record_cleanup_and_one_terminal_result(tmp_path, monkeypatch, failure):
     async def scenario():
         service, manager, profile = await installed_worker(tmp_path)
-        target = service.directory(service.entries[0])
+        target = service.directory()
         body = "raise RuntimeError('private model contents')" if failure == "error" else "time.sleep(60)"
-        (target / "worker/tts_engine.py").write_text("import time\nclass TTSEngine:\n    def __init__(self, *args):\n        " + body + "\n")
+        (target / "worker/tts_engine.py").write_text("import time\nclass TTSEngine:\n    def __init__(self, *args, **kwargs):\n        " + body + "\n")
         adapter = manager._managed_slot(profile).adapter
         if failure == "timeout":
             rpc = adapter._rpc

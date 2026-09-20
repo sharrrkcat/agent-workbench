@@ -76,8 +76,8 @@ document preprocessing; retrieval uses query preprocessing. No local runtime
 is imported by Knowledge. The local reranker backend is deferred to Infinity;
 unavailable reranking retains the documented RRF order.
 
-Changing an embedding profile's provider, runtime binding/options, model reference or parameters, or
-its provider URL, marks associated bases and sources `needs_reindex` in both
+Changing an embedding profile's backend binding, execution options, model reference or parameters, or
+its external backend URL, marks associated bases and sources `needs_reindex` in both
 memory and SQLite stores. Retrieval excludes invalidated bases until reindex.
 One successful source does not clear a base's needs_reindex state while other
 sources still require rebuilding. Deleting the final source sets the base empty.
