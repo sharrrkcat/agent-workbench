@@ -17,7 +17,7 @@ from ai_workbench.core.models.runtimes.catalog import catalog
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import Installation
 from ai_workbench.core.models.schema import ModelProfile, SpeechRequest
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from tests.test_load_timing import events
 from tests.test_phase2b_runtime import installed_worker, supervisor
 from tests.test_runtime_maintenance import link_directory
@@ -113,7 +113,7 @@ def test_entry_links_cannot_escape_the_release(tmp_path, monkeypatch, owned):
 def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, monkeypatch):
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
         state = client.app.state.runtime_state
-        value = state.model_profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref='llms/missing.gguf', backend_profile_id='local', execution_options={'device': 'cpu'}))
+        value = state.model_profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref='llms/missing.gguf', source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
         monkeypatch.setattr(ManagedProcess, "start", AsyncMock(side_effect=AssertionError("Unexpected process start")))
         response = client.post(f"/api/models/profiles/{value.id}/load")
         assert response.status_code == 503 and response.json()["error"]["code"] == "RUNTIME_NOT_INSTALLED"
@@ -188,8 +188,8 @@ def test_single_model_families_use_only_fast_checks_on_health_load_and_reload(tm
             model = tmp_path / "data/models/llms/local.gguf"
             model.parent.mkdir(parents=True)
             model.write_bytes(b"fixture")
-        manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        profile = manager.profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref=model.relative_to(tmp_path / 'data/models').as_posix(), backend_profile_id='local', execution_options={'device': 'cpu' if variant == 'cpu' else 'cuda'}))
+        manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        profile = manager.profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref=model.relative_to(tmp_path / 'data/models').as_posix(), source={'type': 'local', 'execution_options': {'device': 'cpu' if variant == 'cpu' else 'cuda'}}))
         adapter = manager._managed_slot(profile).adapter
         starts = []
         async def start(*args):

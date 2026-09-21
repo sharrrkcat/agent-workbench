@@ -11,7 +11,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
     await relay_events(websocket, session_id)
 
 
-@router.websocket("/api/models/runtimes/events")
+@router.websocket("/api/models/events")
 async def model_events(websocket: WebSocket) -> None:
     await relay_events(websocket, "")
 

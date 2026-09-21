@@ -5,11 +5,11 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import type { ModelInput } from '../../../types/models';
+import type { LocalModelSource, ModelInput } from '../../../types/models';
 import { AppModal } from '../../ui/AppModal';
 import { Field, Check, NumberInput } from './fields';
 import type { ModelFeedbackProps } from './types';
-import { kinds, localEngine, updateModel } from './profileDefaults';
+import { kinds, localEngine, localSource, selectModelSource, sourceValue, updateModel } from './profileDefaults';
 import { CudaLayersField } from './CudaLayersField';
 import { PresetVoices } from './PresetVoices';
 
@@ -20,36 +20,44 @@ export function ProfileEditor({
   run,
   busy,
   feedback,
-  setError,
 }: ModelFeedbackProps & {
   model: ProfileDraft | null;
   setModel: Dispatch<SetStateAction<ProfileDraft | null>>;
 }) {
   const { t } = useTranslation('llm');
-  const { backends, profiles } = useModelsStore();
+  const { providers, profiles } = useModelsStore();
+  const local = model?.value.source?.type === 'local' ? model.value.source : null;
   const engine = model ? localEngine(model.value) : null;
   const transformers = engine === 'transformers';
   const audio = engine === 'chatterbox' || engine === 'qwen3tts';
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
+  const [discoveryError, setDiscoveryError] = useState('');
+  const selectedSource = model ? sourceValue(model.value.source) : '';
+  const modelKind = model?.value.kind;
   useEffect(() => {
     let cancelled = false;
     setRemoteModels([]);
-    const id = model?.value.backend_profile_id;
-    if (id && id !== 'local')
-      void modelsApi
-        .listBackendModels(id)
-        .then((value) => {
-          if (!cancelled) setRemoteModels(value.models);
-        })
+    setDiscoveryError('');
+    const request = selectedSource === 'local'
+      ? modelsApi.listModelInventory(modelKind).then((items) => items.map((item) => item.model_ref))
+      : selectedSource.startsWith('provider:')
+        ? modelsApi.listProviderModels(selectedSource.slice('provider:'.length)).then((value) => value.models)
+        : null;
+    if (request)
+      void request
+        .then((models) => { if (!cancelled) setRemoteModels(models); })
         .catch((error) => {
-          if (!cancelled) setError(String(error.message));
+          if (!cancelled) setDiscoveryError(String(error.message));
         });
     return () => {
       cancelled = true;
     };
-  }, [model?.value.backend_profile_id, setError]);
+  }, [selectedSource, modelKind]);
   const patchModel = (patch: Partial<ModelInput>) =>
     setModel((draft) => (draft ? { ...draft, value: updateModel(draft.value, patch) } : null));
+  const patchLocal = (patch: Partial<LocalModelSource>) =>
+    setModel((draft) => draft?.value.source?.type === 'local'
+      ? { ...draft, value: updateModel(draft.value, { source: { ...draft.value.source, ...patch } }) } : draft);
   return (
     <AppModal
       open={!!model}
@@ -94,27 +102,38 @@ export function ProfileEditor({
                   ))}
                 </select>
               </Field>
-              <Field label={t('backend')}>
-                <select value={model.value.backend_profile_id || ''}
-                  onChange={(e) => patchModel({ backend_profile_id: e.target.value || null })}>
-                  <option value="">{t('unavailableBackend')}</option>
-                  {backends.filter((backend) => backend.type === 'local'
-                    ? ['llm', 'tts'].includes(model.value.kind) : model.value.kind !== 'tts').map((backend) => (
-                    <option value={backend.id} key={backend.id}>
-                      {backend.type === 'local' ? t('localBackend') : backend.name}{backend.enabled ? '' : ` (${t('disabled')})`}
-                    </option>
-                  ))}
+              <Field label={t('source')}>
+                <select value={selectedSource}
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    setModel((draft) => draft ? { ...draft, value: selectModelSource(draft.value,
+                      selected === 'local' ? localSource() : selected
+                        ? { type: 'provider', provider_profile_id: selected.slice('provider:'.length) } : null) } : null);
+                  }}>
+                  <option value="">{t('unbound')}</option>
+                  {['llm', 'tts'].includes(model.value.kind) ? (
+                    <optgroup label={t('localSourceGroup')}><option value="local">{t('localRuntime')}</option></optgroup>
+                  ) : null}
+                  {['llm', 'embedding'].includes(model.value.kind) && providers.length ? (
+                    <optgroup label={t('providers')}>
+                      {providers.map((provider) => (
+                        <option value={`provider:${provider.id}`} key={provider.id}>
+                          {provider.name}{provider.enabled ? '' : ` (${t('disabled')})`}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </Field>
               <Field label={t('modelRef')}>
                 <input
                   required
-                  list="backend-models"
+                  list="source-models"
                   value={model.value.model_ref}
                   onChange={(e) => patchModel({ model_ref: e.target.value })}
                 />
               </Field>
-              <datalist id="backend-models">
+              <datalist id="source-models">
                 {remoteModels.map((id) => (
                   <option key={id} value={id} />
                 ))}
@@ -132,15 +151,17 @@ export function ProfileEditor({
                 />
               </div>
             </div>
-            {engine ? (
+            {model.value.source?.type === 'provider' ? <p className="model-empty">{t('providerModelHint')}</p> : null}
+            {discoveryError ? <p role="status" className="model-empty">{t('discoveryUnavailable')} {discoveryError}</p> : null}
+            {engine && local ? (
               <>
                 <h3>{t('executionOptions')}</h3>
                 <p className="model-empty">{t('engine')}: {t('engines.' + engine)}</p>
                 <div className="model-form-grid">
                   <Field label={t('runtimeDevice')}>
-                    <select value={String(model.value.execution_options.device)} disabled={engine === 'kokoro'}
-                      onChange={(e) => patchModel({ execution_options: {
-                        ...model.value.execution_options, device: e.target.value,
+                    <select value={String(local.execution_options.device)} disabled={engine === 'kokoro'}
+                      onChange={(e) => patchLocal({ execution_options: {
+                        ...local.execution_options, device: e.target.value,
                         ...(engine === 'llama-server' ? { gpu_layers: e.target.value === 'cpu' ? 0 : 'auto' } : {}),
                       } })}>
                       <option value="cuda">NVIDIA CUDA</option><option value="cpu">CPU</option>
@@ -150,12 +171,12 @@ export function ProfileEditor({
                     ? [['threads', 4, 1, 256], ['context_size', 4096, 512, 1048576], ['batch_size', 512, 1, 4096]]
                     : [['intraop_threads', 4, 1, 256]]).map(([key, initial, min, max]) => (
                     <NumberInput key={String(key)} label={t('runtimeParams.' + key)}
-                      value={Number(model.value.execution_options[String(key)] ?? initial)} min={Number(min)} max={Number(max)}
-                      onChange={(value) => patchModel({ execution_options: { ...model.value.execution_options, [String(key)]: value ?? Number(initial) } })} />
+                      value={Number(local.execution_options[String(key)] ?? initial)} min={Number(min)} max={Number(max)}
+                      onChange={(value) => patchLocal({ execution_options: { ...local.execution_options, [String(key)]: value ?? Number(initial) } })} />
                   ))}
-                  {engine === 'llama-server' && model.value.execution_options.device === 'cuda' ? (
-                    <CudaLayersField value={typeof model.value.execution_options.gpu_layers === 'number' ? model.value.execution_options.gpu_layers : 'auto'}
-                      onChange={(gpu_layers) => patchModel({ execution_options: { ...model.value.execution_options, gpu_layers } })} />
+                  {engine === 'llama-server' && local.execution_options.device === 'cuda' ? (
+                    <CudaLayersField value={typeof local.execution_options.gpu_layers === 'number' ? local.execution_options.gpu_layers : 'auto'}
+                      onChange={(gpu_layers) => patchLocal({ execution_options: { ...local.execution_options, gpu_layers } })} />
                   ) : null}
                 </div>
                 {transformers ? <p className="model-empty">{t('transformersDeviceHint')}</p> : null}
@@ -185,20 +206,21 @@ export function ProfileEditor({
               ? <p className="model-empty">{t('chatterboxReferenceHint')}</p> : null}
             {model.value.kind === 'tts' && model.value.parameters.architecture === 'qwen3tts'
               ? <p className="model-empty">{t('qwenReferenceHint')}</p> : null}
-            {model.value.kind === 'tts' && model.value.parameters.architecture === 'kokoro' && model.id
+            {local && model.value.kind === 'tts' && model.value.parameters.architecture === 'kokoro' && model.id
               && profiles.find((profile) => profile.id === model.id)?.parameters.architecture === 'kokoro'
               && profiles.find((profile) => profile.id === model.id)?.model_ref === model.value.model_ref
               ? <PresetVoices profileId={model.id} /> : null}
+            {local ? <>
             <h3>{t('lifecycle')}</h3>
             <div className="model-form-grid">
               <Field label={t('release')}>
                 <select
-                  value={model.value.lifecycle.unload}
+                  value={local.lifecycle.unload}
                   onChange={(e) =>
-                    patchModel({
+                    patchLocal({
                       lifecycle: {
-                        ...model.value.lifecycle,
-                        unload: e.target.value as ModelInput['lifecycle']['unload'],
+                        ...local.lifecycle,
+                        unload: e.target.value as LocalModelSource['lifecycle']['unload'],
                       },
                     })
                   }
@@ -210,15 +232,16 @@ export function ProfileEditor({
                   ))}
                 </select>
               </Field>
-              {model.value.lifecycle.unload === 'idle' ? (
+              {local.lifecycle.unload === 'idle' ? (
                 <NumberInput
                   label={t('idleSeconds')}
-                  value={model.value.lifecycle.idle_seconds}
+                  value={local.lifecycle.idle_seconds}
                   min={1}
-                  onChange={(v) => patchModel({ lifecycle: { ...model.value.lifecycle, idle_seconds: v ?? 300 } })}
+                  onChange={(v) => patchLocal({ lifecycle: { ...local.lifecycle, idle_seconds: v ?? 300 } })}
                 />
               ) : null}
             </div>
+            </> : null}
             <div className="model-form-footer">
               <button type="submit" className="primary-button">
                 <Save size={16} />

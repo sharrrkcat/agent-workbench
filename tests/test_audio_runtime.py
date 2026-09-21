@@ -22,8 +22,8 @@ from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog
 from ai_workbench.core.models.runtimes.process import RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeJob
-from ai_workbench.core.models.schema import SpeechRequest
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
+from ai_workbench.core.models.schema import LocalSource, SpeechRequest
+from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers import audio_engine
 from ai_workbench.workers.audio_catalog import CHATTERBOX_FILES, audio_model, reference_path
@@ -202,19 +202,17 @@ async def installed_audio(tmp_path):
 def test_private_whisper_uses_audio_process_and_manager_admission(tmp_path):
     async def scenario():
         service = await installed_audio(tmp_path)
-        manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        private = SimpleNamespace(id="private-asr", kind="asr", backend_profile_id="local",
-            model_ref="asr/whisper", parameters={"architecture": "whisper"},
-            execution_options={"device": "cpu", "intraop_threads": 4})
+        manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        private = SimpleNamespace(id="private-asr", kind="asr", model_ref="asr/whisper", parameters={"architecture": "whisper"}, source=LocalSource(type='local', execution_options={'device': 'cpu', 'intraop_threads': 4}))
         path = tmp_path / "data/models/asr/whisper"
         path.mkdir(parents=True)
         (path / "config.json").write_text('{}')
         (path / "model.safetensors").write_bytes(b'fixture')
-        backend = manager.backend_key(private)
+        backend = manager.execution_key(private)
         other = SimpleNamespace(**{**vars(private), "id": "other-asr"})
-        assert manager.backend_key(other) != backend
+        assert manager.execution_key(other) != backend
         try:
-            async with manager._provider_lease(backend, (backend, private.id), private) as slot:
+            async with manager._execution_lease(backend, (backend, private.id), private) as slot:
                 slot.adapter.validation = True
                 loaded = await slot.adapter.load(private, explicit=True)
                 assert loaded.runtime.engine == 'whisper' and loaded.residency == 'loaded'
@@ -240,7 +238,7 @@ def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(
     async def scenario():
         service = await installed_audio(tmp_path)
         forbid_install_scans(monkeypatch, service)
-        manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
         manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
         path = tmp_path / "data/models/tts/chatterbox"
         path.mkdir(parents=True)
@@ -249,14 +247,14 @@ def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(
         assert audio_model(tmp_path / "data/models", "tts/chatterbox", "chatterbox") == path
         from tests.audio_fixtures import qwen_model
         qwen_model(tmp_path / "data/models/tts/qwen")
-        first, second = [manager.profiles.create(profile(alias=alias, execution_options={"device": "cpu"},
+        first, second = [manager.profiles.create(profile(alias=alias, source={"type": "local", "execution_options": {"device": "cpu"}},
             model_ref="tts/qwen" if architecture == "qwen3tts" else "tts/chatterbox", parameters={"architecture": architecture}))
             for alias, architecture in zip(("first", "second"), architectures)]
         try:
             voices = [await manager.create_voice_reference(value.id, wav_bytes(), "wav", credential_id("test-key")) for value in (first, second)]
             for value in (first, second):
                 await manager.load(value.id)
-            left, right = [manager._slots[manager.backend_key(value)].adapter for value in (first, second)]
+            left, right = [manager._slots[manager.execution_key(value)].adapter for value in (first, second)]
             assert left.process.process.pid != right.process.process.pid
             right_process = right.process
             async with httpx.AsyncClient(trust_env=False) as client:

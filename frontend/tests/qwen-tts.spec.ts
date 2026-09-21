@@ -15,7 +15,7 @@ for (const locale of ['en', 'zh-CN']) {
     const architecture = dialog.getByLabel(labels.params.architecture, { exact: true });
     await expect(architecture).toBeEnabled();
     await expect(architecture).toHaveValue('kokoro');
-    await expect(dialog.getByLabel(labels.backend, { exact: true })).toHaveValue('local');
+    await expect(dialog.getByLabel(labels.source, { exact: true })).toHaveValue('local');
     await architecture.selectOption('qwen3tts');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('50');
     await expect(dialog.getByLabel(labels.params.temperature, { exact: true })).toHaveValue('0.9');
@@ -44,12 +44,12 @@ for (const locale of ['en', 'zh-CN']) {
     const saved = profiles.find((profile: { alias: string }) => profile.alias === alias);
     expect(saved.parameters).toEqual({ architecture: 'qwen3tts', speed: 0.85, response_format: 'wav', seed: null, do_sample: false,
       temperature: 0.9, top_p: 1, top_k: 0, repetition_penalty: 1.05, max_new_tokens: 512 });
-    expect(saved.backend_profile_id).toBe('local');
-    expect(saved.execution_options.device).toBe('cuda');
+    expect(saved.source.type).toBe('local');
+    expect(saved.source.execution_options.device).toBe('cuda');
     const row = page.locator('.model-list .model-row').filter({ hasText: alias });
     await row.getByRole('button', { name: labels.edit, exact: true }).click();
     await expect(architecture).toHaveValue('qwen3tts');
-    await dialog.getByLabel(labels.backend, { exact: true }).selectOption('local');
+    await dialog.getByLabel(labels.source, { exact: true }).selectOption('local');
     await expect(architecture).toHaveValue('qwen3tts');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('0');
     await expect(dialog.getByLabel(labels.params.do_sample, { exact: true })).not.toBeChecked();

@@ -21,7 +21,7 @@ from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
-from ai_workbench.core.models.store import ModelProfileStore, BackendProfileStore, ModelSettingsStore
+from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore, ModelSettingsStore, LocalRuntimeSettingsStore
 from ai_workbench.core.network_policy import NetworkPolicy
 from ai_workbench.core.runtime import ActiveRunRegistry, WorkbenchRuntime
 from ai_workbench.core.runtime_resources import RuntimeResourcesService
@@ -52,7 +52,8 @@ class RuntimeState:
     active_runs: ActiveRunRegistry
     model_manager: ModelManager
     model_profiles: ModelProfileStore
-    backend_profiles: BackendProfileStore
+    provider_profiles: ProviderProfileStore
+    local_runtime_settings: LocalRuntimeSettingsStore
     model_settings: ModelSettingsStore
     app_settings: Any
     knowledge: Any
@@ -97,7 +98,8 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         sessions.clear_interrupted_waiting_runs(runs.interrupt_unfinished_runs())
 
     profiles = ModelProfileStore(engine)
-    backends = BackendProfileStore(engine)
+    providers = ProviderProfileStore(engine)
+    local_runtime_settings = LocalRuntimeSettingsStore(engine)
     model_settings = ModelSettingsStore(engine)
     active_runs = ActiveRunRegistry()
     network_policy = NetworkPolicy()
@@ -105,8 +107,8 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     tool_registry = ToolRegistry()
     register_builtin_tools(tool_registry)
     harness_settings = HarnessSettingsStore(engine)
-    supervisor = RuntimeSupervisor(repo_root, RuntimeStore(engine), backends, events)
-    manager = ModelManager(profiles, backends, model_settings, events, adapter_factory, supervisor)
+    supervisor = RuntimeSupervisor(repo_root, RuntimeStore(engine), local_runtime_settings, events)
+    manager = ModelManager(profiles, providers, model_settings, events, adapter_factory, supervisor)
     utility_llm = UtilityLLMService(model_manager=manager, app_settings_store=app_settings)
     personas = PersonaStore(engine)
     chat_service = ChatService(personas=personas, sessions=sessions, runs=runs, model_manager=manager,
@@ -129,7 +131,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         sessions=sessions, messages=messages, runs=runs, run_events=run_events, events=events,
         runtime=runtime, chat_runner=chat_runner, active_runs=active_runs,
         chat_service=chat_service, history=history, personas=personas,
-        model_manager=manager, model_profiles=profiles, backend_profiles=backends,
+        model_manager=manager, model_profiles=profiles, provider_profiles=providers, local_runtime_settings=local_runtime_settings,
         model_settings=model_settings, app_settings=app_settings, knowledge=knowledge,
         knowledge_service=knowledge_service, worldbooks=worldbooks,
         utility_llm=utility_llm, network_policy=network_policy,

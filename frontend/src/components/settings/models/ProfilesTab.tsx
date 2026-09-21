@@ -16,8 +16,8 @@ export function ProfilesTab({
   busy,
   feedback,
   setError,
-  onOpenBackends,
-}: ModelFeedbackProps & { onOpenBackends: () => void }) {
+  onOpenLocalRuntime,
+}: ModelFeedbackProps & { onOpenLocalRuntime: () => void }) {
   const { t } = useTranslation('llm');
   const { profiles, statuses, setStatus, loading } = useModelsStore();
   const [kind, setKind] = useState<ModelKind>('llm');
@@ -75,29 +75,31 @@ export function ProfilesTab({
                     <strong>{p.name}</strong>
                     <code>{p.alias}</code>
                     <small>{p.model_ref}</small>
+                    {p.source?.type === 'provider' ? <small>{t('recentRequestState')}</small> : null}
                   </div>
                   <div className="model-state">
                     <span className={'state-' + (status?.state || 'unknown')}>
                       {p.enabled ? t('states.' + (status?.state || 'unknown')) : t('disabled')}
                     </span>
-                    <small>
+                    {p.source?.type === 'local' ? <small>
                       {t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}
-                    </small>
+                    </small> : null}
                     <small>
                       {t('active')}: {status?.active || 0} / {t('queued')}: {status?.queued || 0}
                     </small>
                   </div>
                   <div className="model-actions">
+                    {p.source?.type === 'local' ? <>
                     <Icon
                       label={t('health')}
-                      disabled={busy || !p.enabled || !p.backend_profile_id}
+                      disabled={busy || !p.enabled || !p.source}
                       onClick={() => void statusAction(p.id, 'health')}
                     >
                       <Activity size={15} />
                     </Icon>
                     <Icon
                       label={t('load')}
-                      disabled={busy || !p.enabled || !p.backend_profile_id}
+                      disabled={busy || !p.enabled || !p.source}
                       onClick={() => void statusAction(p.id, 'load')}
                     >
                       <Play size={15} />
@@ -115,7 +117,6 @@ export function ProfilesTab({
                     >
                       <Square size={14} />
                     </Icon>
-                    {p.backend_profile_id === 'local' ? (
                       <Icon
                         label={t('processLog')}
                         disabled={busy}
@@ -125,7 +126,7 @@ export function ProfilesTab({
                       >
                         <FileText size={14} />
                       </Icon>
-                    ) : null}
+                    </> : null}
                     <Icon
                       label={t('edit')}
                       disabled={busy}
@@ -156,6 +157,7 @@ export function ProfilesTab({
                       <Trash2 size={15} />
                     </Icon>
                   </div>
+                  {status?.error_code && !status.runtime ? <code className="error-text">{status.error_code}</code> : null}
                   {status?.runtime ? (
                     <div className="model-runtime-state">
                       <span>
@@ -168,8 +170,8 @@ export function ProfilesTab({
                       })}</span> : null}
                       {status.error_code ? <code className="error-text">{status.error_code}</code> : null}
                       {status.runtime.install_state !== 'installed' ? (
-                        <button type="button" className="text-button" onClick={() => onOpenBackends()}>
-                          {t('manageBackend')}
+                        <button type="button" className="text-button" onClick={() => onOpenLocalRuntime()}>
+                          {t('manageLocalRuntime')}
                         </button>
                       ) : null}
                     </div>

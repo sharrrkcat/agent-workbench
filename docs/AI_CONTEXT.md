@@ -9,9 +9,9 @@ plans describe ongoing work and do not turn proposed features into current capab
 
 Agent Workbench provides local chat and a single-key, loopback-only
 OpenAI-compatible model service. Internal and external inference share
-ModelManager. One Windows x64 local backend installs shared Python dependencies
+ModelManager. One Windows x64 local runtime installs shared Python dependencies
 and separate CPU/CUDA llama-server components. Models run in independent processes;
-external backends use the OpenAI-compatible protocol.
+external ProviderProfiles use the OpenAI-compatible protocol.
 Kokoro ONNX and PyTorch Audio provide offline MP3/WAV TTS through
 `/v1/audio/speech`. Kokoro uses local language resources and presets; English Chatterbox and multilingual
 Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optional

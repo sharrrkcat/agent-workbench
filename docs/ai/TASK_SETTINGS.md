@@ -8,7 +8,7 @@ Read [settings](../contracts/settings.md) and the domain owner:
 
 Backend paths under ai_workbench include core/settings.py for AppSettings,
 core/models/, core/harness/, core/knowledge_settings.py and core/worldbook.py
-for domain settings. API schemas live in api/schemas/; routes own request parsing.
+for domain settings; core/models/store.py owns provider and local runtime settings. API schemas live in api/schemas/; routes own request parsing.
 Under frontend/src/, components/SettingsPage.tsx composes components/settings/
 panels and domain API/type modules. Persona/session controls are in components/personas/.
 Storage and revision effects belong to [data layout](../DATA_LAYOUT.md).

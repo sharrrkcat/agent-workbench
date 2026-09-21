@@ -8,20 +8,19 @@ import { AppModal } from '../ui/AppModal';
 import { CacheJobResult, RuntimeStoragePanel } from './RuntimeStoragePanel';
 import { Check } from './models/fields';
 
-export function LocalBackendPanel({ activeView }: { activeView: boolean }) {
+export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
   const { t } = useTranslation('llm');
-  const { backends, catalog, installation, jobs, reload, runtimeLoading, runtimeError, reloadRuntimes, reloadStorage, storageLoading, setJob } = useModelsStore();
+  const { localRuntimeSettings: local, catalog, installation, jobs, reload, runtimeLoading, runtimeError, reloadRuntimes, reloadStorage, storageLoading, setJob } = useModelsStore();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [settings, setSettings] = useState<RuntimeDownloadSettings | null>(null);
   const [log, setLog] = useState<{ job: RuntimeJob; text: string } | null>(null);
   const active = jobs.find((job) => job.state === 'queued' || job.state === 'running');
-  const local = backends.find((backend) => backend.id === 'local');
-  const job = jobs.find((item) => item.backend_profile_id === 'local');
+  const job = jobs.find((item) => item.version !== null);
   const running = job?.state === 'queued' || job?.state === 'running';
   const state = installation?.state || (catalog?.supported ? 'not_installed' : 'unsupported');
   const jobLabel = (item: RuntimeJob) => t('runtimeOperations.' + item.operation);
-  useEffect(() => { setSettings(local?.download ?? null); }, [local?.updated_at]);
+  useEffect(() => { setSettings(local?.download ?? null); }, [local?.download.http_proxy, local?.download.pypi_index_url, local?.download.pytorch_index_url, local?.download.github_release_proxy_url]);
   async function run(task: () => Promise<unknown>) {
     setBusy(true);
     setError('');
@@ -42,7 +41,7 @@ export function LocalBackendPanel({ activeView }: { activeView: boolean }) {
   return (
     <div className="runtime-panel">
       <div className="model-toolbar">
-        <h3>{t('localBackend')}</h3>
+        <h3>{t('localRuntime')}</h3>
         <button
           className="icon-button"
           title={t('refresh')}
@@ -61,8 +60,8 @@ export function LocalBackendPanel({ activeView }: { activeView: boolean }) {
       <RuntimeStoragePanel activeView={activeView} busy={busy} active={active}
         onCleanup={(mode) => run(async () => setJob(await modelsApi.cleanupRuntimeCache(mode)))}
         onCancel={(job) => void run(async () => setJob(await modelsApi.cancelRuntimeJob(job.id)))} />
-      <Check label={t('enableLocalBackend')} checked={local?.enabled ?? true} disabled={busy || !!active || !local}
-        onChange={(enabled) => void run(() => modelsApi.patchBackendProfile('local', { enabled }))} />
+      <Check label={t('enableLocalRuntime')} checked={local?.enabled ?? true} disabled={busy || !!active || !local}
+        onChange={(enabled) => void run(() => modelsApi.patchLocalRuntimeSettings({ enabled }))} />
       {catalog ? (
         <div className="runtime-row">
           <div className="model-identity">
@@ -104,7 +103,7 @@ export function LocalBackendPanel({ activeView }: { activeView: boolean }) {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              void run(async () => setSettings((await modelsApi.patchBackendProfile('local', { download: settings })).download));
+              void run(async () => setSettings((await modelsApi.patchLocalRuntimeSettings({ download: settings })).download));
             }}
           >
             <fieldset className="model-form" disabled={busy || !!active}>

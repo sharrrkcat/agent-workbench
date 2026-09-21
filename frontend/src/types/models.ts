@@ -13,18 +13,23 @@ export type ModelCapabilities = {
   json_schema: boolean;
 };
 
+export type LocalModelSource = {
+  type: 'local';
+  execution_options: Record<string, string | number>;
+  lifecycle: { unload: 'manual' | 'after_request' | 'idle'; idle_seconds: number };
+};
+export type ModelSource = LocalModelSource | { type: 'provider'; provider_profile_id: string };
+
 export type ModelInput = {
   alias: string;
   name: string;
   kind: ModelKind;
-  backend_profile_id: string | null;
+  source: ModelSource | null;
   model_ref: string;
   enabled: boolean;
   external_enabled: boolean;
   capabilities: ModelCapabilities;
   parameters: Record<string, unknown>;
-  lifecycle: { unload: 'manual' | 'after_request' | 'idle'; idle_seconds: number };
-  execution_options: Record<string, string | number>;
 };
 
 export type ModelProfile = ModelInput & { id: string; created_at: string; updated_at: string };
@@ -38,22 +43,18 @@ export type ExternalConnection = {
   queue_timeout_seconds: number;
 };
 
-export type BackendInput = {
+export type ProviderInput = {
   name: string;
-  type: 'local' | 'openai_compatible';
   enabled: boolean;
-  connection: ExternalConnection | null;
-  download: RuntimeDownloadSettings | null;
+  connection: ExternalConnection;
 };
 
-export type ExternalBackendInput = BackendInput & { type: 'openai_compatible'; connection: ExternalConnection };
-export type BackendPatch = Partial<Omit<BackendInput, 'connection' | 'download'>> & {
-  connection?: Partial<ExternalConnection> | null;
-  download?: Partial<RuntimeDownloadSettings> | null;
+export type ProviderPatch = Partial<Omit<ProviderInput, 'connection'>> & {
+  connection?: Partial<ExternalConnection>;
 };
-export type BackendProfile = Omit<BackendInput, 'connection'> & {
+export type ProviderProfile = Omit<ProviderInput, 'connection'> & {
   id: string;
-  connection: (Omit<ExternalConnection, 'api_key'> & { has_api_key: boolean }) | null;
+  connection: Omit<ExternalConnection, 'api_key'> & { has_api_key: boolean };
   created_at: string;
   updated_at: string;
 };
@@ -74,7 +75,6 @@ export type ModelStatus = {
   queued: number;
   error_code: string | null;
   runtime?: {
-    backend_profile_id: 'local';
     engine: LocalEngine;
     version: string;
     install_state: RuntimeInstallState;
@@ -104,7 +104,6 @@ export type RuntimeCatalog = {
 };
 
 export type RuntimeInstallation = {
-  backend_profile_id: 'local';
   version: string;
   state: RuntimeInstallState;
   job_id: string | null;
@@ -114,7 +113,6 @@ export type RuntimeInstallation = {
 
 export type RuntimeJob = {
   id: string;
-  backend_profile_id: 'local' | null;
   version: string | null;
   operation: 'install' | 'repair' | 'uninstall' | 'cache_prune' | 'cache_clean';
   result: { before: StorageUsage | null; after: StorageUsage | null } | null;
@@ -143,7 +141,6 @@ export type StorageGroup = StorageUsage & {
   id: string;
   category: 'runtime' | 'python' | 'cache' | 'staging' | 'processes' | 'other';
   relative_path: string;
-  backend_profile_id: 'local' | null;
   version: string | null;
 };
 
@@ -162,6 +159,9 @@ export type RuntimeDownloadSettings = {
   pytorch_index_url: string | null;
   github_release_proxy_url: string | null;
 };
+
+export type LocalRuntimeSettings = { enabled: boolean; download: RuntimeDownloadSettings };
+export type LocalRuntimeSettingsPatch = { enabled?: boolean; download?: Partial<RuntimeDownloadSettings> };
 
 export type ModelInventoryItem = {
   kind: ModelKind;

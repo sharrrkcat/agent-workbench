@@ -5,8 +5,7 @@ from fastapi.testclient import TestClient
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.openai_adapter import OpenAIAdapter
-from ai_workbench.core.models.schema import ModelStatus, RerankResult
+from ai_workbench.core.models.schema import RerankResult
 from tests.model_fixtures import MockOpenAI, configure_model
 
 
@@ -35,24 +34,31 @@ def test_index_search_invalidation_reindex_and_shared_embeddings(tmp_path, memor
         assert reindex.json()["sources"][0]["status"] == "indexed"
         result = client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [base["id"]]})
         assert result.json()["results"], result.text
+        provider_path = '/api/models/providers/' + profile['source']['provider_profile_id']
+        assert client.patch(provider_path, json={'connection': {'api_key': 'replacement-key'}}).status_code == 200
+        assert client.get(f"/api/knowledge/bases/{base['id']}").json()['index_status'] != 'needs_reindex'
+        other = client.post('/api/models/providers', json={'name': 'Other', 'connection': {'base_url': 'https://other.test/v1'}}).json()
+        for path, patch in (
+            (provider_path, {'connection': {'base_url': 'https://replacement.test/v1'}}),
+            (f"/api/models/profiles/{profile['id']}", {'source': {'type': 'provider', 'provider_profile_id': other['id']}}),
+        ):
+            assert client.patch(path, json=patch).status_code == 200
+            assert client.get(f"/api/knowledge/bases/{base['id']}").json()['index_status'] == 'needs_reindex'
+            assert client.post(f"/api/knowledge/bases/{base['id']}/reindex").status_code == 200
 
 
-def test_rag_rerank_contract_uses_manager_and_rrf_on_failure(tmp_path):
+def test_rag_rerank_contract_uses_manager_and_rrf_on_failure(tmp_path, monkeypatch):
     upstream = MockOpenAI()
-    fail = False
-
-    class Adapter(OpenAIAdapter):
-        async def health(self, profile):
-            return ModelStatus(state="ready") if profile.kind == "reranker" else await super().health(profile)
-
-        async def rerank(self, profile, query, documents):
-            if fail:
-                raise ModelError("MODEL_UNAVAILABLE", "reranker unavailable", 503)
-            return RerankResult(scores=list(range(len(documents))))
-
-    with TestClient(create_app(use_memory=True, root=tmp_path, adapter_factory=lambda p: Adapter(p, __import__("httpx").MockTransport(upstream.handle)))) as client:
+    with TestClient(create_app(use_memory=True, root=tmp_path, adapter_factory=upstream.factory)) as client:
         embed = configure_model(client, kind="embedding", alias="embed")
-        rerank = configure_model(client, kind="reranker", alias="rerank")
+        rerank = configure_model(client, kind="reranker", alias="rerank", source=None)
+        manager = client.app.state.runtime_state.model_manager
+        original = manager.rerank
+
+        async def rerank_result(profile_id, query, documents):
+            assert profile_id == rerank['id']
+            return RerankResult(scores=list(range(len(documents))))
+        monkeypatch.setattr(manager, 'rerank', rerank_result)
         base = client.post("/api/knowledge/bases", json={"name": "Facts", "embedding_model_profile_id": embed["id"]}).json()
         for value in ("alpha first", "alpha second"):
             assert client.post(f"/api/knowledge/bases/{base['id']}/sources", json={"title": value, "text": value}).status_code == 200
@@ -61,7 +67,7 @@ def test_rag_rerank_contract_uses_manager_and_rrf_on_failure(tmp_path):
         ranked = search()
         assert ranked["metadata"]["reranker_used"] is True
         assert ranked["results"][0]["content"] == "alpha second"
-        fail = True
+        monkeypatch.setattr(manager, 'rerank', original)
         fallback = search()
         assert fallback["metadata"]["rerank_fallback"] is True
         assert fallback["metadata"]["reranker_used"] is False

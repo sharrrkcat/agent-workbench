@@ -33,17 +33,17 @@ See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 ## Configure models
 
-In **Settings > Models**, configure Backends, then bind a model:
+In **Settings > Models**, use the Models, Providers, Local Runtime and External API tabs:
 
-1. **Local backend:** open its details under Backends and install the shared
-   Windows x64 release once. Place model files manually under data/models and
-   select Local backend in each model. The reference/architecture selects its engine.
-2. **External backend:** add an OpenAI-compatible base URL, optional key and
-   queue/timeout settings under Backends. Bind models using the exact references
-   advertised by that service. Multiple external backends can coexist with Local.
+1. **Local Runtime:** install the shared Windows x64 release once. Place model
+   files manually under data/models, then select Local Runtime in a model.
+   Its reference/architecture selects the engine; release policy defaults to manual.
+2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings.
+   In Models, select that provider and enter the service's model ID. Optional discovery
+   supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
 Each profile has one of six kinds, an internal UUID, a unique public alias,
-capabilities, parameters and lifecycle settings. Choose the default chat model
+capabilities and parameters. Unbound drafts can be saved but cannot execute. Choose the default chat model
 and optionally a separate auxiliary model. New sessions select and save that
 default, or the first enabled LLM when it is unavailable. Both chat selectors
 show concrete models; changing the default preserves existing session selections.
@@ -69,7 +69,7 @@ describes the shared Python environment and both native llama-server builds.
 Execution options select CPU or NVIDIA CUDA; capable engines default to CUDA,
 Kokoro to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
 CUDA requires a usable NVIDIA device and GGUF must confirm positive offload.
-Local backend details provide install/repair/uninstall, cancellation, progress, logs and cache prune/clean.
+Local Runtime provides install/repair/uninstall, cancellation, progress, logs and cache prune/clean.
 Storage deduplicates hard links; exclusive logical size is an estimate, not exact disk recovery.
 Cache cleanup preserves installations. Download settings affect dependencies/proxies, never model weights.
 Model load, health and reference preparation check entry/model availability, without installation integrity or cache scans.
@@ -77,10 +77,10 @@ Model logs correlate UTC host/worker stages, package imports and wall/process CP
 Totals include queueing but exclude inference; nested stage durations overlap. See [models](docs/contracts/models.md).
 Repair rebuilds the current dependencies; application worker updates reuse the installed environment after reload/restart.
 
-Release defaults to manual. External health/load verifies the advertised model,
-but standard OpenAI-compatible connections cannot report weight residency or
-unload; the UI shows unknown residency and disables unload. Provider queues
-default to concurrency 1, 32 waiting requests and 30-second queue timeout.
+Local models expose health/load/unload. Provider rows show actual request outcomes:
+unknown before inference, ready on success, failed on upstream errors; retry is allowed.
+Discovery and cancellation do not change availability. Provider queues default to
+concurrency 1, 32 waiting requests and a 30-second queue timeout.
 
 ## Chat and tools
 
@@ -122,7 +122,7 @@ defines processing visibility and elapsed time.
 
 ## External API
 
-In **Models > External service**, configure a key and enable the service. Mark
+In **Models > External API**, configure a key and enable the service. Mark
 LLM/embedding/TTS profiles externally visible. Requests use public aliases, not
 internal UUIDs. The service is disabled by default, accepts loopback clients
 only, and shares inference/lifecycle with internal callers without writing chat
@@ -174,7 +174,7 @@ tok2vec/, tagger/ and vocab/ directly inside it. Kokoro reads this directory at
 load time. Missing or corrupt resources fail Kokoro without changing the shared
 environment or blocking installation/other engines. No language models are downloaded.
 
-Install Local backend under Models > Backends, then create a TTS model with
+Install the local runtime under Models > Local Runtime, then create a TTS model with
 architecture Kokoro and reference `tts/Kokoro-82M-onnx`. Its ONNX execution stays
 on CPU; language processors and MP3 encoding use the shared environment.
 
@@ -193,7 +193,7 @@ must match the voice. SSE and application playback are deferred.
 
 ### Offline Chatterbox Speech
 
-On Windows x64, install Local backend in Models > Backends. Place the English ve.safetensors,
+On Windows x64, install the local runtime in Models > Local Runtime. Place the English ve.safetensors,
 t3_cfg.safetensors, s3gen.safetensors and tokenizer.json under `data/models/tts/chatterbox`.
 Create a Chatterbox profile for `tts/chatterbox`, choose CPU/CUDA and set generation defaults; preset voices are unavailable.
 
@@ -216,7 +216,7 @@ Listing does not renew them. For one request, omit voice and send `tts.reference
 
 ### Offline Qwen3-TTS Base Speech
 
-Install the Windows Local backend, select **Qwen3-TTS (12Hz Base)**
+Install the Windows local runtime, select **Qwen3-TTS (12Hz Base)**
 and explicit CPU/CUDA execution. Place the complete checkpoint, including generation config,
 text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is
 `tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
@@ -315,7 +315,7 @@ and failure traces are under frontend/test-results.
 
 All local-runtime smoke commands reuse an installed release by default and fail if it needs installation
 or repair. Only --install-only installs (or confirms a healthy installation), without inference.
-Old release/file-inventory metadata needs one explicit Repair in Models > Backends > Local; later worker updates reuse dependencies.
+Old release/file-inventory metadata needs one explicit Repair in Models > Local Runtime; later worker updates reuse dependencies.
 Kokoro uses manually placed files and writes all-voice offline/SDK samples under build/tts-smoke:
 
 ```powershell

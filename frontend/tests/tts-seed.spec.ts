@@ -42,7 +42,7 @@ for (const locale of ['en', 'zh-CN']) {
           const row = page.locator('.model-list .model-row').filter({ hasText: alias });
           await row.getByRole('button', { name: labels.edit, exact: true }).click();
           await expect(seed).toHaveValue('0');
-          await dialog.getByLabel(labels.backend, { exact: true }).selectOption('local');
+          await dialog.getByLabel(labels.source, { exact: true }).selectOption('local');
           await expect(seed).toHaveValue('0');
           await seed.fill('4294967295');
           await expect(seed).toHaveValue('4294967295');

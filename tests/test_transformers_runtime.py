@@ -19,7 +19,7 @@ from ai_workbench.core.models.runtimes.catalog import catalog
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatChunk, ChatRequest, ModelProfile
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeSettingsRecord, SessionRecord
@@ -29,13 +29,14 @@ from ai_workbench.workers.transformers_server import build_app, chat_request, op
 
 
 def profile(**values):
-    return ModelProfile(**{**dict(name='Transformers', alias='transformers', kind='llm', model_ref='llms/local', capabilities={'streaming': True, 'tools': True}, backend_profile_id='local'), **values})
+    return ModelProfile(**{**dict(name='Transformers', alias='transformers', kind='llm', model_ref='llms/local', capabilities={'streaming': True, 'tools': True}, source={'type': 'local'}), **values})
 
 
 @pytest.mark.parametrize("patch", [
     {"runtime_variant": "torch-cpu"}, {"runtime_variant": "torch-cu128"},
-    {"kind": "embedding"}, {"execution_options": {"device": "auto"}},
-    {"execution_options": {"intraop_threads": True}}, {"execution_options": {"dtype": "float16"}},
+    {"kind": "embedding"}, {"source": {"type": "local", "execution_options": {"device": "auto"}}},
+    {"source": {"type": "local", "execution_options": {"intraop_threads": True}}},
+    {"source": {"type": "local", "execution_options": {"dtype": "float16"}}},
     {"capabilities": {"vision": True}}, {"capabilities": {"json_schema": True}},
     {"parameters": {"presence_penalty": 0.1}}, {"parameters": {"frequency_penalty": -0.1}},
 ])
@@ -45,14 +46,14 @@ def test_transformers_profile_rejects_unimplemented_combinations(patch):
 
 
 def test_alias_identity_devices_and_request_limits(tmp_path):
-    supervisor = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
-    manager = ModelManager(ModelProfileStore(), BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(tmp_path, RuntimeStore(), LocalRuntimeSettingsStore())
+    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     first, alias = profile(), profile(alias="alias")
-    cpu = profile(alias="cpu", execution_options={"device": "cpu"})
-    assert manager.backend_key(first) == manager.backend_key(alias)
+    cpu = profile(alias="cpu", source={"type": "local", "execution_options": {"device": "cpu"}})
+    assert manager.execution_key(first) == manager.execution_key(alias)
     assert manager._key(first) == manager._key(alias)
-    assert manager.backend_key(first) != manager.backend_key(cpu)
-    assert first.execution_options == {"device": "cuda", "intraop_threads": 4}
+    assert manager.execution_key(first) != manager.execution_key(cpu)
+    assert first.source.execution_options == {"device": "cuda", "intraop_threads": 4}
     request = ChatRequest(model=first.alias, messages=[{"role": "user", "content": "hello"}])
     manager.validate_chat(first, request)
     for values in ({"presence_penalty": 0.2}, {"frequency_penalty": -0.1},

@@ -1,29 +1,29 @@
 # Models contract
 
-All inference uses the application-scoped `core/models/ModelManager` and
-`ProviderAdapter`; ChatRunner, Utility LLM, Knowledge and `/v1` call the manager without HTTP loopback.
+All inference uses the application-scoped `core/models/ModelManager` and inference adapters;
+ChatRunner, Utility LLM, Knowledge and `/v1` call the manager without HTTP loopback.
 The API process imports no torch, transformers, onnxruntime or llama.cpp binding.
 
-## Profiles and backends
+## Profiles and sources
 
-`model_profiles` has six immutable kinds: `llm`, `embedding`, `reranker`,
-`image_embedding`, `vision`, `tts`. References use UUID `id` internally and unique
-lowercase aliases externally. CRUD: `/api/models/profiles`, with `?kind=...`.
+`model_profiles` has six immutable kinds: llm, embedding, reranker, image_embedding, vision and tts.
+References use UUID ids internally and unique lowercase aliases externally. CRUD: `/api/models/profiles`, with `?kind=...`.
+`provider_profiles` stores external ProviderProfile name, enablement, connection and timestamps.
+Connections own URL/key, timeouts, concurrency and queue settings; only OpenAI-compatible protocol is supported.
+CRUD: `/api/models/providers`; optional model discovery: `/{id}/models`.
+LocalRuntimeSettings owns enabled/download independently in appmetadatarecord.local_runtime_settings;
+GET/PATCH `/api/models/local-runtime/settings`. It defaults enabled and has no editable identity/name.
 
-`backend_profiles` uses one strict BackendProfile type: local or openai_compatible.
-The seeded local backend has reserved id=local; database and service constraints
-prevent a second local identity. Its type is immutable and it cannot be deleted.
-Local configuration owns enablement/download settings. External backends own nested
-connection URL/key, timeouts, concurrency and queue settings, with no brand-specific protocols.
-CRUD: `/api/models/backends`; external discovery: `/{id}/models`.
+Model source is a strict, nullable discriminated union:
+- null: a saveable unbound draft; execution returns MODEL_NOT_CONFIGURED before admission/transport.
+- {type: provider, provider_profile_id}: provider LLM/text-embedding only.
+- {type: local, execution_options, lifecycle}: local LLM/TTS only; engine defaults populate omitted local fields.
 
-A model selects `backend_profile_id` and `execution_options`. It owns `model_ref`,
-capabilities, architecture/per-kind parameters, lifecycle, enabled and external_enabled.
-Unbound profiles can be saved but cannot execute. Unknown/removed fields fail before
-persistence; referenced deletion and busy backend edits return errors.
-
-[Settings](settings.md#model-settings) owns key/PATCH semantics. Embedding backend,
-reference or preprocessing changes invalidate indexes; see [Knowledge](knowledge.md).
+Model profiles own model_ref, capabilities, per-kind parameters, enabled and external_enabled.
+PATCH omission preserves source; null unbinds; a supplied source replaces the complete binding.
+Removed top-level backend/execution/lifecycle fields and unsupported combinations fail validation.
+Busy connection edits and referenced provider deletion fail; edits invalidate cached clients/status.
+[Settings](settings.md#model-settings) owns secrets/PATCH semantics; [Knowledge](knowledge.md) owns index invalidation.
 
 ## Resolution and capabilities
 
@@ -31,50 +31,46 @@ New sessions save the enabled default LLM or first enabled LLM (name/id order).
 Execution uses that selection; absence returns MODEL_NOT_CONFIGURED, and disabled/missing/wrong-kind
 selections fail without substitution. Default selection and `/api/health/details` are cached,
 degraded without an enabled LLM. [Chat/context](chat-context.md) owns Persona/session/title selection.
-
-LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties,
-seed and stop; explicit request values override defaults. Capabilities are
-streaming, tools, vision, json_object and json_schema; unsupported requests fail.
-
-External connections execute chat/text embeddings; llama-server and Transformers
-execute chat, ONNX executes Kokoro TTS and Audio executes Chatterbox/Qwen3-TTS Base.
-Local embedding, rerank, image-embedding and WD14 entry points remain pending. Managed image input is unavailable;
-external vision LLMs accept chat images.
+LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties, seed and stop;
+explicit request values override defaults. Capabilities are streaming, tools, vision, json_object and json_schema.
+Providers execute chat/text embeddings; llama-server and Transformers execute chat,
+ONNX executes Kokoro TTS and Audio executes Chatterbox/Qwen3-TTS Base.
+Local embedding, rerank, image-embedding and WD14 remain pending. Managed image input is unavailable;
+provider vision LLMs accept chat images. Unimplemented kinds can be saved only as unbound profiles.
 
 ## Lifecycle and status
 
-The manager owns health/load/unload and queues: concurrency 1, 32 waiting slots, 30-second timeout.
-Discovery shares the queue; overflow/timeout returns `MODEL_BUSY`. Cancellation/stream closure releases resources.
-
-External aliases share residency/occupancy by `(backend_profile_id, model_ref)`; GGUF aliases share
-normalized reference, process and options. Transformers share by path/options; Kokoro profiles share an engine queue.
-Audio profiles have separate processes, queues and cancellation scopes, even for the same model path.
-Release defaults to `manual`; opt-ins are `after_request` and `idle` (300 seconds).
-An enabled manual alias retains shared models; otherwise the longest idle timeout
-wins. Release errors never replace successful inference. Crashes require explicit load.
+Queues are namespaced by source. Provider limits are shared per provider; defaults are concurrency 1,
+32 waiting slots and a 30-second timeout. Local queues retain these defaults. Explicit discovery shares
+its provider queue; overflow/timeout returns MODEL_BUSY. Cancellation/stream closure releases occupancy.
+Provider aliases share status/occupancy by provider id and model_ref. GGUF aliases share normalized
+path/device, process and identical options. Transformers share by path/options; Kokoro shares an engine queue.
+Audio profiles have separate processes, queues and cancellation scopes, even for the same path.
+Only local models load automatically and have release policies: manual by default, or after_request/idle (300 seconds).
+An enabled manual alias retains shared weights; otherwise the longest idle timeout wins. Release errors never
+replace successful inference. Local process crashes require explicit load; provider failures permit another request.
 
 | Operation | Endpoint under `/api/models` | Effect |
 | --- | --- | --- |
-| Cached status | GET `/profiles/{id}/status` | No provider call |
-| Health | POST `/profiles/{id}/health` | Explicit provider/model check |
-| Load/unload | POST `/profiles/{id}/load` or `/unload` | Manager lifecycle |
-| Backend inventory | GET `/backends/{id}/models` | Queued upstream list |
+| Cached status | GET `/profiles/{id}/status` | No transport call |
+| Local health/load/unload | POST `/profiles/{id}/{health,load,unload}` | Local lifecycle; provider bindings return 422 UNSUPPORTED_CAPABILITY |
+| Provider discovery | GET `/providers/{id}/models` | Optional queued list; never an inference preflight |
 | Local inventory | GET `/inventory?kind=...` | Relative file references only |
 
-Inventory/status never load weights, import heavy runtimes or download models. Roots under `data/models`:
-`llms`, `embeddings`, `rerankers`, `image_embeddings`, `vision`, `tts`. Inventory recognizes GGUF/model directories,
+Inventory/status never load weights, import heavy runtimes or download models. Roots under data/models:
+llms, embeddings, rerankers, image_embeddings, vision and tts. Inventory recognizes GGUF/model directories,
 Kokoro ONNX and Chatterbox/Qwen3-TTS 12Hz Base. Qwen requires checkpoint, generation config, text-tokenizer
 and nested speech-tokenizer files; unsupported types fail before engine imports. Auxiliary resources/tokenizers are excluded.
-
-Status contains state (`unknown`, `ready`, `unavailable`, `failed`, `unloaded`), residency
-(`unknown`, `loaded`, `unloaded`), unload_supported, active, queued and optional error_code.
-External health/load requires the advertised model_ref, reports unknown residency and cannot unload (`UNLOAD_UNSUPPORTED`).
-Managed status adds backend_profile_id, engine, release version, installation/process state, latest job id and device_name.
-CUDA layer counts clear when the process stops; [runs/streaming](runs-streaming.md) owns status events.
+Status has state (unknown/ready/unavailable/failed/unloaded), residency, unload_supported, active, queued and error_code.
+Providers start unknown; completed, validated inference marks ready. Upstream failures mark failed; success clears errors.
+Discovery, input validation, queue rejection and cancellation do not change inference availability. A manual model ID
+need not appear in discovery. Provider status always has runtime=null, unknown residency and unsupported unloading.
+Local status adds engine, version, installation/process state, latest job id and device_name; CUDA counts clear on stop.
+[runs/streaming](runs-streaming.md) owns source metadata and events. Local process logs reject provider bindings without transport.
 
 ## Managed catalog and installation
 
-`GET /api/models/backends/local/runtime/catalog` exposes one Windows x64 release
+`GET /api/models/local-runtime/catalog` exposes one Windows x64 release
 (1.0.0), its engines and strict option schemas. Linux and local embedding/rerank/image-embedding/WD14 remain deferred;
 see [future services](../FUTURE_MODEL_SERVICES.md#local-engine-and-platform-expansion).
 
@@ -82,12 +78,12 @@ The model determines its engine: GGUF uses llama-server, an LLM directory uses
 Transformers, and TTS architecture selects Kokoro, Chatterbox or Qwen3-TTS Base.
 model_ref is a safe relative path under data/models. Profiles cannot supply
 executables or arbitrary arguments and may be saved before installation.
-execution_options selects CPU or CUDA; capable engines default to CUDA, Kokoro to
+source.execution_options selects CPU or CUDA; capable engines default to CUDA, Kokoro to
 CPU only. Llama also accepts threads, context_size, batch_size and gpu_layers
 (0 on CPU; auto or integer 1..999 on CUDA). Python options are intraop_threads=4;
 Kokoro adds max_batch_size=1. Unavailable CUDA fails without CPU substitution.
 
-GET `/api/models/backends/local/runtime` returns the single installation.
+GET `/api/models/local-runtime` returns the single installation.
 POST to its `/install`, `/repair` or `/uninstall` returns a RuntimeJob. One
 installation/cache maintenance task runs application-wide. Changing the installation
 requires every local request to be idle, blocks new local requests and stops local
@@ -124,15 +120,15 @@ byte progress, error code, revision and bounded logs. Cancellation stops subproc
 for active file operations before clearing staging. Restart interrupts unfinished work and clears staging.
 Failure/cancellation retains logs; retry creates a job. Uninstall stops local workers and removes the recorded installation, retaining caches/models.
 
-Read-only routes expose installation/status/jobs. `/api/models/runtimes/jobs/{id}/log`
-returns task logs; `/cancel` cancels. `/api/models/profiles/{id}/log` returns process logs.
+GET /api/models/local-runtime/jobs and /jobs/{id} expose history/details. `/api/models/local-runtime/jobs/{id}/log`
+returns task logs; POST to `/cancel` cancels. Runtime/job/storage responses have no provider reference. `/api/models/profiles/{id}/log` returns process logs.
 Responses omit absolute paths, ports, tokens and raw provider errors. Failures use
 `RUNTIME_NOT_INSTALLED`, `RUNTIME_INSTALLING`, `RUNTIME_BROKEN`, `RUNTIME_UNSUPPORTED`,
 `RUNTIME_DEVICE_UNAVAILABLE`, `MODEL_NOT_FOUND`, `MODEL_BUSY` or `MODEL_UNAVAILABLE`.
 
 ## Storage and cache maintenance
 
-GET /api/models/runtimes/storage scans metadata off-loop, returning scanned_at,
+GET /api/models/local-runtime/storage scans metadata off-loop, returning scanned_at,
 complete, totals, groups, warnings and skipped_links. Groups cover installations,
 shared Python, cache, staging, process and other files. Paths are relative to
 data/runtimes; symlinks and Windows junctions are not followed.
@@ -142,12 +138,12 @@ File identities deduplicate hard links; exclusive size excludes files linked out
 Totals deduplicate independently; logical sizes omit compression/copy-on-write and do not predict disk recovery.
 Unreadable/changing metadata yields incomplete groups/totals and null unknown values. Reads never load models.
 
-POST /api/models/runtimes/cache/cleanup accepts mode=prune|clean and returns 202
+POST /api/models/local-runtime/cache/cleanup accepts mode=prune|clean and returns 202
 with a RuntimeJob. Bundled uv uses the explicit .cache directory, --no-config and
 normal locking. Redirected roots/escaping links fail. Models stay loaded;
 filesystem occupancy failures retain retry diagnostics.
 
-Cache jobs use operation=cache_prune|cache_clean and null backend_profile_id/version.
+Cache jobs use operation=cache_prune|cache_clean with version=null; installation jobs require a version.
 Optional result.before/after contain strict usage snapshots (null when unavailable).
 They reuse job/log/cancel routes/events without installation-state writes. Partial
 cleanup may survive failure/cancellation; figures never claim actual disk recovery.
@@ -156,7 +152,7 @@ independently of installation logs.
 
 ## Managed processes and workers
 
-Workers bind reserved loopback ports. Process groups and Windows kill-on-job-close Job Objects stop
+Workers atomically publish readiness and bind reserved loopback ports. Process groups and Windows kill-on-job-close Job Objects stop
 full trees on unload, cancellation or exit. Sanitized logs under `data/logs/runtimes` have a 10 MiB cap;
 retention keeps 20 terminal tasks and 20 terminal process/load-attempt logs per runtime, plus active logs.
 Load/autoload, health and Audio references check installation entries; loaded inference and model status use cached availability.
@@ -171,7 +167,7 @@ processor/model loading and post-load setup; import sub-stages separate Transfor
 Kokoro also times language resource checks, ONNX sessions and each language build/warmup. Imports include transitive work/cache effects.
 Reuse, success, failure, timeout and cancellation are recorded without content or credentials; logging failures are nonfatal.
 Llama/Transformers use private-key OpenAI-compatible health/models/chat; ONNX/Audio use private-token
-health/load/unload/speech RPC. Audio reference validation needs no weights; stdlib validation precedes engine imports.
+health/load/unload/speech RPC. Local startup retains model-advertisement checks. Audio reference validation needs no weights; stdlib validation precedes engine imports.
 Llama CUDA selects the first enumerated device with split-mode=none; none returns RUNTIME_DEVICE_UNAVAILABLE.
 Auto uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx=context_size; manual uses fit=off.
 Logs must confirm positive GPU offload; missing/zero layers or insufficient memory stop loading without CPU substitution.
@@ -186,7 +182,7 @@ including exactly 30; longer audio fails without truncation, segmentation or par
 
 ## Kokoro TTS
 
-Kokoro TTS uses the local backend's CPU ONNX engine, architecture=kokoro, with
+Kokoro TTS uses the local runtime CPU ONNX engine, architecture=kokoro, with
 the v1.0 FP32 model.onnx, config/tokenizer JSON files and voices/<id>.bin.
 The fixed 54-ID catalog intersects with finite float32 [510,1,256] files; extras
 such as af.bin are ignored. No voice-profile records are created. Off-loop file
@@ -206,7 +202,7 @@ Chunks retain supported text, use at most 510 tokens and voice row N-1; unsplit
 oversized words fail. Complete 24 kHz mono PCM16 WAV or 128 kbps MP3 is returned;
 PCM/encoded data each have a 32 MiB limit; timeout is 300 seconds. Disconnects stop
 workers before releasing occupancy and log REQUEST_CANCELLED with 499.
-SSE, external TTS backends and playback are unimplemented. Local execution supports Windows x64 only.
+SSE, provider TTS and playback are unimplemented. Local execution supports Windows x64 only.
 
 ## Audio TTS and temporary references
 
@@ -239,8 +235,8 @@ Qwen optionally accepts reference_text (1..4096 nonblank characters) in the uplo
 Absence uses speaker-embedding cloning; presence uses full audio/transcript conditioning. Transcripts stay
 in reference memory until cleanup, are never returned/logged, and are not generated by ASR.
 
-References bind to the key, model profile/reference, backend, engine, execution options and
-release version; clients sharing the key share access.
+References bind to the key, profile/reference, local source, engine, execution options and release version.
+Release policies and generation parameters, including seed, do not define identity; clients sharing the key share access.
 Creation grants 30 minutes; valid execution/queue admission atomically applies max(expires_at, now+15 minutes).
 Overflow, discovery and pre-admission rejection do not renew. Expired IDs cannot reactivate.
 Active/queued requests pin files until completion or worker cancellation; deleting

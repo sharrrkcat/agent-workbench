@@ -11,11 +11,11 @@ import sys
 from uuid import uuid4
 
 if __package__:
-    from .common import WorkerError, fields, integer, local_model
+    from .common import WorkerError, fields, integer, local_model, publish_ready
     from .timing import TRACE_ENV, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
-    from common import WorkerError, fields, integer, local_model
+    from common import WorkerError, fields, integer, local_model, publish_ready
     from timing import TRACE_ENV, stage, tracing, worker_trace
 
 MAX_BODY = 32 * 1024 * 1024
@@ -159,12 +159,12 @@ def main():
                 import uvicorn
                 server = uvicorn.Server(uvicorn.Config(app, access_log=False, log_level="warning"))
             with stage("ready_file"):
-                ready.write_text(json.dumps({**engine.metadata, "port": listener.getsockname()[1]}), encoding="utf-8")
+                publish_ready(ready, {**engine.metadata, "port": listener.getsockname()[1]})
         loop.run_until_complete(server.serve(sockets=[listener]))
     except Exception as exc:
         code = exc.code if isinstance(exc, WorkerError) else "MODEL_UNAVAILABLE"
         print(f"Transformers startup failed: {code} ({type(exc).__name__})", flush=True)
-        ready.write_text(json.dumps({"protocol_version": PROTOCOL_VERSION, "error_code": code}), encoding="utf-8")
+        publish_ready(ready, {"protocol_version": PROTOCOL_VERSION, "error_code": code})
         raise SystemExit(1) from None
     finally:
         if loop:

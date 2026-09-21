@@ -10,7 +10,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.locator('.model-toolbar').getByRole('combobox').selectOption('tts');
         await page.getByRole('button', { name: locale === 'en' ? 'Add model' : '添加模型', exact: true }).click();
         const dialog = page.getByRole('dialog');
-        await expect(dialog.getByLabel(locale === 'en' ? 'Runtime variant' : '运行环境变体', { exact: true })).toHaveValue('onnx-cpu');
+        await expect(dialog.getByLabel(locale === 'en' ? 'Model source' : '模型来源', { exact: true })).toHaveValue('local');
         const alias = `tts-${locale.toLowerCase()}-${viewport.width}`;
         await dialog.getByLabel(locale === 'en' ? 'Name' : '名称', { exact: true }).fill('Kokoro ONNX');
         await dialog.getByLabel(locale === 'en' ? 'Public alias' : '公开别名', { exact: true }).fill(alias);

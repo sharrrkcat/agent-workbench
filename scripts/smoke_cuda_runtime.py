@@ -1,4 +1,4 @@
-"""Verify GGUF CUDA offload using the installed local backend; installation is explicit."""
+"""Verify GGUF CUDA offload using the installed local runtime; installation is explicit."""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +10,7 @@ from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 
@@ -19,8 +19,8 @@ async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
     engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
     if migrations.current_revision(engine) != migrations.HEAD_REVISION:
         raise RuntimeError("Upgrade the database to Alembic head before running this smoke test")
-    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
-    manager = ModelManager(ModelProfileStore(), supervisor.backends, ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), LocalRuntimeSettingsStore(engine))
+    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     try:
         if install_only:
             job = await supervisor.submit('install')
@@ -37,10 +37,10 @@ async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
             print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
             if result.state != "completed":
                 print(supervisor.log_text(result.id), flush=True)
-                raise RuntimeError("Local backend installation failed")
+                raise RuntimeError("Local runtime installation failed")
             return
         supervisor.assert_available()
-        profile = manager.profiles.create(ModelProfile(name='CUDA smoke', alias='cuda-smoke', kind='llm', model_ref=model_ref, capabilities={'streaming': True}, execution_options={'gpu_layers': 'auto', 'context_size': 4096}, backend_profile_id='local'))
+        profile = manager.profiles.create(ModelProfile(name='CUDA smoke', alias='cuda-smoke', kind='llm', model_ref=model_ref, capabilities={'streaming': True}, source={'type': 'local', 'execution_options': {'gpu_layers': 'auto', 'context_size': 4096}}))
         loaded = await manager.load(profile.id)
         assert loaded.state == "ready" and loaded.runtime.gpu_layers_loaded > 0
         print(json.dumps({"loaded": loaded.model_dump(mode="json")}), flush=True)
@@ -57,7 +57,7 @@ async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
         reloaded = await manager.load(profile.id)
         assert reloaded.state == "ready" and reloaded.runtime.gpu_layers_loaded > 0
         await manager.unload(profile.id)
-        manager.profiles.update(profile.id, {"execution_options": {"gpu_layers": 1, "context_size": 4096}})
+        manager.profiles.update(profile.id, {"source": {"type": "local", "execution_options": {"gpu_layers": 1, "context_size": 4096}}})
         manual = await manager.load(profile.id)
         assert manual.state == "ready" and manual.runtime.gpu_layers_loaded == 1
         await manager.unload(profile.id)

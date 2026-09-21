@@ -52,13 +52,13 @@ def test_complete_contract_and_runtime_models(api):
 def test_contract_gate_rejects_incomplete_or_unstructured_contracts(contract, defect):
     original, expected = contract
     document = deepcopy(original)
-    operation = document["paths"]["/api/models/backends"]["get"]
+    operation = document["paths"]["/api/models/providers"]["get"]
     expected_error = ""
     if defect == "route":
-        del document["paths"]["/api/models/backends"]["get"]
+        del document["paths"]["/api/models/providers"]["get"]
         expected_error = "Route coverage differs"
     elif defect == "operation_id":
-        operation["operationId"] = document["paths"]["/api/models/backends"]["post"]["operationId"]
+        operation["operationId"] = document["paths"]["/api/models/providers"]["post"]["operationId"]
         expected_error = "duplicate operationId"
     elif defect == "reference":
         operation["responses"]["200"]["content"]["application/json"]["schema"] = {"$ref": "#/components/schemas/Missing"}
@@ -73,7 +73,7 @@ def test_contract_gate_rejects_incomplete_or_unstructured_contracts(contract, de
         operation["responses"]["200"]["content"]["application/json"]["schema"] = True
         expected_error = "unstructured JSON payload"
     elif defect == "open_field":
-        document["components"]["schemas"]["BackendResponse"]["properties"]["unknown"] = {"$ref": "#/components/schemas/JsonValue-Output"}
+        document["components"]["schemas"]["ProviderResponse"]["properties"]["unknown"] = {"$ref": "#/components/schemas/JsonValue-Output"}
         expected_error = "undocumented arbitrary JSON field"
     else:
         operation.pop("tags")
@@ -127,8 +127,8 @@ def test_cli_exports_are_isolated_deterministic_and_equal_to_served_schema(tmp_p
 
 def test_model_kinds_execution_options_and_secret_patch_semantics(api):
     client, _ = api
-    provider = client.post("/api/models/backends", json={'name': 'Provider', 'connection': {'base_url': 'http://provider.test/v1', 'api_key': 'private-provider-value'}, 'type': 'openai_compatible'}).json()
-    provider_path = f"/api/models/backends/{provider['id']}"
+    provider = client.post("/api/models/providers", json={'name': 'Provider', 'connection': {'base_url': 'http://provider.test/v1', 'api_key': 'private-provider-value'}}).json()
+    provider_path = f"/api/models/providers/{provider['id']}"
     assert provider["connection"]["has_api_key"] and "api_key" not in provider["connection"]
     assert client.patch(provider_path, json={"name": "Renamed"}).json()["connection"]["has_api_key"]
     assert not client.patch(provider_path, json={'connection': {'api_key': ''}}).json()["connection"]["has_api_key"]
@@ -137,16 +137,16 @@ def test_model_kinds_execution_options_and_secret_patch_semantics(api):
     for kind in ("llm", "embedding", "reranker", "image_embedding", "vision"):
         result = client.post("/api/models/profiles", json={"name": kind, "alias": kind, "kind": kind, "model_ref": "fixture"})
         assert result.status_code == 200, result.text
-        assert result.json()["execution_options"] == {}
+        assert result.json()["source"] is None
         if kind == "llm":
             assert result.json()["parameters"] == {}
     for device, layers in (("cpu", 0), ("cuda", "auto")):
-        result = client.post("/api/models/profiles", json={'name': device, 'alias': device, 'kind': 'llm', 'model_ref': 'llms/fixture.gguf', 'execution_options': {'device': device, 'gpu_layers': layers}, 'backend_profile_id': 'local'})
+        result = client.post("/api/models/profiles", json={'name': device, 'alias': device, 'kind': 'llm', 'model_ref': 'llms/fixture.gguf', 'source': {'type': 'local', 'execution_options': {'device': device, 'gpu_layers': layers}}})
         assert result.status_code == 200, result.text
-        assert result.json()["execution_options"]["gpu_layers"] == layers
-    worker = client.post("/api/models/profiles", json={'name': 'Worker', 'alias': 'worker', 'kind': 'llm', 'model_ref': 'llms/fixture', 'backend_profile_id': 'local'})
-    assert worker.status_code == 200 and worker.json()["execution_options"]["device"] == "cuda"
-    assert client.get("/api/models/backends/local/runtime/catalog").status_code == 200
+        assert result.json()["source"]["execution_options"]["gpu_layers"] == layers
+    worker = client.post("/api/models/profiles", json={'name': 'Worker', 'alias': 'worker', 'kind': 'llm', 'model_ref': 'llms/fixture', 'source': {'type': 'local'}})
+    assert worker.status_code == 200 and worker.json()["source"]["execution_options"]["device"] == "cuda"
+    assert client.get("/api/models/local-runtime/catalog").status_code == 200
 
     settings = "/api/models/settings"
     assert client.patch(settings, json={"external_api_key": "service-private-value"}).json()["has_external_api_key"]
@@ -266,7 +266,7 @@ def test_runtime_jobs_202_and_storage_diagnostics(api, monkeypatch):
     supervisor = client.app.state.runtime_state.runtime_supervisor
 
     async def submit(operation):
-        job = RuntimeJob(version='fixture', operation=operation, log_path='private/internal.log', backend_profile_id='local')
+        job = RuntimeJob(version='fixture', operation=operation, log_path='private/internal.log')
         supervisor.store.save_job(job)
         return job
 
@@ -278,22 +278,23 @@ def test_runtime_jobs_202_and_storage_diagnostics(api, monkeypatch):
     monkeypatch.setattr(supervisor, "submit", submit)
     monkeypatch.setattr(supervisor, "submit_cache", submit_cache)
     for operation in ("install", "repair", "uninstall"):
-        response = client.post(f"/api/models/backends/local/runtime/{operation}")
+        response = client.post(f"/api/models/local-runtime/{operation}")
         assert response.status_code == 202 and "log_path" not in response.json()
         assert response.json()["finished_at"] is None
-        assert client.get(f"/api/models/runtimes/jobs/{response.json()['id']}").status_code == 200
+        assert client.get(f"/api/models/local-runtime/jobs/{response.json()['id']}").status_code == 200
     for mode in ("prune", "clean"):
-        response = client.post("/api/models/runtimes/cache/cleanup", json={"mode": mode})
+        response = client.post("/api/models/local-runtime/cache/cleanup", json={"mode": mode})
         assert response.status_code == 202
-        assert response.json()["backend_profile_id"] is None
+        assert response.json()["version"] is None
+        assert "backend_profile_id" not in response.json()
         assert response.json()["result"] == {"before": None, "after": None}
         assert "log_path" not in response.json()
-    assert client.get("/api/models/runtimes/jobs").status_code == 200
+    assert client.get("/api/models/local-runtime/jobs").status_code == 200
     for job in supervisor.store.jobs():
         supervisor.store.save_job(job.model_copy(update={"state": "completed"}))
-        assert client.get(f"/api/models/runtimes/jobs/{job.id}/log").json() == {"text": ""}
-        assert client.post(f"/api/models/runtimes/jobs/{job.id}/cancel").json()["state"] == "completed"
-    assert client.get("/api/models/runtimes/storage").status_code == 200
+        assert client.get(f"/api/models/local-runtime/jobs/{job.id}/log").json() == {"text": ""}
+        assert client.post(f"/api/models/local-runtime/jobs/{job.id}/cancel").json()["state"] == "completed"
+    assert client.get("/api/models/local-runtime/storage").status_code == 200
     assert client.get("/api/runtime/resources").status_code == 200
     assert client.get("/api/health/details").json()["status"] == "degraded"
 
@@ -321,17 +322,17 @@ def test_documented_patch_types_distinguish_omission_and_null(api):
         assert client.patch(path, json=valid).status_code == 200
         assert client.patch(path, json=invalid).status_code == 422
         assert client.patch(path, json={"unknown": True}).status_code == 422
-    properties = resolve_ref(document, document["paths"]["/api/models/backends"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"])["properties"]
+    properties = resolve_ref(document, document["paths"]["/api/models/providers"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"])["properties"]
     assert "api_key" not in properties
 
 
 def test_management_reads_updates_and_deletions_keep_response_shapes(api):
     client, _ = api
     for path in ("/api/health", "/api/data/storage-stats", "/api/models/inventory",
-                 "/api/models/backends/local", "/api/models/backends/local/runtime", "/api/models/backends/local/runtime/catalog",
+                 "/api/models/local-runtime/settings", "/api/models/local-runtime", "/api/models/local-runtime/catalog",
                  "/api/sessions", "/api/tools", "/api/tools/settings", "/api/personas"):
         assert client.get(path).status_code == 200
-    assert client.patch("/api/models/backends/local", json={"download": {"http_proxy": ""}}).json()["download"]["http_proxy"] is None
+    assert client.patch("/api/models/local-runtime/settings", json={"download": {"http_proxy": ""}}).json()["download"]["http_proxy"] is None
     assert client.patch("/api/tools/settings", json={"searxng_base_url": None}).status_code == 200
     assert client.post("/api/data/attachments/scan-orphans").json()["orphans"] == []
     assert client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}).json()["errors"] == []
@@ -365,14 +366,14 @@ def test_management_reads_updates_and_deletions_keep_response_shapes(api):
 
     model = configure_model(client)
     model_path = f"/api/models/profiles/{model['id']}"
-    provider_path = f"/api/models/backends/{model['backend_profile_id']}"
+    provider_path = f"/api/models/providers/{model['source']['provider_profile_id']}"
     assert client.get(provider_path).status_code == 200
     assert client.get(provider_path + "/models").status_code == 200
     assert client.get(model_path).status_code == 200
-    assert client.get(model_path + "/log").status_code == 200
-    assert client.post(model_path + "/health").status_code == 200
-    assert client.post(model_path + "/load").status_code == 200
-    assert client.post(model_path + "/unload").json()["error"]["code"] == "UNLOAD_UNSUPPORTED"
+    assert client.get(model_path + "/log").status_code == 422
+    assert client.post(model_path + "/health").status_code == 422
+    assert client.post(model_path + "/load").status_code == 422
+    assert client.post(model_path + "/unload").json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
     client.patch("/api/models/settings", json={"default_model_profile_id": None})
     assert client.delete(model_path).json()["deleted"]
     assert client.delete(provider_path).json()["deleted"]

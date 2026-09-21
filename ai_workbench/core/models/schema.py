@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, m
 
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
-from ai_workbench.core.models.runtimes.schema import DownloadSettings, RuntimeStatus
+from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 
 ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts"]
 
@@ -34,22 +34,10 @@ class ExternalConnection(StrictModel):
             raise ValueError("base_url must be an HTTP(S) API root without credentials, query or fragment")
         return value.rstrip("/")
 
-class BackendInput(StrictModel):
+class ProviderInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
-    type: Literal["local", "openai_compatible"]
     enabled: bool = True
-    connection: ExternalConnection | None = None
-    download: DownloadSettings | None = None
-
-    @model_validator(mode="after")
-    def validate_configuration(self):
-        if self.type == "local":
-            if self.connection is not None:
-                raise ValueError("The local backend has no external connection")
-            self.download = self.download or DownloadSettings()
-        elif self.connection is None or self.download is not None:
-            raise ValueError("An external backend requires a connection and has no download settings")
-        return self
+    connection: ExternalConnection
 
     @field_validator("name")
     @classmethod
@@ -59,17 +47,10 @@ class BackendInput(StrictModel):
         return value.strip()
 
 
-class BackendProfile(BackendInput):
+class ProviderProfile(ProviderInput):
     id: str = Field(default_factory=lambda: str(uuid4()))
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-
-    @model_validator(mode="after")
-    def local_identity(self):
-        if (self.type == "local") != (self.id == "local"):
-            raise ValueError("The single local backend has the reserved id 'local'")
-        return self
-
 
 class Capabilities(StrictModel):
     streaming: bool = False
@@ -82,6 +63,20 @@ class Capabilities(StrictModel):
 class Lifecycle(StrictModel):
     unload: Literal["manual", "after_request", "idle"] = "manual"
     idle_seconds: float = Field(default=300, gt=0, le=86400)
+
+
+class ProviderSource(StrictModel):
+    type: Literal["provider"]
+    provider_profile_id: str = Field(min_length=1)
+
+
+class LocalSource(StrictModel):
+    type: Literal["local"]
+    execution_options: dict[str, Any] = Field(default_factory=dict)
+    lifecycle: Lifecycle = Field(default_factory=Lifecycle)
+
+
+ModelSource = Annotated[ProviderSource | LocalSource, Field(discriminator="type")]
 
 
 class GenerationParameters(StrictModel):
@@ -180,12 +175,10 @@ class ModelInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
     alias: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$")
     kind: ModelKind
-    backend_profile_id: str | None = None
-    execution_options: dict[str, Any] = Field(default_factory=dict)
+    source: ModelSource | None = None
     model_ref: str = Field(min_length=1, max_length=1024)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     parameters: dict[str, Any] = Field(default_factory=dict)
-    lifecycle: Lifecycle = Field(default_factory=Lifecycle)
     enabled: bool = True
     external_enabled: bool = False
 
@@ -194,12 +187,12 @@ class ModelInput(StrictModel):
         from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, PythonOptions, local_engine, llama_options, relative_ref
         self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=self.kind != "tts")
         engine = local_engine(self)
-        if self.backend_profile_id == "local":
+        if isinstance(self.source, LocalSource):
             relative_ref(self.model_ref)
             if engine is None:
                 raise ValueError("This model kind has no implemented local engine")
             if engine == "llama-server":
-                device = self.execution_options.get("device", "cuda")
+                device = self.source.execution_options.get("device", "cuda")
                 if device not in {"cpu", "cuda"}:
                     raise ValueError("The local device must be cpu or cuda")
                 options_schema = llama_options(device)
@@ -209,16 +202,14 @@ class ModelInput(StrictModel):
                 options_schema = OnnxCPUOptions
             else:
                 options_schema = PythonOptions
-            self.execution_options = options_schema.model_validate(self.execution_options).model_dump()
+            self.source.execution_options = options_schema.model_validate(self.source.execution_options).model_dump()
             if engine == "transformers":
                 if self.capabilities.vision or self.capabilities.json_object or self.capabilities.json_schema:
                     raise ValueError("Transformers currently supports text and tool calls only")
                 if any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
                     raise ValueError("Transformers does not support nonzero presence or frequency penalties")
-        elif self.execution_options:
-            raise ValueError("Execution options require the local backend")
-        if self.kind == "tts" and self.backend_profile_id not in {None, "local"}:
-            raise ValueError("TTS execution requires the local backend")
+        elif isinstance(self.source, ProviderSource) and self.kind not in {"llm", "embedding"}:
+            raise ValueError("Providers support only LLM and text embedding models")
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
         if self.kind != "llm" and any(self.capabilities.model_dump().values()):

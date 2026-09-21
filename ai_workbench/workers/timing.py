@@ -14,7 +14,7 @@ TRACE_ENV = "WORKBENCH_LOAD_TRACE"
 TRACE_HEADER = "X-Workbench-Load-Trace"
 TIMING_PREFIX = "model_timing "
 _current: ContextVar[LoadTrace | None] = ContextVar("model_load_trace", default=None)
-_FIELDS = {"load_id", "model_profile_id", "backend_profile_id", "engine", "version", "device", "trigger", "operation"}
+_FIELDS = {"load_id", "model_profile_id", "source_type", "engine", "version", "device", "trigger", "operation"}
 _IDENTIFIER = re.compile(r"^[a-zA-Z0-9_.+-]{1,128}$")
 _ERROR_CODES = frozenset({
     "INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_TIMEOUT",
@@ -152,7 +152,7 @@ def worker_trace(encoded, total_stage):
             return None
         if str(UUID(metadata["load_id"])) != metadata["load_id"]:
             return None
-        if metadata["backend_profile_id"] != "local" or metadata["engine"] not in {"kokoro", "transformers", "chatterbox", "qwen3tts", "whisper"} or metadata["trigger"] not in {"explicit", "autoload", "health", "reference"}:
+        if metadata["source_type"] != "local" or metadata["engine"] not in {"kokoro", "transformers", "chatterbox", "qwen3tts", "whisper"} or metadata["trigger"] not in {"explicit", "autoload", "health", "reference"}:
             return None
         if metadata["device"] not in {"cpu", "cuda"}:
             return None

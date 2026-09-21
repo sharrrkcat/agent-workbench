@@ -62,7 +62,7 @@ def model_tree(root):
 def api(tmp_path):
     path = model_tree(tmp_path)
     with TestClient(create_app(use_memory=True, root=tmp_path), client=("127.0.0.1", 40001)) as client:
-        response = client.post("/api/models/profiles", json={'name': 'Kokoro', 'alias': 'kokoro', 'kind': 'tts', 'model_ref': 'tts/kokoro', 'external_enabled': True, 'backend_profile_id': 'local'})
+        response = client.post("/api/models/profiles", json={'name': 'Kokoro', 'alias': 'kokoro', 'kind': 'tts', 'model_ref': 'tts/kokoro', 'external_enabled': True, 'source': {'type': 'local'}})
         assert response.status_code == 200, response.text
         client.patch("/api/models/settings", json={"external_enabled": True, "external_api_key": "test-key"})
         yield client, response.json(), path
@@ -162,9 +162,9 @@ def test_long_phonemes_are_complete_and_bounded():
 def test_tts_backend_and_catalog_constraints():
     values = dict(name="TTS", alias="tts", kind="tts", model_ref="tts/kokoro")
     assert ModelInput(**values).parameters == {"architecture": "kokoro", "speed": 1.0, "response_format": "mp3"}
-    assert ModelInput(**values, backend_profile_id="local").execution_options["device"] == "cpu"
-    for binding in ({"backend_profile_id": "external"}, {"runtime_id": "python-worker"},
-                    {"backend_profile_id": "local", "execution_options": {"device": "cuda"}}):
+    assert ModelInput(**values, source={'type': 'local'}).source.execution_options["device"] == "cpu"
+    for binding in ({'source': {'type': 'provider', 'provider_profile_id': "external"}}, {"runtime_id": "python-worker"},
+                    {'source': {'type': 'local', 'execution_options': {"device": "cuda"}}}):
         with pytest.raises(ValidationError):
             ModelInput(**values, **binding)
     assert catalog("windows", "x86_64").supported
@@ -188,7 +188,7 @@ def test_worker_binary_transport_and_cancellation():
     async def scenario():
         entry = catalog()
         adapter = PythonWorkerAdapter(SimpleNamespace(release=entry),
-            ModelInput(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", backend_profile_id="local"), lambda: None)
+            ModelInput(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", source={'type': 'local'}), lambda: None)
         started = asyncio.Event()
         release = asyncio.Event()
         async def handle(request):
@@ -235,7 +235,7 @@ def test_real_http_disconnect_cancels_speech_before_lease_release(tmp_path):
     with serve(app) as base:
         with httpx.Client(base_url=base) as client:
             client.patch('/api/models/settings', json={"external_enabled": True, "external_api_key": "test-key"}).raise_for_status()
-            client.post('/api/models/profiles', json={'name': 'Kokoro', 'alias': 'kokoro', 'kind': 'tts', 'model_ref': 'tts/kokoro', 'external_enabled': True, 'backend_profile_id': 'local'}).raise_for_status()
+            client.post('/api/models/profiles', json={'name': 'Kokoro', 'alias': 'kokoro', 'kind': 'tts', 'model_ref': 'tts/kokoro', 'external_enabled': True, 'source': {'type': 'local'}}).raise_for_status()
         body = json.dumps(PAYLOAD).encode()
         with socket.create_connection(('127.0.0.1', urlsplit(base).port), timeout=5) as connection:
             connection.sendall((f'POST /v1/audio/speech HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-key\r\n'

@@ -11,14 +11,14 @@ const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale, { 
 const i18n = i18next.createInstance();
 await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } });
 const usage = { complete: true, file_count: 2, logical_bytes: 1024, unique_bytes: 1024, shared_bytes: 1000, exclusive_bytes: 24 };
-const cacheJob = { id: 'cache', backend_profile_id: null, version: null, operation: 'cache_clean',
+const cacheJob = { id: 'cache', version: null, operation: 'cache_clean',
   state: 'completed', stage: 'completed', revision: 3, created_at: '2026-09-08T00:00:00Z', error_code: null,
   result: { before: usage, after: { ...usage, file_count: 0, logical_bytes: 0, unique_bytes: 0, shared_bytes: 0, exclusive_bytes: 0 } },
 };
 const state = { storage: { scanned_at: cacheJob.created_at, complete: true, totals: usage,
   groups: [{ ...usage, id: '.cache', category: 'cache', relative_path: '.cache' }], warnings: [] },
   storageLoading: false, storageError: '', reloadStorage: async () => {}, jobs: [cacheJob] };
-Object.assign(state, { backends: [{ id: 'local', enabled: true }],
+Object.assign(state, { localRuntimeSettings: { enabled: true, download: {} },
   catalog: { version: '1.0.0', platform: 'windows', architecture: 'x86_64', supported: true },
   installation: { version: '0.9.0', state: 'installed' } });
 const load = createModuleLoader({
@@ -27,14 +27,14 @@ const load = createModuleLoader({
 });
 const { RuntimeStoragePanel, CacheJobResult, runtimeBytes } = (await load('../src/components/settings/RuntimeStoragePanel.tsx')).exports;
 const { CudaLayersField } = (await load('../src/components/settings/models/CudaLayersField.tsx')).exports;
-const { LocalBackendPanel } = (await load('../src/components/settings/LocalBackendPanel.tsx')).exports;
+const { LocalRuntimePanel } = (await load('../src/components/settings/LocalRuntimePanel.tsx')).exports;
 assert.equal(runtimeBytes(null, 'Unknown'), 'Unknown');
 assert.equal(runtimeBytes(0, 'Unknown'), '0 B');
 assert.equal(runtimeBytes(1024, 'Unknown'), '1 KiB');
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');
-  const backend = renderToStaticMarkup(React.createElement(LocalBackendPanel, { activeView: true }));
+  const backend = renderToStaticMarkup(React.createElement(LocalRuntimePanel, { activeView: true }));
   assert.ok(backend.includes('0.9.0 / windows / x86_64') && !backend.includes('1.0.0 / windows'));
   assert.ok(backend.includes(t('runtimeReuseHint')));
   const repair = backend.match(/<button\b[^>]*>/g).find((tag) => tag.includes(`aria-label="${t('repairRuntime')}"`));
@@ -88,9 +88,9 @@ globalThis.fetch = async (url, options) => {
 };
 const { modelsApi } = (await load('../src/api/models.ts')).exports;
 await modelsApi.runtimeStorage();
-assert.equal(requests.at(-1).url, '/api/models/runtimes/storage');
+assert.equal(requests.at(-1).url, '/api/models/local-runtime/storage');
 for (const mode of ['prune', 'clean']) {
   await modelsApi.cleanupRuntimeCache(mode);
-  assert.deepEqual(requests.at(-1), { url: '/api/models/runtimes/cache/cleanup', method: 'POST', body: { mode } });
+  assert.deepEqual(requests.at(-1), { url: '/api/models/local-runtime/cache/cleanup', method: 'POST', body: { mode } });
 }
 console.log('Runtime storage accounting display, locales, cache jobs, CUDA fields, refresh ordering and APIs passed.');

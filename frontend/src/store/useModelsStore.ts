@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { modelsApi } from '../api/models';
-import type { ModelProfile, BackendProfile, ModelSettings, ModelStatus, RuntimeCatalog, RuntimeInstallation, RuntimeJob, RuntimeStorage } from '../types/models';
+import type { ModelProfile, ProviderProfile, ModelSettings, ModelStatus, RuntimeCatalog, RuntimeInstallation, RuntimeJob, RuntimeStorage, LocalRuntimeSettings } from '../types/models';
 import type { RuntimeEvent } from '../types/runs';
 
 type ModelsState = {
-  profiles: ModelProfile[]; backends: BackendProfile[]; settings: ModelSettings | null;
+  profiles: ModelProfile[]; providers: ProviderProfile[]; settings: ModelSettings | null;
   statuses: Record<string, ModelStatus>; loading: boolean; error: string;
   reload: () => Promise<void>;
   setStatus: (id: string, status: ModelStatus) => void;
+  localRuntimeSettings: LocalRuntimeSettings | null;
   catalog: RuntimeCatalog | null; installation: RuntimeInstallation | null; jobs: RuntimeJob[];
   runtimeLoading: boolean; runtimeError: string;
   reloadRuntimes: () => Promise<void>;
@@ -32,8 +33,8 @@ export const useModelsStore = create<ModelsState>((set, get) => {
   let installationVersion = 0;
   let storageVersion = 0;
   return {
-  profiles: [], backends: [], settings: null, statuses: {}, loading: false, error: '',
-  catalog: null, installation: null, jobs: [], runtimeLoading: false, runtimeError: '',
+  profiles: [], providers: [], settings: null, statuses: {}, loading: false, error: '',
+  localRuntimeSettings: null, catalog: null, installation: null, jobs: [], runtimeLoading: false, runtimeError: '',
   storage: null, storageLoading: false, storageError: '',
   reloadStorage: async () => {
     const version = ++storageVersion;
@@ -53,9 +54,9 @@ export const useModelsStore = create<ModelsState>((set, get) => {
     const initialInstallationVersion = installationVersion;
     set({ runtimeLoading: true, runtimeError: '' });
     try {
-      const [catalog, installation, jobs] = await Promise.all([modelsApi.runtimeCatalog(), modelsApi.runtimeInstallation(), modelsApi.runtimeJobs()]);
+      const [catalog, installation, jobs, localRuntimeSettings] = await Promise.all([modelsApi.runtimeCatalog(), modelsApi.runtimeInstallation(), modelsApi.runtimeJobs(), modelsApi.localRuntimeSettings()]);
       if (version !== runtimeVersion) return;
-      set((state) => ({ catalog, installation: initialInstallationVersion === installationVersion ? installation : state.installation,
+      set((state) => ({ catalog, localRuntimeSettings, installation: initialInstallationVersion === installationVersion ? installation : state.installation,
         jobs: mergeRuntimeJobs(state.jobs, jobs) }));
     } catch (error) {
       if (version === runtimeVersion) set({ runtimeError: error instanceof Error ? error.message : String(error) });
@@ -78,7 +79,7 @@ export const useModelsStore = create<ModelsState>((set, get) => {
     const initialStatusVersions = new Map(statusVersions);
     set({ loading: true, error: '' });
     try {
-      const [profiles, backends, settings] = await Promise.all([modelsApi.listModelProfiles(), modelsApi.listBackendProfiles(), modelsApi.getModelSettings()]);
+      const [profiles, providers, settings] = await Promise.all([modelsApi.listModelProfiles(), modelsApi.listProviderProfiles(), modelsApi.getModelSettings()]);
       const statuses = Object.fromEntries(await Promise.all(profiles.map(async (p) => [p.id, await modelsApi.getModelStatus(p.id)])));
       if (version !== reloadVersion) return;
       for (const profile of profiles) {
@@ -86,7 +87,7 @@ export const useModelsStore = create<ModelsState>((set, get) => {
           statuses[profile.id] = get().statuses[profile.id];
         }
       }
-      set({ profiles, backends, settings, statuses });
+      set({ profiles, providers, settings, statuses });
     } catch (error) {
       if (version !== reloadVersion) return;
       set({ error: error instanceof Error ? error.message : String(error) });

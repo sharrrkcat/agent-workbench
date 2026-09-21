@@ -159,9 +159,9 @@ async def chat(request: Request, state: RuntimeState = Depends(get_state)):
             response["usage"] = result.usage.model_dump()
         return response
 
-    # Resolve backend/queue failures before headers; inference failures after
+    # Resolve source/queue failures before headers; inference failures after
     # headers use an explicit SSE error followed by the terminal sentinel.
-    await manager.load(profile.id)
+    await manager.prepare_chat_stream(profile.id)
 
     async def events():
         try:

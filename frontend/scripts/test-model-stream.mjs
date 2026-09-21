@@ -49,7 +49,8 @@ function deferred() {
 const modelsModule = await loadStore('../src/store/useModelsStore.ts');
 const modelsStore = modelsModule.exports.useModelsStore;
 const idle = { state: 'ready', residency: 'unknown', unload_supported: false, active: 0, queued: 0 };
-mockApi.listBackendProfiles = async () => [{ id: 'local', type: 'local' }];
+mockApi.listProviderProfiles = async () => [];
+mockApi.localRuntimeSettings = async () => ({ enabled: true, download: {} });
 mockApi.getModelSettings = async () => ({ default_model_profile_id: null });
 mockApi.getModelStatus = async () => idle;
 const oldProfiles = deferred();
@@ -74,14 +75,13 @@ statusRead.resolve(idle);
 await statusReload;
 assert.equal(modelsStore.getState().statuses.new.active, 2);
 
-mockApi.runtimeCatalog = async () => ({ backend_profile_id: 'local', version: '1.0.0', engines: [] });
-mockApi.runtimeInstallation = async () => ({ backend_profile_id: 'local', state: 'not_installed' });
+mockApi.runtimeCatalog = async () => ({ version: '1.0.0', engines: [] });
+mockApi.runtimeInstallation = async () => ({ state: 'not_installed' });
 const jobsRead = deferred();
 mockApi.runtimeJobs = () => jobsRead.promise;
 const runtimeReload = modelsStore.getState().reloadRuntimes();
 const job = {
   id: 'job',
-  backend_profile_id: 'local',
   state: 'running',
   stage: 'installing_packages',
   created_at: '2026-09-05T00:00:00Z',
@@ -93,7 +93,7 @@ modelsStore
   .applyModelEvent({
     type: 'runtime_status',
     session_id: '',
-    payload: { installation: { backend_profile_id: 'local', state: 'installing' } },
+    payload: { installation: { state: 'installing' } },
   });
 jobsRead.resolve([{ ...job, state: 'queued', revision: 1 }]);
 await runtimeReload;

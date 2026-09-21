@@ -15,7 +15,7 @@ from ai_workbench.workers import timing, transformers_engine, tts_engine
 
 
 def metadata(**patch):
-    return {"load_id": str(uuid4()), "model_profile_id": str(uuid4()), "backend_profile_id": "local",
+    return {"load_id": str(uuid4()), "model_profile_id": str(uuid4()), "source_type": "local",
             "engine": "kokoro", "version": "1.0.2", "device": "cpu", "trigger": "explicit",
             "operation": "load", **patch}
 

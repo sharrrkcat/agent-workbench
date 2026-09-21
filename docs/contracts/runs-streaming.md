@@ -21,7 +21,8 @@ animation vocabulary, separate task stream or polling participates in execution.
 
 ChatRunner persists user messages, runs, steps, assistant/tool messages and
 events. Run/message metadata contains public ids, counts, timings, warnings
-and source refs, never prompts, full history/context, vectors, binaries or keys.
+and source refs, never prompts, full history/context, vectors, binaries or keys. Model resolution includes
+source_type and provider_profile_id (null for local/unbound); local worker traces carry source_type=local.
 config_snapshot_json and harness_state_json are private and absent from public
 responses/events. The latter preserves pending tool execution through approval.
 
@@ -54,7 +55,7 @@ Scrolling follows new content only near the bottom, with an explicit latest butt
 
 Session clients connect to `/api/ws/{session_id}`, request `next_event`, and
 receive events with session_id and optional run_id/message_id plus payload.
-Global model/runtime events are also available without a selected chat session.
+Global model/runtime events use `/api/models/events`, including without a selected chat session.
 
 | Event | Meaning |
 | --- | --- |
@@ -76,9 +77,9 @@ empty session_id, create no business rows and share alias occupancy. Models
 subscriptions remain active without a session and across settings navigation.
 Runtime jobs use their own store, not chat runs.
 The same global runtime_job_updated event carries cache_prune/cache_clean jobs,
-including null backend_profile_id/version and optional before/after accounting.
-Installation events identify the single local backend. Cache maintenance never
-emits an installation-state update. Local backend details refresh
+including version=null and optional before/after accounting; jobs carry no provider reference.
+Installation events describe the single local runtime. Cache maintenance never
+emits an installation-state update. Local Runtime details refresh
 storage when a newer terminal maintenance job arrives, without periodic polling.
 
 ## Client reconciliation
@@ -133,7 +134,7 @@ without invoking internal harness execution.
 One public id, created timestamp and alias persist across all chunks. Content
 and tool-call fragments are followed by one finish reason, optional usage when
 stream_options.include_usage=true, and exactly one `data: [DONE]`.
-Backend/load checks happen before response headers. Later inference/queue
+Source admission and local loading happen before response headers; providers never perform discovery preflights. Later inference/queue
 failures emit an explicit SSE error and DONE. Disconnects close upstream
 streams and release model occupancy. Invalid choices, malformed upstream chunks
 and truncated streams are errors, never silently successful empty responses.

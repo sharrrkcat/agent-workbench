@@ -46,7 +46,7 @@ def scan_storage(base: Path) -> RuntimeStorage:
             key = "/".join(parts[:2])
             if key not in groups:
                 groups[key] = StorageGroup(id=key, category="runtime", relative_path=key,
-                    backend_profile_id="local", version=parts[1])
+                    version=parts[1])
             return key
         return "other"
 

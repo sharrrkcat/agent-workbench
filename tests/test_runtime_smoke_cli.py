@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.store import BackendProfileStore, ModelProfileStore, ModelSettingsStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ProviderProfileStore, ModelProfileStore, ModelSettingsStore
 from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_tts_runtime
 
 
@@ -42,8 +42,9 @@ def test_cuda_requires_a_model_unless_installation_is_explicit():
 def test_smoke_modes_separate_installation_from_inference(tmp_path, monkeypatch, script, install_only):
     job = SimpleNamespace(id="job", version="1", state="completed", error_code=None)
     store = SimpleNamespace(job=lambda _: job)
-    backends = BackendProfileStore()
-    supervisor = SimpleNamespace(store=store, backends=backends, task=None, release=SimpleNamespace(version="1"),
+    providers = ProviderProfileStore()
+    settings = LocalRuntimeSettingsStore()
+    supervisor = SimpleNamespace(store=store, settings=settings, task=None, release=SimpleNamespace(version="1"),
         submit=AsyncMock(return_value=job), close=AsyncMock(),
         assert_available=Mock(side_effect=ModelError("RUNTIME_BROKEN", "Repair the local backend", 503)))
     manager = SimpleNamespace(close=AsyncMock(), profiles=ModelProfileStore(), settings=ModelSettingsStore(),
@@ -52,7 +53,9 @@ def test_smoke_modes_separate_installation_from_inference(tmp_path, monkeypatch,
     engine = SimpleNamespace(dispose=Mock())
     monkeypatch.setattr(script, "get_engine", lambda *_: engine)
     monkeypatch.setattr(script, "RuntimeStore", lambda *_: store)
-    monkeypatch.setattr(script, "BackendProfileStore", lambda *_: backends)
+    if hasattr(script, "ProviderProfileStore"):
+        monkeypatch.setattr(script, "ProviderProfileStore", lambda *_: providers)
+    monkeypatch.setattr(script, "LocalRuntimeSettingsStore", lambda *_: settings)
     if hasattr(script, "init_db"):
         monkeypatch.setattr(script, "init_db", lambda *_: None)
     if hasattr(script, "platform"):

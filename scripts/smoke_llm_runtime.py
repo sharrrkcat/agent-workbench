@@ -19,7 +19,7 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile
-from ai_workbench.core.models.store import BackendProfileStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore
 from ai_workbench.db.database import get_engine, init_db
 
 
@@ -39,13 +39,13 @@ async def checked_json(client, method, path, **kwargs):
 
 async def validate_device(state, client, model_ref, device, engine_name):
     manager = state.model_manager
-    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, execution_options={'device': device}, capabilities={'streaming': True, 'tools': True}, parameters={'temperature': 0, 'max_tokens': 128}, external_enabled=True, backend_profile_id='local'))
+    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, capabilities={'streaming': True, 'tools': True}, parameters={'temperature': 0, 'max_tokens': 128}, external_enabled=True, source={'type': 'local', 'execution_options': {'device': device}}))
     manager.settings.patch({"utility_model_profile_id": profile.id})
     loaded = await manager.load(profile.id)
     assert loaded.residency == "loaded"
     if engine_name == "transformers" or device == "cuda":
         assert loaded.runtime.device_name
-    adapter = manager._slots[manager.backend_key(profile)].adapter
+    adapter = manager._slots[manager.execution_key(profile)].adapter
     metadata = (await adapter.client.get("/health")).json()
     if engine_name == "transformers":
         assert metadata["device"] == ("cpu" if device == "cpu" else "cuda:0")
@@ -53,7 +53,7 @@ async def validate_device(state, client, model_ref, device, engine_name):
     elif device == "cuda":
         assert loaded.runtime.gpu_layers_loaded > 0
     else:
-        assert profile.execution_options["gpu_layers"] == 0
+        assert profile.source.execution_options["gpu_layers"] == 0
     request = {"model": profile.alias, "messages": [{"role": "user", "content": "Say hello in a short sentence."}],
                "temperature": 0, "max_tokens": 32}
     reply = await checked_json(client, "POST", "/v1/chat/completions", json=request)
@@ -146,7 +146,7 @@ async def smoke(root, model_ref, devices, install_only, engine_name):
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor
     supervisor.store = RuntimeStore(engine)
-    state.backend_profiles = supervisor.backends = state.model_manager.backends = BackendProfileStore(engine)
+    state.local_runtime_settings = supervisor.settings = LocalRuntimeSettingsStore(engine)
     server, server_task = None, None
     started = time.monotonic()
     try:
@@ -163,7 +163,7 @@ async def smoke(root, model_ref, devices, install_only, engine_name):
             print(json.dumps({"installation_job": job.id, "state": result.state, "error_code": result.error_code}), flush=True)
             if result.state != "completed":
                 print(supervisor.log_text(job.id), flush=True)
-                raise RuntimeError("Local backend installation failed")
+                raise RuntimeError("Local runtime installation failed")
             return
         supervisor.assert_available()
         state.app_settings.patch({"auto_generate_session_titles": False})

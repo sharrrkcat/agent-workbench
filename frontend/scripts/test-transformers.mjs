@@ -13,25 +13,30 @@ await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } })
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { newModel, updateModel, localEngine } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
+const { newModel, updateModel, localEngine, localSource, selectModelSource } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
-const original = { ...newModel('llm'), backend_profile_id: 'external', model_ref: 'llms/model', parameters: { max_tokens: 128, presence_penalty: 1 },
+const original = { ...newModel('llm'), source: null, model_ref: 'llms/model', parameters: { max_tokens: 128, presence_penalty: 1 },
   capabilities: { streaming: true, tools: true, vision: true, json_object: true, json_schema: true } };
-const selected = updateModel(original, { backend_profile_id: 'local' });
-assert.equal(selected.backend_profile_id, 'local');
+const selected = selectModelSource(original, localSource());
+assert.equal(selected.source.type, 'local');
 assert.equal(localEngine(selected), 'transformers');
-assert.deepEqual(selected.execution_options, { device: 'cuda', intraop_threads: 4 });
+assert.deepEqual(selected.source.execution_options, { device: 'cuda', intraop_threads: 4 });
 assert.deepEqual(selected.parameters, { max_tokens: 128 });
 assert.deepEqual(selected.capabilities, { streaming: true, tools: true, vision: false, json_object: false, json_schema: false });
-assert.equal(selected.lifecycle.unload, 'manual');
+assert.equal(selected.source.lifecycle.unload, 'manual');
 assert.equal(original.parameters.presence_penalty, 1);
 const llama = updateModel(selected, { model_ref: 'llms/model.gguf' });
 assert.equal(localEngine(llama), 'llama-server');
-assert.deepEqual(llama.execution_options, { device: 'cuda', gpu_layers: 'auto', threads: 4, context_size: 4096, batch_size: 512 });
-const external = updateModel(llama, { backend_profile_id: 'external' });
+assert.deepEqual(llama.source.execution_options, { device: 'cuda', gpu_layers: 'auto', threads: 4, context_size: 4096, batch_size: 512 });
+const external = selectModelSource(llama, { type: 'provider', provider_profile_id: 'external' });
 assert.equal(localEngine(external), null);
-assert.deepEqual(external.execution_options, {});
-assert.equal(updateModel(selected, { name: 'Renamed' }).execution_options, selected.execution_options);
+assert.deepEqual(external.source, { type: 'provider', provider_profile_id: 'external' });
+assert.equal(external.model_ref, '');
+const manual = { ...external, model_ref: 'manual-id' };
+assert.equal(selectModelSource(manual, null).model_ref, 'manual-id');
+assert.equal(selectModelSource(manual, manual.source), manual);
+assert.equal(selectModelSource(manual, { type: 'provider', provider_profile_id: 'second' }).model_ref, '');
+assert.equal(updateModel(selected, { name: 'Renamed' }).source.execution_options, selected.source.execution_options);
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');

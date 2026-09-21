@@ -1,4 +1,4 @@
-"""Install the local backend and exercise all Kokoro voices through the public API."""
+"""Install the local runtime and exercise all Kokoro voices through the public API."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +16,7 @@ from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ModelProfile
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.workers.tts_catalog import VOICE_IDS
 
@@ -42,7 +42,7 @@ async def check_disconnect(manager, profile, port, token, voice):
         while not manager.status(profile.id).active:
             assert asyncio.get_running_loop().time() < deadline, "Speech never entered the worker queue"
             await asyncio.sleep(0.02)
-        adapter = manager._slots[manager.backend_key(profile)].adapter
+        adapter = manager._slots[manager.execution_key(profile)].adapter
         process = adapter.process
         await asyncio.sleep(0.1)
         assert manager.status(profile.id).active == 1 and process is not None
@@ -60,8 +60,8 @@ async def check_disconnect(manager, profile, port, token, voice):
 async def smoke(root, model_ref, install_only, selected):
     engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
     init_db(engine)
-    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
-    manager = ModelManager(ModelProfileStore(), supervisor.backends, ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), LocalRuntimeSettingsStore(engine))
+    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     try:
         if install_only:
             job = await supervisor.submit('install')
@@ -76,7 +76,7 @@ async def smoke(root, model_ref, install_only, selected):
             print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
             if result.state != "completed":
                 print(supervisor.log_text(result.id), flush=True)
-                raise RuntimeError("Local backend installation failed")
+                raise RuntimeError("Local runtime installation failed")
             return
         supervisor.assert_available()
         from fastapi import FastAPI
@@ -88,7 +88,7 @@ async def smoke(root, model_ref, install_only, selected):
         from ai_workbench.core.models.errors import ModelError
         from ai_workbench.core.models.http import InferenceObservabilityMiddleware
 
-        profile = manager.profiles.create(ModelProfile(name='Kokoro smoke', alias='kokoro-smoke', kind='tts', model_ref=model_ref, external_enabled=True, backend_profile_id='local'))
+        profile = manager.profiles.create(ModelProfile(name='Kokoro smoke', alias='kokoro-smoke', kind='tts', model_ref=model_ref, external_enabled=True, source={'type': 'local'}))
         token = secrets.token_urlsafe(32)
         manager.settings.patch({"external_enabled": True, "external_api_key": token})
         app = FastAPI()

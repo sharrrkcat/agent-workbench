@@ -360,8 +360,8 @@ def test_running_snapshot_survives_persona_edit_and_speaker_switch(tmp_path):
         upstream = BlockingUpstream()
         app = create_app(root=tmp_path, use_memory=True, adapter_factory=upstream.factory)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            provider = ok(await client.post("/api/models/backends", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}, 'type': 'openai_compatible'}))
-            model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "backend_profile_id": provider["id"], "capabilities": {"streaming": True, "tools": True}, "parameters": {"temperature": 0.2}}))
+            provider = ok(await client.post("/api/models/providers", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}}))
+            model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "capabilities": {"streaming": True, "tools": True}, "parameters": {"temperature": 0.2}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             ok(await client.patch("/api/models/settings", json={"default_model_profile_id": model["id"]}))
             before = ok(await client.post("/api/personas", json={"name": "Before", "system_prompt": "BEFORE_PROMPT"}))
             session = ok(await client.post("/api/sessions", json={"current_persona_id": before["id"], "personas": [{"persona_id": before["id"]}, {"persona_id": CHAT_PERSONA_ID}], "context_mode": "group_transcript", "harness_enabled": True, "tools_allowed": ["read_file"]}))

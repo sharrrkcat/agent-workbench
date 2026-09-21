@@ -5,7 +5,7 @@ are never removed by schema revisions.
 
 | Path | Contents and owner |
 | --- | --- |
-| data/agent_workbench.db | Application test state: Personas, sessions/messages/runs, settings, models/backends, Knowledge/Worldbook, runtime jobs |
+| data/agent_workbench.db | Application test state: Personas, sessions/messages/runs, settings, models/providers, Knowledge/Worldbook, runtime jobs |
 | data/attachments/ | Uploaded files and Persona avatars; explicit orphan cleanup |
 | data/tmp/voice-references/ | Model-service temporary reference audio; no database records |
 | data/knowledge/ | Knowledge service source/index working files |
@@ -24,7 +24,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0013_unified_backend`; there are 24 current business tables.
+Alembic head is `0014_provider_runtime_separation`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -74,6 +74,16 @@ records/bindings and unfinished model-backed continuations, preserving completed
 history and unrelated settings. It does not convert records or touch files.
 Old installation directories remain on disk but are not executable backends.
 Repeated upgrades preserve newly saved configuration.
+
+Revision `0014_provider_runtime_separation` replaces disposable model/backend configuration
+with provider_profiles and constrained nullable local/provider model sources, without converting old profiles.
+It resets local_runtime_settings, model/default/utility/session/reranker selections, dependent test Knowledge
+and unfinished model continuations, preserving completed histories and unrelated settings.
+Alembic batch alteration removes runtime backend foreign keys: installation uses internal singleton id=local;
+jobs have no backend column. Installation version/state/digest/job linkage/timestamps and every job's
+identity, result, progress, state and log reference survive. A previously valid installation remains recognized.
+The revision changes only database schema/rows, never installation/model/attachment/cache/log files.
+Repeat upgrades preserve newly saved configuration and do not rebuild the environment.
 
 Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
 The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under
@@ -126,7 +136,7 @@ no schema revision, model uninstall or runtime cache job deletes them.
 - AGENT_WORKBENCH_ATTACHMENTS_DIR overrides attachment storage.
 - AGENT_WORKBENCH_FILE_ALLOWED_DIRS controls permitted attachment file access;
   harness read_file has its own narrower allowlist.
-- Model/backend configuration is stored in the database, not environment fallback.
+- Model/provider configuration is stored in the database, not environment fallback.
 
 `scripts/reset_data.py` is an explicit SQLite-file reset command; its default is
 a dry run and `--yes` deletes only the selected database file.

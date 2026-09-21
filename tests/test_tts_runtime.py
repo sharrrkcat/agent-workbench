@@ -74,7 +74,7 @@ def test_worker_audio_failures_stop_execution_and_sanitize_errors(monkeypatch, f
 
     async def scenario():
         adapter = PythonWorkerAdapter(SimpleNamespace(release=catalog("windows", "x86_64")),
-            ModelProfile(name="speech", alias="speech", kind="tts", model_ref="tts/kokoro", backend_profile_id="local"), lambda: None)
+            ModelProfile(name="speech", alias="speech", kind="tts", model_ref="tts/kokoro", source={'type': 'local'}), lambda: None)
         adapter._stop = AsyncMock()
 
         async def handle(request):

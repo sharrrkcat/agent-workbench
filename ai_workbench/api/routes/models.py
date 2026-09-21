@@ -5,11 +5,11 @@ from ai_workbench.api.openapi import request_body
 from ai_workbench.api.schemas.common import DeletedResponse, TextResponse, error_responses
 from ai_workbench.api.schemas.models import (
     ModelCreate, ModelInventoryItem, ModelPatch, ModelProfileResponse, ModelSettingsPatch,
-    ModelSettingsResponse, BackendModelsResponse, BackendPatch, BackendResponse,
+    ModelSettingsResponse, ProviderModelsResponse, ProviderPatch, ProviderResponse,
 )
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.inventory import inventory
-from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelProfile, ModelSettings, ModelStatus, BackendInput, BackendProfile
+from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile
 from ai_workbench.api.schemas.inference import VoiceAvailability
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -22,10 +22,9 @@ async def model_voices(profile_id: str, state: RuntimeState = Depends(get_state)
     return await asyncio.to_thread(state.model_manager.voice_list, profile_id)
 
 
-def public_backend(profile: BackendProfile) -> dict:
+def public_provider(profile: ProviderProfile) -> dict:
     result = profile.model_dump(mode="json", exclude={"connection": {"api_key"}})
-    if profile.connection is not None:
-        result["connection"]["has_api_key"] = bool(profile.connection.api_key)
+    result["connection"]["has_api_key"] = bool(profile.connection.api_key)
     return result
 
 
@@ -33,63 +32,56 @@ def public_settings(settings: ModelSettings) -> dict:
     return {**settings.model_dump(exclude={"external_api_key"}), "has_external_api_key": bool(settings.external_api_key)}
 
 
-@router.get("/backends", response_model=list[BackendResponse], response_model_exclude_unset=True)
-async def backends(state: RuntimeState = Depends(get_state)):
-    return [public_backend(p) for p in state.backend_profiles.list()]
+def _binding(profile):
+    return profile.source.model_dump(exclude={"lifecycle"}) if profile.source else None
 
 
-@router.post("/backends", response_model=BackendResponse, response_model_exclude_unset=True, responses=error_responses(409))
-async def create_backend(payload: BackendInput, state: RuntimeState = Depends(get_state)):
-    if payload.type == "local":
-        raise ModelError("BACKEND_CONFLICT", "The local backend already exists.", 409)
-    return public_backend(state.backend_profiles.create(BackendProfile(**payload.model_dump())))
+@router.get("/providers", response_model=list[ProviderResponse], response_model_exclude_unset=True)
+async def providers(state: RuntimeState = Depends(get_state)):
+    return [public_provider(p) for p in state.provider_profiles.list()]
 
 
-@router.get("/backends/{backend_id}", response_model=BackendResponse, response_model_exclude_unset=True, responses=error_responses(404))
-async def backend(backend_id: str, state: RuntimeState = Depends(get_state)):
-    return public_backend(state.backend_profiles.get(backend_id))
+@router.post("/providers", response_model=ProviderResponse, response_model_exclude_unset=True, responses=error_responses(409))
+async def create_provider(payload: ProviderInput, state: RuntimeState = Depends(get_state)):
+    return public_provider(state.provider_profiles.create(ProviderProfile(**payload.model_dump())))
 
 
-@router.patch("/backends/{backend_id}", response_model=BackendResponse, response_model_exclude_unset=True,
-              openapi_extra=request_body(BackendPatch), responses=error_responses(404, 409, 422))
-async def update_backend(backend_id: str, payload: dict, state: RuntimeState = Depends(get_state)):
-    current = state.backend_profiles.get(backend_id)
-    if payload.get("type", current.type) != current.type:
-        raise ModelError("BACKEND_TYPE_IMMUTABLE", "Backend type cannot be changed.", 409)
-    merged = current.model_dump(include=set(BackendInput.model_fields))
+@router.get("/providers/{provider_id}", response_model=ProviderResponse, response_model_exclude_unset=True, responses=error_responses(404))
+async def provider(provider_id: str, state: RuntimeState = Depends(get_state)):
+    return public_provider(state.provider_profiles.get(provider_id))
+
+
+@router.patch("/providers/{provider_id}", response_model=ProviderResponse, response_model_exclude_unset=True,
+              openapi_extra=request_body(ProviderPatch), responses=error_responses(404, 409, 422))
+async def update_provider(provider_id: str, payload: dict, state: RuntimeState = Depends(get_state)):
+    current = state.provider_profiles.get(provider_id)
+    merged = current.model_dump(include=set(ProviderInput.model_fields))
     for key, value in payload.items():
-        merged[key] = {**(merged[key] or {}), **value} if key in {"connection", "download"} and isinstance(value, dict) else value
-    values = BackendInput.model_validate(merged)
-    if backend_id == "local":
-        if state.runtime_supervisor.active_job:
-            raise ModelError("RUNTIME_INSTALLING", "Wait for the runtime task before editing the local backend.", 409)
-        if values.enabled != current.enabled:
-            await state.model_manager.invalidate_local()
-    else:
-        await state.model_manager.invalidate(backend_id)
-    result = state.backend_profiles.update(backend_id, values.model_dump())
-    if current.connection and result.connection.base_url != current.connection.base_url:
+        merged[key] = {**merged[key], **value} if key == "connection" and isinstance(value, dict) else value
+    values = ProviderInput.model_validate(merged)
+    await state.model_manager.invalidate(("provider", provider_id))
+    result = state.provider_profiles.update(provider_id, values.model_dump())
+    if result.connection.base_url != current.connection.base_url:
         for profile in state.model_profiles.list("embedding"):
-            if profile.backend_profile_id == backend_id:
+            if profile.source and profile.source.type == "provider" and profile.source.provider_profile_id == provider_id:
                 _invalidate_profile_indexes(state, profile.id)
-    if backend_id == "local":
-        state.model_manager.runtime_changed()
-    return public_backend(result)
+    return public_provider(result)
 
 
-@router.delete("/backends/{backend_id}", response_model=DeletedResponse, responses=error_responses(404, 409))
-async def delete_backend(backend_id: str, state: RuntimeState = Depends(get_state)):
-    if backend_id == "local" or any(p.backend_profile_id == backend_id for p in state.model_profiles.list()):
-        raise ModelError("BACKEND_IN_USE", "The local backend or a referenced backend cannot be deleted.", 409)
-    await state.model_manager.invalidate(backend_id)
-    state.backend_profiles.delete(backend_id)
+@router.delete("/providers/{provider_id}", response_model=DeletedResponse, responses=error_responses(404, 409))
+async def delete_provider(provider_id: str, state: RuntimeState = Depends(get_state)):
+    state.provider_profiles.get(provider_id)
+    if any(p.source and p.source.type == "provider" and p.source.provider_profile_id == provider_id for p in state.model_profiles.list()):
+        raise ModelError("PROVIDER_IN_USE", "A referenced provider cannot be deleted.", 409)
+    await state.model_manager.invalidate(("provider", provider_id))
+    state.provider_profiles.delete(provider_id)
     return {"deleted": True}
 
 
-@router.get("/backends/{backend_id}/models", response_model=BackendModelsResponse,
+@router.get("/providers/{provider_id}/models", response_model=ProviderModelsResponse,
             responses=error_responses(404, 409, 422, 429, 502, 503, 504))
-async def backend_models(backend_id: str, state: RuntimeState = Depends(get_state)):
-    return {"models": await state.model_manager.backend_models(backend_id)}
+async def provider_models(provider_id: str, state: RuntimeState = Depends(get_state)):
+    return {"models": await state.model_manager.provider_models(provider_id)}
 
 
 @router.get("/profiles", response_model=list[ModelProfileResponse], response_model_exclude_unset=True)
@@ -100,8 +92,6 @@ async def profiles(kind: ModelKind | None = None, state: RuntimeState = Depends(
 @router.post("/profiles", response_model=ModelProfileResponse, response_model_exclude_unset=True,
              openapi_extra=request_body(ModelCreate), responses=error_responses(404, 409, 422))
 async def create_profile(payload: ModelInput, state: RuntimeState = Depends(get_state)):
-    if payload.backend_profile_id:
-        state.backend_profiles.get(payload.backend_profile_id)
     profile = ModelProfile(**payload.model_dump())
     state.model_manager.validate_binding(profile)
     return state.model_profiles.create(profile).model_dump(mode="json")
@@ -120,20 +110,18 @@ async def update_profile(profile_id: str, payload: dict, state: RuntimeState = D
            for r in state.runs.list_all_runs() if r.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"}):
         raise ModelError("MODEL_BUSY", "An unfinished chat run uses this model configuration.", 409)
     current = state.model_profiles.get(profile_id)
-    updated = ModelInput.model_validate({**current.model_dump(include=set(ModelInput.model_fields)), **payload})
-    if updated.kind != current.kind:
+    if payload.get("kind", current.kind) != current.kind:
         raise ModelError("MODEL_KIND_IMMUTABLE", "Create a new profile to use a different model kind.", 409)
-    if updated.backend_profile_id:
-        state.backend_profiles.get(updated.backend_profile_id)
+    updated = ModelInput.model_validate({**current.model_dump(include=set(ModelInput.model_fields)), **payload})
     state.model_manager.validate_binding(ModelProfile(**updated.model_dump(), id=profile_id))
-    state.model_manager.require_idle(state.model_manager.backend_key(updated))
-    await state.model_manager.invalidate(state.model_manager.backend_key(current))
+    state.model_manager.require_idle(state.model_manager.execution_key(updated))
+    await state.model_manager.invalidate(state.model_manager.execution_key(current))
     result = state.model_profiles.update(profile_id, payload)
     if current.kind == "tts" and (not result.enabled or not result.external_enabled or
-            (current.model_ref, current.backend_profile_id, current.execution_options, current.parameters.get("architecture")) !=
-            (result.model_ref, result.backend_profile_id, result.execution_options, result.parameters.get("architecture"))):
+            (current.model_ref, _binding(current), current.parameters.get("architecture")) !=
+            (result.model_ref, _binding(result), result.parameters.get("architecture"))):
         state.model_manager.invalidate_voice_references(profile_id)
-    if current.kind == "embedding" and (current.backend_profile_id, current.model_ref, current.parameters, current.execution_options) != (result.backend_profile_id, result.model_ref, result.parameters, result.execution_options):
+    if current.kind == "embedding" and (_binding(current), current.model_ref, current.parameters) != (_binding(result), result.model_ref, result.parameters):
         _invalidate_profile_indexes(state, profile_id)
     return result.model_dump(mode="json")
 
@@ -156,7 +144,7 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
     references.extend(b.embedding_model_profile_id for b in state.knowledge.list_knowledge_bases())
     if profile_id in references:
         raise ModelError("MODEL_IN_USE", "Remove session, unfinished run, default or Knowledge references before deleting this model.", 409)
-    await state.model_manager.invalidate(state.model_manager.backend_key(profile))
+    await state.model_manager.invalidate(state.model_manager.execution_key(profile))
     state.model_profiles.delete(profile_id)
     state.model_manager.invalidate_voice_references(profile_id)
     return {"deleted": True}
@@ -167,7 +155,7 @@ async def profile_status(profile_id: str, state: RuntimeState = Depends(get_stat
     return state.model_manager.status(profile_id).model_dump()
 
 
-@router.get("/profiles/{profile_id}/log", response_model=TextResponse, responses=error_responses(404))
+@router.get("/profiles/{profile_id}/log", response_model=TextResponse, responses=error_responses(404, 422, 503))
 def profile_log(profile_id: str, state: RuntimeState = Depends(get_state)):
     profile = state.model_profiles.get(profile_id)
     return {"text": state.model_manager.process_log(profile)}

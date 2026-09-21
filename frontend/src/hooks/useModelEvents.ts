@@ -9,7 +9,7 @@ export function useModelEvents() {
     let socket: WebSocket;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
     function connect() {
-      const url = new URL(joinApiUrl(API_BASE_URL, '/api/models/runtimes/events'), window.location.origin);
+      const url = new URL(joinApiUrl(API_BASE_URL, '/api/models/events'), window.location.origin);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       socket = new WebSocket(url);
       const next = () => { if (!closed && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'next_event' })); };

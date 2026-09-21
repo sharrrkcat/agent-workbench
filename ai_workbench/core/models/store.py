@@ -7,11 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.schema import ModelInput, ModelProfile, ModelSettings, BackendInput, BackendProfile
+from ai_workbench.core.models.schema import ModelInput, ModelProfile, ModelSettings, ProviderInput, ProviderProfile
+from ai_workbench.core.models.runtimes.schema import LocalRuntimeSettings
 from ai_workbench.core.time import utc_now
-from ai_workbench.db.models import AppMetadataRecord, ModelProfileRecord, BackendProfileRecord
+from ai_workbench.db.models import AppMetadataRecord, ModelProfileRecord, ProviderProfileRecord
 
-T = TypeVar("T", ModelProfile, BackendProfile)
+T = TypeVar("T", ModelProfile, ProviderProfile)
 
 
 class _Store(Generic[T]):
@@ -24,7 +25,13 @@ class _Store(Generic[T]):
 
     def _decode(self, record) -> T:
         data = record.model_dump()
-        for key in ("capabilities", "parameters", "lifecycle", "execution_options", "connection", "download"):
+        if "source_type" in data:
+            source_type = data.pop("source_type")
+            provider_id = data.pop("provider_profile_id")
+            options, lifecycle = data.pop("execution_options_json"), data.pop("lifecycle_json")
+            data["source"] = ({"type": "local", "execution_options": json.loads(options), "lifecycle": json.loads(lifecycle)}
+                if source_type == "local" else {"type": source_type, "provider_profile_id": provider_id} if source_type else None)
+        for key in ("capabilities", "parameters", "connection"):
             if key + "_json" in data:
                 raw = data.pop(key + "_json")
                 data[key] = json.loads(raw) if raw is not None else None
@@ -32,7 +39,14 @@ class _Store(Generic[T]):
 
     def _encode(self, profile) -> dict:
         data = profile.model_dump()
-        for key in ("capabilities", "parameters", "lifecycle", "execution_options", "connection", "download"):
+        if "source" in data:
+            source = data.pop("source")
+            local = source is not None and source["type"] == "local"
+            data.update(source_type=source["type"] if source else None,
+                provider_profile_id=source["provider_profile_id"] if source and not local else None,
+                execution_options_json=json.dumps(source["execution_options"]) if local else None,
+                lifecycle_json=json.dumps(source["lifecycle"]) if local else None)
+        for key in ("capabilities", "parameters", "connection"):
             if key in data:
                 value = data.pop(key)
                 data[key + "_json"] = json.dumps(value) if value is not None else None
@@ -66,7 +80,7 @@ class _Store(Generic[T]):
                     db.commit()
                 except IntegrityError as exc:
                     db.rollback()
-                    raise ModelError("MODEL_CONFLICT", "Profile alias, id or backend reference conflicts.", 409) from exc
+                    raise ModelError("MODEL_CONFLICT", "Profile alias, id or provider reference conflicts.", 409) from exc
         return profile.model_copy(deep=True)
 
     def update(self, profile_id: str, values: dict) -> T:
@@ -87,7 +101,7 @@ class _Store(Generic[T]):
                     db.commit()
                 except IntegrityError as exc:
                     db.rollback()
-                    raise ModelError("MODEL_CONFLICT", "Profile alias or backend reference conflicts.", 409) from exc
+                    raise ModelError("MODEL_CONFLICT", "Profile alias or provider reference conflicts.", 409) from exc
         return updated.model_copy(deep=True)
 
     def delete(self, profile_id: str) -> T:
@@ -116,50 +130,44 @@ class ModelProfileStore(_Store[ModelProfile]):
             return self._decode(record) if record else None
 
 
-class BackendProfileStore(_Store[BackendProfile]):
+class ProviderProfileStore(_Store[ProviderProfile]):
     def __init__(self, engine=None):
-        super().__init__(BackendProfile, BackendProfileRecord, BackendInput, engine)
-        if engine is None:
-            self._records["local"] = BackendProfile(id="local", name="Local backend", type="local")
-
-    def create(self, profile: BackendProfile) -> BackendProfile:
-        if profile.type == "local":
-            raise ModelError("BACKEND_CONFLICT", "The local backend already exists.", 409)
-        return super().create(profile)
-
-    def update(self, profile_id: str, values: dict) -> BackendProfile:
-        current = self.get(profile_id)
-        if values.get("type", current.type) != current.type:
-            raise ModelError("BACKEND_TYPE_IMMUTABLE", "Backend type cannot be changed.", 409)
-        return super().update(profile_id, values)
-
-    def delete(self, profile_id: str) -> BackendProfile:
-        if profile_id == "local":
-            raise ModelError("BACKEND_IN_USE", "The local backend cannot be deleted; uninstall its runtime instead.", 409)
-        return super().delete(profile_id)
+        super().__init__(ProviderProfile, ProviderProfileRecord, ProviderInput, engine)
 
 
-class ModelSettingsStore:
-    def __init__(self, engine=None):
+class _SettingsStore:
+    def __init__(self, schema, key, engine=None):
+        self.schema = schema
+        self.key = key
         self.engine = engine
-        self._settings = ModelSettings()
+        self._settings = schema()
 
-    def get(self) -> ModelSettings:
+    def get(self):
         if self.engine is None:
             return self._settings.model_copy(deep=True)
         with Session(self.engine) as db:
-            record = db.get(AppMetadataRecord, "model_settings")
-            return ModelSettings.model_validate_json(record.value) if record else ModelSettings()
+            record = db.get(AppMetadataRecord, self.key)
+            return self.schema.model_validate_json(record.value) if record else self.schema()
 
-    def patch(self, values: dict) -> ModelSettings:
-        updated = ModelSettings.model_validate({**self.get().model_dump(), **values})
+    def patch(self, values: dict):
+        updated = self.schema.model_validate({**self.get().model_dump(), **values})
         if self.engine is None:
             self._settings = updated
         else:
             with Session(self.engine) as db:
-                record = db.get(AppMetadataRecord, "model_settings") or AppMetadataRecord(key="model_settings", value="{}")
+                record = db.get(AppMetadataRecord, self.key) or AppMetadataRecord(key=self.key, value="{}")
                 record.value = updated.model_dump_json()
                 record.updated_at = utc_now()
                 db.add(record)
                 db.commit()
         return updated.model_copy(deep=True)
+
+
+class ModelSettingsStore(_SettingsStore):
+    def __init__(self, engine=None):
+        super().__init__(ModelSettings, "model_settings", engine)
+
+
+class LocalRuntimeSettingsStore(_SettingsStore):
+    def __init__(self, engine=None):
+        super().__init__(LocalRuntimeSettings, "local_runtime_settings", engine)

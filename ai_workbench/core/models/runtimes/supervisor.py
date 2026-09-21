@@ -128,13 +128,13 @@ def extract_archive(archive: Path, target: Path, archive_format: str):
 
 
 class RuntimeSupervisor:
-    def __init__(self, root, store, backends, events=None, release=None, transport=None):
+    def __init__(self, root, store, settings, events=None, release=None, transport=None):
         self.root = Path(root).resolve()
         self.base = self.root / "data" / "runtimes"
         self.logs = self.root / "data" / "logs" / "runtimes"
         self.store = store
         self.events = events
-        self.backends = backends
+        self.settings = settings
         self.release = release if release is not None else catalog()
         self.worker_root = WORKER_ROOT
         self._installation_snapshot: Installation | None = None
@@ -205,8 +205,8 @@ class RuntimeSupervisor:
         codes = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING",
                  "broken": "RUNTIME_BROKEN", "unsupported": "RUNTIME_UNSUPPORTED", "interrupted": "RUNTIME_BROKEN"}
         if value.state != "installed":
-            raise ModelError(codes[value.state], "Install or repair the local backend in Models settings.", 503,
-                {"backend_profile_id": "local", "action": "repair" if value.state in {"broken", "interrupted"}
+            raise ModelError(codes[value.state], "Install or repair the local runtime in Models settings.", 503,
+                {"source_type": "local", "action": "repair" if value.state in {"broken", "interrupted"}
                  else "install" if value.state == "not_installed" else "view_runtime"})
 
     def assert_available(self, *, check=True):
@@ -336,7 +336,7 @@ class RuntimeSupervisor:
                 self._save_job(job)
             finally:
                 self.active_job = None
-            self._prune_logs(None)
+            self._prune_logs(cache=True)
 
     async def submit(self, operation):
         if self.closed:
@@ -352,7 +352,7 @@ class RuntimeSupervisor:
         if operation == "install" and value.state != "not_installed":
             self._require_available(value)
         version = value.version if operation == "uninstall" or operation == "install" and value.state == "installed" else entry.version
-        job = RuntimeJob(backend_profile_id="local", version=version, operation=operation)
+        job = RuntimeJob(version=version, operation=operation)
         job.log_path = f"{job.id}.log"
         self.active_job = job.id
         self.blocked = True
@@ -457,7 +457,7 @@ class RuntimeSupervisor:
             finally:
                 self.active_job = None
                 self.blocked = False
-            self._prune_logs(job.backend_profile_id)
+            self._prune_logs(cache=job.version is None)
 
     async def _install_native(self, native, payload, staging, device, job, log):
         artifacts = [native.artifact, *native.dependencies]
@@ -518,7 +518,7 @@ class RuntimeSupervisor:
         self._save_job(job)
 
     async def _download(self, entry, target, job, *, offset=0, total_bytes=None, final=True):
-        settings = self.backends.get("local").download
+        settings = self.settings.get().download
         url = entry.url
         if settings.github_release_proxy_url:
             url = settings.github_release_proxy_url + "/" + url
@@ -572,7 +572,7 @@ class RuntimeSupervisor:
             raise ModelError("RUNTIME_BROKEN", "Runtime requirements changed during installation.", 503)
         env = {key: value for key, value in os.environ.items() if not key.startswith(("UV_", "PIP_", "PYTHON", "VIRTUAL_ENV")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
         env.update(UV_CACHE_DIR=str(self.base / ".cache"), UV_NO_PROGRESS="1", UV_NATIVE_TLS="true", UV_PYTHON_DOWNLOADS="never")
-        settings = self.backends.get("local").download
+        settings = self.settings.get().download
         if settings.http_proxy:
             env.update(HTTP_PROXY=settings.http_proxy, HTTPS_PROXY=settings.http_proxy)
         self._stage(job, "creating_environment", log)
@@ -615,8 +615,8 @@ class RuntimeSupervisor:
         path = contained(self.logs, self.logs / job.log_path)
         return RuntimeLog(path, self.root).sanitize(path.read_text(encoding="utf-8", errors="replace")) if path.is_file() else ""
 
-    def _prune_logs(self, backend_profile_id):
-        jobs = [job for job in self.store.jobs() if job.backend_profile_id == backend_profile_id and job.state in TERMINAL]
+    def _prune_logs(self, *, cache):
+        jobs = [job for job in self.store.jobs() if (job.version is None) == cache and job.state in TERMINAL]
         for job in jobs[20:]:
             path = contained(self.logs, self.logs / job.log_path)
             if path.is_file():

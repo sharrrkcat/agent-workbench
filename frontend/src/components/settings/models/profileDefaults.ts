@@ -1,20 +1,22 @@
-import type { ModelInput, ModelKind, ExternalBackendInput, LocalEngine } from '../../../types/models';
+import type { ModelInput, ModelKind, ProviderInput, LocalEngine, LocalModelSource, ModelSource } from '../../../types/models';
 
 export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts'];
+
+export const localSource = (): LocalModelSource => ({
+  type: 'local', execution_options: {}, lifecycle: { unload: 'manual', idle_seconds: 300 },
+});
 
 export const newModel = (kind: ModelKind): ModelInput => ({
   name: '',
   alias: '',
   kind,
   model_ref: '',
-  backend_profile_id: kind === 'tts' ? 'local' : null,
+  source: kind === 'tts' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
   enabled: true,
   external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
   parameters: kind === 'tts' ? { architecture: 'kokoro', speed: 1, response_format: 'mp3' }
     : kind === 'vision' ? { architecture: 'wd14', task: 'tags', batch_size: 1 } : {},
-  lifecycle: { unload: 'manual', idle_seconds: 300 },
-  execution_options: kind === 'tts' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } : {},
 });
 
 export const ttsGenerationDefaults = {
@@ -30,7 +32,7 @@ export function selectTTSArchitecture(parameters: ModelInput['parameters'], arch
 }
 
 export function localEngine(value: ModelInput): LocalEngine | null {
-  if (value.backend_profile_id !== 'local') return null;
+  if (value.source?.type !== 'local') return null;
   if (value.kind === 'llm') return value.model_ref.endsWith('.gguf') ? 'llama-server' : 'transformers';
   return value.kind === 'tts' ? value.parameters.architecture as LocalEngine : null;
 }
@@ -38,11 +40,11 @@ export function localEngine(value: ModelInput): LocalEngine | null {
 export function updateModel(value: ModelInput, patch: Partial<ModelInput>): ModelInput {
   const next = { ...value, ...patch };
   const engine = localEngine(next);
-  if (engine !== localEngine(value) || next.backend_profile_id !== value.backend_profile_id) {
-    next.execution_options = engine === 'llama-server'
+  if (next.source?.type === 'local' && engine !== localEngine(value)) {
+    next.source = { ...next.source, execution_options: engine === 'llama-server'
       ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto' }
       : engine === 'kokoro' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
-      : engine ? { device: 'cuda', intraop_threads: 4 } : {};
+      : { device: 'cuda', intraop_threads: 4 } };
   }
   if (engine === 'llama-server' || engine === 'transformers') next.capabilities = { ...next.capabilities, vision: false };
   if (engine === 'transformers') {
@@ -54,8 +56,18 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
   return next;
 }
 
-export const newBackend = (): ExternalBackendInput => ({
-  name: '', type: 'openai_compatible', enabled: true, download: null,
+export function sourceValue(source: ModelSource | null): string {
+  return source?.type === 'provider' ? `provider:${source.provider_profile_id}` : source?.type ?? '';
+}
+
+export function selectModelSource(value: ModelInput, source: ModelSource | null): ModelInput {
+  if (sourceValue(source) === sourceValue(value.source)) return value;
+  if (!source) return { ...value, source: null };
+  return updateModel(value, { source, model_ref: value.source ? '' : value.model_ref });
+}
+
+export const newProvider = (): ProviderInput => ({
+  name: '', enabled: true,
   connection: {
     base_url: 'http://127.0.0.1:1234/v1', timeout_seconds: 60,
     concurrency: 1, queue_size: 32, queue_timeout_seconds: 30,

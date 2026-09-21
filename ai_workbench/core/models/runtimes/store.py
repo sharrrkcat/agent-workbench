@@ -19,15 +19,15 @@ class RuntimeStore:
         if self.engine is None:
             return [value.model_copy(deep=True) for value in self._installations.values()]
         with Session(self.engine) as db:
-            return [Installation.model_validate(row.model_dump()) for row in db.exec(select(RuntimeInstallationRecord))]
+            return [Installation.model_validate(row.model_dump(exclude={"id"})) for row in db.exec(select(RuntimeInstallationRecord))]
 
     def save_installation(self, value: Installation):
         value.updated_at = utc_now()
         if self.engine is None:
-            self._installations[value.backend_profile_id] = value.model_copy(deep=True)
+            self._installations["local"] = value.model_copy(deep=True)
         else:
             with Session(self.engine) as db:
-                row = db.get(RuntimeInstallationRecord, value.backend_profile_id) or RuntimeInstallationRecord(**value.model_dump())
+                row = db.get(RuntimeInstallationRecord, "local") or RuntimeInstallationRecord(**value.model_dump())
                 for key, item in value.model_dump().items():
                     setattr(row, key, item)
                 db.add(row)

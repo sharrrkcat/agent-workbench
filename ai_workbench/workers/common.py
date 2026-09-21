@@ -8,6 +8,13 @@ class WorkerError(Exception):
         self.code, self.status = code, status
 
 
+def publish_ready(path: Path, value: dict):
+    # The supervisor polls for existence, so never expose a partially written file.
+    pending = path.with_suffix('.tmp')
+    pending.write_text(json.dumps(value), encoding='utf-8')
+    pending.replace(path)
+
+
 def fields(value, required, optional=()):
     if not isinstance(value, dict) or not set(required) <= value.keys() or value.keys() - set(required) - set(optional):
         raise WorkerError("INVALID_REQUEST")

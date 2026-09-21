@@ -22,11 +22,11 @@ import uvicorn
 from ai_workbench.api.deps import build_runtime_state
 from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.manager import BackendSlot
+from ai_workbench.core.models.manager import InferenceSlot
 from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter
 from ai_workbench.core.models.runtimes.store import RuntimeStore
-from ai_workbench.core.models.schema import ModelProfile
-from ai_workbench.core.models.store import BackendProfileStore
+from ai_workbench.core.models.schema import LocalSource, ModelProfile
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore
 from ai_workbench.db.database import get_engine, init_db
 from scripts.smoke_llm_runtime import until
 
@@ -40,7 +40,7 @@ async def smoke(args):
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor
     supervisor.store = RuntimeStore(engine)
-    state.backend_profiles = supervisor.backends = state.model_manager.backends = BackendProfileStore(engine)
+    state.local_runtime_settings = supervisor.settings = LocalRuntimeSettingsStore(engine)
     try:
         if args.install_only:
             job = await supervisor.submit('install')
@@ -56,7 +56,7 @@ async def smoke(args):
             print(json.dumps({"installation_job": result.id, "state": result.state, "error_code": result.error_code}), flush=True)
             if result.state != "completed":
                 print(supervisor.log_text(result.id), flush=True)
-                raise RuntimeError("Local backend installation failed")
+                raise RuntimeError("Local runtime installation failed")
             return
         supervisor.assert_available()
         await validate_engines(state, args)
@@ -132,7 +132,7 @@ def offline_files(adapter):
 async def reference_tts(state, client, args, architecture, device, reference, output, keeper):
     manager = state.model_manager
     qwen = architecture == "qwen3tts"
-    created = (await checked(client, "POST", "/api/models/profiles", json={'name': f'{architecture} {device}', 'alias': f'{architecture}-{device}', 'kind': 'tts', 'model_ref': getattr(args, architecture), 'execution_options': {'device': device}, 'parameters': {'architecture': architecture, 'response_format': 'wav', 'seed': 12345}, 'external_enabled': True, 'backend_profile_id': 'local'})).json()
+    created = (await checked(client, "POST", "/api/models/profiles", json={'name': f'{architecture} {device}', 'alias': f'{architecture}-{device}', 'kind': 'tts', 'model_ref': getattr(args, architecture), 'parameters': {'architecture': architecture, 'response_format': 'wav', 'seed': 12345}, 'external_enabled': True, 'source': {'type': 'local', 'execution_options': {'device': device}}})).json()
     profile = manager.profiles.get(created["id"])
     uploaded = (await checked(client, "POST", "/v1/audio/voice-references", data={"model": profile.alias},
         files={"file": (reference.name, reference.read_bytes())})).json()
@@ -146,7 +146,7 @@ async def reference_tts(state, client, args, architecture, device, reference, ou
     assert voices["data"][0]["id"] == voice_id
     assert all(item["language"] == (None if qwen else "en-US") and "reference_text" not in item for item in voices["data"])
     assert (await checked(client, "GET", "/v1/audio/voices", params={"model": profile.alias, "source": "preset"})).json()["data"] == []
-    adapter = manager._slots[manager.backend_key(profile)].adapter
+    adapter = manager._slots[manager.execution_key(profile)].adapter
     # Unavailable-device validation must start a fresh process with hidden GPUs.
     if device == "cuda":
         await adapter.unload(profile)
@@ -228,14 +228,14 @@ async def reference_tts(state, client, args, architecture, device, reference, ou
 async def whisper(state, args, device, reference, output, keeper):
     manager = state.model_manager
     # Whisper alone remains private acceptance tooling, outside public ModelInput.
-    profile = SimpleNamespace(id=f'acceptance-whisper-{device}', kind='asr', model_ref=args.whisper, parameters={'architecture': 'whisper'}, execution_options={'device': device, 'intraop_threads': 4}, backend_profile_id='local')
+    profile = SimpleNamespace(id=f'acceptance-whisper-{device}', kind='asr', model_ref=args.whisper, parameters={'architecture': 'whisper'}, source=LocalSource(type='local', execution_options={'device': device, 'intraop_threads': 4}))
     adapter = AudioWorkerAdapter(state.runtime_supervisor, profile, lambda: None)
     adapter.validation = True
-    backend = manager.backend_key(profile)
-    manager._slots[backend] = BackendSlot(adapter, asyncio.Semaphore(1))
+    backend = manager.execution_key(profile)
+    manager._slots[backend] = InferenceSlot(adapter, asyncio.Semaphore(1))
 
     async def call(operation):
-        async with manager._provider_lease(backend, (backend, profile.id), profile, require_runtime=False):
+        async with manager._execution_lease(backend, (backend, profile.id), profile, require_runtime=False):
             return await operation
 
     try:
@@ -299,9 +299,9 @@ async def validate_engines(state, args):
     manager.settings.patch({"external_enabled": True, "external_api_key": token})
     report = {"platform": "windows", "runtime_version": state.runtime_supervisor.release.version,
               "models": {name: getattr(args, name) for name in ("chatterbox", "qwen3tts", "whisper")}, "results": []}
-    keeper_profile = manager.profiles.create(ModelProfile(name='Audio isolation witness', alias='audio-witness', kind='tts', model_ref=args.chatterbox, parameters={'architecture': 'chatterbox'}, execution_options={'device': 'cpu'}, backend_profile_id='local'))
+    keeper_profile = manager.profiles.create(ModelProfile(name='Audio isolation witness', alias='audio-witness', kind='tts', model_ref=args.chatterbox, parameters={'architecture': 'chatterbox'}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
     # Start only the reference decoder in this witness, keeping its process alive without weights.
-    _, keeper_slot = manager._slot(manager.backend_key(keeper_profile), keeper_profile)
+    _, keeper_slot = manager._slot(manager.execution_key(keeper_profile), keeper_profile)
     keeper = keeper_slot.adapter
     async with reference_file(manager, reference.read_bytes(), reference.suffix[1:]) as entry:
         await keeper.validate_reference(keeper_profile, entry.path.name)

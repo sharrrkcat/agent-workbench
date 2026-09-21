@@ -11,7 +11,7 @@ from sqlalchemy import inspect
 from ai_workbench.api.main import create_app
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.store import BackendProfileStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ProviderProfileStore
 from ai_workbench.core.models.runtimes.schema import CacheCleanupResult, Installation, RuntimeJob, StorageUsage
 from ai_workbench.core.models.runtimes.storage import scan_storage
 from ai_workbench.core.models.runtimes.store import RuntimeStore
@@ -50,7 +50,7 @@ def test_storage_deduplicates_links_and_excludes_external_references(tmp_path, m
     cache = next(group for group in value.groups if group.id == ".cache")
     assert (cache.file_count, cache.logical_bytes, cache.unique_bytes, cache.shared_bytes, cache.exclusive_bytes) == (4, 32, 22, 18, 4)
     runtime = next(group for group in value.groups if group.category == "runtime")
-    assert (runtime.backend_profile_id, runtime.version) == ("local", "test")
+    assert runtime.version == "test"
     assert runtime.unique_bytes == runtime.shared_bytes == 10
     assert runtime.exclusive_bytes == 0
     total = value.totals
@@ -69,7 +69,7 @@ def test_storage_empty_roots_and_environment_directories(tmp_path):
     assert value.complete
     assert {group.category for group in value.groups} == {"runtime", "python", "cache", "staging", "processes", "other"}
     runtime = next(group for group in value.groups if group.category == "runtime")
-    assert (runtime.backend_profile_id, runtime.version, runtime.file_count) == ("local", "version", 0)
+    assert (runtime.version, runtime.file_count) == ("version", 0)
 
 
 def test_storage_does_not_follow_symlinks_or_junctions(tmp_path):
@@ -133,14 +133,14 @@ def test_cache_jobs_preserve_installed_hardlinks_and_use_scoped_uv(tmp_path, mod
     async def scenario():
         events = EventBus()
         store = RuntimeStore()
-        service = RuntimeSupervisor(tmp_path, store, BackendProfileStore(), events)
+        service = RuntimeSupervisor(tmp_path, store, LocalRuntimeSettingsStore(), events)
         cached = put(service.base / ".cache/package", b"immutable package")
         installed = service.base / "local/test/env/Lib/package"
         installed.parent.mkdir(parents=True)
         os.link(cached, installed)
         put(service.base / ".cache/exclusive", b"cache")
         protected = put(tmp_path / "data/models/keep", b"weights")
-        store.save_installation(Installation(version='test', state='installed', manifest_sha256='a' * 64, backend_profile_id='local'))
+        store.save_installation(Installation(version='test', state='installed', manifest_sha256='a' * 64))
         before = store.installations()
         calls = []
 
@@ -156,7 +156,7 @@ def test_cache_jobs_preserve_installed_hardlinks_and_use_scoped_uv(tmp_path, mod
         await service.task
         value = store.job(job.id)
         assert value.state == "completed" and value.operation == f"cache_{mode}"
-        assert value.backend_profile_id is value.version is None
+        assert value.version is None
         assert value.result.before.exclusive_bytes == 5
         assert value.result.after.logical_bytes == 0
         assert installed.read_bytes() == b"immutable package" and protected.read_bytes() == b"weights"
@@ -172,7 +172,7 @@ def test_cache_jobs_preserve_installed_hardlinks_and_use_scoped_uv(tmp_path, mod
 
 def test_cache_partial_failure_and_cancel_release_global_slot(tmp_path):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), LocalRuntimeSettingsStore())
         first = put(service.base / ".cache/first", b"first")
         second = put(service.base / ".cache/second", b"second")
 
@@ -216,7 +216,7 @@ def test_cache_partial_failure_and_cancel_release_global_slot(tmp_path):
 
 def test_native_uv_cache_clean_preserves_the_installed_file(tmp_path):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), LocalRuntimeSettingsStore())
         cached = put(service.base / ".cache/archive-v0/fixture/module.py", b"VALUE = 42\n")
         installed = service.base / "py/fixture/1.0.0/module.py"
         installed.parent.mkdir(parents=True)
@@ -236,7 +236,7 @@ def test_native_uv_cache_clean_preserves_the_installed_file(tmp_path):
 
 def test_shutdown_waits_for_an_already_requested_cache_cancellation(tmp_path):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), LocalRuntimeSettingsStore())
         started, accounting, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
         calls = 0
 
@@ -271,7 +271,7 @@ def test_shutdown_waits_for_an_already_requested_cache_cancellation(tmp_path):
 @pytest.mark.parametrize("root_link", [False, True])
 def test_cache_rejects_redirected_roots_and_escaping_links(tmp_path, root_link):
     async def scenario():
-        service = RuntimeSupervisor(tmp_path, RuntimeStore(), BackendProfileStore())
+        service = RuntimeSupervisor(tmp_path, RuntimeStore(), LocalRuntimeSettingsStore())
         cache = service.base / ".cache"
         outside = put(tmp_path / "outside/keep", b"protected").parent
         cache.parent.mkdir(parents=True)
@@ -301,7 +301,7 @@ def test_cache_result_persistence_restart_and_job_targets(tmp_path):
     job = RuntimeJob(operation="cache_clean", state="running",
                      result=CacheCleanupResult(before=StorageUsage(logical_bytes=19)))
     store.save_job(job)
-    service = RuntimeSupervisor(tmp_path, RuntimeStore(engine), BackendProfileStore(engine))
+    service = RuntimeSupervisor(tmp_path, RuntimeStore(engine), LocalRuntimeSettingsStore(engine))
     restored = service.store.job(job.id)
     assert restored.state == "interrupted" and restored.result.before.logical_bytes == 19
     assert service.store.installations() == []
@@ -314,8 +314,8 @@ def test_cache_result_persistence_restart_and_job_targets(tmp_path):
 
 def test_storage_api_and_cleanup_request_are_strict(tmp_path):
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
-        response = client.get("/api/models/runtimes/storage")
+        response = client.get("/api/models/local-runtime/storage")
         assert response.status_code == 200 and response.json()["complete"]
         for payload in ({}, {"mode": "unknown"}, {"mode": None}, {"mode": "clean", "path": "outside"}):
-            assert client.post("/api/models/runtimes/cache/cleanup", json=payload).status_code == 422
-        assert client.get("/api/models/runtimes/jobs").json() == []
+            assert client.post("/api/models/local-runtime/cache/cleanup", json=payload).status_code == 422
+        assert client.get("/api/models/local-runtime/jobs").json() == []

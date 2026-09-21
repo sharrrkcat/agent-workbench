@@ -42,6 +42,21 @@ def test_seed_profile_save_clear_and_openapi(seed_api):
         assert "identical audio" in field["description"]
 
 
+def test_release_policy_and_generation_changes_preserve_voice_identity(seed_api):
+    client, manager, profile, _ = seed_api
+    voice = upload(client, alias=profile.alias).json()['voice_id']
+    entry = manager.voice_references._entries[voice]
+    original_binding = manager.voice_binding(profile)
+    for patch in ({'parameters': {**profile.parameters, 'seed': 0}},
+                  {'source': {**profile.source.model_dump(), 'lifecycle': {'unload': 'idle', 'idle_seconds': 42}}}):
+        result = client.patch(f'/api/models/profiles/{profile.id}', json=patch)
+        assert result.status_code == 200, result.text
+        assert manager.voice_binding(manager.profiles.get(profile.id)) == original_binding
+        assert manager.voice_references._entries[voice] is entry and entry.path.exists()
+        voices = client.get('/v1/audio/voices', headers=HEADERS, params={'model': profile.alias, 'source': 'temporary'})
+        assert voices.json()['data'][0]['id'] == voice
+
+
 @pytest.mark.parametrize("profile_seed", [None, 37])
 @pytest.mark.parametrize("source", ["temporary", "inline"])
 def test_seed_request_override_and_null_inheritance(seed_api, profile_seed, source):
@@ -84,8 +99,7 @@ def test_invalid_seed_rejected_before_staging_admission_or_renewal(seed_api, mon
 
 def test_kokoro_and_other_request_locations_reject_seed(api):
     client, manager, _, _ = api
-    profile = ModelProfile(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro",
-        backend_profile_id="local", external_enabled=True)
+    profile = ModelProfile(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", external_enabled=True, source={'type': 'local'})
     manager.profiles.create(profile)
     for seed in (None, 0):
         with pytest.raises(ValidationError):

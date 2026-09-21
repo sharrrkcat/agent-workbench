@@ -12,10 +12,12 @@ import sys
 import threading
 
 if __package__:
+    from .common import publish_ready
     from .protocol import WorkerError, fields, load_request, speech_request
     from .timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
+    from common import publish_ready
     from protocol import WorkerError, fields, load_request, speech_request
     from timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 
@@ -143,7 +145,7 @@ def main():
             server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
             server.daemon_threads = True
         with stage("ready_file"):
-            Path(os.environ["WORKBENCH_WORKER_READY"]).write_text(json.dumps({"port": server.server_port, "protocol_version": PROTOCOL_VERSION}), encoding="utf-8")
+            publish_ready(Path(os.environ["WORKBENCH_WORKER_READY"]), {"port": server.server_port, "protocol_version": PROTOCOL_VERSION})
     try:
         server.serve_forever()
     finally:

@@ -1,6 +1,5 @@
 """Token-authenticated, single-engine private Audio worker."""
 import gc
-import json
 import math
 import os
 from pathlib import Path
@@ -9,13 +8,13 @@ import threading
 from http.server import ThreadingHTTPServer
 
 if __package__:
-    from .common import WorkerError, fields, integer
+    from .common import WorkerError, fields, integer, publish_ready
     from .audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
     from .server import handler
     from .timing import TRACE_ENV, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
-    from common import WorkerError, fields, integer
+    from common import WorkerError, fields, integer, publish_ready
     from audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
     from server import handler
     from timing import TRACE_ENV, current_trace, stage, tracing, worker_trace
@@ -180,7 +179,7 @@ def main():
             server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
             server.daemon_threads = True
         with stage("ready_file"):
-            Path(os.environ["WORKBENCH_WORKER_READY"]).write_text(json.dumps({"port": server.server_port, "protocol_version": 1}), encoding="utf-8")
+            publish_ready(Path(os.environ["WORKBENCH_WORKER_READY"]), {"port": server.server_port, "protocol_version": 1})
     try:
         server.serve_forever()
     finally:

@@ -137,32 +137,35 @@ class RunEventRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
-class BackendProfileRecord(SQLModel, table=True):
-    __tablename__ = "backend_profiles"
-    __table_args__ = (CheckConstraint("(type = 'local' AND id = 'local') OR (type = 'openai_compatible' AND id != 'local')", name="ck_backend_identity"),)
+class ProviderProfileRecord(SQLModel, table=True):
+    __tablename__ = "provider_profiles"
     id: str = Field(primary_key=True)
     name: str
-    type: str
     enabled: bool = True
-    connection_json: Optional[str] = None
-    download_json: Optional[str] = None
+    connection_json: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
 
 class ModelProfileRecord(SQLModel, table=True):
     __tablename__ = "model_profiles"
-    __table_args__ = (CheckConstraint("kind IN ('llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts')", name="ck_model_kind"),)
+    __table_args__ = (
+        CheckConstraint("kind IN ('llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts')", name="ck_model_kind"),
+        CheckConstraint("(source_type IS NULL AND provider_profile_id IS NULL AND execution_options_json IS NULL AND lifecycle_json IS NULL) OR "
+            "(source_type IS 'provider' AND kind IN ('llm', 'embedding') AND provider_profile_id IS NOT NULL AND execution_options_json IS NULL AND lifecycle_json IS NULL) OR "
+            "(source_type IS 'local' AND kind IN ('llm', 'tts') AND provider_profile_id IS NULL AND execution_options_json IS NOT NULL AND lifecycle_json IS NOT NULL)", name="ck_model_source"),
+    )
     id: str = Field(primary_key=True)
     alias: str = Field(index=True, unique=True)
     name: str
     kind: str = Field(index=True)
-    backend_profile_id: Optional[str] = Field(default=None, foreign_key="backend_profiles.id", index=True)
+    source_type: Optional[str] = None
+    provider_profile_id: Optional[str] = Field(default=None, foreign_key="provider_profiles.id", index=True)
     model_ref: str
     capabilities_json: str = "{}"
     parameters_json: str = "{}"
-    lifecycle_json: str = "{}"
-    execution_options_json: str = Field(default="{}", sa_column=Column(String, nullable=False, server_default="{}"))
+    lifecycle_json: Optional[str] = None
+    execution_options_json: Optional[str] = None
     enabled: bool = True
     external_enabled: bool = False
     created_at: datetime = Field(default_factory=utc_now)
@@ -177,7 +180,8 @@ class AppMetadataRecord(SQLModel, table=True):
 
 class RuntimeInstallationRecord(SQLModel, table=True):
     __tablename__ = "runtime_installations"
-    backend_profile_id: str = Field(primary_key=True, foreign_key="backend_profiles.id")
+    __table_args__ = (CheckConstraint("id = 'local'", name="ck_local_runtime_identity"),)
+    id: str = Field(default="local", primary_key=True)
     version: str
     state: str
     job_id: Optional[str] = None
@@ -189,7 +193,6 @@ class RuntimeInstallationRecord(SQLModel, table=True):
 class RuntimeJobRecord(SQLModel, table=True):
     __tablename__ = "runtime_jobs"
     id: str = Field(primary_key=True)
-    backend_profile_id: Optional[str] = Field(default=None, foreign_key="backend_profiles.id")
     version: Optional[str] = None
     operation: str
     result_json: Optional[str] = None

@@ -1,5 +1,6 @@
 from ai_workbench.core.models.schema import ExternalConnection
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
 import json
@@ -7,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import threading
 import time
 import venv
 import zipfile
@@ -26,13 +28,14 @@ from ai_workbench.core.models.runtimes.schema import NativeRuntime, RuntimeArtif
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor, extract_archive, sha256
 from ai_workbench.core.models.schema import ModelProfile
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.workers.server import Worker
+from ai_workbench.workers.common import publish_ready
 from ai_workbench.workers.protocol import WorkerError
 from ai_workbench.workers.protocol import local_model
 from tests.model_fixtures import MockOpenAI
-from ai_workbench.core.models.schema import ChatRequest, BackendProfile, SpeechRequest
+from ai_workbench.core.models.schema import ChatRequest, ProviderProfile, SpeechRequest
 from tests.test_tts import model_tree, wav_bytes
 
 
@@ -52,8 +55,8 @@ def supervisor(tmp_path, *, data=None, store=None):
         sha256=hashlib.sha256(data).hexdigest(), archive_format="zip"))
     release = catalog("windows", "x86_64").model_copy(update={"version": "fixture", "native_cpu": native, "native_cuda": native})
     transport = httpx.MockTransport(lambda request: httpx.Response(200, content=data))
-    backends = BackendProfileStore(store.engine if store else None)
-    service = RuntimeSupervisor(tmp_path, store or RuntimeStore(), backends, EventBus(), release, transport)
+    settings = LocalRuntimeSettingsStore(store.engine if store else None)
+    service = RuntimeSupervisor(tmp_path, store or RuntimeStore(), settings, EventBus(), release, transport)
     async def install(entry, target, job, log):
         (target / "env").mkdir(parents=True)
         (target / "env/python.exe").write_bytes(b"test interpreter")
@@ -73,14 +76,44 @@ def test_catalog_is_one_pinned_windows_release():
         assert not catalog(system, machine).supported
 
 
+@pytest.mark.parametrize('existing', [None, {'protocol_version': 1, 'port': 12345}])
+def test_ready_readers_never_observe_partial_publication(tmp_path, monkeypatch, existing):
+    ready = tmp_path / 'ready.json'
+    value = {'protocol_version': 1, 'error_code': 'MODEL_UNAVAILABLE'}
+    if existing:
+        ready.write_text(json.dumps(existing), encoding='utf-8')
+    writing, finish = threading.Event(), threading.Event()
+    def interrupted_write(path, text, encoding):
+        with path.open('w', encoding=encoding) as stream:
+            stream.write(text[:5])
+            stream.flush()
+            writing.set()
+            assert finish.wait(5)
+            stream.write(text[5:])
+    monkeypatch.setattr(Path, 'write_text', interrupted_write)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        task = pool.submit(publish_ready, ready, value)
+        try:
+            assert writing.wait(5)
+            if existing:
+                assert json.loads(ready.read_text(encoding='utf-8')) == existing
+            else:
+                assert not ready.exists()
+        finally:
+            finish.set()
+            task.result(timeout=5)
+    assert json.loads(ready.read_text(encoding='utf-8')) == value
+
+
 @pytest.mark.parametrize("patch", [
     {"runtime_variant": "cpu"}, {"runtime_id": "llama-server"}, {"provider_profile_id": "external"},
     {"model_ref": "../outside"}, {"model_ref": "C:/weights"}, {"model_ref": "vision\\file"},
     {"model_ref": "/abs/model"}, {"model_ref": "https://hf.co/model"},
-    {"execution_options": {"command": "arbitrary"}}, {"execution_options": {"max_batch_size": 0}},
+    {"source": {"type": "local", "execution_options": {"command": "arbitrary"}}},
+    {"source": {"type": "local", "execution_options": {"max_batch_size": 0}}},
 ])
 def test_managed_profile_rejects_unsafe_and_removed_fields(patch):
-    values = dict(name="local", alias="local", kind="llm", model_ref="llms/local.gguf", backend_profile_id="local")
+    values = dict(name="local", alias="local", kind="llm", model_ref="llms/local.gguf", source={'type': 'local'})
     with pytest.raises(ValidationError):
         ModelProfile(**{**values, **patch})
 
@@ -211,26 +244,26 @@ def test_sql_jobs_settings_and_interrupted_recovery(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'runtime.db'}")
     init_db(engine)
     store = RuntimeStore(engine)
-    job = RuntimeJob(version='fixture', operation='install', state='running', backend_profile_id='local')
+    job = RuntimeJob(version='fixture', operation='install', state='running')
     store.save_job(job)
-    store.save_installation(Installation(version='fixture', state='installing', job_id=job.id, backend_profile_id='local'))
-    BackendProfileStore(engine).update("local", {"download": {"http_proxy": "http://127.0.0.1:9999"}})
+    store.save_installation(Installation(version='fixture', state='installing', job_id=job.id))
+    LocalRuntimeSettingsStore(engine).patch( {"download": {"http_proxy": "http://127.0.0.1:9999"}})
     service = supervisor(tmp_path, store=RuntimeStore(engine))
     assert service.store.job(job.id).state == "interrupted"
     assert service.installation().state == "interrupted"
-    assert service.backends.get("local").download.http_proxy == "http://127.0.0.1:9999"
+    assert service.settings.get().download.http_proxy == "http://127.0.0.1:9999"
     engine.dispose()
 
 
 def test_api_install_actions_global_events_and_missing_runtime_details(tmp_path):
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
-        model = client.post("/api/models/profiles", json={'name': 'managed', 'alias': 'managed', 'kind': 'llm', 'model_ref': 'llms/missing.gguf', 'backend_profile_id': 'local', 'execution_options': {'device': 'cpu'}}).json()
+        model = client.post("/api/models/profiles", json={'name': 'managed', 'alias': 'managed', 'kind': 'llm', 'model_ref': 'llms/missing.gguf', 'source': {'type': 'local', 'execution_options': {'device': 'cpu'}}}).json()
         response = client.post(f"/api/models/profiles/{model['id']}/load")
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "RUNTIME_NOT_INSTALLED"
         assert response.json()["error"]["details"]["action"] == "install"
-        assert client.post("/api/models/runtimes/llama-server/vulkan/install").status_code == 404
-        with client.websocket_connect("/api/models/runtimes/events") as socket:
+        assert client.post("/api/models/local-runtime/llama-server/vulkan/install").status_code == 404
+        with client.websocket_connect("/api/models/events") as socket:
             socket.send_json({"type": "next_event"})
             client.app.state.runtime_state.events.emit("runtime_job_updated", session_id="", payload={"job": {"id": "example"}})
             assert socket.receive_json()["payload"]["job"]["id"] == "example"
@@ -281,9 +314,9 @@ async def installed_worker(tmp_path):
     await service.task
     assert service.installation().state == "installed"
     profiles = ModelProfileStore()
-    manager = ModelManager(profiles, BackendProfileStore(), ModelSettingsStore(), service.events, runtime_supervisor=service)
+    manager = ModelManager(profiles, ProviderProfileStore(), ModelSettingsStore(), service.events, runtime_supervisor=service)
     model_tree(tmp_path)
-    profile = profiles.create(ModelProfile(name='speech', alias='speech', kind='tts', model_ref='tts/kokoro', backend_profile_id='local'))
+    profile = profiles.create(ModelProfile(name='speech', alias='speech', kind='tts', model_ref='tts/kokoro', source={'type': 'local'}))
     return service, manager, profile
 
 
@@ -295,16 +328,16 @@ def test_real_worker_process_rpc_auth_crash_and_explicit_reload(tmp_path):
             request = SpeechRequest(model=profile.alias, input="hello", voice="af_heart", response_format="wav")
             result = await manager.speech(profile.id, request)
             assert result.data == wav_bytes()
-            adapter = manager._slots[manager.backend_key(profile)].adapter
+            adapter = manager._slots[manager.execution_key(profile)].adapter
             async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(str(adapter.client.base_url) + "/health")
                 assert response.status_code == 401
             before_pid = adapter.process.process.pid
-            other = manager.profiles.create(ModelProfile(name='other', alias='other', kind='tts', model_ref='tts/kokoro', backend_profile_id='local'))
+            other = manager.profiles.create(ModelProfile(name='other', alias='other', kind='tts', model_ref='tts/kokoro', source={'type': 'local'}))
             assert (await manager.speech(other.id, request.model_copy(update={"model": other.alias}))).data == wav_bytes()
             assert adapter.process.process.pid == before_pid
             assert len(manager._slots) == 1
-            unused = manager.profiles.create(ModelProfile(name='unused', alias='unused', kind='tts', model_ref='tts/kokoro', backend_profile_id='local'))
+            unused = manager.profiles.create(ModelProfile(name='unused', alias='unused', kind='tts', model_ref='tts/kokoro', source={'type': 'local'}))
             await manager.unload(unused.id)
             assert adapter.process.process.pid == before_pid
             assert manager.status(profile.id).residency == "loaded"
@@ -362,7 +395,7 @@ def test_runtime_logs_are_bounded_and_redacted(tmp_path):
 
 def test_cancel_and_progress_writers_keep_job_revisions_monotonic():
     store = RuntimeStore()
-    job = RuntimeJob(version='fixture', operation='install', backend_profile_id='local')
+    job = RuntimeJob(version='fixture', operation='install')
     store.save_job(job)
     cancellation = store.job(job.id)
     store.save_job(cancellation)
@@ -412,10 +445,10 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
             adapter.state = "ready"
         monkeypatch.setattr(LlamaServerAdapter, "_start", start)
         profiles = ModelProfileStore()
-        manager = ModelManager(profiles, BackendProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        first = profiles.create(ModelProfile(name='first', alias='first', kind='llm', model_ref='llms/fixture.gguf', capabilities={'streaming': True}, parameters={'temperature': 0.4}, backend_profile_id='local', execution_options={'device': 'cpu'}))
-        alias = profiles.create(ModelProfile(name='alias', alias='alias', kind='llm', model_ref=first.model_ref, capabilities={'streaming': True}, backend_profile_id='local', execution_options=first.execution_options))
-        bad = alias.model_copy(update={"execution_options": {**alias.execution_options, "threads": 8}})
+        manager = ModelManager(profiles, ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
+        first = profiles.create(ModelProfile(name='first', alias='first', kind='llm', model_ref='llms/fixture.gguf', capabilities={'streaming': True}, parameters={'temperature': 0.4}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
+        alias = profiles.create(ModelProfile(name='alias', alias='alias', kind='llm', model_ref=first.model_ref, capabilities={'streaming': True}, source={'type': 'local', 'execution_options': first.source.execution_options}))
+        bad = alias.model_copy(update={"source": alias.source.model_copy(update={"execution_options": {**alias.source.execution_options, "threads": 8}})})
         with pytest.raises(ModelError, match="identical execution options"):
             manager.validate_binding(bad)
         request = ChatRequest(model="first", messages=[{"role": "user", "content": "hello"}])
@@ -437,11 +470,11 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
 def test_logs_retain_twenty_terminal_jobs(tmp_path):
     service = supervisor(tmp_path)
     for index in range(25):
-        job = RuntimeJob(version='fixture', operation='install', state='completed', backend_profile_id='local')
+        job = RuntimeJob(version='fixture', operation='install', state='completed')
         job.log_path = job.id + ".log"
         RuntimeLog(service.logs / job.log_path, tmp_path).write(str(index))
         service.store.save_job(job)
-    service._prune_logs("local")
+    service._prune_logs(cache=False)
     assert len(list(service.logs.glob("*.log"))) == 20
 
 
@@ -465,7 +498,7 @@ def test_python_installer_uses_pinned_artifact_and_offline_checks_without_models
         service._command = command
         monkeypatch.setattr(service, "_uv", lambda: "bundled-uv")
         monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
-        job = RuntimeJob(backend_profile_id="local", version=service.release.version, operation="install")
+        job = RuntimeJob(version=service.release.version, operation="install")
         await RuntimeSupervisor._install_python(service, service.release, tmp_path / "payload", job, RuntimeLog(tmp_path / "log", tmp_path))
         assert not (tmp_path / "data/models").exists()
         install = next(args for args, _ in calls if "sync" in args)

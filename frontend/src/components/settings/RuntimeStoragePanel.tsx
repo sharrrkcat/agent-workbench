@@ -87,7 +87,7 @@ export function RuntimeStoragePanel({ busy, active, activeView, onCleanup, onCan
             <thead><tr><th>{t('storage.directory')}</th>{['files', 'logical', 'unique', 'shared', 'exclusive'].map((key) => <th key={key}>{t('storage.' + key)}</th>)}</tr></thead>
             <tbody>{storage.groups.map((group) => (
               <tr key={group.id}>
-                <th scope="row"><span>{group.category === 'runtime' ? t('localBackend') : t('storage.categories.' + group.category)}</span>
+                <th scope="row"><span>{group.category === 'runtime' ? t('localRuntime') : t('storage.categories.' + group.category)}</span>
                   <code>{group.category === 'other' ? '' : group.relative_path}</code></th>
                 <td data-label={t('storage.files')}>{group.file_count == null ? t('storage.unknown') : group.file_count.toLocaleString()}</td>
                 {(['logical_bytes', 'unique_bytes', 'shared_bytes', 'exclusive_bytes'] as const).map((key) => (

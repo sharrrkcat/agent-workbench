@@ -23,8 +23,9 @@ test_phase2b_runtime.py, test_runtime_maintenance.py and test_llama_cuda.py.
 test_runtime_installation.py covers fixed-file checks, explicit repair and traversal guards;
 test_runtime_dependencies.py covers normalized identity, version paths, recoverable checks and application workers.
 test_runtime_smoke_cli.py covers installation-only modes and device defaults.
-test_unified_backend.py covers backend identity, strict bindings, maintenance isolation,
-configuration reset and the shared lock/wheel audit. scripts/build_runtime_wheels.py
+test_provider_runtime.py covers strict sources, provider ownership, maintenance isolation,
+configuration reset, installation/job preservation and the shared lock/wheel audit.
+test_provider_inference.py covers optional discovery and request status. scripts/build_runtime_wheels.py
 reproduces upstream patches; scripts/check_qwen_rope.py checks checkpoint buffer restoration.
 Kokoro API, engine boundaries and installation use test_tts.py and test_tts_runtime.py.
 Audio references, queue admission and key/profile invalidation use test_audio.py;

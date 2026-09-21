@@ -70,7 +70,7 @@ class PythonOptions(Strict):
 
 
 def local_engine(profile) -> LocalEngine | None:
-    if profile.backend_profile_id != "local":
+    if profile.source is None or profile.source.type != "local":
         return None
     if profile.kind == "llm":
         return "llama-server" if profile.model_ref.endswith(".gguf") else "transformers"
@@ -99,6 +99,11 @@ class DownloadSettings(Strict):
         if url.scheme not in schemes or not url.hostname or url.username or url.password or url.query or url.fragment:
             raise ValueError("Use an HTTPS URL without credentials, query or fragment (HTTP is allowed for the proxy)")
         return value.rstrip("/")
+
+
+class LocalRuntimeSettings(Strict):
+    enabled: bool = True
+    download: DownloadSettings = Field(default_factory=DownloadSettings)
 
 
 class RuntimeArtifact(Strict):
@@ -195,7 +200,6 @@ TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
 
 
 class Installation(Strict):
-    backend_profile_id: Literal["local"] = "local"
     version: str
     state: InstallState = "not_installed"
     job_id: str | None = None
@@ -217,7 +221,6 @@ class StorageGroup(StorageUsage):
     id: str
     category: Literal["runtime", "python", "cache", "staging", "processes", "other"]
     relative_path: str
-    backend_profile_id: Literal["local"] | None = None
     version: str | None = None
 
 
@@ -246,7 +249,6 @@ class CacheCleanupResult(Strict):
 
 class RuntimeJob(Strict):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    backend_profile_id: Literal["local"] | None = None
     version: str | None = None
     operation: Literal["install", "repair", "uninstall", "cache_prune", "cache_clean"]
     result: CacheCleanupResult | None = None
@@ -264,17 +266,15 @@ class RuntimeJob(Strict):
 
     @model_validator(mode="after")
     def valid_target(self):
-        identity = (self.backend_profile_id, self.version)
         if self.operation in {"install", "repair", "uninstall"}:
-            if not all(identity) or self.result is not None:
-                raise ValueError("Installation jobs require a local backend release and no cache result")
-        elif any(value is not None for value in identity):
+            if self.version is None or self.result is not None:
+                raise ValueError("Installation jobs require a local release and no cache result")
+        elif self.version is not None:
             raise ValueError("Cache jobs have no installation identity")
         return self
 
 
 class RuntimeStatus(Strict):
-    backend_profile_id: Literal["local"] = "local"
     engine: LocalEngine
     version: str
     install_state: InstallState

@@ -8,7 +8,7 @@ from httpx_sse import aconnect_sse, SSEError
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingResult,
-    ModelProfile, ModelStatus, ExternalConnection, Usage,
+    ModelProfile, ExternalConnection, Usage,
 )
 
 
@@ -54,19 +54,6 @@ class OpenAIAdapter:
             return sorted(set(ids))
         except (ValueError, KeyError, TypeError) as exc:
             raise transport_error(exc) from exc
-
-    async def health(self, profile: ModelProfile) -> ModelStatus:
-        if profile.kind not in {"llm", "embedding"}:
-            raise ModelError("MODEL_UNAVAILABLE", "This model kind requires a managed backend.", 503)
-        if profile.model_ref not in await self.models():
-            raise ModelError("MODEL_NOT_FOUND", "model_ref is not advertised by the configured provider.", 404)
-        return ModelStatus(state="ready")
-
-    async def load(self, profile: ModelProfile) -> ModelStatus:
-        return await self.health(profile)
-
-    async def unload(self, profile: ModelProfile) -> ModelStatus:
-        raise ModelError("UNLOAD_UNSUPPORTED", "OpenAI-compatible connections do not expose model unload.", 409)
 
     @staticmethod
     def _payload(profile: ModelProfile, request: ChatRequest) -> dict:
@@ -153,16 +140,16 @@ class OpenAIAdapter:
             raise transport_error(exc) from exc
 
     async def rerank(self, profile, query, documents):
-        raise ModelError("MODEL_UNAVAILABLE", "Reranking requires a managed backend.", 503)
+        raise ModelError("MODEL_UNAVAILABLE", "Providers do not support reranking.", 503)
 
     async def image_embed(self, profile, images):
-        raise ModelError("MODEL_UNAVAILABLE", "Image embedding requires a managed backend.", 503)
+        raise ModelError("MODEL_UNAVAILABLE", "Providers do not support image embedding.", 503)
 
     async def vision(self, profile, images):
-        raise ModelError("MODEL_UNAVAILABLE", "Vision models require a managed backend.", 503)
+        raise ModelError("MODEL_UNAVAILABLE", "Providers do not support standalone vision models.", 503)
 
     async def speech(self, profile, text, voice, speed, response_format, language):
-        raise ModelError("MODEL_UNAVAILABLE", "TTS currently requires the managed ONNX CPU backend.", 503)
+        raise ModelError("MODEL_UNAVAILABLE", "Providers do not support speech synthesis.", 503)
 
     async def close(self) -> None:
         await self.client.aclose()

@@ -28,7 +28,7 @@ class ManagedAdapter:
         self.supervisor, self.profile, self.changed = supervisor, profile, changed
         self.entry = supervisor.release
         self.engine = local_engine(profile)
-        self.device = profile.execution_options["device"]
+        self.device = profile.source.execution_options["device"]
         self.process: ManagedProcess | None = None
         self.monitor: asyncio.Task | None = None
         self.client: httpx.AsyncClient | None = None
@@ -63,7 +63,7 @@ class ManagedAdapter:
 
         operation = {"health": "health", "reference": "reference_prepare"}.get(trigger, "load")
         return LoadTrace({"load_id": load_id, "model_profile_id": profile.id,
-                          "backend_profile_id": "local", "engine": self.engine,
+                          "source_type": "local", "engine": self.engine,
                           "version": self.entry.version, "device": self.device,
                           "trigger": trigger, "operation": operation},
                          log.write, total_stage=operation + "_total", on_finish=finished)
@@ -169,7 +169,7 @@ class ManagedAdapter:
                     if not self.single_model and profile.id not in self.loaded:
                         with stage("worker_load_rpc"):
                             metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
-                                "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.execution_options})
+                                "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.source.execution_options})
                             if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                                 if not isinstance(metadata.get("device_name"), str):
                                     raise ModelError("RUNTIME_BROKEN", "Audio worker did not report its execution device.", 503)
@@ -209,7 +209,7 @@ class ManagedAdapter:
             if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                 cache = self.run_dir / "cache"
                 env.update(WORKBENCH_MODEL_REF=profile.model_ref,
-                           WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.execution_options),
+                           WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.source.execution_options),
                            HF_HOME=str(cache), HF_HUB_CACHE=str(cache / "hub"), TORCH_HOME=str(cache / "torch"))
             args = [executable, "-I", "-B", "-X", "utf8", self.supervisor.worker_entrypoint(self.engine)]
             port = None
@@ -224,7 +224,7 @@ class ManagedAdapter:
             key_file = self.run_dir / "api-key"
             key_file.write_text(self.token, encoding="utf-8")
             key_file.chmod(0o600)
-            options = profile.execution_options
+            options = profile.source.execution_options
             # b10809 exposes core llama INFO records, including offload, at trace verbosity.
             args = [executable, "--host", "127.0.0.1", "--port", port, "--model", path, "--alias", "managed",
                     "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],

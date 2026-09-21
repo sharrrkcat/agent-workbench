@@ -5,14 +5,15 @@ import { modelsApi } from '../../api/models';
 import { useModelsStore } from '../../store/useModelsStore';
 import { Field, Icon } from './models/fields';
 import { ProfilesTab } from './models/ProfilesTab';
-import { BackendsTab } from './models/BackendsTab';
+import { ProvidersTab } from './models/ProvidersTab';
+import { LocalRuntimePanel } from './LocalRuntimePanel';
 import { ExternalServicePanel } from './models/ExternalServicePanel';
 import { useModelFeedback } from './models/useModelFeedback';
 
 export function ModelsPanel() {
   const { t } = useTranslation('llm');
   const { profiles, settings, reloadRuntimes, loading, error: loadError, reload } = useModelsStore();
-  const [tab, setTab] = useState<'profiles' | 'backends' | 'service'>('profiles');
+  const [tab, setTab] = useState<'profiles' | 'providers' | 'localRuntime' | 'service'>('profiles');
   const { busy, error, notice, run, setError } = useModelFeedback(reload);
   useEffect(() => {
     void reload().catch(() => undefined);
@@ -73,17 +74,20 @@ export function ModelsPanel() {
         </Field>
       </div>
       <div className="model-tabs" role="tablist">
-        {(['profiles', 'backends', 'service'] as const).map((value) => (
+        {(['profiles', 'providers', 'localRuntime', 'service'] as const).map((value) => (
           <button role="tab" aria-selected={tab === value} key={value} onClick={() => setTab(value)}>
             {t(value)}
           </button>
         ))}
       </div>
       <div hidden={tab !== 'profiles'}>
-        <ProfilesTab {...editorProps} onOpenBackends={() => setTab('backends')} />
+        <ProfilesTab {...editorProps} onOpenLocalRuntime={() => setTab('localRuntime')} />
       </div>
-      <div hidden={tab !== 'backends'}>
-        <BackendsTab {...editorProps} active={tab === 'backends'} />
+      <div hidden={tab !== 'providers'}>
+        <ProvidersTab {...editorProps} />
+      </div>
+      <div hidden={tab !== 'localRuntime'}>
+        <LocalRuntimePanel activeView={tab === 'localRuntime'} />
       </div>
       <div hidden={tab !== 'service'}>
         <ExternalServicePanel run={run} busy={busy} />

@@ -46,40 +46,42 @@ default option. Model selection and
 profile parameters are defined in [models](models.md); title behavior belongs
 to [chat/context](chat-context.md#auxiliary-tasks-and-titles).
 
-Models has Models, Backends and External API tabs. The kind filter, model and
-external-backend editors, service form and local installation details share
-useModelsStore. Drafts survive switching between Models tabs. Health,
-load, unload, inventory and runtime actions use the common model services.
-Local inventory/backend discovery do not load weights. External unknown
-residency/unsupported unload remains visible.
-Models select a configured backend without choosing runtime packages. Local engine
-selection follows the model reference and architecture; execution options expose CPU/CUDA.
+Models has Models, Providers, Local Runtime and External API tabs. Providers manages external
+connections; Local Runtime owns installation/settings/jobs/logs/storage. Forms and the kind filter
+retain drafts across subtabs. Models use grouped Unbound, Local Runtime and configured-provider
+choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro;
+other new profiles start unbound. Local models expose inventory, execution options and release policy.
+Provider models expose model-ID entry and optional discovery; failed discovery leaves manual entry,
+saving and inference available. Late results from a previous source cannot replace current suggestions.
+Changing local/provider source or provider id clears model_ref and replaces source options. Unbinding
+preserves model_ref; binding an unbound draft retains its reference for validation. Reselecting is a no-op.
+Local rows show health/load/unload/residency/logs; provider rows show recent-request state and occupancy,
+without lifecycle controls or a trial-inference action. Local engine selection follows reference/architecture.
 TTS profiles select Kokoro, Chatterbox or Qwen3-TTS Base, speed and MP3/WAV defaults.
 Chatterbox/Qwen expose an optional seed: blank saves null (unfixed), and 0 is a valid fixed seed.
 Speech requests may override it; omitted/null request seeds inherit the profile. Fixed seeds control
 randomness without guaranteeing identical audio. Seed edits use the existing profile save/lifecycle flow.
 Switching architecture preserves speed/format and clears incompatible generation
 and execution settings, resetting seed to null for Audio or removing it for Kokoro;
-reselecting the backend retains the selected architecture and seed.
+reselecting the source retains the selected architecture and seed.
 Saved Kokoro editors show preset availability by language; Audio editors
 explain reference-based API usage and Qwen's optional transcripts. Voices are request
 selections, not profile records. Ownership/expiry belong to [Models](models.md#audio-tts-and-temporary-references).
 
-Backend/settings reads omit secret keys and expose presence flags. PATCH
+Provider/settings reads omit secret keys and expose presence flags. PATCH
 omission retains a key; an explicit empty string clears it. External enablement
 requires a nonempty key. Local key storage is unencrypted. Busy connection
 edits, referenced deletion and invalid model combinations return errors.
 
-The fixed Local backend row cannot be added or deleted. Its details expose
-enablement, one install/repair/uninstall workflow, task cancellation/history,
-logs, storage and cache maintenance. External backends can be added, edited and
-deleted when unreferenced. Backend type is immutable.
+LocalRuntimeSettings has no profile id or editable name. GET/PATCH `/api/models/local-runtime/settings`
+owns enabled=true and nested download defaults. It is independent of provider CRUD and runtime job identity.
+Providers can be added, edited and deleted when unreferenced; local maintenance does not block provider inference.
 Installation details show the recorded installed version. Reads check dependency identity, metadata and entries;
 source changes reuse the environment. Invalid/old metadata or changed dependencies show Repair required.
 Checks recover on refresh when files/dependencies are restored; failed/interrupted jobs require explicit repair.
 Install never rebuilds an unavailable installation; manual Repair also rebuilds healthy ones. Finalizing precedes promotion.
-The local backend's nested download object owns http_proxy, pypi_index_url,
-pytorch_index_url and github_release_proxy_url, patched at `/api/models/backends/local`.
+The local settings download object owns http_proxy, pypi_index_url,
+pytorch_index_url and github_release_proxy_url, patched at `/api/models/local-runtime/settings`.
 Index/release
 proxy URLs require HTTPS; HTTP is allowed for the explicit proxy. URL credentials
 are rejected. These settings serve runtime artifacts/dependencies only.
@@ -126,7 +128,7 @@ matching and recursion controls start collapsed. Knowledge exposes all retained
 retrieval, chunk, source-limit and context fields; advanced items start collapsed.
 Its optional score threshold precedes default_min_score; both empty means no
 score filtering. Chunk overlap must be smaller than chunk size. Model kinds,
-paths and backend settings remain under Models. Both forms retain advanced drafts
+paths and source settings remain under Models. Both forms retain advanced drafts
 when collapsed and preserve nullable override semantics.
 
 ## Pet foundations

@@ -81,7 +81,7 @@ def test_release_metadata_changes_reuse_installed_entries_without_rebuilding(tmp
             artifact.url = "https://example.test/mirror"
             artifact.size_bytes = 123
         release.native_cpu.executable = "renamed-native.exe"
-        restarted = RuntimeSupervisor(tmp_path, service.store, service.backends, release=release)
+        restarted = RuntimeSupervisor(tmp_path, service.store, service.settings, release=release)
         restarted._install_python = AsyncMock(side_effect=AssertionError("Unexpected installation"))
         assert restarted.installation().state == "installed"
         assert restarted.directory() == target
@@ -112,7 +112,7 @@ def test_dependency_changes_require_repair_and_reverting_restores_availability(t
             release.python_artifact.sha256 = "0" * 64
         else:
             getattr(release, dependency).artifact.sha256 = "0" * 64
-        restarted = RuntimeSupervisor(tmp_path, service.store, service.backends, release=release)
+        restarted = RuntimeSupervisor(tmp_path, service.store, service.settings, release=release)
         assert restarted.installation(check=False).state == "broken"
         with pytest.raises(ModelError) as error:
             await restarted.submit("install")
@@ -146,7 +146,7 @@ def test_restored_entry_recovers_but_failed_repair_stays_broken(tmp_path):
         await service.task
         assert entry.is_file()
         assert service.installation().state == "broken"
-        restarted = RuntimeSupervisor(tmp_path, service.store, service.backends, release=service.release)
+        restarted = RuntimeSupervisor(tmp_path, service.store, service.settings, release=service.release)
         assert restarted.installation().state == "broken"
         await restarted.close()
         await service.close()

@@ -73,11 +73,11 @@ Indexing, query embedding and reranking are async calls to the app-scoped
 ModelManager. Model instructions, dimensions, normalization and batch sizes
 belong to the unified profile. Indexing and `/v1/embeddings` use the same
 document preprocessing; retrieval uses query preprocessing. No local runtime
-is imported by Knowledge. The local reranker backend is deferred to Infinity;
+is imported by Knowledge. Local reranking remains deferred;
 unavailable reranking retains the documented RRF order.
 
-Changing an embedding profile's backend binding, execution options, model reference or parameters, or
-its external backend URL, marks associated bases and sources `needs_reindex` in both
+Changing an embedding profile's source binding, model reference or parameters, or
+its provider URL, marks associated bases and sources `needs_reindex` in both
 memory and SQLite stores. Retrieval excludes invalidated bases until reindex.
 One successful source does not clear a base's needs_reindex state while other
 sources still require rebuilding. Deleting the final source sets the base empty.

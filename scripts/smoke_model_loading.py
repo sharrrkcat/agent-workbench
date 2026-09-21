@@ -14,7 +14,7 @@ from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile, SpeechRequest
-from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, BackendProfileStore
+from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
@@ -37,7 +37,7 @@ def timing_records(text):
 
 
 async def install(root, engine):
-    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
+    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), LocalRuntimeSettingsStore(engine))
     try:
         job = await supervisor.submit('install')
         previous = None
@@ -60,14 +60,13 @@ async def install(root, engine):
 
 def profile_for(backend, args):
     if backend.startswith("llama-"):
-        return ModelProfile(name=backend, alias=backend, kind='llm', model_ref=args.gguf_model,
-                            execution_options={'device': backend.removeprefix('llama-')}, backend_profile_id='local')
+        return ModelProfile(name=backend, alias=backend, kind='llm', model_ref=args.gguf_model, source={'type': 'local', 'execution_options': {'device': backend.removeprefix('llama-')}})
     if backend.startswith("transformers-"):
-        return ModelProfile(name=backend, alias=backend, kind='llm', execution_options={'device': backend.removeprefix('transformers-')}, model_ref=args.transformers_model, backend_profile_id='local')
+        return ModelProfile(name=backend, alias=backend, kind='llm', model_ref=args.transformers_model, source={'type': 'local', 'execution_options': {'device': backend.removeprefix('transformers-')}})
     if backend == "kokoro":
-        return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=args.kokoro_model, backend_profile_id='local')
+        return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=args.kokoro_model, source={'type': 'local'})
     architecture, device = backend.rsplit("-", 1)
-    return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=getattr(args, architecture + '_model'), execution_options={'device': device}, parameters={'architecture': architecture}, external_enabled=True, backend_profile_id='local')
+    return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=getattr(args, architecture + '_model'), parameters={'architecture': architecture}, external_enabled=True, source={'type': 'local', 'execution_options': {'device': device}})
 
 
 async def minimal_inference(manager, profile, args, voice):
@@ -126,8 +125,8 @@ def summarize(text, backend):
 
 
 async def validate(root, engine, backend, args, output):
-    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), BackendProfileStore(engine))
-    manager = ModelManager(ModelProfileStore(), supervisor.backends, ModelSettingsStore(), runtime_supervisor=supervisor)
+    supervisor = RuntimeSupervisor(root, RuntimeStore(engine), LocalRuntimeSettingsStore(engine))
+    manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     manager.settings.patch({"external_enabled": True, "external_api_key": secrets.token_urlsafe(32)})
     profile = manager.profiles.create(profile_for(backend, args))
     result = {"backend": backend, "model_ref": profile.model_ref,

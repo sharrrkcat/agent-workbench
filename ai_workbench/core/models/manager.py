@@ -10,21 +10,21 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 
-from ai_workbench.core.models.adapter import ProviderAdapter
+from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.schema import is_transformers, local_engine
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
-    ImagePart, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
+    ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
 
 
 @dataclass
-class BackendSlot:
-    adapter: ProviderAdapter
+class InferenceSlot:
+    adapter: InferenceAdapter
     semaphore: asyncio.Semaphore
     active: int = 0
     queued: int = 0
@@ -41,22 +41,22 @@ class ManagedQueue:
 
 
 class ModelManager:
-    def __init__(self, profiles, backends, settings, events=None,
+    def __init__(self, profiles, providers, settings, events=None,
                  adapter_factory: Callable[[ExternalConnection], ProviderAdapter] = OpenAIAdapter,
                  runtime_supervisor=None):
         self.profiles = profiles
-        self.backends = backends
+        self.providers = providers
         self.settings = settings
         self.events = events
         self.adapter_factory = adapter_factory
         self.runtime_supervisor = runtime_supervisor
         if runtime_supervisor:
             runtime_supervisor.manager = self
-        self._slots: dict[str | tuple, BackendSlot] = {}
+        self._slots: dict[tuple, InferenceSlot] = {}
         self._statuses: dict[tuple, ModelStatus] = {}
         self._idle: dict[tuple, asyncio.Task] = {}
         self._load_locks: dict[tuple, asyncio.Lock] = {}
-        self._invalidating: set[str | tuple | None] = set()
+        self._invalidating: set[tuple] = set()
         self._closed = False
         self._voice_references = None
 
@@ -71,8 +71,8 @@ class ModelManager:
 
     def voice_binding(self, profile):
         version = self.runtime_supervisor.release.version
-        value = [profile.id, profile.model_ref, profile.backend_profile_id, local_engine(profile),
-                 profile.parameters["architecture"], profile.execution_options, version]
+        value = [profile.id, profile.model_ref, profile.source.type, local_engine(profile),
+                 profile.parameters["architecture"], profile.source.execution_options, version]
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
     def profile(self, profile_id: str, kind: str | None = None) -> ModelProfile:
@@ -98,43 +98,46 @@ class ModelManager:
         return next((profile for profile in profiles if profile.id == default_id),
                     profiles[0] if profiles else None)
 
-    def backend_key(self, profile: ModelProfile):
-        if profile.backend_profile_id != "local":
-            return profile.backend_profile_id
+    def execution_key(self, profile: ModelProfile):
+        if profile.source is None:
+            return ("unbound", getattr(profile, "id", "draft"))
+        if isinstance(profile.source, ProviderSource):
+            return ("provider", profile.source.provider_profile_id)
         engine = local_engine(profile)
         key = ("local", engine)
         if engine in {"chatterbox", "qwen3tts", "whisper"}:
             return key + (getattr(profile, "id", "draft"), profile.model_ref,
-                          json.dumps(profile.execution_options, sort_keys=True, separators=(",", ":")))
+                          json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")))
         if engine in {"llama-server", "transformers"}:
             path = self.runtime_supervisor.root / "data" / "models" / profile.model_ref
-            key += (profile.execution_options["device"], os.path.normcase(str(path)))
+            key += (profile.source.execution_options["device"], os.path.normcase(str(path)))
         if engine == "transformers":
-            key += (json.dumps(profile.execution_options, sort_keys=True, separators=(",", ":")),)
+            key += (json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")),)
         return key
 
     def _key(self, profile: ModelProfile) -> tuple:
-        backend = self.backend_key(profile)
+        source_key = self.execution_key(profile)
         engine = local_engine(profile)
-        return backend, backend if engine in {"llama-server", "transformers"} else profile.id if engine else profile.model_ref
+        return source_key, source_key if engine in {"llama-server", "transformers"} else profile.id if engine else profile.model_ref
 
     def validate_binding(self, profile):
-        if profile.backend_profile_id:
-            self.backends.get(profile.backend_profile_id)
+        if isinstance(profile.source, ProviderSource):
+            self.providers.get(profile.source.provider_profile_id)
         if local_engine(profile) == "llama-server":
             for alias in self.profiles.list("llm"):
-                if alias.id != getattr(profile, "id", None) and self.backend_key(alias) == self.backend_key(profile) and alias.execution_options != profile.execution_options:
+                if alias.id != getattr(profile, "id", None) and self.execution_key(alias) == self.execution_key(profile) and alias.source.execution_options != profile.source.execution_options:
                     raise ModelError("MODEL_CONFLICT", "Aliases of a managed GGUF must use identical execution options.", 409)
 
     def status(self, profile_id: str) -> ModelStatus:
         profile = self.profiles.get(profile_id)
         status = self._statuses.get(self._key(profile), ModelStatus()).model_copy()
-        backend = next((p for p in self.backends.list() if p.id == profile.backend_profile_id), None)
+        source = profile.source
+        provider = next((p for p in self.providers.list() if isinstance(source, ProviderSource) and p.id == source.provider_profile_id), None)
         engine = local_engine(profile)
         if engine and self.runtime_supervisor:
             from ai_workbench.core.models.runtimes.schema import model_path, RuntimeStatus
             installation = self.runtime_supervisor.installation(check=False)
-            slot = self._slots.get(self.backend_key(profile))
+            slot = self._slots.get(self.execution_key(profile))
             status = slot.adapter.snapshot(profile) if slot else ModelStatus(state="unloaded", residency="unloaded", unload_supported=True)
             if not slot:
                 status.runtime = RuntimeStatus(engine=engine, version=installation.version,
@@ -160,10 +163,14 @@ class ModelManager:
                 except (OSError, ValueError, WorkerError):
                     status.state = "unavailable"
                     status.error_code = "MODEL_NOT_FOUND"
-        if not profile.enabled or backend is None or not backend.enabled:
+        if source is None:
+            status.state, status.error_code = "unavailable", "MODEL_NOT_CONFIGURED"
+        elif not profile.enabled or (isinstance(source, ProviderSource) and (provider is None or not provider.enabled)) or (
+            isinstance(source, LocalSource) and self.runtime_supervisor and not self.runtime_supervisor.settings.get().enabled
+        ):
             status.state = "unavailable"
             status.error_code = "MODEL_UNAVAILABLE"
-        slot = self._slots.get(self.backend_key(profile))
+        slot = self._slots.get(self.execution_key(profile))
         if slot:
             status.active = slot.model_active.get(self._key(profile), 0)
             status.queued = slot.model_queued.get(self._key(profile), 0)
@@ -181,40 +188,42 @@ class ModelManager:
                         "model_profile_id": profile.id, "status": self.status(profile.id).model_dump(),
                     })
 
-    def _slot(self, backend_key, profile=None, require_runtime=True):
+    def _slot(self, execution_key, profile=None, require_runtime=True):
         if self._closed:
             raise ModelError("MODEL_UNAVAILABLE", "Model manager is shutting down.", 503)
-        if backend_key in self._invalidating or profile and profile.backend_profile_id in self._invalidating:
-            raise ModelError("MODEL_BUSY", "Backend configuration is changing.", 409)
-        try:
-            backend = self.backends.get(profile.backend_profile_id if profile else backend_key)
-        except KeyError as exc:
-            raise ModelError("MODEL_UNAVAILABLE", "Configure an executable backend for this model.", 503) from exc
-        if not backend.enabled:
-            raise ModelError("MODEL_UNAVAILABLE", "Backend is disabled.", 503)
-        if backend.type == "local":
+        if execution_key in self._invalidating or execution_key[0] == "local" and ("local",) in self._invalidating:
+            raise ModelError("MODEL_BUSY", "Model source configuration is changing.", 409)
+        if execution_key[0] == "local":
             supervisor = self.runtime_supervisor
+            if not supervisor.settings.get().enabled:
+                raise ModelError("MODEL_UNAVAILABLE", "The local runtime is disabled.", 503)
             if supervisor.blocked:
                 raise ModelError("RUNTIME_INSTALLING", "Local runtime maintenance is in progress.", 409)
             if require_runtime:
                 supervisor.assert_available(check=False)
             return ManagedQueue(), self._managed_slot(profile)
-        if backend.id not in self._slots:
-            self._slots[backend.id] = BackendSlot(self.adapter_factory(backend.connection), asyncio.Semaphore(backend.connection.concurrency))
-        return backend.connection, self._slots[backend.id]
+        try:
+            provider = self.providers.get(execution_key[1])
+        except KeyError as exc:
+            raise ModelError("MODEL_UNAVAILABLE", "The configured provider does not exist.", 503) from exc
+        if not provider.enabled:
+            raise ModelError("MODEL_UNAVAILABLE", "Provider is disabled.", 503)
+        if execution_key not in self._slots:
+            self._slots[execution_key] = InferenceSlot(self.adapter_factory(provider.connection), asyncio.Semaphore(provider.connection.concurrency))
+        return provider.connection, self._slots[execution_key]
 
     def _managed_slot(self, profile):
-        key = self.backend_key(profile)
+        key = self.execution_key(profile)
         if key not in self._slots:
             from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
             engine = local_engine(profile)
             cls = AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
-            adapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
-            self._slots[key] = BackendSlot(adapter, asyncio.Semaphore(1))
+            adapter: LocalAdapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
+            self._slots[key] = InferenceSlot(adapter, asyncio.Semaphore(1))
         return self._slots[key]
 
     @asynccontextmanager
-    async def _provider_lease(self, provider_id, key: tuple | None = None, profile=None, require_runtime=True, on_admit=None):
+    async def _execution_lease(self, execution_key, key: tuple | None = None, profile=None, require_runtime=True, on_admit=None):
         trace = current_trace()
         queue = trace.start_stage("queue_wait") if trace else None
         task = asyncio.current_task()
@@ -222,9 +231,9 @@ class ModelManager:
         registered = False
         acquired = False
         try:
-            provider, slot = self._slot(provider_id, profile, require_runtime)
-            if slot.active + slot.queued >= provider.concurrency + provider.queue_size:
-                raise ModelError("MODEL_BUSY", "Provider queue is full.", 429)
+            limits, slot = self._slot(execution_key, profile, require_runtime)
+            if slot.active + slot.queued >= limits.concurrency + limits.queue_size:
+                raise ModelError("MODEL_BUSY", "Model source queue is full.", 429)
             if on_admit:
                 on_admit()
             slot.queued += 1
@@ -233,9 +242,9 @@ class ModelManager:
             registered = True
             self._publish(key)
             try:
-                await asyncio.wait_for(slot.semaphore.acquire(), timeout=provider.queue_timeout_seconds)
+                await asyncio.wait_for(slot.semaphore.acquire(), timeout=limits.queue_timeout_seconds)
             except asyncio.TimeoutError as exc:
-                raise ModelError("MODEL_BUSY", "Timed out waiting for the provider.", 429) from exc
+                raise ModelError("MODEL_BUSY", "Timed out waiting for model source admission.", 429) from exc
             acquired = True
             slot.queued -= 1
             slot.model_queued[key] -= 1
@@ -263,9 +272,13 @@ class ModelManager:
 
     @asynccontextmanager
     async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None, load_trigger=None):
+        if profile.source is None:
+            raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
+        local = isinstance(profile.source, LocalSource)
+        executing = False
         key = self._key(profile)
         trace = None
-        if profile.backend_profile_id == "local" and self.runtime_supervisor and not self._closed and (
+        if local and self.runtime_supervisor and not self._closed and (
             load_trigger or autoload and self._statuses.get(key, ModelStatus()).state != "ready"
         ):
             trace = self._managed_slot(profile).adapter.begin_trace(profile, load_trigger or "autoload")
@@ -277,9 +290,9 @@ class ModelManager:
                 idle.cancel()
         with tracing(trace):
             try:
-                async with self._provider_lease(self.backend_key(profile), key, profile, require_runtime, admitted) as slot:
+                async with self._execution_lease(self.execution_key(profile), key, profile, require_runtime, admitted) as slot:
                     try:
-                        if autoload:
+                        if local and autoload:
                             async with self._load_locks.setdefault(key, asyncio.Lock()):
                                 if self._statuses.get(key, ModelStatus()).state != "ready":
                                     self._notify(profile, await slot.adapter.load(profile))
@@ -288,12 +301,17 @@ class ModelManager:
                                 elif trace:
                                     trace.reused.update(process_reused=True, model_reused=True)
                                     trace.finish()
+                        executing = True
                         yield slot.adapter
+                        if not local:
+                            self._notify(profile, ModelStatus(state="ready"))
                     finally:
-                        if release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
+                        if local and release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
                             await self._release_policy(profile, slot.adapter)
             except ModelError as exc:
-                if exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}:
+                if (local and exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}) or (
+                    not local and executing and exc.code in {"MODEL_TIMEOUT", "MODEL_UNAVAILABLE", "PROVIDER_ERROR", "PROVIDER_PROTOCOL_ERROR", "MODEL_REFUSAL", "EMBEDDING_DIMENSION_MISMATCH"}
+                ):
                     self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
                 raise
 
@@ -301,7 +319,7 @@ class ModelManager:
         key = self._key(profile)
         if not self._statuses.get(key, ModelStatus()).unload_supported:
             return
-        policies = [p.lifecycle for p in self.profiles.list() if p.enabled and self._key(p) == key]
+        policies = [p.source.lifecycle for p in self.profiles.list() if p.enabled and self._key(p) == key]
         # A shared model stays resident if any enabled alias requests manual release.
         if any(p.unload == "manual" for p in policies):
             return
@@ -326,6 +344,7 @@ class ModelManager:
 
     async def health(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
+        self.require_local(profile)
         async with self._lease(profile, autoload=False, release=False, load_trigger="health") as adapter:
             result = await adapter.health(profile)
             self._notify(profile, result)
@@ -333,14 +352,16 @@ class ModelManager:
 
     async def load(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
+        self.require_local(profile)
         async with self._lease(profile, autoload=False, release=False, load_trigger="explicit") as adapter:
-            result = await adapter.load(profile, explicit=True) if profile.backend_profile_id == "local" else await adapter.load(profile)
+            result = await adapter.load(profile, explicit=True)
             self._notify(profile, result)
             return result
 
     async def unload(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
-        slot = self._slots.get(self.backend_key(profile))
+        self.require_local(profile)
+        slot = self._slots.get(self.execution_key(profile))
         if slot and (slot.active or slot.queued):
             raise ModelError("MODEL_BUSY", "Wait for active and queued requests before unloading.", 409)
         async with self._lease(profile, autoload=False, release=False, require_runtime=False) as adapter:
@@ -348,11 +369,28 @@ class ModelManager:
             self._notify(profile, result)
             return result
 
-    async def backend_models(self, provider_id: str) -> list[str]:
-        if self.backends.get(provider_id).type != "openai_compatible":
-            raise ModelError("UNSUPPORTED_CAPABILITY", "Use local inventory for the local backend.", 422)
-        async with self._provider_lease(provider_id) as slot:
+    @staticmethod
+    def require_local(profile):
+        if profile.source is None:
+            raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
+        if not isinstance(profile.source, LocalSource):
+            raise ModelError("UNSUPPORTED_CAPABILITY", "This operation requires a local model.", 422)
+
+    async def provider_models(self, provider_id: str) -> list[str]:
+        self.providers.get(provider_id)
+        async with self._execution_lease(("provider", provider_id)) as slot:
             return await slot.adapter.models()
+
+    async def prepare_chat_stream(self, profile_id: str) -> None:
+        """Resolve source admission and local startup before SSE headers."""
+        profile = self.profile(profile_id, "llm")
+        if isinstance(profile.source, LocalSource):
+            await self.load(profile_id)
+        elif profile.source is None:
+            raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
+        else:
+            async with self._execution_lease(self.execution_key(profile), self._key(profile), profile):
+                pass
 
     def validate_chat(self, profile: ModelProfile, request: ChatRequest) -> None:
         if is_transformers(profile) and (
@@ -486,7 +524,7 @@ class ModelManager:
             raise ModelError("VOICE_UNAVAILABLE", "Voice ID is not supported by this model.", 404)
         if request.tts.language is not None and request.tts.language != LANGUAGES[request.voice[0]]:
             raise ModelError("INVALID_REQUEST", "Language does not match the selected voice.")
-        if profile.backend_profile_id == "local" and self.runtime_supervisor:
+        if isinstance(profile.source, LocalSource) and self.runtime_supervisor:
             try:
                 path = model_path(self.runtime_supervisor.root, profile.model_ref)
             except (OSError, ValueError) as exc:
@@ -654,20 +692,21 @@ class ModelManager:
             if entry is not None:
                 await asyncio.to_thread(self.voice_references.release, entry)
 
-    def _managed_changed(self, backend):
-        slot = self._slots.get(backend)
+    def _managed_changed(self, source_key):
+        slot = self._slots.get(source_key)
         if slot:
             for profile in self.profiles.list():
-                if self.backend_key(profile) == backend:
+                if self.execution_key(profile) == source_key:
                     self._notify(profile, slot.adapter.snapshot(profile))
 
     def runtime_changed(self):
         for profile in self.profiles.list():
-            if profile.backend_profile_id == "local":
+            if isinstance(profile.source, LocalSource):
                 self._publish(self._key(profile))
 
     def process_log(self, profile):
-        slot = self._slots.get(self.backend_key(profile))
+        self.require_local(profile)
+        slot = self._slots.get(self.execution_key(profile))
         path = getattr(slot.adapter, "log_path", None) if slot else None
         if slot:
             path = getattr(slot.adapter, "log_paths", {}).get(profile.id, path)
@@ -677,34 +716,34 @@ class ModelManager:
             return ""
 
     def require_local_idle(self):
-        self.require_idle("local")
+        self.require_idle(("local",))
         for key in set(self._slots) | self._invalidating:
             if isinstance(key, tuple) and key[0] == "local":
                 self.require_idle(key)
 
     async def invalidate_local(self):
         self.require_local_idle()
-        self._invalidating.add("local")
+        self._invalidating.add(("local",))
         try:
             self.invalidate_voice_references()
             for key in list(self._slots):
                 if isinstance(key, tuple) and key[0] == "local":
                     await self.invalidate(key)
         finally:
-            self._invalidating.discard("local")
+            self._invalidating.discard(("local",))
 
-    def require_idle(self, provider_id: str | None) -> None:
-        slot = self._slots.get(provider_id)
-        if provider_id in self._invalidating or slot and (slot.active or slot.queued):
-            raise ModelError("MODEL_BUSY", "Wait for active and queued provider requests before editing.", 409)
+    def require_idle(self, source_key: tuple) -> None:
+        slot = self._slots.get(source_key)
+        if source_key in self._invalidating or slot and (slot.active or slot.queued):
+            raise ModelError("MODEL_BUSY", "Wait for active and queued model requests before editing.", 409)
 
-    async def invalidate(self, provider_id: str | None) -> None:
-        self.require_idle(provider_id)
-        self._invalidating.add(provider_id)
+    async def invalidate(self, source_key: tuple) -> None:
+        self.require_idle(source_key)
+        self._invalidating.add(source_key)
         try:
-            slot = self._slots.pop(provider_id, None)
+            slot = self._slots.pop(source_key, None)
             for key in set(self._statuses) | set(self._idle) | set(self._load_locks):
-                if key[0] == provider_id:
+                if key[0] == source_key:
                     self._statuses.pop(key, None)
                     self._load_locks.pop(key, None)
                     idle = self._idle.pop(key, None)
@@ -713,7 +752,7 @@ class ModelManager:
             if slot:
                 await slot.adapter.close()
         finally:
-            self._invalidating.discard(provider_id)
+            self._invalidating.discard(source_key)
 
     async def close(self) -> None:
         self._closed = True

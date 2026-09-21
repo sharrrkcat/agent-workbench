@@ -77,7 +77,7 @@ def test_install_restart_and_repeat_install_access_only_fixed_files(tmp_path, mo
         (unrelated / "module_1.py").unlink()
         assert inspect() == baseline
 
-        restarted = RuntimeSupervisor(tmp_path, service.store, service.backends, release=service.release)
+        restarted = RuntimeSupervisor(tmp_path, service.store, service.settings, release=service.release)
         restarted._install_python = AsyncMock(side_effect=AssertionError("Unexpected reinstall"))
         reads.clear()
         job = await restarted.submit("install")
@@ -165,9 +165,9 @@ def test_installation_query_and_install_route_report_repair_without_rebuilding(t
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
         state = client.app.state.runtime_state
         state.runtime_supervisor = state.model_manager.runtime_supervisor = service
-        response = client.get("/api/models/backends/local/runtime")
+        response = client.get("/api/models/local-runtime")
         assert response.json()["state"] == "broken" and "manifest_sha256" not in response.json()
-        response = client.post("/api/models/backends/local/runtime/install")
+        response = client.post("/api/models/local-runtime/install")
         assert response.status_code == 503 and response.json()["error"]["details"]["action"] == "repair"
         assert len(service.store.jobs()) == count and marker.is_file()
 
