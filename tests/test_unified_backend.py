@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, worker_digest
+from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog
 from ai_workbench.core.models.schema import BackendProfile, ChatRequest, ModelProfile
 from ai_workbench.core.models.store import BackendProfileStore, ModelProfileStore, ModelSettingsStore
 from ai_workbench.db import migrations
@@ -296,8 +296,3 @@ def test_full_dependency_lock_and_all_three_wheels_are_auditable(tmp_path):
                     data = archive.read(file)
                     assert len(data) == int(size)
                     assert digest == 'sha256=' + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip('=')
-    for name in release.worker_files:
-        (tmp_path / name).write_text(name)
-    before = worker_digest(release.worker_files, tmp_path)
-    (tmp_path / 'tts_engine.py').write_text('changed')
-    assert worker_digest(release.worker_files, tmp_path) != before

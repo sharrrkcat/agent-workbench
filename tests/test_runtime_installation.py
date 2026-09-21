@@ -55,7 +55,7 @@ def test_install_restart_and_repeat_install_access_only_fixed_files(tmp_path, mo
         await service.submit("install")
         await service.task
         assert service.installation().state == "installed"
-        assert set(json.loads((target / "installation.json").read_bytes())) == {"release", "executables"}
+        assert set(json.loads((target / "installation.json").read_bytes())) == {"dependencies", "executables"}
         stages = [event.payload["job"]["stage"] for event in service.events.list_events()
                   if event.type == "runtime_job_updated"]
         assert "finalizing" in stages and "verifying" not in stages
@@ -89,7 +89,7 @@ def test_install_restart_and_repeat_install_access_only_fixed_files(tmp_path, mo
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("damage", ["old_files", "digest", "json", "release", "python", "cpu", "cuda", "worker", "marker"])
+@pytest.mark.parametrize("damage", ["old_files", "old_release", "digest", "json", "dependencies", "python", "cpu", "cuda", "marker"])
 def test_invalid_installation_is_broken_on_restart_and_requires_explicit_repair(tmp_path, damage):
     async def scenario():
         service = supervisor(tmp_path)
@@ -101,8 +101,12 @@ def test_invalid_installation_is_broken_on_restart_and_requires_explicit_repair(
         if damage == "old_files":
             data["files"] = {"env/python.exe": "0" * 64}
             save_metadata(service, data)
-        elif damage == "release":
-            data["release"]["lock_sha256"] = "0" * 64
+        elif damage == "old_release":
+            data.pop("dependencies")
+            data["release"] = service.release.model_dump()
+            save_metadata(service, data)
+        elif damage == "dependencies":
+            data["dependencies"]["requirements_sha256"] = "0" * 64
             save_metadata(service, data)
         elif damage in {"digest", "json"}:
             marker.write_bytes(b"{" if damage == "json" else marker.read_bytes() + b" ")
@@ -111,10 +115,11 @@ def test_invalid_installation_is_broken_on_restart_and_requires_explicit_repair(
                 value.manifest_sha256 = hashlib.sha256(marker.read_bytes()).hexdigest()
                 service.store.save_installation(value)
         else:
-            name = "worker/common.py" if damage == "worker" else "installation.json" if damage == "marker" else data["executables"][damage]
+            name = "installation.json" if damage == "marker" else data["executables"][damage]
             (target / name).unlink()
         restarted = supervisor(tmp_path, store=service.store)
-        assert restarted.store.installations()[0].state == "broken"
+        assert restarted.installation(check=False).state == "broken"
+        assert restarted.store.installations()[0].state == "installed"
         count = len(restarted.store.jobs())
         with pytest.raises(ModelError) as error:
             await restarted.submit("install")
@@ -130,13 +135,13 @@ def test_invalid_installation_is_broken_on_restart_and_requires_explicit_repair(
     asyncio.run(scenario())
 
 
-def test_missing_worker_prevents_installation_promotion(tmp_path):
+def test_missing_interpreter_prevents_installation_promotion(tmp_path):
     async def scenario():
         service = supervisor(tmp_path)
         install = service._install_python
         async def incomplete(entry, target, job, log):
             await install(entry, target, job, log)
-            (target / "worker/common.py").unlink()
+            (target / "env/python.exe").unlink()
         service._install_python = incomplete
         job = await service.submit("install")
         await service.task

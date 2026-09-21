@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import platform
 from pathlib import Path
+import re
 
 from ai_workbench.core.models.runtimes.schema import LocalRelease, NativeRuntime, RuntimeArtifact
 
 CATALOG_ROOT = Path(__file__).parent
+WORKER_ROOT = CATALOG_ROOT.resolve().parents[2] / "workers"
 LOCAL_VERSION = "1.0.0"
 LLAMA_VERSION = "b10809"
 PYTHON_VERSION = "3.12.11"
@@ -24,23 +27,34 @@ LLAMA_CUDA_DLLS = RuntimeArtifact(
     url=f"https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_VERSION}/cudart-llama-bin-win-cuda-12.4-x64.zip",
     sha256="8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
     archive_format="zip", size_bytes=391443627)
-WORKER_FILES = ["common.py", "timing.py", "server.py", "protocol.py", "tts_engine.py", "tts_catalog.py",
-                "audio.py", "audio_catalog.py", "audio_engine.py", "audio_server.py",
-                "transformers_server.py", "transformers_engine.py"]
 
 
-def text_digest(path: Path) -> str:
-    return hashlib.sha256(path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
-
-
-def worker_digest(files: list[str], root: Path | None = None) -> str:
-    root = root or CATALOG_ROOT.parents[2] / "workers"
-    digest = hashlib.sha256()
-    for name in sorted(files):
-        source = root / name
-        digest.update(source.name.encode("utf-8"))
-        digest.update(source.read_text(encoding="utf-8").encode("utf-8"))
-    return digest.hexdigest()
+def requirements_digest(path: Path) -> str:
+    """Identify exact package pins and their allowed artifacts, independent of formatting."""
+    packages = {}
+    requirement = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.partition("#")[0].strip()
+        if not line:
+            continue
+        continued = line.endswith("\\")
+        requirement += line.removesuffix("\\").strip() + " "
+        if continued:
+            continue
+        match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9_.-]*)\s*==\s*([A-Za-z0-9][A-Za-z0-9.!+_-]*)\s+(.+)", requirement.strip())
+        if match is None:
+            raise ValueError("Runtime requirements must use exact package pins with SHA-256 hashes")
+        name, version, hashes = match.groups()
+        name = re.sub(r"[-_.]+", "-", name).lower()
+        hashes = hashes.split()
+        if name in packages or not all(re.fullmatch(r"--hash=sha256:[a-f0-9]{64}", item) for item in hashes):
+            raise ValueError("Runtime requirements must have unique package pins and SHA-256 hashes")
+        packages[name] = (version, sorted({item.removeprefix("--hash=sha256:") for item in hashes}))
+        requirement = ""
+    if requirement or not packages:
+        raise ValueError("Runtime requirements are empty or have an unfinished continuation")
+    contents = json.dumps(sorted(packages.items()), separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(contents).hexdigest()
 
 
 def worker_entrypoint(engine: str) -> str:
@@ -57,8 +71,7 @@ def catalog(os_name: str | None = None, machine: str | None = None) -> LocalRele
     return LocalRelease(
         version=LOCAL_VERSION, platform=os_name, supported=supported,
         reason=None if supported else "RUNTIME_UNSUPPORTED", python_version=PYTHON_VERSION,
-        requirements=lock.name if supported else None, lock_sha256=text_digest(lock) if supported else None,
-        worker_files=WORKER_FILES, worker_sha256=worker_digest(WORKER_FILES),
+        requirements=lock.name if supported else None, requirements_sha256=requirements_digest(lock) if supported else None,
         python_artifact=PYTHON_ARTIFACT if supported else None,
         native_cpu=NativeRuntime(artifact=LLAMA_CPU) if supported else None,
         native_cuda=NativeRuntime(artifact=LLAMA_CUDA, dependencies=[LLAMA_CUDA_DLLS]) if supported else None,

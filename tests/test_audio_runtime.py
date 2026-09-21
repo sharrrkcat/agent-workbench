@@ -19,7 +19,7 @@ import pytest
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.manager import ModelManager
-from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, worker_digest
+from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog
 from ai_workbench.core.models.runtimes.process import RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeJob
 from ai_workbench.core.models.schema import SpeechRequest
@@ -184,12 +184,13 @@ QwenTTSEngine = WhisperEngine = ChatterboxEngine
 async def installed_audio(tmp_path):
     service = supervisor(tmp_path)
     service.release.python_executable = "env/Scripts/python.exe" if sys.platform == "win32" else "env/bin/python"
+    source = service.worker_root
+    service.worker_root = tmp_path / "application package/workers"
+    shutil.copytree(source, service.worker_root, ignore=shutil.ignore_patterns("__pycache__"))
+    (service.worker_root / "audio_engine.py").write_text(FAKE_AUDIO, encoding="utf-8")
 
     async def install(entry, target, job, log):
         await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target / "env")
-        source = Path(__file__).parents[1] / "ai_workbench/workers"
-        shutil.copytree(source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
-        (target / "worker/audio_engine.py").write_text(FAKE_AUDIO, encoding="utf-8")
 
     service._install_python = install
     await service.submit('install')

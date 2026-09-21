@@ -16,7 +16,7 @@ import zipfile
 import httpx
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog, text_digest, worker_digest
+from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, WORKER_ROOT, catalog, requirements_digest, worker_entrypoint
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import (
     CacheCleanupResult, Installation, InstallationManifest, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
@@ -136,6 +136,8 @@ class RuntimeSupervisor:
         self.events = events
         self.backends = backends
         self.release = release if release is not None else catalog()
+        self.worker_root = WORKER_ROOT
+        self._installation_snapshot: Installation | None = None
         self.transport = transport
         self.task: asyncio.Task | None = None
         self.active_job: str | None = None
@@ -150,38 +152,49 @@ class RuntimeSupervisor:
                     remove_owned(self.base, staging)
         self.installation()
 
-    def directory(self):
-        return contained(self.base, self.base / "local" / self.release.version)
+    def directory(self, version=None):
+        if version is None:
+            value = self._installation_snapshot
+            version = value.version if value and value.state != "not_installed" else self.release.version
+        local = contained(self.base, self.base / "local")
+        return contained(local, local / version)
+
+    def worker_entrypoint(self, engine):
+        path = self.worker_root / worker_entrypoint(engine)
+        if not path.is_file():
+            raise ModelError("MODEL_UNAVAILABLE", "The application worker entry point is missing.", 503)
+        return path
 
     def _entry_paths(self, target, manifest):
-        if manifest.release != self.release:
-            raise ValueError("Installation release identity changed")
+        if manifest.dependencies != self.release.dependency_identity():
+            raise ValueError("Runtime dependencies changed")
         paths = {key: installed_file(target, name) for key, name in manifest.executables.model_dump().items()}
-        workers = [installed_file(target, "worker/" + name) for name in self.release.worker_files]
-        if not all(path.is_file() for path in [*paths.values(), *workers]):
-            raise ValueError("An installed entry point or worker source is missing")
+        if not all(path.is_file() for path in paths.values()):
+            raise ValueError("An installed entry point is missing")
         return paths
 
     def _inspect_installation(self, check=True):
+        if not check:
+            return self._installation_snapshot.model_copy(deep=True), None
         entry = self.release
         records = self.store.installations()
         value = records[0] if records else Installation(version=entry.version)
         paths = None
         if not entry.supported:
             value.state, value.error_code = "unsupported", "RUNTIME_UNSUPPORTED"
-        elif value.version != entry.version:
-            value.state, value.error_code = "broken", "RUNTIME_BROKEN"
-        elif check and value.state == "installed":
+        elif value.state == "installed":
             try:
-                target = self.directory()
+                target = self.directory(value.version)
                 contents = installed_file(target, "installation.json").read_bytes()
                 if hashlib.sha256(contents).hexdigest() != value.manifest_sha256:
                     raise ValueError("Installation metadata digest changed")
                 paths = self._entry_paths(target, InstallationManifest.model_validate_json(contents, strict=True))
             except (OSError, ValueError, ModelError):
                 value.state, value.error_code = "broken", "RUNTIME_BROKEN"
-                self.store.save_installation(value)
-                self._emit_installation(value)
+        previous = self._installation_snapshot
+        self._installation_snapshot = value.model_copy(deep=True)
+        if previous and previous.model_dump(exclude={"updated_at"}) != value.model_dump(exclude={"updated_at"}):
+            self._emit_installation(value)
         return value, paths
 
     def installation(self, *, check=True):
@@ -207,6 +220,7 @@ class RuntimeSupervisor:
         return paths[device if engine == "llama-server" else "python"]
 
     def _emit_installation(self, value):
+        self._installation_snapshot = value.model_copy(deep=True)
         if self.events:
             self.events.emit("runtime_status", session_id="", payload={"installation": value.model_dump(mode="json")})
         if self.manager:
@@ -337,7 +351,8 @@ class RuntimeSupervisor:
         value = self.installation()
         if operation == "install" and value.state != "not_installed":
             self._require_available(value)
-        job = RuntimeJob(backend_profile_id="local", version=entry.version, operation=operation)
+        version = value.version if operation == "uninstall" or operation == "install" and value.state == "installed" else entry.version
+        job = RuntimeJob(backend_profile_id="local", version=version, operation=operation)
         job.log_path = f"{job.id}.log"
         self.active_job = job.id
         self.blocked = True
@@ -377,13 +392,13 @@ class RuntimeSupervisor:
 
     async def _execute(self, job, entry):
         staging = self.base / ".staging" / job.id
-        target = self.directory()
         log = None
         value = self.installation()
         try:
             log = RuntimeLog(self.logs / job.log_path, self.root)
             job.state = "running"
             self._save_job(job)
+            target = self.directory(job.version)
             if job.operation == "uninstall":
                 if target.exists():
                     await file_work(lambda _: remove_owned(self.base, target))
@@ -396,12 +411,15 @@ class RuntimeSupervisor:
                 for device, native in (("cpu", entry.native_cpu), ("cuda", entry.native_cuda)):
                     executables[device] = await self._install_native(native, payload, staging, device, job, log)
                 self._stage(job, "finalizing", log)
-                manifest = InstallationManifest(release=entry, executables=executables)
+                manifest = InstallationManifest(dependencies=entry.dependency_identity(), executables=executables)
                 self._entry_paths(payload, manifest)
                 marker = payload / "installation.json"
                 marker.write_text(manifest.model_dump_json(), encoding="utf-8")
                 value.manifest_sha256 = sha256(marker)
                 target.parent.mkdir(parents=True, exist_ok=True)
+                previous = self.directory(value.version)
+                if previous != target and previous.exists():
+                    await file_work(lambda _: remove_owned(self.base, previous))
                 if target.exists():
                     await file_work(lambda _: remove_owned(self.base, target))
                 payload.replace(target)
@@ -550,8 +568,8 @@ class RuntimeSupervisor:
     async def _install_python(self, entry, target, job, log):
         uv = self._uv()
         lock = CATALOG_ROOT / entry.requirements
-        if text_digest(lock) != entry.lock_sha256:
-            raise ModelError("RUNTIME_BROKEN", "Worker requirements checksum mismatch.", 503)
+        if requirements_digest(lock) != entry.requirements_sha256:
+            raise ModelError("RUNTIME_BROKEN", "Runtime requirements changed during installation.", 503)
         env = {key: value for key, value in os.environ.items() if not key.startswith(("UV_", "PIP_", "PYTHON", "VIRTUAL_ENV")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
         env.update(UV_CACHE_DIR=str(self.base / ".cache"), UV_NO_PROGRESS="1", UV_NATIVE_TLS="true", UV_PYTHON_DOWNLOADS="never")
         settings = self.backends.get("local").download
@@ -578,12 +596,6 @@ class RuntimeSupervisor:
             "--index-url", settings.pypi_index_url or "https://pypi.org/simple",
             "--extra-index-url", settings.pytorch_index_url or entry.pytorch_index_url,
             "--index-strategy", "unsafe-best-match", lock], env, self.root, log)
-        worker_source = Path(__file__).resolve().parents[3] / "workers"
-        if worker_digest(entry.worker_files, worker_source) != entry.worker_sha256:
-            raise ModelError("RUNTIME_BROKEN", "Worker source fingerprint changed during installation.", 503)
-        (target / "worker").mkdir()
-        for name in entry.worker_files:
-            shutil.copyfile(worker_source / name, target / "worker" / name)
         self._stage(job, "checking_packages", log)
         await self._command([uv, "pip", "check", "--no-config", "--python", target / entry.python_executable], env, self.root, log)
         checks = [
@@ -596,7 +608,7 @@ class RuntimeSupervisor:
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
         for check in checks:
             script = "import sys; sys.path.insert(0, sys.argv[1]); " + check
-            await self._command([target / entry.python_executable, "-I", "-B", "-c", script, target / "worker"], env, self.root, log)
+            await self._command([target / entry.python_executable, "-I", "-B", "-c", script, self.worker_root], env, self.root, log)
 
     def log_text(self, job_id):
         job = self.store.job(job_id)

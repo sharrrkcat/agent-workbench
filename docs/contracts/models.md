@@ -95,14 +95,16 @@ processes. Bulk file operations run off-loop; external inference continues indep
 create a global inference queue. Cache cleanup allows loaded models to remain.
 
 Downloads stage under data/runtimes/.staging/{job_id}; checked payloads promote to
-data/runtimes/local/<version> with env/, worker/, native/cpu/ and native/cuda/.
-Small installation.json records release/source/lock identity and Python/CPU/CUDA entry paths;
-manifest_sha256 binds this metadata. Startup, installation reads, repeat install and process
-entry resolution check its strict schema/digest/release, entry boundaries and fixed worker files.
-Checks do not traverse the environment, import engines or probe GPUs; other dependency edits are not detected.
-Finalizing validates entries, records metadata and promotes. Healthy install returns already_installed;
-broken/interrupted states and old files inventories require explicit repair. Repair rebuilds the
-release without conversion or database/model resets; absent installations use install.
+data/runtimes/local/<version> with env/, native/cpu/ and native/cuda/; workers remain in the application.
+Small installation.json stores dependency identity and Python/CPU/CUDA entry paths, bound by manifest_sha256.
+Identity covers platform/architecture, pinned Python, exact package pins/hashes and native artifact hashes.
+Lock comments, formatting/order, worker sources, release labels and download metadata do not affect it.
+Startup, installation reads, repeat install and process entry resolution validate metadata schema/digest/dependencies
+and entry boundaries/existence, without environment scans or engine/GPU probes; other dependency edits remain undetected.
+Reads cache availability without overwriting installation-job state; restored files/dependencies recover on refresh/restart.
+Failed/interrupted jobs require explicit repair. Paths use the recorded version; repair replaces the active installation.
+Finalizing validates entries and promotes. Healthy install returns already_installed; manual repair always rebuilds.
+Old release/file-inventory manifests require one explicit repair, without conversion or database/model resets.
 
 Bundled uv installs pinned Python 3.12.11 and one hash lock: Torch/Torchaudio 2.11.0+cu128,
 Torchvision 0.26.0+cu128, Transformers 5.16.1, NumPy 1.26.4, ONNX Runtime 1.23.2 and Misaki/spaCy/Thinc dependencies.
@@ -112,18 +114,15 @@ build tools; native packages require wheels. Installation runs dependency checks
 offline engine-import processes and native program checks without weights or a GPU.
 User PATH/registry are untouched; [Settings](settings.md) owns download configuration.
 
-Both llama.cpp b10809 CPU and CUDA programs are included. CUDA's pinned main and
-cudart ZIPs use combined byte progress and SHA-256 checks before extraction.
-Native archives are cached under .cache/workbench-artifacts and rechecked on reuse.
-CUDA 12.4 DLLs stay beside that llama-server, separate from Torch's CUDA 12.8 files.
-Different-content DLL collisions fail. --version precedes promotion; dependency
-paths apply only to child processes.
+Both llama.cpp b10809 CPU/CUDA programs are included; CUDA's pinned main/cudart ZIPs use combined byte progress.
+Native archives are SHA-256 checked before extraction and on reuse from .cache/workbench-artifacts.
+Llama's CUDA 12.4 DLLs stay beside its executable, separate from Torch CUDA 12.8; different-content DLL collisions fail.
+Native --version checks precede promotion; dependency paths apply only to child processes.
 
 Jobs expose queued/running/completed/failed/cancelled/interrupted states, stage,
 byte progress, error code, revision and bounded logs. Cancellation stops subprocesses and waits
 for active file operations before clearing staging. Restart interrupts unfinished work and clears staging.
-Failure/cancellation retains logs; retry creates a job. Uninstall stops related
-workers and removes only the current local release directory, retaining download caches and all model files.
+Failure/cancellation retains logs; retry creates a job. Uninstall stops local workers and removes the recorded installation, retaining caches/models.
 
 Read-only routes expose installation/status/jobs. `/api/models/runtimes/jobs/{id}/log`
 returns task logs; `/cancel` cancels. `/api/models/profiles/{id}/log` returns process logs.
@@ -160,8 +159,9 @@ independently of installation logs.
 Workers bind reserved loopback ports. Process groups and Windows kill-on-job-close Job Objects stop
 full trees on unload, cancellation or exit. Sanitized logs under `data/logs/runtimes` have a 10 MiB cap;
 retention keeps 20 terminal tasks and 20 terminal process/load-attempt logs per runtime, plus active logs.
-Load/autoload, health and Audio reference preparation use the fixed installation check above.
-Loaded inference and model-status snapshots read stored state without rechecking installation files.
+Load/autoload, health and Audio references check installation entries; loaded inference and model status use cached availability.
+Python workers execute application sources with the installed interpreter; reload/restart picks up source changes.
+Missing or failed worker code is a model-load error and does not invalidate the installation.
 The model log endpoint returns the latest attempt, including pre-spawn failures; UTC records share load_id through startup environment/private headers.
 `duration_ms`/`elapsed_ms` measure monotonic wall time; `cpu_duration_ms`/`cpu_elapsed_ms` measure CPU time for all threads
 in the emitting process, excluding child processes. Concurrent work is included; CPU time can exceed wall time and is not an I/O measurement.

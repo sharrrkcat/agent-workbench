@@ -21,6 +21,7 @@ Model tests are tests/test_phase2a_manager.py, test_phase2a_protocol.py and
 test_phase2a_transport.py under tests/. Managed runtime tests are
 test_phase2b_runtime.py, test_runtime_maintenance.py and test_llama_cuda.py.
 test_runtime_installation.py covers fixed-file checks, explicit repair and traversal guards;
+test_runtime_dependencies.py covers normalized identity, version paths, recoverable checks and application workers.
 test_runtime_smoke_cli.py covers installation-only modes and device defaults.
 test_unified_backend.py covers backend identity, strict bindings, maintenance isolation,
 configuration reset and the shared lock/wheel audit. scripts/build_runtime_wheels.py

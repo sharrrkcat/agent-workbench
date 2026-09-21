@@ -44,6 +44,7 @@ def save_manifest(service, data):
     marker.write_text(json.dumps(data), encoding="utf-8")
     service.store.save_installation(Installation(version=service.release.version, state="installed",
         manifest_sha256=hashlib.sha256(marker.read_bytes()).hexdigest()))
+    service.installation()
 
 
 async def until(predicate):
@@ -124,10 +125,7 @@ def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, m
         target = service.directory()
         target.mkdir(parents=True)
         (target / "llama-server.exe").write_bytes(b"fixture")
-        (target / "worker").mkdir()
-        for name in entry.worker_files:
-            (target / "worker" / name).write_text("# fixture")
-        save_manifest(service, {"release": entry.model_dump(),
+        save_manifest(service, {"dependencies": entry.dependency_identity().model_dump(),
             "executables": dict.fromkeys(["cpu", "cuda", "python"], "llama-server.exe")})
         forbid_install_scans(monkeypatch, service)
         response = client.post(f"/api/models/profiles/{value.id}/load")
@@ -265,9 +263,8 @@ def test_autoload_finishes_before_inference_and_later_cancel_does_not_rewrite_it
 def test_load_failures_record_cleanup_and_one_terminal_result(tmp_path, monkeypatch, failure):
     async def scenario():
         service, manager, profile = await installed_worker(tmp_path)
-        target = service.directory()
         body = "raise RuntimeError('private model contents')" if failure == "error" else "time.sleep(60)"
-        (target / "worker/tts_engine.py").write_text("import time\nclass TTSEngine:\n    def __init__(self, *args, **kwargs):\n        " + body + "\n")
+        (service.worker_root / "tts_engine.py").write_text("import time\nclass TTSEngine:\n    def __init__(self, *args, **kwargs):\n        " + body + "\n")
         adapter = manager._managed_slot(profile).adapter
         if failure == "timeout":
             rpc = adapter._rpc

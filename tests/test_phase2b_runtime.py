@@ -57,9 +57,6 @@ def supervisor(tmp_path, *, data=None, store=None):
     async def install(entry, target, job, log):
         (target / "env").mkdir(parents=True)
         (target / "env/python.exe").write_bytes(b"test interpreter")
-        (target / "worker").mkdir()
-        for name in entry.worker_files:
-            (target / "worker" / name).write_text("# worker fixture")
     async def command(args, env, cwd, log):
         assert args[1:] == ["--version"] and Path(args[0]).is_file()
     service._install_python = install
@@ -70,7 +67,7 @@ def supervisor(tmp_path, *, data=None, store=None):
 def test_catalog_is_one_pinned_windows_release():
     release = catalog("windows", "amd64")
     assert release.supported and release.python_version == "3.12.11"
-    assert release.python_artifact.sha256 and release.lock_sha256 and release.worker_sha256
+    assert release.python_artifact.sha256 and release.requirements_sha256
     assert release.native_cpu.artifact.sha256 and release.native_cuda.dependencies[0].sha256
     for system, machine in (("linux", "x86_64"), ("windows", "arm64"), ("darwin", "arm64")):
         assert not catalog(system, machine).supported
@@ -273,11 +270,12 @@ class TTSEngine:
 async def installed_worker(tmp_path):
     service = supervisor(tmp_path)
     service.release.python_executable = "env/Scripts/python.exe" if os.name == "nt" else "env/bin/python"
+    source = service.worker_root
+    service.worker_root = tmp_path / "application package/workers"
+    shutil.copytree(source, service.worker_root, ignore=shutil.ignore_patterns("__pycache__"))
+    (service.worker_root / "tts_engine.py").write_text(FAKE_ENGINE, encoding="utf-8")
     async def install(entry, target, job, log):
         await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target / "env")
-        source = Path(__file__).parents[1] / "ai_workbench/workers"
-        shutil.copytree(source, target / "worker", ignore=shutil.ignore_patterns("__pycache__"))
-        (target / "worker/tts_engine.py").write_text(FAKE_ENGINE, encoding="utf-8")
     service._install_python = install
     await service.submit('install')
     await service.task
@@ -480,7 +478,8 @@ def test_python_installer_uses_pinned_artifact_and_offline_checks_without_models
         assert all(env["CUDA_VISIBLE_DEVICES"] == "" and env["HF_HUB_OFFLINE"] == "1" for _, env in checks)
         assert ["ChatterboxTTS" in " ".join(args) for args, _ in checks].count(True) == 1
         assert ["Qwen3TTSModel" in " ".join(args) for args, _ in checks].count(True) == 1
-        assert set(path.name for path in (tmp_path / "payload/worker").iterdir()) == set(service.release.worker_files)
+        assert not (tmp_path / "payload/worker").exists()
+        assert all(args[-1] == str(service.worker_root) for args, _ in checks)
         assert (tmp_path / "payload/env/python.exe").read_bytes() == b"fixture"
         assert not any("en_core_web_sm" in " ".join(args) for args, _ in calls)
         await service.close()

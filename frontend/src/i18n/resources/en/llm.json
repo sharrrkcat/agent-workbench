@@ -255,6 +255,7 @@
   "enableLocalBackend": "Enable local backend",
   "manageBackend": "Manage local backend",
   "repairRuntime": "Repair installation",
+  "runtimeReuseHint": "App updates reuse the installed runtime when dependencies are unchanged. Manual repair rebuilds the runtime.",
   "executionOptions": "Execution options",
   "engine": "Engine",
   "engines": {

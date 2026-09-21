@@ -116,10 +116,32 @@ class RuntimeArtifact(Strict):
         return value
 
 
+SHA256 = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
+class NativeDependencies(Strict):
+    artifact_sha256: SHA256
+    dependencies_sha256: list[SHA256]
+
+
+class RuntimeDependencies(Strict):
+    platform: str
+    architecture: str
+    python_version: str
+    python_sha256: SHA256
+    requirements_sha256: SHA256
+    native_cpu: NativeDependencies
+    native_cuda: NativeDependencies
+
+
 class NativeRuntime(Strict):
     artifact: RuntimeArtifact
     dependencies: list[RuntimeArtifact] = Field(default_factory=list)
     executable: str = "llama-server.exe"
+
+    def dependency_identity(self) -> NativeDependencies:
+        return NativeDependencies(artifact_sha256=self.artifact.sha256,
+            dependencies_sha256=sorted({artifact.sha256 for artifact in self.dependencies}))
 
 
 class LocalRelease(Strict):
@@ -129,26 +151,26 @@ class LocalRelease(Strict):
     supported: bool = False
     reason: str | None = None
     requirements: str | None = None
-    lock_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    requirements_sha256: SHA256 | None = None
     python_version: str
     python_artifact: RuntimeArtifact | None = None
     python_executable: str = "env/python.exe"
     pytorch_index_url: str = "https://download.pytorch.org/whl/cu128"
-    worker_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
-    worker_files: list[str] = Field(default_factory=list)
     native_cpu: NativeRuntime | None = None
     native_cuda: NativeRuntime | None = None
 
     @model_validator(mode="after")
     def valid_release(self):
-        if self.supported and not all((self.requirements, self.lock_sha256,
-                self.python_artifact, self.worker_sha256, self.worker_files, self.native_cpu, self.native_cuda)):
-            raise ValueError("An installable local release requires pinned Python, packages, workers and native components")
-        if len(set(self.worker_files)) != len(self.worker_files) or any(
-            relative_ref(name) != name or "/" in name or not name.endswith(".py") for name in self.worker_files
-        ):
-            raise ValueError("Worker sources must be unique Python filenames")
+        if self.supported and not all((self.requirements, self.requirements_sha256,
+                self.python_artifact, self.native_cpu, self.native_cuda)):
+            raise ValueError("An installable local release requires pinned Python, packages and native components")
         return self
+
+    def dependency_identity(self) -> RuntimeDependencies:
+        return RuntimeDependencies(platform=self.platform, architecture=self.architecture,
+            python_version=self.python_version, python_sha256=self.python_artifact.sha256,
+            requirements_sha256=self.requirements_sha256,
+            native_cpu=self.native_cpu.dependency_identity(), native_cuda=self.native_cuda.dependency_identity())
 
 
 class InstallationExecutables(Strict):
@@ -163,7 +185,7 @@ class InstallationExecutables(Strict):
 
 
 class InstallationManifest(Strict):
-    release: LocalRelease
+    dependencies: RuntimeDependencies
     executables: InstallationExecutables
 
 

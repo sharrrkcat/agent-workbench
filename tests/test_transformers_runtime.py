@@ -15,7 +15,7 @@ from sqlmodel import Session
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.adapters import TransformersServerAdapter
-from ai_workbench.core.models.runtimes.catalog import catalog, worker_digest
+from ai_workbench.core.models.runtimes.catalog import catalog
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatChunk, ChatRequest, ModelProfile

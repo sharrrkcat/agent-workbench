@@ -18,18 +18,27 @@ const cacheJob = { id: 'cache', backend_profile_id: null, version: null, operati
 const state = { storage: { scanned_at: cacheJob.created_at, complete: true, totals: usage,
   groups: [{ ...usage, id: '.cache', category: 'cache', relative_path: '.cache' }], warnings: [] },
   storageLoading: false, storageError: '', reloadStorage: async () => {}, jobs: [cacheJob] };
+Object.assign(state, { backends: [{ id: 'local', enabled: true }],
+  catalog: { version: '1.0.0', platform: 'windows', architecture: 'x86_64', supported: true },
+  installation: { version: '0.9.0', state: 'installed' } });
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: () => state }),
 });
 const { RuntimeStoragePanel, CacheJobResult, runtimeBytes } = (await load('../src/components/settings/RuntimeStoragePanel.tsx')).exports;
 const { CudaLayersField } = (await load('../src/components/settings/models/CudaLayersField.tsx')).exports;
+const { LocalBackendPanel } = (await load('../src/components/settings/LocalBackendPanel.tsx')).exports;
 assert.equal(runtimeBytes(null, 'Unknown'), 'Unknown');
 assert.equal(runtimeBytes(0, 'Unknown'), '0 B');
 assert.equal(runtimeBytes(1024, 'Unknown'), '1 KiB');
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');
+  const backend = renderToStaticMarkup(React.createElement(LocalBackendPanel, { activeView: true }));
+  assert.ok(backend.includes('0.9.0 / windows / x86_64') && !backend.includes('1.0.0 / windows'));
+  assert.ok(backend.includes(t('runtimeReuseHint')));
+  const repair = backend.match(/<button\b[^>]*>/g).find((tag) => tag.includes(`aria-label="${t('repairRuntime')}"`));
+  assert.ok(repair && !repair.includes('disabled'));
   const panel = renderToStaticMarkup(React.createElement(RuntimeStoragePanel, {
     busy: false, activeView: true, active: undefined, onCleanup: async () => {}, onCancel: () => {},
   }));

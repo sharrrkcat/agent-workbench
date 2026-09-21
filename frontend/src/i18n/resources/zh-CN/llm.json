@@ -255,6 +255,7 @@
   "enableLocalBackend": "启用本地后端",
   "manageBackend": "管理本地后端",
   "repairRuntime": "修复安装",
+  "runtimeReuseHint": "依赖未变时，应用更新会复用已安装的运行环境。手动修复会重建运行环境。",
   "executionOptions": "执行选项",
   "engine": "引擎",
   "engines": {

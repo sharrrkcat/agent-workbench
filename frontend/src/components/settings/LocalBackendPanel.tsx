@@ -67,7 +67,7 @@ export function LocalBackendPanel({ activeView }: { activeView: boolean }) {
         <div className="runtime-row">
           <div className="model-identity">
             <strong>{t('localInstallation')}</strong>
-            <small>{catalog.version} / {catalog.platform} / {catalog.architecture}</small>
+            <small>{state === 'not_installed' ? catalog.version : installation?.version ?? catalog.version} / {catalog.platform} / {catalog.architecture}</small>
           </div>
           <div className="runtime-progress">
             <span>{t('runtimeStates.' + state)}</span>
@@ -97,6 +97,7 @@ export function LocalBackendPanel({ activeView }: { activeView: boolean }) {
           </div>
         </div>
       ) : null}
+      <p>{t('runtimeReuseHint')}</p>
       <details className="runtime-download-settings">
         <summary>{t('downloadSettings')}</summary>
         {settings ? (

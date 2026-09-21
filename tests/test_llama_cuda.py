@@ -104,8 +104,8 @@ def test_cuda_dual_artifact_install_progress_manifest_and_uninstall(tmp_path):
         executable = service.executable("llama-server", "cuda")
         assert (executable.parent / "cublas64_12.dll").read_bytes() == b"cuda"
         manifest = json.loads((service.directory() / "installation.json").read_text())
-        assert manifest["release"]["native_cuda"]["dependencies"][0]["sha256"] == service.release.native_cuda.dependencies[0].sha256
-        assert set(manifest) == {"release", "executables"}
+        assert manifest["dependencies"]["native_cuda"]["dependencies_sha256"] == [service.release.native_cuda.dependencies[0].sha256]
+        assert set(manifest) == {"dependencies", "executables"}
         assert (service.directory() / "native/cuda/dependencies/1/LICENSE").is_file()
         (executable.parent / "cublas64_12.dll").write_bytes(b"changed")
         service.assert_available()

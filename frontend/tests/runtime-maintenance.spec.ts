@@ -48,6 +48,21 @@ for (const locale of ['en', 'zh-CN']) {
         await page.screenshot({ path: info.outputPath('cache-cleared.png') });
       });
 
+      test('installed version and manual repair remain available after a catalog update', async ({ page }) => {
+        await page.route('**/api/models/backends/local/runtime', (route) => route.fulfill({ json: {
+          backend_profile_id: 'local', version: '0.9.0', state: 'installed',
+          updated_at: '2026-09-22T00:00:00Z',
+        } }));
+        await runtimeView(page, locale);
+        const row = page.locator('.runtime-row');
+        await expect(row).toContainText('0.9.0 / windows / x86_64');
+        await expect(row.getByRole('button', { name: locale === 'en' ? 'Repair installation' : '修复安装', exact: true })).toBeEnabled();
+        await expect(page.locator('.runtime-panel')).toContainText(locale === 'en'
+          ? 'App updates reuse the installed runtime when dependencies are unchanged.'
+          : '依赖未变时，应用更新会复用已安装的运行环境。');
+        await noRuntimeOverflow(page);
+      });
+
       test('CUDA automatic and manual values save and reopen', async ({ page, request }, info) => {
         await page.goto('/settings?tab=models');
         await page.getByRole('button', { name: locale === 'en' ? 'Add model' : '添加模型', exact: true }).click();

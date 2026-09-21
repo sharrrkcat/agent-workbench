@@ -17,7 +17,6 @@ from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offlo
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.runtimes.catalog import worker_entrypoint
 from ai_workbench.core.models.schema import AudioOutput, ModelStatus, ExternalConnection
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
@@ -198,7 +197,6 @@ class ManagedAdapter:
         log = self._activate_trace(trace)
         env = {key: value for key, value in os.environ.items() if not key.startswith(("PYTHON", "VIRTUAL_ENV", "LLAMA_ARG_")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
-        target = self.supervisor.directory()
         if self.engine != "llama-server":
             ready = self.run_dir / "ready.json"
             env.update(WORKBENCH_WORKER_TOKEN=self.token, WORKBENCH_WORKER_READY=str(ready),
@@ -213,7 +211,7 @@ class ManagedAdapter:
                 env.update(WORKBENCH_MODEL_REF=profile.model_ref,
                            WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.execution_options),
                            HF_HOME=str(cache), HF_HUB_CACHE=str(cache / "hub"), TORCH_HOME=str(cache / "torch"))
-            args = [executable, "-I", "-B", "-X", "utf8", target / "worker" / worker_entrypoint(self.engine)]
+            args = [executable, "-I", "-B", "-X", "utf8", self.supervisor.worker_entrypoint(self.engine)]
             port = None
         else:
             if cuda:

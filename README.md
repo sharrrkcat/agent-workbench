@@ -75,7 +75,7 @@ Cache cleanup preserves installations. Download settings affect dependencies/pro
 Model load, health and reference preparation check entry/model availability, without installation integrity or cache scans.
 Model logs correlate UTC host/worker stages, package imports and wall/process CPU times, including pre-spawn failures.
 Totals include queueing but exclude inference; nested stage durations overlap. See [models](docs/contracts/models.md).
-Repair installs the current release's dependencies and workers together.
+Repair rebuilds the current dependencies; application worker updates reuse the installed environment after reload/restart.
 
 Release defaults to manual. External health/load verifies the advertised model,
 but standard OpenAI-compatible connections cannot report weight residency or
@@ -315,7 +315,7 @@ and failure traces are under frontend/test-results.
 
 All local-runtime smoke commands reuse an installed release by default and fail if it needs installation
 or repair. Only --install-only installs (or confirms a healthy installation), without inference.
-Old file-inventory metadata requires explicit Repair in Models > Backends > Local; model settings are retained.
+Old release/file-inventory metadata needs one explicit Repair in Models > Backends > Local; later worker updates reuse dependencies.
 Kokoro uses manually placed files and writes all-voice offline/SDK samples under build/tts-smoke:
 
 ```powershell
