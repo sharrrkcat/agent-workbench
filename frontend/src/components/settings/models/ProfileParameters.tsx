@@ -51,6 +51,10 @@ export function ProfileParameters({
               <option value="qwen3tts">{t('qwen3TTSBase')}</option>
             </select>
           </Field>
+          {['chatterbox', 'qwen3tts'].includes(String(value.parameters.architecture)) ? (
+            <NumberInput label={t('params.seed')} value={value.parameters.seed as number | null | undefined}
+              min={0} max={4294967295} onChange={(seed) => patchParam('seed', seed)} />
+          ) : null}
           {value.parameters.architecture === 'chatterbox' ? [
             ['exaggeration', 0.5, 0, 2, 0.05], ['cfg_weight', 0.5, 0, 1, 0.05],
             ['temperature', 0.8, 0.01, 5, 0.01], ['repetition_penalty', 1.2, 1, 2, 0.05],

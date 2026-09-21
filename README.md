@@ -193,11 +193,9 @@ must match the voice. SSE and application playback are deferred.
 
 ### Offline Chatterbox Speech
 
-On Windows x64, install Local backend in Models > Backends.
-Place the English ve.safetensors, t3_cfg.safetensors, s3gen.safetensors and
-tokenizer.json files under `data/models/tts/chatterbox`. Create a TTS profile
-using architecture Chatterbox, model reference `tts/chatterbox`, and CPU or NVIDIA
-CUDA execution. Chatterbox has generation defaults in the editor and no preset voices.
+On Windows x64, install Local backend in Models > Backends. Place the English ve.safetensors,
+t3_cfg.safetensors, s3gen.safetensors and tokenizer.json under `data/models/tts/chatterbox`.
+Create a Chatterbox profile for `tts/chatterbox`, choose CPU/CUDA and set generation defaults; preset voices are unavailable.
 
 Upload one WAV/MP3 reference (8 MiB, at most 30 decoded seconds) through the API:
 
@@ -205,16 +203,16 @@ Upload one WAV/MP3 reference (8 MiB, at most 30 decoded seconds) through the API
 $voice = Invoke-RestMethod "$apiBase/audio/voice-references" -Method Post -Headers $headers `
   -Form @{ model = 'chatterbox'; file = Get-Item './reference.wav' }
 $speechBody = @{ model = 'chatterbox'; input = 'Hello from my local voice.';
-  voice = $voice.voice_id; response_format = 'wav' } | ConvertTo-Json
+  voice = $voice.voice_id; response_format = 'wav';
+  tts = @{ model_options = @{ seed = 12345 } } } | ConvertTo-Json -Depth 5
 Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
   -ContentType 'application/json' -Body $speechBody -OutFile speech.wav
 Invoke-RestMethod "$apiBase/audio/voice-references/$($voice.voice_id)" -Method Delete -Headers $headers
 ```
 
-Temporary IDs are scoped to the key/profile, start with 30 minutes and gain at
-least 15 remaining minutes when admitted for speech. Listing does not renew them.
-Alternatively, omit voice and send `tts.reference_audio={format,data_base64}` for one request. `tts.language`
-accepts only en-US; `tts.model_options` overrides defaults. See [reference limits](docs/contracts/models.md#audio-tts-and-temporary-references).
+Temporary IDs bind to the key/profile, start with 30 minutes and gain at least 15 remaining minutes on admission.
+Listing does not renew them. For one request, omit voice and send `tts.reference_audio={format,data_base64}`.
+`tts.language` accepts only en-US; `tts.model_options` overrides defaults. See [reference limits](docs/contracts/models.md#audio-tts-and-temporary-references).
 
 ### Offline Qwen3-TTS Base Speech
 
@@ -231,13 +229,15 @@ Supply the recording's actual words; the service does not transcribe or persist 
 $voice = Invoke-RestMethod "$apiBase/audio/voice-references" -Method Post -Headers $headers `
   -Form @{ model = 'qwen'; file = Get-Item './reference.wav'; reference_text = 'Hello, this is a voice test.' }
 $speechBody = @{ model = 'qwen'; input = 'Hello from Qwen.'; voice = $voice.voice_id;
-  tts = @{ language = 'en-US'; model_options = @{ max_new_tokens = 2048 } } } | ConvertTo-Json -Depth 5
+  tts = @{ language = 'en-US'; model_options = @{ max_new_tokens = 2048; seed = 12345 } } } | ConvertTo-Json -Depth 5
 Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
   -ContentType 'application/json' -Body $speechBody -OutFile speech.mp3
 ```
 
-Language omission/auto selects automatically; ten languages are supported, excluding Hindi. The editor/OpenAPI describe
-six generation controls; token limits can stop speech early. Qwen has no presets; temporary voices have language=null.
+Language omission/auto selects automatically; ten languages exclude Hindi. Token limits can stop speech early.
+Qwen has no presets; temporary voices have language=null. Both Audio architectures support optional seed=0..4294967295:
+0 is valid; omitted/null request seeds inherit the profile, whose blank/null default leaves randomness unfixed.
+Fixed seeds control randomness without guaranteeing identical audio. The editor/OpenAPI describe all controls.
 
 ## HTTP contract
 
@@ -330,7 +330,7 @@ termination on HTTP disconnect, followed by reload and another SDK request.
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
 Use mono PCM16 24 kHz speech, stop Workbench first, and provide enough RAM/VRAM. CUDA is the default.
-The three CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, references, cancellation/isolation
+The CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, seed PCM comparisons, references, cancellation/isolation
 and Whisper's 30-second boundary. `--engine chatterbox|qwen3tts|whisper` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected.
 Use `--device cpu` only for affected changes under the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU.
 Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`.

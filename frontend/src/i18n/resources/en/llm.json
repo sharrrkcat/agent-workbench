@@ -242,6 +242,7 @@
   },
   "audioDeviceHint": "Select CPU or NVIDIA CUDA. CUDA must be available when selected.",
   "chatterboxEnglish": "Chatterbox (English)",
+  "ttsSeedHint": "Leave seed blank for unfixed randomness; 0 is a valid fixed seed. Speech requests can override it; omitted or null values inherit this setting. A fixed seed controls randomness but does not guarantee identical audio.",
   "chatterboxReferenceHint": "English speech requires a temporary voice ID or reference audio through the speech API. Temporary voices expire after 30 minutes; admitted requests extend their remaining lifetime to at least 15 minutes.",
   "qwen3TTSBase": "Qwen3-TTS (12Hz Base)",
   "qwenReferenceHint": "Multilingual Base cloning uses a temporary voice ID or reference audio through the speech API. Include the reference transcript for full conditioning, or omit it for audio-only cloning. Language defaults to automatic. The token limit can stop speech before the text ends. Disabling main-token sampling does not guarantee identical audio.",

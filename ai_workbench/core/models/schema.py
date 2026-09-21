@@ -139,6 +139,7 @@ class KokoroParameters(SpeechOutputParameters):
 class ChatterboxParameters(SpeechOutputParameters):
     """English Chatterbox uses a temporary voice ID or one-request reference audio."""
     architecture: Literal["chatterbox"] = "chatterbox"
+    seed: int | None = Field(default=None, ge=0, le=4294967295, strict=True, description="Fixed speech seed; null leaves randomness unfixed. Controls randomness without guaranteeing identical audio.")
     exaggeration: float = Field(default=0.5, ge=0.0, le=2.0, strict=True, description="Expressiveness of the reference-conditioned voice.")
     cfg_weight: float = Field(default=0.5, ge=0.0, le=1.0, strict=True, description="Classifier-free conditioning guidance strength.")
     temperature: float = Field(default=0.8, gt=0.0, le=5.0, strict=True, description="Sampling temperature; higher values increase randomness.")
@@ -150,6 +151,7 @@ class ChatterboxParameters(SpeechOutputParameters):
 class Qwen3TTSParameters(SpeechOutputParameters):
     """Qwen3-TTS 12Hz Base cloning; request model_options override these saved defaults."""
     architecture: Literal["qwen3tts"] = "qwen3tts"
+    seed: int | None = Field(default=None, ge=0, le=4294967295, strict=True, description="Fixed speech seed for main and secondary-codebook sampling; null leaves randomness unfixed. Does not guarantee identical audio.")
     do_sample: bool = Field(default=True, strict=True, description="Enable main talker sampling; false uses greedy decoding. Secondary-codebook sampling stays enabled.")
     temperature: float = Field(default=0.9, gt=0.0, strict=True, description="Main talker sampling temperature; used when do_sample is true.")
     top_p: float = Field(default=1.0, gt=0.0, le=1.0, strict=True, description="Main talker nucleus sampling cutoff; used when do_sample is true.")
@@ -190,7 +192,7 @@ class ModelInput(StrictModel):
     @model_validator(mode="after")
     def validate_parameters(self):
         from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, PythonOptions, local_engine, llama_options, relative_ref
-        self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=True)
+        self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=self.kind != "tts")
         engine = local_engine(self)
         if self.backend_profile_id == "local":
             relative_ref(self.model_ref)
@@ -425,6 +427,7 @@ class ReferenceAudio(ReferenceTranscript):
 
 class ChatterboxRequestOptions(StrictModel):
     """Chatterbox-only overrides. Omitted/null values inherit the saved profile."""
+    seed: int | None = Field(default=None, ge=0, le=4294967295, strict=True, description="Speech seed override; 0 is valid. Omitted/null inherits the profile, whose default is null (unfixed). Does not guarantee identical audio.")
     exaggeration: float | None = Field(default=None, ge=0.0, le=2.0, strict=True, description="Expressiveness override; profile default 0.5.")
     cfg_weight: float | None = Field(default=None, ge=0.0, le=1.0, strict=True, description="Conditioning guidance override; profile default 0.5.")
     temperature: float | None = Field(default=None, gt=0.0, le=5.0, strict=True, description="Sampling temperature override; profile default 0.8.")
@@ -435,6 +438,7 @@ class ChatterboxRequestOptions(StrictModel):
 
 class Qwen3TTSRequestOptions(StrictModel):
     """Qwen Base-only overrides. Omitted/null values inherit the saved profile. Secondary-codebook settings are fixed: sampling=true, temperature=0.9, top_p=1, top_k=50."""
+    seed: int | None = Field(default=None, ge=0, le=4294967295, strict=True, description="Seed override for main and secondary-codebook sampling; 0 is valid. Omitted/null inherits the profile, whose default is null (unfixed). Does not guarantee identical audio.")
     do_sample: bool | None = Field(default=None, strict=True, description="Main talker sampling override; profile default true. Does not disable secondary-codebook sampling.")
     temperature: float | None = Field(default=None, gt=0.0, strict=True, description="Main talker sampling temperature override; profile default 0.9. Used when do_sample is true.")
     top_p: float | None = Field(default=None, gt=0.0, le=1.0, strict=True, description="Main talker nucleus cutoff override; profile default 1. Used when do_sample is true.")

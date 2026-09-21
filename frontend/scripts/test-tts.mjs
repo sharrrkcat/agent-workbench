@@ -24,20 +24,22 @@ assert.deepEqual(profile.parameters, { architecture: 'kokoro', speed: 1, respons
 const chatterbox = updateModel(profile, { parameters: selectTTSArchitecture({ ...profile.parameters, speed: 0.8 }, 'chatterbox') });
 assert.equal(chatterbox.parameters.architecture, 'chatterbox');
 assert.equal(chatterbox.parameters.speed, 0.8);
+assert.equal(chatterbox.parameters.seed, null);
 assert.deepEqual(chatterbox.execution_options, { device: 'cuda', intraop_threads: 4 });
 const kokoro = updateModel(chatterbox, { parameters: selectTTSArchitecture({ ...chatterbox.parameters, cfg_weight: 0.3 }, 'kokoro') });
 assert.equal(kokoro.parameters.architecture, 'kokoro');
 assert.equal(kokoro.parameters.speed, 0.8);
-assert.ok(!('cfg_weight' in kokoro.parameters));
+assert.ok(!('cfg_weight' in kokoro.parameters) && !('seed' in kokoro.parameters));
 assert.deepEqual(kokoro.execution_options, { device: 'cpu', intraop_threads: 4, max_batch_size: 1 });
 const qwen = updateModel(chatterbox, { parameters: selectTTSArchitecture(chatterbox.parameters, 'qwen3tts') });
 assert.deepEqual(qwen.parameters, { architecture: 'qwen3tts', speed: 0.8, response_format: 'mp3',
-  do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 });
-const editedQwen = { ...qwen, parameters: { ...qwen.parameters, top_k: 0, max_new_tokens: 4096 } };
+  seed: null, do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 });
+const editedQwen = { ...qwen, parameters: { ...qwen.parameters, seed: 0, top_k: 0, max_new_tokens: 4096 } };
 assert.deepEqual(updateModel(editedQwen, { backend_profile_id: 'local' }).parameters, editedQwen.parameters);
 const back = selectTTSArchitecture(editedQwen.parameters, 'chatterbox');
 assert.equal(back.temperature, 0.8);
 assert.equal(back.speed, 0.8);
+assert.equal(back.seed, null);
 assert.ok(!('top_k' in back) && !('max_new_tokens' in back) && !('do_sample' in back));
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
@@ -45,15 +47,16 @@ for (const locale of ['en', 'zh-CN']) {
   const markup = renderToStaticMarkup(React.createElement(ProfileParameters, { value: profile, onChange: () => {} }));
   assert.ok(markup.includes(t('params.speed')) && markup.includes(t('params.response_format')));
   assert.ok(markup.includes('MP3') && markup.includes('WAV') && markup.includes('Kokoro-82M'));
-  assert.ok(!markup.includes(t('params.batch_size')) && !markup.includes(t('params.temperature')));
+  assert.ok(!markup.includes(t('params.batch_size')) && !markup.includes(t('params.temperature')) && !markup.includes(t('params.seed')));
   const audioMarkup = renderToStaticMarkup(React.createElement(ProfileParameters, { value: chatterbox, onChange: () => {} }));
-  for (const key of ['exaggeration', 'cfg_weight', 'temperature', 'repetition_penalty', 'min_p', 'top_p']) {
+  for (const key of ['seed', 'exaggeration', 'cfg_weight', 'temperature', 'repetition_penalty', 'min_p', 'top_p']) {
     assert.ok(audioMarkup.includes(t('params.' + key)), `${locale}: ${key}`);
   }
   assert.ok(audioMarkup.includes(t('chatterboxEnglish')));
   assert.match(audioMarkup, /min="0.01" max="5"/);
+  assert.match(audioMarkup, /min="0" max="4294967295"/);
   const qwenMarkup = renderToStaticMarkup(React.createElement(ProfileParameters, { value: qwen, onChange: () => {} }));
-  for (const key of ['do_sample', 'temperature', 'top_p', 'top_k', 'repetition_penalty', 'max_new_tokens']) {
+  for (const key of ['seed', 'do_sample', 'temperature', 'top_p', 'top_k', 'repetition_penalty', 'max_new_tokens']) {
     assert.ok(qwenMarkup.includes(t('params.' + key)), `${locale}: Qwen ${key}`);
   }
   assert.ok(!qwenMarkup.includes(t('params.exaggeration')) && !qwenMarkup.includes(t('params.cfg_weight')));

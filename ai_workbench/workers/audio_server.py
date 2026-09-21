@@ -31,8 +31,12 @@ def options_request(value):
 
 def generation_options(value, architecture):
     fields(value, (), AUDIO_DEFAULTS.get(architecture, {}))
+    if value.get("seed") is not None:
+        integer(value["seed"], 0, 4294967295)
     if architecture == "qwen3tts":
         for key, number in value.items():
+            if key == "seed":
+                continue
             if key == "do_sample":
                 valid = type(number) is bool
             elif key in {"top_k", "max_new_tokens"}:
@@ -47,6 +51,8 @@ def generation_options(value, architecture):
     bounds = {"exaggeration": (0, 2), "cfg_weight": (0, 1), "temperature": (0, 5),
               "repetition_penalty": (1, 2), "min_p": (0, 1), "top_p": (0, 1)}
     for key, number in value.items():
+        if key == "seed":
+            continue
         low, high = bounds[key]
         if type(number) not in {int, float} or not math.isfinite(number) or not low <= number <= high or key in {"temperature", "top_p"} and number == 0:
             raise WorkerError("INVALID_REQUEST")

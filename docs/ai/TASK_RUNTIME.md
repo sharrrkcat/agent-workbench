@@ -29,7 +29,8 @@ Kokoro API, engine boundaries and installation use test_tts.py and test_tts_runt
 Audio references, queue admission and key/profile invalidation use test_audio.py;
 test_audio_runtime.py covers locks, offline workers, isolation, private Whisper
 dispatch and its decoded-duration boundary. test_qwen_tts.py covers Base layouts, transcripts, generation,
-languages and API/reference validation. scripts/smoke_audio_runtime.py defaults to three Windows CUDA cases;
+languages and API/reference validation. test_tts_seed.py covers seed validation, inheritance and worker RNG scope.
+scripts/smoke_audio_runtime.py defaults to three Windows CUDA cases with TTS PCM seed comparisons;
 scripts/smoke_llm_runtime.py covers real llama-server/Transformers CPU/CUDA, streaming and tools.
 Chat/Harness tests cover private snapshots, ordered approvals, active budgets,
 restart handling and cancellation; test_chat_presentation.py covers partial

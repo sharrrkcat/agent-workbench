@@ -1,4 +1,5 @@
 """Offline engines sharing the Windows Audio dependency environment."""
+from contextlib import contextmanager
 from pathlib import Path
 from io import BytesIO
 import re
@@ -20,6 +21,35 @@ else:
     from timing import stage
 
 _network_blocked = False
+
+
+@contextmanager
+def speech_random_state(seed, device):
+    """Scope a fixed seed to one complete request under the Audio worker lock."""
+    if seed is None:
+        yield
+        return
+    import random
+    import numpy as np
+    import torch
+    python_state = random.getstate()
+    numpy_state = np.random.get_state()
+    cpu_state = torch.get_rng_state()
+    cuda_state = torch.cuda.get_rng_state() if device == "cuda" else None
+    try:
+        random.seed(seed)
+        np.random.seed(seed)
+        # torch.manual_seed also seeds CUDA; CPU requests must not touch it.
+        torch.random.default_generator.manual_seed(seed)
+        if cuda_state is not None:
+            torch.cuda.manual_seed(seed)
+        yield
+    finally:
+        random.setstate(python_state)
+        np.random.set_state(numpy_state)
+        torch.set_rng_state(cpu_state)
+        if cuda_state is not None:
+            torch.cuda.set_rng_state(cuda_state)
 
 
 def encode_pcm16(pcm: bytes, response_format: str) -> tuple[bytes, str]:
@@ -179,23 +209,24 @@ class ChatterboxEngine:
     def speech(self, text, reference, speed, response_format, model_options):
         import numpy as np
         import torch
-        decode_audio(reference)
         values = {**CHATTERBOX_DEFAULTS, **model_options}
-        parts, size = [], 0
-        try:
-            self.model.conds = None
-            with torch.inference_mode():
-                self.model.prepare_conditionals(str(reference), exaggeration=values["exaggeration"])
-                for chunk in text_chunks(text):
-                    audio = self.model.generate(chunk, **values).detach().cpu().numpy().reshape(-1)
-                    size += audio.size
-                    if size * 2 / speed > MAX_AUDIO_BYTES:
-                        raise WorkerError("AUDIO_TOO_LARGE", 413)
-                    parts.append(audio)
-            return encode_waveform(np.concatenate(parts), self.model.sr, speed, response_format)
-        finally:
-            # An invalid or cancelled request must never inherit another voice.
-            self.model.conds = None
+        with speech_random_state(values.pop("seed"), self.device):
+            decode_audio(reference)
+            parts, size = [], 0
+            try:
+                self.model.conds = None
+                with torch.inference_mode():
+                    self.model.prepare_conditionals(str(reference), exaggeration=values["exaggeration"])
+                    for chunk in text_chunks(text):
+                        audio = self.model.generate(chunk, **values).detach().cpu().numpy().reshape(-1)
+                        size += audio.size
+                        if size * 2 / speed > MAX_AUDIO_BYTES:
+                            raise WorkerError("AUDIO_TOO_LARGE", 413)
+                        parts.append(audio)
+                return encode_waveform(np.concatenate(parts), self.model.sr, speed, response_format)
+            finally:
+                # An invalid or cancelled request must never inherit another voice.
+                self.model.conds = None
 
 
 class QwenTTSEngine:
@@ -214,11 +245,13 @@ class QwenTTSEngine:
             self.dtype = self.model.model.dtype
 
     def speech(self, text, reference, speed, response_format, model_options, *, language=None, reference_text=None):
-        audio, reference_rate = decode_audio(reference)
-        waves, rate = self.model.generate_voice_clone(text=text, language=QWEN3TTS_LANGUAGES[language or "auto"],
-            ref_audio=(audio, reference_rate), ref_text=reference_text, x_vector_only_mode=reference_text is None,
-            **{**QWEN3TTS_DEFAULTS, **model_options, **QWEN3TTS_SUBTALKER})
-        return encode_waveform(waves[0], rate, speed, response_format)
+        values = {**QWEN3TTS_DEFAULTS, **model_options, **QWEN3TTS_SUBTALKER}
+        with speech_random_state(values.pop("seed"), self.device):
+            audio, reference_rate = decode_audio(reference)
+            waves, rate = self.model.generate_voice_clone(text=text, language=QWEN3TTS_LANGUAGES[language or "auto"],
+                ref_audio=(audio, reference_rate), ref_text=reference_text, x_vector_only_mode=reference_text is None,
+                **values)
+            return encode_waveform(waves[0], rate, speed, response_format)
 
 
 class WhisperEngine:

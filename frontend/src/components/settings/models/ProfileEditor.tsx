@@ -180,6 +180,7 @@ export function ProfileEditor({
             ) : null}
             <h3>{t('parameters')}</h3>
             <ProfileParameters value={model.value} onChange={(parameters) => patchModel({ parameters })} />
+            {audio ? <p className="model-empty">{t('ttsSeedHint')}</p> : null}
             {model.value.kind === 'tts' && model.value.parameters.architecture === 'chatterbox'
               ? <p className="model-empty">{t('chatterboxReferenceHint')}</p> : null}
             {model.value.kind === 'tts' && model.value.parameters.architecture === 'qwen3tts'

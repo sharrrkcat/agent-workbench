@@ -210,30 +210,30 @@ SSE, external TTS backends and playback are unimplemented. Local execution suppo
 
 ## Audio TTS and temporary references
 
-English Chatterbox uses architecture=chatterbox and the local backend's Audio worker.
-Local files are ve.safetensors, t3_cfg.safetensors, s3gen.safetensors and tokenizer.json.
-Speech shares Kokoro's text/speed/format/output-size/timeout contract; tts.language is en-US only.
+English Chatterbox (architecture=chatterbox) uses the Audio worker and Kokoro's text/speed/format/size/timeout contract.
+Local files: ve.safetensors, t3_cfg.safetensors, s3gen.safetensors, tokenizer.json; tts.language accepts only en-US.
 Profile defaults and tts.model_options accept exaggeration=0.5 [0,2], cfg_weight=0.5 [0,1], temperature=0.8 (0,5],
 repetition_penalty=1.2 [1,2], min_p=0.05 [0,1], top_p=1 (0,1]. Chatterbox has no presets.
 
-Qwen3-TTS 12Hz Base uses architecture=qwen3tts and the same Audio backend/output
-contract. Main generation defaults are do_sample=true, temperature=0.9, top_p=1,
-top_k=50, repetition_penalty=1.05 and max_new_tokens=2048. Temperature/penalty are
-finite and positive, top_p is (0,1], top_k is an integer >=0, and max_new_tokens
-is 1..8192. The token cap may end speech before the text ends; input is passed whole.
-Secondary-codebook sampling stays enabled with temperature=0.9, top_p=1, top_k=50.
+Qwen3-TTS 12Hz Base (architecture=qwen3tts) shares the Audio output contract.
+Main defaults: do_sample=true, temperature=0.9, top_p=1, top_k=50, repetition_penalty=1.05, max_new_tokens=2048.
+Temperature/penalty are finite and positive; top_p is (0,1], top_k is an integer >=0, max_new_tokens is 1..8192.
+Input is passed whole; the token cap may stop speech early. Secondary-codebook sampling stays enabled at temperature=0.9, top_p=1, top_k=50.
 Strict architecture-specific profile/request schemas reject other-architecture options before staging/admission.
 Omitted/null request options inherit the profile. OpenAPI describes defaults, meanings and restrictions.
+Both Audio architectures accept seed=null or a strict integer 0..4294967295 in profiles and tts.model_options.
+Profile seed defaults to null (unfixed); 0 is valid. Seeded requests scope and restore Python/NumPy/PyTorch CPU/current-CUDA
+random states across conditioning, all chunks and encoding, including errors. Unfixed requests advance normally; identical audio is not guaranteed.
 Qwen accepts en-US/en-GB (English), zh-CN, ja-JP, ko-KR, de-DE, fr-FR, ru-RU,
 pt-BR, es-ES and it-IT; omission/null/auto selects Auto. Hindi is unsupported.
-Base has no presets. Real validation covers the 0.6B Base checkpoint on CPU/CUDA
-with English/Chinese; other Base sizes are unverified. CustomVoice/VoiceDesign are deferred.
+Base has no presets. Real validation covers the 0.6B Base checkpoint on CPU/CUDA with English/Chinese;
+other Base sizes are unverified. CustomVoice/VoiceDesign are deferred.
 Automatic transcripts can be ambiguous for short Chinese clones; pronunciation fidelity still needs listening review.
 
 Chatterbox/Qwen require exactly one temporary voice ID or tts.reference_audio={format=wav|mp3,data_base64}.
 Multipart uploads contain model alias and one file; responses contain voice_id, model, source=temporary and expires_at.
-Both validate format/decoded samples before synthesis: 8 MiB encoded, 32 MiB decoded,
-1/2 channels, 8..192 kHz and at most 30 seconds. Uploaded names never choose storage paths.
+Before synthesis, both validate 8 MiB encoded/32 MiB decoded, 1/2 channels, 8..192 kHz and at most 30 seconds.
+Uploaded names never choose storage paths.
 One-request files are removed on completion/cancellation. Kokoro rejects references and model_options.
 Qwen optionally accepts reference_text (1..4096 nonblank characters) in the upload form or inline reference_audio.
 Absence uses speaker-embedding cloning; presence uses full audio/transcript conditioning. Transcripts stay

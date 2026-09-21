@@ -12,10 +12,12 @@ MAX_REFERENCE_BYTES = 8 * 1024 * 1024
 MAX_REFERENCE_SECONDS = 30
 MAX_DECODED_BYTES = 32 * 1024 * 1024
 CHATTERBOX_DEFAULTS = {
+    "seed": None,
     "exaggeration": 0.5, "cfg_weight": 0.5, "temperature": 0.8,
     "repetition_penalty": 1.2, "min_p": 0.05, "top_p": 1.0,
 }
 QWEN3TTS_DEFAULTS = {
+    "seed": None,
     "do_sample": True, "temperature": 0.9, "top_p": 1.0, "top_k": 50,
     "repetition_penalty": 1.05, "max_new_tokens": 2048,
 }

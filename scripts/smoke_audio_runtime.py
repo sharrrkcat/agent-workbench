@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import base64
 from contextlib import asynccontextmanager
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -89,6 +90,12 @@ async def save_audio(manager, adapter, profile, output, data, audio_format):
     return {"bytes": len(data), **decoded}
 
 
+def wav_pcm(data):
+    with wave.open(BytesIO(data), "rb") as audio:
+        assert audio.getparams()[:3] == (1, 2, 24000)
+        return audio.readframes(audio.getnframes())
+
+
 async def unavailable_cuda(adapter, profile):
     old = os.environ.get("CUDA_VISIBLE_DEVICES")
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -125,7 +132,7 @@ def offline_files(adapter):
 async def reference_tts(state, client, args, architecture, device, reference, output, keeper):
     manager = state.model_manager
     qwen = architecture == "qwen3tts"
-    created = (await checked(client, "POST", "/api/models/profiles", json={'name': f'{architecture} {device}', 'alias': f'{architecture}-{device}', 'kind': 'tts', 'model_ref': getattr(args, architecture), 'execution_options': {'device': device}, 'parameters': {'architecture': architecture, 'response_format': 'wav'}, 'external_enabled': True, 'backend_profile_id': 'local'})).json()
+    created = (await checked(client, "POST", "/api/models/profiles", json={'name': f'{architecture} {device}', 'alias': f'{architecture}-{device}', 'kind': 'tts', 'model_ref': getattr(args, architecture), 'execution_options': {'device': device}, 'parameters': {'architecture': architecture, 'response_format': 'wav', 'seed': 12345}, 'external_enabled': True, 'backend_profile_id': 'local'})).json()
     profile = manager.profiles.get(created["id"])
     uploaded = (await checked(client, "POST", "/v1/audio/voice-references", data={"model": profile.alias},
         files={"file": (reference.name, reference.read_bytes())})).json()
@@ -151,13 +158,35 @@ async def reference_tts(state, client, args, architecture, device, reference, ou
     for audio_format in ("wav", "mp3"):
         conditioning = qwen and audio_format == "mp3"
         extensions = {"language": "zh-CN" if conditioning else "en-US", "model_options": {"max_new_tokens": 128}} if qwen else {}
-        response = await checked(client, "POST", "/v1/audio/speech", json={"model": profile.alias,
-            "input": "你好，世界。" if conditioning else "Hello from the local audio runtime.",
+        payload = {"model": profile.alias,
+            "input": "你好，世界。" if conditioning else "Hello from the local audio runtime. This is a seed test.",
             "voice": transcript_voice if conditioning else voice_id, "response_format": audio_format,
-            "speed": 0.9 if conditioning else 1, "tts": extensions})
+            "speed": 0.9 if conditioning else 1, "tts": extensions}
+        response = await checked(client, "POST", "/v1/audio/speech", json=payload)
         assert response.headers["x-request-id"]
         results[audio_format] = await save_audio(manager, adapter, profile,
             output / f"{architecture}-{device}.{audio_format}", response.content, audio_format)
+        if audio_format == "wav":
+            seed_payload, profile_pcm = payload, wav_pcm(response.content)
+    seed_results = {}
+
+    async def seed_sample(label, options, baseline):
+        extensions = seed_payload["tts"]
+        response = await checked(client, "POST", "/v1/audio/speech", json={**seed_payload,
+            "tts": {**extensions, "model_options": {**extensions.get("model_options", {}), **options}}})
+        details = await save_audio(manager, adapter, profile,
+            output / f"{architecture}-{device}-seed-{label}.wav", response.content, "wav")
+        pcm = wav_pcm(response.content)
+        # Record observations; RNG control does not guarantee identical waveforms.
+        seed_results[label] = {**details, "same_pcm_as_baseline": pcm == baseline}
+        return pcm
+
+    for label, options in (("zero-override", {"seed": 0}), ("null-inheritance", {"seed": None}), ("repeat-profile", {})):
+        await seed_sample(label, options, profile_pcm)
+    if qwen:
+        greedy_pcm = await seed_sample("greedy-main", {"do_sample": False}, profile_pcm)
+        await seed_sample("greedy-repeat", {"do_sample": False}, greedy_pcm)
+        await seed_sample("greedy-zero", {"do_sample": False, "seed": 0}, greedy_pcm)
     assert manager.status(profile.id).residency == "loaded"
     offline_files(adapter)
     process = adapter.process
@@ -173,6 +202,7 @@ async def reference_tts(state, client, args, architecture, device, reference, ou
     assert process.process.returncode is not None and adapter.process is None
     assert keeper.process and keeper.process.process.returncode is None
     await manager.load(profile.id)
+    await seed_sample("reload-profile", {}, profile_pcm)
     for transcript in ([None, args.reference_text] if qwen else [None]):
         reference_audio = {"format": reference.suffix[1:], "data_base64": base64.b64encode(reference.read_bytes()).decode()}
         if transcript is not None:
@@ -191,7 +221,7 @@ async def reference_tts(state, client, args, architecture, device, reference, ou
     await manager.unload(profile.id)
     assert process.process.returncode is not None
     return {"metadata": metadata, "outputs": results, "http_disconnect": "passed", "reference_api": "passed",
-            "manual_unload": "passed", "unrelated_worker": "preserved",
+            "manual_unload": "passed", "unrelated_worker": "preserved", "seed": {"profile": 12345, "comparisons": seed_results},
             **({"cloning_modes": ["audio-only", "audio-and-transcript"], "languages": ["en-US", "zh-CN", "auto"]} if qwen else {})}
 
 

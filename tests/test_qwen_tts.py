@@ -181,6 +181,7 @@ def test_qwen_engine_uses_decoded_audio_full_text_and_language(monkeypatch, lang
     encoded = MagicMock(return_value=(b"encoded", "audio/wav"))
     monkeypatch.setattr(module, "encode_waveform", encoded)
     engine = QwenTTSEngine.__new__(QwenTTSEngine)
+    engine.device = "cpu"
     generate = MagicMock(return_value=([[0.2, 0.3]], 24000))
     engine.model = SimpleNamespace(generate_voice_clone=generate)
     text = "没有空格的长文本。" * 100
@@ -188,7 +189,8 @@ def test_qwen_engine_uses_decoded_audio_full_text_and_language(monkeypatch, lang
     assert result == (b"encoded", "audio/wav")
     assert generate.call_args.kwargs == {"text": text, "language": expected, "ref_audio": decoded,
         "ref_text": transcript, "x_vector_only_mode": transcript is None,
-        **QWEN3TTS_DEFAULTS, "max_new_tokens": 128, **QWEN3TTS_SUBTALKER}
+        **{key: value for key, value in QWEN3TTS_DEFAULTS.items() if key != "seed"},
+        "max_new_tokens": 128, **QWEN3TTS_SUBTALKER}
     encoded.assert_called_once_with([0.2, 0.3], 24000, 0.8, "wav")
 
 
@@ -203,12 +205,13 @@ def test_qwen_worker_is_public_and_validates_before_engine_calls(tmp_path):
             "parameters": profile.parameters, "options": profile.execution_options}
     assert worker.dispatch("/load", load)["loaded"] == [profile.id]
     body = {"profile_id": profile.id, "input": "你好", "reference": "voice.wav", "reference_text": "Hello",
-            "speed": 1, "response_format": "wav", "language": "zh-CN", "model_options": {"top_k": 0}}
+            "speed": 1, "response_format": "wav", "language": "zh-CN", "model_options": {"top_k": 0, "seed": 0}}
     assert worker.dispatch("/speech", body)[0] == wav_bytes()
     assert engine.speech.call_args.kwargs == {"language": "zh-CN", "reference_text": "Hello"}
+    assert engine.speech.call_args.args[4] == {"top_k": 0, "seed": 0}
     for patch in ({"language": "hi-IN"}, {"language": []}, {"reference_text": " "},
                   {"model_options": {"cfg_weight": 0.5}}, {"model_options": {"do_sample": 1}},
-                  {"model_options": {"max_new_tokens": 8193}}, {"extra": True}):
+                  {"model_options": {"max_new_tokens": 8193}}, {"model_options": {"seed": True}}, {"extra": True}):
         with pytest.raises(WorkerError):
             worker.dispatch("/speech", {**body, **patch})
     assert engine.speech.call_count == 1
@@ -273,7 +276,7 @@ def test_qwen_openapi_explains_defaults_transcripts_and_overrides(qwen_api):
     schemas = document["components"]["schemas"]
     parameters = schemas["Qwen3TTSParameters"]["properties"]
     for name, default in QWEN3TTS_DEFAULTS.items():
-        assert parameters[name]["default"] == default and parameters[name]["description"]
+        assert parameters[name].get("default") == default and parameters[name]["description"]
     options = schemas["Documented__Qwen3TTSRequestOptions"]
     assert options["additionalProperties"] is False and "inherit" in options["description"]
     assert "reference_text" in schemas["Documented__ReferenceAudio"]["properties"]

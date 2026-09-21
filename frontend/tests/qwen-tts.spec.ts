@@ -42,7 +42,7 @@ for (const locale of ['en', 'zh-CN']) {
     await expect(dialog).toHaveCount(0);
     const profiles = await (await request.get('/api/models/profiles')).json();
     const saved = profiles.find((profile: { alias: string }) => profile.alias === alias);
-    expect(saved.parameters).toEqual({ architecture: 'qwen3tts', speed: 0.85, response_format: 'wav', do_sample: false,
+    expect(saved.parameters).toEqual({ architecture: 'qwen3tts', speed: 0.85, response_format: 'wav', seed: null, do_sample: false,
       temperature: 0.9, top_p: 1, top_k: 0, repetition_penalty: 1.05, max_new_tokens: 512 });
     expect(saved.backend_profile_id).toBe('local');
     expect(saved.execution_options.device).toBe('cuda');

@@ -55,8 +55,12 @@ residency/unsupported unload remains visible.
 Models select a configured backend without choosing runtime packages. Local engine
 selection follows the model reference and architecture; execution options expose CPU/CUDA.
 TTS profiles select Kokoro, Chatterbox or Qwen3-TTS Base, speed and MP3/WAV defaults.
+Chatterbox/Qwen expose an optional seed: blank saves null (unfixed), and 0 is a valid fixed seed.
+Speech requests may override it; omitted/null request seeds inherit the profile. Fixed seeds control
+randomness without guaranteeing identical audio. Seed edits use the existing profile save/lifecycle flow.
 Switching architecture preserves speed/format and clears incompatible generation
-and execution settings; reselecting the backend retains the selected architecture.
+and execution settings, resetting seed to null for Audio or removing it for Kokoro;
+reselecting the backend retains the selected architecture and seed.
 Saved Kokoro editors show preset availability by language; Audio editors
 explain reference-based API usage and Qwen's optional transcripts. Voices are request
 selections, not profile records. Ownership/expiry belong to [Models](models.md#audio-tts-and-temporary-references).

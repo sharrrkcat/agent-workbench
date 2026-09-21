@@ -19,8 +19,8 @@ export const newModel = (kind: ModelKind): ModelInput => ({
 
 export const ttsGenerationDefaults = {
   kokoro: {},
-  chatterbox: { exaggeration: 0.5, cfg_weight: 0.5, temperature: 0.8, repetition_penalty: 1.2, min_p: 0.05, top_p: 1 },
-  qwen3tts: { do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 },
+  chatterbox: { seed: null, exaggeration: 0.5, cfg_weight: 0.5, temperature: 0.8, repetition_penalty: 1.2, min_p: 0.05, top_p: 1 },
+  qwen3tts: { seed: null, do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 },
 };
 
 export function selectTTSArchitecture(parameters: ModelInput['parameters'], architecture: keyof typeof ttsGenerationDefaults) {
