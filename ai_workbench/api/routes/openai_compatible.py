@@ -161,11 +161,11 @@ async def chat(request: Request, state: RuntimeState = Depends(get_state)):
 
     # Resolve source/queue failures before headers; inference failures after
     # headers use an explicit SSE error followed by the terminal sentinel.
-    await manager.prepare_chat_stream(profile.id)
+    stream = await manager.prepare_chat_stream(profile.id, payload)
 
     async def events():
         try:
-            async with aclosing(manager.chat_stream(profile.id, payload)) as chunks:
+            async with aclosing(stream) as chunks:
                 async for chunk in chunks:
                     delta = chunk.delta.model_dump(exclude_none=True)
                     data = {**identity, "object": "chat.completion.chunk",

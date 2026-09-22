@@ -196,16 +196,16 @@ class ModelInput(StrictModel):
                 if device not in {"cpu", "cuda"}:
                     raise ValueError("The local device must be cpu or cuda")
                 options_schema = llama_options(device)
-                if self.capabilities.vision:
-                    raise ValueError("Managed llama image input requires a future projector configuration")
             elif engine == "kokoro":
                 options_schema = OnnxCPUOptions
             else:
                 options_schema = PythonOptions
             self.source.execution_options = options_schema.model_validate(self.source.execution_options).model_dump()
+            if engine == "llama-server" and self.capabilities.vision != bool(self.source.execution_options["mmproj_ref"]):
+                raise ValueError("Managed GGUF vision requires mmproj_ref; text-only profiles must omit it")
             if engine == "transformers":
-                if self.capabilities.vision or self.capabilities.json_object or self.capabilities.json_schema:
-                    raise ValueError("Transformers currently supports text and tool calls only")
+                if self.capabilities.json_object or self.capabilities.json_schema:
+                    raise ValueError("Transformers does not support structured JSON output")
                 if any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
                     raise ValueError("Transformers does not support nonzero presence or frequency penalties")
         elif isinstance(self.source, ProviderSource) and self.kind not in {"llm", "embedding"}:

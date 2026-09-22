@@ -209,4 +209,7 @@ def test_current_images_reach_provider_and_stream_events_have_stable_identity(ap
     assert "".join(e.payload["delta"] for e in deltas) == completed.payload["message"]["parts"][0]["text"]
     assert state.sessions.get_session(session["session_id"]).title == ""
     client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "again"})
-    assert all(isinstance(m["content"], str) for m in upstream.calls[-1]["messages"])
+    history_images = [m for m in upstream.calls[-1]["messages"] if isinstance(m["content"], list)]
+    assert len(history_images) == 1
+    assert history_images[0]["content"][1] == upstream.calls[-2]["messages"][-1]["content"][1]
+    assert upstream.calls[-1]["messages"][-1]["content"] == "again"

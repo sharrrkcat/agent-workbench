@@ -14,8 +14,9 @@ from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessA
 from ai_workbench.core.context import ContextBuilder, LLMContextError
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest
-from ai_workbench.core.attachments import read_attachment_as_data_url, read_attachment_text, is_text_attachment
+from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
 from ai_workbench.core.memory_context import append_system_context, build_core_memory_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
@@ -144,6 +145,7 @@ class ChatRunner:
 
             if config.harness_enabled and config.tools_allowed and self.harness_loop is not None:
                 result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context,
+                                                     max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
                                                      active_seconds=time.monotonic() - context_started)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     await self.maybe_title(session_id, raw_text)
@@ -164,7 +166,9 @@ class ChatRunner:
                           "provider_profile_id": profile.source.provider_profile_id if profile.source and profile.source.type == "provider" else None, "model_ref": profile.model_ref}
             self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "model_resolution": resolution})
             streamed = profile.capabilities.streaming
-            request = ChatRequest(model=profile.alias, messages=context, stream=streamed, **config.generation.model_dump(exclude_none=True))
+            messages = await resolve_context_images(context, vision=profile.capabilities.vision,
+                max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024)
+            request = ChatRequest(model=profile.alias, messages=messages, stream=streamed, **config.generation.model_dump(exclude_none=True))
             self.model_manager.validate_chat(profile, request)
             draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session_id,
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,
@@ -296,13 +300,6 @@ class ChatRunner:
             )
             messages = append_knowledge_to_system(messages, knowledge.rendered_text)
             metadata["knowledge"] = knowledge.metadata
-        images = [item for item in attachments if item.get("type") == "image"]
-        if images:
-            # ContextBuilder leaves the current user message last in both modes.
-            current = messages[-1]
-            current["content"] = [{"type": "text", "text": current["content"]}] + [
-                {"type": "image_url", "image_url": {"url": read_attachment_as_data_url(item)}} for item in images
-            ]
         return messages, metadata
 
     async def maybe_title(self, session_id: str, text: str) -> None:

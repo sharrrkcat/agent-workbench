@@ -22,6 +22,19 @@ def test_audio_and_loading_defaults_preserve_explicit_cpu_selection():
     assert smoke_llm_runtime.parse_args([]).device == "both"
 
 
+def test_vision_smoke_requires_explicit_gguf_projector_and_checks_answers():
+    assert smoke_llm_runtime.parse_args(["--vision"]).vision
+    args = smoke_llm_runtime.parse_args(["--vision", "--engine", "llama-server", "--mmproj-ref", "llms/mmproj.gguf"])
+    assert args.mmproj_ref == "llms/mmproj.gguf"
+    for argv in (["--vision", "--engine", "llama-server"], ["--mmproj-ref", "llms/mmproj.gguf"]):
+        with pytest.raises(SystemExit):
+            smoke_llm_runtime.parse_args(argv)
+    smoke_llm_runtime.check_colors("First: red. Second: blue.", ["red", "blue"])
+    for answer in ("A colorful image.", "<think>red and blue</think>No answer.", "First blue, second red."):
+        with pytest.raises(AssertionError):
+            smoke_llm_runtime.check_colors(answer, ["red", "blue"])
+
+
 @pytest.mark.parametrize("script", SCRIPTS)
 def test_obsolete_skip_install_option_is_rejected(script):
     with pytest.raises(SystemExit) as error:

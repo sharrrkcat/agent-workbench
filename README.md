@@ -58,11 +58,11 @@ Titles use only the auxiliary selection and remain unchanged when it is missing 
 | vision | data/models/vision | WD14 deferred |
 | tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
 
-Inventory returns references relative to data/models, for example
-`llms/example.gguf`. Transformers checkpoints use a model directory and may
-explicitly select CPU execution. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
-Image input to chat requires an external
-vision-capable LLM; managed llama projector support is not implemented.
+Inventory references are relative to data/models, such as `llms/example.gguf`; Transformers uses a model directory.
+Enable Vision for image input. GGUF also requires its matching mmproj_ref; suggestions appear in the editor.
+Chat accepts static PNG/JPEG/WebP through file selection, paste and drag/drop; selected historical images support follow-ups.
+Local `/v1` images require inline data URLs and detail=auto, with a 32 MiB complete-request limit.
+Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
 
 The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
 describes the shared Python environment and both native llama-server builds.
@@ -324,8 +324,7 @@ uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
 ```
 
 Installation uses bundled uv; run it before the temporary SDK environment. `--voice af_heart` selects one voice.
-The smoke test isolates caches, decodes both formats and checks actual worker
-termination on HTTP disconnect, followed by reload and another SDK request.
+The smoke isolates caches, decodes both formats and checks worker termination on disconnect, reload and another SDK request.
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
@@ -340,10 +339,11 @@ For a Windows CUDA check with an existing GGUF, run
 `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`.
 It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload
 with temporary model profiles. Runtime installation/jobs remain persisted.
-Stop Workbench before real-model checks. Record hardware, runtime version and model;
-deterministic tests do not establish real-provider or cross-platform runtime compatibility.
+Stop Workbench before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility.
 `uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation;
-use --engine llama-server for GGUF. smoke_model_loading measures first/reload and minimal inference, writing build/model-loading-smoke.
+use --engine llama-server for GGUF. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks.
+GGUF vision also needs `--mmproj-ref llms/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf`; Qwen3.5-0.8B files are the validated reference.
+Image answers are checked against fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke.
 Its defaults retain LLM CPU/CUDA and Kokoro CPU; Audio CPU requires --backend chatterbox-cpu or --backend qwen3tts-cpu.
 
 Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests.

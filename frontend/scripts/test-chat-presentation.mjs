@@ -141,6 +141,14 @@ const views = createModuleLoader({
   [sourceUrl('store/useWorkbenchStore.ts')]: mockModule({ useWorkbenchStore: (selector) => selector(viewState) }),
 });
 const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).exports;
+const { MessageBubble } = (await views('../src/components/MessageBubble.tsx')).exports;
+const { isContextMessage, contextMessageLabel } = (await views('../src/components/messages/messageContent.ts')).exports;
+const imageOnly = { ...user, parts: [], metadata: { attachments: [
+  { id: 'image', type: 'image', name: 'photo.png', uri: 'local://attachments/aaaa.png' },
+] } };
+assert.ok(isContextMessage(imageOnly));
+assert.equal(isContextMessage({ ...imageOnly, metadata: { ...imageOnly.metadata, incomplete: true } }), false);
+assert.equal(contextMessageLabel(imageOnly), 'photo.png');
 const render = (reply, showFullProcessing) => renderToStaticMarkup(React.createElement(RunReply, { reply, showFullProcessing }));
 const approvalStep = { step_id: 'approval', kind: 'approval', status: 'running', run_id: 'r', metadata: { tool_call_id: 'a', risk: 'file' } };
 for (const locale of ['en', 'zh-CN']) {
@@ -165,5 +173,11 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(waiting.includes(i18n.t('runs:approve')));
   assert.ok(waiting.includes(i18n.t('runs:reject')));
   assert.match(render(buildReply(failedEmpty, [], []), false), /MODEL_NOT_CONFIGURED/);
+  const imageHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: imageOnly }));
+  assert.match(imageHtml, /attachments\/aaaa.png/);
+  assert.equal((imageHtml.match(/<img /g) || []).length, 1);
+  assert.doesNotMatch(imageHtml, /base64/);
+  const oversized = { ...failedEmpty, error_code: 'REQUEST_TOO_LARGE', error: 'Local chat request is too large.' };
+  assert.ok(render(buildReply(oversized, [], []), false).includes(i18n.t('personas:imageErrors.tooLarge')));
 }
 console.log('reply projection, reasoning deltas, history pruning, late responses, approvals and bilingual rendering: ok');

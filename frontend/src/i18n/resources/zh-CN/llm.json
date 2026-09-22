@@ -14,6 +14,8 @@
   "name": "名称",
   "alias": "公开别名",
   "modelRef": "模型引用",
+  "mmprojRef": "视觉投影文件（mmproj）",
+  "mmprojHint": "选择配套投影文件，或填写 data/models 下的相对路径。更换模型会清空此选项。",
   "baseUrl": "API 基础地址",
   "emptyModels": "暂无模型配置",
   "enabled": "启用",

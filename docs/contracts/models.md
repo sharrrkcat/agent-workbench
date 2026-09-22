@@ -1,7 +1,6 @@
 # Models contract
 
-All inference uses the application-scoped `core/models/ModelManager` and inference adapters;
-ChatRunner, Utility LLM, Knowledge and `/v1` call the manager without HTTP loopback.
+ChatRunner, Utility LLM, Knowledge and `/v1` share `core/models/ModelManager` without HTTP loopback.
 The API process imports no torch, transformers, onnxruntime or llama.cpp binding.
 
 ## Profiles and sources
@@ -14,14 +13,13 @@ CRUD: `/api/models/providers`; optional model discovery: `/{id}/models`.
 LocalRuntimeSettings owns enabled/download independently in appmetadatarecord.local_runtime_settings;
 GET/PATCH `/api/models/local-runtime/settings`. It defaults enabled and has no editable identity/name.
 
-Model source is a strict, nullable discriminated union:
+Model source is a strict nullable union:
 - null: a saveable unbound draft; execution returns MODEL_NOT_CONFIGURED before admission/transport.
 - {type: provider, provider_profile_id}: provider LLM/text-embedding only.
 - {type: local, execution_options, lifecycle}: local LLM/TTS only; engine defaults populate omitted local fields.
 
 Model profiles own model_ref, capabilities, per-kind parameters, enabled and external_enabled.
-PATCH omission preserves source; null unbinds; a supplied source replaces the complete binding.
-Removed top-level backend/execution/lifecycle fields and unsupported combinations fail validation.
+PATCH omission preserves source; null unbinds; a supplied source replaces the binding. Removed fields/combinations fail validation.
 Busy connection edits and referenced provider deletion fail; edits invalidate cached clients/status.
 [Settings](settings.md#model-settings) owns secrets/PATCH semantics; [Knowledge](knowledge.md) owns index invalidation.
 
@@ -35,8 +33,8 @@ LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties,
 explicit request values override defaults. Capabilities are streaming, tools, vision, json_object and json_schema.
 Providers execute chat/text embeddings; llama-server and Transformers execute chat,
 ONNX executes Kokoro TTS and Audio executes Chatterbox/Qwen3-TTS Base.
-Local embedding, rerank, image-embedding and WD14 remain pending. Managed image input is unavailable;
-provider vision LLMs accept chat images. Unimplemented kinds can be saved only as unbound profiles.
+Vision-capable LLMs accept chat images through providers, GGUF and Transformers.
+Local embedding, rerank, image-embedding and WD14 remain pending; these kinds are saveable only as unbound profiles.
 
 ## Lifecycle and status
 
@@ -44,7 +42,7 @@ Queues are namespaced by source. Provider limits are shared per provider; defaul
 32 waiting slots and a 30-second timeout. Local queues retain these defaults. Explicit discovery shares
 its provider queue; overflow/timeout returns MODEL_BUSY. Cancellation/stream closure releases occupancy.
 Provider aliases share status/occupancy by provider id and model_ref. GGUF aliases share normalized
-path/device, process and identical options. Transformers share by path/options; Kokoro shares an engine queue.
+main-model/projector paths and device, process and identical options. Transformers share by path/options; Kokoro shares an engine queue.
 Audio profiles have separate processes, queues and cancellation scopes, even for the same path.
 Only local models load automatically and have release policies: manual by default, or after_request/idle (300 seconds).
 An enabled manual alias retains shared weights; otherwise the longest idle timeout wins. Release errors never
@@ -79,9 +77,11 @@ Transformers, and TTS architecture selects Kokoro, Chatterbox or Qwen3-TTS Base.
 model_ref is a safe relative path under data/models. Profiles cannot supply
 executables or arbitrary arguments and may be saved before installation.
 source.execution_options selects CPU or CUDA; capable engines default to CUDA, Kokoro to
-CPU only. Llama also accepts threads, context_size, batch_size and gpu_layers
+CPU only. Llama accepts threads, context_size, batch_size, nullable mmproj_ref and gpu_layers
 (0 on CPU; auto or integer 1..999 on CUDA). Python options are intraop_threads=4;
 Kokoro adds max_batch_size=1. Unavailable CUDA fails without CPU substitution.
+GGUF vision requires a safe relative mmproj_ref under data/models; text-only profiles require null.
+Inventory returns same-directory mmproj_refs candidates. CPU disables projector GPU offload; CUDA uses the main model's device.
 
 GET `/api/models/local-runtime` returns the single installation.
 POST to its `/install`, `/repair` or `/uninstall` returns a RuntimeJob. One
@@ -115,8 +115,7 @@ Native archives are SHA-256 checked before extraction and on reuse from .cache/w
 Llama's CUDA 12.4 DLLs stay beside its executable, separate from Torch CUDA 12.8; different-content DLL collisions fail.
 Native --version checks precede promotion; dependency paths apply only to child processes.
 
-Jobs expose queued/running/completed/failed/cancelled/interrupted states, stage,
-byte progress, error code, revision and bounded logs. Cancellation stops subprocesses and waits
+Jobs expose state, stage, byte progress, error code, revision and bounded logs. Cancellation stops subprocesses and waits
 for active file operations before clearing staging. Restart interrupts unfinished work and clears staging.
 Failure/cancellation retains logs; retry creates a job. Uninstall stops local workers and removes the recorded installation, retaining caches/models.
 
@@ -155,8 +154,8 @@ independently of installation logs.
 Workers atomically publish readiness and bind reserved loopback ports. Process groups and Windows kill-on-job-close Job Objects stop
 full trees on unload, cancellation or exit. Sanitized logs under `data/logs/runtimes` have a 10 MiB cap;
 retention keeps 20 terminal tasks and 20 terminal process/load-attempt logs per runtime, plus active logs.
-Load/autoload, health and Audio references check installation entries; loaded inference and model status use cached availability.
-Python workers execute application sources with the installed interpreter; reload/restart picks up source changes.
+Load/health/Audio references check installation entries; loaded inference/status use cached availability.
+Workers use application sources and the installed interpreter; reload/restart picks up changes.
 Missing or failed worker code is a model-load error and does not invalidate the installation.
 The model log endpoint returns the latest attempt, including pre-spawn failures; UTC records share load_id through startup environment/private headers.
 `duration_ms`/`elapsed_ms` measure monotonic wall time; `cpu_duration_ms`/`cpu_elapsed_ms` measure CPU time for all threads
@@ -173,8 +172,9 @@ Auto uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx=context_size; m
 Logs must confirm positive GPU offload; missing/zero layers or insufficient memory stop loading without CPU substitution.
 Cached reads do not probe GPUs. Workers enforce offline/local-only loading without remote code or device substitution.
 Transformers uses float32 CPU/checkpoint dtype CUDA and disables upstream idle release. Its cancellation stops the process
-before freeing occupancy; llama-server cancellation closes only the request. Tools require a supported response template and Harness; vision, JSON output,
-nonzero presence/frequency penalties and explicit tool controls fail.
+before freeing occupancy; llama-server cancellation closes only the request. Tools require a supported response template and Harness.
+Native multimodal AutoModel/AutoProcessor and chat templates process images; readiness reports actual processor vision capability.
+JSON output, nonzero presence/frequency penalties and explicit tool controls fail.
 Audio blocks Python networking; Chatterbox uses from_local with float32/attention adaptations,
 and Qwen uses local-only loading with float32 CPU/bfloat16 CUDA and SDPA.
 Whisper is private acceptance only. Decoded samples are counted before resampling/features: at most 30 seconds,
@@ -270,12 +270,16 @@ Voice discovery accepts optional model alias and source=preset|temporary. Items 
 language (null for Qwen references) and expires_at (null for presets). Only enabled public TTS profiles,
 valid preset files and the current key's unexpired references appear.
 
-Chat accepts system/developer/user/assistant/tool roles, text, user image_url
-parts (HTTP(S)/data URLs), function tools, tool_choice, parallel_tool_calls,
-response_format and generation parameters. Only n=1 is accepted. Formats are
-text/json_object/json_schema with matching capabilities. Tool results must match
-preceding calls; unknown/legacy fields, unsupported formats and incomplete histories
-fail. `/v1` forwards tool data without execution; [Harness](harness-tools.md) owns execution.
+Chat accepts system/developer/user/assistant/tool roles, text, user image_url parts, function tools,
+tool_choice, parallel_tool_calls, response_format and generation parameters. Only n=1 is accepted.
+Formats are text/json_object/json_schema with matching capabilities. Tool results must match preceding calls;
+unknown fields, unsupported formats and incomplete histories fail. `/v1` forwards tools; [Harness](harness-tools.md) executes them.
+Provider image URLs/details pass through. Local images require inline data URLs and detail=auto; other values return UNSUPPORTED_CAPABILITY.
+Local input supports static PNG/JPEG/WebP. ModelManager uses Pillow off-loop to decode, apply EXIF orientation,
+fill transparency white and convert to RGB PNG; original attachments stay unchanged. Invalid images return INVALID_IMAGE.
+The complete local JSON body, including defaults and converted image data, is limited to 32 MiB before admission;
+REQUEST_TOO_LARGE is explicit. External requests also obey max_request_mb. Qwen3.5-0.8B GGUF/Transformers CPU/CUDA
+acceptance covers image content, multiple-image order, historical follow-up, streaming and cancellation; other checkpoints are unverified.
 
 Non-streaming tool-only messages have content=null. SSE framing, error timing
 and disconnect cleanup are owned by [runs/streaming](runs-streaming.md#external-sse).

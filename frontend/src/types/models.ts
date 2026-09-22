@@ -15,7 +15,7 @@ export type ModelCapabilities = {
 
 export type LocalModelSource = {
   type: 'local';
-  execution_options: Record<string, string | number>;
+  execution_options: Record<string, string | number | null>;
   lifecycle: { unload: 'manual' | 'after_request' | 'idle'; idle_seconds: number };
 };
 export type ModelSource = LocalModelSource | { type: 'provider'; provider_profile_id: string };
@@ -169,4 +169,5 @@ export type ModelInventoryItem = {
   model_ref: string;
   state: string;
   error_code: string;
+  mmproj_refs: string[];
 };

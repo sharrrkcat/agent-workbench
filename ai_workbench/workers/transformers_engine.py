@@ -58,6 +58,8 @@ class TransformersEngine:
                 from transformers import AutoModelForCausalLM
             with stage("engine_imports.transformers.AutoModelForMultimodalLM"):
                 from transformers import AutoModelForMultimodalLM
+            with stage("engine_imports.transformers.AutoModelForImageTextToText"):
+                from transformers import AutoModelForImageTextToText
             with stage("engine_imports.transformers.AutoProcessor"):
                 from transformers import AutoProcessor
             with stage("engine_imports.transformers.serving.chat_completion"):
@@ -65,9 +67,9 @@ class TransformersEngine:
             with stage("engine_imports.transformers.serving.model_manager"):
                 from transformers.cli.serving.model_manager import ModelManager
             with stage("engine_imports.transformers.serving.utils"):
-                from transformers.cli.serving.utils import GenerationState, get_response_template
+                from transformers.cli.serving.utils import GenerationState, Modality, get_response_template
             with stage("engine_imports.transformers.modeling_auto"):
-                from transformers.models.auto.modeling_auto import MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES
+                from transformers.models.auto.modeling_auto import MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES, MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
             with stage("engine_imports.transformers.logging"):
                 from transformers.utils import logging
 
@@ -96,7 +98,12 @@ class TransformersEngine:
             def _load_model(self, _model_id, tqdm_class=None, progress_callback=None):
                 with stage("model_config"):
                     config = AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
-                    model_class = AutoModelForMultimodalLM if config.model_type in MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES else AutoModelForCausalLM
+                    if config.model_type in MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES:
+                        model_class = AutoModelForMultimodalLM
+                    elif config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES:
+                        model_class = AutoModelForImageTextToText
+                    else:
+                        model_class = AutoModelForCausalLM
                 with stage("weights"):
                     model, loading = model_class.from_pretrained(
                         path, config=config, local_files_only=True, trust_remote_code=False,
@@ -161,8 +168,11 @@ class TransformersEngine:
             self.handler_type = LocalChatCompletionHandler
             resident = self.manager.loaded_models["managed@main"]
             template = get_response_template(resident.processor, resident.model)
+            vision = (self.manager.get_model_modality(resident.model, resident.processor) in {Modality.VLM, Modality.MULTIMODAL}
+                      and hasattr(resident.processor, "image_processor"))
             self.metadata = {"protocol_version": 1, "device": device, "device_name": device_name,
-                             "dtype": str(resident.model.dtype), "tool_calls": bool(template and template.get("fields", {}).get("tool_calls"))}
+                             "dtype": str(resident.model.dtype), "vision": vision,
+                             "tool_calls": bool(template and template.get("fields", {}).get("tool_calls"))}
 
     async def chat(self, body, request_id):
         if (body.get("tools") or any(message.get("tool_calls") or message["role"] == "tool" for message in body["messages"])) and not self.metadata["tool_calls"]:

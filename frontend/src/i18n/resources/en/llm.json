@@ -14,6 +14,8 @@
   "name": "Name",
   "alias": "Public alias",
   "modelRef": "Model reference",
+  "mmprojRef": "Vision projector (mmproj)",
+  "mmprojHint": "Select the matching projector or enter its relative path under data/models. Changing the model clears this selection.",
   "baseUrl": "API base URL",
   "emptyModels": "No model profiles",
   "enabled": "Enabled",

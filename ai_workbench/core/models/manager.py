@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+from ai_workbench.core.models.images import prepare_local_images, validate_local_image_options
 from ai_workbench.core.models.runtimes.schema import is_transformers, local_engine
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
@@ -113,6 +114,9 @@ class ModelManager:
             key += (profile.source.execution_options["device"], os.path.normcase(str(path)))
         if engine == "transformers":
             key += (json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")),)
+        if engine == "llama-server":
+            projector = profile.source.execution_options["mmproj_ref"]
+            key += (os.path.normcase(str(self.runtime_supervisor.root / "data" / "models" / projector)) if projector else None,)
         return key
 
     def _key(self, profile: ModelProfile) -> tuple:
@@ -150,6 +154,9 @@ class ModelManager:
                     path = model_path(self.runtime_supervisor.root, profile.model_ref)
                     if engine == "llama-server":
                         if not path.is_file():
+                            raise ValueError()
+                        projector = profile.source.execution_options["mmproj_ref"]
+                        if projector and not model_path(self.runtime_supervisor.root, projector).is_file():
                             raise ValueError()
                     elif engine in {"chatterbox", "qwen3tts", "whisper"}:
                         from ai_workbench.workers.audio_catalog import audio_model
@@ -381,9 +388,10 @@ class ModelManager:
         async with self._execution_lease(("provider", provider_id)) as slot:
             return await slot.adapter.models()
 
-    async def prepare_chat_stream(self, profile_id: str) -> None:
+    async def prepare_chat_stream(self, profile_id: str, request: ChatRequest) -> AsyncIterator[ChatChunk]:
         """Resolve source admission and local startup before SSE headers."""
         profile = self.profile(profile_id, "llm")
+        request = await self._prepare_chat(profile, request)
         if isinstance(profile.source, LocalSource):
             await self.load(profile_id)
         elif profile.source is None:
@@ -391,6 +399,7 @@ class ModelManager:
         else:
             async with self._execution_lease(self.execution_key(profile), self._key(profile), profile):
                 pass
+        return self._chat_stream(profile, request)
 
     def validate_chat(self, profile: ModelProfile, request: ChatRequest) -> None:
         if is_transformers(profile) and (
@@ -407,20 +416,33 @@ class ModelManager:
         for capability, needed in required.items():
             if needed and not getattr(caps, capability):
                 raise ModelError("UNSUPPORTED_CAPABILITY", f"Model profile does not support {capability}.", 422)
+        if isinstance(profile.source, LocalSource):
+            validate_local_image_options(request)
+
+    async def _prepare_chat(self, profile, request):
+        self.validate_chat(profile, request)
+        if isinstance(profile.source, LocalSource):
+            return await asyncio.to_thread(prepare_local_images, profile, request)
+        return request
 
     async def chat(self, profile_id: str, request: ChatRequest):
         profile = self.profile(profile_id, "llm")
-        self.validate_chat(profile, request)
         if request.stream:
             raise ModelError("INVALID_REQUEST", "Use chat_stream for a streaming request.")
+        request = await self._prepare_chat(profile, request)
         async with self._lease(profile) as adapter:
             return await adapter.chat(profile, request)
 
     async def chat_stream(self, profile_id: str, request: ChatRequest) -> AsyncIterator[ChatChunk]:
         profile = self.profile(profile_id, "llm")
-        self.validate_chat(profile, request)
         if not request.stream:
             raise ModelError("INVALID_REQUEST", "chat_stream requires stream=true.")
+        request = await self._prepare_chat(profile, request)
+        async with aclosing(self._chat_stream(profile, request)) as stream:
+            async for chunk in stream:
+                yield chunk
+
+    async def _chat_stream(self, profile, request):
         async with self._lease(profile) as adapter:
             async with aclosing(adapter.chat_stream(profile, request)) as stream:
                 async for chunk in stream:

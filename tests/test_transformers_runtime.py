@@ -37,7 +37,7 @@ def profile(**values):
     {"kind": "embedding"}, {"source": {"type": "local", "execution_options": {"device": "auto"}}},
     {"source": {"type": "local", "execution_options": {"intraop_threads": True}}},
     {"source": {"type": "local", "execution_options": {"dtype": "float16"}}},
-    {"capabilities": {"vision": True}}, {"capabilities": {"json_schema": True}},
+    {"capabilities": {"json_schema": True}},
     {"parameters": {"presence_penalty": 0.1}}, {"parameters": {"frequency_penalty": -0.1}},
 ])
 def test_transformers_profile_rejects_unimplemented_combinations(patch):
@@ -89,7 +89,7 @@ def test_private_server_authentication_and_local_text_boundary():
     calls = []
 
     class Engine:
-        metadata = {"protocol_version": 1, "device_name": "CPU", "tool_calls": True}
+        metadata = {"protocol_version": 1, "device_name": "CPU", "tool_calls": True, "vision": False}
         closed = False
 
         async def chat(self, body, request_id):

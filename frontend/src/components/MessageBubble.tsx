@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 import type { Message } from '../types/messages';
 import { MessageFrame } from './messages/MessageFrame';
-import { messageText } from './messages/messageContent';
+import { messageImages, messageText } from './messages/messageContent';
+import { MessageImages } from './messages/MessageImages';
 
 import { MessageParts } from './messages/MessageParts';
 import { MessageActions } from './messages/MessageActions';
@@ -43,6 +44,7 @@ export function MessageBubble({ message }: { message: Message }) {
           ) : (
             <MessageParts parts={message.parts} />
           )}
+          {messageImages(message).length ? <MessageImages attachments={messageImages(message)} /> : null}
           {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
         </div>
         {isUser ? <MessageActions

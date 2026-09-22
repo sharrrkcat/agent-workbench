@@ -37,7 +37,11 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
             if target is None or target in seen:
                 continue
             seen.add(target)
+            projectors = sorted(item.relative_to(root).as_posix() for item in target.parent.glob("*.gguf")
+                                if item.name.lower().startswith("mmproj") and item.is_file()
+                                and item.resolve().is_relative_to(root)) if target.suffix == ".gguf" else []
             items.append({"kind": model_kind, "name": target.name,
                           "model_ref": target.relative_to(root).as_posix(),
+                          "mmproj_refs": projectors,
                           "state": "unavailable", "error_code": "MODEL_UNAVAILABLE"})
     return items

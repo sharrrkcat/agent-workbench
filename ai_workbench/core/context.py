@@ -9,11 +9,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.settings import DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
+from ai_workbench.core.models.images import ContextMessage
 
 
 class ContextBuildResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    messages: list[dict[str, str]]
+    messages: list[ContextMessage]
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -32,6 +33,10 @@ class ContextBuilder:
               persona_name: str | None = None, persona_id: str | None = None) -> ContextBuildResult:
         policy = policy or ContextPolicy(mode="session")
         current = self._current_text(text, current_message_id)
+        current_refs = []
+        if current_message_id and policy.include_attachments == "explicit":
+            current_refs = _image_refs(self.message_store.get_message(current_message_id))
+        current_content = _content(current, current_refs)
         history = [m for m in self.message_store.list_messages(session_id) if m.message_id != current_message_id and _eligible(m)]
         if policy.mode in {"none", "current_message"}:
             selected = []
@@ -46,7 +51,10 @@ class ContextBuilder:
         projected = [_project(m, include_attachments=policy.include_attachments == "explicit") for m in selected]
         projected = [m for m in projected if m is not None]
         if context_mode == "group_transcript":
-            projected = [{"role": "user", "content": _transcript_line(m, include_attachments=policy.include_attachments == "explicit")} for m in selected]
+            projected = [{"role": "user", "content": _content(
+                _transcript_line(m, include_attachments=policy.include_attachments == "explicit"),
+                _image_refs(m) if policy.include_attachments == "explicit" else [],
+            )} for m in selected]
         # Budget history before adding framing and persona instructions, retaining the current input.
         warnings = []
         if policy.max_chars is not None:
@@ -55,29 +63,45 @@ class ContextBuilder:
             if len(current) > policy.max_chars:
                 warnings.append("Current message exceeds the history character budget; current input is retained.")
         if context_mode == "group_transcript":
-            transcript = "\n".join(m["content"] for m in projected)
-            content = f"<conversation_transcript>\n{transcript}\n</conversation_transcript>\n\n<current_user_message>\n{current}\n</current_user_message>"
+            parts = [{"type": "text", "text": "<conversation_transcript>\n"}]
+            for index, message in enumerate(projected):
+                if index:
+                    parts.append({"type": "text", "text": "\n"})
+                parts.extend(_parts(message["content"]))
+            parts.append({"type": "text", "text": "\n</conversation_transcript>\n\n<current_user_message>\n"})
+            parts.extend(_parts(current_content))
+            parts.append({"type": "text", "text": "\n</current_user_message>"})
+            content = parts if any(part["type"] == "attachment_image" for part in parts) else "".join(part["text"] for part in parts)
             instruction = group_instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
             if persona_id is not None:
                 instruction += "\nReply only as the current speaker: " + json.dumps({"persona_id": persona_id, "name": persona_name}, ensure_ascii=False) + "."
             messages = [{"role": "system", "content": instruction}, {"role": "user", "content": content}]
         else:
-            messages = [*projected, {"role": "user", "content": current}]
-        return ContextBuildResult(messages=validate_llm_context_messages(messages), warnings=warnings)
+            messages = [*projected, {"role": "user", "content": current_content}]
+        return ContextBuildResult(messages=messages, warnings=warnings)
 
     def _current_text(self, text: str, message_id: str | None) -> str:
         if text: return text
         if message_id:
-            try: return message_text(self.message_store.get_message(message_id))
+            try: return message_text(self.message_store.get_message(message_id), include_attachments=False)
             except KeyError: pass
         return ""
 
 
-def validate_llm_context_messages(messages: list[dict[str,Any]]) -> list[dict[str,Any]]:
-    for index,item in enumerate(messages):
-        if item.get("role") not in {"system","user","assistant"}: raise LLMContextError(f"Illegal LLM context role at index {index}: {item.get('role')!r}")
-        if not isinstance(item.get("content"),str): raise LLMContextError(f"Illegal LLM context content at index {index}")
-    return messages
+def _image_refs(message: Any) -> list[dict]:
+    if getattr(message, "role", "") != "user":
+        return []
+    return [{"type": "attachment_image", "attachment_id": item["uri"].removeprefix("local://attachments/")}
+            for item in (getattr(message, "metadata", {}) or {}).get("attachments", [])
+            if item.get("type") == "image"]
+
+
+def _content(text: str, images: list[dict]):
+    return [{"type": "text", "text": text}, *images] if images else text
+
+
+def _parts(content):
+    return [{"type": "text", "text": content}] if isinstance(content, str) else content
 
 
 def message_text(message: Any, *, include_attachments: bool = True) -> str:
@@ -106,7 +130,7 @@ def message_text(message: Any, *, include_attachments: bool = True) -> str:
     return "\n\n".join(part for part in rendered if part)
 
 
-def _project(message: Any, *, include_attachments: bool = True) -> dict[str,str] | None:
+def _project(message: Any, *, include_attachments: bool = True) -> ContextMessage | None:
     role=getattr(message,"role","")
     if role not in {"system","user","assistant","tool"}: return None
     text=message_text(message, include_attachments=include_attachments)
@@ -114,7 +138,8 @@ def _project(message: Any, *, include_attachments: bool = True) -> dict[str,str]
     # A selected/truncated history may omit a call's partner. Historical tool
     # parts are quoted user data; only the live harness transcript uses native
     # assistant/tool protocol pairs. This also supports ordinary chat models.
-    return {"role":"user" if role == "tool" else role,"content":text}
+    return {"role":"user" if role == "tool" else role,
+            "content": _content(text, _image_refs(message) if include_attachments else [])}
 
 
 def _eligible(message: Any) -> bool:
@@ -133,10 +158,10 @@ def _transcript_line(message: Any, *, include_attachments: bool = True) -> str:
     return f"[{label}{identity}] {message_text(message, include_attachments=include_attachments)}".rstrip()
 
 
-def _limit_history(messages: list[dict[str,str]], limit: int) -> list[dict[str,str]]:
+def _limit_history(messages: list[ContextMessage], limit: int) -> list[ContextMessage]:
     kept=[]; used=0
     for item in reversed(messages):
-        content=item["content"]
-        if used+len(content)>limit: break
-        kept.append(item); used+=len(content)
+        length = sum(len(part["text"]) for part in _parts(item["content"]) if part["type"] == "text")
+        if used + length > limit: break
+        kept.append(item); used += length
     return list(reversed(kept))

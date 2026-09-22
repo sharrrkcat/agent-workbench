@@ -158,5 +158,6 @@ class ModelInventoryItem(ApiModel):
     kind: ModelKind
     name: str
     model_ref: str
+    mmproj_refs: list[str] = Field(default_factory=list)
     state: Literal["unavailable"]
     error_code: Literal["MODEL_UNAVAILABLE"]

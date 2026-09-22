@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ai_workbench.core.json_data import validate_json_data
 from ai_workbench.core.models.schema import ToolCall
+from ai_workbench.core.models.images import ContextMessage
 
 if TYPE_CHECKING:
     from ai_workbench.core.harness.settings import HarnessSettings
@@ -84,7 +85,8 @@ class HarnessState(BaseModel):
 
     direct: bool = False
     searxng_base_url: str | None = None
-    base_messages: list[dict[str, Any]] = Field(default_factory=list)
+    base_messages: list[ContextMessage] = Field(default_factory=list)
+    max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
     transcript: list[dict[str, Any]] = Field(default_factory=list)
     pending_calls: list[ToolCall] = Field(default_factory=list)
     awaiting_approval: str | None = None

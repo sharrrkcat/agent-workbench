@@ -134,7 +134,8 @@ without invoking internal harness execution.
 One public id, created timestamp and alias persist across all chunks. Content
 and tool-call fragments are followed by one finish reason, optional usage when
 stream_options.include_usage=true, and exactly one `data: [DONE]`.
-Source admission and local loading happen before response headers; providers never perform discovery preflights. Later inference/queue
+Local image validation/normalization, request-size checks, source admission and loading precede response headers;
+providers never perform discovery preflights. Later inference/queue
 failures emit an explicit SSE error and DONE. Disconnects close upstream
 streams and release model occupancy. Invalid choices, malformed upstream chunks
 and truncated streams are errors, never silently successful empty responses.

@@ -42,6 +42,16 @@ class LlamaOptions(Strict):
     context_size: int = Field(default=4096, ge=512, le=1048576)
     batch_size: int = Field(default=512, ge=1, le=4096)
     gpu_layers: int = Field(default=0, ge=0, le=999, strict=True)
+    mmproj_ref: str | None = Field(default=None, max_length=1024)
+
+    @field_validator("mmproj_ref")
+    @classmethod
+    def projector_reference(cls, value):
+        if value is not None:
+            relative_ref(value)
+            if not value.endswith(".gguf"):
+                raise ValueError("The multimodal projector must reference a GGUF file")
+        return value
 
 
 class LlamaCPUOptions(LlamaOptions):

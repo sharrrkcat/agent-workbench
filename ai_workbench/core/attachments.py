@@ -500,26 +500,6 @@ def resolve_attachment_uri(uri_or_id: str) -> Path:
     return path
 
 
-def read_attachment_as_data_url(attachment: dict[str, Any]) -> str:
-    parsed = ImageAttachment.model_validate(attachment)
-    if parsed.data_url:
-        return parsed.data_url
-    if not parsed.uri:
-        raise ValueError("Attachment does not include readable image data.")
-
-    path = resolve_attachment_uri(parsed.uri)
-    if not path.is_file():
-        raise FileNotFoundError("Attachment file not found.")
-    data = path.read_bytes()
-    if len(data) > MAX_IMAGE_ATTACHMENT_BYTES:
-        raise ValueError("Attachment image is too large. Maximum size is 10 MB.")
-    mime_type = _mime_type_for_attachment_path(path)
-    if mime_type != parsed.mime_type:
-        raise ValueError("Attachment MIME type does not match file extension.")
-    encoded = base64.b64encode(data).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"
-
-
 def read_attachment_bytes(attachment: dict[str, Any]) -> bytes:
     parsed = Attachment.model_validate(attachment)
     if parsed.data_url:

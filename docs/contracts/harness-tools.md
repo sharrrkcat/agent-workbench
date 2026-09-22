@@ -79,6 +79,9 @@ session's waiting_run_id. Private harness_state_json preserves the original
 input, transcript, ordered remaining calls, approval ID, round count, settings
 and active time. config_snapshot_json preserves the resolved chat configuration.
 Neither private state appears in public run metadata, responses or events.
+Base context stores typed attachment-image references, never image data URLs/base64. Every model round,
+including approval resumption, reads only those references and applies the model's image capability/request limits.
+The attachment byte limit is snapshotted with the context. Terminal/history cleanup discards private references.
 
 Only the approval endpoint resumes a waiting run. Approval executes the original
 call; rejection skips its handler and records a rejected result. Remaining

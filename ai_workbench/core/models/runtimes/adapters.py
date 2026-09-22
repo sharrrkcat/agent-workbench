@@ -12,6 +12,7 @@ from uuid import uuid4
 import httpx
 
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.images import request_images
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
@@ -47,6 +48,7 @@ class ManagedAdapter:
         self.gpu_layers_loaded: int | None = None
         self.gpu_layers_total: int | None = None
         self.tool_calls_supported = False
+        self.vision_supported = False
 
     def begin_trace(self, profile, trigger):
         load_id = str(uuid4())
@@ -121,6 +123,10 @@ class ManagedAdapter:
             path = model_path(self.supervisor.root, profile.model_ref)
             if not path.exists() or self.engine == "llama-server" and not path.is_file() or self.engine != "llama-server" and not path.is_dir():
                 raise FileNotFoundError()
+            if self.engine == "llama-server":
+                projector = profile.source.execution_options["mmproj_ref"]
+                if projector and not model_path(self.supervisor.root, projector).is_file():
+                    raise FileNotFoundError()
             if self.engine != "llama-server":
                 from ai_workbench.workers.common import WorkerError, local_model
                 try:
@@ -229,7 +235,10 @@ class ManagedAdapter:
             args = [executable, "--host", "127.0.0.1", "--port", port, "--model", path, "--alias", "managed",
                     "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],
                     "--batch-size", options["batch_size"], "--parallel", 1,
-                    "--reasoning-format", "none", "--log-verbosity", 4 if cuda else 1]
+                    "--reasoning-format", "none", "--offline", "--no-mmproj-auto", "--log-verbosity", 4 if cuda else 1]
+            if options["mmproj_ref"]:
+                args.extend(["--mmproj", model_path(self.supervisor.root, options["mmproj_ref"])])
+                args.extend(["--mmproj-offload", "--mmproj-device", device_id] if cuda else ["--no-mmproj-offload"])
             if cuda:
                 args.extend(["--log-colors", "off"])
             args.extend(cuda_arguments(options, device_id) if cuda else ["--n-gpu-layers", options["gpu_layers"]])
@@ -263,10 +272,12 @@ class ManagedAdapter:
                         raise ValueError()
                     port = data["port"]
                     if is_transformers(profile):
-                        if not isinstance(data.get("device_name"), str) or type(data.get("tool_calls")) is not bool:
+                        if (not isinstance(data.get("device_name"), str) or type(data.get("tool_calls")) is not bool
+                                or type(data.get("vision")) is not bool):
                             raise ValueError()
                         self.device_name = data["device_name"]
                         self.tool_calls_supported = data["tool_calls"]
+                        self.vision_supported = data["vision"]
                 except (ValueError, KeyError):
                     raise ModelError("RUNTIME_BROKEN", "Worker readiness response was invalid.", 503)
             if self.process.process.returncode is not None:
@@ -383,6 +394,7 @@ class ManagedAdapter:
         self.error_code = None
         self.device_name = self.gpu_layers_loaded = self.gpu_layers_total = None
         self.tool_calls_supported = False
+        self.vision_supported = False
         if self.run_dir and self.run_dir.exists():
             remove_owned(self.supervisor.base, self.run_dir)
         self.run_dir = None
@@ -406,9 +418,11 @@ class LlamaServerAdapter(ManagedAdapter):
 
 
 class TransformersServerAdapter(LlamaServerAdapter):
-    def _require_tools(self, request):
+    def _require_capabilities(self, request):
         if (request.tools or any(message.tool_calls or message.role == "tool" for message in request.messages)) and not self.tool_calls_supported:
             raise ModelError("UNSUPPORTED_CAPABILITY", "The local checkpoint has no supported Transformers tool response template.", 422)
+        if any(request_images(request)) and not self.vision_supported:
+            raise ModelError("UNSUPPORTED_CAPABILITY", "The local checkpoint has no supported image processor.", 422)
 
     async def _abort(self, error=None):
         await self._stop()
@@ -418,7 +432,7 @@ class TransformersServerAdapter(LlamaServerAdapter):
         self.changed()
 
     async def chat(self, profile, request):
-        self._require_tools(request)
+        self._require_capabilities(request)
         try:
             return await super().chat(profile, request)
         except asyncio.CancelledError:
@@ -429,7 +443,7 @@ class TransformersServerAdapter(LlamaServerAdapter):
             raise
 
     async def chat_stream(self, profile, request):
-        self._require_tools(request)
+        self._require_capabilities(request)
         completed, error = False, None
         try:
             async with aclosing(super().chat_stream(profile, request)) as stream:

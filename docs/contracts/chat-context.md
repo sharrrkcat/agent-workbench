@@ -126,7 +126,7 @@ ordering uses PATCH /api/worldbooks/{id}/entries/reorder. POST
 
 [Knowledge](knowledge.md) owns indexing, hybrid retrieval, RRF and optional
 rerank. Its context injection uses the run's resolved bindings. File context
-and current-image handling follow the attachment rules below.
+and image handling follow the attachment rules below.
 
 ## Messages and attachments
 
@@ -143,15 +143,21 @@ size/count and text-context byte limits. Persisted parts retain ids, MIME,
 name, size and compact metadata, never image data URLs. Orphan cleanup is an
 explicit separate operation and considers Persona avatar references.
 
-Current image attachments become OpenAI image_url parts through the selected
-LLM and ModelManager. The profile must advertise vision; otherwise the run
-returns UNSUPPORTED_CAPABILITY without an alternate model or silent display-only
-path. Standalone image_embedding/vision profiles and managed backend limits
-are described in [models](models.md#resolution-and-capabilities).
+User images persist only as metadata.attachments references; message parts do not duplicate them.
+ContextBuilder selects history by policy, message count and character budget before reading images.
+Image bytes do not consume the text budget. Single-assistant projection keeps images with their user message;
+group projection interleaves each speaker label, text and images. Image-only messages can be selected context.
+Included references become OpenAI image_url parts immediately before inference, including historical follow-ups.
+The selected LLM must advertise vision; otherwise UNSUPPORTED_CAPABILITY ends the run.
+Missing selected images return ATTACHMENT_NOT_FOUND; corrupt local images and request limits follow
+[models](models.md#external-inference-api). Excluded or pruned images are never read.
 
 Text-file context obeys the enable switch and per-file/per-message bounds.
-Other attachments contribute bounded descriptive markers. Historical attachment
-bytes are not resent; normal history projection remains in force.
+Other attachments contribute bounded descriptive markers. include_attachments=none excludes all image inputs.
+File selection, clipboard images and file dropping share an upload flow with per-file status, previews and removal.
+Partial failure keeps successful uploads. Session changes clear pending attachments and ignore late results.
+Message thumbnails and zoom previews resolve stored references after refresh. Model capability, attachment-policy
+and size errors have English/Chinese guidance. Text editing/retry retains image references; pruning cleans unreferenced files.
 
 Tool calls require assistant role, a unique call id within the run, a name and
 finite JSON object arguments. Results require tool role, matching call id,

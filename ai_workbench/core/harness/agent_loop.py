@@ -17,6 +17,7 @@ from ai_workbench.core.harness.settings import HarnessSettings
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest, ToolCall
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.persona import ResolvedChatConfig
@@ -61,8 +62,9 @@ class HarnessAgentLoop:
         self.active_runs = active_runs
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
-                  user: MessageSchema, context: list[dict[str, Any]], active_seconds: float = 0.0) -> RunResult:
+                  user: MessageSchema, context: list[dict[str, Any]], max_image_bytes: int, active_seconds: float = 0.0) -> RunResult:
         state = HarnessState(base_messages=context, active_seconds=active_seconds,
+                             max_image_bytes=max_image_bytes,
                              searxng_base_url=self.harness_settings.get().searxng_base_url)
         return await self._drive(session=session, config=config, run=run, user=user, state=state)
 
@@ -188,7 +190,9 @@ class HarnessAgentLoop:
         profile = self.model_manager.profile(config.model_profile_id, "llm")
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
                  for spec in (self.registry.get(name) for name in config.tools_allowed)]
-        request = ChatRequest(model=profile.alias, messages=[*state.base_messages, *state.transcript],
+        base_messages = await resolve_context_images(state.base_messages, vision=profile.capabilities.vision,
+                                                     max_image_bytes=state.max_image_bytes)
+        request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],
                               tools=tools, stream=profile.capabilities.streaming,
                               **config.generation.model_dump(exclude_none=True))
         self.model_manager.validate_chat(profile, request)

@@ -63,9 +63,22 @@ def chat_request(body):
             raise WorkerError("INVALID_REQUEST")
         content = message.get("content")
         if isinstance(content, list):
+            if not content:
+                raise WorkerError("INVALID_REQUEST")
             for part in content:
-                fields(part, ("type", "text"))
-                if part["type"] != "text" or not isinstance(part["text"], str):
+                fields(part, ("type",), ("text", "image_url"))
+                if part["type"] == "text":
+                    fields(part, ("type", "text"))
+                    if not isinstance(part["text"], str):
+                        raise WorkerError("INVALID_REQUEST")
+                elif part["type"] == "image_url" and message["role"] == "user":
+                    fields(part, ("type", "image_url"))
+                    image = part["image_url"]
+                    fields(image, ("url",), ("detail",))
+                    if (not isinstance(image["url"], str) or not image["url"].startswith("data:image/png;base64,")
+                            or image.get("detail", "auto") != "auto"):
+                        raise WorkerError("UNSUPPORTED_CAPABILITY")
+                else:
                     raise WorkerError("UNSUPPORTED_CAPABILITY")
         elif content is not None and not isinstance(content, str):
             raise WorkerError("INVALID_REQUEST")
@@ -123,6 +136,10 @@ def build_app(engine, token):
             body = chat_request(body)
         except (ValueError, TypeError, KeyError) as exc:
             raise WorkerError("INVALID_REQUEST") from exc
+        if any(isinstance(message.get("content"), list)
+               and any(part["type"] == "image_url" for part in message["content"])
+               for message in body["messages"]) and not engine.metadata["vision"]:
+            raise WorkerError("UNSUPPORTED_CAPABILITY")
         return await engine.chat(body, str(uuid4()))
 
     return app

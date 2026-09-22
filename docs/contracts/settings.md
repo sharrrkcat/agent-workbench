@@ -51,6 +51,9 @@ connections; Local Runtime owns installation/settings/jobs/logs/storage. Forms a
 retain drafts across subtabs. Models use grouped Unbound, Local Runtime and configured-provider
 choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro;
 other new profiles start unbound. Local models expose inventory, execution options and release policy.
+GGUF vision exposes required mmproj_ref with inventory suggestions and manual relative-path entry.
+Changing the main model or disabling vision clears the projector. Transformers vision remains selectable;
+the worker verifies actual image capability during execution.
 Provider models expose model-ID entry and optional discovery; failed discovery leaves manual entry,
 saving and inference available. Late results from a previous source cannot replace current suggestions.
 Changing local/provider source or provider id clears model_ref and replaces source options. Unbinding

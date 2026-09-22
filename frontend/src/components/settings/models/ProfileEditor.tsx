@@ -5,7 +5,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import type { LocalModelSource, ModelInput } from '../../../types/models';
+import type { LocalModelSource, ModelInput, ModelInventoryItem } from '../../../types/models';
 import { AppModal } from '../../ui/AppModal';
 import { Field, Check, NumberInput } from './fields';
 import type { ModelFeedbackProps } from './types';
@@ -31,15 +31,20 @@ export function ProfileEditor({
   const transformers = engine === 'transformers';
   const audio = engine === 'chatterbox' || engine === 'qwen3tts';
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
+  const [inventory, setInventory] = useState<ModelInventoryItem[]>([]);
   const [discoveryError, setDiscoveryError] = useState('');
   const selectedSource = model ? sourceValue(model.value.source) : '';
   const modelKind = model?.value.kind;
   useEffect(() => {
     let cancelled = false;
     setRemoteModels([]);
+    setInventory([]);
     setDiscoveryError('');
     const request = selectedSource === 'local'
-      ? modelsApi.listModelInventory(modelKind).then((items) => items.map((item) => item.model_ref))
+      ? modelsApi.listModelInventory(modelKind).then((items) => {
+        if (!cancelled) setInventory(items);
+        return items.map((item) => item.model_ref);
+      })
       : selectedSource.startsWith('provider:')
         ? modelsApi.listProviderModels(selectedSource.slice('provider:'.length)).then((value) => value.models)
         : null;
@@ -192,11 +197,21 @@ export function ProfileEditor({
                       key={key}
                       label={t('cap.' + key)}
                       checked={model.value.capabilities[key]}
-                      disabled={(engine === 'llama-server' && key === 'vision') || (transformers && ['vision', 'json_object', 'json_schema'].includes(key))}
+                      disabled={transformers && ['json_object', 'json_schema'].includes(key)}
                       onChange={(v) => patchModel({ capabilities: { ...model.value.capabilities, [key]: v } })}
                     />
                   ))}
                 </div>
+                {engine === 'llama-server' && local && model.value.capabilities.vision ? <>
+                  <Field label={t('mmprojRef')}>
+                    <input required list="model-projectors" value={String(local.execution_options.mmproj_ref ?? '')}
+                      onChange={(event) => patchLocal({ execution_options: { ...local.execution_options, mmproj_ref: event.target.value || null } })} />
+                  </Field>
+                  <datalist id="model-projectors">
+                    {(inventory.find((item) => item.model_ref === model.value.model_ref)?.mmproj_refs ?? []).map((ref) => <option key={ref} value={ref} />)}
+                  </datalist>
+                  <p className="model-empty">{t('mmprojHint')}</p>
+                </> : null}
               </>
             ) : null}
             <h3>{t('parameters')}</h3>

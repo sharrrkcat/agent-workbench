@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import type { MessagePart } from '../../types/messages';
 import { API_BASE_URL, resolveAttachmentUrlFromBase } from '../../api/url';
 import { ToolResultBody } from './ToolResultBody';
+import { imageErrorKey } from './messageContent';
 
 export function MessageParts({ parts }: { parts: MessagePart[] }) {
   return (
@@ -80,7 +81,7 @@ function Part({ part }: { part: MessagePart }) {
     return (
       <div className="part-error">
         {part.code ? `${part.code}: ` : ''}
-        {part.message}
+        {imageErrorKey(part.code, part.message) ? t(imageErrorKey(part.code, part.message)!) : part.message}
       </div>
     );
   return <div className={`part-notice ${part.level || 'info'}`}>{part.text}</div>;

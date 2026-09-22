@@ -201,7 +201,7 @@ def test_kokoro_times_imports_and_checks_resources_before_building_languages(mon
 def test_transformers_import_timings_attribute_failures_before_model_loading(monkeypatch, failed_import):
     wall, cpu, lines, imported = Clock(), Clock(), [], []
     names = ["torch", "transformers.AutoConfig", "transformers.AutoModelForCausalLM",
-             "transformers.AutoModelForMultimodalLM", "transformers.AutoProcessor",
+             "transformers.AutoModelForMultimodalLM", "transformers.AutoModelForImageTextToText", "transformers.AutoProcessor",
              "transformers.serving.chat_completion", "transformers.serving.model_manager",
              "transformers.serving.utils", "transformers.modeling_auto", "transformers.logging"]
     original_import = builtins.__import__

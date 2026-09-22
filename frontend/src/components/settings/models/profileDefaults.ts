@@ -42,11 +42,14 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
   const engine = localEngine(next);
   if (next.source?.type === 'local' && engine !== localEngine(value)) {
     next.source = { ...next.source, execution_options: engine === 'llama-server'
-      ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto' }
+      ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto', mmproj_ref: null }
       : engine === 'kokoro' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
       : { device: 'cuda', intraop_threads: 4 } };
   }
-  if (engine === 'llama-server' || engine === 'transformers') next.capabilities = { ...next.capabilities, vision: false };
+  if (engine === 'llama-server' && next.source?.type === 'local' &&
+    (next.model_ref !== value.model_ref || !next.capabilities.vision)) {
+    next.source = { ...next.source, execution_options: { ...next.source.execution_options, mmproj_ref: null } };
+  }
   if (engine === 'transformers') {
     next.parameters = { ...next.parameters };
     delete next.parameters.presence_penalty;

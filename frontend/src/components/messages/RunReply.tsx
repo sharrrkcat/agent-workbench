@@ -10,6 +10,7 @@ import { RunApproval, RunCancelButton } from './RunApproval';
 import { ReplyActions } from './ReplyActions';
 import { ToolGroup } from './ToolGroup';
 import type { Reply } from './turns';
+import { imageErrorKey } from './messageContent';
 
 export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFullProcessing: boolean }) {
   const { t } = useTranslation(['runs', 'personas']);
@@ -23,6 +24,8 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
   const name = first?.speaker_name || configuration?.persona_name || t('personas:assistant');
   const avatar = first?.metadata?.speaker_avatar_attachment_id ?? configuration?.avatar_attachment_id;
   const processId = `processing-${run.run_id}`;
+  const error = run.error_message || run.error || '';
+  const errorKey = imageErrorKey(run.error_code, error);
   const status = ({ PENDING: 'queued', WAITING_FOR_USER: 'waiting', CANCELLING: 'cancelling', FAILED: 'failed', CANCELLED: 'cancelled', INTERRUPTED: 'interrupted' } as Partial<Record<Run['status'], string>>)[run.status];
   return <MessageFrame role="assistant" name={name} avatarId={typeof avatar === 'string' ? avatar : null}
     createdAt={run.created_at} runId={run.run_id}>
@@ -45,7 +48,7 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
       {!process.length && !ended ? <span className="run-muted">{t('preparing')}</span> : null}
     </div> : null}
     <RunApproval run={run} steps={reply.steps} messages={reply.messages} />
-    {run.error_message || run.error ? <p className="reply-error" role="alert">{run.error_code ? `${run.error_code}: ` : ''}{run.error_message || run.error}</p> : null}
+    {error ? <p className="reply-error" role="alert">{run.error_code ? `${run.error_code}: ` : ''}{errorKey ? t(errorKey) : error}</p> : null}
     {answer?.metadata?.incomplete ? <p className="reply-incomplete">{t('incompleteAnswer')}</p> : null}
     {answerParts.length ? <div className="message reply-answer" data-message-id={answer?.message_id}>
       <MessageParts parts={answerParts} />
