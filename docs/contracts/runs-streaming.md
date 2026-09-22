@@ -50,6 +50,8 @@ active expansion. User toggles survive incoming deltas; entering a terminal stat
 collapses the outer history, and reopened conversations start terminal histories
 collapsed. Final answers and approval controls stay outside that history.
 Scrolling follows new content only near the bottom, with an explicit latest button.
+The bounded scroll layout is currently missing; see the
+[frontend styling limitations](settings.md#frontend-styling-foundation).
 
 ## WebSocket events
 

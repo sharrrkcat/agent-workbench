@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 for (const script of [
   'check-i18n',
   'check-doc-links',
+  'test-module-loader',
   'test-contracts',
   'test-resource-management',
   'test-session-settings',

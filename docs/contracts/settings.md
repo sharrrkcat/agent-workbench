@@ -11,6 +11,24 @@ domain modules, with a single HTTP/error implementation. User-visible labels,
 states and feedback have matching English/Chinese resources. User content,
 prompts, ids, API fields and error codes retain their original values.
 
+## Frontend styling foundation
+
+Tailwind CSS 4 uses its Vite plugin. shadcn/ui uses Base UI and the Mira preset
+`b1D0dv72` (`base-mira`, Neutral, Lucide, default menus and subtle accents).
+`frontend/src/styles.css` is the only application CSS entry. Its preset light/dark
+tokens are retained, while the HTML root always selects dark and declares a dark
+color scheme. There is no theme setting or system-theme tracking. Inter Variable
+ships in the build; headings inherit the body font and Chinese uses system fallbacks.
+Fonts do not use external CDNs or the removed backend font settings.
+
+The generated Button and `cn` utility are the shared component foundation.
+Vite, TypeScript and the test module loader resolve `@/` to `frontend/src/`.
+Old application/resource styles are removed. Existing business components retain
+their state and semantics, but page layouts, overlay positioning and bounded
+scroll containers are currently unstyled. Component replacement and layout
+reconstruction remain outstanding; existing browser layout cases retain their
+assertions and do not currently establish full workflow acceptance.
+
 ## General
 
 GET/PATCH `/api/settings/general` owns attachment size/count and text-context

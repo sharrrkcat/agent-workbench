@@ -38,8 +38,9 @@ reports in Git or task results. See `docs/ai/DOCS_MAINTENANCE.md` for ownership
 and the plan lifecycle.
 
 Each implementation round reports changed files, commands and results,
-API/settings/workflow changes, and remaining limitations. Run backend tests,
-frontend tests/build and relevant checks, and `scripts/check_docs_size.py`.
+API/settings/workflow changes, and remaining limitations. Run frontend tests/build,
+relevant checks, and `scripts/check_docs_size.py`. Run backend tests only when
+backend code changes; skip them for frontend-only or documentation-only work.
 
 ## Runtime verification and acceptance
 

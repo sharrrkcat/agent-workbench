@@ -289,7 +289,7 @@ and [.env.example](.env.example) for paths and explicit maintenance commands.
 ## Verification
 
 ```powershell
-uv run pytest -q
+uv run pytest -q # Only when backend code changes
 uv run python -m compileall -q ai_workbench
 uv run python scripts/openapi.py check
 uv run python scripts/check_docs_size.py
@@ -307,11 +307,11 @@ Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
 
-Browser checks for chat, runtime maintenance and resource management run with
-`npm run test:browser` in frontend after a build. Install Chromium once with
-`npx playwright install chromium`. Tests start and stop an isolated fixture
-server on port 18767; WORKBENCH_BROWSER_PORT can select a free port. Screenshots
-and failure traces are under frontend/test-results.
+After a build, `npm run test:browser -- style-foundation.spec.ts` checks Mira components and local fonts.
+`npm run test:browser` also includes existing chat, runtime and resource layout cases; these retain their
+assertions but need [layout reconstruction](docs/contracts/settings.md#frontend-styling-foundation) before full acceptance.
+Install Chromium once with `npx playwright install chromium`. Tests manage an isolated fixture server on
+port 18767; WORKBENCH_BROWSER_PORT selects a free port. Screenshots/traces are under frontend/test-results.
 
 All local-runtime smoke commands reuse an installed release by default and fail if it needs installation
 or repair. Only --install-only installs (or confirms a healthy installation), without inference.

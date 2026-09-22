@@ -39,6 +39,7 @@ export function createModuleLoader(mocks = {}) {
   const cache = new Map();
 
   function resolve(specifier, parent) {
+    if (specifier.startsWith('@/')) specifier = sourceUrl(specifier.slice(2));
     if (mocks[specifier]) return mocks[specifier];
     if (!specifier.startsWith('.') && !specifier.startsWith('file:')) return import.meta.resolve(specifier);
     const url = new URL(specifier, parent);
