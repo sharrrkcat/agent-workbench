@@ -21,13 +21,48 @@ color scheme. There is no theme setting or system-theme tracking. Inter Variable
 ships in the build; headings inherit the body font and Chinese uses system fallbacks.
 Fonts do not use external CDNs or the removed backend font settings.
 
-The generated Button and `cn` utility are the shared component foundation.
-Vite, TypeScript and the test module loader resolve `@/` to `frontend/src/`.
-Old application/resource styles are removed. Existing business components retain
-their state and semantics, but page layouts, overlay positioning and bounded
-scroll containers are currently unstyled. Component replacement and layout
-reconstruction remain outstanding; existing browser layout cases retain their
-assertions and do not currently establish full workflow acceptance.
+Shared controls are generated with shadcn CLI 4.21.0 and maintained in
+`frontend/src/components/ui/`. Callers compose Button, Field, Input, Textarea,
+Select, Combobox, Checkbox, Switch, Tabs, Collapsible, ToggleGroup, Dialog,
+AlertDialog and Tooltip directly. Domain components retain model filtering and
+resource binding rules. Vite, TypeScript and the test module loader resolve
+`@/` to `frontend/src/`; `cn` combines component styles.
+
+Desktop controls retain Mira density. Coarse-pointer buttons, options and form
+actions have at least 44px targets; Checkbox/Switch keep compact marks with
+expanded targets and associated labels. Field labels/descriptions are connected
+to controls. Forms retain native required/range validation and existing blank,
+null and zero semantics. Hidden file inputs remain behind visible Buttons.
+Controlled Select preserves groups, disabled options, empty choices and missing
+selected records. Model IDs and projector paths use editable Comboboxes whose
+text is the field value, including values outside the suggestions.
+
+Controlled Tabs use arrow keys for focus and Enter/Space for activation. Model
+and resource panels keep their existing mounted drafts; hidden panels leave
+the focus order and accessibility tree. Other editors retain parent-owned drafts.
+Advanced Collapsible fields stay mounted; invalid submissions expand their
+section and focus the field. CUDA mode uses a single-selection ToggleGroup.
+
+Base UI owns modal focus, Escape, backdrops and scroll locking. Dialogs use Mira's
+default width; large editors use `max-w-3xl`. Side margins and scrollable bodies
+bound them to the viewport. Nested Select/Combobox and confirmation popups return
+focus to their trigger, and busy editors retain their close restrictions.
+Close, Clear, confirmation and Tooltip labels have both locales.
+
+`useConfirmDialog` returns a local `Promise<boolean>` action and an AlertDialog
+node rendered by its owner. One request may be pending per owner; overlapping
+requests, cancellation, Escape and unmount resolve false. Accepting continues
+the existing action. Cache clearing uses this same confirmation workflow.
+`SettingsLeaveContext` and `onLeaveGuardChange` accept async leave guards.
+App commits routes only after acceptance. For guarded browser back/forward,
+it restores the current history entry before asking and replays the target once
+on acceptance; cancellation preserves the page, drafts and history order.
+
+Old application/resource styles are removed. Shared controls, fields and overlays
+are styled, while the application shell, message typography, overall settings
+layouts and bounded chat scrolling still require reconstruction. Existing browser
+layout assertions remain; scoped control acceptance does not establish full-page
+layout acceptance.
 
 ## General
 

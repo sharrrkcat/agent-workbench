@@ -38,7 +38,7 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(backend.includes('0.9.0 / windows / x86_64') && !backend.includes('1.0.0 / windows'));
   assert.ok(backend.includes(t('runtimeReuseHint')));
   const repair = backend.match(/<button\b[^>]*>/g).find((tag) => tag.includes(`aria-label="${t('repairRuntime')}"`));
-  assert.ok(repair && !repair.includes('disabled'));
+  assert.ok(repair && !/\s(?:disabled=""|aria-disabled="true")/.test(repair));
   const panel = renderToStaticMarkup(React.createElement(RuntimeStoragePanel, {
     busy: false, activeView: true, active: undefined, onCleanup: async () => {}, onCancel: () => {},
   }));

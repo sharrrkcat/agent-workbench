@@ -1,3 +1,7 @@
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Activity, Copy, FileText, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -5,8 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
 import type { ModelKind, ModelInventoryItem } from '../../../types/models';
-import { AppModal } from '../../ui/AppModal';
-import { Icon } from './fields';
+
 import type { ModelFeedbackProps } from './types';
 import { kinds, newModel } from './profileDefaults';
 import { ProfileEditor, type ProfileDraft } from './ProfileEditor';
@@ -36,32 +39,54 @@ export function ProfilesTab({
     <>
       <>
         <div className="model-toolbar">
-          <select aria-label={t('kind')} value={kind} onChange={(e) => setKind(e.target.value as ModelKind)}>
-            {kinds.map((k) => (
-              <option key={k} value={k}>
-                {t('kinds.' + k)}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={kind}
+            onValueChange={(selected) => setKind((selected ?? '') as ModelKind)}
+            items={kinds.map((k) => ({ value: k, label: t('kinds.' + k) }))}
+          >
+            <SelectTrigger aria-label={t('kind')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {kinds.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {t('kinds.' + k)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="model-actions">
-            <Icon
-              label={t('inventory')}
-              disabled={busy}
-              onClick={() => void run(async () => setInventory(await modelsApi.listModelInventory(kind)), false)}
-            >
-              <RefreshCw size={16} />
-            </Icon>
-            <button
-              className="secondary-button"
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t('inventory')}
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => setInventory(await modelsApi.listModelInventory(kind)), false)
+                    }
+                  />
+                }
+              >
+                <RefreshCw size={16} />
+              </TooltipTrigger>
+              <TooltipContent>{t('inventory')}</TooltipContent>
+            </Tooltip>
+            <Button
               disabled={busy}
               onClick={() => {
                 setError('');
                 setModel({ value: newModel(kind) });
               }}
+              type="button"
+              variant="outline"
             >
               <Plus size={16} />
               {t('addModel')}
-            </button>
+            </Button>
           </div>
         </div>
         <div className="model-list">
@@ -81,83 +106,166 @@ export function ProfilesTab({
                     <span className={'state-' + (status?.state || 'unknown')}>
                       {p.enabled ? t('states.' + (status?.state || 'unknown')) : t('disabled')}
                     </span>
-                    {p.source?.type === 'local' ? <small>
-                      {t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}
-                    </small> : null}
+                    {p.source?.type === 'local' ? (
+                      <small>
+                        {t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}
+                      </small>
+                    ) : null}
                     <small>
                       {t('active')}: {status?.active || 0} / {t('queued')}: {status?.queued || 0}
                     </small>
                   </div>
                   <div className="model-actions">
-                    {p.source?.type === 'local' ? <>
-                    <Icon
-                      label={t('health')}
-                      disabled={busy || !p.enabled || !p.source}
-                      onClick={() => void statusAction(p.id, 'health')}
-                    >
-                      <Activity size={15} />
-                    </Icon>
-                    <Icon
-                      label={t('load')}
-                      disabled={busy || !p.enabled || !p.source}
-                      onClick={() => void statusAction(p.id, 'load')}
-                    >
-                      <Play size={15} />
-                    </Icon>
-                    <Icon
-                      label={status?.unload_supported ? t('unload') : t('unloadUnsupported')}
-                      disabled={
-                        busy ||
-                        !status?.unload_supported ||
-                        !!status.active ||
-                        !!status.queued ||
-                        (!!status.runtime && status.runtime.install_state !== 'installed')
-                      }
-                      onClick={() => void statusAction(p.id, 'unload')}
-                    >
-                      <Square size={14} />
-                    </Icon>
-                      <Icon
-                        label={t('processLog')}
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => setProcessLog((await modelsApi.getModelLog(p.id)).text), false)
+                    {p.source?.type === 'local' ? (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={t('health')}
+                                disabled={busy || !p.enabled || !p.source}
+                                onClick={() => void statusAction(p.id, 'health')}
+                              />
+                            }
+                          >
+                            <Activity size={15} />
+                          </TooltipTrigger>
+                          <TooltipContent>{t('health')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={t('load')}
+                                disabled={busy || !p.enabled || !p.source}
+                                onClick={() => void statusAction(p.id, 'load')}
+                              />
+                            }
+                          >
+                            <Play size={15} />
+                          </TooltipTrigger>
+                          <TooltipContent>{t('load')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={status?.unload_supported ? t('unload') : t('unloadUnsupported')}
+                                disabled={
+                                  busy ||
+                                  !status?.unload_supported ||
+                                  !!status.active ||
+                                  !!status.queued ||
+                                  (!!status.runtime && status.runtime.install_state !== 'installed')
+                                }
+                                onClick={() => void statusAction(p.id, 'unload')}
+                              />
+                            }
+                          >
+                            <Square size={14} />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {status?.unload_supported ? t('unload') : t('unloadUnsupported')}
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={t('processLog')}
+                                disabled={busy}
+                                onClick={() =>
+                                  void run(
+                                    async () => setProcessLog((await modelsApi.getModelLog(p.id)).text),
+                                    false,
+                                  )
+                                }
+                              />
+                            }
+                          >
+                            <FileText size={14} />
+                          </TooltipTrigger>
+                          <TooltipContent>{t('processLog')}</TooltipContent>
+                        </Tooltip>
+                      </>
+                    ) : null}
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t('edit')}
+                            disabled={busy}
+                            onClick={() => {
+                              const { id, created_at: _c, updated_at: _u, ...value } = p;
+                              setError('');
+                              setModel({ id, value });
+                            }}
+                          />
                         }
                       >
-                        <FileText size={14} />
-                      </Icon>
-                    </> : null}
-                    <Icon
-                      label={t('edit')}
-                      disabled={busy}
-                      onClick={() => {
-                        const { id, created_at: _c, updated_at: _u, ...value } = p;
-                        setError('');
-                        setModel({ id, value });
-                      }}
-                    >
-                      <Pencil size={15} />
-                    </Icon>
-                    <Icon
-                      label={t('duplicate')}
-                      disabled={busy}
-                      onClick={() => {
-                        const { id: _id, created_at: _c, updated_at: _u, ...value } = p;
-                        setError('');
-                        setModel({ value: { ...value, alias: p.alias + '-copy', name: p.name + ' ' + t('copy') } });
-                      }}
-                    >
-                      <Copy size={15} />
-                    </Icon>
-                    <Icon
-                      label={t('delete')}
-                      disabled={busy}
-                      onClick={() => void run(() => modelsApi.deleteModelProfile(p.id))}
-                    >
-                      <Trash2 size={15} />
-                    </Icon>
+                        <Pencil size={15} />
+                      </TooltipTrigger>
+                      <TooltipContent>{t('edit')}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t('duplicate')}
+                            disabled={busy}
+                            onClick={() => {
+                              const { id: _id, created_at: _c, updated_at: _u, ...value } = p;
+                              setError('');
+                              setModel({
+                                value: { ...value, alias: p.alias + '-copy', name: p.name + ' ' + t('copy') },
+                              });
+                            }}
+                          />
+                        }
+                      >
+                        <Copy size={15} />
+                      </TooltipTrigger>
+                      <TooltipContent>{t('duplicate')}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t('delete')}
+                            disabled={busy}
+                            onClick={() => void run(() => modelsApi.deleteModelProfile(p.id))}
+                          />
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </TooltipTrigger>
+                      <TooltipContent>{t('delete')}</TooltipContent>
+                    </Tooltip>
                   </div>
-                  {status?.error_code && !status.runtime ? <code className="error-text">{status.error_code}</code> : null}
+                  {status?.error_code && !status.runtime ? (
+                    <code className="error-text">{status.error_code}</code>
+                  ) : null}
                   {status?.runtime ? (
                     <div className="model-runtime-state">
                       <span>
@@ -165,14 +273,24 @@ export function ProfilesTab({
                         {t('runtimeStates.' + status.runtime.install_state)}
                       </span>
                       {status.runtime.device_name ? <span>{status.runtime.device_name}</span> : null}
-                      {status.runtime.gpu_layers_loaded != null ? <span>{t('gpuOffloaded', {
-                        loaded: status.runtime.gpu_layers_loaded, total: status.runtime.gpu_layers_total,
-                      })}</span> : null}
+                      {status.runtime.gpu_layers_loaded != null ? (
+                        <span>
+                          {t('gpuOffloaded', {
+                            loaded: status.runtime.gpu_layers_loaded,
+                            total: status.runtime.gpu_layers_total,
+                          })}
+                        </span>
+                      ) : null}
                       {status.error_code ? <code className="error-text">{status.error_code}</code> : null}
                       {status.runtime.install_state !== 'installed' ? (
-                        <button type="button" className="text-button" onClick={() => onOpenLocalRuntime()}>
+                        <Button
+                          type="button"
+                          onClick={() => onOpenLocalRuntime()}
+                          variant="ghost"
+                          className="text-button"
+                        >
                           {t('manageLocalRuntime')}
-                        </button>
+                        </Button>
                       ) : null}
                     </div>
                   ) : null}
@@ -191,29 +309,54 @@ export function ProfilesTab({
               .map((item) => (
                 <div className="model-row" key={item.model_ref}>
                   <code>{item.model_ref}</code>
-                  <Icon
-                    label={t('addModel')}
-                    onClick={() =>
-                      setModel({ value: { ...newModel(kind), name: item.name, model_ref: item.model_ref } })
-                    }
-                  >
-                    <Plus size={16} />
-                  </Icon>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('addModel')}
+                          onClick={() =>
+                            setModel({
+                              value: { ...newModel(kind), name: item.name, model_ref: item.model_ref },
+                            })
+                          }
+                        />
+                      }
+                    >
+                      <Plus size={16} />
+                    </TooltipTrigger>
+                    <TooltipContent>{t('addModel')}</TooltipContent>
+                  </Tooltip>
                 </div>
               ))}
           </>
         ) : null}
       </>
-      <AppModal
+      <Dialog
         open={processLog !== null}
-        title={t('processLog')}
-        closeLabel={t('close')}
-        width="large"
-        onClose={() => setProcessLog(null)}
+        onOpenChange={(open) => {
+          if (!open) (() => setProcessLog(null))();
+        }}
       >
-        <pre className="runtime-log">{processLog || t('emptyLog')}</pre>
-      </AppModal>
-      <ProfileEditor model={model} setModel={setModel} run={run} busy={busy} feedback={feedback} setError={setError} />
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t('processLog')}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            <pre className="runtime-log">{processLog || t('emptyLog')}</pre>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <ProfileEditor
+        model={model}
+        setModel={setModel}
+        run={run}
+        busy={busy}
+        feedback={feedback}
+        setError={setError}
+      />
     </>
   );
 }

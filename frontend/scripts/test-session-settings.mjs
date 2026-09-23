@@ -6,7 +6,7 @@ import i18next from 'i18next';
 import { createModuleLoader, mockModule, sourceUrl } from './module-loader.mjs';
 
 const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale,
-  Object.fromEntries(['personas', 'settings', 'llm'].map((namespace) => [namespace,
+  Object.fromEntries(['personas', 'settings', 'llm', 'common'].map((namespace) => [namespace,
     JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'))])),
 ]));
 const i18n = i18next.createInstance();
@@ -14,9 +14,12 @@ await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { esca
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { ToolsField, ContextFields, GenerationFields, ModelField, ModelSelect, Check } = (
+const { ToolsField, ContextFields, GenerationFields, ModelField, ModelSelect } = (
   await load('../src/components/personas/ConfigurationFields.tsx')
 ).exports;
+const { Checkbox } = (await load('../src/components/ui/checkbox.tsx')).exports;
+const { Switch } = (await load('../src/components/ui/switch.tsx')).exports;
+const { SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
 function descendants(node) {
   if (Array.isArray(node)) return node.flatMap(descendants);
   if (!React.isValidElement(node)) return [];
@@ -29,26 +32,26 @@ const tools = [
 ];
 let selected = tools.map((tool) => tool.name);
 const renderTools = () => ToolsField({ tools, value: selected, onChange: (value) => { selected = value; } });
-let toggles = descendants(renderTools()).filter((node) => node.type === Check);
+let toggles = descendants(renderTools()).filter((node) => node.type === Checkbox);
 assert.equal(toggles.length, 3);
 assert.ok(toggles.every((node) => node.props.checked));
-toggles.find((node) => node.props.label === 'read_file').props.onChange(false);
+toggles[1].props.onCheckedChange(false);
 assert.deepEqual(selected, ['base64_encode', 'web_search']);
-toggles = descendants(renderTools()).filter((node) => node.type === Check);
-assert.equal(toggles.find((node) => node.props.label === 'read_file').props.checked, false);
-toggles.find((node) => node.props.label === 'read_file').props.onChange(true);
+toggles = descendants(renderTools()).filter((node) => node.type === Checkbox);
+assert.equal(toggles[1].props.checked, false);
+toggles[1].props.onCheckedChange(true);
 assert.deepEqual(selected, ['base64_encode', 'read_file', 'web_search']);
 for (const name of [...selected])
-  descendants(renderTools()).find((node) => node.type === Check && node.props.label === name).props.onChange(false);
+  descendants(renderTools()).filter((node) => node.type === Checkbox)[tools.findIndex((tool) => tool.name === name)].props.onCheckedChange(false);
 assert.deepEqual(selected, []);
-assert.ok(descendants(renderTools()).filter((node) => node.type === Check).every((node) => !node.props.checked));
+assert.ok(descendants(renderTools()).filter((node) => node.type === Checkbox).every((node) => !node.props.checked));
 
 const policy = { mode: 'session', max_messages: null, max_chars: null, include_attachments: 'explicit' };
 let changedPolicy;
 const fields = ContextFields({ value: policy, onChange: (value) => { changedPolicy = value; } });
-const policySwitches = descendants(fields).filter((node) => node.type === Check);
+const policySwitches = descendants(fields).filter((node) => node.type === Switch);
 assert.equal(policySwitches.length, 1);
-policySwitches[0].props.onChange(false);
+policySwitches[0].props.onCheckedChange(false);
 assert.deepEqual(changedPolicy, { ...policy, include_attachments: 'none' });
 
 const profiles = [
@@ -61,20 +64,20 @@ let modelChoice;
 const modelSelect = ModelSelect({ profiles, value: 'preferred', onChange: (id) => { modelChoice = id; } });
 assert.equal(modelSelect.props.value, 'preferred');
 assert.equal(modelSelect.props.disabled, false);
-const modelOptions = descendants(modelSelect).filter((node) => node.type === 'option');
+const modelOptions = descendants(modelSelect).filter((node) => node.type === SelectItem);
 assert.deepEqual(modelOptions.map((node) => node.props.value), ['disabled', 'first', 'preferred']);
 assert.equal(modelOptions[0].props.disabled, true);
-modelSelect.props.onChange({ target: { value: 'first' } });
+modelSelect.props.onValueChange('first');
 assert.equal(modelChoice, 'first');
 const unavailable = ModelSelect({ profiles, value: 'missing', onChange: () => assert.fail('Rendering must not change the selected model') });
 assert.equal(unavailable.props.value, 'missing');
-assert.equal(descendants(unavailable).find((node) => node.type === 'option' && node.props.value === 'missing').props.disabled, true);
+assert.equal(descendants(unavailable).find((node) => node.type === SelectItem && node.props.value === 'missing').props.disabled, true);
 const noModels = ModelSelect({ profiles: profiles.slice(0, 2), value: null, onChange: () => {} });
 assert.equal(noModels.props.disabled, true);
-assert.ok(descendants(noModels).filter((node) => node.type === 'option').every((node) => node.props.disabled));
+assert.ok(descendants(noModels).filter((node) => node.type === SelectItem).every((node) => node.props.disabled));
 const unselected = ModelSelect({ profiles, value: null, onChange: () => {} });
 assert.equal(unselected.props.value, '');
-assert.equal(descendants(unselected).find((node) => node.type === 'option' && node.props.value === '').props.disabled, true);
+assert.equal(descendants(unselected).find((node) => node.type === SelectItem && node.props.value === '').props.disabled, true);
 
 let headerSession = { model_profile_id: 'preferred', current_persona_id: 'chat', personas: [], effective: {} };
 const headerLoad = createModuleLoader({
@@ -96,13 +99,14 @@ for (const [locale, labels] of [
   ));
   for (const label of labels) assert.ok(html.includes(label), label);
   assert.doesNotMatch(html, /include_system_prompt|inheritPersona|overrideHarness|toolRisk\.|Global default|全局默认/);
-  assert.equal((html.match(/checked=""/g) || []).length, 2);
+  assert.equal((html.match(/aria-checked="true"/g) || []).length, 2);
   for (const modelId of ['preferred', 'first']) {
     headerSession = { ...headerSession, model_profile_id: modelId };
     const header = renderToStaticMarkup(React.createElement(ChatHeader, { onOpenSettings: () => {}, onToggleSidebar: () => {} }));
     const settings = renderToStaticMarkup(React.createElement(ModelField, { profiles, value: modelId, onChange: () => {} }));
     for (const rendered of [header, settings]) {
-      assert.match(rendered, new RegExp(`<option value="${modelId}"[^>]*selected=""`));
+      assert.ok(rendered.includes(profiles.find((profile) => profile.id === modelId).name));
+      assert.match(rendered, new RegExp(`<input[^>]*value="${modelId}"`));
       assert.doesNotMatch(rendered, /Global default|全局默认|<option value=""/);
     }
   }

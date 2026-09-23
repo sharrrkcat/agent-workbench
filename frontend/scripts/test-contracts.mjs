@@ -65,6 +65,7 @@ await assert.rejects(
 );
 
 const { GeneralSettingsForm } = (await load('../src/components/settings/GeneralPanel.tsx')).exports;
+const { Button } = (await load('../src/components/ui/button.tsx')).exports;
 const settings = {
   show_full_processing: false,
   core_memory_enabled: true,
@@ -89,7 +90,7 @@ const form = GeneralSettingsForm({
   },
 });
 descendants(form)
-  .find((node) => node.type === 'button')
+  .find((node) => node.type === Button)
   .props.onClick();
 assert.deepEqual(saved, {
   show_full_processing: false,

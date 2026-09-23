@@ -160,7 +160,7 @@ assert.match(html, /aria-label="Cancel"/);
 globalThis.harnessTestState.resolvingApprovals = ['r'];
 const busy = renderToStaticMarkup(React.createElement(panel, { run: waiting }));
 assert.match(busy, /Resuming/);
-assert.equal((busy.match(/disabled=""/g) || []).length, 2);
+assert.equal((busy.match(/\sdisabled=""/g) || []).length, 2);
 const messageParts = (await loadView('../src/components/messages/MessageParts.tsx')).exports.MessageParts;
 const rendered = renderToStaticMarkup(
   React.createElement(messageParts, {

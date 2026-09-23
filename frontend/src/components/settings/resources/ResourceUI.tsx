@@ -1,19 +1,29 @@
-import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
-import type { ReactElement, ReactNode } from 'react';
-import { LoaderCircle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { RefreshCw } from 'lucide-react';
+import type { ConfirmAction } from '@/hooks/useConfirmDialog';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../../../api/http';
 
-export const SettingsLeaveContext = createContext<(guard: () => boolean) => () => void>(() => () => undefined);
+export type LeaveGuard = () => Promise<boolean>;
+export const SettingsLeaveContext = createContext<(guard: LeaveGuard) => () => void>(() => () => undefined);
 
-export function useResourceGuard(dirty: boolean, busy: boolean) {
+export function useResourceGuard(dirty: boolean, busy: boolean, confirm: ConfirmAction) {
   const { t } = useTranslation('settings');
   const register = useContext(SettingsLeaveContext);
-  const guard = useCallback(() => !busy && (!dirty || window.confirm(t('resources.discardConfirm'))), [busy, dirty, t]);
+  const guard = useCallback(
+    async () => !busy && (!dirty || (await confirm(t('resources.discardConfirm')))),
+    [busy, dirty, confirm, t],
+  );
   useEffect(() => register(guard), [guard, register]);
   useEffect(() => {
     if (!dirty && !busy) return;
-    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [dirty, busy]);
@@ -30,10 +40,18 @@ export function useResourceTask() {
   const [notice, setNotice] = useState('');
   const lock = useRef(false);
   const live = useRef(true);
-  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   async function run<T>(key: string, action: () => Promise<T>, message = ''): Promise<T | undefined> {
     if (lock.current) return;
-    lock.current = true; setBusy(key); setError(''); setNotice('');
+    lock.current = true;
+    setBusy(key);
+    setError('');
+    setNotice('');
     try {
       const result = await action();
       if (live.current) setNotice(message);
@@ -49,61 +67,54 @@ export function useResourceTask() {
 }
 
 export function Feedback({ error, notice }: { error: string; notice?: string }) {
-  return <div className="resource-feedback" role={error ? 'alert' : 'status'}>
-    {error ? <span className="error-text">{error}</span> : <span className="success-text">{notice}</span>}
-  </div>;
-}
-
-export function ResourceIcon({ label, children, onClick, disabled, busy = false, danger = false }: {
-  label: string; children: ReactNode; onClick: () => void; disabled?: boolean; busy?: boolean; danger?: boolean;
-}) {
-  return <button type="button" className={`icon-button resource-icon${danger ? ' danger' : ''}`} title={label} aria-label={label}
-    disabled={disabled || busy} onClick={onClick}>{busy ? <LoaderCircle size={16} className="spin" /> : children}</button>;
-}
-
-export function ResourceTabs<T extends string>({ value, onChange, tabs, disabled = false }: {
-  value: T; onChange: (value: T) => void; tabs: Array<{ id: T; label: string; disabled?: boolean }>; disabled?: boolean;
-}) {
-  const { t } = useTranslation('settings');
-  return <div className="model-tabs resource-tabs" role="tablist" aria-label={t('resources.sections')}>
-    {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={tab.id === value}
-      disabled={disabled || tab.disabled} onClick={() => onChange(tab.id)}>{tab.label}</button>)}
-  </div>;
-}
-
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  const id = useId();
-  return <div className="settings-field resource-field"><label htmlFor={id}>{label}</label>
-    {Children.map(children, (child) => isValidElement(child) && ['input', 'select', 'textarea'].includes(String(child.type))
-      ? cloneElement(child as ReactElement<{ id: string }>, { id }) : child)}
-  </div>;
-}
-
-export function NumberInput({ label, value, onChange, min, max, step = 1, optional = false }: {
-  label: string; value: number | null; onChange: (value: number | null) => void; min: number; max: number;
-  step?: number; optional?: boolean;
-}) {
-  const [text, setText] = useState(value == null || Number.isNaN(value) ? '' : String(value));
-  useEffect(() => setText(value == null || Number.isNaN(value) ? '' : String(value)), [value]);
-  return <Field label={label}><input type="number" min={min} max={max} step={step} required={!optional}
-    value={text} onChange={(event) => {
-      const raw = event.target.value; setText(raw);
-      onChange(raw === '' ? optional ? null : Number.NaN : Number(raw));
-    }} /></Field>;
+  return (
+    <div className="resource-feedback" role={error ? 'alert' : 'status'}>
+      {error ? <span className="error-text">{error}</span> : <span className="success-text">{notice}</span>}
+    </div>
+  );
 }
 
 export function ResourceLoading({ error, retry }: { error?: string; retry?: () => void }) {
   const { t } = useTranslation('settings');
-  return <div className="resource-loading" role={error ? 'alert' : 'status'}>
-    {error || t('common:loading')}
-    {error && retry ? <ResourceIcon label={t('resources.refresh')} onClick={retry}><RefreshCw size={16} /></ResourceIcon> : null}
-  </div>;
+  return (
+    <div className="resource-loading" role={error ? 'alert' : 'status'}>
+      {error || t('common:loading')}
+      {error && retry ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={t('resources.refresh')}
+                onClick={retry}
+              />
+            }
+          >
+            <RefreshCw size={16} />
+          </TooltipTrigger>
+          <TooltipContent>{t('resources.refresh')}</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
 }
 
-export function equalDraft(left: unknown, right: unknown) { return JSON.stringify(left) === JSON.stringify(right); }
+export function equalDraft(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 export function revealInvalidField(event: { target: EventTarget }) {
   if (!(event.target instanceof HTMLElement)) return;
-  let details = event.target.closest('details');
-  while (details) { details.open = true; details = details.parentElement?.closest('details') ?? null; }
+  const target = event.target;
+  flushSync(() => {
+    let panel = target.closest('[data-slot="collapsible"]');
+    while (panel) {
+      const trigger = panel.querySelector<HTMLElement>(':scope > [data-slot="collapsible-trigger"]');
+      if (trigger?.getAttribute('aria-expanded') === 'false') trigger.click();
+      panel = panel.parentElement?.closest('[data-slot="collapsible"]') ?? null;
+    }
+  });
+  target.focus();
 }

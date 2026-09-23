@@ -1,3 +1,8 @@
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { Textarea } from '@/components/ui/textarea';
+import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toolsApi } from '../../api/tools';
@@ -5,7 +10,6 @@ import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { HarnessSettings, HarnessTool } from '../../types/tools';
 import { MessageParts } from '../messages/MessageParts';
 import { RunPanel } from '../RunPanel';
-import { Panel } from './fields';
 
 export function ToolsPanel() {
   const { t } = useTranslation('settings');
@@ -42,7 +46,8 @@ export function ToolsPanel() {
     setFeedback('');
   }, [session?.session_id]);
   const current = tools.find((item) => item.name === selected);
-  const allowed = !!current && !!session?.effective.tools_allowed.includes(current.name) && current.direct_callable;
+  const allowed =
+    !!current && !!session?.effective.tools_allowed.includes(current.name) && current.direct_callable;
   const active = runs.some(
     (run) =>
       run.session_id === session?.session_id &&
@@ -51,7 +56,8 @@ export function ToolsPanel() {
   const latest = [...runs]
     .reverse()
     .find(
-      (run) => run.session_id === session?.session_id && run.kind === 'tool' && run.metadata?.tool_name === selected,
+      (run) =>
+        run.session_id === session?.session_id && run.kind === 'tool' && run.metadata?.tool_name === selected,
     );
   const output = latest ? messages.filter((message) => message.run_id === latest.run_id) : [];
 
@@ -84,106 +90,120 @@ export function ToolsPanel() {
   }
 
   return (
-    <Panel title={t('tools')}>
-      <p className="settings-note">{t('toolDirectHelp')}</p>
-      <h3>{t('toolCatalog')}</h3>
-      <div className="settings-list">
-        {tools.map((tool) => (
-          <button
-            key={tool.name}
-            type="button"
-            aria-pressed={selected === tool.name}
-            className="settings-list-row tool-selector"
-            onClick={() => {
-              setSelected(tool.name);
-              setArgumentsText(exampleArguments(tool));
-              setFeedback('');
-            }}
-          >
-            <span>
-              {tool.name}
-              <small>{t('toolDescriptions.' + tool.name)}</small>
-            </span>
-            <small>
-              {t('toolRisk.' + tool.risk)} · {tool.requires_approval ? t('approvalRequired') : t('noApproval')}
-            </small>
-          </button>
-        ))}
-      </div>
-      {current ? (
-        <div className="tool-call-form">
-          <h3>{current.name}</h3>
-          <details>
-            <summary>{t('toolSchema')}</summary>
-            <pre className="part-json">{JSON.stringify(current.parameters, null, 2)}</pre>
-          </details>
-          <label className="settings-field">
-            <span>{t('toolArguments')}</span>
-            <textarea
-              rows={6}
-              value={argumentsText}
-              onChange={(event) => setArgumentsText(event.currentTarget.value)}
-            />
-          </label>
-          {!session ? (
-            <p>{t('toolSelectSession')}</p>
-          ) : !allowed ? (
-            <p>{t('toolNotAllowed')}</p>
-          ) : (
-            <p>{t('toolSession', { name: session.title || session.effective.persona_name })}</p>
-          )}
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={!allowed || active || sending}
-            onClick={() => void call()}
-          >
-            {t(sending ? 'toolCalling' : 'callTool')}
-          </button>
-        </div>
-      ) : null}
-      {latest ? (
-        <div className="tool-output">
-          <h3>{t('toolResult')}</h3>
-          <RunPanel run={latest} />
-          {output.map((message) => (
-            <MessageParts key={message.message_id} parts={message.parts} />
+    <section className="settings-panel">
+      <h2>{t('tools')}</h2>
+      <FieldGroup>
+        <p className="settings-note">{t('toolDirectHelp')}</p>
+        <h3>{t('toolCatalog')}</h3>
+        <div className="settings-list">
+          {tools.map((tool) => (
+            <Button
+              key={tool.name}
+              type="button"
+              aria-pressed={selected === tool.name}
+              onClick={() => {
+                setSelected(tool.name);
+                setArgumentsText(exampleArguments(tool));
+                setFeedback('');
+              }}
+              variant="ghost"
+              className="settings-list-row tool-selector"
+            >
+              <span>
+                {tool.name}
+                <small>{t('toolDescriptions.' + tool.name)}</small>
+              </span>
+              <small>
+                {t('toolRisk.' + tool.risk)} ·{' '}
+                {tool.requires_approval ? t('approvalRequired') : t('noApproval')}
+              </small>
+            </Button>
           ))}
         </div>
-      ) : null}
-      <h3>{t('searxng')}</h3>
-      <p className="settings-note">{t('searxngHelp')}</p>
-      {settings ? (
-        <>
-          <label className="settings-field">
-            <span>{t('searxngUrl')}</span>
-            <input
-              type="url"
-              value={settings.searxng_base_url || ''}
-              onChange={(event) => setSettings({ ...settings, searxng_base_url: event.currentTarget.value || null })}
-            />
-          </label>
-          <button className="primary-button" type="button" disabled={saving} onClick={() => void saveSettings()}>
-            {t('save')}
-          </button>
-        </>
-      ) : null}
-      {feedback ? (
-        <p className="settings-feedback" role="status">
-          {feedback}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="settings-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </Panel>
+        {current ? (
+          <div className="tool-call-form">
+            <h3>{current.name}</h3>
+            <Collapsible>
+              <CollapsibleTrigger render={<Button type="button" variant="ghost" className="justify-start" />}>
+                {t('toolSchema')}
+              </CollapsibleTrigger>
+              <CollapsibleContent keepMounted>
+                <pre className="part-json">{JSON.stringify(current.parameters, null, 2)}</pre>
+              </CollapsibleContent>
+            </Collapsible>
+            <Field className="settings-field">
+              <FieldLabel>{t('toolArguments')}</FieldLabel>
+              <Textarea
+                rows={6}
+                value={argumentsText}
+                onChange={(event) => setArgumentsText(event.currentTarget.value)}
+              ></Textarea>
+            </Field>
+            {!session ? (
+              <p>{t('toolSelectSession')}</p>
+            ) : !allowed ? (
+              <p>{t('toolNotAllowed')}</p>
+            ) : (
+              <p>{t('toolSession', { name: session.title || session.effective.persona_name })}</p>
+            )}
+            <Button
+              type="button"
+              disabled={!allowed || active || sending}
+              onClick={() => void call()}
+              variant="outline"
+            >
+              {t(sending ? 'toolCalling' : 'callTool')}
+            </Button>
+          </div>
+        ) : null}
+        {latest ? (
+          <div className="tool-output">
+            <h3>{t('toolResult')}</h3>
+            <RunPanel run={latest} />
+            {output.map((message) => (
+              <MessageParts key={message.message_id} parts={message.parts} />
+            ))}
+          </div>
+        ) : null}
+        <h3>{t('searxng')}</h3>
+        <p className="settings-note">{t('searxngHelp')}</p>
+        {settings ? (
+          <>
+            <Field className="settings-field">
+              <FieldLabel>{t('searxngUrl')}</FieldLabel>
+              <Input
+                type="url"
+                value={settings.searxng_base_url || ''}
+                onChange={(event) =>
+                  setSettings({ ...settings, searxng_base_url: event.currentTarget.value || null })
+                }
+              />
+            </Field>
+            <Button type="button" disabled={saving} onClick={() => void saveSettings()} variant="default">
+              {t('save')}
+            </Button>
+          </>
+        ) : null}
+        {feedback ? (
+          <p className="settings-feedback" role="status">
+            {feedback}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="settings-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </FieldGroup>
+    </section>
   );
 }
 
 function exampleArguments(tool: HarnessTool): string {
-  const properties = (tool.parameters.properties || {}) as Record<string, { type?: string; minimum?: number }>;
+  const properties = (tool.parameters.properties || {}) as Record<
+    string,
+    { type?: string; minimum?: number }
+  >;
   const required = (tool.parameters.required || []) as string[];
   return JSON.stringify(
     Object.fromEntries(

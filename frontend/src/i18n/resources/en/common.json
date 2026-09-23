@@ -1,1 +1,15 @@
-{"appName":"Workbench","loading":"Loading…","save":"Save","cancel":"Cancel","delete":"Delete","back":"Back","language":"Language"}
+{
+  "appName": "Workbench",
+  "loading": "Loading…",
+  "save": "Save",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "back": "Back",
+  "language": "Language",
+  "close": "Close",
+  "clear": "Clear",
+  "showSuggestions": "Show suggestions",
+  "confirm": "Confirm",
+  "confirmAction": "Confirm action",
+  "noSuggestions": "No suggestions"
+}

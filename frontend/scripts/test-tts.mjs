@@ -15,6 +15,12 @@ const load = createModuleLoader({
 });
 const { kinds, newModel, updateModel, localEngine, localSource, selectModelSource, selectTTSArchitecture } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
+const { SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
+function descendants(node) {
+  if (Array.isArray(node)) return node.flatMap(descendants);
+  if (!React.isValidElement(node)) return [];
+  return [node, ...descendants(node.props.children)];
+}
 assert.ok(kinds.includes('tts'));
 const profile = newModel('tts');
 assert.equal(profile.source.type, 'local');
@@ -46,7 +52,9 @@ for (const locale of ['en', 'zh-CN']) {
   const t = i18n.getFixedT(locale, 'llm');
   const markup = renderToStaticMarkup(React.createElement(ProfileParameters, { value: profile, onChange: () => {} }));
   assert.ok(markup.includes(t('params.speed')) && markup.includes(t('params.response_format')));
-  assert.ok(markup.includes('MP3') && markup.includes('WAV') && markup.includes('Kokoro-82M'));
+  assert.ok(markup.includes('MP3') && markup.includes('Kokoro-82M'));
+  const options = descendants(ProfileParameters({ value: profile, onChange() {} })).filter((node) => node.type === SelectItem);
+  assert.deepEqual(options.filter((node) => ['mp3', 'wav'].includes(node.props.value)).map((node) => node.props.children), ['MP3', 'WAV']);
   assert.ok(!markup.includes(t('params.batch_size')) && !markup.includes(t('params.temperature')) && !markup.includes(t('params.seed')));
   const audioMarkup = renderToStaticMarkup(React.createElement(ProfileParameters, { value: chatterbox, onChange: () => {} }));
   for (const key of ['seed', 'exaggeration', 'cfg_weight', 'temperature', 'repetition_penalty', 'min_p', 'top_p']) {
@@ -61,7 +69,7 @@ for (const locale of ['en', 'zh-CN']) {
   }
   assert.ok(!qwenMarkup.includes(t('params.exaggeration')) && !qwenMarkup.includes(t('params.cfg_weight')));
   assert.ok(qwenMarkup.includes(t('qwen3TTSBase')));
-  assert.match(qwenMarkup, /value="qwen3tts" selected=""/);
+  assert.match(qwenMarkup, /<input[^>]*value="qwen3tts"/);
   assert.match(qwenMarkup, /max="8192"/);
 }
 let requested;

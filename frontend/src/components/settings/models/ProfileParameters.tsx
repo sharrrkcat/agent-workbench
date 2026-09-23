@@ -1,6 +1,11 @@
+import { Input } from '@/components/ui/input';
+import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
 import type { ModelInput } from '../../../types/models';
-import { Check, Field, NumberInput } from './fields';
+
 import { localEngine, selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
 
 export function ProfileParameters({
@@ -12,8 +17,10 @@ export function ProfileParameters({
 }) {
   const { t } = useTranslation('llm');
   const patchParam = (key: string, next: unknown) => onChange({ ...value.parameters, [key]: next });
+  // Viewport columns need no size containment, which can hide unchanged fields
+  // in Chromium when an architecture removes sibling controls.
   return (
-    <div className="model-form-grid">
+    <FieldGroup className="@container-normal grid gap-4 sm:grid-cols-2">
       {value.kind === 'llm' ? (
         <>
           {[
@@ -23,19 +30,37 @@ export function ProfileParameters({
             ['presence_penalty', -2, 2, 0.1],
             ['frequency_penalty', -2, 2, 0.1],
             ['seed', undefined, undefined, 1],
-          ].filter(([key]) => localEngine(value) !== 'transformers' || !['presence_penalty', 'frequency_penalty'].includes(String(key))).map(([key, min, max, step]) => (
-            <NumberInput
-              key={String(key)}
-              label={t('params.' + key)}
-              value={value.parameters[String(key)] as number | undefined}
-              min={min as number}
-              max={max as number}
-              step={step as number}
-              onChange={(v) => patchParam(String(key), v)}
-            />
-          ))}
-          <Field label={t('params.stop')}>
-            <input
+          ]
+            .filter(
+              ([key]) =>
+                localEngine(value) !== 'transformers' ||
+                !['presence_penalty', 'frequency_penalty'].includes(String(key)),
+            )
+            .map(([key, min, max, step]) => (
+              <Field key={String(key)}>
+                <FieldLabel>{t('params.' + key)}</FieldLabel>
+                <Input
+                  type="number"
+                  min={min as number}
+                  max={max as number}
+                  step={step as number}
+                  value={
+                    Number.isNaN(value.parameters[String(key)] as number | undefined)
+                      ? ''
+                      : ((value.parameters[String(key)] as number | undefined) ?? '')
+                  }
+                  onChange={(event) =>
+                    patchParam(
+                      String(key),
+                      event.currentTarget.value === '' ? null : Number(event.currentTarget.value),
+                    )
+                  }
+                />
+              </Field>
+            ))}
+          <Field>
+            <FieldLabel>{t('params.stop')}</FieldLabel>
+            <Input
               value={String(value.parameters.stop || '')}
               onChange={(e) => patchParam('stop', e.target.value || null)}
             />
@@ -43,107 +68,279 @@ export function ProfileParameters({
         </>
       ) : value.kind === 'tts' ? (
         <>
-          <Field label={t('params.architecture')}>
-            <select value={String(value.parameters.architecture ?? 'kokoro')}
-              onChange={(e) => onChange(selectTTSArchitecture(value.parameters, e.target.value as keyof typeof ttsGenerationDefaults))}>
-              <option value="kokoro">Kokoro-82M v1.0 (ONNX)</option>
-              <option value="chatterbox">{t('chatterboxEnglish')}</option>
-              <option value="qwen3tts">{t('qwen3TTSBase')}</option>
-            </select>
+          <Field>
+            <FieldLabel>{t('params.architecture')}</FieldLabel>
+            <Select
+              value={String(value.parameters.architecture ?? 'kokoro')}
+              onValueChange={(selected) =>
+                onChange(
+                  selectTTSArchitecture(
+                    value.parameters,
+                    (selected ?? '') as keyof typeof ttsGenerationDefaults,
+                  ),
+                )
+              }
+              items={[
+                { value: 'kokoro', label: <>Kokoro-82M v1.0 (ONNX)</> },
+                { value: 'chatterbox', label: t('chatterboxEnglish') },
+                { value: 'qwen3tts', label: t('qwen3TTSBase') },
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="kokoro">Kokoro-82M v1.0 (ONNX)</SelectItem>
+                <SelectItem value="chatterbox">{t('chatterboxEnglish')}</SelectItem>
+                <SelectItem value="qwen3tts">{t('qwen3TTSBase')}</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           {['chatterbox', 'qwen3tts'].includes(String(value.parameters.architecture)) ? (
-            <NumberInput label={t('params.seed')} value={value.parameters.seed as number | null | undefined}
-              min={0} max={4294967295} onChange={(seed) => patchParam('seed', seed)} />
-          ) : null}
-          {value.parameters.architecture === 'chatterbox' ? [
-            ['exaggeration', 0.5, 0, 2, 0.05], ['cfg_weight', 0.5, 0, 1, 0.05],
-            ['temperature', 0.8, 0.01, 5, 0.01], ['repetition_penalty', 1.2, 1, 2, 0.05],
-            ['min_p', 0.05, 0, 1, 0.01], ['top_p', 1, 0.01, 1, 0.01],
-          ].map(([key, initial, min, max, step]) => (
-            <NumberInput key={String(key)} label={t('params.' + key)}
-              value={Number(value.parameters[String(key)] ?? initial)} min={Number(min)} max={Number(max)} step={Number(step)}
-              onChange={(next) => patchParam(String(key), next ?? initial)} />
-          )) : null}
-          {value.parameters.architecture === 'qwen3tts' ? <>
-            <Check label={t('params.do_sample')} checked={value.parameters.do_sample !== false}
-              onChange={(next) => patchParam('do_sample', next)} />
-            {([
-              ['temperature', 0.01, undefined, 0.01], ['top_p', 0.01, 1, 0.01],
-              ['top_k', 0, undefined, 1], ['repetition_penalty', 0.01, undefined, 0.01],
-              ['max_new_tokens', 1, 8192, 1],
-            ] as const).map(([key, min, max, step]) => (
-              <NumberInput key={key} label={t('params.' + key)}
-                value={Number(value.parameters[key] ?? ttsGenerationDefaults.qwen3tts[key])} min={min} max={max} step={step}
-                onChange={(next) => patchParam(key, next ?? ttsGenerationDefaults.qwen3tts[key])} />
-            ))}
-          </> : null}
-          <NumberInput label={t('params.speed')} value={Number(value.parameters.speed ?? 1)} min={0.25} max={4} step={0.05}
-            onChange={(speed) => patchParam('speed', speed ?? 1)} />
-          <Field label={t('params.response_format')}>
-            <select value={String(value.parameters.response_format ?? 'mp3')} onChange={(e) => patchParam('response_format', e.target.value)}>
-              <option value="mp3">MP3</option><option value="wav">WAV</option>
-            </select>
-          </Field>
-        </>
-      ) : (
-        <>
-          <NumberInput
-            label={t('params.batch_size')}
-            value={Number(
-              value.parameters.batch_size || (value.kind === 'embedding' || value.kind === 'reranker' ? 16 : 1),
-            )}
-            min={1}
-            onChange={(v) => patchParam('batch_size', v ?? 1)}
-          />
-          {['embedding', 'image_embedding'].includes(value.kind) ? (
-            <>
-              <NumberInput
-                label={t('params.dimensions')}
-                value={value.parameters.dimensions as number | undefined}
-                min={1}
-                onChange={(v) => patchParam('dimensions', v)}
+            <Field>
+              <FieldLabel>{t('params.seed')}</FieldLabel>
+              <Input
+                type="number"
+                min={0}
+                max={4294967295}
+                step={1}
+                value={
+                  Number.isNaN(value.parameters.seed as number | null | undefined)
+                    ? ''
+                    : ((value.parameters.seed as number | null | undefined) ?? '')
+                }
+                onChange={(event) =>
+                  patchParam(
+                    'seed',
+                    event.currentTarget.value === '' ? null : Number(event.currentTarget.value),
+                  )
+                }
               />
-              <Check
-                label={t('params.normalize')}
-                checked={value.parameters.normalize !== false}
-                onChange={(v) => patchParam('normalize', v)}
-              />
-            </>
+            </Field>
           ) : null}
-          {value.kind === 'embedding' ? (
+          {value.parameters.architecture === 'chatterbox'
+            ? [
+                ['exaggeration', 0.5, 0, 2, 0.05],
+                ['cfg_weight', 0.5, 0, 1, 0.05],
+                ['temperature', 0.8, 0.01, 5, 0.01],
+                ['repetition_penalty', 1.2, 1, 2, 0.05],
+                ['min_p', 0.05, 0, 1, 0.01],
+                ['top_p', 1, 0.01, 1, 0.01],
+              ].map(([key, initial, min, max, step]) => (
+                <Field key={String(key)}>
+                  <FieldLabel>{t('params.' + key)}</FieldLabel>
+                  <Input
+                    type="number"
+                    min={Number(min)}
+                    max={Number(max)}
+                    step={Number(step)}
+                    value={
+                      Number.isNaN(Number(value.parameters[String(key)] ?? initial))
+                        ? ''
+                        : (Number(value.parameters[String(key)] ?? initial) ?? '')
+                    }
+                    onChange={(event) =>
+                      patchParam(
+                        String(key),
+                        event.currentTarget.value === '' ? initial : Number(event.currentTarget.value),
+                      )
+                    }
+                  />
+                </Field>
+              ))
+            : null}
+          {value.parameters.architecture === 'qwen3tts' ? (
             <>
-              {['document_instruction', 'query_instruction'].map((key) => (
-                <Field key={key} label={t('params.' + key)}>
-                  <textarea
-                    rows={2}
-                    value={String(value.parameters[key] || '')}
-                    onChange={(e) => patchParam(key, e.target.value)}
+              <Field orientation="horizontal">
+                <Switch
+                  checked={value.parameters.do_sample !== false}
+                  onCheckedChange={(next) => patchParam('do_sample', next)}
+                />
+                <FieldLabel>{t('params.do_sample')}</FieldLabel>
+              </Field>
+              {(
+                [
+                  ['temperature', 0.01, undefined, 0.01],
+                  ['top_p', 0.01, 1, 0.01],
+                  ['top_k', 0, undefined, 1],
+                  ['repetition_penalty', 0.01, undefined, 0.01],
+                  ['max_new_tokens', 1, 8192, 1],
+                ] as const
+              ).map(([key, min, max, step]) => (
+                <Field key={key}>
+                  <FieldLabel>{t('params.' + key)}</FieldLabel>
+                  <Input
+                    type="number"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={
+                      Number.isNaN(Number(value.parameters[key] ?? ttsGenerationDefaults.qwen3tts[key]))
+                        ? ''
+                        : (Number(value.parameters[key] ?? ttsGenerationDefaults.qwen3tts[key]) ?? '')
+                    }
+                    onChange={(event) =>
+                      patchParam(
+                        key,
+                        event.currentTarget.value === ''
+                          ? ttsGenerationDefaults.qwen3tts[key]
+                          : Number(event.currentTarget.value),
+                      )
+                    }
                   />
                 </Field>
               ))}
             </>
           ) : null}
+          <Field>
+            <FieldLabel>{t('params.speed')}</FieldLabel>
+            <Input
+              type="number"
+              min={0.25}
+              max={4}
+              step={0.05}
+              value={
+                Number.isNaN(Number(value.parameters.speed ?? 1))
+                  ? ''
+                  : (Number(value.parameters.speed ?? 1) ?? '')
+              }
+              onChange={(event) =>
+                patchParam('speed', event.currentTarget.value === '' ? 1 : Number(event.currentTarget.value))
+              }
+            />
+          </Field>
+          <Field>
+            <FieldLabel>{t('params.response_format')}</FieldLabel>
+            <Select
+              value={String(value.parameters.response_format ?? 'mp3')}
+              onValueChange={(selected) => patchParam('response_format', selected ?? '')}
+              items={[
+                { value: 'mp3', label: <>MP3</> },
+                { value: 'wav', label: <>WAV</> },
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mp3">MP3</SelectItem>
+                <SelectItem value="wav">WAV</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field>
+            <FieldLabel>{t('params.batch_size')}</FieldLabel>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={
+                Number.isNaN(
+                  Number(
+                    value.parameters.batch_size ||
+                      (value.kind === 'embedding' || value.kind === 'reranker' ? 16 : 1),
+                  ),
+                )
+                  ? ''
+                  : (Number(
+                      value.parameters.batch_size ||
+                        (value.kind === 'embedding' || value.kind === 'reranker' ? 16 : 1),
+                    ) ?? '')
+              }
+              onChange={(event) =>
+                patchParam(
+                  'batch_size',
+                  event.currentTarget.value === '' ? 1 : Number(event.currentTarget.value),
+                )
+              }
+            />
+          </Field>
+          {['embedding', 'image_embedding'].includes(value.kind) ? (
+            <>
+              <Field>
+                <FieldLabel>{t('params.dimensions')}</FieldLabel>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={
+                    Number.isNaN(value.parameters.dimensions as number | undefined)
+                      ? ''
+                      : ((value.parameters.dimensions as number | undefined) ?? '')
+                  }
+                  onChange={(event) =>
+                    patchParam(
+                      'dimensions',
+                      event.currentTarget.value === '' ? null : Number(event.currentTarget.value),
+                    )
+                  }
+                />
+              </Field>
+              <Field orientation="horizontal">
+                <Switch
+                  checked={value.parameters.normalize !== false}
+                  onCheckedChange={(v) => patchParam('normalize', v)}
+                />
+                <FieldLabel>{t('params.normalize')}</FieldLabel>
+              </Field>
+            </>
+          ) : null}
+          {value.kind === 'embedding' ? (
+            <>
+              {['document_instruction', 'query_instruction'].map((key) => (
+                <Field key={key}>
+                  <FieldLabel>{t('params.' + key)}</FieldLabel>
+                  <Textarea
+                    rows={2}
+                    value={String(value.parameters[key] || '')}
+                    onChange={(e) => patchParam(key, e.target.value)}
+                  ></Textarea>
+                </Field>
+              ))}
+            </>
+          ) : null}
           {value.kind === 'image_embedding' || value.kind === 'vision' ? (
-            <Field label={t('params.architecture')}>
-              <select
+            <Field>
+              <FieldLabel>{t('params.architecture')}</FieldLabel>
+              <Select
                 value={String(value.parameters.architecture || (value.kind === 'vision' ? 'wd14' : 'clip'))}
-                onChange={(e) => patchParam('architecture', e.target.value)}
+                onValueChange={(selected) => patchParam('architecture', selected ?? '')}
+                items={(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => ({
+                  value: v,
+                  label: v,
+                }))}
               >
-                {(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
           ) : null}
           {value.kind === 'vision' ? (
-            <Field label={t('params.task')}>
-              <select value="tags" disabled><option value="tags">{t('visionTags')}</option></select>
+            <Field>
+              <FieldLabel>{t('params.task')}</FieldLabel>
+              <Select value={'tags'} disabled={true} items={[{ value: 'tags', label: t('visionTags') }]}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tags">{t('visionTags')}</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           ) : null}
         </>
       )}
-    </div>
+    </FieldGroup>
   );
 }

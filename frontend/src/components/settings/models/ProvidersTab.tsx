@@ -1,9 +1,11 @@
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import { Icon } from './fields';
+
 import type { ModelFeedbackProps } from './types';
 import { newProvider } from './profileDefaults';
 import { ProviderEditor, type ProviderDraft } from './ProviderEditor';
@@ -16,9 +18,18 @@ export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackPro
     <>
       <div className="model-toolbar">
         <h3>{t('providers')}</h3>
-        <button className="secondary-button" disabled={busy} onClick={() => {
-          setError(''); setProvider({ value: newProvider() });
-        }}><Plus size={16} />{t('addProvider')}</button>
+        <Button
+          disabled={busy}
+          onClick={() => {
+            setError('');
+            setProvider({ value: newProvider() });
+          }}
+          type="button"
+          variant="outline"
+        >
+          <Plus size={16} />
+          {t('addProvider')}
+        </Button>
       </div>
       <p>{t('providerSummary')}</p>
       {providers.map((item) => (
@@ -29,19 +40,59 @@ export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackPro
             <small>{item.enabled ? t('enabled') : t('disabled')}</small>
           </div>
           <div className="model-actions">
-            <Icon label={t('edit')} disabled={busy} onClick={() => {
-              const { has_api_key: _key, ...connection } = item.connection;
-              setError('');
-              setProvider({ id: item.id, value: { name: item.name, enabled: item.enabled, connection } });
-            }}><Pencil size={16} /></Icon>
-            <Icon label={t('delete')} disabled={busy} onClick={() => void run(() => modelsApi.deleteProviderProfile(item.id))}>
-              <Trash2 size={16} />
-            </Icon>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t('edit')}
+                    disabled={busy}
+                    onClick={() => {
+                      const { has_api_key: _key, ...connection } = item.connection;
+                      setError('');
+                      setProvider({
+                        id: item.id,
+                        value: { name: item.name, enabled: item.enabled, connection },
+                      });
+                    }}
+                  />
+                }
+              >
+                <Pencil size={16} />
+              </TooltipTrigger>
+              <TooltipContent>{t('edit')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t('delete')}
+                    disabled={busy}
+                    onClick={() => void run(() => modelsApi.deleteProviderProfile(item.id))}
+                  />
+                }
+              >
+                <Trash2 size={16} />
+              </TooltipTrigger>
+              <TooltipContent>{t('delete')}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       ))}
       {!providers.length ? <p className="model-empty">{t('emptyProviders')}</p> : null}
-      <ProviderEditor provider={provider} setProvider={setProvider} run={run} busy={busy} feedback={feedback} setError={setError} />
+      <ProviderEditor
+        provider={provider}
+        setProvider={setProvider}
+        run={run}
+        busy={busy}
+        feedback={feedback}
+        setError={setError}
+      />
     </>
   );
 }

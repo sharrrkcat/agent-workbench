@@ -1,1 +1,15 @@
-{"appName":"WorkBench","loading":"加载中…","save":"保存","cancel":"取消","delete":"删除","back":"返回","language":"语言"}
+{
+  "appName": "WorkBench",
+  "loading": "加载中…",
+  "save": "保存",
+  "cancel": "取消",
+  "delete": "删除",
+  "back": "返回",
+  "language": "语言",
+  "close": "关闭",
+  "clear": "清除",
+  "showSuggestions": "显示建议",
+  "confirm": "确认",
+  "confirmAction": "确认操作",
+  "noSuggestions": "暂无建议"
+}

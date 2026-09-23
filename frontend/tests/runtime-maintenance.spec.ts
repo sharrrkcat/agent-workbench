@@ -1,3 +1,4 @@
+import { chooseOption, fillCombobox } from './controls';
 import { expect, test, type Page } from '@playwright/test';
 
 async function runtimeView(page: Page, locale: string) {
@@ -9,7 +10,7 @@ async function runtimeView(page: Page, locale: string) {
 }
 
 async function noRuntimeOverflow(page: Page) {
-  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .settings-page, .settings-content, .runtime-panel, .runtime-storage, .runtime-row, .app-modal-panel, .runtime-gpu-mode')]
+  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .settings-page, .settings-content, .runtime-panel, .runtime-storage, .runtime-row, [data-slot="dialog-content"], .runtime-gpu-mode')]
     .filter((node) => node.scrollWidth > node.clientWidth + 1).map((node) => node.className || node.tagName));
   expect(overflow).toEqual([]);
 }
@@ -17,7 +18,7 @@ async function noRuntimeOverflow(page: Page) {
 for (const locale of ['en', 'zh-CN']) {
   for (const viewport of [{ width: 1366, height: 900 }, { width: 390, height: 844 }]) {
     test.describe(`runtime ${locale} ${viewport.width}`, () => {
-      test.use({ viewport });
+      test.use({ viewport, hasTouch: viewport.width === 390 });
       test.beforeEach(async ({ page, request }) => {
         await page.addInitScript((locale) => localStorage.setItem('agent-workbench.locale', locale), locale);
         expect((await request.post('/__test__/runtimes', { data: {} })).ok()).toBeTruthy();
@@ -25,19 +26,19 @@ for (const locale of ['en', 'zh-CN']) {
 
       test('storage details, clear confirmation and preserved installation', async ({ page, request }, info) => {
         await runtimeView(page, locale);
-        await page.locator('.runtime-storage-details summary').click();
+        await page.locator('.runtime-storage-details > [data-slot="collapsible-trigger"]').click();
         await expect(page.locator('.runtime-storage-table')).toContainText('.cache');
         await expect(page.locator('.runtime-storage-table')).toContainText('local/1.0.0');
         await noRuntimeOverflow(page);
         await page.screenshot({ path: info.outputPath('runtime-storage.png') });
         const clean = locale === 'en' ? 'Clear cache' : '清空缓存';
         await page.locator('.runtime-cache-actions').getByRole('button', { name: clean, exact: true }).click();
-        const dialog = page.getByRole('dialog');
+        const dialog = page.getByRole('alertdialog');
         await expect(dialog).toContainText(locale === 'en' ? 'Estimated reclaimable cache' : '缓存预计可释放');
-        await dialog.getByRole('button', { name: locale === 'en' ? 'Close' : '关闭', exact: true }).click();
+        await dialog.getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click();
         expect(await (await request.get('/api/models/local-runtime/jobs')).json()).toEqual([]);
         await page.locator('.runtime-cache-actions').getByRole('button', { name: clean, exact: true }).click();
-        await page.getByRole('dialog').getByRole('button', { name: clean, exact: true }).click();
+        await page.getByRole('alertdialog').getByRole('button', { name: clean, exact: true }).click();
         await expect(page.locator('.runtime-cache-task')).toContainText(locale === 'en' ? 'Completed' : '已完成');
         await expect(page.locator('.runtime-storage-summary').locator('dd').nth(1)).toHaveText('0 B');
         expect((await (await request.post('/__test__/runtimes/files')).json()).installed_preserved).toBe(true);
@@ -71,8 +72,8 @@ for (const locale of ['en', 'zh-CN']) {
         await dialog.getByLabel(locale === 'en' ? 'Name' : '名称', { exact: true }).fill('Runtime fixture CUDA');
         const alias = `runtime-fixture-${locale.toLowerCase()}-${viewport.width}`;
         await dialog.getByLabel(locale === 'en' ? 'Public alias' : '公开别名', { exact: true }).fill(alias);
-        await dialog.getByLabel(locale === 'en' ? 'Model source' : '模型来源', { exact: true }).selectOption('local');
-        await dialog.getByLabel(locale === 'en' ? 'Model reference' : '模型引用', { exact: true }).fill('llms/fixture.gguf');
+        await chooseOption(dialog.getByLabel(locale === 'en' ? 'Model source' : '模型来源', { exact: true }), locale === 'en' ? 'Local Runtime' : '本地运行环境');
+        await fillCombobox(dialog.getByLabel(locale === 'en' ? 'Model reference' : '模型引用', { exact: true }), 'llms/fixture.gguf');
         const automatic = locale === 'en' ? 'Automatic' : '自动';
         const manual = locale === 'en' ? 'Manual' : '手动';
         const group = dialog.locator('.runtime-gpu-mode');

@@ -1,3 +1,4 @@
+import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
@@ -32,29 +33,38 @@ export function MessageBubble({ message }: { message: Message }) {
   }
 
   return (
-    <MessageFrame role={message.role} name={isUser ? t('you') : message.speaker_name || t(message.role === 'assistant' ? 'assistant' : 'system')}
-      avatarId={avatarId} createdAt={message.created_at} messageId={message.message_id}>
-        <div className="message">
-          {editing ? (
-            <textarea
-              value={value}
-              onChange={(event) => setValue(event.currentTarget.value)}
-              rows={Math.max(3, value.split('\n').length)}
-            />
-          ) : (
-            <MessageParts parts={message.parts} />
-          )}
-          {messageImages(message).length ? <MessageImages attachments={messageImages(message)} /> : null}
-          {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
-        </div>
-        {isUser ? <MessageActions
+    <MessageFrame
+      role={message.role}
+      name={
+        isUser ? t('you') : message.speaker_name || t(message.role === 'assistant' ? 'assistant' : 'system')
+      }
+      avatarId={avatarId}
+      createdAt={message.created_at}
+      messageId={message.message_id}
+    >
+      <div className="message">
+        {editing ? (
+          <Textarea
+            value={value}
+            onChange={(event) => setValue(event.currentTarget.value)}
+            rows={Math.max(3, value.split('\n').length)}
+          ></Textarea>
+        ) : (
+          <MessageParts parts={message.parts} />
+        )}
+        {messageImages(message).length ? <MessageImages attachments={messageImages(message)} /> : null}
+        {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
+      </div>
+      {isUser ? (
+        <MessageActions
           message={message}
           editing={editing}
           busy={busy}
           onEdit={() => setEditing(true)}
           onSave={saveEdit}
           onCancel={() => setEditing(false)}
-        /> : null}
+        />
+      ) : null}
     </MessageFrame>
   );
 }

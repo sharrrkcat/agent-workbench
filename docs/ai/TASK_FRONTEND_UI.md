@@ -8,7 +8,7 @@ Read [settings](../contracts/settings.md), [chat/context](../contracts/chat-cont
 Paths below are under frontend/src:
 
 - styles.css owns the Tailwind 4/Mira tokens and bundled Inter entry;
-  components/ui/button.tsx and lib/utils.ts are the generated foundation.
+  components/ui/ contains shared Base UI/Mira controls and lib/utils.ts the style utility.
   frontend/components.json configures generation; Vite/TypeScript and the test
   loader share the @/ alias. Current layout limits belong to
   [Settings](../contracts/settings.md#frontend-styling-foundation).
@@ -20,6 +20,9 @@ Paths below are under frontend/src:
 - components/SettingsPage.tsx composes components/settings/ domain panels;
   components/settings/models/ contains model/provider editors; LocalRuntimePanel.tsx
   owns installation details. components/personas/ contains session editors.
+- App.tsx owns committed routes and guarded history replay; ResourceUI.tsx in
+  components/settings/resources/ owns async resource leave guards and invalid-field
+  expansion. hooks/useConfirmDialog.tsx owns local promise-based confirmations.
 - components/pet/usePetPosition.ts and components/pet/petState.ts contain
   dragging and task-state foundations.
 
@@ -30,11 +33,15 @@ Run `npm test` and `npm run build` in frontend. The scripts load actual TypeScri
 module graphs through scripts/module-loader.mjs and mock API/component boundaries;
 do not match source formatting as behavior. Focused scripts cover session settings,
 resource management, chat presentation, model streams, runtime maintenance and Harness.
+test-confirm-dialog.mjs covers acceptance, cancellation, overlapping requests and unmount.
 test-module-loader.mjs covers real TS/TSX/JSON alias imports and shared API mocks.
 style-foundation.spec.ts renders the real Button with production CSS on the existing
 fixture server, checking dark colors, focus, disabled/override behavior and local
-font loading in both locales and viewports. Existing page-layout cases stay unchanged
-while their missing layouts are reconstructed.
+font loading in both locales and viewports. controls.spec.ts mounts the real App
+with production CSS in English/Chinese at 1366x900 and touch-enabled 390x844. It
+covers keyboard/labels, 44px targets, nested overlays and focus, retained drafts,
+validation, busy locks, async navigation/history, attachments, IME and approvals.
+Existing page-layout assertions remain while their missing layouts are reconstructed.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
 Check stale responses, session isolation, approval visibility, draft persistence

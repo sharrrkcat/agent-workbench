@@ -1,10 +1,11 @@
+import { answerConfirmation } from './controls';
 import { expect, test, type Page } from '@playwright/test';
 
 async function submit(page: Page, content: string) {
-  await expect(page.locator('.composer .send-button')).toBeVisible();
+  await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeVisible();
   const input = page.locator('.composer textarea');
   await input.fill(content);
-  await expect(page.locator('.composer .send-button')).toBeEnabled();
+  await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeEnabled();
   await input.press('Enter');
 }
 
@@ -43,8 +44,8 @@ test('retry replaces the whole reply and deletion removes its tool history', asy
   expect(await page.locator('article[data-run-id]').getAttribute('data-run-id')).not.toBe(originalId);
   expect((await request.get(`/api/runs/${originalId}`)).status()).toBe(404);
   await expect(page.locator('.tool-command')).toHaveCount(0);
-  page.once('dialog', (dialog) => dialog.accept());
   await page.locator('.reply-actions button').last().click();
+  await answerConfirmation(page, true);
   await expect(page.locator('article[data-run-id]')).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.message-row.user')).toHaveCount(1);
@@ -55,7 +56,7 @@ test('retry replaces the whole reply and deletion removes its tool history', asy
 for (const locale of ['en', 'zh-CN']) {
   for (const viewport of [{ width: 1366, height: 900 }, { width: 390, height: 844 }]) {
     test.describe(`${locale} ${viewport.width}`, () => {
-      test.use({ viewport });
+      test.use({ viewport, hasTouch: viewport.width === 390 });
       test.beforeEach(async ({ page }) => {
         await page.addInitScript((locale) => localStorage.setItem('agent-workbench.locale', locale), locale);
       });
@@ -111,10 +112,10 @@ for (const locale of ['en', 'zh-CN']) {
 
         await page.goto('/settings?tab=general');
         const label = locale === 'en' ? 'Show full processing history' : '显示完整处理过程';
-        await page.getByLabel(label).check();
+        await page.getByRole('switch', { name: label, exact: true }).check();
         await page.getByRole('button', { name: locale === 'en' ? 'Save general settings' : '保存常规设置' }).click();
         await expect.poll(async () => (await (await request.get('/api/settings/general')).json()).show_full_processing).toBe(true);
-        await page.locator('.settings-header .icon-button').click();
+        await page.locator('.settings-header').getByRole('button', { name: /^(Back|返回)$/, exact: true }).click();
         await submit(page, 'two-rounds');
         reply = page.locator('article[data-run-id]').last();
         await expect(reply.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'true');
@@ -146,7 +147,7 @@ for (const locale of ['en', 'zh-CN']) {
         await submit(page, 'cancel-stream');
         const second = page.locator('article[data-run-id]').last();
         await expect(second.locator('.reply-answer')).toHaveText('Incomplete streamed answer.');
-        await second.locator('.reply-processing-header .danger').click();
+        await second.locator('.reply-processing-header').getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click();
         await expect(second.locator('.reply-incomplete')).toBeVisible();
         await page.reload();
         await expect(page.locator('.reply-incomplete')).toBeVisible();

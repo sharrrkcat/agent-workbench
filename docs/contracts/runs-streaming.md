@@ -49,6 +49,9 @@ locally and terminal clocks freeze. General show_full_processing controls initia
 active expansion. User toggles survive incoming deltas; entering a terminal state
 collapses the outer history, and reopened conversations start terminal histories
 collapsed. Final answers and approval controls stay outside that history.
+History and tool details use controlled Base UI Collapsible sections; replacing
+their controls does not reset user expansion during streaming. Shared control
+and overlay behavior belongs to [Settings](settings.md#frontend-styling-foundation).
 Scrolling follows new content only near the bottom, with an explicit latest button.
 The bounded scroll layout is currently missing; see the
 [frontend styling limitations](settings.md#frontend-styling-foundation).

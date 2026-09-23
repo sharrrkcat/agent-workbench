@@ -1,61 +1,241 @@
+import { CollapsibleTrigger, CollapsibleContent, Collapsible } from '@/components/ui/collapsible';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { Switch } from '@/components/ui/switch';
+import { Field, FieldLabel, FieldSet } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { ChevronDown, ChevronRight, GripVertical, LoaderCircle, RotateCcw, Save, Trash2 } from 'lucide-react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { WorldbookEntryInput } from '../../../types/worldbook';
-import { MiniToggle } from '../../ui/ToggleSwitch';
-import { Field, ResourceIcon } from '../resources/ResourceUI';
 
-export function WorldbookEntryCard({ id, draft, expanded, dirty, busy, locked, dragging, error, onToggle, onUpdate, onEnabled,
-  onSave, onReset, onDelete, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onKeyDown }: {
-  id: string; draft: WorldbookEntryInput; expanded: boolean; dirty: boolean; busy: string; locked: boolean; dragging: boolean; error?: string;
-  onToggle: () => void; onUpdate: (patch: Partial<WorldbookEntryInput>) => void; onEnabled: (enabled: boolean) => void;
-  onSave: () => void; onReset: () => void; onDelete: () => void;
+export function WorldbookEntryCard({
+  id,
+  draft,
+  expanded,
+  dirty,
+  busy,
+  locked,
+  dragging,
+  error,
+  onToggle,
+  onUpdate,
+  onEnabled,
+  onSave,
+  onReset,
+  onDelete,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onKeyDown,
+}: {
+  id: string;
+  draft: WorldbookEntryInput;
+  expanded: boolean;
+  dirty: boolean;
+  busy: string;
+  locked: boolean;
+  dragging: boolean;
+  error?: string;
+  onToggle: () => void;
+  onUpdate: (patch: Partial<WorldbookEntryInput>) => void;
+  onEnabled: (enabled: boolean) => void;
+  onSave: () => void;
+  onReset: () => void;
+  onDelete: () => void;
   onPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void;
   onPointerMove?: (event: PointerEvent<HTMLButtonElement>) => void;
-  onPointerUp?: (event: PointerEvent<HTMLButtonElement>) => void; onPointerCancel?: () => void;
+  onPointerUp?: (event: PointerEvent<HTMLButtonElement>) => void;
+  onPointerCancel?: () => void;
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   const { t } = useTranslation('worldbook');
-  return <article data-entry-id={id} className={`worldbook-entry-card${expanded ? ' expanded' : ''}${draft.enabled ? '' : ' disabled'}${dragging ? ' dragging' : ''}`}>
-    <header className="worldbook-entry-card-header" onClick={onToggle}>
-      <button type="button" className="drag-handle" title={t('dragToReorder')} aria-label={t('dragNamed', { name: draft.name || t('newEntry') })}
-        disabled={id === 'new' || locked} onClick={(event) => event.stopPropagation()}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel} onKeyDown={onKeyDown}>
-        <GripVertical size={15} />
-      </button>
-      <button type="button" className="icon-button resource-icon" title={expanded ? t('collapse') : t('expand')}
-        aria-label={expanded ? t('collapse') : t('expand')} aria-expanded={expanded} aria-controls={`entry-body-${id}`}
-        onClick={(event) => { event.stopPropagation(); onToggle(); }}>{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
-      <div className="worldbook-entry-toggle-cell" onClick={(event) => event.stopPropagation()}>
-        <span className="worldbook-entry-toggle-spinner">{busy === 'toggle' ? <LoaderCircle size={14} className="spin" /> : null}</span>
-        <MiniToggle checked={draft.enabled} onChange={onEnabled} disabled={locked} label={t('enabledNamed', { name: draft.name || t('newEntry') })} />
-      </div>
-      <div className="worldbook-entry-card-title"><strong title={draft.name}>{draft.name || t('newEntry')}</strong>
-        {error ? <span className="error-text" role="alert">{error}</span> : null}</div>
-      <div className="worldbook-entry-card-actions" onClick={(event) => event.stopPropagation()}>
-        {dirty ? <span className="resource-badge warning">{t('unsaved')}</span> : null}
-        <span className="resource-badge worldbook-entry-mode-chip">{t(draft.activation_mode)}</span>
-        <ResourceIcon label={t('common:delete')} danger disabled={locked} onClick={onDelete}><Trash2 size={14} /></ResourceIcon>
-      </div>
-    </header>
-    {expanded ? <form id={`entry-body-${id}`} className="worldbook-entry-card-body" onSubmit={(event) => { event.preventDefault(); onSave(); }}>
-      <fieldset disabled={!!busy} className="resource-fieldset">
-        <div className="worldbook-entry-form-row">
-          <Field label={t('name')}><input required value={draft.name} onChange={(event) => onUpdate({ name: event.target.value })} /></Field>
-          <Field label={t('activationMode')}><select value={draft.activation_mode} onChange={(event) => onUpdate({ activation_mode: event.target.value as WorldbookEntryInput['activation_mode'] })}>
-            <option value="keyword">{t('keyword')}</option><option value="always">{t('always')}</option>
-          </select></Field>
+  return (
+    <Collapsible
+      open={expanded}
+      onOpenChange={onToggle}
+      render={
+        <article
+          data-entry-id={id}
+          className={`worldbook-entry-card${expanded ? ' expanded' : ''}${draft.enabled ? '' : ' disabled'}${dragging ? ' dragging' : ''}`}
+        />
+      }
+    >
+      <header className="worldbook-entry-card-header" onClick={onToggle}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                aria-label={t('dragNamed', { name: draft.name || t('newEntry') })}
+                disabled={id === 'new' || locked}
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerCancel}
+                onKeyDown={onKeyDown}
+                variant="ghost"
+                size="icon"
+                className="drag-handle touch-none"
+              />
+            }
+          >
+            <GripVertical size={15} />
+          </TooltipTrigger>
+          <TooltipContent>{t('dragToReorder')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <CollapsibleTrigger
+                render={
+                  <Button
+                    type="button"
+                    aria-label={expanded ? t('collapse') : t('expand')}
+                    variant="ghost"
+                    size="icon"
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                }
+              ></CollapsibleTrigger>
+            }
+          >
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </TooltipTrigger>
+          <TooltipContent>{expanded ? t('collapse') : t('expand')}</TooltipContent>
+        </Tooltip>
+        <div className="worldbook-entry-toggle-cell" onClick={(event) => event.stopPropagation()}>
+          <span className="worldbook-entry-toggle-spinner">
+            {busy === 'toggle' ? <LoaderCircle size={14} className="animate-spin" /> : null}
+          </span>
+          <Field orientation="horizontal" disabled={locked}>
+            <Switch checked={draft.enabled} disabled={locked} onCheckedChange={onEnabled} />
+            <FieldLabel className="sr-only">
+              {t('enabledNamed', { name: draft.name || t('newEntry') })}
+            </FieldLabel>
+          </Field>
         </div>
-        <Field label={t('keywords')}><input aria-label={t('keywords')} aria-describedby={`entry-keywords-help-${id}`} maxLength={20000} value={draft.keywords_text} onChange={(event) => onUpdate({ keywords_text: event.target.value })} /></Field>
-        <small id={`entry-keywords-help-${id}`} className="resource-hint">{t('keywordsHelp')}</small>
-        <Field label={t('content')}><textarea required rows={8} maxLength={200000} value={draft.content} onChange={(event) => onUpdate({ content: event.target.value })} /></Field>
-        <div className="resource-actions">
-          <button type="submit" className="primary-button" disabled={locked || !draft.name.trim() || !draft.content.trim()}>
-            {busy === 'save' ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{t('common:save')}</button>
-          <button type="button" className="secondary-button" disabled={!dirty || locked} onClick={onReset}><RotateCcw size={15} />{t('reset')}</button>
-          <button type="button" className="secondary-button danger" disabled={locked} onClick={onDelete}><Trash2 size={15} />{t('common:delete')}</button>
+        <div className="worldbook-entry-card-title">
+          <strong title={draft.name}>{draft.name || t('newEntry')}</strong>
+          {error ? (
+            <span className="error-text" role="alert">
+              {error}
+            </span>
+          ) : null}
         </div>
-      </fieldset>
-    </form> : null}
-  </article>;
+        <div className="worldbook-entry-card-actions" onClick={(event) => event.stopPropagation()}>
+          {dirty ? <span className="resource-badge warning">{t('unsaved')}</span> : null}
+          <span className="resource-badge worldbook-entry-mode-chip">{t(draft.activation_mode)}</span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon"
+                  aria-label={t('common:delete')}
+                  disabled={locked}
+                  onClick={onDelete}
+                />
+              }
+            >
+              <Trash2 size={14} />
+            </TooltipTrigger>
+            <TooltipContent>{t('common:delete')}</TooltipContent>
+          </Tooltip>
+        </div>
+      </header>
+      <CollapsibleContent
+        render={
+          <form
+            id={`entry-body-${id}`}
+            className="worldbook-entry-card-body"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSave();
+            }}
+          />
+        }
+      >
+        <FieldSet disabled={!!busy} className="resource-fieldset">
+          <div className="worldbook-entry-form-row">
+            <Field>
+              <FieldLabel>{t('name')}</FieldLabel>
+              <Input
+                required
+                value={draft.name}
+                onChange={(event) => onUpdate({ name: event.target.value })}
+              />
+            </Field>
+            <Field>
+              <FieldLabel>{t('activationMode')}</FieldLabel>
+              <Select
+                value={draft.activation_mode}
+                onValueChange={(selected) =>
+                  onUpdate({ activation_mode: (selected ?? '') as WorldbookEntryInput['activation_mode'] })
+                }
+                items={[
+                  { value: 'keyword', label: t('keyword') },
+                  { value: 'always', label: t('always') },
+                ]}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="keyword">{t('keyword')}</SelectItem>
+                  <SelectItem value="always">{t('always')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel>{t('keywords')}</FieldLabel>
+            <Input
+              aria-label={t('keywords')}
+              aria-describedby={`entry-keywords-help-${id}`}
+              maxLength={20000}
+              value={draft.keywords_text}
+              onChange={(event) => onUpdate({ keywords_text: event.target.value })}
+            />
+          </Field>
+          <small id={`entry-keywords-help-${id}`} className="resource-hint">
+            {t('keywordsHelp')}
+          </small>
+          <Field>
+            <FieldLabel>{t('content')}</FieldLabel>
+            <Textarea
+              required
+              rows={8}
+              maxLength={200000}
+              value={draft.content}
+              onChange={(event) => onUpdate({ content: event.target.value })}
+            ></Textarea>
+          </Field>
+          <div className="resource-actions">
+            <Button
+              type="submit"
+              disabled={locked || !draft.name.trim() || !draft.content.trim()}
+              variant="default"
+            >
+              {busy === 'save' ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}
+              {t('common:save')}
+            </Button>
+            <Button type="button" disabled={!dirty || locked} onClick={onReset} variant="outline">
+              <RotateCcw size={15} />
+              {t('reset')}
+            </Button>
+            <Button type="button" disabled={locked} onClick={onDelete} variant="destructive">
+              <Trash2 size={15} />
+              {t('common:delete')}
+            </Button>
+          </div>
+        </FieldSet>
+      </CollapsibleContent>
+    </Collapsible>
+  );
 }

@@ -1,3 +1,11 @@
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Field, FieldLabel, FieldSet } from '@/components/ui/field';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Pencil, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,13 +18,8 @@ import { useWorkbenchStore } from '../../store/useWorkbenchStore';
 import type { KnowledgeBase } from '../../types/knowledge';
 import type { Persona, PersonaInput } from '../../types/chat';
 import type { Worldbook } from '../../types/worldbook';
-import { AppModal } from '../ui/AppModal';
-import {
-  BindingsField,
-  Field,
-  IconButton,
-  PersonaAvatar,
-} from '../personas/ConfigurationFields';
+
+import { BindingsField, PersonaAvatar } from '../personas/ConfigurationFields';
 
 type Editor = { id?: string; value: PersonaInput; knowledge: string[]; worldbooks: string[] };
 type Tab = 'identity' | 'knowledge' | 'worldbook';
@@ -27,6 +30,7 @@ const newPersona = (): PersonaInput => ({
 });
 
 export function PersonasPanel() {
+  const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('personas');
   const personas = usePersonasStore((s) => s.personas);
   const reload = usePersonasStore((s) => s.reload);
@@ -98,7 +102,9 @@ export function PersonasPanel() {
     }
     await run(async () => {
       const value = editor.value;
-      const saved = editor.id ? await chatApi.patchPersona(editor.id, value) : await chatApi.createPersona(value);
+      const saved = editor.id
+        ? await chatApi.patchPersona(editor.id, value)
+        : await chatApi.createPersona(value);
       setEditor({ ...editor, id: saved.id, value });
       if (saved.avatar_attachment_id) temporaryAvatars.current.delete(saved.avatar_attachment_id);
       await chatApi.patchPersonaKnowledge(saved.id, editor.knowledge);
@@ -125,22 +131,36 @@ export function PersonasPanel() {
       <div className="model-heading">
         <h2>{t('title')}</h2>
         <div className="model-actions">
-          <IconButton label={t('refresh')} disabled={busy} onClick={() => void run(load)}>
-            <RefreshCw size={16} />
-          </IconButton>
-          <button
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('refresh')}
+                  disabled={busy}
+                  onClick={() => void run(load)}
+                />
+              }
+            >
+              <RefreshCw size={16} />
+            </TooltipTrigger>
+            <TooltipContent>{t('refresh')}</TooltipContent>
+          </Tooltip>
+          <Button
             type="button"
-            className="secondary-button"
             disabled={busy}
             onClick={() => {
               setError('');
               setTab('identity');
               setEditor({ value: newPersona(), knowledge: [], worldbooks: [] });
             }}
+            variant="outline"
           >
             <Plus size={16} />
             {t('add')}
-          </button>
+          </Button>
         </div>
       </div>
       {!editor && (error || storeError) ? (
@@ -156,125 +176,186 @@ export function PersonasPanel() {
               <strong>{persona.name}</strong>
             </div>
             <div className="model-actions">
-              <IconButton
-                label={t('editNamed', { name: persona.name })}
-                disabled={busy}
-                onClick={() => void edit(persona)}
-              >
-                <Pencil size={16} />
-              </IconButton>
-              <IconButton
-                label={t('deleteNamed', { name: persona.name })}
-                disabled={busy}
-                onClick={() => {
-                  if (window.confirm(t('deleteConfirm', { name: persona.name })))
-                    void run(async () => {
-                      await chatApi.deletePersona(persona.id);
-                      await reload();
-                    });
-                }}
-              >
-                <Trash2 size={16} />
-              </IconButton>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t('editNamed', { name: persona.name })}
+                      disabled={busy}
+                      onClick={() => void edit(persona)}
+                    />
+                  }
+                >
+                  <Pencil size={16} />
+                </TooltipTrigger>
+                <TooltipContent>{t('editNamed', { name: persona.name })}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t('deleteNamed', { name: persona.name })}
+                      disabled={busy}
+                      onClick={async () => {
+                        if (await confirm(t('deleteConfirm', { name: persona.name }), { destructive: true }))
+                          void run(async () => {
+                            await chatApi.deletePersona(persona.id);
+                            await reload();
+                          });
+                      }}
+                    />
+                  }
+                >
+                  <Trash2 size={16} />
+                </TooltipTrigger>
+                <TooltipContent>{t('deleteNamed', { name: persona.name })}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         ))}
       </div>
-      <AppModal
+      <Dialog
         open={!!editor}
-        title={editor?.id ? t('edit') : t('add')}
-        closeLabel={t('close')}
-        width="large"
-        onClose={close}
+        onOpenChange={(open) => {
+          if (!open) close();
+        }}
       >
-        {editor ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void save();
-            }}
-          >
-            {error ? (
-              <p className="model-feedback error-text" role="alert">
-                {error}
-              </p>
-            ) : null}
-            <div className="model-tabs" role="tablist" aria-label={t('editorSections')}>
-              {(['identity', 'knowledge', 'worldbook'] as Tab[]).map((key) => (
-                <button type="button" role="tab" key={key} aria-selected={tab === key} onClick={() => setTab(key)}>
-                  {t(key)}
-                </button>
-              ))}
-            </div>
-            <fieldset disabled={busy} className="model-form">
-              {tab === 'identity' ? (
-                <>
-                  <div className="persona-avatar-editor">
-                    <PersonaAvatar name={editor.value.name} attachmentId={editor.value.avatar_attachment_id} />
-                    <input
-                      ref={upload}
-                      type="file"
-                      hidden
-                      accept="image/png,image/jpeg,image/webp,image/gif"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        void chooseAvatar(file);
-                      }}
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{editor?.id ? t('edit') : t('add')}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            {editor ? (
+              <Tabs
+                value={tab}
+                onValueChange={setTab}
+                render={
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void save();
+                    }}
+                  />
+                }
+              >
+                {error ? (
+                  <p className="model-feedback error-text" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+                <TabsList className="model-tabs" aria-label={t('editorSections')}>
+                  {(['identity', 'knowledge', 'worldbook'] as Tab[]).map((key) => (
+                    <TabsTrigger value={key} key={key}>
+                      {t(key)}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <FieldSet disabled={busy} className="model-form">
+                  <TabsContent value="identity">
+                    <>
+                      <div className="persona-avatar-editor">
+                        <PersonaAvatar
+                          name={editor.value.name}
+                          attachmentId={editor.value.avatar_attachment_id}
+                        />
+                        <input
+                          ref={upload}
+                          type="file"
+                          hidden
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            void chooseAvatar(file);
+                          }}
+                        />
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={t('uploadAvatar')}
+                                onClick={() => upload.current?.click()}
+                              />
+                            }
+                          >
+                            <Upload size={17} />
+                          </TooltipTrigger>
+                          <TooltipContent>{t('uploadAvatar')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={t('removeAvatar')}
+                                disabled={!editor.value.avatar_attachment_id}
+                                onClick={() => patch({ avatar_attachment_id: null })}
+                              />
+                            }
+                          >
+                            <X size={17} />
+                          </TooltipTrigger>
+                          <TooltipContent>{t('removeAvatar')}</TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <Field>
+                        <FieldLabel>{t('name')}</FieldLabel>
+                        <Input
+                          required
+                          maxLength={128}
+                          value={editor.value.name}
+                          onChange={(e) => patch({ name: e.target.value })}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel>{t('systemPrompt')}</FieldLabel>
+                        <Textarea
+                          rows={8}
+                          maxLength={100000}
+                          value={editor.value.system_prompt}
+                          onChange={(e) => patch({ system_prompt: e.target.value })}
+                        ></Textarea>
+                      </Field>
+                    </>
+                  </TabsContent>
+                  <TabsContent value="knowledge">
+                    <BindingsField
+                      items={bases}
+                      ids={editor.knowledge}
+                      onChange={(knowledge) => setEditor({ ...editor, knowledge })}
                     />
-                    <IconButton label={t('uploadAvatar')} onClick={() => upload.current?.click()}>
-                      <Upload size={17} />
-                    </IconButton>
-                    <IconButton
-                      label={t('removeAvatar')}
-                      disabled={!editor.value.avatar_attachment_id}
-                      onClick={() => patch({ avatar_attachment_id: null })}
-                    >
-                      <X size={17} />
-                    </IconButton>
+                  </TabsContent>
+                  <TabsContent value="worldbook">
+                    <BindingsField
+                      items={worldbooks}
+                      ids={editor.worldbooks}
+                      onChange={(worldbooks) => setEditor({ ...editor, worldbooks })}
+                    />
+                  </TabsContent>
+                  <div className="model-form-footer">
+                    <Button type="submit" variant="default">
+                      <Save size={16} />
+                      {t('save')}
+                    </Button>
                   </div>
-                  <Field label={t('name')}>
-                    <input
-                      required
-                      maxLength={128}
-                      value={editor.value.name}
-                      onChange={(e) => patch({ name: e.target.value })}
-                    />
-                  </Field>
-                  <Field label={t('systemPrompt')}>
-                    <textarea
-                      rows={8}
-                      maxLength={100000}
-                      value={editor.value.system_prompt}
-                      onChange={(e) => patch({ system_prompt: e.target.value })}
-                    />
-                  </Field>
-                </>
-              ) : null}
-              {tab === 'knowledge' ? (
-                <BindingsField
-                  items={bases}
-                  ids={editor.knowledge}
-                  onChange={(knowledge) => setEditor({ ...editor, knowledge })}
-                />
-              ) : null}
-              {tab === 'worldbook' ? (
-                <BindingsField
-                  items={worldbooks}
-                  ids={editor.worldbooks}
-                  onChange={(worldbooks) => setEditor({ ...editor, worldbooks })}
-                />
-              ) : null}
-              <div className="model-form-footer">
-                <button className="primary-button" type="submit">
-                  <Save size={16} />
-                  {t('save')}
-                </button>
-              </div>
-            </fieldset>
-          </form>
-        ) : null}
-      </AppModal>
+                </FieldSet>
+              </Tabs>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {confirmation}
     </section>
   );
 }

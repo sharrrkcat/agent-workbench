@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
@@ -18,8 +20,10 @@ export function ChatView() {
   const content = useRef<HTMLDivElement | null>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
-  const items = useMemo(() => currentSession ? buildConversation(currentSession.session_id, messages, runs, steps) : [],
-    [currentSession?.session_id, messages, runs, steps]);
+  const items = useMemo(
+    () => (currentSession ? buildConversation(currentSession.session_id, messages, runs, steps) : []),
+    [currentSession?.session_id, messages, runs, steps],
+  );
 
   useLayoutEffect(() => {
     following.current = true;
@@ -42,7 +46,10 @@ export function ChatView() {
     observer.observe(body);
     observer.observe(scroll);
     update();
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, [currentSession?.session_id]);
 
   useEffect(() => {
@@ -55,22 +62,63 @@ export function ChatView() {
   if (!currentSession) return <div className="chat-empty">{t('loading')}</div>;
   return (
     <div className="chat-scroll-container">
-      <section ref={view} className="chat-view" onScroll={() => {
-        const scroll = view.current;
-        if (!scroll) return;
-        following.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 120;
-        setShowLatest(!following.current);
-      }} onClickCapture={(event) => {
-        if ((event.target as Element).closest('button[aria-expanded]')) following.current = false;
-      }}>
-        <div ref={content} className="conversation-content" role="log" aria-live="polite" aria-relevant="additions">
-          {!items.length ? <div className="chat-empty"><h2>{currentSession.effective.persona_name}</h2></div> : null}
-          {items.map((item) => item.kind === 'message' ? <MessageBubble key={item.id} message={item.message} /> :
-            <RunReply key={item.id} reply={item.reply} showFullProcessing={showFullProcessing} />)}
+      <section
+        ref={view}
+        className="chat-view"
+        onScroll={() => {
+          const scroll = view.current;
+          if (!scroll) return;
+          following.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 120;
+          setShowLatest(!following.current);
+        }}
+        onClickCapture={(event) => {
+          if ((event.target as Element).closest('button[aria-expanded]')) following.current = false;
+        }}
+      >
+        <div
+          ref={content}
+          className="conversation-content"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+        >
+          {!items.length ? (
+            <div className="chat-empty">
+              <h2>{currentSession.effective.persona_name}</h2>
+            </div>
+          ) : null}
+          {items.map((item) =>
+            item.kind === 'message' ? (
+              <MessageBubble key={item.id} message={item.message} />
+            ) : (
+              <RunReply key={item.id} reply={item.reply} showFullProcessing={showFullProcessing} />
+            ),
+          )}
         </div>
       </section>
-      {showLatest ? <button type="button" className="latest-message-button" title={t('runs:latestMessages')} aria-label={t('runs:latestMessages')}
-        onClick={() => { following.current = true; if (view.current) view.current.scrollTop = view.current.scrollHeight; setShowLatest(false); }}><ArrowDown size={17} /></button> : null}
+      {showLatest ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                aria-label={t('runs:latestMessages')}
+                onClick={() => {
+                  following.current = true;
+                  if (view.current) view.current.scrollTop = view.current.scrollHeight;
+                  setShowLatest(false);
+                }}
+                variant="ghost"
+                size="icon"
+                className="latest-message-button"
+              />
+            }
+          >
+            <ArrowDown size={17} />
+          </TooltipTrigger>
+          <TooltipContent>{t('runs:latestMessages')}</TooltipContent>
+        </Tooltip>
+      ) : null}
     </div>
   );
 }

@@ -40,7 +40,7 @@ for (const locale of ['en', 'zh-CN']) {
     await row.getByRole('button', { name: labels.delete, exact: true }).click();
     await expect(row).toHaveCount(0);
     await page.getByRole('tab', { name: labels.localRuntime, exact: true }).click();
-    await expect(page.getByRole('checkbox', { name: labels.enableLocalRuntime })).toBeVisible();
+    await expect(page.getByRole('switch', { name: labels.enableLocalRuntime })).toBeVisible();
     await expect(page.locator('.runtime-panel').getByRole('button', { name: labels.delete, exact: true })).toHaveCount(0);
   });
 }

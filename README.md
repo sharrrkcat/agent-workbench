@@ -307,7 +307,7 @@ Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
 
-After a build, `npm run test:browser -- style-foundation.spec.ts` checks Mira components and local fonts.
+After a build, `npm run test:browser -- style-foundation.spec.ts controls.spec.ts` checks bilingual desktop/touch controls and fonts.
 `npm run test:browser` also includes existing chat, runtime and resource layout cases; these retain their
 assertions but need [layout reconstruction](docs/contracts/settings.md#frontend-styling-foundation) before full acceptance.
 Install Chromium once with `npx playwright install chromium`. Tests manage an isolated fixture server on

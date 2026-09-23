@@ -15,6 +15,12 @@ const { knowledgeSettingsInput } = (await load('../src/components/settings/knowl
 const { knowledgeBaseInput } = (await load('../src/components/settings/knowledge/KnowledgeDetail.tsx')).exports;
 const { entryInput } = (await load('../src/components/settings/worldbook/WorldbookEntries.tsx')).exports;
 const { KnowledgeModelSelect } = (await load('../src/components/settings/knowledge/KnowledgeModelSelect.tsx')).exports;
+const { SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
+function descendants(node) {
+  if (Array.isArray(node)) return node.flatMap(descendants);
+  if (!React.isValidElement(node)) return [];
+  return [node, ...descendants(node.props.children)];
+}
 const { WorldbookEntryCard } = (await load('../src/components/settings/worldbook/WorldbookEntryCard.tsx')).exports;
 const { worldbookApi } = (await load('../src/api/worldbook.ts')).exports;
 const { knowledgeApi } = (await load('../src/api/knowledge.ts')).exports;
@@ -56,7 +62,10 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(html.indexOf('drag-handle') < html.indexOf('worldbook-entry-toggle-cell'));
   assert.ok(html.indexOf('worldbook-entry-form-row') < html.indexOf('textarea'));
   const missing = renderToStaticMarkup(React.createElement(KnowledgeModelSelect, { kind: 'embedding', value: 'missing', models: [], onChange() {} }));
-  assert.match(missing, /value="missing" disabled="" selected=""/);
+  assert.match(missing, /<input[^>]*value="missing"/);
+  const choice = descendants(KnowledgeModelSelect({ kind: 'embedding', value: 'missing', models: [], onChange() {} }))
+    .find((node) => node.type === SelectItem && node.props.value === 'missing');
+  assert.equal(choice.props.disabled, true);
   assert.ok(missing.includes(i18n.t('missingModel', { ns: 'knowledge' })));
 }
 console.log('resource input contracts, API methods, entry structure and bilingual model states: ok');

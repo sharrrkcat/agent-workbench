@@ -15,6 +15,12 @@ const load = createModuleLoader({
 });
 const { newModel, updateModel, localEngine, localSource, selectModelSource } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
+const { SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
+function descendants(node) {
+  if (Array.isArray(node)) return node.flatMap(descendants);
+  if (!React.isValidElement(node)) return [];
+  return [node, ...descendants(node.props.children)];
+}
 const original = { ...newModel('llm'), source: null, model_ref: 'llms/model', parameters: { max_tokens: 128, presence_penalty: 1 },
   capabilities: { streaming: true, tools: true, vision: true, json_object: true, json_schema: true } };
 const selected = selectModelSource(original, localSource());
@@ -50,7 +56,10 @@ for (const locale of ['en', 'zh-CN']) {
   const vision = renderToStaticMarkup(React.createElement(ProfileParameters, { value: newModel('vision'), onChange: () => {} }));
   const embedding = renderToStaticMarkup(React.createElement(ProfileParameters, { value: newModel('image_embedding'), onChange: () => {} }));
   assert.ok(vision.includes('wd14') && vision.includes(t('visionTags')));
-  assert.ok(embedding.includes('clip') && embedding.includes('siglip2'));
+  assert.ok(embedding.includes('clip'));
+  const architectures = descendants(ProfileParameters({ value: newModel('image_embedding'), onChange() {} }))
+    .filter((node) => node.type === SelectItem).map((node) => node.props.value);
+  assert.deepEqual(architectures, ['clip', 'siglip2']);
   assert.doesNotMatch(vision + embedding, /florence|dinov2|caption/i);
 }
 console.log('Transformers selection, strict device defaults, retained entries and bilingual parameter controls passed.');

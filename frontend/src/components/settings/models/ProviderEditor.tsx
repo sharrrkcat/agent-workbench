@@ -1,3 +1,8 @@
+import { Input } from '@/components/ui/input';
+import { FieldGroup, Field, FieldLabel, FieldSet } from '@/components/ui/field';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Save } from 'lucide-react';
 
 import type { Dispatch, SetStateAction } from 'react';
@@ -5,8 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
 import type { ProviderInput, ExternalConnection } from '../../../types/models';
-import { AppModal } from '../../ui/AppModal';
-import { Field, Check, NumberInput } from './fields';
+
 import type { ModelFeedbackProps } from './types';
 
 export type ProviderDraft = { id?: string; value: ProviderInput };
@@ -25,74 +29,110 @@ export function ProviderEditor({
   const patchProvider = (patch: Partial<ProviderInput>) =>
     setProvider((draft) => (draft ? { ...draft, value: { ...draft.value, ...patch } } : null));
   const patchConnection = (patch: Partial<ExternalConnection>) =>
-    setProvider((draft) => draft ? { ...draft, value: { ...draft.value, connection: { ...draft.value.connection, ...patch } } } : null);
+    setProvider((draft) =>
+      draft
+        ? { ...draft, value: { ...draft.value, connection: { ...draft.value.connection, ...patch } } }
+        : null,
+    );
   return (
-    <AppModal
+    <Dialog
       open={!!provider}
-      title={provider?.id ? t('editProvider') : t('addProvider')}
-      closeLabel={t('close')}
-      onClose={() => {
-        if (!busy) setProvider(null);
+      onOpenChange={(open) => {
+        if (!open)
+          (() => {
+            if (!busy) setProvider(null);
+          })();
       }}
     >
-      {provider ? (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              if (provider.id) await modelsApi.patchProviderProfile(provider.id, provider.value);
-              else await modelsApi.createProviderProfile(provider.value);
-              setProvider(null);
-            });
-          }}
-        >
-          {feedback}
-          <fieldset disabled={busy} className="model-form">
-            <Field label={t('name')}>
-              <input required value={provider.value.name} onChange={(e) => patchProvider({ name: e.target.value })} />
-            </Field>
-            <Field label={t('baseUrl')}>
-              <input
-                required
-                type="url"
-                value={provider.value.connection.base_url}
-                onChange={(e) => patchConnection({ base_url: e.target.value })}
-              />
-            </Field>
-            <Field label={t('apiKey')}>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={provider.value.connection.api_key ?? ''}
-                placeholder={providers.find((p) => p.id === provider.id)?.connection?.has_api_key ? t('keySet') : ''}
-                onChange={(e) => patchConnection({ api_key: e.target.value })}
-              />
-            </Field>
-            <div className="model-form-grid">
-              {(['timeout_seconds', 'concurrency', 'queue_size', 'queue_timeout_seconds'] as const).map((key) => (
-                <NumberInput
-                  key={key}
-                  label={t('connection.' + key)}
-                  value={provider.value.connection[key]}
-                  min={key === 'queue_size' ? 0 : 1}
-                  onChange={(v) => patchConnection({ [key]: v ?? 1 })}
-                />
-              ))}
-            </div>
-            <Check
-              label={t('enabled')}
-              checked={provider.value.enabled}
-              onChange={(enabled) => patchProvider({ enabled })}
-            />
-            <div className="model-form-footer">
-              <button className="primary-button" type="submit">
-                <Save size={16} />
-                {t('save')}
-              </button>
-            </div>
-          </fieldset>
-        </form>
-      ) : null}
-    </AppModal>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{provider?.id ? t('editProvider') : t('addProvider')}</DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
+          {provider ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(async () => {
+                  if (provider.id) await modelsApi.patchProviderProfile(provider.id, provider.value);
+                  else await modelsApi.createProviderProfile(provider.value);
+                  setProvider(null);
+                });
+              }}
+            >
+              {feedback}
+              <FieldSet disabled={busy} className="model-form">
+                <Field>
+                  <FieldLabel>{t('name')}</FieldLabel>
+                  <Input
+                    required
+                    value={provider.value.name}
+                    onChange={(e) => patchProvider({ name: e.target.value })}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>{t('baseUrl')}</FieldLabel>
+                  <Input
+                    required
+                    type="url"
+                    value={provider.value.connection.base_url}
+                    onChange={(e) => patchConnection({ base_url: e.target.value })}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>{t('apiKey')}</FieldLabel>
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={provider.value.connection.api_key ?? ''}
+                    placeholder={
+                      providers.find((p) => p.id === provider.id)?.connection?.has_api_key ? t('keySet') : ''
+                    }
+                    onChange={(e) => patchConnection({ api_key: e.target.value })}
+                  />
+                </Field>
+                <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                  {(['timeout_seconds', 'concurrency', 'queue_size', 'queue_timeout_seconds'] as const).map(
+                    (key) => (
+                      <Field key={key}>
+                        <FieldLabel>{t('connection.' + key)}</FieldLabel>
+                        <Input
+                          type="number"
+                          min={key === 'queue_size' ? 0 : 1}
+                          step={1}
+                          value={
+                            Number.isNaN(provider.value.connection[key])
+                              ? ''
+                              : (provider.value.connection[key] ?? '')
+                          }
+                          onChange={(event) =>
+                            patchConnection({
+                              [key]: event.currentTarget.value === '' ? 1 : Number(event.currentTarget.value),
+                            })
+                          }
+                        />
+                      </Field>
+                    ),
+                  )}
+                </FieldGroup>
+                <Field orientation="horizontal">
+                  <Switch
+                    checked={provider.value.enabled}
+                    onCheckedChange={(enabled) => patchProvider({ enabled })}
+                  />
+                  <FieldLabel>{t('enabled')}</FieldLabel>
+                </Field>
+                <div className="model-form-footer">
+                  <Button type="submit" variant="default">
+                    <Save size={16} />
+                    {t('save')}
+                  </Button>
+                </div>
+              </FieldSet>
+            </form>
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

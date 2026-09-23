@@ -1,3 +1,4 @@
+import { chooseOption, answerConfirmation } from './controls';
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 
 const labels = (locale: string) => locale === 'en' ? {
@@ -17,7 +18,7 @@ const labels = (locale: string) => locale === 'en' ? {
 };
 
 async function noOverflow(page: Page) {
-  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .settings-page, .settings-content, .resource-panel, .worldbook-entry-card, .worldbook-entry-card-header, .app-modal-panel')]
+  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .settings-page, .settings-content, .resource-panel, .worldbook-entry-card, .worldbook-entry-card-header, [data-slot="dialog-content"]')]
     .filter((element) => element.clientWidth && element.scrollWidth > element.clientWidth + 1).map((element) => element.className || element.tagName));
   expect(overflow).toEqual([]);
 }
@@ -55,9 +56,9 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
         ids.push((await (await created).json()).id);
       }
       const first = page.locator(`[data-entry-id="${ids[0]}"]`), second = page.locator(`[data-entry-id="${ids[1]}"]`);
-      expect(await first.locator('.worldbook-entry-card-header > *').evaluateAll((elements) => elements.map((element) => element.className))).toEqual([
-        'drag-handle', 'icon-button resource-icon', 'worldbook-entry-toggle-cell', 'worldbook-entry-card-title', 'worldbook-entry-card-actions',
-      ]);
+      expect(await first.locator('.worldbook-entry-card-header > *').evaluateAll((elements) => elements.map((element, index) => element.matches([
+        '.drag-handle', 'button[aria-expanded]', '.worldbook-entry-toggle-cell', '.worldbook-entry-card-title', '.worldbook-entry-card-actions',
+      ][index])))).toEqual([true, true, true, true, true]);
       await first.getByLabel(l.content, { exact: true }).fill('Unsaved Alpha draft');
       await second.getByLabel(l.content, { exact: true }).fill('Updated Beta facts');
       await second.getByRole('button', { name: l.save, exact: true }).click();
@@ -106,14 +107,14 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
       await expect(page.locator('.worldbook-match-entry-card')).toHaveCount(2);
       await page.getByRole('tab', { name: l.config, exact: true }).click();
       await page.getByLabel(l.name, { exact: true }).fill('Unsaved book');
-      page.once('dialog', (dialog) => dialog.dismiss());
       await page.locator('.resource-heading').getByRole('button', { name: l.back, exact: true }).click();
+      await answerConfirmation(page, false, locale);
       await expect(page.getByLabel(l.name, { exact: true })).toHaveValue('Unsaved book');
-      page.once('dialog', (dialog) => dialog.accept());
       await page.locator('.resource-heading').getByRole('button', { name: l.back, exact: true }).click();
+      await answerConfirmation(page, true, locale);
       await expect(page.getByRole('button', { name: l.addBook, exact: true })).toBeVisible();
       await page.getByRole('tab', { name: l.globals, exact: true }).click();
-      await page.locator('.resource-advanced > summary').click();
+      await page.locator('.resource-advanced > [data-slot="collapsible-trigger"]').click();
       await page.getByLabel(l.maxContext, { exact: true }).fill(String(9000 + viewport.width));
       await page.getByRole('button', { name: l.save, exact: true }).click();
       await expect.poll(async () => (await (await request.get('/api/worldbook/settings')).json()).worldbook_max_context_chars).toBe(9000 + viewport.width);
@@ -124,7 +125,7 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
       await page.goto('/settings?tab=knowledge');
       await page.getByRole('button', { name: l.addBase, exact: true }).click();
       await page.getByLabel(l.baseName, { exact: true }).fill(`Facts ${locale} ${viewport.width}`);
-      await page.getByLabel(l.embedding, { exact: true }).selectOption(await modelId(request));
+      await chooseOption(page.getByLabel(l.embedding, { exact: true }), (await (await request.get(`/api/models/profiles/${await modelId(request)}`)).json()).name);
       const created = page.waitForResponse((response) => response.url().endsWith('/api/knowledge/bases') && response.request().method() === 'POST');
       await page.getByRole('button', { name: l.save, exact: true }).click();
       const base = await (await created).json();
@@ -134,7 +135,7 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
       await dialog.getByLabel(l.text, { exact: true }).fill('# Alpha\nUseful alpha fact.');
       await dialog.getByRole('button', { name: l.index, exact: true }).click();
       await expect(page.locator('.knowledge-source-preview')).toContainText('Useful alpha fact.');
-      await page.locator('.knowledge-chunk summary').click();
+      await page.locator('.knowledge-chunk > [data-slot="collapsible-trigger"]').click();
       await expect(page.locator('.knowledge-chunk pre')).toContainText('Useful alpha fact.');
       await page.getByRole('dialog').getByRole('button', { name: l.close, exact: true }).click();
       await page.getByRole('button', { name: l.upload, exact: true }).click();
@@ -174,8 +175,8 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
       expect(bindings.effective_knowledge_base_ids).toContain(base.id);
       await page.getByRole('tab', { name: locale === 'en' ? 'Sources' : '来源', exact: true }).click();
       const row = page.locator('.knowledge-sources-table tbody tr').filter({ hasText: 'first.txt' });
-      page.once('dialog', (dialog) => dialog.accept());
       await row.getByRole('button', { name: locale === 'en' ? 'Delete' : '删除', exact: true }).click();
+      await answerConfirmation(page, true, locale);
       await expect(page.locator('.knowledge-sources-table tbody tr')).toHaveCount(2);
     });
   });
@@ -206,8 +207,8 @@ test('stale source previews do not replace a new selection, and rejected uploads
   const attachment = await (await uploaded).json();
   await expect(page.getByRole('dialog')).toContainText('KNOWLEDGE_SOURCE_NOT_READABLE');
   const attachmentId = attachment.uri.split('/').at(-1);
-  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  await answerConfirmation(page, true);
   await expect.poll(async () => (await request.get(`/api/attachments/${attachmentId}`)).status()).toBe(404);
 });
 
@@ -215,19 +216,19 @@ test('advanced settings retain nullable fields and invalid drafts block departur
   await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
   await page.goto('/settings?tab=knowledge');
   await page.getByRole('tab', { name: 'Global settings', exact: true }).click();
-  const advanced = page.locator('.resource-advanced'); await advanced.locator(':scope > summary').click();
+  const advanced = page.locator('.resource-advanced'); await advanced.locator(':scope > [data-slot="collapsible-trigger"]').click();
   await page.getByLabel('Score threshold', { exact: true }).fill('0.25');
   await page.getByLabel('Default score threshold', { exact: true }).fill('0.1');
   await page.getByLabel('Results per source', { exact: true }).fill('');
   await page.getByRole('switch', { name: 'Enable optional reranker', exact: true }).click();
-  await advanced.locator(':scope > summary').click();
+  await advanced.locator(':scope > [data-slot="collapsible-trigger"]').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   const settings = await (await request.get('/api/knowledge/settings')).json();
   expect(settings.min_score_threshold).toBe(0.25); expect(settings.default_min_score).toBe(0.1); expect(settings.retrieval_max_chunks_per_source).toBeNull();
   await page.getByLabel('Chunk size', { exact: true }).fill('');
-  page.once('dialog', (dialog) => dialog.dismiss());
   await page.getByRole('navigation').getByRole('button', { name: 'General', exact: true }).click();
+  await answerConfirmation(page, false);
   await expect(page.getByLabel('Chunk size', { exact: true })).toHaveValue('');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   expect((await (await request.get('/api/knowledge/settings')).json()).default_chunk_size).toBe(settings.default_chunk_size);

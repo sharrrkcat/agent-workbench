@@ -1,3 +1,5 @@
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,25 +31,31 @@ function Part({ part }: { part: MessagePart }) {
   if (part.type === 'json') return <pre className="part-json">{JSON.stringify(part.data, null, 2)}</pre>;
   if (part.type === 'tool_call')
     return (
-      <details className="part-tool" open>
-        <summary>
-          {t('toolCall')} · {part.tool_name}
-        </summary>
-        <pre className="part-json">{JSON.stringify(part.arguments, null, 2)}</pre>
-      </details>
+      <Collapsible className="part-tool" defaultOpen={true}>
+        <CollapsibleTrigger render={<Button type="button" variant="ghost" className="justify-start" />}>
+          {t('toolCall')}· {part.tool_name}
+        </CollapsibleTrigger>
+        <CollapsibleContent keepMounted>
+          <pre className="part-json">{JSON.stringify(part.arguments, null, 2)}</pre>
+        </CollapsibleContent>
+      </Collapsible>
     );
   if (part.type === 'tool_result')
     return (
-      <details className={`part-tool tool-${part.status}`} open>
-        <summary>
-          {part.tool_name} · {t(`toolStatus.${part.status}`)}
-        </summary>
-        <ToolResultBody part={part} />
-      </details>
+      <Collapsible className={`part-tool tool-${part.status}`} defaultOpen={true}>
+        <CollapsibleTrigger render={<Button type="button" variant="ghost" className="justify-start" />}>
+          {part.tool_name}· {t(`toolStatus.${part.status}`)}
+        </CollapsibleTrigger>
+        <CollapsibleContent keepMounted>
+          <ToolResultBody part={part} />
+        </CollapsibleContent>
+      </Collapsible>
     );
   if (part.type === 'file')
     return (
-      <pre className="part-file">{part.content || part.filename || part.attachment_id || t('renderers:file')}</pre>
+      <pre className="part-file">
+        {part.content || part.filename || part.attachment_id || t('renderers:file')}
+      </pre>
     );
   if (part.type === 'image') {
     const url =

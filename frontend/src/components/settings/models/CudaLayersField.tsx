@@ -1,8 +1,13 @@
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Input } from '@/components/ui/input';
+import { Field, FieldLabel } from '@/components/ui/field';
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NumberInput } from './fields';
 
-export function CudaLayersField({ value, onChange }: {
+export function CudaLayersField({
+  value,
+  onChange,
+}: {
   value: 'auto' | number;
   onChange: (value: 'auto' | number) => void;
 }) {
@@ -13,12 +18,33 @@ export function CudaLayersField({ value, onChange }: {
   return (
     <div className="runtime-gpu-field">
       <span>{t('gpuAllocation')}</span>
-      <div className="runtime-gpu-mode" role="group" aria-label={t('gpuAllocation')}>
-        <button type="button" aria-pressed={automatic} onClick={() => onChange('auto')}>{t('gpuAuto')}</button>
-        <button type="button" aria-pressed={!automatic} onClick={() => onChange(manual.current)}>{t('gpuManual')}</button>
-      </div>
-      {!automatic ? <NumberInput label={t('runtimeParams.gpu_layers')} value={value} min={1} max={999}
-        onChange={(next) => onChange(next ?? 1)} /> : null}
+      <ToggleGroup
+        className="runtime-gpu-mode"
+        aria-label={t('gpuAllocation')}
+        multiple={false}
+        value={[automatic ? 'auto' : 'manual']}
+        onValueChange={(next) => {
+          if (next.length) onChange(next[0] === 'auto' ? 'auto' : manual.current);
+        }}
+      >
+        <ToggleGroupItem value="auto">{t('gpuAuto')}</ToggleGroupItem>
+        <ToggleGroupItem value="manual">{t('gpuManual')}</ToggleGroupItem>
+      </ToggleGroup>
+      {!automatic ? (
+        <Field>
+          <FieldLabel>{t('runtimeParams.gpu_layers')}</FieldLabel>
+          <Input
+            type="number"
+            min={1}
+            max={999}
+            step={1}
+            value={Number.isNaN(value) ? '' : (value ?? '')}
+            onChange={(event) =>
+              onChange(event.currentTarget.value === '' ? 1 : Number(event.currentTarget.value))
+            }
+          />
+        </Field>
+      ) : null}
     </div>
   );
 }
