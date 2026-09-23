@@ -15,8 +15,10 @@ prompts, ids, API fields and error codes retain their original values.
 
 Tailwind CSS 4 uses its Vite plugin. shadcn/ui uses Base UI and the Mira preset
 `b1D0dv72` (`base-mira`, Neutral, Lucide, default menus and subtle accents).
-`frontend/src/styles.css` is the only application CSS entry. Its preset light/dark
-tokens are retained, while the HTML root always selects dark and declares a dark
+`frontend/src/styles.css` is the only application CSS entry, with preset tokens,
+base rules and scoped application layout, Markdown and media styles. Shared
+controls own their styling in their component classes. Preset light/dark tokens
+are retained, while the HTML root always selects dark and declares a dark
 color scheme. There is no theme setting or system-theme tracking. Inter Variable
 ships in the build; headings inherit the body font and Chinese uses system fallbacks.
 Fonts do not use external CDNs or the removed backend font settings.

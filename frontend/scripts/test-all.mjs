@@ -17,7 +17,6 @@ for (const script of [
   'test-transformers',
   'test-harness',
   'test-chat-presentation',
-  'test-knowledge-citations',
   'test-url-helpers',
 ]) {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL(`./${script}.mjs`, import.meta.url))], {

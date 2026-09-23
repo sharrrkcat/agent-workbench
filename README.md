@@ -13,12 +13,12 @@ generation. The external API stays single-key and localhost-only.
 ## Start
 
 Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), and Node.js 20.19+
-or 22.12+ with npm. From a source checkout:
+or 22.12+ with npm. Source builds require development dependencies:
 
 ```powershell
 uv sync
 Push-Location frontend
-npm ci
+npm ci --include=dev
 npm run build
 Pop-Location
 uv run python scripts/run_app.py --no-open

@@ -143,6 +143,10 @@ attachment_ref), image, audio, video, media_group image galleries, notice,
 error, tool_call and tool_result. Unknown types are rejected; there are no
 forms, actions, command buttons or diff parts.
 
+Text parts choose plain text or Markdown; reasoning uses Markdown with GFM.
+Knowledge citation labels such as `[K1]` follow ordinary Markdown rendering,
+without a citation-specific parser, source lookup or popover.
+
 Large binary data belongs in the attachment store and is referenced by id/URL.
 Uploads and serving use the configured attachment directory; General owns
 size/count and text-context byte limits. Persisted parts retain ids, MIME,
