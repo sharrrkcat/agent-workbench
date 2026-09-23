@@ -1,8 +1,9 @@
+import { useSettingsView } from '../SettingsView';
 import { Input } from '@/components/ui/input';
 import { FieldGroup, Field, FieldLabel, FieldSet } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Save } from 'lucide-react';
 
 import type { Dispatch, SetStateAction } from 'react';
@@ -25,6 +26,7 @@ export function ProviderEditor({
   setProvider: Dispatch<SetStateAction<ProviderDraft | null>>;
 }) {
   const { t } = useTranslation('llm');
+  const activeView = useSettingsView();
   const providers = useModelsStore((state) => state.providers);
   const patchProvider = (patch: Partial<ProviderInput>) =>
     setProvider((draft) => (draft ? { ...draft, value: { ...draft.value, ...patch } } : null));
@@ -36,7 +38,7 @@ export function ProviderEditor({
     );
   return (
     <Dialog
-      open={!!provider}
+      open={activeView && !!provider}
       onOpenChange={(open) => {
         if (!open)
           (() => {
@@ -48,18 +50,19 @@ export function ProviderEditor({
         <DialogHeader>
           <DialogTitle>{provider?.id ? t('editProvider') : t('addProvider')}</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {provider ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  if (provider.id) await modelsApi.patchProviderProfile(provider.id, provider.value);
-                  else await modelsApi.createProviderProfile(provider.value);
-                  setProvider(null);
-                });
-              }}
-            >
+        {provider ? (
+          <form
+            className="settings-dialog-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                if (provider.id) await modelsApi.patchProviderProfile(provider.id, provider.value);
+                else await modelsApi.createProviderProfile(provider.value);
+                setProvider(null);
+              });
+            }}
+          >
+            <div className="settings-dialog-body">
               {feedback}
               <FieldSet disabled={busy} className="model-form">
                 <Field>
@@ -122,16 +125,16 @@ export function ProviderEditor({
                   />
                   <FieldLabel>{t('enabled')}</FieldLabel>
                 </Field>
-                <div className="model-form-footer">
-                  <Button type="submit" variant="default">
-                    <Save size={16} />
-                    {t('save')}
-                  </Button>
-                </div>
               </FieldSet>
-            </form>
-          ) : null}
-        </div>
+            </div>
+            <DialogFooter>
+              <Button disabled={busy} type="submit" variant="default">
+                <Save data-icon="inline-start" />
+                {t('save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

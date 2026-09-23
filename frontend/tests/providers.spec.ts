@@ -1,3 +1,4 @@
+import { navigateSettings } from './controls';
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
 
@@ -6,8 +7,8 @@ for (const locale of ['en', 'zh-CN']) {
   test(`independent provider key editing and local runtime (${locale})`, async ({ page, request }) => {
     await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
     await page.goto('/settings?tab=models');
-    await expect(page.locator('.model-tabs [role="tab"]')).toHaveCount(4);
-    await page.getByRole('tab', { name: labels.providers, exact: true }).click();
+    await expect(page.locator('.settings-content [role="tablist"]')).toHaveCount(0);
+    await navigateSettings(page, labels.title, labels.providers);
     await page.getByRole('button', { name: labels.addProvider, exact: true }).click();
     const dialog = page.getByRole('dialog');
     const name = `External fixture ${locale}`;
@@ -39,7 +40,7 @@ for (const locale of ['en', 'zh-CN']) {
     expect((await (await request.get(`/api/models/providers/${provider.id}`)).json()).connection.has_api_key).toBe(false);
     await row.getByRole('button', { name: labels.delete, exact: true }).click();
     await expect(row).toHaveCount(0);
-    await page.getByRole('tab', { name: labels.localRuntime, exact: true }).click();
+    await navigateSettings(page, labels.title, labels.localRuntime);
     await expect(page.getByRole('switch', { name: labels.enableLocalRuntime })).toBeVisible();
     await expect(page.locator('.runtime-panel').getByRole('button', { name: labels.delete, exact: true })).toHaveCount(0);
   });

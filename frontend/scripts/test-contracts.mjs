@@ -23,14 +23,21 @@ await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { esca
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { settingsSections, readSettingsSection, settingsSectionUrl } = (
+const { settingsSections, settingsGroups, readSettingsRoute, settingsRouteUrl } = (
   await load('../src/components/settings/navigation.ts')
 ).exports;
 assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools']);
-for (const section of settingsSections)
-  assert.equal(readSettingsSection(new URL(settingsSectionUrl(section), 'http://localhost').search), section);
+const settingsPages = settingsGroups.flatMap((group) => group.menus.flatMap((menu) => menu.pages));
+assert.equal(settingsPages.length, 11);
+for (const route of settingsPages)
+  assert.deepEqual(readSettingsRoute(new URL(settingsRouteUrl(route), 'http://localhost').search), route);
 for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities', '?tab=pet'])
-  assert.equal(readSettingsSection(tab), 'general');
+  assert.deepEqual(readSettingsRoute(tab), { section: 'general' });
+assert.deepEqual(readSettingsRoute('?tab=models'), { section: 'models', view: 'profiles' });
+assert.deepEqual(readSettingsRoute('?tab=models&view=settings'), { section: 'models', view: 'profiles' });
+assert.deepEqual(readSettingsRoute('?tab=knowledge&view=providers'), { section: 'knowledge', view: 'list' });
+assert.deepEqual(readSettingsRoute('?tab=worldbook&view=settings'), { section: 'worldbook', view: 'settings' });
+assert.deepEqual(readSettingsRoute('?tab=general&view=providers'), { section: 'general' });
 
 const { settingsApi } = (await load('../src/api/settings.ts')).exports;
 const { modelsApi } = (await load('../src/api/models.ts')).exports;

@@ -171,11 +171,12 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(sidebar).toHaveCount(0);
           await page.setViewportSize({ width: viewport.width, height: 480 });
           await expect
-            .poll(() => page.evaluate(() => document.documentElement.scrollHeight > innerHeight))
+            .poll(() => page.locator('.settings-scroll').evaluate((node) => node.scrollHeight > node.clientHeight))
             .toBe(true);
           await page.mouse.move(200, 240);
           await page.mouse.wheel(0, 600);
-          await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+          await expect.poll(() => page.locator('.settings-scroll').evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+          expect(await page.evaluate(() => window.scrollY)).toBe(0);
         } else {
           await trigger.click();
           await expect(trigger).toHaveAttribute('aria-expanded', 'false');

@@ -3,13 +3,16 @@ import fs from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import i18next from 'i18next';
-import { createModuleLoader, mockModule } from './module-loader.mjs';
+import { createModuleLoader, mockModule, sourceUrl } from './module-loader.mjs';
 
 const i18n = i18next.createInstance();
 const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale, Object.fromEntries(['settings', 'common', 'knowledge', 'worldbook'].map((ns) => [ns,
   JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/${ns}.json`, import.meta.url), 'utf8'))]))]));
 await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { escapeValue: false } });
-const load = createModuleLoader({ 'react-i18next': mockModule({ useTranslation: (ns) => ({ t: i18n.getFixedT(null, ns), i18n }) }) });
+const load = createModuleLoader({
+  'react-i18next': mockModule({ useTranslation: (ns) => ({ t: i18n.getFixedT(null, ns), i18n }) }),
+  [sourceUrl('components/settings/SettingsView.tsx')]: mockModule({ useSettingsView: () => true }),
+});
 const { worldbookSettingsInput } = (await load('../src/components/settings/worldbook/WorldbookDefaults.tsx')).exports;
 const { knowledgeSettingsInput } = (await load('../src/components/settings/knowledge/KnowledgeDefaults.tsx')).exports;
 const { knowledgeBaseInput } = (await load('../src/components/settings/knowledge/KnowledgeDetail.tsx')).exports;

@@ -1,3 +1,4 @@
+import { ResourceEmpty } from '../resources/ResourceUI';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState } from 'react';
@@ -188,7 +189,7 @@ export function WorldbookEntries({
           }}
           variant="outline"
         >
-          <Plus size={16} />
+          <Plus data-icon="inline-start" />
           {t('newEntry')}
         </Button>
       </div>
@@ -257,7 +258,7 @@ export function WorldbookEntries({
           );
         })}
       </div>
-      {!ids.length ? <p className="resource-empty">{t('noEntries')}</p> : null}
+      {!ids.length ? <ResourceEmpty>{t('noEntries')}</ResourceEmpty> : null}
       {confirmation}
     </div>
   );

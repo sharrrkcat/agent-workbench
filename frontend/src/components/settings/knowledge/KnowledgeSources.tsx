@@ -1,3 +1,6 @@
+import { Badge } from '@/components/ui/badge';
+import { ResourceEmpty } from '../resources/ResourceUI';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -114,7 +117,7 @@ export function KnowledgeSources({
                 />
               }
             >
-              <RefreshCw size={16} />
+              <RefreshCw data-icon="inline-start" />
             </TooltipTrigger>
             <TooltipContent>{t('settings:resources.refresh')}</TooltipContent>
           </Tooltip>
@@ -124,7 +127,7 @@ export function KnowledgeSources({
             onClick={() => setModal('paste')}
             variant="outline"
           >
-            <Clipboard size={15} />
+            <Clipboard data-icon="inline-start" />
             {t('pasteText')}
           </Button>
           <Button
@@ -133,7 +136,7 @@ export function KnowledgeSources({
             onClick={() => setModal('upload')}
             variant="outline"
           >
-            <Upload size={15} />
+            <Upload data-icon="inline-start" />
             {t('uploadFiles')}
           </Button>
         </div>
@@ -147,9 +150,9 @@ export function KnowledgeSources({
           variant="outline"
         >
           {task.busy === 'all' ? (
-            <LoaderCircle size={15} className="animate-spin" />
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
           ) : (
-            <RefreshCw size={15} />
+            <RefreshCw data-icon="inline-start" />
           )}
           {t('reindexAll')}
         </Button>
@@ -159,45 +162,43 @@ export function KnowledgeSources({
         <ResourceLoading error={loadError} retry={() => setReload((value) => value + 1)} />
       ) : sources.length ? (
         <div className="knowledge-table-scroll">
-          <table className="knowledge-sources-table">
-            <thead>
-              <tr>
-                <th>{t('sourceTitle')}</th>
-                <th>{t('sourceType')}</th>
-                <th>{t('chunks')}</th>
-                <th>{t('index')}</th>
-                <th>
+          <Table className="knowledge-sources-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('sourceTitle')}</TableHead>
+                <TableHead>{t('sourceType')}</TableHead>
+                <TableHead>{t('chunks')}</TableHead>
+                <TableHead>{t('index')}</TableHead>
+                <TableHead>
                   <span className="sr-only">{t('actions')}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sources.map((source) => (
-                <tr key={source.id}>
-                  <td>
+                <TableRow key={source.id}>
+                  <TableCell>
                     <Button
                       type="button"
                       onClick={() => setSourceId(source.id)}
                       variant="ghost"
-                      className="resource-source-link"
+                      className="resource-source-link h-auto max-w-72 justify-start whitespace-normal text-left"
                     >
                       {source.title}
                     </Button>
                     {source.error ? <small className="error-text">{source.error}</small> : null}
-                  </td>
-                  <td>{t('sourceTypes.' + source.source_type)}</td>
-                  <td data-unit={t('chunks')}>{source.chunks}</td>
-                  <td>
-                    <span className={`resource-badge ${source.status === 'indexed' ? 'active' : 'warning'}`}>
-                      {t('statuses.' + source.status)}
-                    </span>
+                  </TableCell>
+                  <TableCell>{t('sourceTypes.' + source.source_type)}</TableCell>
+                  <TableCell data-unit={t('chunks')}>{source.chunks}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{t('statuses.' + source.status)}</Badge>
                     <small>
                       {source.indexed_at
                         ? new Date(source.indexed_at).toLocaleString(i18n.language)
                         : t('notIndexed')}
                     </small>
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     <div className="resource-actions">
                       <Tooltip>
                         <TooltipTrigger
@@ -211,7 +212,7 @@ export function KnowledgeSources({
                             />
                           }
                         >
-                          <Eye size={15} />
+                          <Eye data-icon="inline-start" />
                         </TooltipTrigger>
                         <TooltipContent>{t('sourceDetail')}</TooltipContent>
                       </Tooltip>
@@ -229,10 +230,10 @@ export function KnowledgeSources({
                           }
                         >
                           {task.busy === source.id ? (
-                            <LoaderCircle className="size-4 animate-spin" />
+                            <LoaderCircle className="animate-spin" />
                           ) : (
                             <>
-                              <RefreshCw size={15} />
+                              <RefreshCw data-icon="inline-start" />
                             </>
                           )}
                         </TooltipTrigger>
@@ -251,19 +252,19 @@ export function KnowledgeSources({
                             />
                           }
                         >
-                          <Trash2 size={15} />
+                          <Trash2 data-icon="inline-start" />
                         </TooltipTrigger>
                         <TooltipContent>{t('common:delete')}</TooltipContent>
                       </Tooltip>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       ) : (
-        <p className="resource-empty">{t('noSources')}</p>
+        <ResourceEmpty>{t('noSources')}</ResourceEmpty>
       )}
       {selected && !modal ? (
         <KnowledgeSourceDetail

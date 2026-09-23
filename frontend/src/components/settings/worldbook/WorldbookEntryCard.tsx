@@ -1,10 +1,18 @@
+import { Badge } from '@/components/ui/badge';
 import { CollapsibleTrigger, CollapsibleContent, Collapsible } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { Field, FieldLabel, FieldSet } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ChevronDown, ChevronRight, GripVertical, LoaderCircle, RotateCcw, Save, Trash2 } from 'lucide-react';
 import type { KeyboardEvent, PointerEvent } from 'react';
@@ -84,7 +92,7 @@ export function WorldbookEntryCard({
               />
             }
           >
-            <GripVertical size={15} />
+            <GripVertical data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('dragToReorder')}</TooltipContent>
         </Tooltip>
@@ -104,13 +112,13 @@ export function WorldbookEntryCard({
               ></CollapsibleTrigger>
             }
           >
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expanded ? <ChevronDown data-icon="inline-start" /> : <ChevronRight data-icon="inline-start" />}
           </TooltipTrigger>
           <TooltipContent>{expanded ? t('collapse') : t('expand')}</TooltipContent>
         </Tooltip>
         <div className="worldbook-entry-toggle-cell" onClick={(event) => event.stopPropagation()}>
           <span className="worldbook-entry-toggle-spinner">
-            {busy === 'toggle' ? <LoaderCircle size={14} className="animate-spin" /> : null}
+            {busy === 'toggle' ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}
           </span>
           <Field orientation="horizontal" disabled={locked}>
             <Switch checked={draft.enabled} disabled={locked} onCheckedChange={onEnabled} />
@@ -128,8 +136,10 @@ export function WorldbookEntryCard({
           ) : null}
         </div>
         <div className="worldbook-entry-card-actions" onClick={(event) => event.stopPropagation()}>
-          {dirty ? <span className="resource-badge warning">{t('unsaved')}</span> : null}
-          <span className="resource-badge worldbook-entry-mode-chip">{t(draft.activation_mode)}</span>
+          {dirty ? <Badge variant="outline">{t('unsaved')}</Badge> : null}
+          <Badge variant="outline" className="worldbook-entry-mode-chip">
+            {t(draft.activation_mode)}
+          </Badge>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -143,7 +153,7 @@ export function WorldbookEntryCard({
                 />
               }
             >
-              <Trash2 size={14} />
+              <Trash2 data-icon="inline-start" />
             </TooltipTrigger>
             <TooltipContent>{t('common:delete')}</TooltipContent>
           </Tooltip>
@@ -187,8 +197,10 @@ export function WorldbookEntryCard({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="keyword">{t('keyword')}</SelectItem>
-                  <SelectItem value="always">{t('always')}</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value="keyword">{t('keyword')}</SelectItem>
+                    <SelectItem value="always">{t('always')}</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </Field>
@@ -222,15 +234,19 @@ export function WorldbookEntryCard({
               disabled={locked || !draft.name.trim() || !draft.content.trim()}
               variant="default"
             >
-              {busy === 'save' ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}
+              {busy === 'save' ? (
+                <LoaderCircle data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Save data-icon="inline-start" />
+              )}
               {t('common:save')}
             </Button>
             <Button type="button" disabled={!dirty || locked} onClick={onReset} variant="outline">
-              <RotateCcw size={15} />
+              <RotateCcw data-icon="inline-start" />
               {t('reset')}
             </Button>
             <Button type="button" disabled={locked} onClick={onDelete} variant="destructive">
-              <Trash2 size={15} />
+              <Trash2 data-icon="inline-start" />
               {t('common:delete')}
             </Button>
           </div>

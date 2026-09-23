@@ -50,7 +50,7 @@ export function PresetVoices({ profileId }: { profileId: string }) {
               />
             }
           >
-            <RefreshCw size={16} />
+            <RefreshCw data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('refresh')}</TooltipContent>
         </Tooltip>

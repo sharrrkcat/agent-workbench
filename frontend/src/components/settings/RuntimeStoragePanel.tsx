@@ -1,3 +1,4 @@
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -48,7 +49,7 @@ export function RuntimeStoragePanel({
 }) {
   const { t } = useTranslation('llm');
   const { storage, storageLoading, storageError, reloadStorage, jobs } = useModelsStore();
-  const { confirm, confirmation } = useConfirmDialog();
+  const { confirm, confirmation } = useConfirmDialog(activeView);
   const terminal = jobs.find((job) => job.state !== 'queued' && job.state !== 'running');
   const terminalKey = terminal ? `${terminal.id}:${terminal.revision}` : '';
   useEffect(() => {
@@ -100,7 +101,7 @@ export function RuntimeStoragePanel({
           onClick={() => void onCleanup('prune')}
           variant="outline"
         >
-          <BrushCleaning size={16} />
+          <BrushCleaning data-icon="inline-start" />
           {t('cachePrune')}
         </Button>
         <Button
@@ -121,7 +122,7 @@ export function RuntimeStoragePanel({
           }}
           variant="destructive"
         >
-          <Trash2 size={16} />
+          <Trash2 data-icon="inline-start" />
           {t('cacheClean')}
         </Button>
       </div>
@@ -145,7 +146,7 @@ export function RuntimeStoragePanel({
                     />
                   }
                 >
-                  <Square size={16} />
+                  <Square data-icon="inline-start" />
                 </TooltipTrigger>
                 <TooltipContent>{t('cancelTask')}</TooltipContent>
               </Tooltip>
@@ -162,40 +163,40 @@ export function RuntimeStoragePanel({
         </CollapsibleTrigger>
         <CollapsibleContent keepMounted>
           {storage ? (
-            <table className="runtime-storage-table">
-              <thead>
-                <tr>
-                  <th>{t('storage.directory')}</th>
+            <Table className="runtime-storage-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('storage.directory')}</TableHead>
                   {['files', 'logical', 'unique', 'shared', 'exclusive'].map((key) => (
-                    <th key={key}>{t('storage.' + key)}</th>
+                    <TableHead key={key}>{t('storage.' + key)}</TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {storage.groups.map((group) => (
-                  <tr key={group.id}>
-                    <th scope="row">
+                  <TableRow key={group.id}>
+                    <TableHead scope="row">
                       <span>
                         {group.category === 'runtime'
                           ? t('localRuntime')
                           : t('storage.categories.' + group.category)}
                       </span>
                       <code>{group.category === 'other' ? '' : group.relative_path}</code>
-                    </th>
-                    <td data-label={t('storage.files')}>
+                    </TableHead>
+                    <TableCell data-label={t('storage.files')}>
                       {group.file_count == null ? t('storage.unknown') : group.file_count.toLocaleString()}
-                    </td>
+                    </TableCell>
                     {(['logical_bytes', 'unique_bytes', 'shared_bytes', 'exclusive_bytes'] as const).map(
                       (key) => (
-                        <td key={key} data-label={t('storage.' + key.split('_')[0])}>
+                        <TableCell key={key} data-label={t('storage.' + key.split('_')[0])}>
                           {bytes(group[key])}
-                        </td>
+                        </TableCell>
                       ),
                     )}
-                  </tr>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           ) : (
             <p>{storageLoading ? t('storage.scanning') : t('storage.unavailable')}</p>
           )}

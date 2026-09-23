@@ -33,13 +33,13 @@ See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 ## Configure models
 
-In **Settings > Models**, use the Models, Providers, Local Runtime and External API tabs:
+In **Settings > Models**, use the Model profiles, Providers, Local Runtime and External API sidebar pages:
 
 1. **Local Runtime:** install the shared Windows x64 release once. Place model
    files manually under data/models, then select Local Runtime in a model.
    Its reference/architecture selects the engine; release policy defaults to manual.
 2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings.
-   In Models, select that provider and enter the service's model ID. Optional discovery
+   In Model profiles, select that provider and enter the service's model ID. Optional discovery
    supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
 Each profile has one of six kinds, an internal UUID, a unique public alias,
@@ -266,8 +266,8 @@ domain validators; OpenAPI does not replace them.
 
 ## Settings and storage
 
-The six settings entries are General, Models, Personas, Knowledge, Worldbook and Tools.
-The [settings contract](docs/contracts/settings.md) lists
+Settings shares the home sidebar, with three responsibility groups, six menus and 11 pages. Subpage URLs
+survive refresh and browser back/forward. The [settings contract](docs/contracts/settings.md) lists
 APIs, editable fields and key omission/clearing semantics. Keys are omitted from
 management reads but remain unencrypted in local storage. Logs omit credentials
 and request/model content.
@@ -307,9 +307,9 @@ Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
 
-After a build, `npm run test:browser -- app-layout.spec.ts chat-presentation.spec.ts vision-input.spec.ts controls.spec.ts style-foundation.spec.ts`
-checks bilingual desktop/touch navigation, chat, images, controls and fonts. Other browser cases retain their
-settings-layout assertions; full settings-page acceptance still needs [layout reconstruction](docs/contracts/settings.md#frontend-styling-foundation).
+After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts,
+grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
+For a focused layout check, use `npm run test:browser -- app-layout.spec.ts settings-layout.spec.ts`.
 Install Chromium once with `npx playwright install chromium`. Tests manage an isolated fixture server on
 port 18767; WORKBENCH_BROWSER_PORT selects a free port. Screenshots/traces are under frontend/test-results.
 

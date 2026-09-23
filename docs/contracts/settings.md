@@ -2,8 +2,8 @@
 
 Settings have explicit domain owners and strict Pydantic inputs with
 extra=forbid. Unknown/removed fields return HTTP 422. The frontend keeps six
-navigation entries and `/settings?tab=` values: general, models, personas,
-knowledge, worldbook, tools. Default/unknown tab selects General, including pet.
+domains and `/settings?tab=` values: general, models, personas, knowledge,
+worldbook, tools. Default/unknown tab selects General, including pet.
 
 SettingsPage owns navigation and composition only. Domain panels own their
 forms; shared controls are independent of the page. Types and API clients use
@@ -24,7 +24,7 @@ Fonts do not use external CDNs or the removed backend font settings.
 Shared controls are generated with shadcn CLI 4.21.0 and maintained in
 `frontend/src/components/ui/`. Callers compose Button, Field, Input, Textarea,
 Select, Combobox, Checkbox, Switch, Tabs, Collapsible, ToggleGroup, Dialog,
-AlertDialog and Tooltip directly. Domain components retain model filtering and
+AlertDialog, Tooltip, Badge and Table directly. Domain components retain model filtering and
 resource binding rules. Vite, TypeScript and the test module loader resolve
 `@/` to `frontend/src/`; `cn` combines component styles.
 
@@ -37,33 +37,36 @@ Controlled Select preserves groups, disabled options, empty choices and missing
 selected records. Model IDs and projector paths use editable Comboboxes whose
 text is the field value, including values outside the suggestions.
 
-Controlled Tabs use arrow keys for focus and Enter/Space for activation. Model
-and resource panels keep their existing mounted drafts; hidden panels leave
-the focus order and accessibility tree. Other editors retain parent-owned drafts.
+Detail/editor Tabs use arrow keys for focus and Enter/Space for activation. Model
+and resource subpages retain mounted drafts; hidden panels and their overlays
+leave the focus order and accessibility tree. Other editors retain parent-owned drafts.
 Advanced Collapsible fields stay mounted; invalid submissions expand their
 section and focus the field. CUDA mode uses a single-selection ToggleGroup.
 
 Base UI owns modal focus, Escape, backdrops and scroll locking. Dialogs use Mira's
 default width; large editors use `max-w-3xl`. Side margins and scrollable bodies
-bound them to the viewport. Nested Select/Combobox and confirmation popups return
+bound them to the viewport; settings editor actions stay in a fixed footer.
+Nested Select/Combobox and confirmation popups return
 focus to their trigger, and busy editors retain their close restrictions.
 Close, Clear, confirmation and Tooltip labels have both locales.
 
 `useConfirmDialog` returns a local `Promise<boolean>` action and an AlertDialog
 node rendered by its owner. One request may be pending per owner; overlapping
-requests, cancellation, Escape and unmount resolve false. Accepting continues
+requests, cancellation, Escape, hidden owners and unmount resolve false. Accepting continues
 the existing action. Cache clearing uses this same confirmation workflow.
-`SettingsLeaveContext` and `onLeaveGuardChange` accept async leave guards.
+`SettingsLeaveContext` and `onLeaveGuardChange` accept async guards with the target route.
 App commits routes only after acceptance. For guarded browser back/forward,
 it restores the current history entry before asking and replays the target once
 on acceptance; cancellation preserves the page, drafts and history order.
 
-The home shell is bounded to the dynamic viewport height. Its desktop sidebar
+Home and Settings share one SidebarProvider/SidebarInset shell bounded to the
+dynamic viewport height. The desktop sidebar
 is 16rem wide, initially expanded and can be fully hidden; hidden controls leave
-the focus order. Visibility is not persisted. Below 768px it becomes an initially
+the focus order. Visibility is shared across routes but not persisted. Below 768px it becomes an initially
 closed Sheet, at most 18rem wide with viewport margins. Close, backdrop and Escape
-return focus to the toggle. Selecting/creating a session or opening Settings
-closes the mobile drawer.
+return focus to the toggle. Drawers are titled Sessions or Settings. Selecting/creating
+a session, opening Settings or accepting settings navigation closes the drawer;
+rejected navigation keeps it open.
 
 The sidebar fixes its brand/new-session header, two disabled feature placeholders
 and Settings footer; only the session list scrolls. Each row has one truncated
@@ -81,9 +84,30 @@ Service states and error dismissal have matching English/Chinese labels.
 MessageScroller uses pinned @shadcn/react 0.3.1; transcript behavior belongs to
 [runs/streaming](runs-streaming.md#run-lifecycle).
 
-Overall settings-page layouts still require reconstruction. Settings retains
-document scrolling, existing control/overlay behavior and its browser layout
-assertions; home/chat layout acceptance does not establish settings-page acceptance.
+Settings fixes its title in the shared sidebar brand position and a Back to chat footer; the middle navigation
+scrolls independently. SidebarGroup reflects responsibility: Application preferences
+contains General; Models and execution contains Models/Tools; Personas and context
+contains Personas/Knowledge/Worldbook. Each domain is a SidebarMenu. Models, Knowledge
+and Worldbook have parent menu buttons and nested SidebarMenuItem pages; clicking a
+parent only toggles its menu. These menus start collapsed, keep their icons, and
+hide closed pages from keyboard navigation. Groups stay visible; single-page menus
+have direct entries. Parent menus have no selected state; active pages use aria-current.
+The 11 pages replace secondary Tabs:
+
+| Domain | Pages / `view` values |
+| --- | --- |
+| General, Personas, Tools | Single page; no `view` |
+| Models | Model profiles `profiles`, Providers `providers`, Local Runtime `localRuntime`, External API `service` |
+| Knowledge, Worldbook | Resources `list`, Global settings `settings` |
+
+Missing/unknown views select profiles or list. Page changes push browser history;
+reselecting the effective current page adds no entry. Back to chat navigates to `/`.
+Refresh restores the domain/subpage; resource selection and detail Tabs are local.
+The fixed page header shares Home's primary-row height and toggle position and shows
+only the current location. Content scrolls
+independently, with a 64rem maximum width and ordinary forms limited to 48rem.
+FieldSet/FieldGroup and separators organize forms; resource rows wrap on narrow
+screens. Code, logs and tables contain their own overflow.
 
 ## General
 
@@ -93,6 +117,8 @@ streaming-delta persistence, show_full_processing and nested PetSettings. Derive
 defaults/effective values are read-only; frontend General submissions contain
 only the editable fields shown in that form. Remaining limits/prompts are
 available through this API even when the current form has no dedicated control.
+The form groups conversation display, Core Memory, titles and group prompts,
+with one explicit save action.
 
 show_full_processing is a strict boolean, default false, labeled Show full
 processing history in General. It controls initial expansion of active reply
@@ -120,9 +146,10 @@ default option. Model selection and
 profile parameters are defined in [models](models.md); title behavior belongs
 to [chat/context](chat-context.md#auxiliary-tasks-and-titles).
 
-Models has Models, Providers, Local Runtime and External API tabs. Providers manages external
-connections; Local Runtime owns installation/settings/jobs/logs/storage. Forms and the kind filter
-retain drafts across subtabs. Models use grouped Unbound, Local Runtime and configured-provider
+Models has four sidebar pages. Default chat/auxiliary model selectors appear only
+on Model profiles. Providers manages external connections; Local Runtime shows installation,
+storage, download settings and task history, with a log dialog. Forms and the kind filter
+retain drafts across subpages. Models use grouped Unbound, Local Runtime and configured-provider
 choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro;
 other new profiles start unbound. Local models expose inventory, execution options and release policy.
 GGUF vision exposes required mmproj_ref with inventory suggestions and manual relative-path entry.
@@ -180,7 +207,9 @@ See [chat/context](chat-context.md). Harness settings own only the optional
 searxng_base_url through `/api/tools/settings`.
 
 ToolsPanel shows catalog, risk, parameter schema, direct JSON calls, results and
-approval controls shared with RunPanel. Search configuration is snapshotted for
+approval controls shared with RunPanel. Catalog and call/results use two columns
+on wide screens and stack on narrow screens; search settings form a separate section.
+Search configuration is snapshotted for
 a run; edits never change a pending call's destination. [Harness/tools](harness-tools.md)
 owns the runtime workflow and permissions.
 
@@ -192,12 +221,13 @@ Worldbook settings stay at `/api/worldbook/settings`; its matching/context
 rules are owned by chat/context. There are no independent per-kind model pages,
 extension configuration objects or old General inference-service settings.
 
-Knowledge and Worldbook default to resource lists, with a separate Global
-settings tab and inline resource details. Selection is local to the panel;
-refresh returns to the list, with no extra URL parameters. Internal detail-tab
-switches preserve drafts. Leaving a resource with edits asks before discarding;
-settings navigation/back and browser unload also protect unsaved work. Busy
-mutations prevent departure, and stale detail reads cannot replace a new selection.
+Knowledge and Worldbook default to resource lists, with a separate Global settings
+sidebar page and inline details. Refreshing a resource page returns to its list.
+Internal detail Tabs preserve drafts; switching list/settings retains global-settings
+drafts. Clicking Resources while in a detail returns to the list. Leaving an edited
+detail asks before discarding; switching domains or returning to chat also protects
+global-settings drafts. Browser unload protects unsaved work. Busy mutations prevent
+departure, and stale detail reads cannot replace a new selection.
 
 Worldbook submits only editable settings, omitting id and timestamps. One
 case-sensitive control synchronizes its inverse regex field. Advanced context,

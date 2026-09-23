@@ -3,8 +3,21 @@ import { expect, type Locator, type Page } from '@playwright/test';
 export async function openSidebar(page: Page) {
   const trigger = page.locator('[data-sidebar="trigger"]');
   await expect(trigger).toBeVisible();
-  if (await trigger.getAttribute('aria-expanded') === 'false') await trigger.click();
-  await expect(page.locator('.session-sidebar')).toBeInViewport();
+  if ((await trigger.getAttribute('aria-expanded')) === 'false') await trigger.click();
+  await expect(page.locator('.session-sidebar, .settings-sidebar')).toBeInViewport();
+}
+
+export async function navigateSettings(page: Page, section: string, name = section) {
+  await openSidebar(page);
+  const menu = page.locator('.settings-sidebar nav').getByRole('list', { name: section, exact: true });
+  const toggle = menu.locator('[data-settings-menu]');
+  if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+  await menu.getByRole('button', { name, exact: true }).click();
+}
+
+export async function backToChat(page: Page) {
+  await openSidebar(page);
+  await page.locator('.settings-sidebar [data-slot="sidebar-footer"] button').click();
 }
 
 export async function chooseOption(trigger: Locator, name: string) {

@@ -1,10 +1,16 @@
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Field, FieldLabel } from '@/components/ui/field';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
+import { Field, FieldLabel, FieldSet, FieldLegend, FieldGroup } from '@/components/ui/field';
 import { RefreshCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../api/models';
 import { useModelsStore } from '../../store/useModelsStore';
@@ -14,12 +20,15 @@ import { ProvidersTab } from './models/ProvidersTab';
 import { LocalRuntimePanel } from './LocalRuntimePanel';
 import { ExternalServicePanel } from './models/ExternalServicePanel';
 import { useModelFeedback } from './models/useModelFeedback';
+import { SettingsView } from './SettingsView';
+import { settingsRouteUrl, type ModelView, type SettingsNavigate } from './navigation';
+import { useSettingsLeaveGuard } from './resources/ResourceUI';
 
-export function ModelsPanel() {
+export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate: SettingsNavigate }) {
   const { t } = useTranslation('llm');
   const { profiles, settings, reloadRuntimes, loading, error: loadError, reload } = useModelsStore();
-  const [tab, setTab] = useState<'profiles' | 'providers' | 'localRuntime' | 'service'>('profiles');
   const { busy, error, notice, run, setError } = useModelFeedback(reload);
+  useSettingsLeaveGuard(useCallback(async () => !busy, [busy]));
   useEffect(() => {
     void reload().catch(() => undefined);
   }, [reload]);
@@ -37,13 +46,9 @@ export function ModelsPanel() {
   );
   const editorProps = { busy, run, feedback, setError };
   return (
-    <Tabs
-      value={tab}
-      onValueChange={setTab}
-      render={<section className="settings-panel models-panel" aria-busy={busy || loading} />}
-    >
+    <section className="settings-panel models-panel" aria-busy={busy || loading}>
       <div className="model-heading">
-        <h2>{t('title')}</h2>
+        <p className="text-muted-foreground">{t('viewHelp.' + view)}</p>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -57,89 +62,96 @@ export function ModelsPanel() {
               />
             }
           >
-            <RefreshCw size={16} />
+            <RefreshCw data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('refresh')}</TooltipContent>
         </Tooltip>
       </div>
       {feedback}
-      <div className="model-defaults">
-        <Field>
-          <FieldLabel>{t('defaultModel')}</FieldLabel>
-          <Select
-            value={settings?.default_model_profile_id || ''}
-            disabled={busy || !settings}
-            onValueChange={(selected) =>
-              void run(() =>
-                modelsApi.updateModelSettings({ default_model_profile_id: (selected ?? '') || null }),
-              )
-            }
-            items={[
-              { value: '', label: t('unconfigured') },
-              ...chatProfiles.map((profile) => ({ value: profile.id, label: profile.name })),
-            ]}
-          >
-            <SelectTrigger aria-label={t('defaultModel')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">{t('unconfigured')}</SelectItem>
-              {chatProfiles.map((profile) => (
-                <SelectItem value={profile.id} key={profile.id}>
-                  {profile.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel>{t('utilityModel')}</FieldLabel>
-          <Select
-            value={settings?.utility_model_profile_id || ''}
-            disabled={busy || !settings}
-            onValueChange={(selected) =>
-              void run(() =>
-                modelsApi.updateModelSettings({ utility_model_profile_id: (selected ?? '') || null }),
-              )
-            }
-            items={[
-              { value: '', label: t('unconfigured') },
-              ...chatProfiles.map((profile) => ({ value: profile.id, label: profile.name })),
-            ]}
-          >
-            <SelectTrigger aria-label={t('utilityModel')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">{t('unconfigured')}</SelectItem>
-              {chatProfiles.map((profile) => (
-                <SelectItem value={profile.id} key={profile.id}>
-                  {profile.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-      <TabsList className="model-tabs">
-        {(['profiles', 'providers', 'localRuntime', 'service'] as const).map((value) => (
-          <TabsTrigger value={value} key={value}>
-            {t(value)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-      <TabsContent value="profiles" keepMounted hidden={tab !== 'profiles'}>
-        <ProfilesTab {...editorProps} onOpenLocalRuntime={() => setTab('localRuntime')} />
-      </TabsContent>
-      <TabsContent value="providers" keepMounted hidden={tab !== 'providers'}>
+      <SettingsView active={view === 'profiles'}>
+        <FieldSet className="model-defaults">
+          <FieldLegend>{t('defaultModels')}</FieldLegend>
+          <FieldGroup className="grid gap-4 md:grid-cols-2">
+            <Field>
+              <FieldLabel>{t('defaultModel')}</FieldLabel>
+              <Select
+                key={String(view === 'profiles')}
+                value={settings?.default_model_profile_id || ''}
+                disabled={busy || !settings}
+                onValueChange={(selected) =>
+                  void run(() =>
+                    modelsApi.updateModelSettings({ default_model_profile_id: (selected ?? '') || null }),
+                  )
+                }
+                items={[
+                  { value: '', label: t('unconfigured') },
+                  ...chatProfiles.map((profile) => ({ value: profile.id, label: profile.name })),
+                ]}
+              >
+                <SelectTrigger aria-label={t('defaultModel')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="">{t('unconfigured')}</SelectItem>
+                    {chatProfiles.map((profile) => (
+                      <SelectItem value={profile.id} key={profile.id}>
+                        {profile.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel>{t('utilityModel')}</FieldLabel>
+              <Select
+                key={String(view === 'profiles')}
+                value={settings?.utility_model_profile_id || ''}
+                disabled={busy || !settings}
+                onValueChange={(selected) =>
+                  void run(() =>
+                    modelsApi.updateModelSettings({ utility_model_profile_id: (selected ?? '') || null }),
+                  )
+                }
+                items={[
+                  { value: '', label: t('unconfigured') },
+                  ...chatProfiles.map((profile) => ({ value: profile.id, label: profile.name })),
+                ]}
+              >
+                <SelectTrigger aria-label={t('utilityModel')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="">{t('unconfigured')}</SelectItem>
+                    {chatProfiles.map((profile) => (
+                      <SelectItem value={profile.id} key={profile.id}>
+                        {profile.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
+        </FieldSet>
+        <ProfilesTab
+          {...editorProps}
+          onOpenLocalRuntime={() =>
+            void onNavigate(settingsRouteUrl({ section: 'models', view: 'localRuntime' }))
+          }
+        />
+      </SettingsView>
+      <SettingsView active={view === 'providers'}>
         <ProvidersTab {...editorProps} />
-      </TabsContent>
-      <TabsContent value="localRuntime" keepMounted hidden={tab !== 'localRuntime'}>
-        <LocalRuntimePanel activeView={tab === 'localRuntime'} />
-      </TabsContent>
-      <TabsContent value="service" keepMounted hidden={tab !== 'service'}>
+      </SettingsView>
+      <SettingsView active={view === 'localRuntime'}>
+        <LocalRuntimePanel activeView={view === 'localRuntime'} />
+      </SettingsView>
+      <SettingsView active={view === 'service'}>
         <ExternalServicePanel run={run} busy={busy} />
-      </TabsContent>
-    </Tabs>
+      </SettingsView>
+    </section>
   );
 }

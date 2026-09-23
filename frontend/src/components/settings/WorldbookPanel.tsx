@@ -1,8 +1,10 @@
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { ResourceEmpty } from './resources/ResourceUI';
+import { SettingsView } from './SettingsView';
+import type { ResourceView } from './navigation';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpenText, ChevronRight, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { worldbookApi } from '../../api/worldbook';
@@ -18,20 +20,32 @@ import {
   revealInvalidField,
 } from './resources/ResourceUI';
 
-export function WorldbookPanel() {
+export function WorldbookPanel({ view }: { view: ResourceView }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('worldbook');
   const [books, setBooks] = useState<Worldbook[]>([]);
   const [selected, setSelected] = useState('');
-  const [tab, setTab] = useState<'list' | 'settings'>('list');
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panel.current?.closest('.settings-scroll')?.scrollTo(0, 0);
+  }, [selected]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [detailState, setDetailState] = useState({ dirty: false, busy: false });
   const [settingsState, setSettingsState] = useState({ dirty: false, busy: false });
   const task = useResourceTask();
+  const leaveDetail = useCallback(() => {
+    setSelected('');
+    setDetailState({ dirty: false, busy: false });
+  }, []);
   useResourceGuard(
-    detailState.dirty || settingsState.dirty,
-    detailState.busy || settingsState.busy || !!task.busy,
+    {
+      section: 'worldbook',
+      detail: detailState,
+      settings: settingsState,
+      busy: !!task.busy,
+      onLeaveDetail: leaveDetail,
+    },
     confirm,
   );
   async function reload() {
@@ -67,51 +81,38 @@ export function WorldbookPanel() {
     }
   }
   return (
-    <Tabs
-      value={tab}
-      onValueChange={setTab}
-      render={<section className="settings-panel resource-panel" onInvalidCapture={revealInvalidField} />}
-    >
-      {selected ? (
-        <WorldbookDetail
-          key={selected}
-          id={selected}
-          onBack={back}
-          onState={setDetailState}
-          onSaved={(book, created) => {
-            setBooks((current) =>
-              current.some((item) => item.id === book.id)
-                ? current.map((item) => (item.id === book.id ? book : item))
-                : [...current, book],
-            );
-            if (created) {
+    <section ref={panel} className="settings-panel resource-panel" onInvalidCapture={revealInvalidField}>
+      <SettingsView active={view === 'list'}>
+        {selected ? (
+          <WorldbookDetail
+            key={selected}
+            id={selected}
+            onBack={back}
+            onState={setDetailState}
+            onSaved={(book, created) => {
+              setBooks((current) =>
+                current.some((item) => item.id === book.id)
+                  ? current.map((item) => (item.id === book.id ? book : item))
+                  : [...current, book],
+              );
+              if (created) {
+                setDetailState({ dirty: false, busy: false });
+                setSelected(book.id);
+              }
+            }}
+            onDeleted={() => {
+              setBooks((current) => current.filter((item) => item.id !== selected));
+              setSelected('');
               setDetailState({ dirty: false, busy: false });
-              setSelected(book.id);
-            }
-          }}
-          onDeleted={() => {
-            setBooks((current) => current.filter((item) => item.id !== selected));
-            setSelected('');
-            setDetailState({ dirty: false, busy: false });
-          }}
-        />
-      ) : (
-        <>
-          <div className="resource-heading">
-            <BookOpenText size={22} />
-            <h2>{t('title')}</h2>
-          </div>
-          <TabsList aria-label={t('settings:resources.sections')}>
-            {[
-              { id: 'list', label: t('settings:resources.list') },
-              { id: 'settings', label: t('settings:resources.settings') },
-            ].map((item) => (
-              <TabsTrigger key={item.id} value={item.id} disabled={'disabled' in item && !!item.disabled}>
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <TabsContent value="list" keepMounted hidden={tab !== 'list'}>
+            }}
+          />
+        ) : (
+          <>
+            <div className="resource-heading">
+              <BookOpenText data-icon="inline-start" />
+              <h2>{t('title')}</h2>
+            </div>
+
             <div className="resource-toolbar">
               <span>{t('bookCount', { count: books.length })}</span>
               <div className="resource-actions">
@@ -133,7 +134,7 @@ export function WorldbookPanel() {
                       />
                     }
                   >
-                    <RefreshCw size={16} />
+                    <RefreshCw data-icon="inline-start" />
                   </TooltipTrigger>
                   <TooltipContent>{t('settings:resources.refresh')}</TooltipContent>
                 </Tooltip>
@@ -143,7 +144,7 @@ export function WorldbookPanel() {
                   onClick={() => setSelected('new')}
                   variant="outline"
                 >
-                  <Plus size={16} />
+                  <Plus data-icon="inline-start" />
                   {t('addWorldbook')}
                 </Button>
               </div>
@@ -184,7 +185,7 @@ export function WorldbookPanel() {
                             />
                           }
                         >
-                          <ChevronRight size={18} />
+                          <ChevronRight data-icon="inline-start" />
                         </TooltipTrigger>
                         <TooltipContent>
                           {t('settings:resources.manageNamed', { name: book.name })}
@@ -213,7 +214,7 @@ export function WorldbookPanel() {
                             />
                           }
                         >
-                          <Trash2 size={16} />
+                          <Trash2 data-icon="inline-start" />
                         </TooltipTrigger>
                         <TooltipContent>{t('common:delete')}</TooltipContent>
                       </Tooltip>
@@ -222,15 +223,15 @@ export function WorldbookPanel() {
                 ))}
               </div>
             ) : (
-              <p className="resource-empty">{t('noWorldbooks')}</p>
+              <ResourceEmpty>{t('noWorldbooks')}</ResourceEmpty>
             )}
-          </TabsContent>
-        </>
-      )}
-      <TabsContent value="settings" keepMounted hidden={!!selected || tab !== 'settings'}>
+          </>
+        )}
+      </SettingsView>
+      <SettingsView active={view === 'settings'}>
         <WorldbookDefaults onState={setSettingsState} />
-      </TabsContent>
+      </SettingsView>
       {confirmation}
-    </Tabs>
+    </section>
   );
 }

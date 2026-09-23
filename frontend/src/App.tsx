@@ -11,6 +11,7 @@ import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
 import { useModelEvents } from './hooks/useModelEvents';
 import type { LeaveGuard } from './components/settings/resources/ResourceUI';
+import { readSettingsRoute, settingsRouteUrl } from './components/settings/navigation';
 
 type Location = { pathname: string; search: string; url: string; index: number };
 const readLocation = (): Location => ({
@@ -38,14 +39,23 @@ export default function App() {
     setLocation(next);
   }, []);
   const navigate = useCallback(
-    async (url: string, replace = false) => {
-      if (navigating.current || url === committed.current.url) return;
+    async (url: string) => {
+      if (navigating.current) return false;
       navigating.current = true;
       try {
-        if (committed.current.pathname === '/settings' && !(await leaveSettings.current())) return;
-        const index = committed.current.index + (replace ? 0 : 1);
-        window.history[replace ? 'replaceState' : 'pushState']({ workbenchIndex: index }, '', url);
+        const target = new URL(url, window.location.href);
+        if (committed.current.pathname === '/settings' && !(await leaveSettings.current(target)))
+          return false;
+        const sameSettingsPage =
+          target.pathname === '/settings' &&
+          committed.current.pathname === '/settings' &&
+          settingsRouteUrl(readSettingsRoute(target.search)) ===
+            settingsRouteUrl(readSettingsRoute(committed.current.search));
+        if (url === committed.current.url || sameSettingsPage) return true;
+        const index = committed.current.index + 1;
+        window.history.pushState({ workbenchIndex: index }, '', url);
         commit(readLocation());
+        return true;
       } finally {
         navigating.current = false;
       }
@@ -133,7 +143,7 @@ export default function App() {
         if (transition.phase === 'restoring') {
           transition.phase = 'confirming';
           const current = transition;
-          void leaveSettings.current().then((allowed) => {
+          void leaveSettings.current(current.target).then((allowed) => {
             if (!live || transition !== current) return;
             current.allowed = allowed;
             settle();
@@ -160,27 +170,24 @@ export default function App() {
       window.removeEventListener('popstate', onPop);
     };
   }, [commit]);
-  if (location.pathname === '/settings')
-    return (
-      <SettingsPage
-        search={location.search}
-        onNavigate={navigate}
-        onLeaveGuardChange={setLeaveSettings}
-        onBack={() => void navigate('/')}
-      />
-    );
   return (
     <SidebarProvider className="app-shell h-dvh min-h-0 overflow-hidden">
-      <SessionSidebar onOpenSettings={() => void navigate('/settings')} />
-      <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
-        <ChatHeader onOpenSettings={(section = 'general') => void navigate('/settings?tab=' + section)} />
-        <ErrorBanner />
-        <ChatView key={currentSession?.session_id} />
-        <div className="chat-bottom">
-          <ChatInput key={currentSession?.session_id} />
-          <StatusBar />
-        </div>
-      </SidebarInset>
+      {location.pathname === '/settings' ? (
+        <SettingsPage search={location.search} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} />
+      ) : (
+        <>
+          <SessionSidebar onOpenSettings={() => void navigate('/settings')} />
+          <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
+            <ChatHeader onOpenSettings={(section = 'general') => void navigate('/settings?tab=' + section)} />
+            <ErrorBanner />
+            <ChatView key={currentSession?.session_id} />
+            <div className="chat-bottom">
+              <ChatInput key={currentSession?.session_id} />
+              <StatusBar />
+            </div>
+          </SidebarInset>
+        </>
+      )}
     </SidebarProvider>
   );
 }

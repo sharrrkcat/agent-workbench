@@ -1,10 +1,10 @@
-import { chooseOption, fillCombobox } from './controls';
+import { chooseOption, fillCombobox, navigateSettings } from './controls';
 import { expect, test, type Page } from '@playwright/test';
 
 async function runtimeView(page: Page, locale: string) {
   await page.goto('/settings?tab=models');
   const scanned = page.waitForResponse((response) => response.url().endsWith('/api/models/local-runtime/storage'));
-  await page.getByRole('tab', { name: locale === 'en' ? 'Local Runtime' : '本地运行环境', exact: true }).click();
+  await navigateSettings(page, locale === 'en' ? 'Models' : '模型', locale === 'en' ? 'Local Runtime' : '本地运行环境');
   await scanned;
   await expect(page.locator('.runtime-storage')).toHaveAttribute('aria-busy', 'false');
 }
@@ -117,7 +117,7 @@ test('cache task cancellation and failure release installation controls', async 
   await expect(installation.getByRole('button', { name: 'Install local runtime', exact: true })).toBeEnabled();
   await request.post('/__test__/runtimes', { data: { fail: true } });
   await page.reload();
-  await page.getByRole('tab', { name: 'Local Runtime', exact: true }).click();
+  await expect(page).toHaveURL('/settings?tab=models&view=localRuntime');
   await page.getByRole('button', { name: 'Prune cache', exact: true }).click();
   await expect(page.locator('.runtime-cache-task')).toContainText('RUNTIME_CLEANUP_FAILED');
   await expect(installation.getByRole('button', { name: 'Install local runtime', exact: true })).toBeEnabled();

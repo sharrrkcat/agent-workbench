@@ -1,8 +1,10 @@
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { ResourceEmpty } from './resources/ResourceUI';
+import { SettingsView } from './SettingsView';
+import type { ResourceView } from './navigation';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Database, ChevronRight, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { knowledgeApi } from '../../api/knowledge';
@@ -19,12 +21,15 @@ import {
   revealInvalidField,
 } from './resources/ResourceUI';
 
-export function KnowledgePanel() {
+export function KnowledgePanel({ view }: { view: ResourceView }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('knowledge');
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [selected, setSelected] = useState('');
-  const [tab, setTab] = useState<'list' | 'settings'>('list');
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panel.current?.closest('.settings-scroll')?.scrollTo(0, 0);
+  }, [selected]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [detailState, setDetailState] = useState({ dirty: false, busy: false });
@@ -32,9 +37,18 @@ export function KnowledgePanel() {
   const modelsError = useModelsStore((state) => state.error);
   const reloadModels = useModelsStore((state) => state.reload);
   const task = useResourceTask();
+  const leaveDetail = useCallback(() => {
+    setSelected('');
+    setDetailState({ dirty: false, busy: false });
+  }, []);
   useResourceGuard(
-    detailState.dirty || settingsState.dirty,
-    detailState.busy || settingsState.busy || !!task.busy,
+    {
+      section: 'knowledge',
+      detail: detailState,
+      settings: settingsState,
+      busy: !!task.busy,
+      onLeaveDetail: leaveDetail,
+    },
     confirm,
   );
   useEffect(() => {
@@ -85,44 +99,31 @@ export function KnowledgePanel() {
     setLoadError('');
   }
   return (
-    <Tabs
-      value={tab}
-      onValueChange={setTab}
-      render={<section className="settings-panel resource-panel" onInvalidCapture={revealInvalidField} />}
-    >
+    <section ref={panel} className="settings-panel resource-panel" onInvalidCapture={revealInvalidField}>
       {modelsError ? (
         <ResourceLoading error={modelsError} retry={() => void reloadModels().catch(() => undefined)} />
       ) : null}
-      {selected ? (
-        <KnowledgeDetail
-          key={selected}
-          id={selected}
-          onBack={back}
-          onState={setDetailState}
-          onSaved={saved}
-          onDeleted={() => {
-            setBases((current) => current.filter((item) => item.id !== selected));
-            setSelected('');
-            setDetailState({ dirty: false, busy: false });
-          }}
-        />
-      ) : (
-        <>
-          <div className="resource-heading">
-            <Database size={22} />
-            <h2>{t('title')}</h2>
-          </div>
-          <TabsList aria-label={t('settings:resources.sections')}>
-            {[
-              { id: 'list', label: t('settings:resources.list') },
-              { id: 'settings', label: t('settings:resources.settings') },
-            ].map((item) => (
-              <TabsTrigger key={item.id} value={item.id} disabled={'disabled' in item && !!item.disabled}>
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <TabsContent value="list" keepMounted hidden={tab !== 'list'}>
+      <SettingsView active={view === 'list'}>
+        {selected ? (
+          <KnowledgeDetail
+            key={selected}
+            id={selected}
+            onBack={back}
+            onState={setDetailState}
+            onSaved={saved}
+            onDeleted={() => {
+              setBases((current) => current.filter((item) => item.id !== selected));
+              setSelected('');
+              setDetailState({ dirty: false, busy: false });
+            }}
+          />
+        ) : (
+          <>
+            <div className="resource-heading">
+              <Database data-icon="inline-start" />
+              <h2>{t('title')}</h2>
+            </div>
+
             <div className="resource-toolbar">
               <span>{t('baseCount', { count: bases.length })}</span>
               <div className="resource-actions">
@@ -139,7 +140,7 @@ export function KnowledgePanel() {
                       />
                     }
                   >
-                    <RefreshCw size={16} />
+                    <RefreshCw data-icon="inline-start" />
                   </TooltipTrigger>
                   <TooltipContent>{t('settings:resources.refresh')}</TooltipContent>
                 </Tooltip>
@@ -149,7 +150,7 @@ export function KnowledgePanel() {
                   onClick={() => setSelected('new')}
                   variant="outline"
                 >
-                  <Plus size={16} />
+                  <Plus data-icon="inline-start" />
                   {t('addBase')}
                 </Button>
               </div>
@@ -181,7 +182,7 @@ export function KnowledgePanel() {
                             />
                           }
                         >
-                          <ChevronRight size={18} />
+                          <ChevronRight data-icon="inline-start" />
                         </TooltipTrigger>
                         <TooltipContent>
                           {t('settings:resources.manageNamed', { name: base.name })}
@@ -210,7 +211,7 @@ export function KnowledgePanel() {
                             />
                           }
                         >
-                          <Trash2 size={16} />
+                          <Trash2 data-icon="inline-start" />
                         </TooltipTrigger>
                         <TooltipContent>{t('common:delete')}</TooltipContent>
                       </Tooltip>
@@ -219,15 +220,15 @@ export function KnowledgePanel() {
                 ))}
               </div>
             ) : (
-              <p className="resource-empty">{t('noBases')}</p>
+              <ResourceEmpty>{t('noBases')}</ResourceEmpty>
             )}
-          </TabsContent>
-        </>
-      )}
-      <TabsContent value="settings" keepMounted hidden={!!selected || tab !== 'settings'}>
+          </>
+        )}
+      </SettingsView>
+      <SettingsView active={view === 'settings'}>
         <KnowledgeDefaults onState={setSettingsState} />
-      </TabsContent>
+      </SettingsView>
       {confirmation}
-    </Tabs>
+    </section>
   );
 }

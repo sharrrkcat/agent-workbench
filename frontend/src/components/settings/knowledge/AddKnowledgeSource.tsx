@@ -4,8 +4,8 @@ import { Field, FieldLabel, FieldSet } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useEffect, useRef, useState } from 'react';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Clipboard, LoaderCircle, Plus, RefreshCw, Upload, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { chatApi } from '../../../api/chat';
@@ -40,6 +40,7 @@ export function AddKnowledgeSource({
 }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('knowledge');
+  const formId = useId();
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [items, setItems] = useState<UploadItem[]>([]);
@@ -103,14 +104,15 @@ export function AddKnowledgeSource({
         if (!open) close();
       }}
     >
-      <DialogContent className={'sm:max-w-3xl' + ' ' + 'resource-modal'}>
+      <DialogContent className="resource-modal sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t(mode === 'paste' ? 'pasteText' : 'uploadFiles')}</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto overscroll-contain">
+        <div className="settings-dialog-body flex flex-col gap-4">
           <Feedback {...task} />
           {mode === 'paste' ? (
             <form
+              id={formId}
               onSubmit={(event) => {
                 event.preventDefault();
                 void task.run('paste', async () => {
@@ -137,16 +139,6 @@ export function AddKnowledgeSource({
                     onChange={(event) => setText(event.target.value)}
                   ></Textarea>
                 </Field>
-                <div className="resource-form-footer">
-                  <Button type="submit" disabled={!title.trim() || !text.trim()} variant="default">
-                    {task.busy ? (
-                      <LoaderCircle size={16} className="animate-spin" />
-                    ) : (
-                      <Clipboard size={16} />
-                    )}
-                    {t('addAndIndex')}
-                  </Button>
-                </div>
               </FieldSet>
             </form>
           ) : (
@@ -172,7 +164,7 @@ export function AddKnowledgeSource({
                 onClick={() => input.current?.click()}
                 variant="outline"
               >
-                <Plus size={16} />
+                <Plus data-icon="inline-start" />
                 {t('chooseFiles')}
               </Button>
               <div className="knowledge-upload-list">
@@ -205,33 +197,44 @@ export function AddKnowledgeSource({
                           />
                         }
                       >
-                        <X size={16} />
+                        <X data-icon="inline-start" />
                       </TooltipTrigger>
                       <TooltipContent>{t('removeFile')}</TooltipContent>
                     </Tooltip>
                   </div>
                 ))}
               </div>
-              <div className="resource-form-footer">
-                <Button
-                  type="button"
-                  disabled={!!task.busy || !items.some((item) => item.status !== 'indexed')}
-                  onClick={() => void upload()}
-                  variant="default"
-                >
-                  {task.busy ? (
-                    <LoaderCircle size={16} className="animate-spin" />
-                  ) : items.some((item) => item.status === 'failed') ? (
-                    <RefreshCw size={16} />
-                  ) : (
-                    <Upload size={16} />
-                  )}
-                  {t(items.some((item) => item.status === 'failed') ? 'retryFailed' : 'addAndIndex')}
-                </Button>
-              </div>
             </>
           )}
         </div>
+        <DialogFooter className="shrink-0">
+          {mode === 'paste' ? (
+            <Button type="submit" form={formId} disabled={!!task.busy || !title.trim() || !text.trim()}>
+              {task.busy ? (
+                <LoaderCircle data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Clipboard data-icon="inline-start" />
+              )}
+              {t('addAndIndex')}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              disabled={!!task.busy || !items.some((item) => item.status !== 'indexed')}
+              onClick={() => void upload()}
+              variant="default"
+            >
+              {task.busy ? (
+                <LoaderCircle data-icon="inline-start" className="animate-spin" />
+              ) : items.some((item) => item.status === 'failed') ? (
+                <RefreshCw data-icon="inline-start" />
+              ) : (
+                <Upload data-icon="inline-start" />
+              )}
+              {t(items.some((item) => item.status === 'failed') ? 'retryFailed' : 'addAndIndex')}
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
       {confirmation}
     </Dialog>

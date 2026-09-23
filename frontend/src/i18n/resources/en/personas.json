@@ -103,5 +103,6 @@
   "you": "You",
   "assistant": "Assistant",
   "system": "System",
-  "discardChanges": "Discard unsaved changes?"
+  "discardChanges": "Discard unsaved changes?",
+  "emptyPersonas": "No personas yet"
 }

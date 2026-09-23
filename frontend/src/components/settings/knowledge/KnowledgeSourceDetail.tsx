@@ -1,14 +1,14 @@
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useEffect, useState } from 'react';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { knowledgeApi } from '../../../api/knowledge';
 import type { KnowledgeSource, KnowledgeSourceChunk, KnowledgeSourcePreview } from '../../../types/knowledge';
 
-import { errorText, ResourceLoading } from '../resources/ResourceUI';
+import { errorText, Feedback, ResourceEmpty, ResourceLoading } from '../resources/ResourceUI';
 
 export function KnowledgeSourceDetail({
   source,
@@ -64,52 +64,14 @@ export function KnowledgeSourceDetail({
         if (!open) onClose();
       }}
     >
-      <DialogContent className={'sm:max-w-3xl' + ' ' + 'resource-modal'}>
+      <DialogContent className="resource-modal sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{source.title}</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto overscroll-contain">
-          <div className="resource-toolbar">
-            <span className={`resource-badge ${source.status === 'indexed' ? 'active' : 'warning'}`}>
-              {t('statuses.' + source.status)}
-            </span>
-            <div className="resource-actions">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t('reindex')}
-                      disabled={busy}
-                      onClick={onReindex}
-                    />
-                  }
-                >
-                  <RefreshCw size={16} />
-                </TooltipTrigger>
-                <TooltipContent>{t('reindex')}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="icon"
-                      aria-label={t('common:delete')}
-                      disabled={busy}
-                      onClick={onDelete}
-                    />
-                  }
-                >
-                  <Trash2 size={16} />
-                </TooltipTrigger>
-                <TooltipContent>{t('common:delete')}</TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
+        <div className="settings-dialog-body knowledge-source-content">
+          <Badge variant="secondary" className="self-start">
+            {t('statuses.' + source.status)}
+          </Badge>
           <dl className="resource-metrics">
             <div>
               <dt>{t('sourceType')}</dt>
@@ -133,28 +95,20 @@ export function KnowledgeSourceDetail({
             </div>
           </dl>
           {source.error ? <p className="error-text">{source.error}</p> : null}
-          {operationError ? (
-            <p className="error-text" role="alert">
-              {operationError}
-            </p>
-          ) : notice ? (
-            <p className="success-text" role="status">
-              {notice}
-            </p>
-          ) : null}
+          <Feedback error={operationError} notice={notice} />
           {error ? (
             <ResourceLoading error={error} retry={() => setReload((value) => value + 1)} />
           ) : !preview || !chunks ? (
             <ResourceLoading />
           ) : null}
-          <h3>{t('sourcePreview')}</h3>
+          <h3 className="font-semibold">{t('sourcePreview')}</h3>
           {preview ? (
             <>
               <pre className="knowledge-source-preview">{preview.content}</pre>
               {preview.truncated ? <p className="resource-warning">{t('truncated')}</p> : null}
             </>
           ) : null}
-          <h3>{t('chunks')}</h3>
+          <h3 className="font-semibold">{t('chunks')}</h3>
           {chunks?.map((chunk) => (
             <Collapsible className="knowledge-chunk" key={chunk.chunk_id}>
               <CollapsibleTrigger render={<Button type="button" variant="ghost" className="justify-start" />}>
@@ -169,8 +123,18 @@ export function KnowledgeSourceDetail({
               </CollapsibleContent>
             </Collapsible>
           ))}
-          {chunks?.length === 0 ? <p className="resource-empty">{t('noChunks')}</p> : null}
+          {chunks?.length === 0 ? <ResourceEmpty>{t('noChunks')}</ResourceEmpty> : null}
         </div>
+        <DialogFooter className="shrink-0">
+          <Button type="button" variant="outline" disabled={busy} onClick={onReindex}>
+            <RefreshCw data-icon="inline-start" />
+            {t('reindex')}
+          </Button>
+          <Button type="button" variant="destructive" disabled={busy} onClick={onDelete}>
+            <Trash2 data-icon="inline-start" />
+            {t('common:delete')}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

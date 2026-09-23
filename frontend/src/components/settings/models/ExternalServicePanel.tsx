@@ -1,7 +1,7 @@
 import { Switch } from '@/components/ui/switch';
-import { Field, FieldLabel } from '@/components/ui/field';
+import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from '@/components/ui/input-group';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Copy, KeyRound, Save } from 'lucide-react';
 import { useState } from 'react';
@@ -18,7 +18,7 @@ export function ExternalServicePanel({ run, busy }: Pick<ModelFeedbackProps, 'ru
   const [apiKey, setApiKey] = useState('');
   if (!settings) return null;
   return (
-    <div className="model-service">
+    <FieldGroup className="model-service">
       <Field orientation="horizontal" disabled={busy}>
         <Switch
           checked={settings.external_enabled}
@@ -31,8 +31,8 @@ export function ExternalServicePanel({ run, busy }: Pick<ModelFeedbackProps, 'ru
       </Field>
       <Field>
         <FieldLabel>{t('apiKey')}</FieldLabel>
-        <div className="model-actions">
-          <Input
+        <InputGroup>
+          <InputGroupInput
             aria-label={t('apiKey')}
             type="password"
             autoComplete="new-password"
@@ -40,62 +40,64 @@ export function ExternalServicePanel({ run, busy }: Pick<ModelFeedbackProps, 'ru
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
           />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t('generateKey')}
-                  onClick={() => setApiKey(crypto.randomUUID() + crypto.randomUUID())}
-                />
-              }
-            >
-              <KeyRound size={16} />
-            </TooltipTrigger>
-            <TooltipContent>{t('generateKey')}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t('copy')}
-                  disabled={!apiKey}
-                  onClick={() => void run(() => navigator.clipboard.writeText(apiKey), false)}
-                />
-              }
-            >
-              <Copy size={16} />
-            </TooltipTrigger>
-            <TooltipContent>{t('copy')}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t('save')}
-                  disabled={!apiKey || busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await modelsApi.updateModelSettings({ external_api_key: apiKey });
-                      setApiKey('');
-                    })
-                  }
-                />
-              }
-            >
-              <Save size={16} />
-            </TooltipTrigger>
-            <TooltipContent>{t('save')}</TooltipContent>
-          </Tooltip>
-        </div>
+          <InputGroupAddon align="inline-end">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <InputGroupButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('generateKey')}
+                    onClick={() => setApiKey(crypto.randomUUID() + crypto.randomUUID())}
+                  />
+                }
+              >
+                <KeyRound data-icon="inline-start" />
+              </TooltipTrigger>
+              <TooltipContent>{t('generateKey')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <InputGroupButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('copy')}
+                    disabled={!apiKey}
+                    onClick={() => void run(() => navigator.clipboard.writeText(apiKey), false)}
+                  />
+                }
+              >
+                <Copy data-icon="inline-start" />
+              </TooltipTrigger>
+              <TooltipContent>{t('copy')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <InputGroupButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('save')}
+                    disabled={!apiKey || busy}
+                    onClick={() =>
+                      void run(async () => {
+                        await modelsApi.updateModelSettings({ external_api_key: apiKey });
+                        setApiKey('');
+                      })
+                    }
+                  />
+                }
+              >
+                <Save data-icon="inline-start" />
+              </TooltipTrigger>
+              <TooltipContent>{t('save')}</TooltipContent>
+            </Tooltip>
+          </InputGroupAddon>
+        </InputGroup>
       </Field>
       <Field>
         <FieldLabel>{t('bodyLimit')}</FieldLabel>
@@ -111,6 +113,6 @@ export function ExternalServicePanel({ run, busy }: Pick<ModelFeedbackProps, 'ru
           }}
         />
       </Field>
-    </div>
+    </FieldGroup>
   );
 }

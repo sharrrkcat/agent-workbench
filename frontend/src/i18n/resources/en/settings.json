@@ -56,5 +56,17 @@
     "titleLimit": "Title input limit",
     "groupInstruction": "Group transcript instruction",
     "save": "Save general settings"
+  },
+  "backToChat": "Back to chat",
+  "generalSections": {
+    "conversation": "Conversation display",
+    "memory": "Core memory",
+    "titles": "Session titles",
+    "group": "Group conversations"
+  },
+  "sidebarGroups": {
+    "application": "Application preferences",
+    "execution": "Models and execution",
+    "context": "Personas and context"
   }
 }

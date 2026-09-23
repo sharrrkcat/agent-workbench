@@ -5,9 +5,9 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel, FieldSet } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Pencil, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { knowledgeApi } from '../../api/knowledge';
 import { worldbookApi } from '../../api/worldbook';
@@ -20,6 +20,7 @@ import type { Persona, PersonaInput } from '../../types/chat';
 import type { Worldbook } from '../../types/worldbook';
 
 import { BindingsField, PersonaAvatar } from '../personas/ConfigurationFields';
+import { useSettingsLeaveGuard, ResourceEmpty } from './resources/ResourceUI';
 
 type Editor = { id?: string; value: PersonaInput; knowledge: string[]; worldbooks: string[] };
 type Tab = 'identity' | 'knowledge' | 'worldbook';
@@ -40,6 +41,7 @@ export function PersonasPanel() {
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]);
   const [busy, setBusy] = useState(false);
+  useSettingsLeaveGuard(useCallback(async () => !busy, [busy]));
   const [error, setError] = useState('');
   const upload = useRef<HTMLInputElement>(null);
   const temporaryAvatars = useRef(new Set<string>());
@@ -144,7 +146,7 @@ export function PersonasPanel() {
                 />
               }
             >
-              <RefreshCw size={16} />
+              <RefreshCw data-icon="inline-start" />
             </TooltipTrigger>
             <TooltipContent>{t('refresh')}</TooltipContent>
           </Tooltip>
@@ -158,7 +160,7 @@ export function PersonasPanel() {
             }}
             variant="outline"
           >
-            <Plus size={16} />
+            <Plus data-icon="inline-start" />
             {t('add')}
           </Button>
         </div>
@@ -169,6 +171,7 @@ export function PersonasPanel() {
         </p>
       ) : null}
       <div className="persona-list">
+        {!personas.length && !storeError ? <ResourceEmpty>{t('emptyPersonas')}</ResourceEmpty> : null}
         {personas.map((persona) => (
           <div className="persona-row" key={persona.id}>
             <PersonaAvatar name={persona.name} attachmentId={persona.avatar_attachment_id} />
@@ -189,7 +192,7 @@ export function PersonasPanel() {
                     />
                   }
                 >
-                  <Pencil size={16} />
+                  <Pencil data-icon="inline-start" />
                 </TooltipTrigger>
                 <TooltipContent>{t('editNamed', { name: persona.name })}</TooltipContent>
               </Tooltip>
@@ -212,7 +215,7 @@ export function PersonasPanel() {
                     />
                   }
                 >
-                  <Trash2 size={16} />
+                  <Trash2 data-icon="inline-start" />
                 </TooltipTrigger>
                 <TooltipContent>{t('deleteNamed', { name: persona.name })}</TooltipContent>
               </Tooltip>
@@ -230,32 +233,33 @@ export function PersonasPanel() {
           <DialogHeader>
             <DialogTitle>{editor?.id ? t('edit') : t('add')}</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 overflow-y-auto overscroll-contain">
-            {editor ? (
-              <Tabs
-                value={tab}
-                onValueChange={setTab}
-                render={
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void save();
-                    }}
-                  />
-                }
-              >
-                {error ? (
-                  <p className="model-feedback error-text" role="alert">
-                    {error}
-                  </p>
-                ) : null}
-                <TabsList className="model-tabs" aria-label={t('editorSections')}>
-                  {(['identity', 'knowledge', 'worldbook'] as Tab[]).map((key) => (
-                    <TabsTrigger value={key} key={key}>
-                      {t(key)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
+          {editor ? (
+            <Tabs
+              value={tab}
+              onValueChange={setTab}
+              render={
+                <form
+                  className="settings-dialog-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void save();
+                  }}
+                />
+              }
+            >
+              {error ? (
+                <p className="model-feedback error-text" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <TabsList className="model-tabs" aria-label={t('editorSections')}>
+                {(['identity', 'knowledge', 'worldbook'] as Tab[]).map((key) => (
+                  <TabsTrigger value={key} key={key}>
+                    {t(key)}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              <div className="settings-dialog-body">
                 <FieldSet disabled={busy} className="model-form">
                   <TabsContent value="identity">
                     <>
@@ -287,7 +291,7 @@ export function PersonasPanel() {
                               />
                             }
                           >
-                            <Upload size={17} />
+                            <Upload data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>{t('uploadAvatar')}</TooltipContent>
                         </Tooltip>
@@ -304,7 +308,7 @@ export function PersonasPanel() {
                               />
                             }
                           >
-                            <X size={17} />
+                            <X data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>{t('removeAvatar')}</TooltipContent>
                         </Tooltip>
@@ -343,16 +347,16 @@ export function PersonasPanel() {
                       onChange={(worldbooks) => setEditor({ ...editor, worldbooks })}
                     />
                   </TabsContent>
-                  <div className="model-form-footer">
-                    <Button type="submit" variant="default">
-                      <Save size={16} />
-                      {t('save')}
-                    </Button>
-                  </div>
                 </FieldSet>
-              </Tabs>
-            ) : null}
-          </div>
+              </div>
+              <DialogFooter>
+                <Button disabled={busy} type="submit" variant="default">
+                  <Save data-icon="inline-start" />
+                  {t('save')}
+                </Button>
+              </DialogFooter>
+            </Tabs>
+          ) : null}
         </DialogContent>
       </Dialog>
       {confirmation}

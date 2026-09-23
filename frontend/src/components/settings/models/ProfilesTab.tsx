@@ -1,4 +1,14 @@
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { ResourceEmpty } from '../resources/ResourceUI';
+import { useSettingsView } from '../SettingsView';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -22,6 +32,7 @@ export function ProfilesTab({
   onOpenLocalRuntime,
 }: ModelFeedbackProps & { onOpenLocalRuntime: () => void }) {
   const { t } = useTranslation('llm');
+  const activeView = useSettingsView();
   const { profiles, statuses, setStatus, loading } = useModelsStore();
   const [kind, setKind] = useState<ModelKind>('llm');
   const [model, setModel] = useState<ProfileDraft | null>(null);
@@ -40,19 +51,22 @@ export function ProfilesTab({
       <>
         <div className="model-toolbar">
           <Select
+            key={String(activeView)}
             value={kind}
             onValueChange={(selected) => setKind((selected ?? '') as ModelKind)}
             items={kinds.map((k) => ({ value: k, label: t('kinds.' + k) }))}
           >
-            <SelectTrigger aria-label={t('kind')}>
+            <SelectTrigger className="w-full sm:w-56" aria-label={t('kind')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {kinds.map((k) => (
-                <SelectItem key={k} value={k}>
-                  {t('kinds.' + k)}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {kinds.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {t('kinds.' + k)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <div className="model-actions">
@@ -71,7 +85,7 @@ export function ProfilesTab({
                   />
                 }
               >
-                <RefreshCw size={16} />
+                <RefreshCw data-icon="inline-start" />
               </TooltipTrigger>
               <TooltipContent>{t('inventory')}</TooltipContent>
             </Tooltip>
@@ -84,7 +98,7 @@ export function ProfilesTab({
               type="button"
               variant="outline"
             >
-              <Plus size={16} />
+              <Plus data-icon="inline-start" />
               {t('addModel')}
             </Button>
           </div>
@@ -103,9 +117,9 @@ export function ProfilesTab({
                     {p.source?.type === 'provider' ? <small>{t('recentRequestState')}</small> : null}
                   </div>
                   <div className="model-state">
-                    <span className={'state-' + (status?.state || 'unknown')}>
+                    <Badge variant="secondary">
                       {p.enabled ? t('states.' + (status?.state || 'unknown')) : t('disabled')}
-                    </span>
+                    </Badge>
                     {p.source?.type === 'local' ? (
                       <small>
                         {t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}
@@ -131,7 +145,7 @@ export function ProfilesTab({
                               />
                             }
                           >
-                            <Activity size={15} />
+                            <Activity data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>{t('health')}</TooltipContent>
                         </Tooltip>
@@ -148,7 +162,7 @@ export function ProfilesTab({
                               />
                             }
                           >
-                            <Play size={15} />
+                            <Play data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>{t('load')}</TooltipContent>
                         </Tooltip>
@@ -171,7 +185,7 @@ export function ProfilesTab({
                               />
                             }
                           >
-                            <Square size={14} />
+                            <Square data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>
                             {status?.unload_supported ? t('unload') : t('unloadUnsupported')}
@@ -195,7 +209,7 @@ export function ProfilesTab({
                               />
                             }
                           >
-                            <FileText size={14} />
+                            <FileText data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>{t('processLog')}</TooltipContent>
                         </Tooltip>
@@ -218,7 +232,7 @@ export function ProfilesTab({
                           />
                         }
                       >
-                        <Pencil size={15} />
+                        <Pencil data-icon="inline-start" />
                       </TooltipTrigger>
                       <TooltipContent>{t('edit')}</TooltipContent>
                     </Tooltip>
@@ -241,7 +255,7 @@ export function ProfilesTab({
                           />
                         }
                       >
-                        <Copy size={15} />
+                        <Copy data-icon="inline-start" />
                       </TooltipTrigger>
                       <TooltipContent>{t('duplicate')}</TooltipContent>
                     </Tooltip>
@@ -258,7 +272,7 @@ export function ProfilesTab({
                           />
                         }
                       >
-                        <Trash2 size={15} />
+                        <Trash2 data-icon="inline-start" />
                       </TooltipTrigger>
                       <TooltipContent>{t('delete')}</TooltipContent>
                     </Tooltip>
@@ -298,7 +312,7 @@ export function ProfilesTab({
               );
             })}
           {!loading && !profiles.some((p) => p.kind === kind) ? (
-            <p className="model-empty">{t('emptyModels')}</p>
+            <ResourceEmpty>{t('emptyModels')}</ResourceEmpty>
           ) : null}
         </div>
         {inventory.filter((i) => i.kind === kind).length ? (
@@ -325,7 +339,7 @@ export function ProfilesTab({
                         />
                       }
                     >
-                      <Plus size={16} />
+                      <Plus data-icon="inline-start" />
                     </TooltipTrigger>
                     <TooltipContent>{t('addModel')}</TooltipContent>
                   </Tooltip>
@@ -335,7 +349,7 @@ export function ProfilesTab({
         ) : null}
       </>
       <Dialog
-        open={processLog !== null}
+        open={activeView && processLog !== null}
         onOpenChange={(open) => {
           if (!open) (() => setProcessLog(null))();
         }}

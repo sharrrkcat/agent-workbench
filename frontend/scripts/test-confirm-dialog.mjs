@@ -26,7 +26,8 @@ const load = createModuleLoader({
       return callback;
     },
     useEffect(effect) {
-      cleanup ??= effect();
+      const value = effect();
+      if (value) cleanup ??= value;
     },
   }),
   'react-i18next': mockModule({ useTranslation: () => ({ t: (key) => key }) }),
@@ -34,9 +35,9 @@ const load = createModuleLoader({
 const { useConfirmDialog } = (await load('../src/hooks/useConfirmDialog.tsx')).exports;
 const { AlertDialogAction, AlertDialogCancel } = (await load('../src/components/ui/alert-dialog.tsx'))
   .exports;
-const render = () => {
+const render = (active = true) => {
   cursor = 0;
-  return useConfirmDialog();
+  return useConfirmDialog(active);
 };
 function descendants(node) {
   if (Array.isArray(node)) return node.flatMap(descendants);
@@ -71,4 +72,8 @@ assert.equal(await escaped, false);
 const unmounted = owner.confirm('Owner removed before answering');
 cleanup();
 assert.equal(await unmounted, false);
+owner = render();
+const hidden = owner.confirm('Hidden settings view');
+assert.equal(render(false).confirmation.props.open, false);
+assert.equal(await hidden, false);
 console.log('Confirmation accepts, cancels, rejects overlapping requests and resolves false on unmount.');

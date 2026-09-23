@@ -86,7 +86,7 @@ export function WorldbookDetail({
               />
             }
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('common:back')}</TooltipContent>
         </Tooltip>
@@ -109,7 +109,7 @@ export function WorldbookDetail({
               />
             }
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('common:back')}</TooltipContent>
         </Tooltip>
@@ -134,7 +134,7 @@ export function WorldbookDetail({
                 />
               }
             >
-              <Trash2 size={16} />
+              <Trash2 data-icon="inline-start" />
             </TooltipTrigger>
             <TooltipContent>{t('common:delete')}</TooltipContent>
           </Tooltip>
@@ -154,6 +154,7 @@ export function WorldbookDetail({
       <Feedback {...task} />
       <TabsContent value="config" keepMounted hidden={tab !== 'config'}>
         <form
+          className="settings-form"
           onSubmit={(event) => {
             event.preventDefault();
             void task.run(
@@ -197,7 +198,7 @@ export function WorldbookDetail({
             </Field>
             <div className="resource-form-footer">
               <Button type="submit" disabled={!draft.name.trim() || (!!book && !dirty)} variant="default">
-                <Save size={16} />
+                <Save data-icon="inline-start" />
                 {t('common:save')}
               </Button>
             </div>

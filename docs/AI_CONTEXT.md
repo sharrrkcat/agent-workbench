@@ -33,7 +33,7 @@ Pet has position, dragging and task-state foundations only, with no mounted UI.
 - [Harness/tools](contracts/harness-tools.md): direct calls, loops, permissions, approval.
 - [Knowledge](contracts/knowledge.md): sources, indexing, hybrid retrieval and rerank.
 - [Runs/streaming](contracts/runs-streaming.md): status, WS/SSE, persistence, reconciliation.
-- [Settings](contracts/settings.md): strict ownership, six UI entries, Pet foundations.
+- [Settings](contracts/settings.md): strict ownership, six sidebar domains, Pet foundations.
 
 HTTP schemas and validation belong to these same domain contracts. OpenAPI
 generation and verification commands are in the [README](../README.md#http-contract).

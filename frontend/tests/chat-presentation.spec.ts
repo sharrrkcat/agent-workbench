@@ -1,7 +1,8 @@
-import { answerConfirmation } from './controls';
+import { answerConfirmation, backToChat } from './controls';
 import { expect, test, type Page } from '@playwright/test';
 
 async function submit(page: Page, content: string) {
+  await expect(page.locator('.session-settings-trigger')).toBeEnabled();
   await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeVisible();
   const input = page.locator('.composer textarea');
   await input.fill(content);
@@ -117,7 +118,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('switch', { name: label, exact: true }).check();
         await page.getByRole('button', { name: locale === 'en' ? 'Save general settings' : '保存常规设置' }).click();
         await expect.poll(async () => (await (await request.get('/api/settings/general')).json()).show_full_processing).toBe(true);
-        await page.locator('.settings-header').getByRole('button', { name: /^(Back|返回)$/, exact: true }).click();
+        await backToChat(page);
         await submit(page, 'two-rounds');
         reply = page.locator('article[data-run-id]').last();
         await expect(reply.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'true');

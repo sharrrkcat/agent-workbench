@@ -1,3 +1,7 @@
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Feedback } from './resources/ResourceUI';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
@@ -91,85 +95,105 @@ export function ToolsPanel() {
 
   return (
     <section className="settings-panel">
-      <h2>{t('tools')}</h2>
-      <FieldGroup>
-        <p className="settings-note">{t('toolDirectHelp')}</p>
-        <h3>{t('toolCatalog')}</h3>
-        <div className="settings-list">
-          {tools.map((tool) => (
-            <Button
-              key={tool.name}
-              type="button"
-              aria-pressed={selected === tool.name}
-              onClick={() => {
+      <p className="settings-note">{t('toolDirectHelp')}</p>
+      <div className="tools-layout">
+        <div className="tool-catalog">
+          <h2>{t('toolCatalog')}</h2>
+          <ToggleGroup
+            className="w-full"
+            orientation="vertical"
+            multiple={false}
+            aria-label={t('toolCatalog')}
+            value={[selected]}
+            onValueChange={(values) => {
+              const tool = tools.find((item) => item.name === values[0]);
+              if (tool) {
                 setSelected(tool.name);
                 setArgumentsText(exampleArguments(tool));
                 setFeedback('');
-              }}
-              variant="ghost"
-              className="settings-list-row tool-selector"
-            >
-              <span>
-                {tool.name}
-                <small>{t('toolDescriptions.' + tool.name)}</small>
-              </span>
-              <small>
-                {t('toolRisk.' + tool.risk)} ·{' '}
-                {tool.requires_approval ? t('approvalRequired') : t('noApproval')}
-              </small>
-            </Button>
-          ))}
-        </div>
-        {current ? (
-          <div className="tool-call-form">
-            <h3>{current.name}</h3>
-            <Collapsible>
-              <CollapsibleTrigger render={<Button type="button" variant="ghost" className="justify-start" />}>
-                {t('toolSchema')}
-              </CollapsibleTrigger>
-              <CollapsibleContent keepMounted>
-                <pre className="part-json">{JSON.stringify(current.parameters, null, 2)}</pre>
-              </CollapsibleContent>
-            </Collapsible>
-            <Field className="settings-field">
-              <FieldLabel>{t('toolArguments')}</FieldLabel>
-              <Textarea
-                rows={6}
-                value={argumentsText}
-                onChange={(event) => setArgumentsText(event.currentTarget.value)}
-              ></Textarea>
-            </Field>
-            {!session ? (
-              <p>{t('toolSelectSession')}</p>
-            ) : !allowed ? (
-              <p>{t('toolNotAllowed')}</p>
-            ) : (
-              <p>{t('toolSession', { name: session.title || session.effective.persona_name })}</p>
-            )}
-            <Button
-              type="button"
-              disabled={!allowed || active || sending}
-              onClick={() => void call()}
-              variant="outline"
-            >
-              {t(sending ? 'toolCalling' : 'callTool')}
-            </Button>
-          </div>
-        ) : null}
-        {latest ? (
-          <div className="tool-output">
-            <h3>{t('toolResult')}</h3>
-            <RunPanel run={latest} />
-            {output.map((message) => (
-              <MessageParts key={message.message_id} parts={message.parts} />
+              }
+            }}
+          >
+            {tools.map((tool) => (
+              <ToggleGroupItem
+                key={tool.name}
+                value={tool.name}
+                className="tool-selector h-auto min-h-14 w-full justify-start whitespace-normal py-2 text-left"
+              >
+                <span>
+                  <span>{tool.name}</span>
+                  <small>{t('toolDescriptions.' + tool.name)}</small>
+                </span>
+              </ToggleGroupItem>
             ))}
-          </div>
-        ) : null}
-        <h3>{t('searxng')}</h3>
+          </ToggleGroup>
+        </div>
+        <div className="tool-workspace">
+          {current ? (
+            <div className="tool-call-form">
+              <div className="resource-toolbar">
+                <h2>{current.name}</h2>
+                <div className="resource-meta">
+                  <Badge variant="outline">{t('toolRisk.' + current.risk)}</Badge>
+                  <Badge variant="secondary">
+                    {t(current.requires_approval ? 'approvalRequired' : 'noApproval')}
+                  </Badge>
+                </div>
+              </div>
+              <Collapsible>
+                <CollapsibleTrigger
+                  render={<Button type="button" variant="ghost" className="justify-start" />}
+                >
+                  {t('toolSchema')}
+                </CollapsibleTrigger>
+                <CollapsibleContent keepMounted>
+                  <pre className="part-json">{JSON.stringify(current.parameters, null, 2)}</pre>
+                </CollapsibleContent>
+              </Collapsible>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>{t('toolArguments')}</FieldLabel>
+                  <Textarea
+                    className="min-h-32"
+                    rows={6}
+                    value={argumentsText}
+                    onChange={(event) => setArgumentsText(event.currentTarget.value)}
+                  />
+                </Field>
+              </FieldGroup>
+              <p className="settings-note">
+                {!session
+                  ? t('toolSelectSession')
+                  : !allowed
+                    ? t('toolNotAllowed')
+                    : t('toolSession', { name: session.title || session.effective.persona_name })}
+              </p>
+              <div className="resource-actions">
+                <Button type="button" disabled={!allowed || active || sending} onClick={() => void call()}>
+                  {t(sending ? 'toolCalling' : 'callTool')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {latest ? (
+            <div className="tool-output">
+              <h3>{t('toolResult')}</h3>
+              <RunPanel run={latest} />
+              {output.map((message) => (
+                <MessageParts key={message.message_id} parts={message.parts} />
+              ))}
+            </div>
+          ) : null}
+          <Feedback error={error || ''} notice={feedback} />
+        </div>
+      </div>
+      <Separator />
+      <section className="tool-search-settings" aria-label={t('searxng')}>
+        <h2>{t('searxng')}</h2>
         <p className="settings-note">{t('searxngHelp')}</p>
         {settings ? (
-          <>
-            <Field className="settings-field">
+          <FieldGroup>
+            <Field>
               <FieldLabel>{t('searxngUrl')}</FieldLabel>
               <Input
                 type="url"
@@ -179,22 +203,14 @@ export function ToolsPanel() {
                 }
               />
             </Field>
-            <Button type="button" disabled={saving} onClick={() => void saveSettings()} variant="default">
-              {t('save')}
-            </Button>
-          </>
+            <div className="settings-form-actions">
+              <Button type="button" disabled={saving} onClick={() => void saveSettings()}>
+                {t('save')}
+              </Button>
+            </div>
+          </FieldGroup>
         ) : null}
-        {feedback ? (
-          <p className="settings-feedback" role="status">
-            {feedback}
-          </p>
-        ) : null}
-        {error ? (
-          <p className="settings-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </FieldGroup>
+      </section>
     </section>
   );
 }

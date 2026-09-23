@@ -103,5 +103,6 @@
   "you": "你",
   "assistant": "助手",
   "system": "系统",
-  "discardChanges": "放弃未保存的修改？"
+  "discardChanges": "放弃未保存的修改？",
+  "emptyPersonas": "暂无角色"
 }

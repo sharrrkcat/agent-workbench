@@ -59,6 +59,7 @@ export function WorldbookDefaults({
   if (!draft) return <ResourceLoading error={error} retry={() => setRevision((value) => value + 1)} />;
   return (
     <form
+      className="settings-form"
       onSubmit={(event) => {
         event.preventDefault();
         void task.run(
@@ -176,7 +177,7 @@ export function WorldbookDefaults({
         </Collapsible>
         <div className="resource-form-footer">
           <Button type="submit" disabled={!dirty} variant="default">
-            <Save size={16} />
+            <Save data-icon="inline-start" />
             {t('common:save')}
           </Button>
         </div>

@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -111,7 +112,7 @@ export function KnowledgeDetail({
               />
             }
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('common:back')}</TooltipContent>
         </Tooltip>
@@ -134,7 +135,7 @@ export function KnowledgeDetail({
               />
             }
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('common:back')}</TooltipContent>
         </Tooltip>
@@ -159,7 +160,7 @@ export function KnowledgeDetail({
                 />
               }
             >
-              <Trash2 size={16} />
+              <Trash2 data-icon="inline-start" />
             </TooltipTrigger>
             <TooltipContent>{t('common:delete')}</TooltipContent>
           </Tooltip>
@@ -167,9 +168,7 @@ export function KnowledgeDetail({
       </div>
       {base ? (
         <div className="resource-meta">
-          <span className={`resource-badge ${base.index_status === 'ready' ? 'active' : 'warning'}`}>
-            {t('statuses.' + base.index_status)}
-          </span>
+          <Badge variant="secondary">{t('statuses.' + base.index_status)}</Badge>
           <span>
             {models.find((model) => model.id === base.embedding_model_profile_id)?.name || t('missingModel')}
           </span>
@@ -192,6 +191,7 @@ export function KnowledgeDetail({
       <Feedback {...task} />
       <TabsContent value="config" keepMounted hidden={tab !== 'config'}>
         <form
+          className="settings-form"
           onSubmit={(event) => {
             event.preventDefault();
             void task.run(
@@ -290,7 +290,7 @@ export function KnowledgeDetail({
                 disabled={!draft.name.trim() || !draft.embedding_model_profile_id || (!!base && !dirty)}
                 variant="default"
               >
-                <Save size={16} />
+                <Save data-icon="inline-start" />
                 {t('common:save')}
               </Button>
             </div>

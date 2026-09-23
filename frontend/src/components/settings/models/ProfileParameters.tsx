@@ -1,6 +1,13 @@
 import { Input } from '@/components/ui/input';
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
@@ -90,9 +97,11 @@ export function ProfileParameters({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="kokoro">Kokoro-82M v1.0 (ONNX)</SelectItem>
-                <SelectItem value="chatterbox">{t('chatterboxEnglish')}</SelectItem>
-                <SelectItem value="qwen3tts">{t('qwen3TTSBase')}</SelectItem>
+                <SelectGroup>
+                  <SelectItem value="kokoro">Kokoro-82M v1.0 (ONNX)</SelectItem>
+                  <SelectItem value="chatterbox">{t('chatterboxEnglish')}</SelectItem>
+                  <SelectItem value="qwen3tts">{t('qwen3TTSBase')}</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
           </Field>
@@ -223,8 +232,10 @@ export function ProfileParameters({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="mp3">MP3</SelectItem>
-                <SelectItem value="wav">WAV</SelectItem>
+                <SelectGroup>
+                  <SelectItem value="mp3">MP3</SelectItem>
+                  <SelectItem value="wav">WAV</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
           </Field>
@@ -317,11 +328,13 @@ export function ProfileParameters({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {v}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {v}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </Field>
@@ -334,7 +347,9 @@ export function ProfileParameters({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tags">{t('visionTags')}</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value="tags">{t('visionTags')}</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </Field>

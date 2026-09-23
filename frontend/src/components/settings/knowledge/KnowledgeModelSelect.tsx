@@ -1,7 +1,15 @@
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { useTranslation } from 'react-i18next';
 import type { ModelProfile } from '../../../types/models';
+import { useSettingsView } from '../SettingsView';
 
 export function KnowledgeModelSelect({
   kind,
@@ -17,12 +25,14 @@ export function KnowledgeModelSelect({
   optional?: boolean;
 }) {
   const { t } = useTranslation('knowledge');
+  const activeView = useSettingsView();
   const choices = models.filter((model) => model.kind === kind && (model.enabled || model.id === value));
   const missing = !!value && !choices.some((model) => model.id === value);
   return (
     <Field>
       <FieldLabel>{t(kind === 'embedding' ? 'embeddingProfile' : 'rerankerProfile')}</FieldLabel>
       <Select
+        key={String(activeView)}
         required={!optional}
         value={value || ''}
         onValueChange={(selected) => onChange((selected ?? '') || null)}
@@ -55,18 +65,20 @@ export function KnowledgeModelSelect({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">{t('unconfigured')}</SelectItem>
-          {missing ? (
-            <SelectItem value={value!} disabled>
-              {t('missingModel')}({value})
-            </SelectItem>
-          ) : null}
-          {choices.map((model) => (
-            <SelectItem value={model.id} key={model.id} disabled={!model.enabled}>
-              {model.name}
-              {model.enabled ? '' : ` (${t('disabled')})`}
-            </SelectItem>
-          ))}
+          <SelectGroup>
+            <SelectItem value="">{t('unconfigured')}</SelectItem>
+            {missing ? (
+              <SelectItem value={value!} disabled>
+                {t('missingModel')}({value})
+              </SelectItem>
+            ) : null}
+            {choices.map((model) => (
+              <SelectItem value={model.id} key={model.id} disabled={!model.enabled}>
+                {model.name}
+                {model.enabled ? '' : ` (${t('disabled')})`}
+              </SelectItem>
+            ))}
+          </SelectGroup>
         </SelectContent>
       </Select>
       {!choices.some((model) => model.enabled) ? <small>{t('noModels')}</small> : null}

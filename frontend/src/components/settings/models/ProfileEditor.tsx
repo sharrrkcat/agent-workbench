@@ -1,3 +1,4 @@
+import { useSettingsView } from '../SettingsView';
 import {
   Combobox,
   ComboboxInput,
@@ -19,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ProfileParameters } from './ProfileParameters';
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -53,6 +54,7 @@ export function ProfileEditor({
   setModel: Dispatch<SetStateAction<ProfileDraft | null>>;
 }) {
   const { t } = useTranslation('llm');
+  const activeView = useSettingsView();
   const { providers, profiles } = useModelsStore();
   const local = model?.value.source?.type === 'local' ? model.value.source : null;
   const engine = model ? localEngine(model.value) : null;
@@ -101,7 +103,7 @@ export function ProfileEditor({
     );
   return (
     <Dialog
-      open={!!model}
+      open={activeView && !!model}
       onOpenChange={(open) => {
         if (!open)
           (() => {
@@ -113,18 +115,19 @@ export function ProfileEditor({
         <DialogHeader>
           <DialogTitle>{model?.id ? t('editModel') : t('addModel')}</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {model ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  if (model.id) await modelsApi.patchModelProfile(model.id, model.value);
-                  else await modelsApi.createModelProfile(model.value);
-                  setModel(null);
-                });
-              }}
-            >
+        {model ? (
+          <form
+            className="settings-dialog-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                if (model.id) await modelsApi.patchModelProfile(model.id, model.value);
+                else await modelsApi.createModelProfile(model.value);
+                setModel(null);
+              });
+            }}
+          >
+            <div className="settings-dialog-body">
               {feedback}
               <FieldSet disabled={busy} className="model-form">
                 <FieldGroup className="grid gap-4 sm:grid-cols-2">
@@ -526,16 +529,16 @@ export function ProfileEditor({
                     </FieldGroup>
                   </>
                 ) : null}
-                <div className="model-form-footer">
-                  <Button type="submit" variant="default">
-                    <Save size={16} />
-                    {t('save')}
-                  </Button>
-                </div>
               </FieldSet>
-            </form>
-          ) : null}
-        </div>
+            </div>
+            <DialogFooter>
+              <Button disabled={busy} type="submit" variant="default">
+                <Save data-icon="inline-start" />
+                {t('save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

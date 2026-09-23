@@ -1,4 +1,4 @@
-import { chooseOption, answerConfirmation } from './controls';
+import { chooseOption, answerConfirmation, navigateSettings } from './controls';
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 
 const labels = (locale: string) => locale === 'en' ? {
@@ -62,7 +62,7 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
       await first.getByLabel(l.content, { exact: true }).fill('Unsaved Alpha draft');
       await second.getByLabel(l.content, { exact: true }).fill('Updated Beta facts');
       await second.getByRole('button', { name: l.save, exact: true }).click();
-      await expect(second.locator('.resource-badge.warning')).toHaveCount(0);
+      await expect(second.getByText(locale === 'en' ? 'Unsaved' : '未保存', { exact: true })).toHaveCount(0);
       await expect(first.getByLabel(l.content, { exact: true })).toHaveValue('Unsaved Alpha draft');
       const toggle = first.getByRole('switch');
       await toggle.click(); await expect(toggle).toHaveAttribute('aria-checked', 'false'); await expect(toggle).toBeEnabled();
@@ -113,7 +113,7 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
       await page.locator('.resource-heading').getByRole('button', { name: l.back, exact: true }).click();
       await answerConfirmation(page, true, locale);
       await expect(page.getByRole('button', { name: l.addBook, exact: true })).toBeVisible();
-      await page.getByRole('tab', { name: l.globals, exact: true }).click();
+      await navigateSettings(page, locale === 'en' ? 'Worldbook' : '世界书', l.globals);
       await page.locator('.resource-advanced > [data-slot="collapsible-trigger"]').click();
       await page.getByLabel(l.maxContext, { exact: true }).fill(String(9000 + viewport.width));
       await page.getByRole('button', { name: l.save, exact: true }).click();
@@ -215,7 +215,7 @@ test('stale source previews do not replace a new selection, and rejected uploads
 test('advanced settings retain nullable fields and invalid drafts block departure', async ({ page, request }) => {
   await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
   await page.goto('/settings?tab=knowledge');
-  await page.getByRole('tab', { name: 'Global settings', exact: true }).click();
+  await navigateSettings(page, 'Knowledge', 'Global settings');
   const advanced = page.locator('.resource-advanced'); await advanced.locator(':scope > [data-slot="collapsible-trigger"]').click();
   await page.getByLabel('Score threshold', { exact: true }).fill('0.25');
   await page.getByLabel('Default score threshold', { exact: true }).fill('0.1');
@@ -227,7 +227,7 @@ test('advanced settings retain nullable fields and invalid drafts block departur
   const settings = await (await request.get('/api/knowledge/settings')).json();
   expect(settings.min_score_threshold).toBe(0.25); expect(settings.default_min_score).toBe(0.1); expect(settings.retrieval_max_chunks_per_source).toBeNull();
   await page.getByLabel('Chunk size', { exact: true }).fill('');
-  await page.getByRole('navigation').getByRole('button', { name: 'General', exact: true }).click();
+  await navigateSettings(page, 'General');
   await answerConfirmation(page, false);
   await expect(page.getByLabel('Chunk size', { exact: true })).toHaveValue('');
   await page.getByRole('button', { name: 'Save', exact: true }).click();

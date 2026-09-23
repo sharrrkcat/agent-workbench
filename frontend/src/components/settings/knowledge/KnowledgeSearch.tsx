@@ -32,7 +32,11 @@ export function KnowledgeSearch({ baseId }: { baseId: string }) {
           <Input required value={query} onChange={(event) => setQuery(event.target.value)} />
         </Field>
         <Button type="submit" disabled={!!task.busy || !query.trim()} variant="outline">
-          {task.busy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}
+          {task.busy ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <Search data-icon="inline-start" />
+          )}
           {t('search')}
         </Button>
       </form>

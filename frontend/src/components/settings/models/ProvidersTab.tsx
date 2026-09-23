@@ -1,3 +1,5 @@
+import { Badge } from '@/components/ui/badge';
+import { ResourceEmpty } from '../resources/ResourceUI';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
@@ -27,7 +29,7 @@ export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackPro
           type="button"
           variant="outline"
         >
-          <Plus size={16} />
+          <Plus data-icon="inline-start" />
           {t('addProvider')}
         </Button>
       </div>
@@ -37,7 +39,9 @@ export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackPro
           <div className="model-identity">
             <strong>{item.name}</strong>
             <small>{item.connection.base_url}</small>
-            <small>{item.enabled ? t('enabled') : t('disabled')}</small>
+            <Badge variant={item.enabled ? 'secondary' : 'outline'}>
+              {item.enabled ? t('enabled') : t('disabled')}
+            </Badge>
           </div>
           <div className="model-actions">
             <Tooltip>
@@ -60,7 +64,7 @@ export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackPro
                   />
                 }
               >
-                <Pencil size={16} />
+                <Pencil data-icon="inline-start" />
               </TooltipTrigger>
               <TooltipContent>{t('edit')}</TooltipContent>
             </Tooltip>
@@ -77,14 +81,14 @@ export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackPro
                   />
                 }
               >
-                <Trash2 size={16} />
+                <Trash2 data-icon="inline-start" />
               </TooltipTrigger>
               <TooltipContent>{t('delete')}</TooltipContent>
             </Tooltip>
           </div>
         </div>
       ))}
-      {!providers.length ? <p className="model-empty">{t('emptyProviders')}</p> : null}
+      {!providers.length ? <ResourceEmpty>{t('emptyProviders')}</ResourceEmpty> : null}
       <ProviderEditor
         provider={provider}
         setProvider={setProvider}

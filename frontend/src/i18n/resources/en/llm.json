@@ -5,7 +5,7 @@
   "defaultModel": "Default chat model",
   "utilityModel": "Auxiliary model",
   "unconfigured": "Not configured",
-  "profiles": "Models",
+  "profiles": "Model profiles",
   "service": "External API",
   "kind": "Model kind",
   "inventory": "Local model files",
@@ -271,5 +271,12 @@
   "emptyProviders": "No providers configured",
   "providerModelHint": "Enter the provider model ID, or choose a discovered model. Discovery is optional.",
   "discoveryUnavailable": "Model discovery is unavailable. You can still enter a model ID and save.",
-  "recentRequestState": "Status from recent requests"
+  "recentRequestState": "Status from recent requests",
+  "defaultModels": "Default models",
+  "viewHelp": {
+    "profiles": "Choose your default models and manage local or connected model profiles.",
+    "providers": "Manage connections to OpenAI-compatible model providers.",
+    "localRuntime": "Manage the local installation, storage and runtime tasks.",
+    "service": "Configure the localhost OpenAI-compatible model API."
+  }
 }

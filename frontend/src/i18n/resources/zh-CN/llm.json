@@ -5,7 +5,7 @@
   "defaultModel": "默认聊天模型",
   "utilityModel": "辅助模型",
   "unconfigured": "未配置",
-  "profiles": "模型",
+  "profiles": "模型配置",
   "service": "对外 API",
   "kind": "模型种类",
   "inventory": "本地模型文件",
@@ -271,5 +271,12 @@
   "emptyProviders": "尚未配置服务提供商",
   "providerModelHint": "输入服务端模型 ID，或选择已发现的模型。模型发现为可选功能。",
   "discoveryUnavailable": "暂时无法发现模型。仍可手动输入模型 ID 并保存。",
-  "recentRequestState": "状态来自最近请求"
+  "recentRequestState": "状态来自最近请求",
+  "defaultModels": "默认模型",
+  "viewHelp": {
+    "profiles": "选择默认模型，管理本地模型与外部连接的模型配置。",
+    "providers": "管理兼容 OpenAI 协议的模型服务连接。",
+    "localRuntime": "管理本地安装、存储空间和运行环境任务。",
+    "service": "配置本机兼容 OpenAI 协议的模型 API。"
+  }
 }

@@ -127,6 +127,7 @@ function Sidebar({
   className,
   children,
   dir,
+  title,
   ...props
 }: React.ComponentProps<'div'> & {
   side?: 'left' | 'right';
@@ -172,7 +173,7 @@ function Sidebar({
           side={side}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>{t('sessions')}</SheetTitle>
+            <SheetTitle>{title || t('sessions')}</SheetTitle>
           </SheetHeader>
           <div className="flex h-full min-h-0 w-full flex-col">{children}</div>
         </SheetContent>

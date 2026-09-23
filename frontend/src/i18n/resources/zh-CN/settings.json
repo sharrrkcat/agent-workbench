@@ -56,5 +56,17 @@
     "titleLimit": "标题输入长度上限",
     "groupInstruction": "群聊记录指令",
     "save": "保存常规设置"
+  },
+  "backToChat": "返回聊天",
+  "generalSections": {
+    "conversation": "对话显示",
+    "memory": "核心记忆",
+    "titles": "会话标题",
+    "group": "群聊提示词"
+  },
+  "sidebarGroups": {
+    "application": "应用偏好",
+    "execution": "模型与执行",
+    "context": "角色与上下文"
   }
 }

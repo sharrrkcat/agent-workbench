@@ -80,7 +80,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
               />
             }
           >
-            <RefreshCw size={16} />
+            <RefreshCw data-icon="inline-start" />
           </TooltipTrigger>
           <TooltipContent>{t('refresh')}</TooltipContent>
         </Tooltip>
@@ -90,13 +90,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
           {error || runtimeError}
         </p>
       ) : null}
-      <RuntimeStoragePanel
-        activeView={activeView}
-        busy={busy}
-        active={active}
-        onCleanup={(mode) => run(async () => setJob(await modelsApi.cleanupRuntimeCache(mode)))}
-        onCancel={(job) => void run(async () => setJob(await modelsApi.cancelRuntimeJob(job.id)))}
-      />
+
       <Field orientation="horizontal" disabled={busy || !!active || !local}>
         <Switch
           checked={local?.enabled ?? true}
@@ -147,7 +141,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                     />
                   }
                 >
-                  <Square size={16} />
+                  <Square data-icon="inline-start" />
                 </TooltipTrigger>
                 <TooltipContent>{t('cancelTask')}</TooltipContent>
               </Tooltip>
@@ -165,7 +159,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                     />
                   }
                 >
-                  <Download size={16} />
+                  <Download data-icon="inline-start" />
                 </TooltipTrigger>
                 <TooltipContent>{t('installRuntime')}</TooltipContent>
               </Tooltip>
@@ -183,7 +177,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                   />
                 }
               >
-                <Wrench size={16} />
+                <Wrench data-icon="inline-start" />
               </TooltipTrigger>
               <TooltipContent>{t('repairRuntime')}</TooltipContent>
             </Tooltip>
@@ -200,7 +194,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                   />
                 }
               >
-                <Trash2 size={16} />
+                <Trash2 data-icon="inline-start" />
               </TooltipTrigger>
               <TooltipContent>{t('uninstallRuntime')}</TooltipContent>
             </Tooltip>
@@ -217,7 +211,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                   />
                 }
               >
-                <FileText size={16} />
+                <FileText data-icon="inline-start" />
               </TooltipTrigger>
               <TooltipContent>{t('runtimeLog')}</TooltipContent>
             </Tooltip>
@@ -225,6 +219,13 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
         </div>
       ) : null}
       <p>{t('runtimeReuseHint')}</p>
+      <RuntimeStoragePanel
+        activeView={activeView}
+        busy={busy}
+        active={active}
+        onCleanup={(mode) => run(async () => setJob(await modelsApi.cleanupRuntimeCache(mode)))}
+        onCancel={(job) => void run(async () => setJob(await modelsApi.cancelRuntimeJob(job.id)))}
+      />
       <Collapsible className="runtime-download-settings">
         <CollapsibleTrigger render={<Button type="button" variant="ghost" className="justify-start" />}>
           {t('downloadSettings')}
@@ -252,7 +253,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                 ))}
                 <div className="model-form-footer">
                   <Button type="submit" variant="default">
-                    <Save size={16} />
+                    <Save data-icon="inline-start" />
                     {t('save')}
                   </Button>
                 </div>
@@ -288,7 +289,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                         />
                       }
                     >
-                      <FileText size={16} />
+                      <FileText data-icon="inline-start" />
                     </TooltipTrigger>
                     <TooltipContent>{t('runtimeLog')}</TooltipContent>
                   </Tooltip>
@@ -299,7 +300,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
         </Collapsible>
       ) : null}
       <Dialog
-        open={!!log}
+        open={activeView && !!log}
         onOpenChange={(open) => {
           if (!open) (() => setLog(null))();
         }}
@@ -326,7 +327,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
                         />
                       }
                     >
-                      <RefreshCw size={16} />
+                      <RefreshCw data-icon="inline-start" />
                     </TooltipTrigger>
                     <TooltipContent>{t('refresh')}</TooltipContent>
                   </Tooltip>

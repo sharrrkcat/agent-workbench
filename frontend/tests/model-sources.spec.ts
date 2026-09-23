@@ -1,4 +1,4 @@
-import { chooseOption, fillCombobox } from './controls';
+import { chooseOption, fillCombobox, navigateSettings } from './controls';
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
 
@@ -7,7 +7,7 @@ for (const locale of ['en', 'zh-CN']) {
   for (const width of [1366, 390]) {
     test.describe(`model sources ${locale} ${width}`, () => {
       test.use({ viewport: { width, height: width === 390 ? 844 : 900 }, hasTouch: width === 390 });
-      test('manual provider IDs survive failed discovery and local drafts survive tabs', async ({ page, request }, info) => {
+      test('manual provider IDs survive failed discovery and local drafts survive subpages', async ({ page, request }, info) => {
         const created = await request.post('/api/models/providers', { data: {
           name: `Source fixture ${locale} ${width}`, connection: { base_url: 'https://provider.test/v1' },
         } });
@@ -17,7 +17,7 @@ for (const locale of ['en', 'zh-CN']) {
           status: 502, json: { error: { code: 'PROVIDER_ERROR', message: 'Discovery fixture failure' } },
         }));
         await page.goto('/settings?tab=models');
-        await expect(page.locator('.model-tabs [role="tab"]')).toHaveCount(4);
+        await expect(page.locator('.settings-content [role="tablist"]')).toHaveCount(0);
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         const source = dialog.getByLabel(labels.source, { exact: true });
@@ -52,13 +52,13 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(dialog.getByLabel(labels.release, { exact: true }).locator('[data-slot="select-value"]')).toHaveText(labels.policy.manual);
         await expect(dialog.getByLabel(labels.runtimeDevice, { exact: true })).toBeVisible();
         await dialog.getByRole('button', { name: labels.close, exact: true }).click();
-        await page.getByRole('tab', { name: labels.localRuntime, exact: true }).click();
+        await navigateSettings(page, labels.title, labels.localRuntime);
         await page.locator('.runtime-download-settings > [data-slot="collapsible-trigger"]').click();
         const proxy = page.getByLabel(labels.download.http_proxy, { exact: true });
         await proxy.fill('http://127.0.0.1:8899');
-        await page.getByRole('tab', { name: labels.providers, exact: true }).click();
+        await navigateSettings(page, labels.title, labels.providers);
         await expect(page.getByRole('button', { name: labels.addProvider, exact: true })).toBeVisible();
-        await page.getByRole('tab', { name: labels.localRuntime, exact: true }).click();
+        await navigateSettings(page, labels.title, labels.localRuntime);
         await expect(proxy).toHaveValue('http://127.0.0.1:8899');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
         expect(overflow).toBe(false);

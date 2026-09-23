@@ -14,7 +14,7 @@ import {
 type Options = { destructive?: boolean; confirmLabel?: string; title?: string };
 export type ConfirmAction = (message: string, options?: Options) => Promise<boolean>;
 
-export function useConfirmDialog() {
+export function useConfirmDialog(active = true) {
   const { t } = useTranslation('common');
   const [request, setRequest] = useState<Options & { message: string }>();
   const [open, setOpen] = useState(false);
@@ -34,6 +34,9 @@ export function useConfirmDialog() {
     setOpen(false);
     resolve?.(answer);
   }, []);
+  useEffect(() => {
+    if (!active) finish(false);
+  }, [active, finish]);
   useEffect(
     () => () => {
       pending.current?.(false);
@@ -43,7 +46,7 @@ export function useConfirmDialog() {
   );
   const confirmation = (
     <AlertDialog
-      open={open}
+      open={active && open}
       onOpenChange={(next) => {
         if (!next) finish(false);
       }}

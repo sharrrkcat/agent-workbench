@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
@@ -29,7 +30,11 @@ export function WorldbookMatch({ bookId }: { bookId: string }) {
           <Textarea rows={5} value={text} onChange={(event) => setText(event.target.value)}></Textarea>
         </Field>
         <Button type="submit" disabled={!!task.busy} variant="outline">
-          {task.busy ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
+          {task.busy ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <Play data-icon="inline-start" />
+          )}
           {t('matchTest')}
         </Button>
       </form>
@@ -48,7 +53,7 @@ export function WorldbookMatch({ bookId }: { bookId: string }) {
             <article className="worldbook-match-entry-card" key={item.entry_id}>
               <div className="resource-toolbar">
                 <strong>{item.entry_name}</strong>
-                <span className="resource-badge">{t(item.activation_mode)}</span>
+                <Badge variant="outline">{t(item.activation_mode)}</Badge>
               </div>
               <small>
                 {item.matched_keywords.join(', ')}

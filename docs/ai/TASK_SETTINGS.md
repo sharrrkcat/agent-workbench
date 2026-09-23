@@ -10,7 +10,9 @@ Backend paths under ai_workbench include core/settings.py for AppSettings,
 core/models/, core/harness/, core/knowledge_settings.py and core/worldbook.py
 for domain settings; core/models/store.py owns provider and local runtime settings. API schemas live in api/schemas/; routes own request parsing.
 Under frontend/src/, components/SettingsPage.tsx composes components/settings/
-panels and domain API/type modules. Persona/session controls are in components/personas/.
+panels and domain API/type modules. SettingsSidebar.tsx and settings/navigation.ts
+own grouped page navigation; SettingsView.tsx retains inactive subpages.
+Persona/session controls are in components/personas/.
 Storage and revision effects belong to [data layout](../DATA_LAYOUT.md).
 
 ## Verification
@@ -20,6 +22,7 @@ test_resource_management.py and test_openapi_contracts.py under tests/ plus
 the affected model/runtime/tool tests. Frontend scripts cover session settings,
 Pet foundations, runtime maintenance, resources and reply presentation.
 Check omission/null/empty semantics, secret clearing, reference guards, draft
-persistence and approval snapshots. Run all backend tests, frontend tests/build
-and documentation gates in the [README](../../README.md#verification).
+persistence and approval snapshots. Run backend tests when backend code changes;
+run frontend tests/build and documentation gates in the [README](../../README.md#verification).
+Browser settings-layout.spec.ts covers grouped navigation, drafts and responsive layout.
 UI copy follows the [i18n guide](../../frontend/src/i18n/README.md).

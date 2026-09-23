@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { answerConfirmation, chooseOption, openSidebar } from './controls';
+import { answerConfirmation, chooseOption, navigateSettings, openSidebar } from './controls';
 
 const words = (locale: string, namespace: string) =>
   JSON.parse(
@@ -70,18 +70,29 @@ for (const locale of ['en', 'zh-CN']) {
         await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
       });
 
-      test('keyboard tabs, labels, touch targets, dropdowns and bounded dialogs', async ({ page }, info) => {
+      test('keyboard navigation, labels, touch targets, dropdowns and bounded dialogs', async ({ page }, info) => {
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await page.goto('/settings?tab=models');
-        const profiles = page.getByRole('tab', { name: llm.profiles, exact: true });
-        const providers = page.getByRole('tab', { name: llm.providers, exact: true });
-        await profiles.focus();
-        await profiles.press('ArrowRight');
+        await openSidebar(page);
+        const group = page.locator('.settings-sidebar nav').getByRole('list', { name: settings.models, exact: true });
+        const toggle = group.getByRole('button', { name: settings.models, exact: true });
+        const profiles = group.getByRole('button', { name: llm.profiles, exact: true });
+        const providers = group.getByRole('button', { name: llm.providers, exact: true });
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(profiles).toBeHidden();
+        await toggle.focus();
+        await toggle.press('Space');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await toggle.press('Tab');
+        await expect(profiles).toBeFocused();
+        await profiles.press('Tab');
         await expect(providers).toBeFocused();
-        await expect(profiles).toHaveAttribute('aria-selected', 'true');
+        await expect(profiles).toHaveAttribute('aria-current', 'page');
+        await expect(page.locator('.settings-sidebar [data-active]')).toHaveCount(1);
+        await expect(toggle).not.toHaveAttribute('data-active');
         await providers.press('Space');
-        await expect(providers).toHaveAttribute('aria-selected', 'true');
+        await expect(page).toHaveURL('/settings?tab=models&view=providers');
         await expect(page.getByRole('button', { name: llm.addModel, exact: true })).toHaveCount(0);
 
         const addProvider = page.getByRole('button', { name: llm.addProvider, exact: true });
@@ -104,12 +115,14 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(dialog).toBeHidden();
         await expect(addProvider).toBeFocused();
 
-        const runtime = page.getByRole('tab', { name: llm.localRuntime, exact: true });
+        await openSidebar(page);
+        if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+        const runtime = group.getByRole('button', { name: llm.localRuntime, exact: true });
         await providers.focus();
-        await providers.press('ArrowRight');
+        await providers.press('Tab');
         await expect(runtime).toBeFocused();
         await runtime.press('Enter');
-        await expect(runtime).toHaveAttribute('aria-selected', 'true');
+        await expect(page).toHaveURL('/settings?tab=models&view=localRuntime');
         const enabled = page.getByRole('switch', { name: llm.enableLocalRuntime, exact: true });
         const label = page.locator('[data-slot="field-label"]').filter({ hasText: llm.enableLocalRuntime });
         const before = await enabled.isChecked();
@@ -123,11 +136,11 @@ for (const locale of ['en', 'zh-CN']) {
         await page.locator('.runtime-download-settings > [data-slot="collapsible-trigger"]').click();
         const proxy = page.getByLabel(llm.download.http_proxy, { exact: true });
         await proxy.fill('http://127.0.0.1:8899');
-        await providers.click();
+        await navigateSettings(page, settings.models, llm.providers);
         await expect(proxy).toBeHidden();
-        await runtime.click();
+        await navigateSettings(page, settings.models, llm.localRuntime);
         await expect(proxy).toHaveValue('http://127.0.0.1:8899');
-        await profiles.click();
+        await navigateSettings(page, settings.models, llm.profiles);
         const add = page.getByRole('button', { name: llm.addModel, exact: true });
         await add.click();
         await bounded(dialog, viewport);
@@ -144,7 +157,11 @@ for (const locale of ['en', 'zh-CN']) {
         await reference.fill('llms/manual-model.gguf');
         await reference.press('Tab');
         await expect(reference).toHaveValue('llms/manual-model.gguf');
-        const body = dialog.locator(':scope > .overflow-y-auto');
+        const body = dialog.locator('.settings-dialog-body');
+        const footer = dialog.locator('[data-slot="dialog-footer"]');
+        const footerY = (await footer.boundingBox())!.y;
+        await body.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+        expect((await footer.boundingBox())!.y).toBe(footerY);
         await dialog.getByRole('button', { name: llm.save, exact: true }).scrollIntoViewIfNeeded();
         if (viewport.width === 390) {
           expect(await body.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
@@ -164,17 +181,13 @@ for (const locale of ['en', 'zh-CN']) {
         await request.post('/__test__/session', { data: {} });
         await page.goto('/');
         await openSettings(page, personas.settings);
-        const nav = page.getByRole('navigation', { name: settings.title, exact: true });
-        await nav.getByRole('button', { name: settings.knowledge, exact: true }).click();
-        const globals = page.getByRole('tab', { name: settings.resources.settings, exact: true });
-        const list = page.getByRole('tab', { name: settings.resources.list, exact: true });
-        await globals.click();
+        await navigateSettings(page, settings.knowledge, settings.resources.settings);
         const chunk = page.getByLabel(knowledge.chunkSize, { exact: true });
         const original = Number(await chunk.inputValue());
         await chunk.fill(String(original + 1));
-        await list.click();
+        await navigateSettings(page, settings.knowledge, settings.resources.list);
         await expect(chunk).toBeHidden();
-        await globals.click();
+        await navigateSettings(page, settings.knowledge, settings.resources.settings);
         await expect(chunk).toHaveValue(String(original + 1));
         const advanced = page.locator('.resource-advanced > [data-slot="collapsible-trigger"]');
         await advanced.click();
@@ -187,11 +200,12 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(advanced).toHaveAttribute('aria-expanded', 'true');
         await expect(candidate).toBeFocused();
         await candidate.fill(originalCandidate);
-        await nav.getByRole('button', { name: settings.general, exact: true }).click();
+        await navigateSettings(page, settings.general);
         await expect(page.getByRole('alertdialog')).toBeVisible();
         await page.evaluate(() => history.back());
         await answerConfirmation(page, false, locale);
-        await expect(page).toHaveURL(/\/settings\?tab=knowledge$/);
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=settings');
+        if (viewport.width === 390) await page.keyboard.press('Escape');
         await expect(chunk).toHaveValue(String(original + 1));
 
         let release!: () => void;
@@ -208,11 +222,11 @@ for (const locale of ['en', 'zh-CN']) {
         await save.click();
         await submitted;
         await expect(chunk).toBeDisabled();
-        await nav.getByRole('button', { name: settings.general, exact: true }).click();
-        await expect(page).toHaveURL(/\/settings\?tab=knowledge$/);
+        await navigateSettings(page, settings.general);
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=settings');
         await expect(page.getByRole('alertdialog')).toHaveCount(0);
         await page.evaluate(() => history.back());
-        await expect(page).toHaveURL(/\/settings\?tab=knowledge$/);
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=settings');
         const saved = page.waitForResponse(
           (value) => value.request().method() === 'PATCH' && value.url().endsWith('/knowledge/settings'),
         );
@@ -220,27 +234,33 @@ for (const locale of ['en', 'zh-CN']) {
         await saved;
         await expect(chunk).toBeEnabled();
         await page.unroute('**/api/knowledge/settings');
+        if (viewport.width === 390) await page.keyboard.press('Escape');
         await chunk.fill(String(original + 2));
         const length = await page.evaluate(() => history.length);
+        await page.goBack();
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=list');
+        await expect(page.getByRole('alertdialog')).toHaveCount(0);
+        await page.goBack();
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=settings');
+        await expect(chunk).toHaveValue(String(original + 2));
         await page.evaluate(() => history.back());
         await expect(page.getByRole('alertdialog')).toBeVisible();
-        await expect(page).toHaveURL(/\/settings\?tab=knowledge$/);
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=settings');
         await page.keyboard.press('Escape');
         await expect(page.getByRole('alertdialog')).toBeHidden();
         await expect(chunk).toHaveValue(String(original + 2));
         expect(await page.evaluate(() => history.length)).toBe(length);
         await page.evaluate(() => history.back());
         await answerConfirmation(page, true, locale);
-        await expect(page).toHaveURL(/\/$/);
+        await expect(page).toHaveURL('/settings');
         await page.evaluate(() => history.forward());
-        await expect(page).toHaveURL(/\/settings\?tab=knowledge$/);
-        await globals.click();
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=settings');
         await expect(chunk).toHaveValue(String(original + 1));
         expect(await page.evaluate(() => history.length)).toBe(length);
         await page.evaluate(() => history.back());
-        await expect(page).toHaveURL(/\/$/);
+        await expect(page).toHaveURL('/settings');
         await page.evaluate(() => history.forward());
-        await expect(page).toHaveURL(/\/settings\?tab=knowledge$/);
+        await expect(page).toHaveURL('/settings?tab=knowledge&view=settings');
       });
 
       test('nested confirmation, focus return and deletion cancellation', async ({ page, request }, info) => {
@@ -433,15 +453,12 @@ for (const locale of ['en', 'zh-CN']) {
           .poll(async () => (await (await request.get(`/api/worldbooks/${book.id}/entries`)).json())[0].id)
           .toBe(entries[1].id);
         await expect(second.getByRole('button', { name: worldbook.expand, exact: true })).toBeVisible();
-        await page.getByRole('navigation').getByRole('button', { name: settings.tools, exact: true }).click();
+        await navigateSettings(page, settings.tools);
         const args = page.getByLabel(settings.toolArguments, { exact: true });
         await args.fill('{"value":"hi"}');
         await page.getByRole('button', { name: settings.callTool, exact: true }).click();
         await expect(page.locator('.tool-output')).toContainText('aGk=');
-        await page
-          .getByRole('navigation')
-          .getByRole('button', { name: settings.general, exact: true })
-          .click();
+        await navigateSettings(page, settings.general);
         const processing = page.getByRole('switch', {
           name: settings.generalFields.showFullProcessing,
           exact: true,
@@ -462,7 +479,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
 }) => {
   await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
   await page.goto('/settings?tab=models');
-  await page.getByRole('tab', { name: 'Providers', exact: true }).click();
+  await navigateSettings(page, 'Models', 'Providers');
   await page.getByRole('button', { name: 'Add provider', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const name = dialog.getByLabel('Name', { exact: true });
@@ -485,6 +502,9 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
   await expect(dialog.getByRole('switch', { name: 'Enabled', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL('/settings?tab=models&view=providers');
   await expect(dialog).toBeVisible();
   release();
   await expect(dialog).toBeHidden();
