@@ -86,6 +86,7 @@ const headerLoad = createModuleLoader({
   [sourceUrl('store/useWorkbenchStore.ts')]: mockModule({ useWorkbenchStore: (selector) => selector({ currentSession: headerSession, updateSession: () => {} }) }),
 });
 const { ChatHeader } = (await headerLoad('../src/components/ChatHeader.tsx')).exports;
+const { SidebarProvider } = (await headerLoad('../src/components/ui/sidebar.tsx')).exports;
 for (const [locale, labels] of [
   ['en', ['Tools', 'Approval required', 'No models available']],
   ['zh-CN', ['工具', '需要确认', '暂无可用模型']],
@@ -102,7 +103,8 @@ for (const [locale, labels] of [
   assert.equal((html.match(/aria-checked="true"/g) || []).length, 2);
   for (const modelId of ['preferred', 'first']) {
     headerSession = { ...headerSession, model_profile_id: modelId };
-    const header = renderToStaticMarkup(React.createElement(ChatHeader, { onOpenSettings: () => {}, onToggleSidebar: () => {} }));
+    const header = renderToStaticMarkup(React.createElement(SidebarProvider, null,
+      React.createElement(ChatHeader, { onOpenSettings: () => {} })));
     const settings = renderToStaticMarkup(React.createElement(ModelField, { profiles, value: modelId, onChange: () => {} }));
     for (const rendered of [header, settings]) {
       assert.ok(rendered.includes(profiles.find((profile) => profile.id === modelId).name));

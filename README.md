@@ -307,9 +307,9 @@ Runtime installation and real-model/browser smoke checks are reported separately
 from deterministic tests. Frontend source is organized by domain types/API,
 explicit store actions and focused view components.
 
-After a build, `npm run test:browser -- style-foundation.spec.ts controls.spec.ts` checks bilingual desktop/touch controls and fonts.
-`npm run test:browser` also includes existing chat, runtime and resource layout cases; these retain their
-assertions but need [layout reconstruction](docs/contracts/settings.md#frontend-styling-foundation) before full acceptance.
+After a build, `npm run test:browser -- app-layout.spec.ts chat-presentation.spec.ts vision-input.spec.ts controls.spec.ts style-foundation.spec.ts`
+checks bilingual desktop/touch navigation, chat, images, controls and fonts. Other browser cases retain their
+settings-layout assertions; full settings-page acceptance still needs [layout reconstruction](docs/contracts/settings.md#frontend-styling-foundation).
 Install Chromium once with `npx playwright install chromium`. Tests manage an isolated fixture server on
 port 18767; WORKBENCH_BROWSER_PORT selects a free port. Screenshots/traces are under frontend/test-results.
 

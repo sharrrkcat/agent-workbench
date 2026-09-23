@@ -1,9 +1,7 @@
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
-import { Switch } from '@/components/ui/switch';
-import { Field, FieldLabel } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Copy, RefreshCw, Trash2 } from 'lucide-react';
+import { Check, Copy, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWorkbenchStore } from '../../store/useWorkbenchStore';
@@ -47,17 +45,11 @@ export function ReplyActions({ reply }: { reply: Reply }) {
                 aria-label={t(copied ? 'copied' : 'copyAnswer')}
                 onClick={() => void copy()}
                 variant="ghost"
+                size="icon"
               />
             }
           >
-            {copied ? (
-              <Field orientation="horizontal">
-                <Switch onCheckedChange={undefined} />
-                <FieldLabel>{''}</FieldLabel>
-              </Field>
-            ) : (
-              <Copy size={14} />
-            )}
+            {copied ? <Check /> : <Copy size={14} />}
           </TooltipTrigger>
           <TooltipContent>{t(copied ? 'copied' : 'copyAnswer')}</TooltipContent>
         </Tooltip>

@@ -1,1 +1,21 @@
-{"placeholder":"Message the chat…","waiting":"Waiting for your reply","single":"Single assistant","group":"Group transcript","prefixes":"Prefixes are sent as ordinary text"}
+{
+  "placeholder": "Message the chat…",
+  "waiting": "Waiting for your reply",
+  "single": "Single assistant",
+  "group": "Group transcript",
+  "prefixes": "Prefixes are sent as ordinary text",
+  "messages": "Messages",
+  "scrollToEnd": "Latest messages",
+  "scrollToStart": "First messages",
+  "loadFailed": "Unable to open the conversation",
+  "service": "Service: {{status}}",
+  "serviceStatus": {
+    "checking": "Checking…",
+    "ok": "Ready",
+    "ready": "Ready",
+    "offline": "Offline",
+    "degraded": "Degraded",
+    "unavailable": "Unavailable",
+    "error": "Error"
+  }
+}

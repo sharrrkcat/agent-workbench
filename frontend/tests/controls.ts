@@ -1,5 +1,12 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
+export async function openSidebar(page: Page) {
+  const trigger = page.locator('[data-sidebar="trigger"]');
+  await expect(trigger).toBeVisible();
+  if (await trigger.getAttribute('aria-expanded') === 'false') await trigger.click();
+  await expect(page.locator('.session-sidebar')).toBeInViewport();
+}
+
 export async function chooseOption(trigger: Locator, name: string) {
   await trigger.click();
   await trigger.page().getByRole('option', { name, exact: true }).click();

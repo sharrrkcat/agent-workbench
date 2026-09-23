@@ -37,6 +37,7 @@ for (const locale of ['en', 'zh-CN']) {
       test('select, paste, drop, preview and image-only history', async ({ page, request }, info) => {
         const session = await configure(request);
         await page.goto('/');
+        await expect(page.locator('.composer').getByRole('button', { name: labels.attach, exact: true })).toBeEnabled();
         const picker = page.locator('.composer input[type=file]');
         await picker.setInputFiles(file('selected.png'));
         await transfer(page, 'paste', 'pasted.png');
@@ -121,6 +122,7 @@ test('partial upload failure preserves successes and late results stay in their 
     await route.continue();
   });
   await page.goto('/');
+  await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();
   const picker = page.locator('.composer input[type=file]');
   await picker.setInputFiles([file('good.png'), file('failed.png')]);
   await expect(page.locator('.upload-ready')).toHaveCount(1);
@@ -129,7 +131,7 @@ test('partial upload failure preserves successes and late results stay in their 
   await picker.setInputFiles(file('late.png'));
   await inFlight;
   await expect(page.locator('.upload-uploading [role=status]')).toBeVisible();
-  await page.getByRole('button', { name: 'New session', exact: true }).click();
+  await page.locator('.sidebar-header').getByRole('button', { name: 'New session', exact: true }).click();
   await expect(page.locator('.attachment-chip')).toHaveCount(0);
   const response = page.waitForResponse((value) => value.url().endsWith('/api/attachments'));
   release();
@@ -144,11 +146,13 @@ test('image capability and attachment policy provide clear prompts', async ({ pa
   const session = await configure(request);
   await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: { capabilities: { streaming: true, tools: true, vision: false } } });
   await page.goto('/');
+  await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();
   await page.locator('.composer input[type=file]').setInputFiles(file('image.png'));
   await expect(page.locator('.composer-warning')).toContainText('does not support images');
   await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeDisabled();
   await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { mode: 'session', include_attachments: 'none' } } });
   await page.reload();
+  await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();
   await page.locator('.composer input[type=file]').setInputFiles(file('image.png'));
   await expect(page.locator('.composer-warning')).toContainText('Enable Include attachments');
 });

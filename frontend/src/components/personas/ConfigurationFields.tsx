@@ -1,4 +1,11 @@
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -71,22 +78,24 @@ export function ModelSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {!value ? (
-          <SelectItem value="" disabled>
-            {emptyLabel}
-          </SelectItem>
-        ) : null}
-        {options.map((p) => (
-          <SelectItem key={p.id} value={p.id} disabled={!p.enabled}>
-            {p.name}
-            {p.enabled ? '' : ` (${t('disabled')})`}
-          </SelectItem>
-        ))}
-        {value && !selected ? (
-          <SelectItem value={value} disabled>
-            {t('unavailable')}
-          </SelectItem>
-        ) : null}
+        <SelectGroup>
+          {!value ? (
+            <SelectItem value="" disabled>
+              {emptyLabel}
+            </SelectItem>
+          ) : null}
+          {options.map((p) => (
+            <SelectItem key={p.id} value={p.id} disabled={!p.enabled}>
+              {p.name}
+              {p.enabled ? '' : ` (${t('disabled')})`}
+            </SelectItem>
+          ))}
+          {value && !selected ? (
+            <SelectItem value={value} disabled>
+              {t('unavailable')}
+            </SelectItem>
+          ) : null}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );

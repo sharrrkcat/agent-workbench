@@ -16,7 +16,9 @@ Paths below are under frontend/src:
 - store/useWorkbenchStore.ts composes store/workbench/ actions and mergeState;
   store/messageStream.ts handles deltas. store/useModelsStore.ts and
   hooks/useModelEvents.ts handle global events.
-- components/ChatView.tsx and components/messages/ compose replies and approvals.
+- components/SessionSidebar.tsx and ChatHeader.tsx compose the home navigation.
+  components/ChatView.tsx owns the session-scoped MessageScroller; components/messages/
+  compose replies, disclosure anchors and approvals. ChatInput.tsx owns the composer.
 - components/SettingsPage.tsx composes components/settings/ domain panels;
   components/settings/models/ contains model/provider editors; LocalRuntimePanel.tsx
   owns installation details. components/personas/ contains session editors.
@@ -41,7 +43,10 @@ font loading in both locales and viewports. controls.spec.ts mounts the real App
 with production CSS in English/Chinese at 1366x900 and touch-enabled 390x844. It
 covers keyboard/labels, 44px targets, nested overlays and focus, retained drafts,
 validation, busy locks, async navigation/history, attachments, IME and approvals.
-Existing page-layout assertions remain while their missing layouts are reconstructed.
+app-layout.spec.ts covers sidebar scrolling/menus, deletion, drawer focus, Markdown,
+composer growth, disclosure position and breakpoint/short viewport behavior.
+chat-presentation.spec.ts and vision-input.spec.ts retain streaming and image workflows.
+Settings page-layout assertions remain while their layouts are reconstructed.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
 Check stale responses, session isolation, approval visibility, draft persistence

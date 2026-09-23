@@ -58,11 +58,32 @@ App commits routes only after acceptance. For guarded browser back/forward,
 it restores the current history entry before asking and replays the target once
 on acceptance; cancellation preserves the page, drafts and history order.
 
-Old application/resource styles are removed. Shared controls, fields and overlays
-are styled, while the application shell, message typography, overall settings
-layouts and bounded chat scrolling still require reconstruction. Existing browser
-layout assertions remain; scoped control acceptance does not establish full-page
-layout acceptance.
+The home shell is bounded to the dynamic viewport height. Its desktop sidebar
+is 16rem wide, initially expanded and can be fully hidden; hidden controls leave
+the focus order. Visibility is not persisted. Below 768px it becomes an initially
+closed Sheet, at most 18rem wide with viewport margins. Close, backdrop and Escape
+return focus to the toggle. Selecting/creating a session or opening Settings
+closes the mobile drawer.
+
+The sidebar fixes its brand/new-session header, two disabled feature placeholders
+and Settings footer; only the session list scrolls. Each row has one truncated
+title, with its full title available, and a delete menu shown on hover, focus,
+menu opening or coarse pointers. Placeholders have no routes. Session deletion
+semantics belong to [chat/context](chat-context.md#personas-and-sessions).
+
+The fixed chat header contains the sidebar toggle, title, concrete model selector
+and session settings; the model selector occupies a second row on narrow screens.
+Mode and speaker changes live in the session dialog. The message column is at most
+48rem wide, with an independent scroller and aligned fixed composer/status area.
+The composer uses InputGroup and a single horizontally scrolling AttachmentGroup;
+its textarea grows to at most 12rem, with a lower cap in short viewports.
+Service states and error dismissal have matching English/Chinese labels.
+MessageScroller uses pinned @shadcn/react 0.3.1; transcript behavior belongs to
+[runs/streaming](runs-streaming.md#run-lifecycle).
+
+Overall settings-page layouts still require reconstruction. Settings retains
+document scrolling, existing control/overlay behavior and its browser layout
+assertions; home/chat layout acceptance does not establish settings-page acceptance.
 
 ## General
 

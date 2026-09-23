@@ -24,7 +24,9 @@ test('scroll following pauses when reading earlier content and resumes explicitl
   await expect(body).toContainText('Paragraph 18:');
   const view = page.locator('.chat-view');
   await expect.poll(() => view.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight)).toBeLessThanOrEqual(120);
-  await view.evaluate((node) => { node.scrollTop = 0; node.dispatchEvent(new Event('scroll')); });
+  await view.hover();
+  await page.mouse.wheel(0, -10000);
+  await expect.poll(() => view.evaluate((node) => node.scrollTop)).toBe(0);
   await expect(body).toContainText('Paragraph 28:');
   expect(await view.evaluate((node) => node.scrollTop)).toBe(0);
   await page.locator('.latest-message-button').click();

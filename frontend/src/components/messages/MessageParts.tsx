@@ -1,5 +1,7 @@
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Marker, MarkerContent } from '@/components/ui/marker';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -25,7 +27,18 @@ function Part({ part }: { part: MessagePart }) {
       <p className="part-text">{part.text}</p>
     ) : (
       <div className="part-markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            table: ({ children }) => (
+              <div className="markdown-table">
+                <table>{children}</table>
+              </div>
+            ),
+          }}
+        >
+          {part.text}
+        </ReactMarkdown>
       </div>
     );
   if (part.type === 'json') return <pre className="part-json">{JSON.stringify(part.data, null, 2)}</pre>;
@@ -87,10 +100,16 @@ function Part({ part }: { part: MessagePart }) {
   if (part.type === 'video') return <video controls src={part.url} poster={part.poster_url} />;
   if (part.type === 'error')
     return (
-      <div className="part-error">
-        {part.code ? `${part.code}: ` : ''}
-        {imageErrorKey(part.code, part.message) ? t(imageErrorKey(part.code, part.message)!) : part.message}
-      </div>
+      <Alert className="part-error" variant="destructive">
+        <AlertDescription>
+          {part.code ? `${part.code}: ` : ''}
+          {imageErrorKey(part.code, part.message) ? t(imageErrorKey(part.code, part.message)!) : part.message}
+        </AlertDescription>
+      </Alert>
     );
-  return <div className={`part-notice ${part.level || 'info'}`}>{part.text}</div>;
+  return (
+    <Marker className="part-notice">
+      <MarkerContent>{part.text}</MarkerContent>
+    </Marker>
+  );
 }

@@ -52,9 +52,12 @@ collapsed. Final answers and approval controls stay outside that history.
 History and tool details use controlled Base UI Collapsible sections; replacing
 their controls does not reset user expansion during streaming. Shared control
 and overlay behavior belongs to [Settings](settings.md#frontend-styling-foundation).
-Scrolling follows new content only near the bottom, with an explicit latest button.
-The bounded scroll layout is currently missing; see the
-[frontend styling limitations](settings.md#frontend-styling-foundation).
+MessageScroller follows streamed content near the bottom and yields when the user
+reads earlier messages. Disclosures use registered header anchors to retain the
+reading position. Returning to the bottom, choosing Latest messages or sending
+input resumes following. Each session gets a fresh scroller opened at its latest
+content. The fixed shell and responsive layout belong to
+[Settings](settings.md#frontend-styling-foundation).
 
 ## WebSocket events
 

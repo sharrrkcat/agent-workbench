@@ -1,128 +1,160 @@
-import { useConfirmDialog } from '@/hooks/useConfirmDialog';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { MessageSquarePlus, Settings2, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Boxes, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { cn } from '@/lib/utils';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from '@/components/ui/sidebar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
 
-export function SessionSidebar({
-  onOpenSettings,
-  open,
-  onClose,
-}: {
-  onOpenSettings: () => void;
-  open: boolean;
-  onClose: () => void;
-}) {
+export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('personas');
+  const { setOpenMobile } = useSidebar();
   const sessions = useWorkbenchStore((state) => state.sessions);
   const current = useWorkbenchStore((state) => state.currentSession);
   const select = useWorkbenchStore((state) => state.selectSession);
   const create = useWorkbenchStore((state) => state.createSession);
   const remove = useWorkbenchStore((state) => state.deleteSession);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function deleteSession(id: string) {
+    if (!(await confirm(t('deleteSessionConfirm'), { destructive: true }))) return;
+    setDeleting(id);
+    try {
+      await remove(id);
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   return (
-    <aside className={`session-sidebar ${open ? 'mobile-open' : ''}`}>
-      <div className="sidebar-header">
-        <strong>Workbench</strong>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
+    <>
+      <Sidebar className="session-sidebar" aria-label={t('sessions')}>
+        <SidebarHeader className="sidebar-header shrink-0 gap-4 p-3">
+          <div className="sidebar-brand">Workbench</div>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
                 type="button"
-                aria-label={t('close')}
-                onClick={onClose}
-                variant="ghost"
-                size="icon"
-                className="mobile-sidebar-toggle"
-              />
-            }
-          >
-            <X size={18} />
-          </TooltipTrigger>
-          <TooltipContent>{t('close')}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                aria-label={t('newSession')}
                 onClick={() => {
                   void create();
-                  onClose();
+                  setOpenMobile(false);
                 }}
-                variant="ghost"
-                size="icon"
-              />
-            }
-          >
-            <MessageSquarePlus size={18} />
-          </TooltipTrigger>
-          <TooltipContent>{t('newSession')}</TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="session-list">
-        {sessions.map((session) => (
-          <div
-            key={session.session_id}
-            className={`session-item ${session.session_id === current?.session_id ? 'selected' : ''}`}
-          >
-            <Button
-              type="button"
-              onClick={() => {
-                void select(session.session_id);
-                onClose();
-              }}
-              variant="ghost"
-              className="session-select"
-            >
-              <span>{session.title.trim() || t('newSession')}</span>
-              <small>
-                {t(session.context_mode === 'group_transcript' ? 'group' : 'single')} /{' '}
-                {session.effective.persona_name}
-              </small>
-            </Button>
-            {session.session_id === current?.session_id ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
+              >
+                <MessageSquarePlus data-icon="inline-start" />
+                <span>{t('newSession')}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" disabled>
+                <Compass data-icon="inline-start" />
+                <span>{t('featureOne')}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" disabled>
+                <Boxes data-icon="inline-start" />
+                <span>{t('featureTwo')}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+        <SidebarGroupLabel className="shrink-0 px-5">{t('sessions')}</SidebarGroupLabel>
+        <SidebarContent className="session-list overflow-x-hidden overscroll-contain">
+          <SidebarGroup>
+            <SidebarMenu>
+              {sessions.map((session) => {
+                const title = session.title.trim() || t('newSession');
+                const selected = session.session_id === current?.session_id;
+                return (
+                  <SidebarMenuItem
+                    key={session.session_id}
+                    className={cn('session-item', selected && 'selected')}
+                  >
+                    <SidebarMenuButton
                       type="button"
-                      aria-label={t('deleteSession')}
-                      onClick={async () => {
-                        if (await confirm(t('deleteSessionConfirm'), { destructive: true }))
-                          void remove(session.session_id);
+                      className="session-select"
+                      title={title}
+                      isActive={selected}
+                      aria-current={selected ? 'page' : undefined}
+                      disabled={deleting === session.session_id}
+                      onClick={() => {
+                        void select(session.session_id);
+                        setOpenMobile(false);
                       }}
-                      variant="destructive"
-                      size="icon"
-                      className="session-delete"
-                    />
-                  }
-                >
-                  <Trash2 size={14} />
-                </TooltipTrigger>
-                <TooltipContent>{t('deleteSession')}</TooltipContent>
-              </Tooltip>
-            ) : null}
-          </div>
-        ))}
-      </div>
-      <div className="sidebar-footer">
-        <Button
-          type="button"
-          onClick={() => {
-            onOpenSettings();
-            onClose();
-          }}
-          variant="ghost"
-          className="sidebar-settings-button"
-        >
-          <Settings2 size={16} />
-          {t('settings')}
-        </Button>
-      </div>
-      {confirmation}
-    </aside>
+                    >
+                      <span>{title}</span>
+                    </SidebarMenuButton>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <SidebarMenuAction
+                            type="button"
+                            className="session-menu"
+                            showOnHover
+                            aria-label={t('sessionActions', { title })}
+                          />
+                        }
+                      >
+                        <MoreHorizontal />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            disabled={deleting !== null}
+                            onClick={() => void deleteSession(session.session_id)}
+                          >
+                            <Trash2 data-icon="inline-start" />
+                            {t('deleteSession')}
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter className="sidebar-footer shrink-0 p-3">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                type="button"
+                className="sidebar-settings-button"
+                onClick={() => {
+                  onOpenSettings();
+                  setOpenMobile(false);
+                }}
+              >
+                <Settings2 data-icon="inline-start" />
+                <span>{t('settings')}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+        {confirmation}
+      </Sidebar>
+    </>
   );
 }

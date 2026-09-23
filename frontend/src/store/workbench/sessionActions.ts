@@ -120,19 +120,18 @@ export const createSessionActions: WorkbenchActions<
   deleteSession: async (id) => {
     try {
       await chatApi.deleteSession(id);
+      const epoch = get().sessionEpoch;
       const remaining = get().sessions.filter((item) => item.session_id !== id);
-      const next = remaining[0] || (await chatApi.createSession());
+      const replacement = get().currentSession?.session_id === id && !remaining.length
+        ? await chatApi.createSession()
+        : null;
       set((state) => ({
-        sessions: remaining.length ? remaining : [next],
-        currentSession: next,
-        messages: [],
-        runs: [],
-        stepsByRunId: {},
-        sourceMessageId: null,
-        sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [],
-        sending: false, mutatingHistory: false,
+        sessions: [...state.sessions.filter((item) => item.session_id !== id), ...(replacement ? [replacement] : [])],
+        sessionVersion: state.sessionVersion + 1,
       }));
-      await get().refreshCurrent();
+      // A replacement request must not undo a later session selection.
+      if (get().currentSession?.session_id === id && get().sessionEpoch === epoch)
+        await get().selectSession(get().sessions[0].session_id);
     } catch (error) {
       set({ error: errorText(error) });
     }

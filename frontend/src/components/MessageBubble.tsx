@@ -1,4 +1,5 @@
 import { Textarea } from '@/components/ui/textarea';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
@@ -42,19 +43,27 @@ export function MessageBubble({ message }: { message: Message }) {
       createdAt={message.created_at}
       messageId={message.message_id}
     >
-      <div className="message">
-        {editing ? (
-          <Textarea
-            value={value}
-            onChange={(event) => setValue(event.currentTarget.value)}
-            rows={Math.max(3, value.split('\n').length)}
-          ></Textarea>
-        ) : (
-          <MessageParts parts={message.parts} />
-        )}
-        {messageImages(message).length ? <MessageImages attachments={messageImages(message)} /> : null}
-        {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
-      </div>
+      <Bubble
+        variant={isUser ? 'secondary' : 'ghost'}
+        align={isUser ? 'end' : 'start'}
+        className={editing ? 'w-full max-w-full' : undefined}
+      >
+        <BubbleContent className={editing ? 'w-full' : undefined}>
+          <div className="message">
+            {editing ? (
+              <Textarea
+                value={value}
+                onChange={(event) => setValue(event.currentTarget.value)}
+                rows={Math.max(3, value.split('\n').length)}
+              ></Textarea>
+            ) : (
+              <MessageParts parts={message.parts} />
+            )}
+            {messageImages(message).length ? <MessageImages attachments={messageImages(message)} /> : null}
+            {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
+          </div>
+        </BubbleContent>
+      </Bubble>
       {isUser ? (
         <MessageActions
           message={message}

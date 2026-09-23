@@ -1,124 +1,103 @@
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { MessageSquare } from 'lucide-react';
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  useMessageScroller,
+} from '@/components/ui/message-scroller';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import { MessageBubble } from './MessageBubble';
 import { RunReply } from './messages/RunReply';
 import { buildConversation } from './messages/turns';
 import { useWorkbenchStore } from '../store/useWorkbenchStore';
-import { useTranslation } from 'react-i18next';
 
 export function ChatView() {
-  const { t } = useTranslation(['personas', 'runs']);
+  return (
+    <MessageScrollerProvider autoScroll scrollEdgeThreshold={32}>
+      <Conversation />
+    </MessageScrollerProvider>
+  );
+}
+
+function Conversation() {
+  const { t } = useTranslation(['personas', 'chat']);
   const messages = useWorkbenchStore((state) => state.messages);
   const runs = useWorkbenchStore((state) => state.runs);
   const currentSession = useWorkbenchStore((state) => state.currentSession);
   const steps = useWorkbenchStore((state) => state.stepsByRunId);
   const showFullProcessing = useWorkbenchStore((state) => state.settings?.show_full_processing === true);
   const sending = useWorkbenchStore((state) => state.sending);
-  const view = useRef<HTMLElement | null>(null);
-  const content = useRef<HTMLDivElement | null>(null);
-  const following = useRef(true);
-  const [showLatest, setShowLatest] = useState(false);
+  const loading = useWorkbenchStore((state) => state.loading);
+  const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const items = useMemo(
     () => (currentSession ? buildConversation(currentSession.session_id, messages, runs, steps) : []),
     [currentSession?.session_id, messages, runs, steps],
   );
 
-  useLayoutEffect(() => {
-    following.current = true;
-    setShowLatest(false);
-  }, [currentSession?.session_id]);
-
   useEffect(() => {
-    const scroll = view.current;
-    const body = content.current;
-    if (!scroll || !body) return;
-    let frame = 0;
-    const update = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        if (following.current) scroll.scrollTop = scroll.scrollHeight;
-        setShowLatest(scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 120);
-      });
-    };
-    const observer = new ResizeObserver(update);
-    observer.observe(body);
-    observer.observe(scroll);
-    update();
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  }, [currentSession?.session_id]);
+    if (sending) scrollToEnd({ behavior: 'instant' });
+  }, [sending, scrollToEnd]);
 
-  useEffect(() => {
-    if (sending && view.current) {
-      following.current = true;
-      view.current.scrollTop = view.current.scrollHeight;
-    }
-  }, [sending]);
+  if (!currentSession) {
+    return (
+      <Empty className="chat-empty min-h-0" role={loading ? 'status' : undefined}>
+        <EmptyHeader>
+          {loading ? <Skeleton className="size-10 rounded-full" /> : null}
+          <EmptyTitle>{loading ? t('loading') : t('chat:loadFailed')}</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
-  if (!currentSession) return <div className="chat-empty">{t('loading')}</div>;
   return (
-    <div className="chat-scroll-container">
-      <section
-        ref={view}
+    <MessageScroller className="chat-scroll-container h-auto flex-1">
+      <MessageScrollerViewport
         className="chat-view"
-        onScroll={() => {
-          const scroll = view.current;
-          if (!scroll) return;
-          following.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 120;
-          setShowLatest(!following.current);
-        }}
+        aria-label={t('chat:messages')}
         onClickCapture={(event) => {
-          if ((event.target as Element).closest('button[aria-expanded]')) following.current = false;
+          const trigger = (event.target as Element).closest('button[aria-expanded]');
+          const anchor = trigger?.closest<HTMLElement>('[data-scroll-pause]');
+          // Hold the visible disclosure header using the scroller's own anchor API.
+          if (anchor?.dataset.messageId)
+            scrollToMessage(anchor.dataset.messageId, { align: 'nearest', behavior: 'instant' });
         }}
       >
-        <div
-          ref={content}
-          className="conversation-content"
-          role="log"
+        <MessageScrollerContent
+          className={cn('conversation-content', !items.length && 'justify-center')}
           aria-live="polite"
-          aria-relevant="additions"
         >
           {!items.length ? (
-            <div className="chat-empty">
-              <h2>{currentSession.effective.persona_name}</h2>
-            </div>
+            <MessageScrollerItem messageId="empty">
+              <Empty className="chat-empty">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <MessageSquare />
+                  </EmptyMedia>
+                  <EmptyTitle>{currentSession.effective.persona_name}</EmptyTitle>
+                  <EmptyDescription>{t('startChat')}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </MessageScrollerItem>
           ) : null}
-          {items.map((item) =>
-            item.kind === 'message' ? (
-              <MessageBubble key={item.id} message={item.message} />
-            ) : (
-              <RunReply key={item.id} reply={item.reply} showFullProcessing={showFullProcessing} />
-            ),
-          )}
-        </div>
-      </section>
-      {showLatest ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                aria-label={t('runs:latestMessages')}
-                onClick={() => {
-                  following.current = true;
-                  if (view.current) view.current.scrollTop = view.current.scrollHeight;
-                  setShowLatest(false);
-                }}
-                variant="ghost"
-                size="icon"
-                className="latest-message-button"
-              />
-            }
-          >
-            <ArrowDown size={17} />
-          </TooltipTrigger>
-          <TooltipContent>{t('runs:latestMessages')}</TooltipContent>
-        </Tooltip>
-      ) : null}
-    </div>
+          {items.map((item) => (
+            <MessageScrollerItem key={item.id} messageId={item.id}>
+              {item.kind === 'message' ? (
+                <MessageBubble message={item.message} />
+              ) : (
+                <RunReply reply={item.reply} showFullProcessing={showFullProcessing} />
+              )}
+            </MessageScrollerItem>
+          ))}
+        </MessageScrollerContent>
+      </MessageScrollerViewport>
+      <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')} />
+    </MessageScroller>
   );
 }

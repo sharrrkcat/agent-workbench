@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { answerConfirmation, chooseOption } from './controls';
+import { answerConfirmation, chooseOption, openSidebar } from './controls';
 
 const words = (locale: string, namespace: string) =>
   JSON.parse(
@@ -48,6 +48,7 @@ async function touchTargets(scope: Locator) {
 }
 
 async function openSettings(page: Page, name: string) {
+  await openSidebar(page);
   await page.locator('.session-sidebar').getByRole('button', { name, exact: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
 }

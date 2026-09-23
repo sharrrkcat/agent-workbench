@@ -1,4 +1,7 @@
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Marker, MarkerContent } from '@/components/ui/marker';
+import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Brain, ChevronRight, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -51,30 +54,32 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
       runId={run.run_id}
     >
       <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <div className={`reply-processing-header status-${run.status.toLowerCase()}`}>
-          <CollapsibleTrigger
-            render={
-              <Button
-                type="button"
-                disabled={ended && process.length === 0}
-                variant="ghost"
-                className="process-disclosure processing-toggle"
-              />
-            }
-          >
-            {process.length || !ended ? (
-              <ChevronRight size={14} className={expanded ? 'rotate-90' : ''} />
+        <MessageScrollerItem messageId={'disclosure-' + processId} data-scroll-pause>
+          <div className={`reply-processing-header status-${run.status.toLowerCase()}`}>
+            <CollapsibleTrigger
+              render={
+                <Button
+                  type="button"
+                  disabled={ended && process.length === 0}
+                  variant="ghost"
+                  className="process-disclosure processing-toggle"
+                />
+              }
+            >
+              {process.length || !ended ? (
+                <ChevronRight size={14} className={expanded ? 'rotate-90' : ''} />
+              ) : null}
+              {!ended ? <LoaderCircle size={14} className="animate-spin" /> : null}
+              <span>{t(ended ? 'elapsed' : 'processing', { seconds })}</span>
+            </CollapsibleTrigger>
+            {status ? (
+              <span className="reply-run-status" role="status">
+                {t(status)}
+              </span>
             ) : null}
-            {!ended ? <LoaderCircle size={14} className="animate-spin" /> : null}
-            <span>{t(ended ? 'elapsed' : 'processing', { seconds })}</span>
-          </CollapsibleTrigger>
-          {status ? (
-            <span className="reply-run-status" role="status">
-              {t(status)}
-            </span>
-          ) : null}
-          {!ended ? <RunCancelButton run={run} /> : null}
-        </div>
+            {!ended ? <RunCancelButton run={run} /> : null}
+          </div>
+        </MessageScrollerItem>
         <CollapsibleContent id={processId} className="processing-timeline">
           {process.map((item) =>
             item.kind === 'tools' ? (
@@ -97,12 +102,18 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
       </Collapsible>
       <RunApproval run={run} steps={reply.steps} messages={reply.messages} />
       {error ? (
-        <p className="reply-error" role="alert">
-          {run.error_code ? `${run.error_code}: ` : ''}
-          {errorKey ? t(errorKey) : error}
-        </p>
+        <Alert className="reply-error" variant="destructive">
+          <AlertDescription>
+            {run.error_code ? `${run.error_code}: ` : ''}
+            {errorKey ? t(errorKey) : error}
+          </AlertDescription>
+        </Alert>
       ) : null}
-      {answer?.metadata?.incomplete ? <p className="reply-incomplete">{t('incompleteAnswer')}</p> : null}
+      {answer?.metadata?.incomplete ? (
+        <Marker className="reply-incomplete">
+          <MarkerContent>{t('incompleteAnswer')}</MarkerContent>
+        </Marker>
+      ) : null}
       {answerParts.length ? (
         <div className="message reply-answer" data-message-id={answer?.message_id}>
           <MessageParts parts={answerParts} />

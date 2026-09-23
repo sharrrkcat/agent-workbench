@@ -64,6 +64,12 @@ References are validated before persistence. Unknown/removed fields return
 A waiting approval blocks new messages and direct calls. Active overlapping
 execution returns SESSION_BUSY. The explicit approval API resumes the same run.
 
+Deleting a different session from the sidebar preserves the current conversation,
+draft and selected context. Deleting the current session selects the first remaining
+session, or creates an empty one when it was the last. Delayed deletion/replacement
+responses preserve subsequent session selections. Failed deletion leaves the
+displayed state intact and reports the error.
+
 Binding PATCH bodies contain only knowledge_base_ids or worldbook_ids arrays;
 [] clears additions. Responses expose that array, read-only persona_* ids and
 effective_* ids. There is no mode field. The UI locks the Persona section and
@@ -90,9 +96,9 @@ ContextBuilder supports single_assistant and group_transcript projection, with
 none/current_message/recent_messages/session/selected_message policies, message
 and character bounds and explicit attachments. The current Persona's nonempty
 system prompt is always inserted once, independently of history mode; there is
-no include_system_prompt switch. The chat header/session dialog selects speakers
-and session configuration; selected-message
-context uses an explicit source message and is cleared on session changes.
+no include_system_prompt switch. The chat header selects the concrete model;
+the session dialog owns members/current speaker, conversation mode and configuration.
+Selected-message context uses an explicit source message and is cleared on session changes.
 Group transcripts preserve historical speaker labels and reply as the current
 speaker. Context sources are separate bounded data blocks, with compact
 diagnostics rather than copied content in metadata.
@@ -190,6 +196,12 @@ selected-context references; MessageParts owns presentation and attachment URLs.
 Speaker snapshots are presentation data. Metadata may hold counts, source refs
 and warnings, never full part bodies, prompts or secrets. Stream merging belongs
 to [runs/streaming](runs-streaming.md).
+
+User messages use right-aligned secondary bubbles; assistant replies use open
+body layout. Both retain historical identity, avatars and time. Message bodies
+use 16px text with Markdown headings, lists, quotes, code, tables and media.
+Wide code, tables and tool results scroll inside their own bounds; tool results
+are limited to 320px height on desktop and 240px below 768px.
 
 ## Auxiliary tasks and titles
 

@@ -7,6 +7,7 @@ import { ErrorBanner } from './components/ErrorBanner';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
+import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
 import { useWorkbenchStore } from './store/useWorkbenchStore';
 import { useModelEvents } from './hooks/useModelEvents';
 import type { LeaveGuard } from './components/settings/resources/ResourceUI';
@@ -28,7 +29,6 @@ export default function App() {
   const [location, setLocation] = useState(readLocation);
   const committed = useRef(location);
   const navigating = useRef(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const leaveSettings = useRef<LeaveGuard>(async () => true);
   const setLeaveSettings = useCallback((guard: LeaveGuard) => {
     leaveSettings.current = guard;
@@ -170,23 +170,17 @@ export default function App() {
       />
     );
   return (
-    <div className="app-shell">
-      {sidebarOpen ? <div className="mobile-sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}
-      <SessionSidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onOpenSettings={() => void navigate('/settings')}
-      />
-      <main className="workspace">
-        <ChatHeader
-          onToggleSidebar={() => setSidebarOpen((open) => !open)}
-          onOpenSettings={(section = 'general') => void navigate('/settings?tab=' + section)}
-        />
+    <SidebarProvider className="app-shell h-dvh min-h-0 overflow-hidden">
+      <SessionSidebar onOpenSettings={() => void navigate('/settings')} />
+      <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
+        <ChatHeader onOpenSettings={(section = 'general') => void navigate('/settings?tab=' + section)} />
         <ErrorBanner />
-        <ChatView />
-        <ChatInput key={currentSession?.session_id} />
-        <StatusBar />
-      </main>
-    </div>
+        <ChatView key={currentSession?.session_id} />
+        <div className="chat-bottom">
+          <ChatInput key={currentSession?.session_id} />
+          <StatusBar />
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

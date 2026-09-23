@@ -1,5 +1,6 @@
 import { CollapsibleTrigger, CollapsibleContent, Collapsible } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
+import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Check, ChevronRight, Clock3, LoaderCircle, Terminal, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,14 +18,16 @@ export function ToolGroup({ calls, run }: { calls: ToolEntry[]; run: Run }) {
   const id = `commands-${run.run_id}-${calls[0].call.tool_call_id}`;
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded} className="tool-group">
-      <CollapsibleTrigger
-        render={<Button type="button" variant="ghost" className="process-disclosure tool-group-toggle" />}
-      >
-        <ChevronRight size={14} className={expanded ? 'expanded' : ''} />
-        <Terminal size={15} />
-        <span>{t(active ? 'commandsRunning' : 'commands', { count: calls.length })}</span>
-        {errors ? <span className="tool-group-errors">{t('commandIssues', { count: errors })}</span> : null}
-      </CollapsibleTrigger>
+      <MessageScrollerItem messageId={'disclosure-' + id} data-scroll-pause>
+        <CollapsibleTrigger
+          render={<Button type="button" variant="ghost" className="process-disclosure tool-group-toggle" />}
+        >
+          <ChevronRight size={14} className={expanded ? 'expanded' : ''} />
+          <Terminal size={15} />
+          <span>{t(active ? 'commandsRunning' : 'commands', { count: calls.length })}</span>
+          {errors ? <span className="tool-group-errors">{t('commandIssues', { count: errors })}</span> : null}
+        </CollapsibleTrigger>
+      </MessageScrollerItem>
       <CollapsibleContent id={id} className="tool-group-list">
         {calls.map((entry) => (
           <ToolCommand key={entry.call.tool_call_id} entry={entry} run={run} />
@@ -49,13 +52,15 @@ function ToolCommand({ entry, run }: { entry: ToolEntry; run: Run }) {
   const id = `command-${run.run_id}-${entry.call.tool_call_id}`;
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded} className={`tool-command command-${status}`}>
-      <CollapsibleTrigger
-        render={<Button type="button" variant="ghost" className="process-disclosure tool-command-toggle" />}
-      >
-        <ChevronRight size={13} className={expanded ? 'expanded' : ''} />
-        <Icon size={14} className={status === 'running' ? 'process-spinner' : ''} />
-        <span>{t(`commandStatus.${status}`, { name: entry.call.tool_name })}</span>
-      </CollapsibleTrigger>
+      <MessageScrollerItem messageId={'disclosure-' + id} data-scroll-pause>
+        <CollapsibleTrigger
+          render={<Button type="button" variant="ghost" className="process-disclosure tool-command-toggle" />}
+        >
+          <ChevronRight size={13} className={expanded ? 'expanded' : ''} />
+          <Icon size={14} className={status === 'running' ? 'animate-spin' : ''} />
+          <span>{t(`commandStatus.${status}`, { name: entry.call.tool_name })}</span>
+        </CollapsibleTrigger>
+      </MessageScrollerItem>
       <CollapsibleContent className="tool-command-details" id={id}>
         <div className="tool-detail-label">
           <span>{t('arguments')}</span>

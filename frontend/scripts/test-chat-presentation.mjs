@@ -141,6 +141,7 @@ const views = createModuleLoader({
   [sourceUrl('store/useWorkbenchStore.ts')]: mockModule({ useWorkbenchStore: (selector) => selector(viewState) }),
 });
 const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).exports;
+const { MessageScrollerProvider } = (await views('../src/components/ui/message-scroller.tsx')).exports;
 const { MessageBubble } = (await views('../src/components/MessageBubble.tsx')).exports;
 const { isContextMessage, contextMessageLabel } = (await views('../src/components/messages/messageContent.ts')).exports;
 const imageOnly = { ...user, parts: [], metadata: { attachments: [
@@ -149,7 +150,8 @@ const imageOnly = { ...user, parts: [], metadata: { attachments: [
 assert.ok(isContextMessage(imageOnly));
 assert.equal(isContextMessage({ ...imageOnly, metadata: { ...imageOnly.metadata, incomplete: true } }), false);
 assert.equal(contextMessageLabel(imageOnly), 'photo.png');
-const render = (reply, showFullProcessing) => renderToStaticMarkup(React.createElement(RunReply, { reply, showFullProcessing }));
+const render = (reply, showFullProcessing) => renderToStaticMarkup(
+  React.createElement(MessageScrollerProvider, { autoScroll: true }, React.createElement(RunReply, { reply, showFullProcessing })));
 const approvalStep = { step_id: 'approval', kind: 'approval', status: 'running', run_id: 'r', metadata: { tool_call_id: 'a', risk: 'file' } };
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
@@ -160,8 +162,8 @@ for (const locale of ['en', 'zh-CN']) {
   const shown = render(active, true);
   assert.match(shown, /first reasoning/);
   assert.doesNotMatch(shown, /aGk=|tool-command-details/);
-  assert.equal((shown.match(/class="message-avatar"/g) || []).length, 1);
-  assert.equal((shown.match(/class="message-row/g) || []).length, 1);
+  assert.equal((shown.match(/data-slot="message-avatar"/g) || []).length, 1);
+  assert.equal((shown.match(/data-slot="message"/g) || []).length, 1);
   const completed = render(reply, true);
   assert.doesNotMatch(completed, /first reasoning|processing-timeline/);
   assert.match(completed, /final answer/);
@@ -172,6 +174,7 @@ for (const locale of ['en', 'zh-CN']) {
   assert.doesNotMatch(waiting, /first reasoning/);
   assert.ok(waiting.includes(i18n.t('runs:approve')));
   assert.ok(waiting.includes(i18n.t('runs:reject')));
+  assert.doesNotMatch(waiting, /role="switch"/, 'Approval is one button without a nested switch');
   assert.match(render(buildReply(failedEmpty, [], []), false), /MODEL_NOT_CONFIGURED/);
   const imageHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: imageOnly }));
   assert.match(imageHtml, /attachments\/aaaa.png/);
