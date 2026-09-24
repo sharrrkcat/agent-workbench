@@ -120,9 +120,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=18767)
     args = parser.parse_args()
-    with TemporaryDirectory(prefix="workbench-presentation-") as directory:
+    with TemporaryDirectory(prefix="cogita-presentation-") as directory:
         root = Path(directory)
-        os.environ["AGENT_WORKBENCH_ATTACHMENTS_DIR"] = str(root / "data/attachments")
+        os.environ["COGITA_ATTACHMENTS_DIR"] = str(root / "data/attachments")
         note = root / "data/knowledge/note.txt"
         note.parent.mkdir(parents=True)
         note.write_text("Approved browser fixture result", encoding="utf-8")

@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 
-PORTABLE_NAME = "agent-workbench-portable"
+PORTABLE_NAME = "cogita-portable"
 
 
 def project_root() -> Path:
@@ -14,8 +14,8 @@ def project_root() -> Path:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a minimal portable Workbench folder.")
-    parser.add_argument("--zip", action="store_true", help="Also create build/agent-workbench-portable.zip")
+    parser = argparse.ArgumentParser(description="Build a minimal portable Cogita folder.")
+    parser.add_argument("--zip", action="store_true", help="Also create build/cogita-portable.zip")
     return parser.parse_args()
 
 

@@ -43,7 +43,7 @@ class ActiveRunRegistry:
         self._tasks.clear()
 
 
-class WorkbenchRuntime:
+class CogitaRuntime:
     """Recognize only registered /tool_name inputs; other text goes to chat."""
 
     def __init__(self, chat_runner: ChatRunner, active_runs: ActiveRunRegistry | None = None) -> None:

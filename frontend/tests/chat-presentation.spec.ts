@@ -61,7 +61,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`${locale} ${viewport.width}`, () => {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test.beforeEach(async ({ page }) => {
-        await page.addInitScript((locale) => localStorage.setItem('agent-workbench.locale', locale), locale);
+        await page.addInitScript((locale) => localStorage.setItem('cogita.locale', locale), locale);
       });
 
       test('nested history stays compact and long results stay bounded', async ({ page, request }, info) => {

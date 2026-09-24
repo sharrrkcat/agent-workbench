@@ -45,7 +45,7 @@ def create_app(
     frontend_dist: str | Path | None = None,
     root: str | Path | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Agent Workbench", lifespan=runtime_lifespan)
+    app = FastAPI(title="Cogita", lifespan=runtime_lifespan)
     app.state.runtime_state = runtime_state or build_runtime_state(
         adapter_factory=adapter_factory,
         database_url=database_url,
@@ -175,7 +175,7 @@ class FrontendRoute(APIRoute):
 
 
 def _resolve_frontend_dist(frontend_dist: str | Path | None) -> Path:
-    configured = frontend_dist or os.environ.get("AGENT_WORKBENCH_FRONTEND_DIST")
+    configured = frontend_dist or os.environ.get("COGITA_FRONTEND_DIST")
     if configured:
         return Path(configured).expanduser().resolve()
     return (Path(__file__).resolve().parents[2] / "frontend" / "dist").resolve()

@@ -122,7 +122,7 @@ def build_app(engine, token):
 
     @app.get("/v1/models")
     async def models():
-        return {"object": "list", "data": [{"id": "managed", "object": "model", "owned_by": "workbench"}]}
+        return {"object": "list", "data": [{"id": "managed", "object": "model", "owned_by": "cogita"}]}
 
     @app.post("/v1/chat/completions")
     async def chat(request: Request):
@@ -148,16 +148,16 @@ def build_app(engine, token):
 def main():
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1",
                       TOKENIZERS_PARALLELISM="false")
-    ready = Path(os.environ["WORKBENCH_WORKER_READY"])
+    ready = Path(os.environ["COGITA_WORKER_READY"])
     listener, loop = None, None
     try:
         with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
             with stage("worker_setup"):
-                token = os.environ["WORKBENCH_WORKER_TOKEN"]
+                token = os.environ["COGITA_WORKER_TOKEN"]
                 if len(token) < 32:
                     raise WorkerError("INVALID_REQUEST")
-                options = options_request(json.loads(os.environ["WORKBENCH_RUNTIME_OPTIONS"]))
-                path = local_model(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve(), os.environ["WORKBENCH_MODEL_REF"])
+                options = options_request(json.loads(os.environ["COGITA_RUNTIME_OPTIONS"]))
+                path = local_model(Path(os.environ["COGITA_MODELS_ROOT"]).resolve(), os.environ["COGITA_MODEL_REF"])
                 listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 listener.bind(("127.0.0.1", 0))
                 listener.listen(128)

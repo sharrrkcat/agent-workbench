@@ -1,5 +1,5 @@
 import type { Run, RunStatus, RunStep, RunStepKind } from '../../types/runs';
-import { older, terminal } from '../../store/workbench/mergeState';
+import { older, terminal } from '../../store/cogita/mergeState';
 
 export type PetTaskState = {
   run_id: string | null;

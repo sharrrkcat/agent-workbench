@@ -53,7 +53,7 @@ async def managed_runtime(tmp_path, **values):
     state.runtime_supervisor = service
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=("127.0.0.1", 40001)),
-                                   base_url="http://workbench.test", headers=HEADERS) as caller:
+                                   base_url="http://cogita.test", headers=HEADERS) as caller:
             yield service, manager, model, caller, kokoro
     finally:
         await manager.close()

@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 for (const locale of ['en', 'zh-CN']) {
   const labels = JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/llm.json`, import.meta.url), 'utf8'));
   test(`Qwen Base architecture, defaults and saved controls (${locale})`, async ({ page, request }, info) => {
-    await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+    await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
     expect((await request.post('/__test__/runtimes', { data: {} })).ok()).toBeTruthy();
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));

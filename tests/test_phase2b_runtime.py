@@ -205,7 +205,7 @@ def test_repair_reuses_checked_native_cache_and_redownloads_corruption(tmp_path)
             await service.task
             assert service.installation().state == "installed"
         assert len(calls) == 1
-        archive = service.base / ".cache/workbench-artifacts" / service.release.native_cpu.artifact.sha256
+        archive = service.base / ".cache/cogita-artifacts" / service.release.native_cpu.artifact.sha256
         archive.write_bytes(b"broken cache")
         await service.submit("repair")
         await service.task

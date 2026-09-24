@@ -6,7 +6,7 @@ import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
 import type { Session, SessionPatch } from '../../types/chat';
 import type { ToolRunResponse } from '../../types/tools';
 
-export type WorkbenchState = {
+export type CogitaState = {
   sessions: Session[];
   currentSession: Session | null;
   messages: Message[];
@@ -49,11 +49,11 @@ export type WorkbenchState = {
   setSettings: (settings: GeneralSettings) => void;
 };
 
-export type WorkbenchActions<K extends keyof WorkbenchState> = StateCreator<
-  WorkbenchState,
+export type CogitaActions<K extends keyof CogitaState> = StateCreator<
+  CogitaState,
   [],
   [],
-  Pick<WorkbenchState, K>
+  Pick<CogitaState, K>
 >;
-export type WorkbenchSet = StoreApi<WorkbenchState>['setState'];
-export type WorkbenchGet = StoreApi<WorkbenchState>['getState'];
+export type CogitaSet = StoreApi<CogitaState>['setState'];
+export type CogitaGet = StoreApi<CogitaState>['getState'];

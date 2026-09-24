@@ -269,7 +269,7 @@ def _data_url_mime_type(data_url: str) -> str:
 
 
 def attachments_root() -> Path:
-    configured = os.getenv("AGENT_WORKBENCH_ATTACHMENTS_DIR")
+    configured = os.getenv("COGITA_ATTACHMENTS_DIR")
     root = Path(configured) if configured else Path("./data/attachments")
     return root.resolve()
 

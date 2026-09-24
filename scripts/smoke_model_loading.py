@@ -80,7 +80,7 @@ async def minimal_inference(manager, profile, args, voice):
         created = await manager.create_voice_reference(profile.id, reference.read_bytes(), reference.suffix[1:],
             credential_id(manager.settings.get().external_api_key))
         voice = created["voice_id"]
-    result = await manager.speech(profile.id, SpeechRequest(model=profile.alias, input="Hello from Workbench.",
+    result = await manager.speech(profile.id, SpeechRequest(model=profile.alias, input="Hello from Cogita.",
         voice=voice or "af_heart", response_format="wav"))
     assert result.data.startswith(b"RIFF") and len(result.data) > 44
     return {"kind": "speech", "state": "passed", "bytes": len(result.data)}, voice
@@ -173,7 +173,7 @@ async def main(args):
     args.root = args.root.resolve()
     if platform.system() != "Windows":
         raise RuntimeError("This real-model matrix currently targets Windows")
-    engine = get_engine(f"sqlite:///{args.root / 'data/agent_workbench.db'}")
+    engine = get_engine(f"sqlite:///{args.root / 'data/cogita.db'}")
     try:
         if migrations.current_revision(engine) != migrations.HEAD_REVISION:
             raise RuntimeError("Upgrade the database to Alembic head before acceptance")

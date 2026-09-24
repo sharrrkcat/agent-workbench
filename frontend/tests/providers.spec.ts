@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 for (const locale of ['en', 'zh-CN']) {
   const labels = JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/llm.json`, import.meta.url), 'utf8'));
   test(`independent provider key editing and local runtime (${locale})`, async ({ page, request }) => {
-    await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+    await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
     await page.goto('/settings?tab=models');
     await expect(page.locator('.settings-content [role="tablist"]')).toHaveCount(0);
     await navigateSettings(page, labels.title, labels.providers);

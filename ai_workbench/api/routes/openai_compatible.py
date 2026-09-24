@@ -32,18 +32,18 @@ router = APIRouter(prefix="/v1", tags=["openai-compatible"])
 
 
 @router.get("/models", response_model=ModelList, response_model_exclude_unset=True,
-            responses=error_responses(401, 403, 422, 503), summary="List externally visible models; optional kind is a Workbench extension")
+            responses=error_responses(401, 403, 422, 503), summary="List externally visible models; optional kind is a Cogita extension")
 async def list_models(request: Request, kind: ModelKind | None = None, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
     return {"object": "list", "data": [
-        {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "workbench"}
+        {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "cogita"}
         for p in state.model_profiles.list(kind) if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts", "vision", "image_embedding"}
     ]}
 
 
 @router.post("/images/tags", response_model=ImageTagsResponse, openapi_extra=request_body(VisionRequest),
-             summary="Tag static images with WD14 (Workbench extension)",
+             summary="Tag static images with WD14 (Cogita extension)",
              responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 502, 503, 504))
 async def image_tags(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
@@ -55,7 +55,7 @@ async def image_tags(request: Request, state: RuntimeState = Depends(get_state))
 
 
 @router.post("/images/embeddings", response_model=ImageEmbeddingResponse, openapi_extra=request_body(ImageEmbeddingRequest),
-             summary="Embed static images or text with local SigLIP (Workbench extension)",
+             summary="Embed static images or text with local SigLIP (Cogita extension)",
              responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 503, 504))
 async def image_embeddings(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
@@ -77,7 +77,7 @@ def embedding_data(vectors, encoding_format):
 
 
 @router.get("/audio/voices", response_model=VoiceList, responses=error_responses(400, 401, 403, 404, 503),
-            summary="List available voices (Workbench extension)")
+            summary="List available voices (Cogita extension)")
 async def audio_voices(request: Request, model: str | None = None, source: Literal["preset", "temporary"] | None = None,
                        state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
@@ -99,7 +99,7 @@ async def audio_voices(request: Request, model: str | None = None, source: Liter
 @router.post("/audio/voice-references", response_model=VoiceReferenceResponse,
              openapi_extra=request_body(VoiceReferenceUpload, "multipart/form-data"),
              responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 502, 503, 504),
-             summary="Create a temporary voice ID (Workbench extension)")
+             summary="Create a temporary voice ID (Cogita extension)")
 async def create_voice_reference(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
@@ -132,7 +132,7 @@ async def create_voice_reference(request: Request, state: RuntimeState = Depends
 
 @router.delete("/audio/voice-references/{voice_id}", response_model=VoiceReferenceDeleted,
                responses=error_responses(400, 401, 403, 404, 409, 503),
-               summary="Delete an unused temporary voice ID (Workbench extension)")
+               summary="Delete an unused temporary voice ID (Cogita extension)")
 async def delete_voice_reference(voice_id: str, request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)

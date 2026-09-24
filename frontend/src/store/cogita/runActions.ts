@@ -1,10 +1,10 @@
-import type { WorkbenchActions } from './state';
+import type { CogitaActions } from './state';
 import { errorText, mergeRuns, mergeSteps, toolResponseState, pruneHistoryState, runtimeResponseState } from './mergeState';
 
 import { runsApi } from '../../api/runs';
 import { toolsApi } from '../../api/tools';
 
-export const createRunActions: WorkbenchActions<'deleteRun' | 'retryRun' | 'cancelRun' | 'resolveApproval' | 'callTool'> = (set, get) => ({
+export const createRunActions: CogitaActions<'deleteRun' | 'retryRun' | 'cancelRun' | 'resolveApproval' | 'callTool'> = (set, get) => ({
   deleteRun: async (runId) => {
     if (get().mutatingHistory) return;
     const epoch = get().sessionEpoch;

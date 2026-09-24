@@ -155,14 +155,14 @@ def main():
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
     with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
         with stage("worker_setup"):
-            token = os.environ["WORKBENCH_WORKER_TOKEN"]
+            token = os.environ["COGITA_WORKER_TOKEN"]
             if len(token) < 32:
                 raise RuntimeError("Worker token is invalid")
-            worker = Worker(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve())
+            worker = Worker(Path(os.environ["COGITA_MODELS_ROOT"]).resolve())
             server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
             server.daemon_threads = True
         with stage("ready_file"):
-            publish_ready(Path(os.environ["WORKBENCH_WORKER_READY"]), {"port": server.server_port, "protocol_version": PROTOCOL_VERSION})
+            publish_ready(Path(os.environ["COGITA_WORKER_READY"]), {"port": server.server_port, "protocol_version": PROTOCOL_VERSION})
     try:
         server.serve_forever()
     finally:

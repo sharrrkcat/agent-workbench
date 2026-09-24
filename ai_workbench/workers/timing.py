@@ -10,8 +10,8 @@ import re
 import time
 from uuid import UUID
 
-TRACE_ENV = "WORKBENCH_LOAD_TRACE"
-TRACE_HEADER = "X-Workbench-Load-Trace"
+TRACE_ENV = "COGITA_LOAD_TRACE"
+TRACE_HEADER = "X-Cogita-Load-Trace"
 TIMING_PREFIX = "model_timing "
 _current: ContextVar[LoadTrace | None] = ContextVar("model_load_trace", default=None)
 _FIELDS = {"load_id", "model_profile_id", "source_type", "engine", "version", "device", "trigger", "operation"}

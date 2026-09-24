@@ -18,7 +18,7 @@ from tests.model_fixtures import MockOpenAI, configure_model
 
 @pytest.fixture
 def app_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     upstream = MockOpenAI()
     with TestClient(create_app(use_memory=True, root=tmp_path, adapter_factory=upstream.factory),
                     client=("127.0.0.1", 40000)) as client:
@@ -39,6 +39,7 @@ def test_internal_chat_and_external_nonstream_share_transport_and_parameters(app
     client, upstream = app_client
     profile = configure_model(client, parameters={"temperature": 0.4, "top_p": 0.8, "max_tokens": 123})
     headers = enable_external(client)
+    assert [model["owned_by"] for model in client.get("/v1/models", headers=headers).json()["data"]] == ["cogita"]
     session = client.post("/api/sessions", json={}).json()
     result = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "hello"})
     assert result.json()["success"] is True, result.text

@@ -1,4 +1,4 @@
-import type { WorkbenchState } from './state';
+import type { CogitaState } from './state';
 
 import { ApiError } from '../../api/http';
 
@@ -52,13 +52,13 @@ export function compareTime(a: string, b: string): number {
   return older(a, b) ? -1 : older(b, a) ? 1 : 0;
 }
 
-export function retainedMessages(state: WorkbenchState, messages: Message[]): Message[] {
+export function retainedMessages(state: CogitaState, messages: Message[]): Message[] {
   const messageIds = new Set(state.deletedMessageIds);
   const runIds = new Set(state.deletedRunIds);
   return messages.filter((message) => !messageIds.has(message.message_id) && !runIds.has(message.run_id || ''));
 }
 
-export function pruneHistoryState(state: WorkbenchState, change: HistoryPruned): Partial<WorkbenchState> {
+export function pruneHistoryState(state: CogitaState, change: HistoryPruned): Partial<CogitaState> {
   const deletedMessageIds = [...new Set([...state.deletedMessageIds, ...change.deleted_message_ids])];
   const deletedRunIds = [...new Set([...state.deletedRunIds, ...change.deleted_run_ids])];
   const next = { ...state, deletedMessageIds, deletedRunIds };
@@ -75,7 +75,7 @@ export function pruneHistoryState(state: WorkbenchState, change: HistoryPruned):
   };
 }
 
-export function runtimeResponseState(state: WorkbenchState, response: RuntimeResponse): Partial<WorkbenchState> {
+export function runtimeResponseState(state: CogitaState, response: RuntimeResponse): Partial<CogitaState> {
   if (response.session?.session_id !== state.currentSession?.session_id) return {};
   const pruned = response.deleted_message_ids && response.deleted_run_ids
     ? pruneHistoryState(state, { deleted_message_ids: response.deleted_message_ids, deleted_run_ids: response.deleted_run_ids }) : {};
@@ -104,7 +104,7 @@ export function mergeSteps(existing: Record<string, RunStep[]>, steps: RunStep[]
   return result;
 }
 
-export function toolResponseState(state: WorkbenchState, response: ToolRunResponse): Partial<WorkbenchState> {
+export function toolResponseState(state: CogitaState, response: ToolRunResponse): Partial<CogitaState> {
   if (state.currentSession?.session_id !== response.run.session_id || state.deletedRunIds.includes(response.run.run_id)) return {};
   const previous = state.runs.find((run) => run.run_id === response.run.run_id);
   const acceptSession = !previous || !older(response.run.updated_at, previous.updated_at);

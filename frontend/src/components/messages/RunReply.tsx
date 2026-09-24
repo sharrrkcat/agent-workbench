@@ -6,7 +6,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/component
 import { Brain, ChevronRight, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { terminal } from '../../store/workbench/mergeState';
+import { terminal } from '../../store/cogita/mergeState';
 import type { Run } from '../../types/runs';
 import { MessageFrame } from './MessageFrame';
 import { MessageParts } from './MessageParts';

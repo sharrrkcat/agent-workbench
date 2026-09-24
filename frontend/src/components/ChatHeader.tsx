@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelsStore } from '../store/useModelsStore';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { useCogitaStore } from '../store/useCogitaStore';
 import type { SettingsSection } from './settings/navigation';
 import { SessionSettingsDialog } from './personas/SessionSettingsDialog';
 import { ModelSelect } from './personas/ConfigurationFields';
@@ -13,8 +13,8 @@ import { ModelSelect } from './personas/ConfigurationFields';
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: (section?: SettingsSection) => void }) {
   const { t } = useTranslation('personas');
   const [editing, setEditing] = useState(false);
-  const session = useWorkbenchStore((state) => state.currentSession);
-  const updateSession = useWorkbenchStore((state) => state.updateSession);
+  const session = useCogitaStore((state) => state.currentSession);
+  const updateSession = useCogitaStore((state) => state.updateSession);
   const profiles = useModelsStore((state) => state.profiles);
   const title = session?.title?.trim() || t('newSession');
   return (

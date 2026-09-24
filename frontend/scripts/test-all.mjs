@@ -5,6 +5,7 @@ for (const script of [
   'check-i18n',
   'check-doc-links',
   'test-module-loader',
+  'test-i18n',
   'test-contracts',
   'test-resource-management',
   'test-session-settings',

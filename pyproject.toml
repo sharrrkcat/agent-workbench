@@ -1,7 +1,7 @@
 [project]
-name = "agent-workbench"
+name = "cogita"
 version = "0.1.0"
-description = "A lightweight local AI workbench with a compact chat path and explicit core services."
+description = "A local chat application and OpenAI-compatible model service."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

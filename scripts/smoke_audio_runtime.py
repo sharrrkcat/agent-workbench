@@ -35,7 +35,7 @@ async def smoke(args):
     if platform.system() != "Windows":
         raise RuntimeError("This acceptance command supports Windows only")
     root = args.root.resolve()
-    engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
+    engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor

@@ -32,7 +32,7 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
   test.describe(`resources ${locale} ${viewport.width}`, () => {
     test.use({ viewport, hasTouch: viewport.width === 390 });
     test.beforeEach(async ({ page }) => {
-      await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+      await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
     });
     const l = labels(locale);
 
@@ -186,7 +186,7 @@ test('stale source previews do not replace a new selection, and rejected uploads
   const base = await (await request.post('/api/knowledge/bases', { data: { name: 'Race fixture', embedding_model_profile_id: await modelId(request) } })).json();
   const ids: string[] = [];
   for (const name of ['First', 'Second']) ids.push((await (await request.post(`/api/knowledge/bases/${base.id}/sources`, { data: { title: name, text: name + ' content' } })).json()).source_id);
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=knowledge');
   await page.getByRole('button', { name: 'Manage Race fixture', exact: true }).click();
   let release!: () => void;
@@ -213,7 +213,7 @@ test('stale source previews do not replace a new selection, and rejected uploads
 });
 
 test('advanced settings retain nullable fields and invalid drafts block departure', async ({ page, request }) => {
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=knowledge');
   await navigateSettings(page, 'Knowledge', 'Global settings');
   const advanced = page.locator('.resource-advanced'); await advanced.locator(':scope > [data-slot="collapsible-trigger"]').click();
@@ -245,7 +245,7 @@ test('managed resources bind through Persona and session editors and enter chat 
     await request.post(`/api/knowledge/bases/${base.id}/sources`, { data: { title: name, text: name + ' alpha context' } });
     bases.push(base);
   }
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=personas');
   await page.getByRole('button', { name: 'Add persona', exact: true }).click();
   let dialog = page.getByRole('dialog');

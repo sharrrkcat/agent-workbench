@@ -1,1 +1,1 @@
-"""Public transport schemas for the compact Workbench core."""
+"""Public transport schemas for the compact Cogita core."""

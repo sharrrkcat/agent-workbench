@@ -467,7 +467,7 @@ class RuntimeSupervisor:
         archives = []
         self._stage(job, "native_" + device, log)
         for index, artifact in enumerate(artifacts):
-            archive = contained(self.base, self.base / ".cache" / "workbench-artifacts" / artifact.sha256)
+            archive = contained(self.base, self.base / ".cache" / "cogita-artifacts" / artifact.sha256)
             if not archive.is_file() or await file_digest(archive) != artifact.sha256:
                 staged_archive = staging / f"{device}-{index}"
                 await self._download(artifact, staged_archive, job, offset=offset,

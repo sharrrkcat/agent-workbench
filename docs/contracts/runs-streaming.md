@@ -103,7 +103,7 @@ preserving these incomplete messages and tool results. User-requested cancellati
 returns the cancelled run through REST, without an HTTP failure; external task
 shutdown still propagates cancellation.
 
-useWorkbenchStore composes session, message and run actions into one Zustand
+useCogitaStore composes session, message and run actions into one Zustand
 store. Shared merge functions preserve atomic session/message/run/step updates.
 Refreshes begun before newer events cannot overwrite live content or approvals.
 Run/step timestamps retain microsecond ordering; old events cannot restore a

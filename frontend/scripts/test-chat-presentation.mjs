@@ -9,8 +9,8 @@ const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { buildReply, buildConversation, toolEntryStatus } = (await load('../src/components/messages/turns.ts')).exports;
 const { applyMessageEvent } = (await load('../src/store/messageStream.ts')).exports;
-const { useWorkbenchStore: store } = (await load('../src/store/useWorkbenchStore.ts')).exports;
-const { toolResponseState } = (await load('../src/store/workbench/mergeState.ts')).exports;
+const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
+const { toolResponseState } = (await load('../src/store/cogita/mergeState.ts')).exports;
 const at = (n) => `2026-09-07T00:00:00.${String(n).padStart(6, '0')}Z`;
 const run = { run_id: 'r', session_id: 's', persona_id: 'p', kind: 'chat', status: 'RUNNING',
   created_at: at(2), started_at: at(2), updated_at: at(3), metadata: { input_message_id: 'u', configuration: { persona_name: 'Original speaker' } } };
@@ -138,7 +138,7 @@ await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { esca
 let viewState = { ...store.getState(), currentSession: session, runs: [run], messages: [calls], stepsByRunId: {}, resolvingApprovals: [] };
 const views = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
-  [sourceUrl('store/useWorkbenchStore.ts')]: mockModule({ useWorkbenchStore: (selector) => selector(viewState) }),
+  [sourceUrl('store/useCogitaStore.ts')]: mockModule({ useCogitaStore: (selector) => selector(viewState) }),
 });
 const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).exports;
 const { MessageScrollerProvider } = (await views('../src/components/ui/message-scroller.tsx')).exports;

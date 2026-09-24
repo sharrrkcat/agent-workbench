@@ -12,7 +12,7 @@ for (const locale of ['en', 'zh-CN']) {
           name: `Source fixture ${locale} ${width}`, connection: { base_url: 'https://provider.test/v1' },
         } });
         const provider = await created.json();
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         await page.route(`**/api/models/providers/${provider.id}/models`, (route) => route.fulfill({
           status: 502, json: { error: { code: 'PROVIDER_ERROR', message: 'Discovery fixture failure' } },
         }));
@@ -80,7 +80,7 @@ for (const locale of ['en', 'zh-CN']) {
       await route.fulfill({ json: { models: ['obsolete-suggestion'] } });
     });
     await page.route(`**/api/models/providers/${providers[1].id}/models`, (route) => route.fulfill({ json: { models: ['current-suggestion'] } }));
-    await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+    await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
     await page.goto('/settings?tab=models');
     await page.getByRole('button', { name: labels.addModel, exact: true }).click();
     const dialog = page.getByRole('dialog');

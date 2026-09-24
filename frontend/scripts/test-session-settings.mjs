@@ -83,7 +83,7 @@ let headerSession = { model_profile_id: 'preferred', current_persona_id: 'chat',
 const headerLoad = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: (selector) => selector({ profiles }) }),
-  [sourceUrl('store/useWorkbenchStore.ts')]: mockModule({ useWorkbenchStore: (selector) => selector({ currentSession: headerSession, updateSession: () => {} }) }),
+  [sourceUrl('store/useCogitaStore.ts')]: mockModule({ useCogitaStore: (selector) => selector({ currentSession: headerSession, updateSession: () => {} }) }),
 });
 const { ChatHeader } = (await headerLoad('../src/components/ChatHeader.tsx')).exports;
 const { SidebarProvider } = (await headerLoad('../src/components/ui/sidebar.tsx')).exports;

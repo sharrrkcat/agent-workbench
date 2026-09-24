@@ -8,7 +8,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`Speech seed ${locale} ${viewport.width}`, () => {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test('save zero, clear seed and reset on architecture changes', async ({ page, request }, info) => {
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         expect((await request.post('/__test__/runtimes', { data: {} })).ok()).toBeTruthy();
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));

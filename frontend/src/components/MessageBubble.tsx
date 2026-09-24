@@ -2,7 +2,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { useCogitaStore } from '../store/useCogitaStore';
 import type { Message } from '../types/messages';
 import { MessageFrame } from './messages/MessageFrame';
 import { messageImages, messageText } from './messages/messageContent';
@@ -26,7 +26,7 @@ export function MessageBubble({ message }: { message: Message }) {
   async function saveEdit() {
     setBusy(true);
     try {
-      await useWorkbenchStore.getState().editMessage(message.message_id, value);
+      await useCogitaStore.getState().editMessage(message.message_id, value);
       setEditing(false);
     } finally {
       setBusy(false);

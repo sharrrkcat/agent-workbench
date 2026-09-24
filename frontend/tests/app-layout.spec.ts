@@ -49,7 +49,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe('Mira layout ' + locale + ' ' + viewport.width, () => {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test.beforeEach(async ({ page }) => {
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
       test('fixed sidebar regions, title menus, deletion and responsive navigation', async ({
@@ -76,10 +76,12 @@ for (const locale of ['en', 'zh-CN']) {
           session.session_id.slice(0, 8);
         await request.patch('/api/sessions/' + session.session_id, { data: { title } });
         await page.goto('/');
+        await expect(page).toHaveTitle('Cogita');
         await expect(page.locator('.chat-title')).toHaveText(title);
         await expect(page.locator('.reply-answer')).toContainText('All 12 commands completed.');
         await openSidebar(page);
         const sidebar = page.locator('.session-sidebar');
+        await expect(sidebar.locator('.sidebar-brand')).toHaveText('Cogita');
         const list = sidebar.locator('.session-list');
         expect((await sidebar.boundingBox())!.width).toBeCloseTo(viewport.width === 390 ? 288 : 256, 1);
         await expect(sidebar.getByRole('button', { name: labels.featureOne, exact: true })).toBeDisabled();
@@ -295,7 +297,7 @@ for (const locale of ['en', 'zh-CN']) {
       'layout boundary ' + locale + ' ' + viewport.width + 'x' + viewport.height,
       async ({ page, request }) => {
         await page.setViewportSize(viewport);
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         await fixture(request);
         await page.goto('/');
         await expect(page.locator('.reply-answer')).toContainText('All 12 commands completed.');

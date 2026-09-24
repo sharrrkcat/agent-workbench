@@ -5,13 +5,13 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_URL = "sqlite:///./data/agent_workbench.db"
+DEFAULT_URL = "sqlite:///./data/cogita.db"
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Reset the local Agent Workbench SQLite database.")
+    parser = argparse.ArgumentParser(description="Reset the local Cogita SQLite database.")
     parser.add_argument("--yes", action="store_true", help="Actually delete the database file.")
-    parser.add_argument("--database-url", default=os.getenv("AGENT_WORKBENCH_DATABASE_URL") or DEFAULT_URL)
+    parser.add_argument("--database-url", default=os.getenv("COGITA_DATABASE_URL") or DEFAULT_URL)
     args = parser.parse_args()
 
     database_url = args.database_url

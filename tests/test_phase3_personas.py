@@ -24,7 +24,7 @@ from tests.model_fixtures import MockOpenAI, configure_model
 
 @pytest.fixture(params=[True, False], ids=["memory", "sqlite"])
 def chat_client(tmp_path, monkeypatch, request):
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     upstream = MockOpenAI()
     app = create_app(root=tmp_path, database_url=f"sqlite:///{tmp_path / 'app.db'}",
                      use_memory=request.param, adapter_factory=upstream.factory)

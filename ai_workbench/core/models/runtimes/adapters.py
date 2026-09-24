@@ -199,17 +199,17 @@ class ManagedAdapter:
         env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
         if self.engine != "llama-server":
             ready = self.run_dir / "ready.json"
-            env.update(WORKBENCH_WORKER_TOKEN=self.token, WORKBENCH_WORKER_READY=str(ready),
-                       WORKBENCH_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
+            env.update(COGITA_WORKER_TOKEN=self.token, COGITA_WORKER_READY=str(ready),
+                       COGITA_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
             env[TRACE_ENV] = trace.transport_value()
             if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
-                env.update(WORKBENCH_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
+                env.update(COGITA_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
                 if getattr(self, "validation", False):
-                    env["WORKBENCH_AUDIO_VALIDATION"] = "1"
+                    env["COGITA_AUDIO_VALIDATION"] = "1"
             if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                 cache = self.run_dir / "cache"
-                env.update(WORKBENCH_MODEL_REF=profile.model_ref,
-                           WORKBENCH_RUNTIME_OPTIONS=json.dumps(profile.source.execution_options),
+                env.update(COGITA_MODEL_REF=profile.model_ref,
+                           COGITA_RUNTIME_OPTIONS=json.dumps(profile.source.execution_options),
                            HF_HOME=str(cache), HF_HUB_CACHE=str(cache / "hub"), TORCH_HOME=str(cache / "torch"))
             args = [executable, "-I", "-B", "-X", "utf8", self.supervisor.worker_entrypoint(self.engine)]
             port = None

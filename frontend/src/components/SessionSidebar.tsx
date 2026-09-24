@@ -23,17 +23,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { useCogitaStore } from '../store/useCogitaStore';
 
 export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('personas');
   const { setOpenMobile } = useSidebar();
-  const sessions = useWorkbenchStore((state) => state.sessions);
-  const current = useWorkbenchStore((state) => state.currentSession);
-  const select = useWorkbenchStore((state) => state.selectSession);
-  const create = useWorkbenchStore((state) => state.createSession);
-  const remove = useWorkbenchStore((state) => state.deleteSession);
+  const sessions = useCogitaStore((state) => state.sessions);
+  const current = useCogitaStore((state) => state.currentSession);
+  const select = useCogitaStore((state) => state.selectSession);
+  const create = useCogitaStore((state) => state.createSession);
+  const remove = useCogitaStore((state) => state.deleteSession);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   async function deleteSession(id: string) {
@@ -50,7 +50,7 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
     <>
       <Sidebar className="session-sidebar" aria-label={t('sessions')}>
         <SidebarHeader className="sidebar-header shrink-0 gap-4 p-3">
-          <div className="sidebar-brand">Workbench</div>
+          <div className="sidebar-brand">{t('common:appName')}</div>
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton

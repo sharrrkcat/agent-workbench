@@ -146,11 +146,14 @@ def test_inspection_rejects_directory_and_config_links_outside_boundary(tmp_path
     assert error.value.code == "INVALID_REQUEST"
 
 
-@pytest.mark.parametrize("sharded", [False, True])
-def test_revision_covers_consumed_files_and_is_independent_of_directory(tmp_path, sharded):
+@pytest.mark.parametrize("sharded, expected", [
+    (False, "sha256:d4dc74abe8111da92468cab092a5381fb413af602c7f1ac46537415fbdde75bc"),
+    (True, "sha256:55a6e0c1fc3376b7e1d0acf095e28e1b1e3ec19bf7aa5cf8b50093bb3c8aee2c"),
+])
+def test_revision_covers_consumed_files_and_is_independent_of_directory(tmp_path, sharded, expected):
     path = model_tree(tmp_path, sharded=sharded)
     baseline = model_revision(path)
-    assert baseline.startswith("sha256:") and len(baseline) == 71
+    assert baseline == expected
     copied = tmp_path / "copied"
     shutil.copytree(path, copied)
     assert model_revision(copied) == baseline

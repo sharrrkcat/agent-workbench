@@ -17,7 +17,7 @@ import { toolsApi } from '../../api/tools';
 import { ApiError } from '../../api/http';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
-import { useWorkbenchStore } from '../../store/useWorkbenchStore';
+import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Session, SessionPatch, SessionPersona } from '../../types/chat';
 import type { HarnessTool } from '../../types/tools';
 import type { KnowledgeBase } from '../../types/knowledge';
@@ -115,7 +115,7 @@ export function SessionSettingsDialog({
       await chatApi.updateSession(session.session_id, values);
       await knowledgeApi.updateSessionKnowledgeBases(session.session_id, knowledge);
       await worldbookApi.updateSessionWorldbooks(session.session_id, books);
-      await useWorkbenchStore.getState().reloadSessions();
+      await useCogitaStore.getState().reloadSessions();
       onClose();
     } catch (e) {
       setError(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));

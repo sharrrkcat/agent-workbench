@@ -63,16 +63,16 @@ class SiglipWorker:
 
 def main():
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
-    ready = Path(os.environ["WORKBENCH_WORKER_READY"])
+    ready = Path(os.environ["COGITA_WORKER_READY"])
     try:
         with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
             with stage("worker_setup"):
-                token = os.environ["WORKBENCH_WORKER_TOKEN"]
+                token = os.environ["COGITA_WORKER_TOKEN"]
                 if len(token) < 32:
                     raise WorkerError("INVALID_REQUEST")
-                root, model_ref = Path(os.environ["WORKBENCH_MODELS_ROOT"]), os.environ["WORKBENCH_MODEL_REF"]
-                tower, revision = os.environ["WORKBENCH_SIGLIP_TOWER"], os.environ["WORKBENCH_MODEL_REVISION"]
-                options = json.loads(os.environ["WORKBENCH_RUNTIME_OPTIONS"])
+                root, model_ref = Path(os.environ["COGITA_MODELS_ROOT"]), os.environ["COGITA_MODEL_REF"]
+                tower, revision = os.environ["COGITA_SIGLIP_TOWER"], os.environ["COGITA_MODEL_REVISION"]
+                options = json.loads(os.environ["COGITA_RUNTIME_OPTIONS"])
             worker = SiglipWorker(root, model_ref, tower, options, revision)
             with stage("http_setup"):
                 server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))

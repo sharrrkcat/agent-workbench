@@ -28,7 +28,7 @@ def contract():
 
 @pytest.fixture
 def api(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "data/attachments"))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "data/attachments"))
     upstream = MockOpenAI()
     app = create_app(use_memory=True, root=tmp_path, adapter_factory=upstream.factory)
     with TestClient(app, client=("127.0.0.1", 41000)) as client:
@@ -39,6 +39,8 @@ def test_complete_contract_and_runtime_models(api):
     client, _ = api
     app = client.app
     document = client.get("/openapi.json").json()
+    assert document["info"]["title"] == "Cogita"
+    assert document["components"]["schemas"]["PublicModel"]["properties"]["owned_by"]["const"] == "cogita"
     assert check_document(document, http_operations(app)) == []
     assert check_route_contracts(app, document) == []
     for route in app.routes:
@@ -383,7 +385,7 @@ def test_management_reads_updates_and_deletions_keep_response_shapes(api):
 def test_resource_partial_reindex_and_retrieval_diagnostics(tmp_path, monkeypatch, use_memory):
     from ai_workbench.core.knowledge_indexing import KnowledgeIndexError
 
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     upstream = MockOpenAI()
     app = create_app(use_memory=use_memory, root=tmp_path, database_url=f"sqlite:///{tmp_path / 'contract.db'}",
                      adapter_factory=upstream.factory)

@@ -276,7 +276,7 @@ def test_load_failures_record_cleanup_and_one_terminal_result(tmp_path, monkeypa
         if failure == "startup":
             start = ManagedProcess.start
             async def broken_start(args, **kwargs):
-                kwargs["env"] = {**kwargs["env"], "WORKBENCH_WORKER_TOKEN": "short"}
+                kwargs["env"] = {**kwargs["env"], "COGITA_WORKER_TOKEN": "short"}
                 return await start(args, **kwargs)
             monkeypatch.setattr(ManagedProcess, "start", broken_start)
         forbid_install_scans(monkeypatch, service)

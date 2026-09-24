@@ -17,7 +17,7 @@ from ai_workbench.db.stores import SqlAppSettingsStore
 def test_position_api_is_strict_shared_and_has_no_package_flow(tmp_path, use_memory):
     frontend = tmp_path / "frontend"
     frontend.mkdir()
-    (frontend / "index.html").write_text("<html>Workbench</html>")
+    (frontend / "index.html").write_text("<html>Cogita</html>")
     legacy = tmp_path / "data/pet/existing"
     legacy.mkdir(parents=True)
     (legacy / "pet.json").write_text('{"name":"Unused"}')

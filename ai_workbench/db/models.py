@@ -1,4 +1,4 @@
-"""SQLModel persistence schema for the workbench."""
+"""SQLModel persistence schema for Cogita."""
 
 from __future__ import annotations
 

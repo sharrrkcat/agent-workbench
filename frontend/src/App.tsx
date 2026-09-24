@@ -8,7 +8,7 @@ import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
 import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
-import { useWorkbenchStore } from './store/useWorkbenchStore';
+import { useCogitaStore } from './store/useCogitaStore';
 import { useModelEvents } from './hooks/useModelEvents';
 import type { LeaveGuard } from './components/settings/resources/ResourceUI';
 import { readSettingsRoute, settingsRouteUrl } from './components/settings/navigation';
@@ -18,15 +18,15 @@ const readLocation = (): Location => ({
   pathname: window.location.pathname,
   search: window.location.search,
   url: window.location.pathname + window.location.search + window.location.hash,
-  index: window.history.state?.workbenchIndex ?? 0,
+  index: window.history.state?.cogitaIndex ?? 0,
 });
 
 export default function App() {
   useModelEvents();
-  const initialize = useWorkbenchStore((state) => state.initialize);
-  const currentSession = useWorkbenchStore((state) => state.currentSession);
-  const refreshCurrent = useWorkbenchStore((state) => state.refreshCurrent);
-  const applyRuntimeEvent = useWorkbenchStore((state) => state.applyRuntimeEvent);
+  const initialize = useCogitaStore((state) => state.initialize);
+  const currentSession = useCogitaStore((state) => state.currentSession);
+  const refreshCurrent = useCogitaStore((state) => state.refreshCurrent);
+  const applyRuntimeEvent = useCogitaStore((state) => state.applyRuntimeEvent);
   const [location, setLocation] = useState(readLocation);
   const committed = useRef(location);
   const navigating = useRef(false);
@@ -53,7 +53,7 @@ export default function App() {
             settingsRouteUrl(readSettingsRoute(committed.current.search));
         if (url === committed.current.url || sameSettingsPage) return true;
         const index = committed.current.index + 1;
-        window.history.pushState({ workbenchIndex: index }, '', url);
+        window.history.pushState({ cogitaIndex: index }, '', url);
         commit(readLocation());
         return true;
       } finally {
@@ -104,7 +104,7 @@ export default function App() {
     };
   }, [currentSession?.session_id, applyRuntimeEvent, refreshCurrent]);
   useEffect(() => {
-    window.history.replaceState({ workbenchIndex: committed.current.index }, '', committed.current.url);
+    window.history.replaceState({ cogitaIndex: committed.current.index }, '', committed.current.url);
     let transition: {
       target: Location;
       phase: 'restoring' | 'confirming' | 'replaying';

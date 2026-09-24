@@ -134,7 +134,7 @@ def audit(root: Path, *, database_path: Path | None = None) -> AuditReport:
         if embedding_root.is_dir()
         else ()
     )
-    selected_database = database_path or (root / "data" / "agent_workbench.db")
+    selected_database = database_path or (root / "data" / "cogita.db")
     if not selected_database.is_absolute():
         selected_database = root / selected_database
     db_path = selected_database.expanduser().resolve()
@@ -192,8 +192,8 @@ def _print_report(report: AuditReport, *, as_json: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT, help="workbench root to inspect")
-    parser.add_argument("--database", type=Path, help="database path (defaults to <root>/data/agent_workbench.db)")
+    parser.add_argument("--root", type=Path, default=ROOT, help="Cogita root to inspect")
+    parser.add_argument("--database", type=Path, help="database path (defaults to <root>/data/cogita.db)")
     parser.add_argument("--check", action="store_true", help="return 1 when an invariant fails")
     parser.add_argument("--json", action="store_true", dest="as_json", help="emit JSON instead of text")
     args = parser.parse_args(argv)

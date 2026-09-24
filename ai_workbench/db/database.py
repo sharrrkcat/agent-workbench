@@ -11,11 +11,11 @@ from sqlmodel import create_engine
 from ai_workbench.db import migrations
 
 
-DEFAULT_DATABASE_URL = "sqlite:///./data/agent_workbench.db"
+DEFAULT_DATABASE_URL = "sqlite:///./data/cogita.db"
 
 
 def get_database_url(database_url: Optional[str] = None) -> str:
-    return database_url or os.getenv("AGENT_WORKBENCH_DATABASE_URL") or DEFAULT_DATABASE_URL
+    return database_url or os.getenv("COGITA_DATABASE_URL") or DEFAULT_DATABASE_URL
 
 
 def get_engine(database_url: Optional[str] = None):

@@ -6,7 +6,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`TTS ${locale} ${viewport.width}`, () => {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test('configure ONNX TTS, reopen voices and retain format', async ({ page, request }, info) => {
-        await page.addInitScript((locale) => localStorage.setItem('agent-workbench.locale', locale), locale);
+        await page.addInitScript((locale) => localStorage.setItem('cogita.locale', locale), locale);
         await page.goto('/settings?tab=models');
         await chooseOption(page.locator('.model-toolbar').getByRole('combobox'), locale === 'en' ? 'Text to speech' : '语音合成');
         await page.getByRole('button', { name: locale === 'en' ? 'Add model' : '添加模型', exact: true }).click();

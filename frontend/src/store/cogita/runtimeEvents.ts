@@ -1,4 +1,4 @@
-import type { WorkbenchSet, WorkbenchGet } from './state';
+import type { CogitaSet, CogitaGet } from './state';
 import { mergeRuns, mergeSteps, older, terminal, pruneHistoryState } from './mergeState';
 
 import { applyMessageEvent } from '../messageStream';
@@ -6,7 +6,7 @@ import { applyMessageEvent } from '../messageStream';
 import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
 import type { Session } from '../../types/chat';
 
-export function handleRuntimeEvent(set: WorkbenchSet, get: WorkbenchGet, event: RuntimeEvent): void {
+export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: RuntimeEvent): void {
   if (event.type === 'session_updated' && event.payload?.session) {
     const session = event.payload.session as Session;
     set((state) => ({

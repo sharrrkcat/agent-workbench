@@ -79,7 +79,7 @@ def check_route_contracts(app, document: dict) -> list[str]:
 async def build_document() -> tuple[dict, set[tuple[str, str]]]:
     from ai_workbench.api.main import create_app
 
-    with TemporaryDirectory(prefix="workbench-openapi-") as directory:
+    with TemporaryDirectory(prefix="cogita-openapi-") as directory:
         app = create_app(use_memory=True, root=directory, frontend_dist=Path(directory) / "frontend")
         async with app.router.lifespan_context(app):
             document = app.openapi()

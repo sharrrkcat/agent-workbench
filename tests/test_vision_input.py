@@ -186,7 +186,7 @@ def test_context_selection_keeps_images_with_their_messages(context_mode, mode, 
 
 
 def test_budgeting_and_attachment_switch_happen_before_reading_images(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path))
     saved = save_attachment_from_upload("picture.png", "image/png", image_bytes())
     store = MessageStore()
     first = store.add_message("s", "user", "", metadata={"attachments": [saved]})
@@ -234,7 +234,7 @@ def test_external_local_errors_precede_loading_and_stream_headers(tmp_path, stre
 
 @pytest.mark.parametrize("memory", [True, False], ids=["memory", "sqlite"])
 def test_images_survive_approval_history_retry_edit_and_cleanup(tmp_path, monkeypatch, memory):
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "data/attachments"))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "data/attachments"))
     upstream = ToolOpenAI(completion(tool_call("read_file", {"path": "data/knowledge/note.txt"})), completion(content="seen"))
     note = tmp_path / "data/knowledge/note.txt"
     note.parent.mkdir(parents=True)

@@ -14,7 +14,7 @@ import { worldbookApi } from '../../api/worldbook';
 import { chatApi } from '../../api/chat';
 import { ApiError } from '../../api/http';
 import { usePersonasStore } from '../../store/usePersonasStore';
-import { useWorkbenchStore } from '../../store/useWorkbenchStore';
+import { useCogitaStore } from '../../store/useCogitaStore';
 import type { KnowledgeBase } from '../../types/knowledge';
 import type { Persona, PersonaInput } from '../../types/chat';
 import type { Worldbook } from '../../types/worldbook';
@@ -112,7 +112,7 @@ export function PersonasPanel() {
       await chatApi.patchPersonaKnowledge(saved.id, editor.knowledge);
       await chatApi.patchPersonaWorldbooks(saved.id, editor.worldbooks);
       await reload();
-      await useWorkbenchStore.getState().reloadSessions();
+      await useCogitaStore.getState().reloadSessions();
       await cleanupUploads();
       setEditor(null);
     });

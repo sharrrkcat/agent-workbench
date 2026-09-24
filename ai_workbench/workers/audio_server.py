@@ -171,15 +171,15 @@ def main():
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
     with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
         with stage("worker_setup"):
-            token = os.environ["WORKBENCH_WORKER_TOKEN"]
+            token = os.environ["COGITA_WORKER_TOKEN"]
             if len(token) < 32:
                 raise RuntimeError("Worker token is invalid")
-            worker = AudioWorker(Path(os.environ["WORKBENCH_MODELS_ROOT"]).resolve(),
-                Path(os.environ["WORKBENCH_AUDIO_REFERENCES_ROOT"]).resolve(), validation=os.environ.get("WORKBENCH_AUDIO_VALIDATION") == "1")
+            worker = AudioWorker(Path(os.environ["COGITA_MODELS_ROOT"]).resolve(),
+                Path(os.environ["COGITA_AUDIO_REFERENCES_ROOT"]).resolve(), validation=os.environ.get("COGITA_AUDIO_VALIDATION") == "1")
             server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
             server.daemon_threads = True
         with stage("ready_file"):
-            publish_ready(Path(os.environ["WORKBENCH_WORKER_READY"]), {"port": server.server_port, "protocol_version": 1})
+            publish_ready(Path(os.environ["COGITA_WORKER_READY"]), {"port": server.server_port, "protocol_version": 1})
     try:
         server.serve_forever()
     finally:

@@ -18,8 +18,8 @@ const load = createModuleLoader({
     useModelsStore: { getState: () => ({ reload: async () => {} }) },
   }),
 });
-const storeModule = await load('../src/store/useWorkbenchStore.ts');
-const store = storeModule.exports.useWorkbenchStore;
+const storeModule = await load('../src/store/useCogitaStore.ts');
+const store = storeModule.exports.useCogitaStore;
 const at = (microseconds) => '2026-09-07T00:00:00.' + microseconds.padStart(6, '0') + 'Z';
 const session = {
   session_id: 's',
@@ -147,8 +147,8 @@ globalThis.harnessTestState = { ...store.getState(), messages: [call], stepsByRu
 const loadView = createModuleLoader({
   ...apiMocks(api),
   'react-i18next': mockModule({ useTranslation: () => ({ t: globalThis.harnessTestTranslate }) }),
-  [sourceUrl('store/useWorkbenchStore.ts')]: mockModule({
-    useWorkbenchStore: (select) => select(globalThis.harnessTestState),
+  [sourceUrl('store/useCogitaStore.ts')]: mockModule({
+    useCogitaStore: (select) => select(globalThis.harnessTestState),
   }),
 });
 const panel = (await loadView('../src/components/RunPanel.tsx')).exports.RunPanel;

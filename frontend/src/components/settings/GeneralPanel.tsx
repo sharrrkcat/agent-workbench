@@ -11,7 +11,7 @@ import type { GeneralSettings, GeneralSettingsPatch } from '../../types/settings
 
 import { useSettingsFeedback } from './useSettingsFeedback';
 import { Feedback, ResourceLoading } from './resources/ResourceUI';
-import { useWorkbenchStore } from '../../store/useWorkbenchStore';
+import { useCogitaStore } from '../../store/useCogitaStore';
 
 export function GeneralPanel() {
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
@@ -40,7 +40,7 @@ export function GeneralPanel() {
         onSave={(patch) =>
           save(async () => {
             const saved = await settingsApi.updateGeneralSettings(patch);
-            useWorkbenchStore.getState().setSettings(saved);
+            useCogitaStore.getState().setSettings(saved);
             setSettings(saved);
           })
         }

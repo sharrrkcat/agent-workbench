@@ -31,7 +31,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`images ${locale} ${width}`, () => {
       test.use({ viewport: { width, height: width === 390 ? 844 : 900 }, hasTouch: width === 390 });
       test.beforeEach(async ({ page }) => {
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
       test('select, paste, drop, preview and image-only history', async ({ page, request }, info) => {

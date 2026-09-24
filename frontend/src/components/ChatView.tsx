@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { MessageBubble } from './MessageBubble';
 import { RunReply } from './messages/RunReply';
 import { buildConversation } from './messages/turns';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { useCogitaStore } from '../store/useCogitaStore';
 
 export function ChatView() {
   return (
@@ -28,13 +28,13 @@ export function ChatView() {
 
 function Conversation() {
   const { t } = useTranslation(['personas', 'chat']);
-  const messages = useWorkbenchStore((state) => state.messages);
-  const runs = useWorkbenchStore((state) => state.runs);
-  const currentSession = useWorkbenchStore((state) => state.currentSession);
-  const steps = useWorkbenchStore((state) => state.stepsByRunId);
-  const showFullProcessing = useWorkbenchStore((state) => state.settings?.show_full_processing === true);
-  const sending = useWorkbenchStore((state) => state.sending);
-  const loading = useWorkbenchStore((state) => state.loading);
+  const messages = useCogitaStore((state) => state.messages);
+  const runs = useCogitaStore((state) => state.runs);
+  const currentSession = useCogitaStore((state) => state.currentSession);
+  const steps = useCogitaStore((state) => state.stepsByRunId);
+  const showFullProcessing = useCogitaStore((state) => state.settings?.show_full_processing === true);
+  const sending = useCogitaStore((state) => state.sending);
+  const loading = useCogitaStore((state) => state.loading);
   const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const items = useMemo(
     () => (currentSession ? buildConversation(currentSession.session_id, messages, runs, steps) : []),

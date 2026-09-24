@@ -10,7 +10,7 @@ for (const locale of ['en', 'zh-CN']) {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test('inspection, drafts, switch, execution options and tower actions', async ({ page, request }, info) => {
         expect((await request.post('/__test__/runtimes', { data: { siglip2: true } })).ok()).toBeTruthy();
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await page.goto('/settings?tab=models');

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { MessageSquareQuote, Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useWorkbenchStore } from '../../store/useWorkbenchStore';
+import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Message } from '../../types/messages';
 import { isContextMessage } from './messageContent';
 
@@ -24,8 +24,8 @@ export function MessageActions({
 }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('personas');
-  const deleteMessage = useWorkbenchStore((state) => state.deleteMessage);
-  const active = useWorkbenchStore(
+  const deleteMessage = useCogitaStore((state) => state.deleteMessage);
+  const active = useCogitaStore(
     (state) =>
       state.mutatingHistory ||
       state.runs.some((run) => ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(run.status)),
@@ -92,9 +92,9 @@ export function MessageActions({
 
 export function MessageContextAction({ message }: { message: Message }) {
   const { t } = useTranslation('personas');
-  const selectContext = useWorkbenchStore((state) => state.setSourceMessageId);
-  const selected = useWorkbenchStore((state) => state.sourceMessageId);
-  const acceptsSelection = useWorkbenchStore(
+  const selectContext = useCogitaStore((state) => state.setSourceMessageId);
+  const selected = useCogitaStore((state) => state.sourceMessageId);
+  const acceptsSelection = useCogitaStore(
     (state) => state.currentSession?.effective.context_policy.mode === 'selected_message',
   );
   if (!acceptsSelection || !isContextMessage(message)) return null;

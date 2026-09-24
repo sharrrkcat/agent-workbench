@@ -48,7 +48,7 @@ def serve(app):
 
 @pytest.fixture
 def transport_app(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "attachments"))
     upstream = FastAPI()
     proceed = threading.Event()
     closed = threading.Event()

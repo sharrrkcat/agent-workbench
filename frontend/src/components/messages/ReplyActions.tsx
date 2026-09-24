@@ -4,8 +4,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Check, Copy, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useWorkbenchStore } from '../../store/useWorkbenchStore';
-import { terminal } from '../../store/workbench/mergeState';
+import { useCogitaStore } from '../../store/useCogitaStore';
+import { terminal } from '../../store/cogita/mergeState';
 import { MessageContextAction } from './MessageActions';
 import { messageText } from './messageContent';
 import type { Reply } from './turns';
@@ -13,10 +13,10 @@ import type { Reply } from './turns';
 export function ReplyActions({ reply }: { reply: Reply }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('runs');
-  const retry = useWorkbenchStore((state) => state.retryRun);
-  const remove = useWorkbenchStore((state) => state.deleteRun);
-  const setError = useWorkbenchStore((state) => state.setError);
-  const busy = useWorkbenchStore(
+  const retry = useCogitaStore((state) => state.retryRun);
+  const remove = useCogitaStore((state) => state.deleteRun);
+  const setError = useCogitaStore((state) => state.setError);
+  const busy = useCogitaStore(
     (state) => state.mutatingHistory || state.runs.some((run) => !terminal(run.status)),
   );
   const [copied, setCopied] = useState(false);

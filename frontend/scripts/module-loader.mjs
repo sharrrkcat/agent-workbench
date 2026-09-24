@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const moduleUrl = (source) => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const values = new Map();
-globalThis.workbenchTestModules = values;
+globalThis.cogitaTestModules = values;
 let sequence = 0;
 
 export const sourceUrl = (relative) => new URL('../src/' + relative, import.meta.url).href;
@@ -17,8 +17,8 @@ export function mockModule(exports) {
     Object.keys(exports)
       .map((key) =>
         key === 'default'
-          ? `export default globalThis.workbenchTestModules.get(${id}).default;`
-          : `export const ${key} = globalThis.workbenchTestModules.get(${id})[${JSON.stringify(key)}];`,
+          ? `export default globalThis.cogitaTestModules.get(${id}).default;`
+          : `export const ${key} = globalThis.cogitaTestModules.get(${id})[${JSON.stringify(key)}];`,
       )
       .join('\n'),
   );

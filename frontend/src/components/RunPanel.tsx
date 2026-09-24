@@ -3,14 +3,14 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/component
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { useCogitaStore } from '../store/useCogitaStore';
 import type { Run, RunStep } from '../types/runs';
 import { RunApproval, RunCancelButton } from './messages/RunApproval';
 
 export function RunPanel({ run }: { run: Run }) {
   const { t } = useTranslation('runs');
-  const messages = useWorkbenchStore((state) => state.messages);
-  const storedSteps = useWorkbenchStore((state) => state.stepsByRunId[run.run_id]);
+  const messages = useCogitaStore((state) => state.messages);
+  const storedSteps = useCogitaStore((state) => state.stepsByRunId[run.run_id]);
   const steps = storedSteps || run.steps || [];
   const [expanded, setExpanded] = useState(true);
   const active = ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(run.status);

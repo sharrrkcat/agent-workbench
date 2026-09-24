@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import type { WorkbenchState } from './workbench/state';
-import { createSessionActions } from './workbench/sessionActions';
-import { createMessageActions } from './workbench/messageActions';
-import { createRunActions } from './workbench/runActions';
-import { handleRuntimeEvent } from './workbench/runtimeEvents';
+import type { CogitaState } from './cogita/state';
+import { createSessionActions } from './cogita/sessionActions';
+import { createMessageActions } from './cogita/messageActions';
+import { createRunActions } from './cogita/runActions';
+import { handleRuntimeEvent } from './cogita/runtimeEvents';
 
-export const useWorkbenchStore = create<WorkbenchState>((set, get, store) => ({
+export const useCogitaStore = create<CogitaState>((set, get, store) => ({
   sessions: [],
   currentSession: null,
   messages: [],

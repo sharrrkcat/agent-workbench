@@ -1,6 +1,6 @@
-# Agent Workbench run guide
+# Cogita run guide
 
-Agent Workbench provides local chat, optional built-in tools and a single-key
+Cogita provides local chat, optional built-in tools and a single-key
 OpenAI-compatible service. Model files are managed manually.
 
 ## Requirements and startup
@@ -29,13 +29,13 @@ model files nor a GPU; model execution checks its selected device and resources.
 ## Portable packages and data
 
 Build from a source checkout with `uv run python scripts/build_portable.py --zip`.
-The folder and optional ZIP are written under `build/`. They contain application
-code, Alembic revisions, built frontend assets and the maintained documentation.
+The folder `build/cogita-portable/` and optional `build/cogita-portable.zip` contain
+application code, Alembic revisions, built frontend assets and the maintained documentation.
 They exclude `.env`, databases, model weights, installed runtimes, attachments,
 API keys and dependency/cache directories. Python dependencies are installed by
 uv on first launch.
 
-The default database is `data/agent_workbench.db`. Startup applies Alembic
+The default database is `data/cogita.db`. Startup applies Alembic
 revisions. Test database records may be reset by a revision; model, runtime,
 attachment and other data files are outside migration ownership. See
 [data layout](docs/DATA_LAYOUT.md) for environment paths and reset behavior.

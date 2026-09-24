@@ -16,7 +16,7 @@ from ai_workbench.db.database import get_engine
 
 
 async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
-    engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
+    engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     if migrations.current_revision(engine) != migrations.HEAD_REVISION:
         raise RuntimeError("Upgrade the database to Alembic head before running this smoke test")
     supervisor = RuntimeSupervisor(root, RuntimeStore(engine), LocalRuntimeSettingsStore(engine))

@@ -1,4 +1,4 @@
-"""Validate real workbench HTTP responses against the served contract."""
+"""Validate real Cogita HTTP responses against the served contract."""
 
 import json
 
@@ -17,7 +17,7 @@ def response_validator(document, path, method, status):
     return Draft202012Validator({**schema, "components": document["components"]}, format_checker=FormatChecker())
 
 
-def validate_workbench_response(app, response, validators):
+def validate_cogita_response(app, response, validators):
     if not hasattr(getattr(app, "state", None), "runtime_state"):
         return None
     media_type = response.headers.get("content-type", "").split(";", 1)[0]

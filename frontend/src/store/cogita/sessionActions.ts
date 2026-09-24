@@ -1,4 +1,4 @@
-import type { WorkbenchActions } from './state';
+import type { CogitaActions } from './state';
 import { errorText, mergeMessages, mergeRuns, mergeSteps, retainedMessages, terminal } from './mergeState';
 
 import { useModelsStore } from '../useModelsStore';
@@ -6,7 +6,7 @@ import { chatApi } from '../../api/chat';
 import { settingsApi } from '../../api/settings';
 import { runsApi } from '../../api/runs';
 
-export const createSessionActions: WorkbenchActions<
+export const createSessionActions: CogitaActions<
   | 'initialize'
   | 'refreshCurrent'
   | 'reloadSessions'

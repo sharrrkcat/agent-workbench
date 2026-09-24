@@ -5,7 +5,7 @@ are never removed by schema revisions.
 
 | Path | Contents and owner |
 | --- | --- |
-| data/agent_workbench.db | Application test state: Personas, sessions/messages/runs, settings, models/providers, Knowledge/Worldbook, runtime jobs |
+| data/cogita.db | Application test state: Personas, sessions/messages/runs, settings, models/providers, Knowledge/Worldbook, runtime jobs |
 | data/attachments/ | Uploaded files and Persona avatars; explicit orphan cleanup |
 | data/tmp/voice-references/ | Model-service temporary reference audio; no database records |
 | data/knowledge/ | Knowledge service source/index working files |
@@ -28,6 +28,10 @@ Alembic head is `0016_siglip_image_embedding`; there are 24 current business tab
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
+
+The default `data/cogita.db` is initialized independently, with fresh settings,
+model/provider profiles and runtime registration. Other database files are not
+imported, moved or removed. Model, attachment and runtime files retain their separate ownership.
 
 Revisions 0001 through 0006 record the baseline, extension pruning, unified
 models, managed runtimes, Persona/session members and private harness
@@ -117,6 +121,7 @@ env/ and separate native/cpu and native/cuda programs. Workers ship in ai_workbe
 the installed interpreter executes those application sources. Pinned Python
 archives under python/archives and dependency/native caches under .cache remain.
 Task/process logs are bounded and retained under data/logs/runtimes.
+Native artifact reuse uses .cache/cogita-artifacts; other cache files remain until explicit maintenance.
 installation.json contains only dependency identity and executable paths; the database's
 manifest_sha256 binds this small metadata file. It contains no environment file inventory.
 Old release/file-inventory metadata is rejected and retained until explicit repair
@@ -143,10 +148,11 @@ no schema revision, model uninstall or runtime cache job deletes them.
 
 ## Environment and maintenance
 
-- AGENT_WORKBENCH_DATABASE_URL overrides the SQLite path.
-- AGENT_WORKBENCH_ATTACHMENTS_DIR overrides attachment storage.
-- AGENT_WORKBENCH_FILE_ALLOWED_DIRS controls permitted attachment file access;
-  harness read_file has its own narrower allowlist.
+- COGITA_DATABASE_URL overrides the SQLite path.
+- COGITA_ATTACHMENTS_DIR overrides attachment storage.
+- COGITA_FRONTEND_DIST selects frontend assets for direct ASGI startup;
+  the launcher sets it from --frontend-dist.
+- Only current environment names are read; earlier prefixes have no fallback.
 - Model/provider configuration is stored in the database, not environment fallback.
 
 `scripts/reset_data.py` is an explicit SQLite-file reset command; its default is

@@ -23,7 +23,7 @@ from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore, ModelSettingsStore, LocalRuntimeSettingsStore
 from ai_workbench.core.network_policy import NetworkPolicy
-from ai_workbench.core.runtime import ActiveRunRegistry, WorkbenchRuntime
+from ai_workbench.core.runtime import ActiveRunRegistry, CogitaRuntime
 from ai_workbench.core.runtime_resources import RuntimeResourcesService
 from ai_workbench.core.settings import AppSettingsStore
 from ai_workbench.core.stores import MessageStore, RunEventStore, RunStore, SessionStore
@@ -44,7 +44,7 @@ class RuntimeState:
     runs: Any
     run_events: Any
     events: EventBus
-    runtime: WorkbenchRuntime
+    runtime: CogitaRuntime
     chat_runner: ChatRunner
     chat_service: ChatService
     history: ConversationHistory
@@ -122,7 +122,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         chat_service=chat_service,
         tool_registry=tool_registry, harness_settings=harness_settings, network_policy=network_policy, repo_root=repo_root,
     )
-    runtime = WorkbenchRuntime(chat_runner=chat_runner, active_runs=active_runs)
+    runtime = CogitaRuntime(chat_runner=chat_runner, active_runs=active_runs)
     history = ConversationHistory(
         store=MemoryHistoryStore(sessions, messages, runs, run_events) if use_memory else SqlHistoryStore(engine),
         sessions=sessions, messages=messages, runs=runs, events=events, chat_service=chat_service, personas=personas,

@@ -1,6 +1,6 @@
-# Agent Workbench
+# Cogita
 
-A local chat workbench and OpenAI-compatible model service. One ModelManager serves chat, titles, Knowledge and external inference.
+Local chat and an OpenAI-compatible model service. One ModelManager serves chat, titles, Knowledge and external inference. The Python package remains `ai_workbench`.
 Prompt Personas and an optional bounded tool harness support ordinary/group conversations. Local models run in managed llama-server/Python workers outside the API process; external connections use the OpenAI-compatible protocol.
 
 The project is in testing, without users or user data. It does not provide an autonomous coding agent, extension/plugin discovery, model downloads or image generation. The external API stays single-key and localhost-only.
@@ -137,7 +137,7 @@ Public rerank and image generation remain [future design records](docs/FUTURE_MO
 Place a WD14-family model.onnx and selected_tags.csv under data/models/vision/<directory>.
 Create a Vision profile with Local Runtime and that relative reference; CPU/four threads and manual release are defaults.
 Only file existence/path containment is checked; config.json, model hashes, revisions and fixed dimensions/tag counts are not required.
-Enable external visibility and use the Workbench extension `POST /v1/images/tags`; discovery supports `GET /v1/models?kind=vision`.
+Enable external visibility and use the Cogita extension `POST /v1/images/tags`; discovery supports `GET /v1/models?kind=vision`.
 
 ```powershell
 $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path './image.png')))
@@ -199,7 +199,7 @@ Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
 Use `response_format=mp3` for MP3 (the default). The response is a complete audio
 file; no chat or attachment record is created. `tts.language`, when supplied,
 must match the voice. SSE and application playback are deferred.
-`GET /v1/audio/voices` is a Workbench extension; source=preset selects Kokoro voices.
+`GET /v1/audio/voices` is a Cogita extension; source=preset selects Kokoro voices.
 
 ### Offline Chatterbox Speech
 
@@ -273,8 +273,8 @@ Pet position, dragging and task-state foundations remain for a future UI; existi
 
 Alembic alone manages SQLite: empty databases upgrade to head; nonempty unversioned databases and destructive downgrades are rejected.
 Revisions may reset disposable records but never delete model files, attachments, runtimes or other data directories.
-[Data layout](docs/DATA_LAYOUT.md#database-revisions) owns revision/reset effects. The database defaults to data/agent_workbench.db;
-AGENT_WORKBENCH_DATABASE_URL overrides it. See [data layout](docs/DATA_LAYOUT.md) and [.env.example](.env.example) for paths and maintenance.
+[Data layout](docs/DATA_LAYOUT.md#database-revisions) owns revision/reset effects. The database defaults to data/cogita.db;
+COGITA_DATABASE_URL overrides it. See [data layout](docs/DATA_LAYOUT.md) and [.env.example](.env.example) for paths and maintenance.
 
 ## Verification
 
@@ -297,10 +297,10 @@ Installation/real-model/browser results are separate from deterministic tests. F
 After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts, grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
 For a focused layout check, use `npm run test:browser -- app-layout.spec.ts settings-layout.spec.ts`.
 Install Chromium once with `npx playwright install chromium`. Tests manage an isolated fixture server on
-port 18767; WORKBENCH_BROWSER_PORT selects a free port. Screenshots/traces are under frontend/test-results.
+port 18767; COGITA_BROWSER_PORT selects a free port. Screenshots/traces are under frontend/test-results.
 
 All local-runtime smoke commands reuse an installed release by default and fail if it needs installation or repair. Only --install-only installs (or confirms a healthy installation), without inference.
-For offline runtime preparation, stop Workbench and wait for its workers to exit. Apply the pinned Transformers patch and one incremental bytecode pass using the installed interpreter, without installation or Repair:
+For offline runtime preparation, stop Cogita and wait for its workers to exit. Apply the pinned Transformers patch and one incremental bytecode pass using the installed interpreter, without installation or Repair:
 
 ```powershell
 $runtimePython = (Resolve-Path 'data/runtimes/local/1.0.0/env/python.exe').Path
@@ -311,7 +311,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Runtime patch failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Runtime bytecode preparation failed.' }
 ```
 
-Restore the previous Workbench launch after successful verification. `-B` suppresses incidental import-cache writes; explicit compileall still writes its caches. No cache clearing or forced recompilation is needed.
+Restore the previous Cogita launch after successful verification. `-B` suppresses incidental import-cache writes; explicit compileall still writes its caches. No cache clearing or forced recompilation is needed.
 Kokoro uses manually placed files and writes all-voice offline/SDK samples under build/tts-smoke:
 
 ```powershell
@@ -330,7 +330,7 @@ SigLIP `--full-lifecycle` includes 20 switches and 10 dual-resident pairs and re
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
-Use mono PCM16 24 kHz speech, stop Workbench first, and provide enough RAM/VRAM. CUDA is the default.
+Use mono PCM16 24 kHz speech, stop Cogita first, and provide enough RAM/VRAM. CUDA is the default.
 The CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, seed PCM comparisons, references, cancellation/isolation
 and Whisper's 30-second boundary. `--engine chatterbox|qwen3tts|whisper` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected.
 Use `--device cpu` only for affected changes under the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU.
@@ -340,7 +340,7 @@ Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` 
 For Windows CUDA with an existing GGUF, run `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`.
 It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload
 with temporary model profiles. Runtime installation/jobs remain persisted.
-Stop Workbench before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility.
+Stop Cogita before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility.
 `uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation;
 use --engine llama-server for GGUF. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks.
 GGUF vision also needs `--mmproj-ref llms/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf`; Qwen3.5-0.8B files are the validated reference.

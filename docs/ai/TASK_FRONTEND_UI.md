@@ -14,7 +14,7 @@ Paths below are under frontend/src:
   loader share the @/ alias. Current layout limits belong to
   [Settings](../contracts/settings.md#frontend-styling-foundation).
 - types/ and api/ contain domain types/clients; api/http.ts and api/url.ts own transport.
-- store/useWorkbenchStore.ts composes store/workbench/ actions and mergeState;
+- store/useCogitaStore.ts composes store/cogita/ actions and mergeState;
   store/messageStream.ts handles deltas. store/useModelsStore.ts and
   hooks/useModelEvents.ts handle global events.
 - components/SessionSidebar.tsx and ChatHeader.tsx compose the home navigation.

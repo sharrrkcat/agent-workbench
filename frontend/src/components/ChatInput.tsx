@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils';
 import { FileText, Paperclip, Send, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useWorkbenchStore } from '../store/useWorkbenchStore';
+import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
 import { ImagePreview, type PreviewImage } from './messages/ImagePreview';
@@ -39,19 +39,19 @@ import { contextMessageLabel, isContextMessage } from './messages/messageContent
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
-  const draft = useWorkbenchStore((state) => state.composerDraftText);
-  const setDraft = useWorkbenchStore((state) => state.setComposerDraftText);
-  const send = useWorkbenchStore((state) => state.sendMessage);
-  const cancelRun = useWorkbenchStore((state) => state.cancelRun);
-  const sending = useWorkbenchStore((state) => state.sending);
-  const mutatingHistory = useWorkbenchStore((state) => state.mutatingHistory);
-  const session = useWorkbenchStore((state) => state.currentSession);
-  const messages = useWorkbenchStore((state) => state.messages);
-  const sourceMessageId = useWorkbenchStore((state) => state.sourceMessageId);
-  const selectSource = useWorkbenchStore((state) => state.setSourceMessageId);
-  const sessionEpoch = useWorkbenchStore((state) => state.sessionEpoch);
+  const draft = useCogitaStore((state) => state.composerDraftText);
+  const setDraft = useCogitaStore((state) => state.setComposerDraftText);
+  const send = useCogitaStore((state) => state.sendMessage);
+  const cancelRun = useCogitaStore((state) => state.cancelRun);
+  const sending = useCogitaStore((state) => state.sending);
+  const mutatingHistory = useCogitaStore((state) => state.mutatingHistory);
+  const session = useCogitaStore((state) => state.currentSession);
+  const messages = useCogitaStore((state) => state.messages);
+  const sourceMessageId = useCogitaStore((state) => state.sourceMessageId);
+  const selectSource = useCogitaStore((state) => state.setSourceMessageId);
+  const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
   const profiles = useModelsStore((state) => state.profiles);
-  const activeRun = useWorkbenchStore((state) =>
+  const activeRun = useCogitaStore((state) =>
     [...state.runs]
       .reverse()
       .find((r) => ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(r.status)),
@@ -83,7 +83,7 @@ export function ChatInput() {
   async function submit() {
     if (cannotSend || activeRun) return;
     const result = await send(draft, attachments);
-    if (result && useWorkbenchStore.getState().sessionEpoch === sessionEpoch) {
+    if (result && useCogitaStore.getState().sessionEpoch === sessionEpoch) {
       setDraft('');
       setPreview(null);
       clear();

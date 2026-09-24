@@ -60,7 +60,7 @@ def is_inference_observability_path(path: str) -> bool:
 
 
 def inference_route_family(path: str) -> str:
-    return "openai_compatible" if path == "/v1" or path.startswith("/v1/") else "workbench_native"
+    return "openai_compatible" if path == "/v1" or path.startswith("/v1/") else "cogita_native"
 
 
 def monotonic_time() -> float:

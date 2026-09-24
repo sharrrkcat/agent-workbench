@@ -3,14 +3,14 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Check, ShieldAlert, Square, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useWorkbenchStore } from '../../store/useWorkbenchStore';
+import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Message } from '../../types/messages';
 import type { Run, RunStep } from '../../types/runs';
 
 export function RunApproval({ run, steps, messages }: { run: Run; steps: RunStep[]; messages: Message[] }) {
   const { t } = useTranslation('runs');
-  const resolve = useWorkbenchStore((state) => state.resolveApproval);
-  const resolving = useWorkbenchStore((state) => state.resolvingApprovals.includes(run.run_id));
+  const resolve = useCogitaStore((state) => state.resolveApproval);
+  const resolving = useCogitaStore((state) => state.resolvingApprovals.includes(run.run_id));
   const approval = steps.find((step) => step.kind === 'approval' && step.status === 'running');
   if (run.status !== 'WAITING_FOR_USER' || !approval) return null;
   const call = messages
@@ -61,7 +61,7 @@ export function RunApproval({ run, steps, messages }: { run: Run; steps: RunStep
 
 export function RunCancelButton({ run }: { run: Run }) {
   const { t } = useTranslation('runs');
-  const cancel = useWorkbenchStore((state) => state.cancelRun);
+  const cancel = useCogitaStore((state) => state.cancelRun);
   return (
     <Tooltip>
       <TooltipTrigger

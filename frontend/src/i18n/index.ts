@@ -23,7 +23,7 @@ import zhWorldbook from './resources/zh-CN/worldbook.json';
 import zhRenderers from './resources/zh-CN/renderers.json';
 import zhPersonas from './resources/zh-CN/personas.json';
 
-export const LOCALE_STORAGE_KEY = 'agent-workbench.locale';
+export const LOCALE_STORAGE_KEY = 'cogita.locale';
 export const SUPPORTED_LOCALES = ['en', 'zh-CN'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 

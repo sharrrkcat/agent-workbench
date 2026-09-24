@@ -125,14 +125,14 @@ class LifecycleAcceptance:
         original_log = observability._write_event
 
         async def start(args, *, env, cwd, log):
-            tower = env.get("WORKBENCH_SIGLIP_TOWER")
+            tower = env.get("COGITA_SIGLIP_TOWER")
             if tower and self.profile.parameters["unload_other_tower_on_call"]:
                 assert all(item["process"].process.returncode is not None for item in self.owned
                            if item["tower"] != tower), "The old tower is alive at the new process startup boundary"
             process = await original_start(args, env=env, cwd=cwd, log=log)
             if tower:
                 self.owned.append({"process": process, "tower": tower,
-                    "directory": Path(env["WORKBENCH_WORKER_READY"]).parent})
+                    "directory": Path(env["COGITA_WORKER_READY"]).parent})
                 self.event("process_started", tower=tower, pid=process.process.pid, state=self.snapshot())
             return process
 

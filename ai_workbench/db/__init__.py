@@ -1,2 +1,2 @@
-"""SQLite persistence for Agent Workbench."""
+"""SQLite persistence for Cogita."""
 

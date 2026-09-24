@@ -1,9 +1,9 @@
-import type { WorkbenchActions } from './state';
+import type { CogitaActions } from './state';
 import { errorText, pruneHistoryState, runtimeResponseState } from './mergeState';
 
 import { chatApi } from '../../api/chat';
 
-export const createMessageActions: WorkbenchActions<
+export const createMessageActions: CogitaActions<
   'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText' | 'setSourceMessageId'
 > = (set, get) => ({
   sendMessage: async (content, attachments = []) => {

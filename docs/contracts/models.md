@@ -85,13 +85,13 @@ Paths use the recorded version. Finalizing validates/promotes entries; healthy i
 
 Bundled uv installs Python 3.12.11 with one hash lock: Torch/Torchaudio 2.11.0+cu128, Torchvision 0.26.0+cu128,
 Transformers 5.16.1, NumPy 1.26.4, ONNX Runtime 1.23.2 and Misaki/spaCy/Thinc. Only docopt, jieba, unidic-lite, antlr4-python3-runtime and sox build from locked sources; native packages require wheels.
-scripts/build_runtime_wheels.py reproduces Chatterbox metadata, Qwen source/metadata and Misaki offline-input patches with embedded records.
+scripts/build_runtime_wheels.py reproduces Chatterbox, Qwen and Misaki patches; their +workbench.* versions, hashes, WORKBENCH_PATCH.json and patch payloads are fixed artifact identity, independent of branding.
 After dependency checks, a pinned offline source patch defers auto_factory's GenerationMixin import, replacing its file to preserve hard-linked caches; package pins and installation identity stay unchanged.
 The runtime's Python incrementally compiles only Lib/site-packages before five isolated offline engine imports and native checks, without weights/GPU.
 Existing installations use the [README preparation commands](../../README.md#verification) while stopped, without Repair or startup rewrites. User PATH/registry stay untouched; [Settings](settings.md) owns downloads.
 
 Both llama.cpp b10809 CPU/CUDA programs are included; CUDA's pinned main/cudart ZIPs use combined byte progress.
-Native archives are SHA-256 checked before extraction and on reuse from .cache/workbench-artifacts.
+Native archives are SHA-256 checked before extraction and on reuse from .cache/cogita-artifacts.
 Llama's CUDA 12.4 DLLs stay beside its executable, separate from Torch CUDA 12.8; different-content DLL collisions fail.
 Native --version checks precede promotion; dependency paths apply only to child processes.
 
@@ -121,7 +121,7 @@ Workers publish readiness atomically on loopback. Process groups/Windows kill-on
 Sanitized logs in `data/logs/runtimes` have a 10 MiB cap; retention keeps 20 terminal task and process/load-attempt logs per runtime, plus active logs.
 Load/health/Audio references check installation entries; loaded inference/status use cached availability. Workers execute application sources
 in the installed interpreter: reload picks up changes without reinstalling; source failures affect model loading, not installation validity.
-Model logs expose the latest attempt, including pre-spawn failures; UTC records share load_id through startup environment/private headers.
+Model logs expose the latest attempt, including pre-spawn failures; UTC records share load_id through COGITA_LOAD_TRACE and the private X-Cogita-Load-Trace header.
 `duration_ms`/`elapsed_ms` measure monotonic wall time; `cpu_duration_ms`/`cpu_elapsed_ms` count all threads in the emitter, excluding children.
 CPU time includes concurrent work, can exceed wall time and is not I/O time. Totals include queueing/cleanup, end before inference; overlapping stages must not be summed.
 Host stages cover entry/resources, CUDA probe, spawn/readiness, load RPC and advertisement; workers time imports, device, processor/model and setup, with separate Transformers symbols/serving and Kokoro libraries/resources/ONNX/language build/warmup.
@@ -184,7 +184,7 @@ Status/events include image/text process state, residency, failure, active_tower
 `POST /profiles/{id}/load` requires {tower:image|text}; health only probes existing towers. `/profiles/{id}/log?tower=...` selects a tower;
 other kinds reject tower on load/log. Unload always releases the whole profile. [Settings](settings.md#model-settings) owns the editor and menus.
 
-Preparation hashes once per use object off-loop: model_revision=sha256:<hex> covers a version marker and sorted, length-framed relative names/content.
+Preparation hashes once per use object off-loop: model_revision=sha256:<hex> covers the fixed workbench-siglip-model-v1 marker and sorted, length-framed relative names/content.
 Inputs are complete selected dual-tower safetensors (single file or indexed shards), index, model/processor/tokenizer configuration, tokenizer.json and consumed token maps.
 README, model-ready.json, unused files and absolute paths are excluded. No preset hashes/sizes, per-file verification manifests or tensor-key checks exist.
 Both towers share this identity; keep files immutable until whole release. vector_space_id includes revision, pipeline/library versions, effective preprocessing/tokenization,
@@ -264,14 +264,14 @@ The service defaults disabled and requires loopback clients plus one key via `Au
 | GET `/v1/models` | Enabled public llm/embedding/tts/vision/image_embedding aliases; optional kind filter, no weight loading |
 | POST `/v1/chat/completions` | Non-streaming or SSE chat |
 | POST `/v1/embeddings` | Text embeddings |
-| POST `/v1/images/tags` | Static WD14 image tagging (Workbench extension) |
-| POST `/v1/images/embeddings` | SigLIP image/text embeddings (Workbench extension) |
+| POST `/v1/images/tags` | Static WD14 image tagging (Cogita extension) |
+| POST `/v1/images/embeddings` | SigLIP image/text embeddings (Cogita extension) |
 | POST `/v1/audio/speech` | Complete MP3/WAV speech |
-| GET `/v1/audio/voices` | Preset/temporary voice discovery (Workbench extension) |
+| GET `/v1/audio/voices` | Preset/temporary voice discovery (Cogita extension) |
 | POST `/v1/audio/voice-references` | Upload a temporary Chatterbox/Qwen Base reference |
 | DELETE `/v1/audio/voice-references/{voice_id}` | Delete an unused reference |
 
-Public aliases must be enabled, visible and match endpoint kind/capabilities; stateless calls create no session/message/run/attachment/Knowledge rows.
+Discovery reports owned_by=cogita. Public aliases must be enabled, visible and match endpoint kind/capabilities; stateless calls create no session/message/run/attachment/Knowledge rows.
 Content-Length/received bytes obey max_request_mb; strict schemas reject unsupported fields without echoing values.
 Responses include X-Request-Id; logs record outcome/time without keys, prompts, content or raw provider errors.
 Voice discovery accepts optional model/source=preset|temporary and returns id, model, source, language (null for Qwen) and expires_at (null for presets).

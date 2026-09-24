@@ -10,7 +10,7 @@ class PublicModel(ApiModel):
     id: str = Field(description="Enabled, externally visible model alias.")
     object: Literal["model"]
     created: int
-    owned_by: Literal["workbench"]
+    owned_by: Literal["cogita"]
 
 
 class ModelList(ApiModel):

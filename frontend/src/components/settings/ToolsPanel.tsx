@@ -10,19 +10,19 @@ import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toolsApi } from '../../api/tools';
-import { useWorkbenchStore } from '../../store/useWorkbenchStore';
+import { useCogitaStore } from '../../store/useCogitaStore';
 import type { HarnessSettings, HarnessTool } from '../../types/tools';
 import { MessageParts } from '../messages/MessageParts';
 import { RunPanel } from '../RunPanel';
 
 export function ToolsPanel() {
   const { t } = useTranslation('settings');
-  const session = useWorkbenchStore((state) => state.currentSession);
-  const runs = useWorkbenchStore((state) => state.runs);
-  const messages = useWorkbenchStore((state) => state.messages);
-  const sending = useWorkbenchStore((state) => state.sending);
-  const error = useWorkbenchStore((state) => state.error);
-  const callTool = useWorkbenchStore((state) => state.callTool);
+  const session = useCogitaStore((state) => state.currentSession);
+  const runs = useCogitaStore((state) => state.runs);
+  const messages = useCogitaStore((state) => state.messages);
+  const sending = useCogitaStore((state) => state.sending);
+  const error = useCogitaStore((state) => state.error);
+  const callTool = useCogitaStore((state) => state.callTool);
   const [tools, setTools] = useState<HarnessTool[]>([]);
   const [settings, setSettings] = useState<HarnessSettings | null>(null);
   const [selected, setSelected] = useState('base64_encode');
@@ -86,7 +86,7 @@ export function ToolsPanel() {
       const args: unknown = JSON.parse(argumentsText);
       if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error(t('toolArgumentsObject'));
       const result = await callTool(current.name, args as Record<string, unknown>);
-      if (result && result.run.session_id === useWorkbenchStore.getState().currentSession?.session_id)
+      if (result && result.run.session_id === useCogitaStore.getState().currentSession?.session_id)
         setFeedback(t(result.run.status === 'WAITING_FOR_USER' ? 'approvalRequired' : 'toolCalled'));
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : t('failed'));

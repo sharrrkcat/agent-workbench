@@ -238,7 +238,7 @@ async def validate_vision(state, client, profile, engine_name):
 
 
 async def smoke(root, model_ref, devices, install_only, engine_name, vision=False, mmproj_ref=None):
-    engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
+    engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor

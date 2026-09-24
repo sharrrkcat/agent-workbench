@@ -101,7 +101,7 @@ async def native_smoke(root, model_ref):
     assert platform.system() == "Windows", "Acceptance currently supports the Windows installation only"
     output = root / "build/siglip-smoke"
     output.mkdir(parents=True, exist_ok=True)
-    database = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
+    database = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor
     supervisor.store, supervisor.settings = RuntimeStore(database), LocalRuntimeSettingsStore(database)
@@ -190,7 +190,7 @@ async def smoke(root, model_ref, *, full_lifecycle=False, cases=None):
     assert platform.system() == "Windows", "Acceptance currently supports the Windows installation only"
     output = root / "build/siglip-smoke"
     output.mkdir(parents=True, exist_ok=True)
-    database = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
+    database = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(database)
     state = build_runtime_state(root=root, use_memory=True)
     manager, supervisor = state.model_manager, state.runtime_supervisor

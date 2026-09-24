@@ -67,7 +67,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`Mira controls ${locale} ${viewport.width}`, () => {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test.beforeEach(async ({ page }) => {
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
       test('keyboard navigation, labels, touch targets, dropdowns and bounded dialogs', async ({ page }, info) => {
@@ -477,7 +477,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
   page,
   request,
 }) => {
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=models');
   await navigateSettings(page, 'Models', 'Providers');
   await page.getByRole('button', { name: 'Add provider', exact: true }).click();

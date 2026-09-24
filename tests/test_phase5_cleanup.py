@@ -73,7 +73,7 @@ def test_settings_revision_resets_only_application_json_and_preserves_files(tmp_
 def test_removed_display_fields_and_fonts_leave_current_settings_and_resources(tmp_path, use_memory):
     frontend = tmp_path / "frontend"
     frontend.mkdir()
-    (frontend / "index.html").write_text("<html>Workbench</html>", encoding="utf-8")
+    (frontend / "index.html").write_text("<html>Cogita</html>", encoding="utf-8")
     app = create_app(root=tmp_path, use_memory=use_memory,
                      database_url=f"sqlite:///{tmp_path / 'app.db'}", frontend_dist=frontend)
     with TestClient(app) as client:
@@ -107,7 +107,7 @@ def test_portable_package_copies_maintained_guide_and_excludes_local_data(tmp_pa
     for name in ("ai_workbench", "alembic", "docs", "scripts", "frontend/dist/assets", "data/models"):
         (root / name).mkdir(parents=True)
     for name in ("pyproject.toml", "uv.lock", "README.md", "README_RUN.md", "alembic.ini", ".env.example",
-                 "scripts/run_app.py", "frontend/dist/index.html", "docs/example.md"):
+                 "ai_workbench/__init__.py", "scripts/run_app.py", "frontend/dist/index.html", "docs/example.md"):
         (root / name).write_text(name, encoding="utf-8")
     (root / "data/models/weights").write_text("weights", encoding="utf-8")
     (root / ".env").write_text("private", encoding="utf-8")
@@ -118,6 +118,8 @@ def test_portable_package_copies_maintained_guide_and_excludes_local_data(tmp_pa
     build_portable.main()
 
     output = root / "build" / build_portable.PORTABLE_NAME
+    assert output.name == "cogita-portable"
+    assert (output / "ai_workbench/__init__.py").is_file()
     assert (output / "README_RUN.md").read_bytes() == (root / "README_RUN.md").read_bytes()
     assert (output / "docs/example.md").is_file()
     assert (output / "alembic.ini").is_file()

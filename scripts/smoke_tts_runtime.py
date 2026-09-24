@@ -58,7 +58,7 @@ async def check_disconnect(manager, profile, port, token, voice):
 
 
 async def smoke(root, model_ref, install_only, selected):
-    engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
+    engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(engine)
     supervisor = RuntimeSupervisor(root, RuntimeStore(engine), LocalRuntimeSettingsStore(engine))
     manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
@@ -155,7 +155,7 @@ def parse_args(argv=None):
 
 if __name__ == "__main__":
     args = parse_args()
-    with TemporaryDirectory(prefix="workbench-tts-cache-") as cache:
+    with TemporaryDirectory(prefix="cogita-tts-cache-") as cache:
         with patch.dict(os.environ, {"HF_HOME": str(Path(cache) / "hf"), "XDG_CACHE_HOME": str(Path(cache) / "xdg"),
                                      "TMPDIR": cache, "TMP": cache, "TEMP": cache}):
             asyncio.run(smoke(args.root.resolve(), args.model_ref, args.install_only, args.voice))

@@ -11,6 +11,9 @@ domain modules, with a single HTTP/error implementation. User-visible labels,
 states and feedback have matching English/Chinese resources. User content,
 prompts, ids, API fields and error codes retain their original values.
 
+Both locales display Cogita. Language uses only the browser key `cogita.locale`,
+defaulting to English when absent or invalid; earlier keys are not imported.
+
 ## Frontend styling foundation
 
 Tailwind CSS 4 uses its Vite plugin. shadcn/ui uses Base UI and the Mira preset
@@ -125,7 +128,7 @@ with one explicit save action.
 show_full_processing is a strict boolean, default false, labeled Show full
 processing history in General. It controls initial expansion of active reply
 processing only; recording and final answers are identical in both modes. The
-saved value immediately updates Workbench state. Terminal replies always start
+saved value immediately updates Cogita state. Terminal replies always start
 collapsed, even with this preference enabled. PATCH null/non-booleans return 422.
 
 appearance_font_* and resource_status_* are removed; reads omit them and PATCH
@@ -280,7 +283,7 @@ It returns run_id, raw RunStatus (or IDLE), step_kind and progress fields. Activ
 runs take precedence over recent terminal runs; timestamps retain microseconds.
 Approval steps take precedence while waiting; terminal states expose no active
 step. It imports no animation states or bubble text. Future visuals subscribe
-to the existing Workbench store; no Pet-specific task endpoint or polling is added.
+to the existing Cogita store; no Pet-specific task endpoint or polling is added.
 New appearance, asset format and animations are explicitly deferred.
 
 ## HTTP schemas

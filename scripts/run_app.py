@@ -21,7 +21,7 @@ def project_root() -> Path:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Agent Workbench in production web mode.")
+    parser = argparse.ArgumentParser(description="Run Cogita in production web mode.")
     parser.add_argument("--host", choices=("127.0.0.1", "localhost"), default=DEFAULT_HOST, help=f"Loopback bind host. Default: {DEFAULT_HOST}")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Bind port. Default: {DEFAULT_PORT}")
     parser.add_argument("--frontend-dist", default=None, help="Path to built frontend dist. Default: frontend/dist")
@@ -69,8 +69,7 @@ def main() -> None:
 
     ensure_port_available(args.host, args.port)
 
-    os.environ["AGENT_WORKBENCH_FRONTEND_DIST"] = str(frontend_dist)
-    os.environ["AGENT_WORKBENCH_PRODUCTION_WEB"] = "1"
+    os.environ["COGITA_FRONTEND_DIST"] = str(frontend_dist)
 
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))

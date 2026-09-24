@@ -20,7 +20,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`runtime ${locale} ${viewport.width}`, () => {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test.beforeEach(async ({ page, request }) => {
-        await page.addInitScript((locale) => localStorage.setItem('agent-workbench.locale', locale), locale);
+        await page.addInitScript((locale) => localStorage.setItem('cogita.locale', locale), locale);
         expect((await request.post('/__test__/runtimes', { data: {} })).ok()).toBeTruthy();
       });
 
@@ -105,7 +105,7 @@ for (const locale of ['en', 'zh-CN']) {
 }
 
 test('cache task cancellation and failure release installation controls', async ({ page, request }) => {
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await request.post('/__test__/runtimes', { data: { slow: true } });
   await runtimeView(page, 'en');
   await page.getByRole('button', { name: 'Prune cache', exact: true }).click();
@@ -126,7 +126,7 @@ test('cache task cancellation and failure release installation controls', async 
 });
 
 test('incomplete and failed storage scans never appear as zero', async ({ page, request }) => {
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   const snapshot = await (await request.post('/__test__/runtimes', { data: {} })).json();
   const unknown = { complete: false, file_count: null, logical_bytes: null, unique_bytes: null, shared_bytes: null, exclusive_bytes: null };
   await page.route('**/api/models/local-runtime/storage', async (route) => {

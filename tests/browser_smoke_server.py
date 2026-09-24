@@ -22,9 +22,9 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18765)
     args = parser.parse_args()
     repository = Path(__file__).resolve().parents[1]
-    with TemporaryDirectory(prefix="workbench-browser-") as directory:
+    with TemporaryDirectory(prefix="cogita-browser-") as directory:
         root = Path(directory)
-        os.environ["AGENT_WORKBENCH_ATTACHMENTS_DIR"] = str(root / "data/attachments")
+        os.environ["COGITA_ATTACHMENTS_DIR"] = str(root / "data/attachments")
         note = root / "data/knowledge/note.txt"
         note.parent.mkdir(parents=True)
         note.write_text("Browser approval result", encoding="utf-8")

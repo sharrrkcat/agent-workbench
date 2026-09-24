@@ -114,45 +114,45 @@ modelsStore
 assert.equal(modelsStore.getState().statuses.new.active, 1);
 console.log('runtime progress, stale reads, cancellation, retry history and global events: ok');
 
-const workbenchModule = await loadStore('../src/store/useWorkbenchStore.ts');
-const workbench = workbenchModule.exports.useWorkbenchStore;
+const cogitaModule = await loadStore('../src/store/useCogitaStore.ts');
+const cogita = cogitaModule.exports.useCogitaStore;
 const session = { session_id: 's', title: '', model_profile_id: null };
-workbench.setState({ currentSession: session, sessions: [session], messages: [], runs: [] });
+cogita.setState({ currentSession: session, sessions: [session], messages: [], runs: [] });
 mockApi.getSession = async () => session;
 const historyRead = deferred();
 mockApi.listMessages = () => historyRead.promise;
 mockApi.listRuns = async () => [{ run_id: 'r', session_id: 's', status: 'RUNNING' }];
-const historyRefresh = workbench.getState().refreshCurrent();
-workbench.getState().applyRuntimeEvent(event('message_started', { message }));
-workbench.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'live' }));
+const historyRefresh = cogita.getState().refreshCurrent();
+cogita.getState().applyRuntimeEvent(event('message_started', { message }));
+cogita.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'live' }));
 historyRead.resolve([]);
 await historyRefresh;
-assert.equal(workbench.getState().messages[0].parts[0].text, 'live');
-workbench.getState().applyRuntimeEvent(event('message_completed', { message: final }));
-workbench.getState().applyRuntimeEvent(event('message_delta', { seq: 2, delta: 'late' }));
-assert.deepEqual(workbench.getState().messages, [final]);
+assert.equal(cogita.getState().messages[0].parts[0].text, 'live');
+cogita.getState().applyRuntimeEvent(event('message_completed', { message: final }));
+cogita.getState().applyRuntimeEvent(event('message_delta', { seq: 2, delta: 'late' }));
+assert.deepEqual(cogita.getState().messages, [final]);
 
 const previousSessionRead = deferred();
 mockApi.listMessages = () => previousSessionRead.promise;
-const oldSessionRefresh = workbench.getState().refreshCurrent();
-workbench.setState({ currentSession: { session_id: 'other' }, messages: [] });
+const oldSessionRefresh = cogita.getState().refreshCurrent();
+cogita.setState({ currentSession: { session_id: 'other' }, messages: [] });
 previousSessionRead.resolve([final]);
 await oldSessionRefresh;
-assert.deepEqual(workbench.getState().messages, []);
-assert.equal(workbench.getState().currentSession.session_id, 'other');
+assert.deepEqual(cogita.getState().messages, []);
+assert.equal(cogita.getState().currentSession.session_id, 'other');
 const beforePersona = { ...session, current_persona_id: 'first', effective: { persona_name: 'First' } };
 const afterPersona = { ...beforePersona, current_persona_id: 'second', effective: { persona_name: 'Second' } };
-workbench.setState({ currentSession: beforePersona, sessions: [beforePersona], messages: [], runs: [] });
+cogita.setState({ currentSession: beforePersona, sessions: [beforePersona], messages: [], runs: [] });
 const staleSession = deferred();
 mockApi.getSession = () => staleSession.promise;
 mockApi.listMessages = async () => [];
 mockApi.listRuns = async () => [];
-const staleRefresh = workbench.getState().refreshCurrent();
-workbench.getState().applyRuntimeEvent(event('session_updated', { session: afterPersona }));
+const staleRefresh = cogita.getState().refreshCurrent();
+cogita.getState().applyRuntimeEvent(event('session_updated', { session: afterPersona }));
 staleSession.resolve(beforePersona);
 await staleRefresh;
-assert.equal(workbench.getState().currentSession.current_persona_id, 'second');
-assert.equal(workbench.getState().sessions[0].effective.persona_name, 'Second');
+assert.equal(cogita.getState().currentSession.current_persona_id, 'second');
+assert.equal(cogita.getState().sessions[0].effective.persona_name, 'Second');
 
 const speakerMessage = {
   ...message,
@@ -160,36 +160,36 @@ const speakerMessage = {
   speaker_name: 'First',
   metadata: { speaker_avatar_attachment_id: 'image.png' },
 };
-workbench.getState().applyRuntimeEvent(event('message_started', { message: speakerMessage }));
-workbench.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'response' }));
-assert.equal(workbench.getState().messages[0].speaker_name, 'First');
-assert.equal(workbench.getState().messages[0].metadata.speaker_avatar_attachment_id, 'image.png');
-workbench.getState().applyRuntimeEvent(event('run_cancelled', {}));
-assert.deepEqual(workbench.getState().messages, []);
+cogita.getState().applyRuntimeEvent(event('message_started', { message: speakerMessage }));
+cogita.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'response' }));
+assert.equal(cogita.getState().messages[0].speaker_name, 'First');
+assert.equal(cogita.getState().messages[0].metadata.speaker_avatar_attachment_id, 'image.png');
+cogita.getState().applyRuntimeEvent(event('run_cancelled', {}));
+assert.deepEqual(cogita.getState().messages, []);
 
 const sourceSession = { ...session, session_id: 'source' };
-workbench.setState({ currentSession: beforePersona, sessions: [beforePersona, sourceSession] });
-workbench.getState().setSourceMessageId('selected-history');
+cogita.setState({ currentSession: beforePersona, sessions: [beforePersona, sourceSession] });
+cogita.getState().setSourceMessageId('selected-history');
 mockApi.getSession = async (id) => ({ ...session, session_id: id });
-await workbench.getState().selectSession('source');
-assert.equal(workbench.getState().sourceMessageId, null);
-workbench.getState().setSourceMessageId('selected-history');
+await cogita.getState().selectSession('source');
+assert.equal(cogita.getState().sourceMessageId, null);
+cogita.getState().setSourceMessageId('selected-history');
 let sendArguments;
 mockApi.sendMessage = async (...args) => {
   sendArguments = args;
   return { success: true, session: sourceSession, messages: [], run: { run_id: 'sent', session_id: 'source' } };
 };
-await workbench.getState().sendMessage('@role:literal');
+await cogita.getState().sendMessage('@role:literal');
 assert.equal(sendArguments[1], '@role:literal');
 assert.equal(sendArguments[4], 'selected-history');
 
 const lateRetry = deferred();
 mockApi.retryRun = () => lateRetry.promise;
-const retry = workbench.getState().retryRun('old-run');
-workbench.setState({ currentSession: beforePersona, messages: [] });
+const retry = cogita.getState().retryRun('old-run');
+cogita.setState({ currentSession: beforePersona, messages: [] });
 lateRetry.resolve({ success: true, session: sourceSession, messages: [{ ...final, session_id: 'source' }] });
 await retry;
-assert.deepEqual(workbench.getState().messages, []);
+assert.deepEqual(cogita.getState().messages, []);
 console.log('persona speaker identity, configuration refresh, selected context, cancellation and retry isolation: ok');
 
 console.log('model reload, live status, chat refresh and session isolation: ok');

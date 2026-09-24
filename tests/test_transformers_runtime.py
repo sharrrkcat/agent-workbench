@@ -103,7 +103,8 @@ def test_private_server_authentication_and_local_text_boundary():
     with TestClient(build_app(engine, "test-token")) as client:
         assert client.get("/health").status_code == 401
         headers = {"Authorization": "Bearer test-token"}
-        assert client.get("/v1/models", headers=headers).json()["data"][0]["id"] == "managed"
+        assert client.get("/v1/models", headers=headers).json()["data"] == [
+            {"id": "managed", "object": "model", "owned_by": "cogita"}]
         base = {"model": "managed", "messages": [{"role": "user", "content": "hello"}]}
         assert client.post("/v1/chat/completions", headers=headers, json=base).status_code == 200
         for patch in ({"model": "another/local/path"}, {"response_format": {"type": "json_object"}},

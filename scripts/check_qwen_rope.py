@@ -20,7 +20,7 @@ def main():
     predictor = Qwen3TTSTalkerCodePredictorConfig(**small, head_dim=8, vocab_size=32, num_code_groups=2)
     decoder = Qwen3TTSTokenizerV2DecoderConfig(**small, latent_dim=16, sliding_window=16)
     results = []
-    with TemporaryDirectory(prefix="workbench-qwen-rope-") as directory:
+    with TemporaryDirectory(prefix="cogita-qwen-rope-") as directory:
         for name, cls, config, kwargs in [
             ("talker", Qwen3TTSTalkerModel, talker, {}),
             ("predictor", Qwen3TTSTalkerCodePredictorModel, predictor, {"embedding_dim": 16}),

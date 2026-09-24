@@ -142,7 +142,7 @@ async def validate(state, client, model_ref, port, token):
 
 
 async def smoke(root, model_ref):
-    engine = get_engine(f"sqlite:///{root / 'data/agent_workbench.db'}")
+    engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
     supervisor = state.runtime_supervisor

@@ -29,7 +29,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`Settings layout ${locale} ${viewport.width}`, () => {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test.beforeEach(async ({ page }) => {
-        await page.addInitScript((value) => localStorage.setItem('agent-workbench.locale', value), locale);
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
       test('all grouped pages have bounded content and stable navigation', async ({ page }, info) => {
@@ -223,7 +223,7 @@ for (const locale of ['en', 'zh-CN']) {
 test('direct links refresh, invalid views default, history preserves model drafts and hides overlays', async ({
   page,
 }) => {
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=models&view=providers');
   await page.getByRole('button', { name: 'Add provider', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -252,7 +252,7 @@ test('direct links refresh, invalid views default, history preserves model draft
 });
 
 test('home and settings retain the shared desktop sidebar visibility through history', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/');
   await openSidebar(page);
   await page.locator('.session-sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
@@ -275,7 +275,7 @@ test('home and settings retain the shared desktop sidebar visibility through his
 test('subpage history closes transient popups while retaining selected values', async ({ page, request }) => {
   const llm = words('en', 'llm');
   const knowledge = words('en', 'knowledge');
-  await page.addInitScript(() => localStorage.setItem('agent-workbench.locale', 'en'));
+  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=models&view=providers');
   await navigateSettings(page, 'Models', llm.profiles);
   const kind = page.locator('.model-toolbar').getByLabel(llm.kind, { exact: true });

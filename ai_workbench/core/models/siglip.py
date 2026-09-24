@@ -109,10 +109,10 @@ class SiglipTowerClient:
         self.prune_logs(self.supervisor.logs)
         env = {key: value for key, value in os.environ.items()
                if not key.startswith(("PYTHON", "VIRTUAL_ENV")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
-        env.update(WORKBENCH_WORKER_TOKEN=token, WORKBENCH_WORKER_READY=str(ready),
-            WORKBENCH_MODELS_ROOT=str(self.model.models_root), WORKBENCH_MODEL_REF=self.model.model_ref,
-            WORKBENCH_SIGLIP_TOWER=self.tower, WORKBENCH_MODEL_REVISION=self.model.model_revision,
-            WORKBENCH_RUNTIME_OPTIONS=self.options.model_dump_json(), HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
+        env.update(COGITA_WORKER_TOKEN=token, COGITA_WORKER_READY=str(ready),
+            COGITA_MODELS_ROOT=str(self.model.models_root), COGITA_MODEL_REF=self.model.model_ref,
+            COGITA_SIGLIP_TOWER=self.tower, COGITA_MODEL_REVISION=self.model.model_revision,
+            COGITA_RUNTIME_OPTIONS=self.options.model_dump_json(), HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
             HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false", HF_HOME=str(cache),
             HF_HUB_CACHE=str(cache / "hub"), TORCH_HOME=str(cache / "torch"))
         trace = current_trace()

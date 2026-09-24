@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-const port = Number(process.env.WORKBENCH_BROWSER_PORT || 18767);
+const port = Number(process.env.COGITA_BROWSER_PORT || 18767);
 export default defineConfig({
   testDir: './tests',
   workers: 1,

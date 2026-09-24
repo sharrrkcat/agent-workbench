@@ -16,7 +16,7 @@ def ok(response):
 
 @pytest.fixture(params=[True, False], ids=["memory", "sqlite"])
 def resources(request, tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_WORKBENCH_ATTACHMENTS_DIR", str(tmp_path / "data/attachments"))
+    monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "data/attachments"))
     upstream = MockOpenAI()
     app = create_app(root=tmp_path, use_memory=request.param, database_url=f"sqlite:///{tmp_path / 'resources.db'}",
                      adapter_factory=upstream.factory)

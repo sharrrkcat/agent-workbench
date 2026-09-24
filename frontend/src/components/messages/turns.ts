@@ -1,6 +1,6 @@
 import type { Message, MessagePart, ToolCallPart, ToolResultPart } from '../../types/messages';
 import type { Run, RunStep } from '../../types/runs';
-import { compareTime, mergeRuns, terminal } from '../../store/workbench/mergeState';
+import { compareTime, mergeRuns, terminal } from '../../store/cogita/mergeState';
 
 export type ToolEntry = {
   call: ToolCallPart;
