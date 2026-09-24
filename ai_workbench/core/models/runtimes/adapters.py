@@ -15,7 +15,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import request_images
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
-from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
+from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog, prune_process_logs
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
 from ai_workbench.core.models.schema import AudioOutput, ModelStatus, ExternalConnection, VisionResult
@@ -71,23 +71,17 @@ class ManagedAdapter:
                          log.write, total_stage=operation + "_total", on_finish=finished)
 
     def _prune_logs(self):
-        try:
-            active = {log.path for log in self._trace_logs.values()}
-            manager = self.supervisor.manager
-            for slot in manager._slots.values() if manager else ():
-                adapter = slot.adapter
-                if isinstance(adapter, ManagedAdapter):
-                    active.update(log.path for log in adapter._trace_logs.values())
-                    if adapter.process:
-                        log = getattr(adapter.process, "log", None)
-                        if log:
-                            active.add(log.path)
-            terminal = sorted((path for path in self.supervisor.logs.glob(f"process-{self.engine}-*.log")
-                               if path not in active), key=lambda path: path.stat().st_mtime_ns, reverse=True)
-            for path in terminal[20:]:
-                path.unlink()
-        except OSError:
-            pass
+        active = {log.path for log in self._trace_logs.values()}
+        manager = self.supervisor.manager
+        for slot in manager._slots.values() if manager else ():
+            adapter = slot.adapter
+            if isinstance(adapter, ManagedAdapter):
+                active.update(log.path for log in adapter._trace_logs.values())
+                if adapter.process:
+                    log = getattr(adapter.process, "log", None)
+                    if log:
+                        active.add(log.path)
+        prune_process_logs(self.supervisor.logs, self.engine, active)
 
     def _trace(self, profile, trigger):
         trace = current_trace()

@@ -10,8 +10,11 @@ authority and makes no delivery commitment.
 The shared local release supports Windows x64 GGUF, Transformers LLM, Kokoro,
 WD14 CPU, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
 native components and real-runtime acceptance before it can be advertised.
-Local embedding, reranker and image embedding are deferred. Their model
-kinds and existing parameter schemas remain; local binding currently fails.
+Local embedding/reranker execution and complete image-embedding integration are deferred.
+SigLIP [inspection and standalone towers](contracts/models.md#siglip-single-tower-foundations) are implemented;
+image_embedding profiles still accept only unbound drafts, with their existing persisted parameters.
+The pending integration includes ModelManager binding, shared serial tower scheduling, an unload-other-tower switch,
+configuration UI and `/v1/images/embeddings`. Image indexes, internal consumers and usage collection remain out of scope.
 Future support must use the same installation and dependency environment,
 validate architecture/preprocessing/index behavior and preserve independent
 queues and worker cancellation. Infinity is an implementation choice to reassess

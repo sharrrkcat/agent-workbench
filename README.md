@@ -322,9 +322,10 @@ uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
 
 Installation uses bundled uv; run it before the temporary SDK environment. `--voice af_heart` selects one voice.
 The smoke isolates caches, decodes both formats and checks worker termination on disconnect, reload and another SDK request.
-WD14 uses `uv run python -m scripts.smoke_wd14_runtime --model-ref vision/wd-swinv2-tagger-v3`.
-The explicit reference is a local fixture, not a required checkpoint; no install mode or default model is supplied.
-It checks actual single/multi-image API, thresholds, reuse, disconnect, crash/reload and unload; hardware/runtime/timings go to build/wd14-smoke.
+WD14 CPU: `uv run python -m scripts.smoke_wd14_runtime --model-ref vision/wd-swinv2-tagger-v3`.
+SigLIP CUDA: `uv run python -m scripts.smoke_siglip_runtime --model-ref image_embeddings/<directory>`.
+Both require supplied directories and reuse installation. WD14 checks tagging API/lifecycle; SigLIP compares standalone towers with native FP16 CUDA outputs.
+Reports go to build/wd14-smoke or build/siglip-smoke. [Models](docs/contracts/models.md#siglip-single-tower-foundations) owns SigLIP integration and acceptance limits.
 For focused bilingual desktop/touch settings checks, run `npm run test:browser -- wd14.spec.ts model-sources.spec.ts` in frontend.
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
@@ -343,8 +344,7 @@ Stop Workbench before real-model checks and record hardware/runtime/model; deter
 `uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation;
 use --engine llama-server for GGUF. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks.
 GGUF vision also needs `--mmproj-ref llms/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf`; Qwen3.5-0.8B files are the validated reference.
-Image answers are checked against fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke.
-Its defaults retain LLM CPU/CUDA and Kokoro CPU; Audio CPU requires --backend chatterbox-cpu or --backend qwen3tts-cpu.
+Image answers check fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke and defaults to LLM CPU/CUDA/Kokoro CPU; Audio CPU needs --backend chatterbox-cpu or --backend qwen3tts-cpu.
 
 Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests.
 [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md) defines English-only documentation and active-plan completion rules.

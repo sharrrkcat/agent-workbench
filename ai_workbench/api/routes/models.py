@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from typing import Literal
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import request_body
@@ -9,6 +10,7 @@ from ai_workbench.api.schemas.models import (
 )
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.inventory import inventory
+from ai_workbench.core.models.inspection import SiglipInspection, inspect_siglip
 from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile
 from ai_workbench.api.schemas.inference import VoiceAvailability
 
@@ -182,6 +184,13 @@ async def unload_profile(profile_id: str, state: RuntimeState = Depends(get_stat
 @router.get("/inventory", response_model=list[ModelInventoryItem])
 async def model_inventory(kind: ModelKind | None = None, state: RuntimeState = Depends(get_state)):
     return inventory(state.repo_root, kind)
+
+
+@router.get("/inspect", response_model=SiglipInspection, responses=error_responses(404, 422),
+            summary="Read local image-embedding configuration without loading weights")
+async def inspect_model(kind: Literal["image_embedding"], model_ref: str, state: RuntimeState = Depends(get_state)):
+    import asyncio
+    return await asyncio.to_thread(inspect_siglip, state.repo_root, model_ref)
 
 
 @router.get("/settings", response_model=ModelSettingsResponse, response_model_exclude_unset=True)

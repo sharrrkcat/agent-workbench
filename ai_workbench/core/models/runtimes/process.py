@@ -16,6 +16,16 @@ LOG_LIMIT = 10 * 1024 * 1024
 _write_lock = threading.Lock()
 
 
+def prune_process_logs(directory: Path, engine: str, active: set[Path]):
+    try:
+        terminal = sorted((path for path in directory.glob(f"process-{engine}-*.log") if path not in active),
+                          key=lambda path: path.stat().st_mtime_ns, reverse=True)
+        for path in terminal[20:]:
+            path.unlink()
+    except OSError:
+        pass
+
+
 class RuntimeLog:
     def __init__(self, path: Path, root: Path, secrets=()):
         self.path = path

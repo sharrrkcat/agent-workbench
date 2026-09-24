@@ -58,6 +58,8 @@ def requirements_digest(path: Path) -> str:
 
 
 def worker_entrypoint(engine: str) -> str:
+    if engine == "siglip2":
+        return "siglip_server.py"
     if engine == "transformers":
         return "transformers_server.py"
     return "server.py" if engine in {"kokoro", "wd14"} else "audio_server.py"
