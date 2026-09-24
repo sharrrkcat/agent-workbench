@@ -506,8 +506,19 @@ def test_python_installer_uses_pinned_artifact_and_offline_checks_without_models
         assert "--build-constraints" in install and "--find-links" in install
         assert set(install[install.index("--no-binary") + 1].split(",")) == {"docopt", "jieba", "unidic-lite", "antlr4-python3-runtime", "sox"}
         assert any(args[1:3] == ["pip", "check"] for args, _ in calls)
+        commands = [args for args, _ in calls]
+        python = str(tmp_path / "payload/env/python.exe")
+        site_packages = str(tmp_path / "payload/env/Lib/site-packages")
+        patch = [python, "-I", "-B", "-X", "utf8", str(service.worker_root / "patch_transformers.py")]
+        compile_bytecode = [python, "-I", "-B", "-X", "utf8", "-m", "compileall", "-q", "-j", "4", "-o", "0",
+            "--invalidation-mode", "timestamp", "-e", site_packages, site_packages]
+        check_packages = next(args for args in commands if args[1:3] == ["pip", "check"])
+        assert commands.count(patch) == commands.count(compile_bytecode) == 1
+        assert commands.index(install) < commands.index(check_packages) < commands.index(patch) < commands.index(compile_bytecode)
+        assert "--compile-bytecode" not in install
         checks = [(args, env) for args, env in calls if "require_offline" in " ".join(args)]
         assert len(checks) == 5
+        assert all(commands.index(compile_bytecode) < commands.index(args) for args, _ in checks)
         assert all(env["CUDA_VISIBLE_DEVICES"] == "" and env["HF_HUB_OFFLINE"] == "1" for _, env in checks)
         assert ["ChatterboxTTS" in " ".join(args) for args, _ in checks].count(True) == 1
         assert ["Qwen3TTSModel" in " ".join(args) for args, _ in checks].count(True) == 1

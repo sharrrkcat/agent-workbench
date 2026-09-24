@@ -142,7 +142,7 @@ class OpenAIAdapter:
     async def rerank(self, profile, query, documents):
         raise ModelError("MODEL_UNAVAILABLE", "Providers do not support reranking.", 503)
 
-    async def image_embed(self, profile, images):
+    async def image_embed(self, profile, tower, inputs):
         raise ModelError("MODEL_UNAVAILABLE", "Providers do not support image embedding.", 503)
 
     async def vision(self, profile, images):

@@ -1,5 +1,32 @@
 export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
-export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts';
+export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2';
+export type SiglipTower = 'image' | 'text';
+export type SiglipTowerInfo = {
+  tower: SiglipTower; device: 'cpu' | 'cuda'; device_name: string;
+  dtype: 'float16' | 'float32'; output_dtype: 'float32'; dimensions: number;
+  model_revision: string; vector_space_id: string;
+};
+export type SiglipTowerStatus = {
+  process_state: 'stopped' | 'starting' | 'ready' | 'failed';
+  residency: 'loaded' | 'unloaded'; error_code: string | null; info: SiglipTowerInfo | null;
+};
+export type SiglipTowers = {
+  image: SiglipTowerStatus; text: SiglipTowerStatus; active_tower: SiglipTower | null;
+  model_revision: string | null; vector_space_id: string | null; dimensions: number | null;
+};
+export type SiglipInspection = {
+  kind: 'image_embedding'; model_ref: string; model_type: string | null; structure: 'fixres' | 'naflex' | null;
+  image: { dimensions: number | null; image_size: number | null; patch_size: number | null };
+  text: { dimensions: number | null; hidden_size: number | null; max_position_embeddings: number | null;
+    tokenizer_class: string | null; tokenizer_max_length: number | null; do_lower_case: boolean | null;
+    add_bos_token: boolean | null; add_eos_token: boolean | null };
+  processor: { image_processor_type: string | null; do_resize: boolean | null;
+    size: number | Record<string, number> | null; resample: number | null;
+    do_rescale: boolean | null; rescale_factor: number | null; do_normalize: boolean | null;
+    image_mean: number[] | number | null; image_std: number[] | number | null;
+    do_convert_rgb: boolean | null; patch_size: number | null; max_num_patches: number | null };
+  diagnostics: { file: string; code: 'missing_config' | 'invalid_config' | 'invalid_field' | 'unknown_structure'; message: string }[];
+};
 
 export type VisionParameters = {
   architecture: 'wd14';
@@ -80,6 +107,7 @@ export type ModelStatus = {
   active: number;
   queued: number;
   error_code: string | null;
+  towers?: SiglipTowers | null;
   runtime?: {
     engine: LocalEngine;
     version: string;
@@ -106,7 +134,7 @@ export type RuntimeCatalog = {
   architecture: string;
   supported: boolean;
   reason: string | null;
-  engines: { engine: LocalEngine; kind: 'llm' | 'tts' | 'vision'; options_schema: Record<string, unknown> }[];
+  engines: { engine: LocalEngine; kind: 'llm' | 'tts' | 'vision' | 'image_embedding'; options_schema: Record<string, unknown> }[];
 };
 
 export type RuntimeInstallation = {

@@ -11,7 +11,7 @@ from ai_workbench.api.schemas.models import (
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.inventory import inventory
 from ai_workbench.core.models.inspection import SiglipInspection, inspect_siglip
-from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile
+from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelLoadRequest, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile, Tower
 from ai_workbench.api.schemas.inference import VoiceAvailability
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -158,9 +158,9 @@ async def profile_status(profile_id: str, state: RuntimeState = Depends(get_stat
 
 
 @router.get("/profiles/{profile_id}/log", response_model=TextResponse, responses=error_responses(404, 422, 503))
-def profile_log(profile_id: str, state: RuntimeState = Depends(get_state)):
+def profile_log(profile_id: str, tower: Tower | None = None, state: RuntimeState = Depends(get_state)):
     profile = state.model_profiles.get(profile_id)
-    return {"text": state.model_manager.process_log(profile)}
+    return {"text": state.model_manager.process_log(profile, tower=tower)}
 
 
 @router.post("/profiles/{profile_id}/health", response_model=ModelStatus, response_model_exclude_unset=True,
@@ -171,8 +171,8 @@ async def profile_health(profile_id: str, state: RuntimeState = Depends(get_stat
 
 @router.post("/profiles/{profile_id}/load", response_model=ModelStatus, response_model_exclude_unset=True,
              responses=error_responses(400, 404, 409, 422, 429, 502, 503, 504))
-async def load_profile(profile_id: str, state: RuntimeState = Depends(get_state)):
-    return (await state.model_manager.load(profile_id)).model_dump()
+async def load_profile(profile_id: str, payload: ModelLoadRequest | None = None, state: RuntimeState = Depends(get_state)):
+    return (await state.model_manager.load(profile_id, tower=payload.tower if payload else None)).model_dump()
 
 
 @router.post("/profiles/{profile_id}/unload", response_model=ModelStatus, response_model_exclude_unset=True,

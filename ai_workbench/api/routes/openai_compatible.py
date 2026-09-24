@@ -19,12 +19,12 @@ from pydantic import ValidationError
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import SSE_RESPONSE, request_body
 from ai_workbench.api.schemas.common import error_responses
-from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ImageTagsResponse, ModelList, VoiceList,
+from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ImageEmbeddingResponse, ImageTagsResponse, ModelList, VoiceList,
     VoiceReferenceDeleted, VoiceReferenceResponse, VoiceReferenceUpload)
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_body, read_request
 from ai_workbench.core.models.images import MAX_TAGGING_BYTES
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ModelKind, SpeechRequest, VisionRequest
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, ModelKind, SpeechRequest, VisionRequest
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
@@ -38,7 +38,7 @@ async def list_models(request: Request, kind: ModelKind | None = None, state: Ru
     guard(request, settings)
     return {"object": "list", "data": [
         {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "workbench"}
-        for p in state.model_profiles.list(kind) if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts", "vision"}
+        for p in state.model_profiles.list(kind) if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts", "vision", "image_embedding"}
     ]}
 
 
@@ -52,6 +52,28 @@ async def image_tags(request: Request, state: RuntimeState = Depends(get_state))
     profile = state.model_manager.external_profile(payload.model, "vision")
     result = await inference_until_disconnect(request, state.model_manager.vision(profile.id, payload))
     return {"object": "list", "model": profile.alias, "data": result.outputs}
+
+
+@router.post("/images/embeddings", response_model=ImageEmbeddingResponse, openapi_extra=request_body(ImageEmbeddingRequest),
+             summary="Embed static images or text with local SigLIP (Workbench extension)",
+             responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 503, 504))
+async def image_embeddings(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    payload = await read_request(request, settings, ImageEmbeddingRequest, max_bytes=MAX_TAGGING_BYTES)
+    profile = state.model_manager.external_profile(payload.model, "image_embedding")
+    result = await inference_until_disconnect(request, state.model_manager.image_embed(profile.id, payload))
+    return {"object": "list", "model": profile.alias, "input_type": payload.input_type,
+            "dimensions": result.dimensions, "model_revision": result.model_revision, "vector_space_id": result.vector_space_id,
+            "data": embedding_data(result.vectors, payload.encoding_format)}
+
+
+def embedding_data(vectors, encoding_format):
+    def encode(vector):
+        if encoding_format == "base64":
+            return base64.b64encode(struct.pack("<" + "f" * len(vector), *vector)).decode("ascii")
+        return vector
+    return [{"object": "embedding", "index": index, "embedding": encode(vector)} for index, vector in enumerate(vectors)]
 
 
 @router.get("/audio/voices", response_model=VoiceList, responses=error_responses(400, 401, 403, 404, 503),
@@ -209,12 +231,8 @@ async def embeddings(request: Request, state: RuntimeState = Depends(get_state))
     profile = state.model_manager.external_profile(payload.model, "embedding")
     inputs = [payload.input] if isinstance(payload.input, str) else payload.input
     result = await state.model_manager.embed(profile.id, inputs, purpose="document", dimensions=payload.dimensions)
-    def encode(vector):
-        if payload.encoding_format == "base64":
-            return base64.b64encode(struct.pack("<" + "f" * len(vector), *vector)).decode("ascii")
-        return vector
     response = {"object": "list", "model": profile.alias,
-                "data": [{"object": "embedding", "index": i, "embedding": encode(v)} for i, v in enumerate(result.vectors)]}
+                "data": embedding_data(result.vectors, payload.encoding_format)}
     if result.usage:
         response["usage"] = result.usage.model_dump(exclude={"completion_tokens"})
     return response

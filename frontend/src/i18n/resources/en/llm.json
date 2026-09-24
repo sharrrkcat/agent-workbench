@@ -137,6 +137,36 @@
   "transformersDeviceHint": "This CUDA build supports explicit CPU execution. CUDA requires an available NVIDIA GPU; it never switches to CPU automatically.",
   "visionTags": "Tags",
   "visionDirectoryHint": "Select a local WD14 directory containing model.onnx and selected_tags.csv. Supports static PNG, JPEG and WebP images.",
+  "siglip": {
+    "directoryHint": "Select a local SigLIP2 directory. Its configuration supplies model information automatically.",
+    "unloadOther": "Unload the other tower when called",
+    "unloadOtherHint": "On: calling one tower releases the other first. Off: both towers may remain loaded; requests still run one at a time. Unload and release policies apply to both towers.",
+    "deviceHint": "CUDA uses FP16; CPU uses FP32. Vectors use the model's native dimensions, float32 and L2 normalization.",
+    "information": "Model information",
+    "informationHint": "Read from the selected directory. Missing values are determined during loading.",
+    "inspecting": "Reading model information…",
+    "inspectionFailed": "Model information is unavailable. You can still save this profile.",
+    "pending": "Determined when loading",
+    "fixresHint": "This fixed-resolution structure is shared by SigLIP and SigLIP2; it does not identify the training generation.",
+    "structures": { "naflex": "SigLIP2 NaFlex", "fixres": "SigLIP-compatible FixRes" },
+    "fields": {
+      "structure": "Structure", "imageDimensions": "Image vector dimensions", "textDimensions": "Text vector dimensions",
+      "textLimit": "Text position limit", "imageSize": "Image size", "patchSize": "Patch size",
+      "maxPatches": "Maximum patches", "resample": "Resize filter", "rescale": "Rescale pixels",
+      "rescaleFactor": "Pixel scale factor", "normalize": "Normalize pixels", "imageMean": "Pixel mean",
+      "imageStd": "Pixel standard deviation", "lowercase": "Lowercase text", "bos": "Add start token", "eos": "Add end token"
+    },
+    "diagnostics": {
+      "missing_config": "Configuration is missing.", "invalid_config": "Configuration could not be read.",
+      "invalid_field": "A declared field could not be interpreted.", "unknown_structure": "The structure is not recognized."
+    },
+    "towers": "Tower status",
+    "tower": { "image": "Image tower", "text": "Text tower" },
+    "load": { "image": "Load image tower", "text": "Load text tower" },
+    "log": { "image": "Image tower log", "text": "Text tower log" },
+    "states": { "stopped": "Unloaded", "starting": "Loading", "ready": "Loaded", "failed": "Failed" },
+    "revision": "Model revision", "vectorSpace": "Vector space"
+  },
   "tagThresholds": {
     "general": "General tag threshold",
     "character": "Character tag threshold"
@@ -262,7 +292,8 @@
     "kokoro": "Kokoro (ONNX)",
     "wd14": "WD14 (ONNX)",
     "chatterbox": "Chatterbox",
-    "qwen3tts": "Qwen3-TTS Base"
+    "qwen3tts": "Qwen3-TTS Base",
+    "siglip2": "SigLIP2"
   },
   "providers": "Providers",
   "addProvider": "Add provider",

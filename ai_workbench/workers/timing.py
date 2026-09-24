@@ -152,7 +152,7 @@ def worker_trace(encoded, total_stage):
             return None
         if str(UUID(metadata["load_id"])) != metadata["load_id"]:
             return None
-        if metadata["source_type"] != "local" or metadata["engine"] not in {"kokoro", "transformers", "chatterbox", "qwen3tts", "whisper"} or metadata["trigger"] not in {"explicit", "autoload", "health", "reference"}:
+        if metadata["source_type"] != "local" or metadata["engine"] not in {"kokoro", "transformers", "chatterbox", "qwen3tts", "whisper", "siglip2"} or metadata["trigger"] not in {"explicit", "autoload", "health", "reference"}:
             return None
         if metadata["device"] not in {"cpu", "cuda"}:
             return None

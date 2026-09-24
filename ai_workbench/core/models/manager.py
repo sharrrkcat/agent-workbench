@@ -13,12 +13,12 @@ from dataclasses import dataclass, field
 from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
-from ai_workbench.core.models.images import prepare_local_images, prepare_tagging_images, validate_local_image_options
+from ai_workbench.core.models.images import prepare_image_embedding_inputs, prepare_local_images, prepare_tagging_images, validate_local_image_options
 from ai_workbench.core.models.runtimes.schema import is_transformers, local_engine
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
-    VisionRequest, VisionResult,
+    ImageEmbeddingRequest, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
@@ -107,7 +107,7 @@ class ModelManager:
             return ("provider", profile.source.provider_profile_id)
         engine = local_engine(profile)
         key = ("local", engine)
-        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14"}:
+        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2"}:
             return key + (getattr(profile, "id", "draft"), profile.model_ref,
                           json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")))
         if engine in {"llama-server", "transformers"}:
@@ -147,6 +147,8 @@ class ModelManager:
             if not slot:
                 status.runtime = RuntimeStatus(engine=engine, version=installation.version,
                     install_state=installation.state, job_id=installation.job_id, process_state="stopped")
+                if engine == "siglip2":
+                    status.towers = SiglipTowers()
             if installation.state != "installed":
                 status.state = "unavailable"
                 status.error_code = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING", "unsupported": "RUNTIME_UNSUPPORTED"}.get(installation.state, "RUNTIME_BROKEN")
@@ -162,6 +164,9 @@ class ModelManager:
                     elif engine in {"chatterbox", "qwen3tts", "whisper"}:
                         from ai_workbench.workers.audio_catalog import audio_model
                         audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
+                    elif engine == "siglip2":
+                        from ai_workbench.workers.siglip_catalog import model_presence
+                        model_presence(self.runtime_supervisor.root / "data/models", profile.model_ref)
                     else:
                         from ai_workbench.workers.common import local_model
                         local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
@@ -210,7 +215,8 @@ class ModelManager:
                 raise ModelError("RUNTIME_INSTALLING", "Local runtime maintenance is in progress.", 409)
             if require_runtime:
                 supervisor.assert_available(check=False)
-            return ManagedQueue(), self._managed_slot(profile)
+            limits = ManagedQueue(queue_timeout_seconds=120) if local_engine(profile) == "siglip2" else ManagedQueue()
+            return limits, self._managed_slot(profile)
         try:
             provider = self.providers.get(execution_key[1])
         except KeyError as exc:
@@ -225,8 +231,9 @@ class ModelManager:
         key = self.execution_key(profile)
         if key not in self._slots:
             from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
+            from ai_workbench.core.models.siglip_adapter import SiglipAdapter
             engine = local_engine(profile)
-            cls = AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
+            cls = SiglipAdapter if engine == "siglip2" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
             adapter: LocalAdapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
             self._slots[key] = InferenceSlot(adapter, asyncio.Semaphore(1))
         return self._slots[key]
@@ -269,63 +276,119 @@ class ModelManager:
             raise
         finally:
             if registered:
-                if acquired:
-                    slot.active -= 1
-                    slot.model_active[key] -= 1
-                    slot.semaphore.release()
-                else:
-                    slot.queued -= 1
-                    slot.model_queued[key] -= 1
-                slot.tasks.discard(task)
-                self._publish(key)
+                try:
+                    if (profile is not None and profile.kind == "image_embedding" and not self._closed
+                            and ((acquired and slot.active == 1 and slot.queued == 0)
+                                 or (not acquired and slot.active == 0 and slot.queued == 1))):
+                        # A cancelled last waiter can drain the queue after the active
+                        # request finished. Keep teardown serialized with new admission.
+                        if not acquired:
+                            await slot.semaphore.acquire()
+                        try:
+                            await self._release_policy(profile, slot.adapter)
+                        finally:
+                            if not acquired:
+                                slot.semaphore.release()
+                finally:
+                    if acquired:
+                        slot.active -= 1
+                        slot.model_active[key] -= 1
+                        slot.semaphore.release()
+                    else:
+                        slot.queued -= 1
+                        slot.model_queued[key] -= 1
+                    slot.tasks.discard(task)
+                    self._publish(key)
 
     @asynccontextmanager
-    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None, load_trigger=None):
+    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None, load_trigger=None, tower: Tower | None = None):
         if profile.source is None:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
         local = isinstance(profile.source, LocalSource)
+        siglip = local_engine(profile) == "siglip2"
         executing = False
         key = self._key(profile)
         trace = None
         if local and self.runtime_supervisor and not self._closed and (
-            load_trigger or autoload and self._statuses.get(key, ModelStatus()).state != "ready"
+            load_trigger or autoload and (not self._managed_slot(profile).adapter.ready(tower) if siglip
+                                         else self._statuses.get(key, ModelStatus()).state != "ready")
         ):
-            trace = self._managed_slot(profile).adapter.begin_trace(profile, load_trigger or "autoload")
+            adapter = self._managed_slot(profile).adapter
+            trace = adapter.begin_trace(profile, load_trigger or "autoload", tower=tower) if siglip else adapter.begin_trace(profile, load_trigger or "autoload")
         def admitted():
             if on_admit:
                 on_admit()
-            idle = self._idle.pop(key, None)
-            if idle and idle is not asyncio.current_task():
-                idle.cancel()
+            if not siglip:
+                self._cancel_idle(key)
         with tracing(trace):
             try:
                 async with self._execution_lease(self.execution_key(profile), key, profile, require_runtime, admitted) as slot:
                     try:
+                        if siglip and load_trigger != "health":
+                            self._cancel_idle(key)
                         if local and autoload:
-                            async with self._load_locks.setdefault(key, asyncio.Lock()):
-                                if self._statuses.get(key, ModelStatus()).state != "ready":
-                                    self._notify(profile, await slot.adapter.load(profile))
-                                    if trace:
+                            if siglip:
+                                self._notify(profile, await slot.adapter.load(profile, tower=tower))
+                            else:
+                                async with self._load_locks.setdefault(key, asyncio.Lock()):
+                                    if self._statuses.get(key, ModelStatus()).state != "ready":
+                                        self._notify(profile, await slot.adapter.load(profile))
+                                        if trace:
+                                            trace.finish()
+                                    elif trace:
+                                        trace.reused.update(process_reused=True, model_reused=True)
                                         trace.finish()
-                                elif trace:
-                                    trace.reused.update(process_reused=True, model_reused=True)
-                                    trace.finish()
                         executing = True
                         yield slot.adapter
                         if not local:
                             self._notify(profile, ModelStatus(state="ready"))
                     finally:
-                        if local and release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
+                        if siglip and release and executing:
+                            self._siglip_activity(profile, slot.adapter, inference=True)
+                        elif local and not siglip and release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
                             await self._release_policy(profile, slot.adapter)
             except ModelError as exc:
-                if (local and exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}) or (
+                if (local and not siglip and exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}) or (
                     not local and executing and exc.code in {"MODEL_TIMEOUT", "MODEL_UNAVAILABLE", "PROVIDER_ERROR", "PROVIDER_PROTOCOL_ERROR", "MODEL_REFUSAL", "EMBEDDING_DIMENSION_MISMATCH"}
                 ):
                     self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
                 raise
 
+    def _cancel_idle(self, key):
+        idle = self._idle.pop(key, None)
+        if idle and idle is not asyncio.current_task():
+            idle.cancel()
+
+    @staticmethod
+    def _siglip_activity(profile, adapter, *, inference=False):
+        if inference:
+            adapter.release_pending = True
+        if profile.source.lifecycle.unload == "idle":
+            adapter.idle_deadline = asyncio.get_running_loop().time() + profile.source.lifecycle.idle_seconds
+
     async def _release_policy(self, profile, adapter):
         key = self._key(profile)
+        if profile.kind == "image_embedding":
+            self._cancel_idle(key)
+            if not any(getattr(adapter.towers, tower).residency == "loaded" for tower in ("image", "text")):
+                adapter.release_pending = False
+                adapter.idle_deadline = None
+                return
+            policy = profile.source.lifecycle
+            if policy.unload == "manual" or policy.unload == "after_request" and not adapter.release_pending:
+                return
+            if policy.unload == "idle":
+                if adapter.idle_deadline is None:
+                    return
+                remaining = adapter.idle_deadline - asyncio.get_running_loop().time()
+                if remaining > 0:
+                    self._idle[key] = asyncio.create_task(self._idle_unload(profile, remaining))
+                    return
+            try:
+                self._notify(profile, await adapter.unload(profile))
+            except ModelError as exc:
+                self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
+            return
         if not self._statuses.get(key, ModelStatus()).unload_supported:
             return
         policies = [p.source.lifecycle for p in self.profiles.list() if p.enabled and self._key(p) == key]
@@ -346,7 +409,8 @@ class ModelManager:
             await asyncio.sleep(seconds)
             await self.unload(profile.id)
         except ModelError as exc:
-            self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
+            if profile.kind != "image_embedding" or exc.code != "MODEL_BUSY":
+                self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
         finally:
             if self._idle.get(self._key(profile)) is asyncio.current_task():
                 self._idle.pop(self._key(profile), None)
@@ -357,15 +421,26 @@ class ModelManager:
         async with self._lease(profile, autoload=False, release=False, load_trigger="health") as adapter:
             result = await adapter.health(profile)
             self._notify(profile, result)
-            return result
+        return self.status(profile_id) if profile.kind == "image_embedding" else result
 
-    async def load(self, profile_id: str) -> ModelStatus:
+    async def load(self, profile_id: str, *, tower: Tower | None = None) -> ModelStatus:
         profile = self.profile(profile_id)
         self.require_local(profile)
-        async with self._lease(profile, autoload=False, release=False, load_trigger="explicit") as adapter:
-            result = await adapter.load(profile, explicit=True)
+        self.validate_tower(profile, tower)
+        async with self._lease(profile, autoload=False, release=False, load_trigger="explicit", tower=tower) as adapter:
+            if profile.kind == "image_embedding":
+                result = await adapter.load(profile, explicit=True, tower=tower)
+                self._siglip_activity(profile, adapter)
+            else:
+                result = await adapter.load(profile, explicit=True)
             self._notify(profile, result)
-            return result
+        return self.status(profile_id) if profile.kind == "image_embedding" else result
+
+    @staticmethod
+    def validate_tower(profile, tower):
+        if (profile.kind == "image_embedding" and tower not in {"image", "text"}
+                or profile.kind != "image_embedding" and tower is not None):
+            raise ModelError("INVALID_REQUEST", "Specify image or text only for an image_embedding profile.", 422)
 
     async def unload(self, profile_id: str) -> ModelStatus:
         profile = self.profile(profile_id)
@@ -493,24 +568,13 @@ class ModelManager:
                 raise ModelError("PROVIDER_PROTOCOL_ERROR", "Reranker returned invalid scores.", 502)
             return result
 
-    async def image_embed(self, profile_id: str, images: list[str]):
+    async def image_embed(self, profile_id: str, request: ImageEmbeddingRequest) -> SiglipResult:
         profile = self.profile(profile_id, "image_embedding")
-        if not images:
-            raise ModelError("INVALID_REQUEST", "Image embedding requires at least one image.")
-        async with self._lease(profile) as adapter:
-            result = await adapter.image_embed(profile, images)
-            dimension = profile.parameters.get("dimensions")
-            if len(result.vectors) != len(images):
-                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Image embedding count did not match input.", 502)
-            for vector in result.vectors:
-                dimension = dimension or len(vector)
-                if not vector or len(vector) != dimension or not all(math.isfinite(x) for x in vector):
-                    raise ModelError("EMBEDDING_DIMENSION_MISMATCH", "Image embeddings have invalid dimensions or values.", 502)
-                if profile.parameters.get("normalize", True):
-                    norm = math.sqrt(sum(x * x for x in vector))
-                    if norm:
-                        vector[:] = [x / norm for x in vector]
-            return result
+        self.require_local(profile)
+        inputs = [request.input] if isinstance(request.input, str) else request.input
+        prepared = await asyncio.to_thread(prepare_image_embedding_inputs, request.input_type, inputs)
+        async with self._lease(profile, tower=request.input_type) as adapter:
+            return await adapter.image_embed(profile, request.input_type, prepared)
 
     async def vision(self, profile_id: str, request: VisionRequest) -> VisionResult:
         profile = self.profile(profile_id, "vision")
@@ -731,12 +795,13 @@ class ModelManager:
             if isinstance(profile.source, LocalSource):
                 self._publish(self._key(profile))
 
-    def process_log(self, profile):
+    def process_log(self, profile, *, tower: Tower | None = None):
         self.require_local(profile)
+        self.validate_tower(profile, tower)
         slot = self._slots.get(self.execution_key(profile))
         path = getattr(slot.adapter, "log_path", None) if slot else None
         if slot:
-            path = getattr(slot.adapter, "log_paths", {}).get(profile.id, path)
+            path = getattr(slot.adapter, "log_paths", {}).get(tower if profile.kind == "image_embedding" else profile.id, path)
         try:
             return path.read_text(encoding="utf-8", errors="replace") if path and path.is_file() else ""
         except OSError:

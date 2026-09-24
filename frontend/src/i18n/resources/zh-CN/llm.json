@@ -137,6 +137,36 @@
   "transformersDeviceHint": "此 CUDA 构建也支持手动选择 CPU 执行。选择 CUDA 需要可用的 NVIDIA GPU，不会自动切换到 CPU。",
   "visionTags": "标签",
   "visionDirectoryHint": "选择包含 model.onnx 和 selected_tags.csv 的本地 WD14 目录。支持静态 PNG、JPEG 和 WebP 图片。",
+  "siglip": {
+    "directoryHint": "选择本地 SigLIP2 目录，模型信息将从配置文件自动识别。",
+    "unloadOther": "调用时自动卸载另一塔",
+    "unloadOtherHint": "开启时，调用一塔前先释放另一塔。关闭时允许双塔驻留，请求仍逐个执行。卸载操作和释放策略作用于双塔。",
+    "deviceHint": "CUDA 使用 FP16，CPU 使用 FP32。向量采用模型原生维度、float32 和 L2 归一化。",
+    "information": "模型信息",
+    "informationHint": "读取所选目录中的配置，缺失值在加载时确定。",
+    "inspecting": "正在读取模型信息…",
+    "inspectionFailed": "暂时无法读取模型信息，仍可保存此配置。",
+    "pending": "待加载确定",
+    "fixresHint": "SigLIP 和 SigLIP2 共用此固定分辨率结构，不能据此确定训练代际。",
+    "structures": { "naflex": "SigLIP2 NaFlex", "fixres": "SigLIP 兼容 FixRes" },
+    "fields": {
+      "structure": "模型结构", "imageDimensions": "图像向量维度", "textDimensions": "文本向量维度",
+      "textLimit": "文本位置上限", "imageSize": "图像尺寸", "patchSize": "图块尺寸",
+      "maxPatches": "最大图块数", "resample": "缩放滤镜", "rescale": "缩放像素值",
+      "rescaleFactor": "像素缩放系数", "normalize": "归一化像素", "imageMean": "像素均值",
+      "imageStd": "像素标准差", "lowercase": "文本转小写", "bos": "添加起始标记", "eos": "添加结束标记"
+    },
+    "diagnostics": {
+      "missing_config": "缺少配置文件。", "invalid_config": "无法读取配置文件。",
+      "invalid_field": "无法识别某个已声明字段。", "unknown_structure": "未识别出模型结构。"
+    },
+    "towers": "双塔状态",
+    "tower": { "image": "图塔", "text": "文本塔" },
+    "load": { "image": "加载图塔", "text": "加载文本塔" },
+    "log": { "image": "图塔日志", "text": "文本塔日志" },
+    "states": { "stopped": "未加载", "starting": "加载中", "ready": "已加载", "failed": "失败" },
+    "revision": "模型版本标识", "vectorSpace": "向量空间标识"
+  },
   "tagThresholds": {
     "general": "通用标签阈值",
     "character": "角色标签阈值"
@@ -262,7 +292,8 @@
     "kokoro": "Kokoro (ONNX)",
     "wd14": "WD14 (ONNX)",
     "chatterbox": "Chatterbox",
-    "qwen3tts": "Qwen3-TTS Base"
+    "qwen3tts": "Qwen3-TTS Base",
+    "siglip2": "SigLIP2"
   },
   "providers": "服务提供商",
   "addProvider": "添加服务提供商",

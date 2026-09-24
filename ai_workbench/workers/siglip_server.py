@@ -12,11 +12,13 @@ if __package__:
     from .common import WorkerError, fields, integer, publish_ready, strings
     from .server import PROTOCOL_VERSION, handler
     from .siglip_catalog import model_directory, model_files
+    from .timing import TRACE_ENV, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from common import WorkerError, fields, integer, publish_ready, strings
     from server import PROTOCOL_VERSION, handler
     from siglip_catalog import model_directory, model_files
+    from timing import TRACE_ENV, stage, tracing, worker_trace
 
 
 class SiglipWorker:
@@ -28,16 +30,18 @@ class SiglipWorker:
         integer(options["max_batch_size"], 1, 16)
         if not isinstance(revision, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", revision):
             raise WorkerError("INVALID_REQUEST")
-        path = model_directory(root, model_ref)
-        model_files(path)
+        with stage("model_resources"):
+            path = model_directory(root, model_ref)
+            model_files(path)
         self.tower, self.lock = tower, threading.Lock()
-        if engine_factory is None:
-            if __package__:
-                from .siglip_engine import SiglipEngine
-            else:
-                from siglip_engine import SiglipEngine
-            engine_factory = SiglipEngine
-        self.engine = engine_factory(path, tower, options, revision)
+        with stage("engine_init"):
+            if engine_factory is None:
+                if __package__:
+                    from .siglip_engine import SiglipEngine
+                else:
+                    from siglip_engine import SiglipEngine
+                engine_factory = SiglipEngine
+            self.engine = engine_factory(path, tower, options, revision)
 
     def health(self):
         return {"protocol_version": PROTOCOL_VERSION, **self.engine.info}
@@ -61,19 +65,24 @@ def main():
     os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
     ready = Path(os.environ["WORKBENCH_WORKER_READY"])
     try:
-        token = os.environ["WORKBENCH_WORKER_TOKEN"]
-        if len(token) < 32:
-            raise WorkerError("INVALID_REQUEST")
-        worker = SiglipWorker(Path(os.environ["WORKBENCH_MODELS_ROOT"]), os.environ["WORKBENCH_MODEL_REF"],
-            os.environ["WORKBENCH_SIGLIP_TOWER"], json.loads(os.environ["WORKBENCH_RUNTIME_OPTIONS"]),
-            os.environ["WORKBENCH_MODEL_REVISION"])
-        server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
-        server.daemon_threads = True
+        with tracing(worker_trace(os.environ.get(TRACE_ENV), "worker_startup")):
+            with stage("worker_setup"):
+                token = os.environ["WORKBENCH_WORKER_TOKEN"]
+                if len(token) < 32:
+                    raise WorkerError("INVALID_REQUEST")
+                root, model_ref = Path(os.environ["WORKBENCH_MODELS_ROOT"]), os.environ["WORKBENCH_MODEL_REF"]
+                tower, revision = os.environ["WORKBENCH_SIGLIP_TOWER"], os.environ["WORKBENCH_MODEL_REVISION"]
+                options = json.loads(os.environ["WORKBENCH_RUNTIME_OPTIONS"])
+            worker = SiglipWorker(root, model_ref, tower, options, revision)
+            with stage("http_setup"):
+                server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
+                server.daemon_threads = True
+            with stage("ready_file"):
+                publish_ready(ready, {"port": server.server_port, "protocol_version": PROTOCOL_VERSION})
     except Exception as exc:
         traceback.print_exc()
         publish_ready(ready, {"error_code": exc.code if isinstance(exc, WorkerError) else "MODEL_UNAVAILABLE"})
         return
-    publish_ready(ready, {"port": server.server_port, "protocol_version": PROTOCOL_VERSION})
     try:
         server.serve_forever()
     finally:

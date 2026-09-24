@@ -148,6 +148,14 @@ def prepare_embedding_images(images: list[str]) -> list[str]:
     return prepared
 
 
+def prepare_image_embedding_inputs(tower: str, inputs: list[str]) -> list[str]:
+    if tower == "image":
+        return prepare_embedding_images(inputs)
+    if len(json.dumps({"inputs": inputs}, ensure_ascii=False).encode("utf-8")) > MAX_TAGGING_BYTES:
+        raise ModelError("REQUEST_TOO_LARGE", "Image embedding requests are limited to 32 MiB.", 413)
+    return inputs
+
+
 def _normalized_image(url: str, *, max_pixels: int | None = None, square_pixels: bool = False) -> str:
     header, separator, encoded = url.partition(",")
     mime = header.removeprefix("data:").removesuffix(";base64")

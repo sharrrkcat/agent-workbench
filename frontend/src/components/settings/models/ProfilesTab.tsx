@@ -18,11 +18,12 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import type { ModelKind, ModelInventoryItem } from '../../../types/models';
+import type { ModelKind, ModelInventoryItem, SiglipTower } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
 import { kinds, newModel } from './profileDefaults';
 import { ProfileEditor, type ProfileDraft } from './ProfileEditor';
+import { SiglipStatus, TowerActionMenu } from './SiglipControls';
 
 export function ProfilesTab({
   run,
@@ -37,11 +38,15 @@ export function ProfilesTab({
   const [kind, setKind] = useState<ModelKind>('llm');
   const [model, setModel] = useState<ProfileDraft | null>(null);
   const [inventory, setInventory] = useState<ModelInventoryItem[]>([]);
-  const [processLog, setProcessLog] = useState<string | null>(null);
-  const statusAction = (id: string, action: 'load' | 'unload' | 'health') =>
+  const [processLog, setProcessLog] = useState<{ title: string; text: string } | null>(null);
+  const openLog = (id: string, tower?: SiglipTower) => run(async () => {
+    const { text } = await modelsApi.getModelLog(id, tower);
+    setProcessLog({ title: tower ? t('siglip.log.' + tower) : t('processLog'), text });
+  }, false);
+  const statusAction = (id: string, action: 'load' | 'unload' | 'health', tower?: SiglipTower) =>
     run(async () => {
       try {
-        setStatus(id, await modelsApi.modelAction(id, action));
+        setStatus(id, await modelsApi.modelAction(id, action, tower));
       } finally {
         setStatus(id, await modelsApi.getModelStatus(id));
       }
@@ -149,7 +154,10 @@ export function ProfilesTab({
                           </TooltipTrigger>
                           <TooltipContent>{t('health')}</TooltipContent>
                         </Tooltip>
-                        <Tooltip>
+                        {p.kind === 'image_embedding' ? (
+                          <TowerActionMenu action="load" disabled={busy || !p.enabled}
+                            onSelect={(tower) => void statusAction(p.id, 'load', tower)} />
+                        ) : <Tooltip>
                           <TooltipTrigger
                             render={
                               <Button
@@ -165,7 +173,7 @@ export function ProfilesTab({
                             <Play data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>{t('load')}</TooltipContent>
-                        </Tooltip>
+                        </Tooltip>}
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -191,7 +199,10 @@ export function ProfilesTab({
                             {status?.unload_supported ? t('unload') : t('unloadUnsupported')}
                           </TooltipContent>
                         </Tooltip>
-                        <Tooltip>
+                        {p.kind === 'image_embedding' ? (
+                          <TowerActionMenu action="log" disabled={busy}
+                            onSelect={(tower) => void openLog(p.id, tower)} />
+                        ) : <Tooltip>
                           <TooltipTrigger
                             render={
                               <Button
@@ -200,19 +211,14 @@ export function ProfilesTab({
                                 size="icon"
                                 aria-label={t('processLog')}
                                 disabled={busy}
-                                onClick={() =>
-                                  void run(
-                                    async () => setProcessLog((await modelsApi.getModelLog(p.id)).text),
-                                    false,
-                                  )
-                                }
+                                onClick={() => void openLog(p.id)}
                               />
                             }
                           >
                             <FileText data-icon="inline-start" />
                           </TooltipTrigger>
                           <TooltipContent>{t('processLog')}</TooltipContent>
-                        </Tooltip>
+                        </Tooltip>}
                       </>
                     ) : null}
                     <Tooltip>
@@ -308,6 +314,7 @@ export function ProfilesTab({
                       ) : null}
                     </div>
                   ) : null}
+                  {status?.towers ? <SiglipStatus towers={status.towers} /> : null}
                 </div>
               );
             })}
@@ -356,10 +363,10 @@ export function ProfilesTab({
       >
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{t('processLog')}</DialogTitle>
+            <DialogTitle>{processLog?.title ?? t('processLog')}</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 overflow-y-auto overscroll-contain">
-            <pre className="runtime-log">{processLog || t('emptyLog')}</pre>
+            <pre className="runtime-log">{processLog?.text || t('emptyLog')}</pre>
           </div>
         </DialogContent>
       </Dialog>

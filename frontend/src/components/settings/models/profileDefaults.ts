@@ -11,12 +11,14 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   alias: '',
   kind,
   model_ref: '',
-  source: kind === 'tts' || kind === 'vision' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
+  source: kind === 'image_embedding' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
+    : kind === 'tts' || kind === 'vision' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
   enabled: true,
   external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
   parameters: kind === 'tts' ? { architecture: 'kokoro', speed: 1, response_format: 'mp3' }
-    : kind === 'vision' ? { architecture: 'wd14', task: 'tags', thresholds: { general: 0.35, character: 0.85 } } : {},
+    : kind === 'vision' ? { architecture: 'wd14', task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
+    : kind === 'image_embedding' ? { unload_other_tower_on_call: true } : {},
 });
 
 export const ttsGenerationDefaults = {
@@ -34,6 +36,7 @@ export function selectTTSArchitecture(parameters: ModelInput['parameters'], arch
 export function localEngine(value: ModelInput): LocalEngine | null {
   if (value.source?.type !== 'local') return null;
   if (value.kind === 'llm') return value.model_ref.endsWith('.gguf') ? 'llama-server' : 'transformers';
+  if (value.kind === 'image_embedding') return 'siglip2';
   return value.kind === 'tts' || value.kind === 'vision' ? value.parameters.architecture as LocalEngine : null;
 }
 
@@ -44,6 +47,7 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
     next.source = { ...next.source, execution_options: engine === 'llama-server'
       ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto', mmproj_ref: null }
       : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
+      : engine === 'siglip2' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
       : { device: 'cuda', intraop_threads: 4 } };
   }
   if (engine === 'llama-server' && next.source?.type === 'local' &&
@@ -57,6 +61,13 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
     next.capabilities = { ...next.capabilities, json_object: false, json_schema: false };
   }
   return next;
+}
+
+export function selectModelReference(value: ModelInput, model_ref: string, suggestName: boolean): ModelInput {
+  return updateModel(value, { model_ref,
+    ...(suggestName && !value.name.trim() && model_ref.trim()
+      ? { name: model_ref.replace(/\/+$/, '').split('/').pop()! } : {}),
+  });
 }
 
 export function sourceValue(source: ModelSource | null): string {

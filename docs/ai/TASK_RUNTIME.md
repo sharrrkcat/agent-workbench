@@ -15,7 +15,8 @@ Paths below are under ai_workbench:
 - workers/server.py dispatches the shared ONNX control service; workers/wd14_engine.py owns tagging,
   while core/models/images.py validates/normalizes inline images before admission.
 - core/models/inspection.py reads SigLIP configuration; core/models/siglip.py owns prepared identity
-  and the standalone client. workers/siglip_catalog.py, siglip_engine.py and siglip_server.py own local files and single-tower execution.
+  and the tower client; siglip_adapter.py owns the two clients and shared identity under ModelManager's queue.
+  workers/siglip_catalog.py, siglip_engine.py and siglip_server.py own local files and single-tower execution.
 - core/stores.py, core/run_lifecycle.py and core/events.py work with db/stores.py and
   API message/tool/run/WebSocket routes for persistence and transport.
 
@@ -35,8 +36,10 @@ Kokoro API, engine boundaries and installation use test_tts.py and test_tts_runt
 test_wd14.py and test_wd14_runtime.py cover tagging schemas, preprocessing, migration, input limits,
 public API, queue cancellation, crash recovery and profile/Kokoro isolation.
 scripts/smoke_wd14_runtime.py requires an explicit local model and reuses installation for real CPU API acceptance.
-test_siglip.py and test_siglip_runtime.py cover inspection, identity, mocked engines and real process cleanup.
-scripts/smoke_siglip_runtime.py compares standalone towers with a native CUDA reference; [Models](../contracts/models.md#siglip-single-tower-foundations) owns integration limits.
+test_siglip.py, test_siglip_runtime.py and test_siglip_service.py cover inspection, identity, engines, shared queues,
+tower cleanup, public API, profiles and migration. scripts/smoke_siglip_runtime.py defaults to a short CUDA API smoke, with optional native comparison.
+scripts/siglip_lifecycle.py supplies the extended --full-lifecycle matrix only for explicit user requests, outside routine tests and CI;
+[Models](../contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits.
 Audio references, queue admission and key/profile invalidation use test_audio.py;
 test_audio_runtime.py covers locks, offline workers, isolation, private Whisper
 dispatch and its decoded-duration boundary. test_qwen_tts.py covers Base layouts, transcripts, generation,

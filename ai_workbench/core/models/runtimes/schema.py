@@ -33,7 +33,7 @@ def model_path(root: Path, ref: str) -> Path:
     return path
 
 
-LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper"]
+LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper", "siglip2"]
 
 
 class LlamaOptions(Strict):
@@ -79,11 +79,17 @@ class PythonOptions(Strict):
     intraop_threads: int = Field(default=4, ge=1, le=256, strict=True)
 
 
+class SiglipOptions(PythonOptions):
+    max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
+
+
 def local_engine(profile) -> LocalEngine | None:
     if profile.source is None or profile.source.type != "local":
         return None
     if profile.kind == "llm":
         return "llama-server" if profile.model_ref.endswith(".gguf") else "transformers"
+    if profile.kind == "image_embedding":
+        return "siglip2"
     if profile.kind in {"tts", "asr", "vision"}:
         return profile.parameters["architecture"]
     return None

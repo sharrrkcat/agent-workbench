@@ -598,6 +598,12 @@ class RuntimeSupervisor:
             "--index-strategy", "unsafe-best-match", lock], env, self.root, log)
         self._stage(job, "checking_packages", log)
         await self._command([uv, "pip", "check", "--no-config", "--python", target / entry.python_executable], env, self.root, log)
+        python = target / entry.python_executable
+        await self._command([python, "-I", "-B", "-X", "utf8", self.worker_root / "patch_transformers.py"],
+            env, self.root, log)
+        site_packages = python.parent / "Lib" / "site-packages"
+        await self._command([python, "-I", "-B", "-X", "utf8", "-m", "compileall", "-q", "-j", "4", "-o", "0",
+            "--invalidation-mode", "timestamp", "-e", site_packages, site_packages], env, self.root, log)
         checks = [
             "from tts_engine import require_offline; require_offline(); import onnxruntime, spacy, thinc, lameenc, tokenizers; from misaki import en, espeak, zh; from misaki.cutlet import Cutlet",
             "from transformers_engine import require_offline; require_offline(); import torch, torchvision, transformers; from transformers.cli.serving.chat_completion import ChatCompletionHandler; from transformers.cli.serving.model_manager import ModelManager; from transformers.cli.serving.utils import GenerationState; assert torch.__version__ == '2.11.0+cu128' and torch.version.cuda == '12.8'; assert torchvision.__version__ == '0.26.0+cu128' and transformers.__version__ == '5.16.1'",

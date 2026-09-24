@@ -1,5 +1,5 @@
 import { Input } from '@/components/ui/input';
-import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
+import { FieldGroup, Field, FieldLabel, FieldContent, FieldDescription } from '@/components/ui/field';
 import {
   Select,
   SelectTrigger,
@@ -271,6 +271,15 @@ export function ProfileParameters({
             );
           })}
         </>
+      ) : value.kind === 'image_embedding' ? (
+        <Field orientation="horizontal" className="sm:col-span-2">
+          <Switch checked={value.parameters.unload_other_tower_on_call === true}
+            onCheckedChange={(enabled) => patchParam('unload_other_tower_on_call', enabled)} />
+          <FieldContent>
+            <FieldLabel>{t('siglip.unloadOther')}</FieldLabel>
+            <FieldDescription>{t('siglip.unloadOtherHint')}</FieldDescription>
+          </FieldContent>
+        </Field>
       ) : (
         <>
           <Field>
@@ -300,7 +309,7 @@ export function ProfileParameters({
               }
             />
           </Field>
-          {['embedding', 'image_embedding'].includes(value.kind) ? (
+          {value.kind === 'embedding' ? (
             <>
               <Field>
                 <FieldLabel>{t('params.dimensions')}</FieldLabel>
@@ -343,32 +352,6 @@ export function ProfileParameters({
                 </Field>
               ))}
             </>
-          ) : null}
-          {value.kind === 'image_embedding' ? (
-            <Field>
-              <FieldLabel>{t('params.architecture')}</FieldLabel>
-              <Select
-                value={String(value.parameters.architecture || 'clip')}
-                onValueChange={(selected) => patchParam('architecture', selected ?? '')}
-                items={['clip', 'siglip2'].map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {['clip', 'siglip2'].map((v) => (
-                      <SelectItem key={v} value={v}>
-                        {v}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
           ) : null}
         </>
       )}

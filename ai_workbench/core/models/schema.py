@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
@@ -11,6 +12,8 @@ from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 
 ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts"]
+Tower = Literal["image", "text"]
+ModelDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$", strict=True)]
 
 
 class StrictModel(BaseModel):
@@ -109,10 +112,8 @@ class RerankParameters(StrictModel):
 
 
 class ImageEmbeddingParameters(StrictModel):
-    architecture: Literal["clip", "siglip2"] = "clip"
-    dimensions: int | None = Field(default=None, ge=1, le=65536)
-    normalize: bool = True
-    batch_size: int = Field(default=1, ge=1, le=256)
+    unload_other_tower_on_call: bool = Field(default=True, strict=True,
+        description="Stop the other SigLIP tower before loading or calling the requested tower. False permits both towers to remain resident; inference is still serial.")
 
 
 class VisionThresholds(StrictModel):
@@ -196,7 +197,7 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, PythonOptions, local_engine, llama_options, relative_ref
+        from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, PythonOptions, SiglipOptions, local_engine, llama_options, relative_ref
         self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=self.kind != "tts")
         engine = local_engine(self)
         if isinstance(self.source, LocalSource):
@@ -210,6 +211,8 @@ class ModelInput(StrictModel):
                 options_schema = llama_options(device)
             elif engine in {"kokoro", "wd14"}:
                 options_schema = OnnxCPUOptions
+            elif engine == "siglip2":
+                options_schema = SiglipOptions
             else:
                 options_schema = PythonOptions
             self.source.execution_options = options_schema.model_validate(self.source.execution_options).model_dump()
@@ -399,6 +402,26 @@ class EmbeddingRequest(StrictModel):
         return value
 
 
+class ImageEmbeddingRequest(StrictModel):
+    model: str = Field(min_length=1, strict=True)
+    input_type: Tower
+    input: Annotated[str, Field(min_length=1, strict=True)] | Annotated[list[Annotated[str, Field(min_length=1, strict=True)]], Field(min_length=1, max_length=16)] = Field(
+        description="One string or 1..16 strings. image requires static inline PNG/JPEG/WebP base64 data URLs; text uses the model's native tokenizer and position limit.")
+    encoding_format: Literal["float", "base64"] = "float"
+
+    @field_validator("input")
+    @classmethod
+    def valid_input(cls, value):
+        inputs = [value] if isinstance(value, str) else value
+        if any(not text.strip() for text in inputs):
+            raise ValueError("Supply 1..16 nonblank image-embedding inputs")
+        return value
+
+
+class ModelLoadRequest(StrictModel):
+    tower: Tower = Field(description="Required for image_embedding profiles. Other kinds reject this field.")
+
+
 class VisionRequest(StrictModel):
     model: str = Field(min_length=1)
     images: list[Annotated[str, Field(min_length=1, strict=True)]] = Field(min_length=1, max_length=16,
@@ -546,6 +569,55 @@ class InferenceUsage(StrictModel):
     total_tokens: int | None = Field(default=None, ge=0, strict=True)
 
 
+class InferenceTiming(StrictModel):
+    """Reserved internal milliseconds; no timing collection is implemented."""
+    queue_ms: float | None = Field(default=None, ge=0, strict=True)
+    load_ms: float | None = Field(default=None, ge=0, strict=True)
+    preprocess_ms: float | None = Field(default=None, ge=0, strict=True)
+    inference_ms: float | None = Field(default=None, ge=0, strict=True)
+    total_ms: float | None = Field(default=None, ge=0, strict=True)
+
+
+class SiglipTowerInfo(StrictModel):
+    tower: Tower
+    device: Literal["cpu", "cuda"]
+    device_name: str = Field(min_length=1, strict=True)
+    dtype: Literal["float16", "float32"]
+    output_dtype: Literal["float32"]
+    dimensions: int = Field(gt=0, strict=True)
+    model_revision: ModelDigest
+    vector_space_id: ModelDigest
+
+
+class SiglipResult(SiglipTowerInfo):
+    vectors: list[list[Annotated[float, Field(strict=True)]]] = Field(min_length=1)
+    usage: InferenceUsage | None = None
+    timing: InferenceTiming | None = None
+
+    @model_validator(mode="after")
+    def valid_vectors(self):
+        if any(len(vector) != self.dimensions or not any(value != 0 for value in vector)
+               or any(not math.isfinite(value) for value in vector) for vector in self.vectors):
+            raise ValueError("Embedding vectors must have consistent dimensions and finite, nonzero values")
+        return self
+
+
+class SiglipTowerStatus(StrictModel):
+    process_state: Literal["stopped", "starting", "ready", "failed"] = "stopped"
+    residency: Literal["loaded", "unloaded"] = "unloaded"
+    error_code: str | None = None
+    info: SiglipTowerInfo | None = None
+
+
+class SiglipTowers(StrictModel):
+    image: SiglipTowerStatus = Field(default_factory=SiglipTowerStatus)
+    text: SiglipTowerStatus = Field(default_factory=SiglipTowerStatus)
+    active_tower: Tower | None = None
+    model_revision: ModelDigest | None = None
+    vector_space_id: ModelDigest | None = None
+    dimensions: int | None = Field(default=None, gt=0, strict=True)
+
+
 class ImageTag(StrictModel):
     name: str = Field(min_length=1, strict=True)
     category: Literal["general", "character"]
@@ -576,3 +648,4 @@ class ModelStatus(StrictModel):
     queued: int = 0
     error_code: str | None = None
     runtime: RuntimeStatus | None = None
+    towers: SiglipTowers | None = None

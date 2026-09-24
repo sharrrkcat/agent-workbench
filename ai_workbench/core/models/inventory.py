@@ -37,6 +37,9 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
                     target = path.parent
                 elif path.name == "config.json" and qwen3tts_files(path.parent):
                     target = path.parent
+            elif model_kind == "image_embedding":
+                if path.name == "config.json":
+                    target = path.parent
             elif path.suffix.lower() == ".gguf" and not path.name.lower().startswith("mmproj"):
                 target = path
             elif path.name in {"config.json", "model.onnx"} and model_kind != "tts":

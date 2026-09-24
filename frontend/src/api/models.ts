@@ -15,6 +15,8 @@ import type {
   RuntimeInstallation,
   RuntimeJob,
   RuntimeStorage,
+  SiglipInspection,
+  SiglipTower,
 } from '../types/models';
 import { request } from './http';
 
@@ -51,9 +53,14 @@ export const modelsApi = {
     request<{ deleted: boolean }>(`/api/models/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   getModelStatus: (id: string) => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/status`),
   getModelVoices: (id: string) => request<PresetVoice[]>(`/api/models/profiles/${encodeURIComponent(id)}/voices`),
-  modelAction: (id: string, action: 'load' | 'unload' | 'health') =>
-    request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
-  getModelLog: (id: string) => request<{ text: string }>(`/api/models/profiles/${encodeURIComponent(id)}/log`),
+  modelAction: (id: string, action: 'load' | 'unload' | 'health', tower?: SiglipTower) =>
+    request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST', ...(tower ? { body: JSON.stringify({ tower }) } : {}),
+    }),
+  getModelLog: (id: string, tower?: SiglipTower) =>
+    request<{ text: string }>(`/api/models/profiles/${encodeURIComponent(id)}/log` + (tower ? `?tower=${tower}` : '')),
+  inspectImageEmbedding: (model_ref: string) =>
+    request<SiglipInspection>('/api/models/inspect?' + new URLSearchParams({ kind: 'image_embedding', model_ref })),
   listModelInventory: (kind?: ModelKind) =>
     request<ModelInventoryItem[]>('/api/models/inventory' + (kind ? '?kind=' + kind : '')),
   listProviderProfiles: () => request<ProviderProfile[]>('/api/models/providers'),

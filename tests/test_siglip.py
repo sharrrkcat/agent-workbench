@@ -22,7 +22,9 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import prepare_embedding_images, prepare_tagging_images
 from ai_workbench.core.models.inspection import inspect_siglip
 from ai_workbench.core.models.inventory import inventory
-from ai_workbench.core.models.siglip import SiglipModelUse, SiglipOptions, InferenceTiming, model_revision
+from ai_workbench.core.models.siglip import SiglipModelUse, model_revision
+from ai_workbench.core.models.runtimes.schema import SiglipOptions
+from ai_workbench.core.models.schema import InferenceTiming
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers import siglip_engine
 from ai_workbench.workers.siglip_catalog import model_files
@@ -122,7 +124,6 @@ def test_inspection_api_has_no_runtime_weights_or_hash_dependency(tmp_path, monk
         draft = client.post("/api/models/profiles", json={"name": "Draft", "alias": "draft", "kind": "image_embedding", "model_ref": REF})
         assert draft.status_code == 200 and draft.json()["source"] is None
         assert client.post(f"/api/models/profiles/{draft.json()['id']}/load").json()["error"]["code"] == "MODEL_NOT_CONFIGURED"
-        assert "/v1/images/embeddings" not in client.app.openapi()["paths"]
 
 
 def test_inspection_rejects_directory_and_config_links_outside_boundary(tmp_path):
@@ -258,8 +259,12 @@ def fake_libraries(monkeypatch):
             return json.dumps({"normalizer": self.normalizer})
     class Tokenizer:
         @classmethod
+        def convert_to_native_format(cls, trust_remote_code=False, **kwargs):
+            return {"tokenizer_object": kwargs.pop("tokenizer_file"), **kwargs}
+        @classmethod
         def from_pretrained(cls, path, **kwargs):
             calls.tokenizer_kwargs = kwargs
+            calls.native_kwargs = cls.convert_to_native_format(**kwargs)
             result = cls()
             result.init_kwargs = json.loads((Path(path) / "tokenizer_config.json").read_text())
             result.backend_tokenizer = Backend()
@@ -269,6 +274,7 @@ def fake_libraries(monkeypatch):
         def __call__(self, values, **kwargs):
             calls.text.append((values, kwargs))
             return {"input_ids": Tensor([[len(value), 4.] for value in values], "int64")}
+    calls.tokenizer_type = Tokenizer
     class Config:
         @classmethod
         def from_dict(cls, values):
@@ -321,6 +327,8 @@ def test_engine_only_instantiates_target_tower_with_native_processing(tmp_path, 
     assert load["dtype"] == ("float16" if device == "cuda" else "float32")
     assert calls.processor_config["rescale_factor"] == 0.01 and calls.processor_config["max_num_patches"] == 91
     assert calls.tokenizer_kwargs["tokenizer_file"] == str(path / "tokenizer.json")
+    assert calls.native_kwargs["tokenizer_file"] == str(path / "tokenizer.json")
+    assert "tokenizer_object" not in calls.native_kwargs
     assert calls.tokenizer.backend_tokenizer.normalizer == ["lowercase", "original"]
     values = [data_url(Image.new("RGB", (2, 2), color)) for color in ((3, 1, 1), (4, 1, 1), (5, 1, 1))] if tower == "image" else ["HELLO", "<Special>", "long " * 20]
     first = engine.embed(values)
@@ -336,6 +344,17 @@ def test_engine_only_instantiates_target_tower_with_native_processing(tmp_path, 
     else:
         assert first["vectors"][0] == [0.6, 0.8]
         assert calls.images[:3] == [(3, 1, 1), (4, 1, 1), (5, 1, 1)]
+
+
+def test_tokenizer_file_override_is_local_to_siglip(tmp_path, monkeypatch):
+    path = model_tree(tmp_path)
+    calls, _ = fake_libraries(monkeypatch)
+    native_conversion = calls.tokenizer_type.convert_to_native_format.__func__
+    siglip_engine.SiglipEngine(path, "text", SiglipOptions().model_dump(), "sha256:" + "a" * 64)
+    assert type(calls.tokenizer) is not calls.tokenizer_type
+    assert isinstance(calls.tokenizer, calls.tokenizer_type)
+    assert calls.tokenizer_type.convert_to_native_format.__func__ is native_conversion
+    assert calls.tokenizer_type.convert_to_native_format(tokenizer_file="other.json") == {"tokenizer_object": "other.json"}
 
 
 def test_vector_identity_is_shared_across_towers_devices_and_batch_options(tmp_path, monkeypatch):

@@ -19,8 +19,8 @@ Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optio
 reference transcripts. Chat playback and live capture are deferred.
 Local WD14-family CPU workers tag 1..16 static inline images through `/v1/images/tags`.
 Models are manually supplied ONNX/CSV directories; usage accounting is reserved but unimplemented.
-SigLIP-family directory inspection and standalone image/text tower clients are available;
-profile binding, tower scheduling, settings UI and public image embeddings remain deferred.
+Local SigLIP profiles encode images/text through `/v1/images/embeddings`, with automatic directory information,
+serial tower switching and a default unload-other-tower option. Image indexing and usage collection remain deferred.
 
 Personas own identity, prompts and resource bindings; sessions own concrete model
 selection, context, generation and opt-in Harness configuration. Chat combines the

@@ -1,5 +1,6 @@
 """Temporary-root runtime fixtures for the settings browser tests."""
 import asyncio
+import json
 import os
 
 from fastapi import Body
@@ -39,6 +40,20 @@ def install_runtime_fixture(app, root):
             model.mkdir(parents=True, exist_ok=True)
             (model / "model.onnx").write_bytes(b"Browser inventory fixture")
             (model / "selected_tags.csv").write_text("name,category\nfixture_tag,0\n", encoding="utf-8")
+        if values.get("siglip2"):
+            for name, model_type in (("browser-naflex", "siglip2"), ("browser-fixres", "siglip"), ("incomplete", "unknown")):
+                model = root / "data/models/image_embeddings" / name
+                model.mkdir(parents=True, exist_ok=True)
+                (model / "config.json").write_text(json.dumps({"model_type": model_type,
+                    "vision_config": {"hidden_size": 768, "image_size": 256, "patch_size": 16},
+                    "text_config": {"projection_size": 768, "max_position_embeddings": 64}}), encoding="utf-8")
+                (model / "model.safetensors").write_bytes(b"Browser inventory fixture")
+                if name != "incomplete":
+                    (model / "preprocessor_config.json").write_text(json.dumps({"patch_size": 16, "max_num_patches": 256,
+                        "do_resize": True, "resample": 2, "do_rescale": True, "rescale_factor": 1 / 255,
+                        "do_normalize": True, "image_mean": [0.5] * 3, "image_std": [0.5] * 3}), encoding="utf-8")
+                    (model / "tokenizer_config.json").write_text(json.dumps({"model_max_length": 10**30,
+                        "do_lower_case": True, "add_bos_token": False, "add_eos_token": True}), encoding="utf-8")
 
         async def command(args, env, cwd, log):
             assert list(map(str, args))[1:3] in (["cache", "prune"], ["cache", "clean"])

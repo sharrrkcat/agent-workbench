@@ -9,7 +9,7 @@ from ai_workbench.core.models.schema import (
 )
 from ai_workbench.core.models.runtimes.schema import (
     DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions,
-    PythonOptions, OnnxCPUOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
+    PythonOptions, OnnxCPUOptions, SiglipOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
 )
 
 
@@ -18,7 +18,7 @@ class EmptyExecutionOptions(ApiModel):
 
 
 LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | PythonOptions
-ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | PythonOptions
+ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions
 Parameters = GenerationParameters | EmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "source"})
 
@@ -39,6 +39,10 @@ class LocalTTSSource(LocalModelSource):
 
 class LocalVisionSource(LocalModelSource):
     execution_options: EmptyExecutionOptions | OnnxCPUOptions = Field(default_factory=EmptyExecutionOptions)
+
+
+class LocalImageEmbeddingSource(LocalModelSource):
+    execution_options: EmptyExecutionOptions | SiglipOptions = Field(default_factory=EmptyExecutionOptions)
 
 
 ModelSource = ProviderSource | LocalModelSource
@@ -65,7 +69,7 @@ class RerankerModel(ModelFields):
 class ImageEmbeddingModel(ModelFields):
     kind: Literal["image_embedding"]
     parameters: ImageEmbeddingParameters = Field(default_factory=ImageEmbeddingParameters)
-    source: None = None
+    source: LocalImageEmbeddingSource | None = None
 
 
 class VisionModel(ModelFields):
@@ -141,7 +145,7 @@ InstallationResponse = public_model("InstallationResponse", Installation, omit={
 RuntimeJobResponse = public_model("RuntimeJobResponse", RuntimeJob, omit={"log_path"})
 class EngineCatalogResponse(ApiModel):
     engine: LocalEngine
-    kind: Literal["llm", "tts", "vision"]
+    kind: Literal["llm", "tts", "vision", "image_embedding"]
     options_schema: JsonObject = Field(description="JSON Schema for this code-owned local engine's execution options.")
 
 

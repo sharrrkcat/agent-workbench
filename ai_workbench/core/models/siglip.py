@@ -5,78 +5,24 @@ import asyncio
 from dataclasses import dataclass
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import secrets
-from typing import Annotated, Literal
+from typing import Callable, Literal
 from uuid import uuid4
 
 import httpx
-from pydantic import Field, model_validator
-
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.images import prepare_embedding_images
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog, prune_process_logs
-from ai_workbench.core.models.runtimes.schema import PythonOptions
+from ai_workbench.core.models.runtimes.schema import SiglipOptions
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.schema import InferenceUsage, StrictModel
+from ai_workbench.core.models.schema import SiglipResult, SiglipTowerInfo, Tower
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.siglip_catalog import model_directory, model_file, model_files
-
-Tower = Literal["image", "text"]
-Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$", strict=True)]
-
-
-class SiglipOptions(PythonOptions):
-    max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
-
-
-class InferenceTiming(StrictModel):
-    """Reserved internal milliseconds; no timing collection is implemented."""
-    queue_ms: float | None = Field(default=None, ge=0, strict=True)
-    load_ms: float | None = Field(default=None, ge=0, strict=True)
-    preprocess_ms: float | None = Field(default=None, ge=0, strict=True)
-    inference_ms: float | None = Field(default=None, ge=0, strict=True)
-    total_ms: float | None = Field(default=None, ge=0, strict=True)
-
-
-class SiglipTowerInfo(StrictModel):
-    tower: Tower
-    device: Literal["cpu", "cuda"]
-    device_name: str = Field(min_length=1, strict=True)
-    dtype: Literal["float16", "float32"]
-    output_dtype: Literal["float32"]
-    dimensions: int = Field(gt=0, strict=True)
-    model_revision: Digest
-    vector_space_id: Digest
-
+from ai_workbench.workers.timing import TRACE_ENV, current_trace
 
 class SiglipHealth(SiglipTowerInfo):
     protocol_version: Literal[1]
-
-
-class SiglipResult(SiglipTowerInfo):
-    vectors: list[list[Annotated[float, Field(strict=True)]]] = Field(min_length=1)
-    usage: InferenceUsage | None = None
-    timing: InferenceTiming | None = None
-
-    @model_validator(mode="after")
-    def valid_vectors(self):
-        if any(len(vector) != self.dimensions or not any(value != 0 for value in vector)
-               or any(not math.isfinite(value) for value in vector) for vector in self.vectors):
-            raise ValueError("Embedding vectors must have consistent dimensions and finite, nonzero values")
-        return self
-
-
-class SiglipInputs(StrictModel):
-    inputs: list[Annotated[str, Field(min_length=1, strict=True)]] = Field(min_length=1, max_length=16)
-
-    @model_validator(mode="after")
-    def nonblank_inputs(self):
-        if any(not value.strip() for value in self.inputs):
-            raise ValueError("Embedding inputs must not be blank")
-        return self
 
 
 def model_revision(path: Path) -> str:
@@ -118,18 +64,34 @@ class SiglipModelUse:
 
 
 class SiglipTowerClient:
-    """One target tower/process. Callers own serialization and the model-use lifetime."""
+    """One tower/process. Callers prepare inputs and own serialization and model-use lifetime."""
     _active_logs: set[Path] = set()
+    _trace_logs: set[Path] = set()
 
-    def __init__(self, supervisor, model: SiglipModelUse, tower: Tower, options: SiglipOptions | None = None):
+    def __init__(self, supervisor, model: SiglipModelUse, tower: Tower, options: SiglipOptions | None = None,
+                 *, log: RuntimeLog | None = None, on_exit: Callable[[], None] | None = None):
         self.supervisor, self.model, self.tower = supervisor, model, tower
         self.options = options or SiglipOptions()
         self.process: ManagedProcess | None = None
         self.client: httpx.AsyncClient | None = None
         self.run_dir: Path | None = None
         self.info: SiglipTowerInfo | None = None
-        self.log: RuntimeLog | None = None
+        self.log = log
+        self.on_exit = on_exit
         self.monitor: asyncio.Task | None = None
+
+    def use_log(self, log: RuntimeLog):
+        if self.log:
+            self._active_logs.discard(self.log.path)
+            log.secrets = self.log.secrets
+        self.log = log
+        if self.process:
+            self._active_logs.add(log.path)
+            self.process.log = log
+
+    @classmethod
+    def prune_logs(cls, directory):
+        prune_process_logs(directory, "siglip2", cls._active_logs | cls._trace_logs)
 
     async def load(self) -> SiglipTowerInfo:
         if self.process is not None:
@@ -140,9 +102,11 @@ class SiglipTowerClient:
         self.run_dir = self.supervisor.base / ".processes" / run_id
         self.run_dir.mkdir(parents=True)
         ready, cache = self.run_dir / "ready.json", self.run_dir / "cache"
-        self.log = RuntimeLog(self.supervisor.logs / f"process-siglip2-{run_id}.log", self.supervisor.root, (token,))
+        if self.log is None:
+            self.log = RuntimeLog(self.supervisor.logs / f"process-siglip2-{run_id}.log", self.supervisor.root)
+        self.log.secrets = (token,)
         self._active_logs.add(self.log.path)
-        prune_process_logs(self.supervisor.logs, "siglip2", self._active_logs)
+        self.prune_logs(self.supervisor.logs)
         env = {key: value for key, value in os.environ.items()
                if not key.startswith(("PYTHON", "VIRTUAL_ENV")) and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
         env.update(WORKBENCH_WORKER_TOKEN=token, WORKBENCH_WORKER_READY=str(ready),
@@ -151,6 +115,9 @@ class SiglipTowerClient:
             WORKBENCH_RUNTIME_OPTIONS=self.options.model_dump_json(), HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
             HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false", HF_HOME=str(cache),
             HF_HUB_CACHE=str(cache / "hub"), TORCH_HOME=str(cache / "torch"))
+        trace = current_trace()
+        if trace:
+            env[TRACE_ENV] = trace.transport_value()
         self.log.write(f"Starting SigLIP {self.tower} tower on {self.options.device}")
         try:
             self.process = await ManagedProcess.start([executable, "-I", "-B", "-X", "utf8", entrypoint],
@@ -192,6 +159,10 @@ class SiglipTowerClient:
         await process.process.wait()
         if not process.stopping:
             await process.stop()
+            await self._clear_transport()
+            self.process = self.monitor = None
+            if self.on_exit:
+                self.on_exit()
 
     async def _rpc(self, method, operation, body=None):
         if not self.client:
@@ -229,19 +200,12 @@ class SiglipTowerClient:
 
     async def embed(self, inputs: list[str]) -> SiglipResult:
         try:
-            body = SiglipInputs(inputs=inputs).model_dump()
-        except ValueError as exc:
-            raise ModelError("INVALID_REQUEST", "Supply 1..16 nonblank embedding inputs.", 422) from exc
-        if self.tower == "image":
-            body["inputs"] = await asyncio.to_thread(prepare_embedding_images, body["inputs"])
-        if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > 32 * 1024 * 1024:
-            raise ModelError("REQUEST_TOO_LARGE", "Image embedding requests are limited to 32 MiB.", 413)
-        try:
             if self.process is None:
                 await self.load()
-            result = SiglipResult.model_validate(await self._rpc("POST", "/embed", body), strict=True)
+            loaded_info = self.info
+            result = SiglipResult.model_validate(await self._rpc("POST", "/embed", {"inputs": inputs}), strict=True)
             self._check_info(result)
-            if len(result.vectors) != len(inputs) or result.model_dump(include=set(SiglipTowerInfo.model_fields)) != self.info.model_dump():
+            if len(result.vectors) != len(inputs) or result.model_dump(include=set(SiglipTowerInfo.model_fields)) != loaded_info.model_dump():
                 raise ValueError("Embedding results do not match the request and loaded tower")
             return result
         except asyncio.CancelledError:
@@ -264,6 +228,9 @@ class SiglipTowerClient:
         if self.monitor:
             await self.monitor
             self.monitor = None
+        await self._clear_transport()
+
+    async def _clear_transport(self):
         if self.client:
             await self.client.aclose()
             self.client = None
@@ -272,5 +239,5 @@ class SiglipTowerClient:
             self.run_dir = None
         if self.log:
             self._active_logs.discard(self.log.path)
-            prune_process_logs(self.supervisor.logs, "siglip2", self._active_logs)
+            self.prune_logs(self.supervisor.logs)
         self.info = None

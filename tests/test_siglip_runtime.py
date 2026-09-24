@@ -1,6 +1,6 @@
 """Real SigLIP HTTP/process plumbing with a stdlib fixture engine, never CPU inference."""
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 import json
 from pathlib import Path
 import re
@@ -12,7 +12,12 @@ import psutil
 import pytest
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.siglip import SiglipModelUse, SiglipOptions, SiglipTowerClient, SiglipTowerInfo
+from ai_workbench.core.models.siglip import SiglipModelUse, SiglipTowerClient
+from ai_workbench.core.models.runtimes.schema import SiglipOptions
+from ai_workbench.core.models.runtimes.process import RuntimeLog
+from ai_workbench.core.models.schema import SiglipTowerInfo
+from ai_workbench.workers import timing
+from tests.test_load_timing import events, metadata
 from tests.test_phase2b_runtime import installed_worker
 from tests.test_siglip import REF, model_tree
 from tests.test_wd14 import data_url
@@ -115,6 +120,40 @@ def test_cancel_during_cold_load_waits_for_process_cleanup(tmp_path):
             with pytest.raises(asyncio.CancelledError):
                 await active
             assert process.returncode is not None and tower.process is None and tower.run_dir is None
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_worker_startup_trace_correlates_with_host_and_finishes_before_inference(tmp_path, failure):
+    async def scenario():
+        async with runtime(tmp_path) as (client, _):
+            tower = client()
+            if failure:
+                (tower.supervisor.worker_root / "siglip_engine.py").write_text("raise RuntimeError('fixture engine failure')\n")
+            tower.log = RuntimeLog(tmp_path / "trace.log", tmp_path)
+            value = metadata(engine="siglip2", device="cuda")
+            with pytest.raises(ModelError) if failure else nullcontext() as error:
+                with timing.tracing(timing.LoadTrace(value, tower.log.write)):
+                    await tower.load()
+            if failure:
+                assert error.value.code == "MODEL_UNAVAILABLE"
+            else:
+                assert (await tower.embed(["fixture"])).timing is None
+            await tower.close()  # Drain the worker's log pipe before reading its final events.
+            records = events(tower.log.path.read_text())
+            assert {item["load_id"] for item in records} == {value["load_id"]}
+            assert all(item["model_profile_id"] == value["model_profile_id"] for item in records)
+            worker = [item for item in records if item["scope"] == "worker"]
+            assert worker[0]["stage"] == "worker_startup" and worker[0]["result"] == "started"
+            terminal = [item for item in worker if item["stage"] == "worker_startup" and item["result"] != "started"]
+            assert len(terminal) == 1 and terminal[0]["result"] == ("failed" if failure else "completed")
+            if failure:
+                assert [(item["stage"], item["error_code"]) for item in worker if item["result"] == "failed"] == [
+                    ("engine_init", "MODEL_UNAVAILABLE"), ("worker_startup", "MODEL_UNAVAILABLE")]
+                assert not any(item["stage"] == "ready_file" for item in worker)
+            else:
+                assert [item["stage"] for item in worker if item["result"] == "completed"] == [
+                    "worker_setup", "model_resources", "engine_init", "http_setup", "ready_file", "worker_startup"]
     asyncio.run(scenario())
 
 

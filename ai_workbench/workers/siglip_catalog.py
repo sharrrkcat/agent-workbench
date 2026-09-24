@@ -41,6 +41,15 @@ def read_config(path: Path) -> dict:
     return value
 
 
+def model_presence(root: Path, ref: str) -> Path:
+    """Cheap status checks: no config/index parsing and no weight content reads."""
+    path = model_directory(root, ref)
+    if (any(not model_file(path, name).is_file() for name in (*CONFIG_FILES, "tokenizer.json"))
+            or not any(model_file(path, name).is_file() for name in ("model.safetensors", "model.safetensors.index.json"))):
+        raise WorkerError("MODEL_NOT_FOUND", 404)
+    return path
+
+
 def model_files(path: Path) -> list[str]:
     """Select the same safetensors and tokenizer assets used by the native loaders."""
     names = [*CONFIG_FILES, "tokenizer.json"]

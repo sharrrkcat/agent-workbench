@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
-from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ReferenceTranscript, Usage
+from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ModelDigest, ReferenceTranscript, Tower, Usage
 
 
 class PublicModel(ApiModel):
@@ -104,3 +104,13 @@ class EmbeddingResponse(ApiModel):
     model: str
     data: list[EmbeddingItem]
     usage: EmbeddingUsage | None = None
+
+
+class ImageEmbeddingResponse(ApiModel):
+    object: Literal["list"]
+    model: str
+    input_type: Tower
+    dimensions: int = Field(gt=0)
+    model_revision: ModelDigest
+    vector_space_id: ModelDigest
+    data: list[EmbeddingItem] = Field(min_length=1, max_length=16)

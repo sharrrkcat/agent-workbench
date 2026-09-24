@@ -238,7 +238,7 @@ def test_revision_deletes_only_old_vision_drafts_and_preserves_other_rows_and_fi
         contents = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files}
         init_db(engine)
         init_db(engine)
-        assert migrations.current_revision(engine) == migrations.WD14_REVISION
+        assert migrations.current_revision(engine) == migrations.HEAD_REVISION
         assert rows() == before and not profiles.list("vision")
         assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files} == contents
         created = profiles.create(profile())

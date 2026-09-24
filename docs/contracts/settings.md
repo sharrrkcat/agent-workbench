@@ -152,7 +152,7 @@ Models has four sidebar pages. Default chat/auxiliary model selectors appear onl
 on Model profiles. Providers manages external connections; Local Runtime shows installation,
 storage, download settings and task history, with a log dialog. Forms and the kind filter
 retain drafts across subpages. Models use grouped Unbound, Local Runtime and configured-provider
-choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro and vision to local WD14 CPU;
+choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro, vision to local WD14 CPU and image_embedding to local SigLIP CUDA;
 other new profiles start unbound. Local models expose inventory, execution options and release policy.
 Vision offers only Unbound/Local Runtime, WD14/Tags read-only fields, general/character thresholds (0.35/0.85),
 CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and
@@ -177,6 +177,16 @@ reselecting the source retains the selected architecture and seed.
 Saved Kokoro editors show preset availability by language; Audio editors
 explain reference-based API usage and Qwen's optional transcripts. Voices are request
 selections, not profile records. Ownership/expiry belong to [Models](models.md#audio-tts-and-temporary-references).
+
+Image embedding offers only Unbound/Local Runtime. Choosing/editing a directory reads inspect information without loading;
+structure, image/text dimensions, native text position limit and processor settings are read-only, with missing values marked
+Determined when loading. Tokenizer placeholder lengths are not presented as the position limit. Diagnostics/errors do not block saving.
+Changing the reference clears old information immediately and ignores late responses, preserving names and runtime policies;
+new empty names receive a directory-name suggestion on selection or leaving the reference input.
+The strict unload_other_tower_on_call switch defaults on. Off permits both towers to reside while requests remain serial.
+Device, threads, worker batch limit (1..16) and release policy remain editable; architecture/dimensions/normalization are not parameters.
+Rows expose separate tower badges and cached vector identity. Load and log menus select Image/Text; Unload releases the whole profile.
+Health, busy locks and hidden subpage menus use the shared lifecycle. [Models](models.md#siglip-image-and-text-embeddings) owns execution and acceptance limits.
 
 Provider/settings reads omit secret keys and expose presence flags. PATCH
 omission retains a key; an explicit empty string clears it. External enablement

@@ -1,19 +1,13 @@
 # Agent Workbench
 
-A local chat workbench and OpenAI-compatible model service. One ModelManager
-serves chat, auxiliary titles, Knowledge retrieval and external inference.
-Prompt Personas and an optional bounded tool harness support ordinary and group
-conversations. Local models run in managed llama-server/Python workers outside
-the API process, or through an external OpenAI-compatible connection.
+A local chat workbench and OpenAI-compatible model service. One ModelManager serves chat, titles, Knowledge and external inference.
+Prompt Personas and an optional bounded tool harness support ordinary/group conversations. Local models run in managed llama-server/Python workers outside the API process; external connections use the OpenAI-compatible protocol.
 
-The project is in testing, without users or user data. It does not provide an
-autonomous coding agent, extension/plugin discovery, model downloads or image
-generation. The external API stays single-key and localhost-only.
+The project is in testing, without users or user data. It does not provide an autonomous coding agent, extension/plugin discovery, model downloads or image generation. The external API stays single-key and localhost-only.
 
 ## Start
 
-Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), and Node.js 20.19+
-or 22.12+ with npm. Source builds require development dependencies:
+Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), and Node.js 20.19+ or 22.12+ with npm and development dependencies:
 
 ```powershell
 uv sync
@@ -26,8 +20,7 @@ uv run python scripts/run_app.py --no-open
 
 Open <http://127.0.0.1:8765>. Use `--port 8766` when that port is occupied.
 Windows `start.bat` and Linux/macOS `bash start.sh` open the built application.
-For development, start the API with `--port 8000`, then run `npm run dev` in
-frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy.
+For development, start the API with `--port 8000`, then run `npm run dev` in frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy.
 
 See the [run guide](README_RUN.md) for launchers and portable packaging.
 
@@ -35,12 +28,8 @@ See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 In **Settings > Models**, use the Model profiles, Providers, Local Runtime and External API sidebar pages:
 
-1. **Local Runtime:** install the shared Windows x64 release once. Place model
-   files manually under data/models, then select Local Runtime in a model.
-   Its reference/architecture selects the engine; release policy defaults to manual.
-2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings.
-   In Model profiles, select that provider and enter the service's model ID. Optional discovery
-   supplies suggestions; unavailable or incomplete lists do not block manual IDs.
+1. **Local Runtime:** install the shared Windows x64 release once. Place model files manually under data/models, then select Local Runtime in a model. Its reference/architecture selects the engine; release policy defaults to manual.
+2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
 Each profile has one of six kinds, an internal UUID, unique public alias, capabilities and parameters.
 Unbound drafts can be saved but cannot execute. Choose default chat and optional auxiliary models.
@@ -52,7 +41,7 @@ Titles use only the auxiliary selection and remain unchanged when it is missing 
 | llm | data/models/llms | llama-server GGUF or Windows Transformers |
 | embedding | data/models/embeddings | Deferred; external embeddings remain available |
 | reranker | data/models/rerankers | Deferred |
-| image_embedding | data/models/image_embeddings | Deferred |
+| image_embedding | data/models/image_embeddings | SigLIP image/text towers, Windows CUDA or CPU |
 | vision | data/models/vision | WD14-family ONNX CPU |
 | tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
 
@@ -62,23 +51,18 @@ Chat accepts static PNG/JPEG/WebP through file selection, paste and drag/drop; s
 Local `/v1` images require inline data URLs and detail=auto, with a 32 MiB complete-request limit.
 Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
 
-The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
-describes the shared Python environment and both native llama-server builds.
-Execution options select CPU or NVIDIA CUDA; capable engines default to CUDA,
-Kokoro/WD14 to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
+The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation) describes the shared Python environment and both native llama-server builds.
+Execution options select CPU or NVIDIA CUDA; capable engines default to CUDA, Kokoro/WD14 to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
 CUDA requires a usable NVIDIA device and GGUF must confirm positive offload.
 Local Runtime provides install/repair/uninstall, cancellation, progress, logs and cache prune/clean.
 Storage deduplicates hard links; exclusive logical size is an estimate, not exact disk recovery.
 Cache cleanup preserves installations. Download settings affect dependencies/proxies, never model weights.
 Model load, health and reference preparation check entry/model availability, without installation integrity or cache scans.
-Model logs correlate UTC host/worker stages, package imports and wall/process CPU times, including pre-spawn failures.
-Totals include queueing but exclude inference; nested stage durations overlap. See [models](docs/contracts/models.md).
+Model logs correlate UTC host/worker stages, imports and wall/process CPU times; [models](docs/contracts/models.md#managed-processes-and-workers) owns timing semantics.
 Repair rebuilds the current dependencies; application worker updates reuse the installed environment after reload/restart.
 
-Local models expose health/load/unload. Provider rows show actual request outcomes:
-unknown before inference, ready on success, failed on upstream errors; retry is allowed.
-Discovery and cancellation do not change availability. Provider queues default to
-concurrency 1, 32 waiting requests and a 30-second queue timeout.
+Local models expose health/load/unload. Provider outcomes are unknown before inference, ready on success or failed on upstream errors; retry is allowed.
+Discovery/cancellation preserve availability. Provider queues default to concurrency 1, 32 waiting requests and a 30-second queue timeout.
 
 ## Chat and tools
 
@@ -109,11 +93,9 @@ owns reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecy
 
 ## External API
 
-In **Models > External API**, configure a key and enable the service. Mark
-LLM/embedding/TTS/vision profiles externally visible. Requests use public aliases, not
-internal UUIDs. The service is disabled by default, accepts loopback clients
-only, and shares inference/lifecycle with internal callers without writing chat
-or Knowledge records. It forwards tool definitions/calls and never executes tools.
+In **Models > External API**, configure a key and enable the service. Mark LLM/embedding/TTS/vision/image_embedding profiles externally visible.
+Requests use public aliases. The service defaults disabled, accepts loopback clients only and shares inference/lifecycle with internal callers
+without writing chat or Knowledge records. It forwards tool definitions/calls and never executes tools.
 
 The examples below are PowerShell. Set the key and aliases to your configuration:
 
@@ -171,16 +153,36 @@ original general/character tags and scores in descending order; empty lists are 
 Usage is reserved internally and omitted publicly. [Models](docs/contracts/models.md#wd14-image-tagging) owns the full contract.
 Windows x64 CPU is supported; wd-swinv2-tagger-v3 is verified. Other family checkpoints need acceptance; video/frames are excluded.
 
+### Offline SigLIP image and text embeddings
+
+Place a standard local SigLIP-family Transformers directory under data/models/image_embeddings, with config.json,
+preprocessor_config.json, tokenizer.json/tokenizer_config.json and complete single-file or indexed-shard safetensors weights.
+Create an Image embedding profile with Local Runtime; selecting its directory automatically displays declared structure/dimensions and processing settings.
+Unknown information stays pending until load; inspection errors do not block drafts. No manual architecture or dimension setting is required.
+CUDA/FP16, four threads, batch size one and manual release are defaults; CPU/FP32 is available but has no real-inference acceptance.
+The unload-other-tower switch defaults on: image calls stop the text tower and text calls stop the image tower before loading.
+Turning it off allows both to remain resident; calls still run serially. Menus provide tower load/log actions and whole-profile unload.
+
+```powershell
+$siglipBody = @{ model = 'siglip-local'; input_type = 'text'; input = @('A red car', 'A blue sky') } | ConvertTo-Json
+Invoke-RestMethod "$apiBase/images/embeddings" -Method Post -Headers $headers -ContentType 'application/json' -Body $siglipBody
+# For images, use input_type='image' with input="data:image/png;base64,$image" from the example above.
+```
+
+Inputs are one string or 1..16 strings of a single modality. Images use static inline PNG/JPEG/WebP, 64 million actual pixels and 32 MiB request limits.
+Responses include native dimensions, unit vectors, model_revision and vector_space_id; encoding_format=base64 returns little-endian float32.
+Both towers share identity; SHA-256 identifies consumed files without preset hash/size comparisons. Files stay unchanged until whole-profile release.
+NaFlex has CUDA API acceptance; FixRes has automated tests only. [Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns queue/error and acceptance limits.
+Image indexing, remote providers and usage/timing collection remain deferred.
+
 ### Offline Kokoro Speech
 
 Place the Kokoro v1.0 FP32 ONNX model, config/tokenizer JSON files and
 `voices/<id>.bin` under `data/models/tts/Kokoro-82M-onnx`. The fixed catalog has
 54 voices; extra files are ignored and missing/invalid voices are unavailable.
-Manually unpack the en_core_web_sm 3.7.1 pipeline into
-`data/models/_auxiliary/en_core_web_sm`, with meta.json, config.cfg, tokenizer,
-tok2vec/, tagger/ and vocab/ directly inside it. Kokoro reads this directory at
-load time. Missing or corrupt resources fail Kokoro without changing the shared
-environment or blocking installation/other engines. No language models are downloaded.
+Manually unpack the en_core_web_sm 3.7.1 pipeline into `data/models/_auxiliary/en_core_web_sm`, with meta.json, config.cfg,
+tokenizer, tok2vec/, tagger/ and vocab/ directly inside it. Missing/corrupt resources fail loading without downloads,
+shared-environment changes or blocking installation/other engines.
 
 Install the local runtime under Models > Local Runtime, then create a TTS model with
 architecture Kokoro and reference `tts/Kokoro-82M-onnx`. Its ONNX execution stays
@@ -249,21 +251,17 @@ Fixed seeds control randomness without guaranteeing identical audio. The editor/
 
 ## HTTP contract
 
-OpenAPI 3.1 describes all `/api` and `/v1` operations at [/openapi.json](http://127.0.0.1:8765/openapi.json), with
-interactive [/docs](http://127.0.0.1:8765/docs) and [/redoc](http://127.0.0.1:8765/redoc). JSON responses have runtime validation;
-public schemas omit keys, private run snapshots and log paths. Invalid responses return sanitized `500 INTERNAL_ERROR`.
-WebSocket behavior remains in the streaming contract.
+OpenAPI 3.1 describes `/api` and `/v1` at [/openapi.json](http://127.0.0.1:8765/openapi.json), with interactive [/docs](http://127.0.0.1:8765/docs)
+and [/redoc](http://127.0.0.1:8765/redoc). [Models](docs/contracts/models.md#external-inference-api) owns response validation and sanitization;
+[runs/streaming](docs/contracts/runs-streaming.md) owns WebSockets.
 
 ```powershell
 uv run python scripts/openapi.py check
 uv run python scripts/openapi.py export --output build/openapi.json
 ```
 
-Both commands use temporary directories/memory stores without the real database, models or service calls.
-Deterministic UTF-8 export is a build artifact; routes/Pydantic remain its source and frontend clients retain their types.
-Checks cover actual routes, request/response schemas, runtime validation, unique operationIds and field-specific JSON exceptions.
-Missing coverage, unconstrained bodies and stale exceptions fail. Tests validate JSON/SSE against the served schema;
-cross-field and saved-state rules remain domain validators.
+Both commands use temporary directories/memory stores without real database/model/service access. Routes/Pydantic generate deterministic UTF-8 exports; frontend clients retain their types.
+Checks enforce route/schema coverage, response validation, unique operationIds and scoped JSON exceptions. Tests validate JSON/SSE; domain validators own cross-field/saved-state rules.
 
 ## Settings and storage
 
@@ -271,19 +269,12 @@ Settings shares the home sidebar: three groups, six menus and 11 pages, with sub
 The [settings contract](docs/contracts/settings.md) lists APIs, editable fields and key omission/clearing semantics.
 Keys stay unencrypted locally but are omitted from management reads; logs omit credentials and request/model content.
 
-The previous Codex Pet and package import are removed. Position settings,
-dragging and task-state interfaces remain for a future Pet; existing Pet files
-are retained without loading or serving them.
+Pet position, dragging and task-state foundations remain for a future UI; existing Pet files are retained without loading or serving them.
 
-Alembic alone manages SQLite. Empty databases upgrade to head;
-nonempty unversioned databases are rejected and destructive downgrade is unsupported.
-Revisions may reset disposable test records. The current schema revision and
-individual reset effects are documented in [data layout](docs/DATA_LAYOUT.md#database-revisions).
-
-Model files, attachments, runtimes and other data directories are never deleted
-by schema revisions. The default database is data/agent_workbench.db;
-AGENT_WORKBENCH_DATABASE_URL overrides it. See [data layout](docs/DATA_LAYOUT.md)
-and [.env.example](.env.example) for paths and explicit maintenance commands.
+Alembic alone manages SQLite: empty databases upgrade to head; nonempty unversioned databases and destructive downgrades are rejected.
+Revisions may reset disposable records but never delete model files, attachments, runtimes or other data directories.
+[Data layout](docs/DATA_LAYOUT.md#database-revisions) owns revision/reset effects. The database defaults to data/agent_workbench.db;
+AGENT_WORKBENCH_DATABASE_URL overrides it. See [data layout](docs/DATA_LAYOUT.md) and [.env.example](.env.example) for paths and maintenance.
 
 ## Verification
 
@@ -300,19 +291,27 @@ Pop-Location
 git diff --check
 ```
 
-Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS. Frontend tests cover payloads, settings,
-translation, streaming, isolation, model/runtime events, approvals and Pet foundations. Installation/real-model/browser results
-are separate from deterministic tests. Frontend source uses domain types/APIs, explicit store actions and focused components.
+Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS. Frontend tests cover payloads, settings, translation, streaming, isolation, model/runtime events, approvals and Pet foundations.
+Installation/real-model/browser results are separate from deterministic tests. Frontend source uses domain types/APIs, explicit store actions and focused components.
 
-After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts,
-grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
+After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts, grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
 For a focused layout check, use `npm run test:browser -- app-layout.spec.ts settings-layout.spec.ts`.
 Install Chromium once with `npx playwright install chromium`. Tests manage an isolated fixture server on
 port 18767; WORKBENCH_BROWSER_PORT selects a free port. Screenshots/traces are under frontend/test-results.
 
-All local-runtime smoke commands reuse an installed release by default and fail if it needs installation
-or repair. Only --install-only installs (or confirms a healthy installation), without inference.
-Old release/file-inventory metadata needs one explicit Repair in Models > Local Runtime; later worker updates reuse dependencies.
+All local-runtime smoke commands reuse an installed release by default and fail if it needs installation or repair. Only --install-only installs (or confirms a healthy installation), without inference.
+For offline runtime preparation, stop Workbench and wait for its workers to exit. Apply the pinned Transformers patch and one incremental bytecode pass using the installed interpreter, without installation or Repair:
+
+```powershell
+$runtimePython = (Resolve-Path 'data/runtimes/local/1.0.0/env/python.exe').Path
+$sitePackages = Join-Path (Split-Path $runtimePython) 'Lib/site-packages'
+& $runtimePython -I -B -X utf8 ai_workbench/workers/patch_transformers.py
+if ($LASTEXITCODE -ne 0) { throw 'Runtime patch failed.' }
+& $runtimePython -I -B -X utf8 -m compileall -q -j 4 -o 0 --invalidation-mode timestamp -e $sitePackages $sitePackages
+if ($LASTEXITCODE -ne 0) { throw 'Runtime bytecode preparation failed.' }
+```
+
+Restore the previous Workbench launch after successful verification. `-B` suppresses incidental import-cache writes; explicit compileall still writes its caches. No cache clearing or forced recompilation is needed.
 Kokoro uses manually placed files and writes all-voice offline/SDK samples under build/tts-smoke:
 
 ```powershell
@@ -323,10 +322,11 @@ uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
 Installation uses bundled uv; run it before the temporary SDK environment. `--voice af_heart` selects one voice.
 The smoke isolates caches, decodes both formats and checks worker termination on disconnect, reload and another SDK request.
 WD14 CPU: `uv run python -m scripts.smoke_wd14_runtime --model-ref vision/wd-swinv2-tagger-v3`.
-SigLIP CUDA: `uv run python -m scripts.smoke_siglip_runtime --model-ref image_embeddings/<directory>`.
-Both require supplied directories and reuse installation. WD14 checks tagging API/lifecycle; SigLIP compares standalone towers with native FP16 CUDA outputs.
-Reports go to build/wd14-smoke or build/siglip-smoke. [Models](docs/contracts/models.md#siglip-single-tower-foundations) owns SigLIP integration and acceptance limits.
-For focused bilingual desktop/touch settings checks, run `npm run test:browser -- wd14.spec.ts model-sources.spec.ts` in frontend.
+SigLIP routine CUDA: `uv run python -m scripts.smoke_siglip_runtime --model-ref image_embeddings/<directory>`.
+Both require supplied directories and reuse installation. WD14 checks tagging API/lifecycle; the default SigLIP smoke checks image→text→image, reuse and unload.
+Add SigLIP `--native-reference` to compare standalone towers with native FP16 CUDA outputs. Reports go to build/wd14-smoke or build/siglip-smoke.
+SigLIP `--full-lifecycle` includes 20 switches and 10 dual-resident pairs and requires an explicit user request; exclude it from routine regression, CI and default acceptance. `--case switching|residency|cancellation|faults|identity|release` narrows that opt-in matrix; each run saves a separate lifecycle report, including failures.
+[Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. For bilingual desktop/touch settings checks, run `npm run test:browser -- siglip.spec.ts wd14.spec.ts model-sources.spec.ts` in frontend.
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.

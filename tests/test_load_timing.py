@@ -11,7 +11,7 @@ import pytest
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog
 from ai_workbench.core.models.runtimes.process import RuntimeLog
-from ai_workbench.workers import timing, transformers_engine, tts_engine
+from ai_workbench.workers import siglip_engine, timing, transformers_engine, tts_engine
 
 
 def metadata(**patch):
@@ -252,3 +252,83 @@ def test_transformers_import_timings_attribute_failures_before_model_loading(mon
                       else ["device_init", "worker_startup"])
     assert "private dependency details" not in "\n".join(lines)
     assert not any(item["stage"] in {"processor", "weights"} for item in records)
+
+
+@pytest.mark.parametrize("failed_import", [None, "torch", "transformers"])
+def test_siglip_library_timings_start_before_import_and_preserve_failure(monkeypatch, failed_import):
+    wall, cpu, lines, imported = Clock(), Clock(), [], []
+    names = ["torch", "transformers", "tokenizers", "PIL.Image"]
+    original_import = builtins.__import__
+
+    def traced_import(name, globals=None, locals=None, fromlist=(), level=0):
+        label = "PIL.Image" if name == "PIL" else name
+        if label not in names:
+            return original_import(name, globals, locals, fromlist, level)
+        record = events("\n".join(lines))[-1]
+        assert (record["stage"], record["result"]) == ("engine_imports." + label, "started")
+        imported.append(label)
+        wall.advance(2)
+        cpu.advance(0.25)
+        if label == failed_import:
+            raise ImportError("private dependency details")
+        return SimpleNamespace(Image=object())
+
+    monkeypatch.setattr(builtins, "__import__", traced_import)
+    with pytest.raises(ImportError) if failed_import else nullcontext():
+        with timing.tracing(timing.LoadTrace(metadata(engine="siglip2"), lines.append,
+                scope="worker", total_stage="worker_startup", clock=wall, cpu_clock=cpu)):
+            assert len(siglip_engine.libraries()) == 4
+    count = names.index(failed_import) + 1 if failed_import else len(names)
+    assert imported == names[:count]
+    records = events("\n".join(lines))
+    imports = [item for item in records if item["stage"].startswith("engine_imports.") and item["result"] != "started"]
+    assert len(imports) == count
+    assert all(item["duration_ms"] == 2000 and item["cpu_duration_ms"] == 250 for item in imports)
+    assert records[-1]["duration_ms"] == count * 2000
+    assert [item["stage"] for item in records if item["result"] == "failed"] == (
+        ["engine_imports." + failed_import, "engine_imports", "worker_startup"] if failed_import else [])
+    assert "private dependency details" not in "\n".join(lines)
+
+
+@pytest.mark.parametrize("tower", ["image", "text"])
+def test_siglip_distinguishes_lazy_model_import_weights_and_device_transfer(tmp_path, monkeypatch, tower):
+    from tests.test_siglip import fake_libraries, model_tree
+    path = model_tree(tmp_path)
+    fake_libraries(monkeypatch)
+    torch, transformers, tokenizers, image = siglip_engine.libraries()
+    wall, lines = Clock(), []
+    model_name = "Siglip2" + ("VisionModel" if tower == "image" else "TextModel")
+    model_type = getattr(transformers, model_name)
+    load, transfer = model_type.from_pretrained, model_type.to
+
+    def advance(stage, seconds):
+        record = events("\n".join(lines))[-1]
+        assert (record["stage"], record["result"]) == (stage, "started")
+        wall.advance(seconds)
+
+    class LazyTransformers:
+        def __getattr__(self, name):
+            if name == model_name:
+                advance("model_class_import", 2)
+            return getattr(transformers, name)
+
+    def from_pretrained(*args, **kwargs):
+        advance("model_from_pretrained", 3)
+        return load(*args, **kwargs)
+
+    def to_device(self, device):
+        advance("model_to_device", 5)
+        return transfer(self, device)
+
+    monkeypatch.setattr(model_type, "from_pretrained", from_pretrained)
+    monkeypatch.setattr(model_type, "to", to_device)
+    monkeypatch.setattr(siglip_engine, "libraries", lambda: (torch, LazyTransformers(), tokenizers, image))
+    with timing.tracing(timing.LoadTrace(metadata(engine="siglip2", device="cuda"), lines.append,
+            scope="worker", total_stage="worker_startup", clock=wall)):
+        engine = siglip_engine.SiglipEngine(path, tower,
+            {"device": "cuda", "intraop_threads": 4, "max_batch_size": 1}, "sha256:" + "a" * 64)
+    completed = {item["stage"]: item["duration_ms"] for item in events("\n".join(lines)) if item["result"] == "completed"}
+    assert {name: completed[name] for name in ("model_class_import", "model_from_pretrained", "model_to_device")} == {
+        "model_class_import": 2000, "model_from_pretrained": 3000, "model_to_device": 5000}
+    assert completed["worker_startup"] == 10000
+    assert engine.info["tower"] == tower and engine.info["dtype"] == "float16"

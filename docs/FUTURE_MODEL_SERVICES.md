@@ -8,13 +8,11 @@ authority and makes no delivery commitment.
 ## Local engine and platform expansion
 
 The shared local release supports Windows x64 GGUF, Transformers LLM, Kokoro,
-WD14 CPU, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
+WD14 CPU, SigLIP, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
 native components and real-runtime acceptance before it can be advertised.
-Local embedding/reranker execution and complete image-embedding integration are deferred.
-SigLIP [inspection and standalone towers](contracts/models.md#siglip-single-tower-foundations) are implemented;
-image_embedding profiles still accept only unbound drafts, with their existing persisted parameters.
-The pending integration includes ModelManager binding, shared serial tower scheduling, an unload-other-tower switch,
-configuration UI and `/v1/images/embeddings`. Image indexes, internal consumers and usage collection remain out of scope.
+Local text-embedding/reranker execution is deferred. [SigLIP image/text encoding](contracts/models.md#siglip-image-and-text-embeddings)
+is implemented through local profiles, serial tower scheduling, configuration UI and `/v1/images/embeddings`.
+Image indexes, internal consumers, remote image-embedding providers and usage collection remain out of scope.
 Future support must use the same installation and dependency environment,
 validate architecture/preprocessing/index behavior and preserve independent
 queues and worker cancellation. Infinity is an implementation choice to reassess

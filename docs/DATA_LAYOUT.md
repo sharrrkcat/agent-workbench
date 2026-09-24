@@ -24,7 +24,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0015_wd14_vision`; there are 24 current business tables.
+Alembic head is `0016_siglip_image_embedding`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -91,6 +91,11 @@ other models, providers, runtime installation/jobs and business records survive.
 new vision profiles. No filesystem operations or installed-environment rebuild occurs.
 WD14 directories under data/models/vision require model.onnx and selected_tags.csv; config.json is optional.
 Inventory and loading boundaries check only file existence and path containment, not model identity or contents.
+
+Revision `0016_siglip_image_embedding` permits local image_embedding sources and deletes only their obsolete unbound drafts.
+It performs no parameter conversion and preserves other records and all model/attachment/runtime files. Repeat upgrades preserve
+new SigLIP profiles. SigLIP keeps native safetensors/configuration under data/models/image_embeddings; loaded identity is held in memory,
+without model verification manifests or stored embeddings. [Models](contracts/models.md#siglip-image-and-text-embeddings) owns hashing and lifetime rules.
 
 Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
 The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under
