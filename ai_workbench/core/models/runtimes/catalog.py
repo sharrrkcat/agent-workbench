@@ -60,7 +60,7 @@ def requirements_digest(path: Path) -> str:
 def worker_entrypoint(engine: str) -> str:
     if engine == "transformers":
         return "transformers_server.py"
-    return "server.py" if engine == "kokoro" else "audio_server.py"
+    return "server.py" if engine in {"kokoro", "wd14"} else "audio_server.py"
 
 
 def catalog(os_name: str | None = None, machine: str | None = None) -> LocalRelease:

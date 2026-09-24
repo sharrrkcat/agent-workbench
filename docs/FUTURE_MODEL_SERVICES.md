@@ -8,15 +8,17 @@ authority and makes no delivery commitment.
 ## Local engine and platform expansion
 
 The shared local release supports Windows x64 GGUF, Transformers LLM, Kokoro,
-Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
+WD14 CPU, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
 native components and real-runtime acceptance before it can be advertised.
-Local embedding, reranker, image embedding and WD14 are deferred. Their model
+Local embedding, reranker and image embedding are deferred. Their model
 kinds and existing parameter schemas remain; local binding currently fails.
 Future support must use the same installation and dependency environment,
 validate architecture/preprocessing/index behavior and preserve independent
 queues and worker cancellation. Infinity is an implementation choice to reassess
 within that shared environment, not a separate package to restore.
 ONNX GPU, Vulkan, DINOv2, Florence and CosyVoice3 remain outside scope.
+WD14 static tagging is implemented under [Models](contracts/models.md#wd14-image-tagging).
+Video, frame sampling and cross-frame aggregation are excluded, rather than deferred extensions.
 
 ## Public rerank
 

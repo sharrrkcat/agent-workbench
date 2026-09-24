@@ -6,10 +6,33 @@ import pytest
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ProviderProfileStore, ModelProfileStore, ModelSettingsStore
-from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_tts_runtime
+from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_tts_runtime, smoke_wd14_runtime
 
 
 SCRIPTS = (smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_tts_runtime)
+
+
+def test_wd14_requires_an_explicit_model_and_never_installs(tmp_path, monkeypatch):
+    for argv in ([], ["--model-ref", "vision/test", "--install-only"]):
+        with pytest.raises(SystemExit):
+            smoke_wd14_runtime.parse_args(argv)
+    assert smoke_wd14_runtime.parse_args(["--model-ref", "vision/test"]).model_ref == "vision/test"
+    supervisor = SimpleNamespace(submit=AsyncMock(), close=AsyncMock(),
+        assert_available=Mock(side_effect=ModelError("RUNTIME_BROKEN", "Repair the local backend", 503)))
+    manager = SimpleNamespace(close=AsyncMock())
+    engine = SimpleNamespace(dispose=Mock())
+    monkeypatch.setattr(smoke_wd14_runtime, "get_engine", lambda *_: engine)
+    monkeypatch.setattr(smoke_wd14_runtime, "init_db", lambda *_: None)
+    monkeypatch.setattr(smoke_wd14_runtime, "RuntimeStore", lambda *_: None)
+    monkeypatch.setattr(smoke_wd14_runtime, "LocalRuntimeSettingsStore", lambda *_: None)
+    monkeypatch.setattr(smoke_wd14_runtime, "build_runtime_state",
+        lambda **_: SimpleNamespace(runtime_supervisor=supervisor, model_manager=manager))
+    with pytest.raises(ModelError, match="Repair"):
+        asyncio.run(smoke_wd14_runtime.smoke(tmp_path, "vision/test"))
+    supervisor.assert_available.assert_called_once_with()
+    supervisor.submit.assert_not_called()
+    manager.close.assert_awaited_once()
+    engine.dispose.assert_called_once_with()
 
 
 def test_audio_and_loading_defaults_preserve_explicit_cpu_selection():

@@ -42,11 +42,9 @@ In **Settings > Models**, use the Model profiles, Providers, Local Runtime and E
    In Model profiles, select that provider and enter the service's model ID. Optional discovery
    supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
-Each profile has one of six kinds, an internal UUID, a unique public alias,
-capabilities and parameters. Unbound drafts can be saved but cannot execute. Choose the default chat model
-and optionally a separate auxiliary model. New sessions select and save that
-default, or the first enabled LLM when it is unavailable. Both chat selectors
-show concrete models; changing the default preserves existing session selections.
+Each profile has one of six kinds, an internal UUID, unique public alias, capabilities and parameters.
+Unbound drafts can be saved but cannot execute. Choose default chat and optional auxiliary models.
+New sessions save the default or first enabled LLM; chat selectors show concrete models and changing the default preserves sessions.
 Titles use only the auxiliary selection and remain unchanged when it is missing or fails.
 
 | Kind | Local inventory root | Local execution |
@@ -55,7 +53,7 @@ Titles use only the auxiliary selection and remain unchanged when it is missing 
 | embedding | data/models/embeddings | Deferred; external embeddings remain available |
 | reranker | data/models/rerankers | Deferred |
 | image_embedding | data/models/image_embeddings | Deferred |
-| vision | data/models/vision | WD14 deferred |
+| vision | data/models/vision | WD14-family ONNX CPU |
 | tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
 
 Inventory references are relative to data/models, such as `llms/example.gguf`; Transformers uses a model directory.
@@ -67,7 +65,7 @@ Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#
 The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
 describes the shared Python environment and both native llama-server builds.
 Execution options select CPU or NVIDIA CUDA; capable engines default to CUDA,
-Kokoro to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
+Kokoro/WD14 to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
 CUDA requires a usable NVIDIA device and GGUF must confirm positive offload.
 Local Runtime provides install/repair/uninstall, cancellation, progress, logs and cache prune/clean.
 Storage deduplicates hard links; exclusive logical size is an estimate, not exact disk recovery.
@@ -84,46 +82,35 @@ concurrency 1, 32 waiting requests and a 30-second queue timeout.
 
 ## Chat and tools
 
-Personas own identity, avatar, prompt and Knowledge/Worldbook bindings.
-Their nonempty system prompt is always included. New sessions start with Chat. Add members and
-select the current speaker for group transcript conversations; each input
-generates one selected speaker's reply. Sessions own model, context, generation
-and Harness configuration. The current speaker's resources are always bound;
-sessions may add resources. Clearing additions preserves Persona bindings.
+Personas own identity, avatar, nonempty system prompt and Knowledge/Worldbook bindings. Their prompt is always included.
+New sessions start with Chat. Add members and select a speaker for group transcripts; each input generates that speaker's reply.
+Sessions own model, context, generation and Harness settings, and may add resources to the speaker's fixed bindings.
+Clearing session additions preserves Persona bindings.
 
-Core Memory, Worldbook and Knowledge remain available in ordinary chat.
-Knowledge supports text/file/attachment sources, chunking, vector/keyword
-retrieval and optional reranking. Changing embedding configuration requires
-reindexing. Unavailable reranking intentionally preserves RRF order.
+Ordinary chat supports Core Memory, Worldbook and Knowledge with text/file/attachment sources,
+chunking, vector/keyword retrieval and optional reranking. Embedding changes require reindexing;
+unavailable reranking intentionally preserves RRF order.
 
-Harness defaults off. Enable it in session settings and use the tool switches
-to permit native model calls. New sessions select all current tools; disabling
-and re-enabling Harness preserves those choices. Built-ins are read_file, web_search, fetch_url,
-knowledge_search, base64_encode and base64_decode. File/network calls require
-approval every time; waiting survives restart and resumes through explicit
-approval, rejection or cancellation. Other input is blocked while waiting.
+Harness defaults off; enable it and choose tools in session settings to permit native model calls.
+New sessions select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search,
+fetch_url, knowledge_search, base64_encode and base64_decode. File/network calls require approval every time;
+waiting survives restart, blocks other input and resumes through approval, rejection or cancellation.
 
-Direct calls use **Settings > Tools** or a registered slash tool. For example,
-`/base64_encode hello` returns `aGVsbG8=` when that tool is enabled, without
-a model summary or title. Multi-parameter tools require a JSON object, such as
-`/read_file {"path":"data/knowledge/note.txt"}`. Unknown `/...`, `@...` and `:...`
-prefixes are ordinary text. Tool results are rendered as data.
-See [harness/tools](docs/contracts/harness-tools.md) for limits and APIs.
+Direct calls use **Settings > Tools** or a registered slash tool. Enabled `/base64_encode hello` returns `aGVsbG8=`
+without a model summary/title. Multi-parameter tools need JSON, such as `/read_file {"path":"data/knowledge/note.txt"}`.
+Unknown `/...`, `@...` and `:...` prefixes are ordinary text; results render as data.
+[Harness/tools](docs/contracts/harness-tools.md) owns limits and APIs.
 
-Each run appears as one reply with a collapsed processing history and its final
-answer. Expand its time row to inspect reasoning and grouped commands, then expand
-a command for arguments/results. General's **Show full processing history** opens
-active processing by default; completed processing is collapsed in either mode.
-Approvals remain visible. Cancellation/failure preserves incomplete output.
-Delete/retry applies to the whole reply; retry replaces its later conversation.
-The [chat contract](docs/contracts/chat-context.md#messages-and-attachments)
-defines reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecycle)
-defines processing visibility and elapsed time.
+Each run has one reply, collapsed processing history and final answer. Expand its time row for reasoning/commands,
+then commands for arguments/results. **Show full processing history** opens active processing by default;
+completed processing stays collapsed and approvals visible. Cancellation/failure preserves incomplete output.
+Delete/retry affects the whole reply; retry replaces later conversation. [Chat](docs/contracts/chat-context.md#messages-and-attachments)
+owns reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecycle) owns processing visibility/time.
 
 ## External API
 
 In **Models > External API**, configure a key and enable the service. Mark
-LLM/embedding/TTS profiles externally visible. Requests use public aliases, not
+LLM/embedding/TTS/vision profiles externally visible. Requests use public aliases, not
 internal UUIDs. The service is disabled by default, accepts loopback clients
 only, and shares inference/lifecycle with internal callers without writing chat
 or Knowledge records. It forwards tool definitions/calls and never executes tools.
@@ -162,6 +149,27 @@ capabilities and unavailable models produce explicit errors without substitution
 [Models](docs/contracts/models.md#external-inference-api) owns request rules;
 [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior.
 Public rerank and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
+
+### Offline WD14 image tagging
+
+Place a WD14-family model.onnx and selected_tags.csv under data/models/vision/<directory>.
+Create a Vision profile with Local Runtime and that relative reference; CPU/four threads and manual release are defaults.
+Only file existence/path containment is checked; config.json, model hashes, revisions and fixed dimensions/tag counts are not required.
+Enable external visibility and use the Workbench extension `POST /v1/images/tags`; discovery supports `GET /v1/models?kind=vision`.
+
+```powershell
+$image = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path './image.png')))
+$tagBody = @{ model = 'wd14-local'; images = @("data:image/png;base64,$image")
+  thresholds = @{ general = 0.35; character = 0.85 } } | ConvertTo-Json -Depth 4
+Invoke-RestMethod "$apiBase/images/tags" -Method Post -Headers $headers -ContentType 'application/json' -Body $tagBody
+```
+
+Supply 1..16 static PNG/JPEG/WebP data URLs; no URLs, paths or attachments. Omitted/null thresholds inherit the profile;
+finite values in [0,1], including zero, override it. Incoming and normalized private JSON are limited to 32 MiB
+plus max_request_mb; decoded/square-padded images are limited to 64 million pixels. Each indexed data item contains
+original general/character tags and scores in descending order; empty lists are valid and failures reject the whole batch.
+Usage is reserved internally and omitted publicly. [Models](docs/contracts/models.md#wd14-image-tagging) owns the full contract.
+Windows x64 CPU is supported; wd-swinv2-tagger-v3 is verified. Other family checkpoints need acceptance; video/frames are excluded.
 
 ### Offline Kokoro Speech
 
@@ -241,36 +249,27 @@ Fixed seeds control randomness without guaranteeing identical audio. The editor/
 
 ## HTTP contract
 
-All `/api` and `/v1` HTTP operations are described by OpenAPI 3.1 at
-[/openapi.json](http://127.0.0.1:8765/openapi.json), with interactive documentation
-at [/docs](http://127.0.0.1:8765/docs) and [/redoc](http://127.0.0.1:8765/redoc).
-Ordinary JSON responses are validated at runtime. Public schemas omit keys,
-private run snapshots and runtime log paths. Response validation failures return
-a sanitized `500 INTERNAL_ERROR`. WebSocket behavior remains in the streaming contract.
+OpenAPI 3.1 describes all `/api` and `/v1` operations at [/openapi.json](http://127.0.0.1:8765/openapi.json), with
+interactive [/docs](http://127.0.0.1:8765/docs) and [/redoc](http://127.0.0.1:8765/redoc). JSON responses have runtime validation;
+public schemas omit keys, private run snapshots and log paths. Invalid responses return sanitized `500 INTERNAL_ERROR`.
+WebSocket behavior remains in the streaming contract.
 
 ```powershell
 uv run python scripts/openapi.py check
 uv run python scripts/openapi.py export --output build/openapi.json
 ```
 
-Both commands use the application factory with temporary directories and memory
-stores, without opening the real database, loading models or calling services.
-Export is deterministic UTF-8 JSON. The generated file is a build artifact;
-routes and Pydantic models remain its source, and frontend clients retain their
-existing types. The check validates every HTTP operation against actual routes,
-request/response schemas, runtime response validation, unique operationIds and
-field-specific JSON exceptions. Missing coverage, unconstrained bodies and stale
-exceptions fail the gate. Tests also validate actual JSON responses and SSE
-frames against the served schema. Cross-field and saved-state checks remain
-domain validators; OpenAPI does not replace them.
+Both commands use temporary directories/memory stores without the real database, models or service calls.
+Deterministic UTF-8 export is a build artifact; routes/Pydantic remain its source and frontend clients retain their types.
+Checks cover actual routes, request/response schemas, runtime validation, unique operationIds and field-specific JSON exceptions.
+Missing coverage, unconstrained bodies and stale exceptions fail. Tests validate JSON/SSE against the served schema;
+cross-field and saved-state rules remain domain validators.
 
 ## Settings and storage
 
-Settings shares the home sidebar, with three responsibility groups, six menus and 11 pages. Subpage URLs
-survive refresh and browser back/forward. The [settings contract](docs/contracts/settings.md) lists
-APIs, editable fields and key omission/clearing semantics. Keys are omitted from
-management reads but remain unencrypted in local storage. Logs omit credentials
-and request/model content.
+Settings shares the home sidebar: three groups, six menus and 11 pages, with subpage URLs surviving refresh/back/forward.
+The [settings contract](docs/contracts/settings.md) lists APIs, editable fields and key omission/clearing semantics.
+Keys stay unencrypted locally but are omitted from management reads; logs omit credentials and request/model content.
 
 The previous Codex Pet and package import are removed. Position settings,
 dragging and task-state interfaces remain for a future Pet; existing Pet files
@@ -301,11 +300,9 @@ Pop-Location
 git diff --check
 ```
 
-Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS. Frontend tests cover API
-payloads, settings, translation, streaming, isolation, model/runtime events, approvals and Pet foundations.
-Runtime installation and real-model/browser smoke checks are reported separately
-from deterministic tests. Frontend source is organized by domain types/API,
-explicit store actions and focused view components.
+Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS. Frontend tests cover payloads, settings,
+translation, streaming, isolation, model/runtime events, approvals and Pet foundations. Installation/real-model/browser results
+are separate from deterministic tests. Frontend source uses domain types/APIs, explicit store actions and focused components.
 
 After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts,
 grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
@@ -325,6 +322,10 @@ uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
 
 Installation uses bundled uv; run it before the temporary SDK environment. `--voice af_heart` selects one voice.
 The smoke isolates caches, decodes both formats and checks worker termination on disconnect, reload and another SDK request.
+WD14 uses `uv run python -m scripts.smoke_wd14_runtime --model-ref vision/wd-swinv2-tagger-v3`.
+The explicit reference is a local fixture, not a required checkpoint; no install mode or default model is supplied.
+It checks actual single/multi-image API, thresholds, reuse, disconnect, crash/reload and unload; hardware/runtime/timings go to build/wd14-smoke.
+For focused bilingual desktop/touch settings checks, run `npm run test:browser -- wd14.spec.ts model-sources.spec.ts` in frontend.
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
@@ -335,8 +336,7 @@ Use `--device cpu` only for affected changes under the [acceptance policy](AGENT
 Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`.
 Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
 
-For a Windows CUDA check with an existing GGUF, run
-`uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`.
+For Windows CUDA with an existing GGUF, run `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`.
 It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload
 with temporary model profiles. Runtime installation/jobs remain persisted.
 Stop Workbench before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility.

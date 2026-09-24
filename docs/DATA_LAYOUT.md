@@ -24,7 +24,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0014_provider_runtime_separation`; there are 24 current business tables.
+Alembic head is `0015_wd14_vision`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -85,15 +85,21 @@ identity, result, progress, state and log reference survive. A previously valid 
 The revision changes only database schema/rows, never installation/model/attachment/cache/log files.
 Repeat upgrades preserve newly saved configuration and do not rebuild the environment.
 
+Revision `0015_wd14_vision` extends ck_model_source to permit local vision alongside LLM/TTS,
+retaining Provider LLM/text-embedding rules. It deletes only obsolete vision drafts without parameter conversion;
+other models, providers, runtime installation/jobs and business records survive. Repeating upgrade preserves
+new vision profiles. No filesystem operations or installed-environment rebuild occurs.
+WD14 directories under data/models/vision require model.onnx and selected_tags.csv; config.json is optional.
+Inventory and loading boundaries check only file existence and path containment, not model identity or contents.
+
 Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
 The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under
 data/models/_auxiliary/en_core_web_sm and is excluded from inventory. Kokoro
 reads it at model load; installation and uninstall never copy or alter it.
 
-For explicit database upgrades, compare protected file paths, sizes and
-modification times before and after. Migration tests use temporary roots and
-cover repeat upgrades and file preservation; the suite additionally checks
-hashes of repository model files.
+Migration tests use temporary stub files to cover repeat upgrades and file preservation.
+The global test fixture compares repository model file presence sets only, without reading contents,
+sizes or hashes. Runtime artifact and locked-dependency verification follows the Models contract.
 `uv run python scripts/audit_workspace.py --check` verifies current schema,
 integrity, foreign keys and absence of the retired root snapshot/test model stubs.
 

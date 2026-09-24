@@ -39,9 +39,9 @@ async def update_settings(payload: dict, state=Depends(get_state)):
 def catalog(state=Depends(get_state)):
     release = state.runtime_supervisor.release
     schemas = {"llama-server": LlamaCPUOptions | LlamaCUDAOptions, "transformers": PythonOptions,
-               "kokoro": OnnxCPUOptions, "chatterbox": PythonOptions, "qwen3tts": PythonOptions}
+               "kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions, "chatterbox": PythonOptions, "qwen3tts": PythonOptions}
     return {**release.model_dump(include={"version", "platform", "architecture", "supported", "reason"}),
-            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "tts",
+            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "vision" if engine == "wd14" else "tts",
                          "options_schema": TypeAdapter(schema).json_schema()} for engine, schema in schemas.items()]}
 
 

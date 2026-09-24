@@ -13,12 +13,12 @@ import threading
 
 if __package__:
     from .common import publish_ready
-    from .protocol import WorkerError, fields, load_request, speech_request
+    from .protocol import WorkerError, fields, load_request, speech_request, tags_request
     from .timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from common import publish_ready
-    from protocol import WorkerError, fields, load_request, speech_request
+    from protocol import WorkerError, fields, load_request, speech_request, tags_request
     from timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 
 PROTOCOL_VERSION = 1
@@ -49,11 +49,18 @@ class Worker:
                 if model_id not in self.models:
                     factory = self.engine_factory
                     if factory is None:
-                        if __package__:
-                            from .tts_engine import TTSEngine
+                        if body["kind"] == "vision":
+                            if __package__:
+                                from .wd14_engine import WD14Engine
+                            else:
+                                from wd14_engine import WD14Engine
+                            factory = WD14Engine
                         else:
-                            from tts_engine import TTSEngine
-                        factory = partial(TTSEngine, models_root=self.root)
+                            if __package__:
+                                from .tts_engine import TTSEngine
+                            else:
+                                from tts_engine import TTSEngine
+                            factory = partial(TTSEngine, models_root=self.root)
                     with stage("engine_init"):
                         self.models[model_id] = factory(path, body["kind"], body["parameters"], body["options"])
                 with stage("worker_ready"):
@@ -65,6 +72,14 @@ class Worker:
                 self.models.pop(body["profile_id"], None)
                 gc.collect()
                 return self.health()
+            if operation == "/tags":
+                tags_request(body)
+                model = self.models.get(body["profile_id"])
+                if model is None:
+                    raise WorkerError("MODEL_UNAVAILABLE", 503)
+                if model.kind != "vision":
+                    raise WorkerError("MODEL_KIND_MISMATCH")
+                return model.tags(body["images"], body["thresholds"])
             if operation != "/speech":
                 raise WorkerError("UNSUPPORTED_CAPABILITY", 404)
             fields(body, ("profile_id", "input", "voice", "speed", "response_format", "language"))
@@ -73,6 +88,8 @@ class Worker:
             model = self.models.get(body["profile_id"])
             if model is None:
                 raise WorkerError("MODEL_UNAVAILABLE", 503)
+            if model.kind != "tts":
+                raise WorkerError("MODEL_KIND_MISMATCH")
             return model.speech(values["input"], values["voice"], values["speed"], values["response_format"], values["language"])
         finally:
             self.lock.release()

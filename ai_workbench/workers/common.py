@@ -1,6 +1,21 @@
 """Small, dependency-free validation shared by isolated runtime families."""
 import json
+import sys
 from pathlib import Path, PurePosixPath
+
+_network_blocked = False
+
+
+def require_offline():
+    global _network_blocked
+    if _network_blocked:
+        return
+    def reject_network(event, _args):
+        if event in {"socket.connect", "socket.getaddrinfo"}:
+            print("ONNX worker network access rejected", flush=True)
+            raise RuntimeError("ONNX worker network access is disabled")
+    sys.addaudithook(reject_network)
+    _network_blocked = True
 
 
 class WorkerError(Exception):

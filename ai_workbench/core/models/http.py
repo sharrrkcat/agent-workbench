@@ -37,8 +37,10 @@ def guard(request: Request, settings) -> None:
         raise ModelError("AUTH_INVALID", "Invalid API key.", 401)
 
 
-async def read_body(request: Request, settings):
+async def read_body(request: Request, settings, *, max_bytes: int | None = None):
     limit = settings.max_request_mb * 1024 * 1024
+    if max_bytes is not None:
+        limit = min(limit, max_bytes)
     length = request.headers.get("content-length")
     if length is not None:
         try:
@@ -57,8 +59,8 @@ async def read_body(request: Request, settings):
     return bytes(body)
 
 
-async def read_request(request: Request, settings, schema):
-    body = await read_body(request, settings)
+async def read_request(request: Request, settings, schema, *, max_bytes: int | None = None):
+    body = await read_body(request, settings, max_bytes=max_bytes)
     try:
         return schema.model_validate_json(body)
     except ValidationError as exc:

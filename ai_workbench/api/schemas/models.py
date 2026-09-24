@@ -37,6 +37,10 @@ class LocalTTSSource(LocalModelSource):
     execution_options: EmptyExecutionOptions | PythonOptions | OnnxCPUOptions = Field(default_factory=EmptyExecutionOptions)
 
 
+class LocalVisionSource(LocalModelSource):
+    execution_options: EmptyExecutionOptions | OnnxCPUOptions = Field(default_factory=EmptyExecutionOptions)
+
+
 ModelSource = ProviderSource | LocalModelSource
 
 
@@ -67,7 +71,7 @@ class ImageEmbeddingModel(ModelFields):
 class VisionModel(ModelFields):
     kind: Literal["vision"]
     parameters: VisionParameters = Field(default_factory=VisionParameters)
-    source: None = None
+    source: LocalVisionSource | None = None
 
 
 class TTSModel(ModelFields):
@@ -137,7 +141,7 @@ InstallationResponse = public_model("InstallationResponse", Installation, omit={
 RuntimeJobResponse = public_model("RuntimeJobResponse", RuntimeJob, omit={"log_path"})
 class EngineCatalogResponse(ApiModel):
     engine: LocalEngine
-    kind: Literal["llm", "tts"]
+    kind: Literal["llm", "tts", "vision"]
     options_schema: JsonObject = Field(description="JSON Schema for this code-owned local engine's execution options.")
 
 

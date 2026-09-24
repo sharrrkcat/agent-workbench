@@ -11,12 +11,12 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   alias: '',
   kind,
   model_ref: '',
-  source: kind === 'tts' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
+  source: kind === 'tts' || kind === 'vision' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
   enabled: true,
   external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
   parameters: kind === 'tts' ? { architecture: 'kokoro', speed: 1, response_format: 'mp3' }
-    : kind === 'vision' ? { architecture: 'wd14', task: 'tags', batch_size: 1 } : {},
+    : kind === 'vision' ? { architecture: 'wd14', task: 'tags', thresholds: { general: 0.35, character: 0.85 } } : {},
 });
 
 export const ttsGenerationDefaults = {
@@ -34,7 +34,7 @@ export function selectTTSArchitecture(parameters: ModelInput['parameters'], arch
 export function localEngine(value: ModelInput): LocalEngine | null {
   if (value.source?.type !== 'local') return null;
   if (value.kind === 'llm') return value.model_ref.endsWith('.gguf') ? 'llama-server' : 'transformers';
-  return value.kind === 'tts' ? value.parameters.architecture as LocalEngine : null;
+  return value.kind === 'tts' || value.kind === 'vision' ? value.parameters.architecture as LocalEngine : null;
 }
 
 export function updateModel(value: ModelInput, patch: Partial<ModelInput>): ModelInput {
@@ -43,7 +43,7 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
   if (next.source?.type === 'local' && engine !== localEngine(value)) {
     next.source = { ...next.source, execution_options: engine === 'llama-server'
       ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto', mmproj_ref: null }
-      : engine === 'kokoro' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
+      : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
       : { device: 'cuda', intraop_threads: 4 } };
   }
   if (engine === 'llama-server' && next.source?.type === 'local' &&

@@ -33,7 +33,7 @@ def model_path(root: Path, ref: str) -> Path:
     return path
 
 
-LocalEngine = Literal["llama-server", "transformers", "kokoro", "chatterbox", "qwen3tts", "whisper"]
+LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper"]
 
 
 class LlamaOptions(Strict):
@@ -84,7 +84,7 @@ def local_engine(profile) -> LocalEngine | None:
         return None
     if profile.kind == "llm":
         return "llama-server" if profile.model_ref.endswith(".gguf") else "transformers"
-    if profile.kind in {"tts", "asr"}:
+    if profile.kind in {"tts", "asr", "vision"}:
         return profile.parameters["architecture"]
     return None
 

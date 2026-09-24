@@ -14,6 +14,7 @@ for (const script of [
   'test-model-stream',
   'test-runtime-maintenance',
   'test-tts',
+  'test-wd14',
   'test-transformers',
   'test-harness',
   'test-chat-presentation',

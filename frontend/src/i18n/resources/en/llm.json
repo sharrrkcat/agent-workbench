@@ -136,6 +136,11 @@
   "runtimeDevice": "Execution device",
   "transformersDeviceHint": "This CUDA build supports explicit CPU execution. CUDA requires an available NVIDIA GPU; it never switches to CPU automatically.",
   "visionTags": "Tags",
+  "visionDirectoryHint": "Select a local WD14 directory containing model.onnx and selected_tags.csv. Supports static PNG, JPEG and WebP images.",
+  "tagThresholds": {
+    "general": "General tag threshold",
+    "character": "Character tag threshold"
+  },
   "runtimeProgress": "Installation progress",
   "installRuntime": "Install local runtime",
   "uninstallRuntime": "Uninstall local runtime",
@@ -255,6 +260,7 @@
     "llama-server": "llama-server",
     "transformers": "Transformers",
     "kokoro": "Kokoro (ONNX)",
+    "wd14": "WD14 (ONNX)",
     "chatterbox": "Chatterbox",
     "qwen3tts": "Qwen3-TTS Base"
   },

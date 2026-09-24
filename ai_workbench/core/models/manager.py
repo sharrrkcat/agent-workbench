@@ -13,11 +13,12 @@ from dataclasses import dataclass, field
 from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
-from ai_workbench.core.models.images import prepare_local_images, validate_local_image_options
+from ai_workbench.core.models.images import prepare_local_images, prepare_tagging_images, validate_local_image_options
 from ai_workbench.core.models.runtimes.schema import is_transformers, local_engine
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
+    VisionRequest, VisionResult,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
@@ -106,7 +107,7 @@ class ModelManager:
             return ("provider", profile.source.provider_profile_id)
         engine = local_engine(profile)
         key = ("local", engine)
-        if engine in {"chatterbox", "qwen3tts", "whisper"}:
+        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14"}:
             return key + (getattr(profile, "id", "draft"), profile.model_ref,
                           json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")))
         if engine in {"llama-server", "transformers"}:
@@ -163,7 +164,8 @@ class ModelManager:
                         audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
                     else:
                         from ai_workbench.workers.common import local_model
-                        local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, tts=engine == "kokoro")
+                        local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
+                                    tts=engine == "kokoro", wd14=engine == "wd14")
                         if engine == "kokoro":
                             from ai_workbench.workers.tts_catalog import language_model
                             language_model(self.runtime_supervisor.root / "data" / "models")
@@ -510,12 +512,15 @@ class ModelManager:
                         vector[:] = [x / norm for x in vector]
             return result
 
-    async def vision(self, profile_id: str, images: list[str]):
+    async def vision(self, profile_id: str, request: VisionRequest) -> VisionResult:
         profile = self.profile(profile_id, "vision")
-        if not images:
-            raise ModelError("INVALID_REQUEST", "Vision requires at least one image.")
+        if profile.source is None:
+            raise ModelError("MODEL_NOT_CONFIGURED", "Select the local runtime for this model.", 503)
+        thresholds = {**profile.parameters["thresholds"],
+                      **(request.thresholds.model_dump(exclude_none=True) if request.thresholds else {})}
+        images = await asyncio.to_thread(prepare_tagging_images, profile.id, request.images, thresholds)
         async with self._lease(profile) as adapter:
-            return await adapter.vision(profile, images)
+            return await adapter.vision(profile, images, thresholds)
 
     def voice_list(self, profile_id: str) -> list[dict]:
         from ai_workbench.workers.tts_catalog import voices

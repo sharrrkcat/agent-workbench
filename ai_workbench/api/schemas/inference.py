@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
-from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ReferenceTranscript, Usage
+from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ReferenceTranscript, Usage
 
 
 class PublicModel(ApiModel):
@@ -16,6 +16,12 @@ class PublicModel(ApiModel):
 class ModelList(ApiModel):
     object: Literal["list"]
     data: list[PublicModel]
+
+
+class ImageTagsResponse(ApiModel):
+    object: Literal["list"]
+    model: str
+    data: list[ImageTags]
 
 
 class VoiceItem(ApiModel):

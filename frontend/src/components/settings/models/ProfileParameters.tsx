@@ -11,7 +11,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
-import type { ModelInput } from '../../../types/models';
+import type { ModelInput, VisionParameters } from '../../../types/models';
 
 import { localEngine, selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
 
@@ -240,6 +240,37 @@ export function ProfileParameters({
             </Select>
           </Field>
         </>
+      ) : value.kind === 'vision' ? (
+        <>
+          <Field>
+            <FieldLabel>{t('params.architecture')}</FieldLabel>
+            <Input value="WD14" readOnly />
+          </Field>
+          <Field>
+            <FieldLabel>{t('params.task')}</FieldLabel>
+            <Input value={t('visionTags')} readOnly />
+          </Field>
+          {(['general', 'character'] as const).map((category) => {
+            const thresholds = (value.parameters as VisionParameters).thresholds;
+            return (
+              <Field key={category}>
+                <FieldLabel>{t('tagThresholds.' + category)}</FieldLabel>
+                <Input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step="any"
+                  required
+                  value={Number.isNaN(thresholds[category]) ? '' : thresholds[category]}
+                  onChange={(event) => patchParam('thresholds', {
+                    ...thresholds,
+                    [category]: event.currentTarget.value === '' ? Number.NaN : Number(event.currentTarget.value),
+                  })}
+                />
+              </Field>
+            );
+          })}
+        </>
       ) : (
         <>
           <Field>
@@ -313,13 +344,13 @@ export function ProfileParameters({
               ))}
             </>
           ) : null}
-          {value.kind === 'image_embedding' || value.kind === 'vision' ? (
+          {value.kind === 'image_embedding' ? (
             <Field>
               <FieldLabel>{t('params.architecture')}</FieldLabel>
               <Select
-                value={String(value.parameters.architecture || (value.kind === 'vision' ? 'wd14' : 'clip'))}
+                value={String(value.parameters.architecture || 'clip')}
                 onValueChange={(selected) => patchParam('architecture', selected ?? '')}
-                items={(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => ({
+                items={['clip', 'siglip2'].map((v) => ({
                   value: v,
                   label: v,
                 }))}
@@ -329,26 +360,11 @@ export function ProfileParameters({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {(value.kind === 'vision' ? ['wd14'] : ['clip', 'siglip2']).map((v) => (
+                    {['clip', 'siglip2'].map((v) => (
                       <SelectItem key={v} value={v}>
                         {v}
                       </SelectItem>
                     ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          ) : null}
-          {value.kind === 'vision' ? (
-            <Field>
-              <FieldLabel>{t('params.task')}</FieldLabel>
-              <Select value={'tags'} disabled={true} items={[{ value: 'tags', label: t('visionTags') }]}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="tags">{t('visionTags')}</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>

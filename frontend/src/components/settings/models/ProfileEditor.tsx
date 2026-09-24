@@ -8,7 +8,7 @@ import {
   ComboboxEmpty,
 } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
-import { FieldGroup, Field, FieldLabel, FieldSet } from '@/components/ui/field';
+import { FieldGroup, Field, FieldLabel, FieldDescription, FieldSet } from '@/components/ui/field';
 import {
   Select,
   SelectTrigger,
@@ -59,6 +59,7 @@ export function ProfileEditor({
   const local = model?.value.source?.type === 'local' ? model.value.source : null;
   const engine = model ? localEngine(model.value) : null;
   const transformers = engine === 'transformers';
+  const onnx = engine === 'kokoro' || engine === 'wd14';
   const audio = engine === 'chatterbox' || engine === 'qwen3tts';
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
   const [inventory, setInventory] = useState<ModelInventoryItem[]>([]);
@@ -194,7 +195,7 @@ export function ProfileEditor({
                       }}
                       items={[
                         { value: '', label: t('unbound') },
-                        ...(['llm', 'tts'].includes(model.value.kind)
+                        ...(['llm', 'tts', 'vision'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
                         ...(['llm', 'embedding'].includes(model.value.kind) && providers.length
@@ -215,7 +216,7 @@ export function ProfileEditor({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">{t('unbound')}</SelectItem>
-                        {['llm', 'tts'].includes(model.value.kind) ? (
+                        {['llm', 'tts', 'vision'].includes(model.value.kind) ? (
                           <SelectGroup>
                             <SelectLabel>{t('localSourceGroup')}</SelectLabel>
                             <SelectItem value="local">{t('localRuntime')}</SelectItem>
@@ -262,6 +263,9 @@ export function ProfileEditor({
                         </ComboboxList>
                       </ComboboxContent>
                     </Combobox>
+                    {model.value.kind === 'vision' ? (
+                      <FieldDescription>{t('visionDirectoryHint')}</FieldDescription>
+                    ) : null}
                   </Field>
                   <FieldGroup className="grid gap-4 sm:grid-cols-2">
                     <Field orientation="horizontal">
@@ -299,7 +303,7 @@ export function ProfileEditor({
                         <FieldLabel>{t('runtimeDevice')}</FieldLabel>
                         <Select
                           value={String(local.execution_options.device)}
-                          disabled={engine === 'kokoro'}
+                          disabled={onnx}
                           onValueChange={(selected) =>
                             patchLocal({
                               execution_options: {
@@ -312,7 +316,7 @@ export function ProfileEditor({
                             })
                           }
                           items={[
-                            { value: 'cuda', label: <>NVIDIA CUDA</> },
+                            ...(onnx ? [] : [{ value: 'cuda', label: <>NVIDIA CUDA</> }]),
                             { value: 'cpu', label: <>CPU</> },
                           ]}
                         >
@@ -320,7 +324,7 @@ export function ProfileEditor({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="cuda">NVIDIA CUDA</SelectItem>
+                            {onnx ? null : <SelectItem value="cuda">NVIDIA CUDA</SelectItem>}
                             <SelectItem value="cpu">CPU</SelectItem>
                           </SelectContent>
                         </Select>

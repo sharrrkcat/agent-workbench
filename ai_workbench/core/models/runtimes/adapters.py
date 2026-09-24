@@ -18,7 +18,7 @@ from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offlo
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.schema import AudioOutput, ModelStatus, ExternalConnection
+from ai_workbench.core.models.schema import AudioOutput, ModelStatus, ExternalConnection, VisionResult
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
 from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing
@@ -134,7 +134,7 @@ class ManagedAdapter:
                         from ai_workbench.workers.audio_catalog import audio_model
                         return audio_model(self.supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
                     return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
-                        tts=self.engine == "kokoro")
+                        tts=self.engine == "kokoro", wd14=self.engine == "wd14")
                 except WorkerError as exc:
                     raise ModelError(exc.code, "The local model directory is incomplete or outside data/models.", exc.status) from exc
             return path
@@ -340,6 +340,11 @@ class ManagedAdapter:
                 code = error.get("code", "MODEL_UNAVAILABLE")
                 allowed = {"INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE", "VOICE_UNAVAILABLE", "AUDIO_TOO_LARGE", "AUDIO_TOO_LONG", "INVALID_AUDIO", "RUNTIME_BROKEN", "RUNTIME_DEVICE_UNAVAILABLE"}
                 raise ModelError(code if code in allowed else "MODEL_UNAVAILABLE", "The managed worker could not complete this operation.", response.status_code)
+            if operation == "/tags":
+                result = VisionResult.model_validate(value)
+                if [item.index for item in result.outputs] != list(range(len(body["images"]))):
+                    raise ValueError("Tagging results do not match the requested images")
+                return result
             return value
         except asyncio.CancelledError:
             # A synchronous CPU call cannot be cancelled safely within its thread.
@@ -461,6 +466,9 @@ class TransformersServerAdapter(LlamaServerAdapter):
 
 
 class PythonWorkerAdapter(ManagedAdapter):
+    async def vision(self, profile, images, thresholds):
+        return await self._rpc("POST", "/tags", {"profile_id": profile.id, "images": images, "thresholds": thresholds})
+
     async def speech(self, profile, text, voice, speed, response_format, language):
         return await self._rpc("POST", "/speech", {"profile_id": profile.id, "input": text, "voice": voice,
             "speed": speed, "response_format": response_format, "language": language}, audio_format=response_format)

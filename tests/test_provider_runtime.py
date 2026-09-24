@@ -154,7 +154,7 @@ def test_removed_routes_and_single_release_catalog(tmp_path):
             ('get', '/runtime/settings'), ('get', '/runtimes'), ('get', '/runtimes/catalog')]:
             assert client.request(method, '/api/models' + path).status_code == 404
         release = client.get('/api/models/local-runtime/catalog').json()
-        assert {item['engine'] for item in release['engines']} == {'llama-server', 'transformers', 'kokoro', 'chatterbox', 'qwen3tts'}
+        assert {item['engine'] for item in release['engines']} == {'llama-server', 'transformers', 'kokoro', 'wd14', 'chatterbox', 'qwen3tts'}
         assert 'whisper' not in str(release)
         assert 'backend_profile_id' not in client.get('/api/models/local-runtime').json()
         for kind in ('asr', 'tts'):
@@ -166,6 +166,7 @@ def test_removed_routes_and_single_release_catalog(tmp_path):
 @pytest.mark.parametrize('kind,ref,parameters,device', [
     ('llm', 'llms/model.gguf', {}, 'cuda'), ('llm', 'llms/model', {}, 'cuda'),
     ('tts', 'tts/kokoro', {'architecture': 'kokoro'}, 'cpu'),
+    ('vision', 'vision/tagger', {'architecture': 'wd14'}, 'cpu'),
     ('tts', 'tts/chatterbox', {'architecture': 'chatterbox'}, 'cuda'),
     ('tts', 'tts/qwen', {'architecture': 'qwen3tts'}, 'cuda'),
 ])
@@ -178,7 +179,7 @@ def test_execution_defaults_follow_model_engine(kind, ref, parameters, device):
         assert cpu.source.execution_options['gpu_layers'] == 0
 
 
-@pytest.mark.parametrize('kind', ['embedding', 'reranker', 'image_embedding', 'vision'])
+@pytest.mark.parametrize('kind', ['embedding', 'reranker', 'image_embedding'])
 def test_deferred_local_kinds_cannot_bind_but_unbound_profiles_can_be_saved(kind):
     values = dict(name='Deferred', alias='deferred', kind=kind, model_ref='local/model')
     assert ModelProfile(**values).source is None

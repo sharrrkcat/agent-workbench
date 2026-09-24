@@ -136,6 +136,11 @@
   "runtimeDevice": "执行设备",
   "transformersDeviceHint": "此 CUDA 构建也支持手动选择 CPU 执行。选择 CUDA 需要可用的 NVIDIA GPU，不会自动切换到 CPU。",
   "visionTags": "标签",
+  "visionDirectoryHint": "选择包含 model.onnx 和 selected_tags.csv 的本地 WD14 目录。支持静态 PNG、JPEG 和 WebP 图片。",
+  "tagThresholds": {
+    "general": "通用标签阈值",
+    "character": "角色标签阈值"
+  },
   "runtimeProgress": "安装进度",
   "installRuntime": "安装本地运行环境",
   "uninstallRuntime": "卸载本地运行环境",
@@ -255,6 +260,7 @@
     "llama-server": "llama-server",
     "transformers": "Transformers",
     "kokoro": "Kokoro (ONNX)",
+    "wd14": "WD14 (ONNX)",
     "chatterbox": "Chatterbox",
     "qwen3tts": "Qwen3-TTS Base"
   },

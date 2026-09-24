@@ -152,8 +152,12 @@ Models has four sidebar pages. Default chat/auxiliary model selectors appear onl
 on Model profiles. Providers manages external connections; Local Runtime shows installation,
 storage, download settings and task history, with a log dialog. Forms and the kind filter
 retain drafts across subpages. Models use grouped Unbound, Local Runtime and configured-provider
-choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro;
+choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro and vision to local WD14 CPU;
 other new profiles start unbound. Local models expose inventory, execution options and release policy.
+Vision offers only Unbound/Local Runtime, WD14/Tags read-only fields, general/character thresholds (0.35/0.85),
+CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and
+fractions round-trip, while blank fields prevent submission. The removed vision batch-size field is rejected by the API.
+WD14 directory suggestions require model.onnx and selected_tags.csv; arbitrary safe manual relative references remain editable.
 GGUF vision exposes required mmproj_ref with inventory suggestions and manual relative-path entry.
 Changing the main model or disabling vision clears the projector. Transformers vision remains selectable;
 the worker verifies actual image capability during execution.

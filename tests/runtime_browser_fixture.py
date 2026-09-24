@@ -34,6 +34,11 @@ def install_runtime_fixture(app, root):
         for profile in state.model_manager.profiles.list():
             if profile.alias.startswith("runtime-fixture-"):
                 state.model_manager.profiles.delete(profile.id)
+        if values.get("wd14"):
+            model = root / "data/models/vision/browser-wd14"
+            model.mkdir(parents=True, exist_ok=True)
+            (model / "model.onnx").write_bytes(b"Browser inventory fixture")
+            (model / "selected_tags.csv").write_text("name,category\nfixture_tag,0\n", encoding="utf-8")
 
         async def command(args, env, cwd, log):
             assert list(map(str, args))[1:3] in (["cache", "prune"], ["cache", "clean"])

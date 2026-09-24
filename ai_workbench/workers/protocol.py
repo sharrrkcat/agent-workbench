@@ -13,20 +13,43 @@ def load_request(body, root):
     fields(body, ("profile_id", "kind", "model_ref", "parameters", "options"))
     if not isinstance(body["profile_id"], str) or not body["profile_id"] or len(body["profile_id"]) > 128:
         raise WorkerError("INVALID_REQUEST")
-    if body["kind"] != "tts":
+    if body["kind"] not in {"tts", "vision"}:
         raise WorkerError("MODEL_KIND_MISMATCH")
     params, options = body["parameters"], body["options"]
-    fields(params, ("architecture", "speed", "response_format"))
     fields(options, ("device", "intraop_threads", "max_batch_size"))
     if options["device"] != "cpu":
         raise WorkerError("RUNTIME_UNSUPPORTED")
     integer(options["intraop_threads"], 1, 256)
     integer(options["max_batch_size"], 1, 1)
+    if body["kind"] == "vision":
+        fields(params, ("architecture", "task", "thresholds"))
+        if params["architecture"] != "wd14" or params["task"] != "tags":
+            raise WorkerError("UNSUPPORTED_CAPABILITY")
+        tag_thresholds(params["thresholds"])
+        return local_model(root, body["model_ref"], wd14=True)
+    fields(params, ("architecture", "speed", "response_format"))
     if params["architecture"] != "kokoro":
         raise WorkerError("UNSUPPORTED_CAPABILITY")
     speech_request({"input": "validation", "voice": "af_heart", "speed": params["speed"],
                     "response_format": params["response_format"], "language": None})
     return local_model(root, body["model_ref"], tts=True)
+
+
+def tag_thresholds(value):
+    fields(value, ("general", "character"))
+    if any(type(score) not in {int, float} or not math.isfinite(score) or not 0 <= score <= 1
+           for score in value.values()):
+        raise WorkerError("INVALID_REQUEST")
+
+
+def tags_request(body):
+    fields(body, ("profile_id", "images", "thresholds"))
+    if not isinstance(body["profile_id"], str) or not body["profile_id"] or len(body["profile_id"]) > 128:
+        raise WorkerError("INVALID_REQUEST")
+    strings(body["images"], limit=16)
+    if any(not image.startswith("data:image/png;base64,") for image in body["images"]):
+        raise WorkerError("INVALID_REQUEST")
+    tag_thresholds(body["thresholds"])
 
 
 def speech_request(body):

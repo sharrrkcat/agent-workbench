@@ -31,7 +31,8 @@ TTS_REVISION = "0011_tts"
 RUNTIME_FAMILIES_REVISION = "0012_runtime_families"
 UNIFIED_BACKEND_REVISION = "0013_unified_backend"
 PROVIDER_RUNTIME_REVISION = "0014_provider_runtime_separation"
-HEAD_REVISION = PROVIDER_RUNTIME_REVISION
+WD14_REVISION = "0015_wd14_vision"
+HEAD_REVISION = WD14_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

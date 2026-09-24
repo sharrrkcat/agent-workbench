@@ -115,10 +115,22 @@ class ImageEmbeddingParameters(StrictModel):
     batch_size: int = Field(default=1, ge=1, le=256)
 
 
+class VisionThresholds(StrictModel):
+    general: float = Field(default=0.35, ge=0, le=1, strict=True)
+    character: float = Field(default=0.85, ge=0, le=1, strict=True)
+
+
+class VisionThresholdOverrides(StrictModel):
+    general: float | None = Field(default=None, ge=0, le=1, strict=True,
+        description="General-tag score cutoff. Omitted/null inherits the model default; zero is valid.")
+    character: float | None = Field(default=None, ge=0, le=1, strict=True,
+        description="Character-tag score cutoff. Omitted/null inherits the model default; zero is valid.")
+
+
 class VisionParameters(StrictModel):
     architecture: Literal["wd14"] = "wd14"
     task: Literal["tags"] = "tags"
-    batch_size: int = Field(default=1, ge=1, le=256)
+    thresholds: VisionThresholds = Field(default_factory=VisionThresholds)
 
 
 class SpeechOutputParameters(StrictModel):
@@ -196,7 +208,7 @@ class ModelInput(StrictModel):
                 if device not in {"cpu", "cuda"}:
                     raise ValueError("The local device must be cpu or cuda")
                 options_schema = llama_options(device)
-            elif engine == "kokoro":
+            elif engine in {"kokoro", "wd14"}:
                 options_schema = OnnxCPUOptions
             else:
                 options_schema = PythonOptions
@@ -387,6 +399,13 @@ class EmbeddingRequest(StrictModel):
         return value
 
 
+class VisionRequest(StrictModel):
+    model: str = Field(min_length=1)
+    images: list[Annotated[str, Field(min_length=1, strict=True)]] = Field(min_length=1, max_length=16,
+        description="Static PNG, JPEG or WebP base64 data URLs, in result order. No remote URLs or file paths.")
+    thresholds: VisionThresholdOverrides | None = None
+
+
 class ReferenceTranscript(StrictModel):
     reference_text: str | None = Field(default=None, min_length=1, max_length=4096, strict=True,
         description="Qwen Base only: the reference audio's transcript. Omit for speaker-embedding cloning; provide nonblank text for full audio-and-transcript conditioning. Never transcribed automatically.")
@@ -519,8 +538,29 @@ class RerankResult(StrictModel):
     scores: list[float]
 
 
+class InferenceUsage(StrictModel):
+    """Reserved internal accounting fields; no collection is implemented yet."""
+    input_images: int | None = Field(default=None, ge=0, strict=True)
+    input_tokens: int | None = Field(default=None, ge=0, strict=True)
+    output_tokens: int | None = Field(default=None, ge=0, strict=True)
+    total_tokens: int | None = Field(default=None, ge=0, strict=True)
+
+
+class ImageTag(StrictModel):
+    name: str = Field(min_length=1, strict=True)
+    category: Literal["general", "character"]
+    score: float = Field(ge=0, le=1, strict=True)
+
+
+class ImageTags(StrictModel):
+    object: Literal["image.tags"] = "image.tags"
+    index: int = Field(ge=0, strict=True)
+    tags: list[ImageTag]
+
+
 class VisionResult(StrictModel):
-    outputs: list[dict[str, Any]]
+    outputs: list[ImageTags]
+    usage: InferenceUsage | None = None
 
 
 class AudioOutput(StrictModel):

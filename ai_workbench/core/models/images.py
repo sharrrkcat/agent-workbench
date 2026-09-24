@@ -20,6 +20,8 @@ from ai_workbench.core.models.schema import ChatRequest, ImagePart
 
 
 MAX_LOCAL_CHAT_BYTES = 32 * 1024 * 1024
+MAX_TAGGING_BYTES = 32 * 1024 * 1024
+MAX_TAGGING_PIXELS = 64_000_000
 IMAGE_FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
 
 
@@ -120,10 +122,26 @@ def prepare_local_images(profile, request: ChatRequest) -> ChatRequest:
     return prepared
 
 
-def _normalized_image(url: str) -> str:
+def prepare_tagging_images(profile_id: str, images: list[str], thresholds: dict[str, float]) -> list[str]:
+    prepared = list(images)
+
+    def check_size():
+        body = {"profile_id": profile_id, "images": prepared, "thresholds": thresholds}
+        size = len(json.dumps(body, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+        if size > MAX_TAGGING_BYTES:
+            raise ModelError("REQUEST_TOO_LARGE", "Image tagging requests are limited to 32 MiB.", 413)
+
+    check_size()
+    for index, url in enumerate(prepared):
+        prepared[index] = _normalized_image(url, max_pixels=MAX_TAGGING_PIXELS)
+        check_size()
+    return prepared
+
+
+def _normalized_image(url: str, *, max_pixels: int | None = None) -> str:
     header, separator, encoded = url.partition(",")
     mime = header.removeprefix("data:").removesuffix(";base64")
-    if not separator or not header.endswith(";base64") or mime not in IMAGE_FORMATS:
+    if not separator or header != f"data:{mime};base64" or mime not in IMAGE_FORMATS:
         raise ModelError("INVALID_IMAGE", "Use a base64 PNG, JPEG or WebP image.", 422)
     try:
         data = base64.b64decode(encoded, validate=True)
@@ -132,6 +150,8 @@ def _normalized_image(url: str) -> str:
             with Image.open(BytesIO(data)) as source:
                 if source.format != IMAGE_FORMATS[mime] or getattr(source, "n_frames", 1) != 1:
                     raise ModelError("INVALID_IMAGE", "Use a static image whose MIME type matches its contents.", 422)
+                if max_pixels is not None and max(source.size) ** 2 > max_pixels:
+                    raise ModelError("REQUEST_TOO_LARGE", "A tagging image exceeds 64 million pixels after square padding.", 413)
                 oriented = ImageOps.exif_transpose(source)
                 rgba = oriented.convert("RGBA")
                 rgb = Image.new("RGB", rgba.size, "white")

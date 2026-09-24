@@ -4,34 +4,20 @@ import json
 import logging
 from pathlib import Path
 import re
-import sys
 import wave
 
 if __package__:
+    from .common import require_offline
     from .protocol import WorkerError
     from .tts_catalog import FORMATS, LANGUAGES, MAX_AUDIO_BYTES, MAX_TOKENS, SAMPLE_RATE, language_model, valid_voice, voice_file
     from .audio import validate_audio
     from .timing import stage
 else:
+    from common import require_offline
     from protocol import WorkerError
     from tts_catalog import FORMATS, LANGUAGES, MAX_AUDIO_BYTES, MAX_TOKENS, SAMPLE_RATE, language_model, valid_voice, voice_file
     from audio import validate_audio
     from timing import stage
-
-_network_blocked = False
-
-
-def require_offline():
-    global _network_blocked
-    if _network_blocked:
-        return
-    def reject_network(event, _args):
-        if event in {"socket.connect", "socket.getaddrinfo"}:
-            print("ONNX worker network access rejected", flush=True)
-            raise RuntimeError("ONNX worker network access is disabled")
-    sys.addaudithook(reject_network)
-    _network_blocked = True
-
 
 def phoneme_chunks(phonemes: str, encode):
     """Split on phoneme word boundaries without tokenizer truncation."""

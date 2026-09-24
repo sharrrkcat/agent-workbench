@@ -55,7 +55,7 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(!html.includes(t('params.presence_penalty')) && !html.includes(t('params.frequency_penalty')));
   const vision = renderToStaticMarkup(React.createElement(ProfileParameters, { value: newModel('vision'), onChange: () => {} }));
   const embedding = renderToStaticMarkup(React.createElement(ProfileParameters, { value: newModel('image_embedding'), onChange: () => {} }));
-  assert.ok(vision.includes('wd14') && vision.includes(t('visionTags')));
+  assert.ok(vision.includes('WD14') && vision.includes(t('visionTags')));
   assert.ok(embedding.includes('clip'));
   const architectures = descendants(ProfileParameters({ value: newModel('image_embedding'), onChange() {} }))
     .filter((node) => node.type === SelectItem).map((node) => node.props.value);

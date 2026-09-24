@@ -22,7 +22,7 @@ def test_document_endpoints_and_manual_request_schemas(tmp_path):
         document = client.get("/openapi.json").json()
         assert document["openapi"] == "3.1.0"
         assert client.get("/docs").status_code == client.get("/redoc").status_code == 200
-        for path, field in (("/v1/chat/completions", "messages"), ("/v1/embeddings", "input")):
+        for path, field in (("/v1/chat/completions", "messages"), ("/v1/embeddings", "input"), ("/v1/images/tags", "images")):
             operation = document["paths"][path]["post"]
             body = operation["requestBody"]["content"]["application/json"]["schema"]
             schema = resolve_ref(document, body["$ref"])

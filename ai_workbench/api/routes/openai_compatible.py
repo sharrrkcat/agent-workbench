@@ -19,11 +19,12 @@ from pydantic import ValidationError
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import SSE_RESPONSE, request_body
 from ai_workbench.api.schemas.common import error_responses
-from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ModelList, VoiceList,
+from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ImageTagsResponse, ModelList, VoiceList,
     VoiceReferenceDeleted, VoiceReferenceResponse, VoiceReferenceUpload)
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_body, read_request
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, SpeechRequest
+from ai_workbench.core.models.images import MAX_TAGGING_BYTES
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ModelKind, SpeechRequest, VisionRequest
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
@@ -31,14 +32,26 @@ router = APIRouter(prefix="/v1", tags=["openai-compatible"])
 
 
 @router.get("/models", response_model=ModelList, response_model_exclude_unset=True,
-            responses=error_responses(401, 403, 503), summary="List externally visible models")
-async def list_models(request: Request, state: RuntimeState = Depends(get_state)):
+            responses=error_responses(401, 403, 422, 503), summary="List externally visible models; optional kind is a Workbench extension")
+async def list_models(request: Request, kind: ModelKind | None = None, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
     return {"object": "list", "data": [
         {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "workbench"}
-        for p in state.model_profiles.list() if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts"}
+        for p in state.model_profiles.list(kind) if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts", "vision"}
     ]}
+
+
+@router.post("/images/tags", response_model=ImageTagsResponse, openapi_extra=request_body(VisionRequest),
+             summary="Tag static images with WD14 (Workbench extension)",
+             responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 502, 503, 504))
+async def image_tags(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    payload = await read_request(request, settings, VisionRequest, max_bytes=MAX_TAGGING_BYTES)
+    profile = state.model_manager.external_profile(payload.model, "vision")
+    result = await inference_until_disconnect(request, state.model_manager.vision(profile.id, payload))
+    return {"object": "list", "model": profile.alias, "data": result.outputs}
 
 
 @router.get("/audio/voices", response_model=VoiceList, responses=error_responses(400, 401, 403, 404, 503),
@@ -89,7 +102,7 @@ async def create_voice_reference(request: Request, state: RuntimeState = Depends
                 **({"reference_text": form["reference_text"]} if "reference_text" in form else {})})
         except ValidationError as exc:
             raise ModelError("INVALID_REQUEST", "Reference transcript must contain 1 to 4096 nonblank characters.") from exc
-        return await speech_until_disconnect(request, state.model_manager.create_voice_reference(
+        return await inference_until_disconnect(request, state.model_manager.create_voice_reference(
             profile.id, data, audio_format, credential_id(settings.external_api_key), reference_text=payload.reference_text))
     finally:
         await form.close()
@@ -104,7 +117,7 @@ async def delete_voice_reference(voice_id: str, request: Request, state: Runtime
     return await asyncio.to_thread(state.model_manager.delete_voice_reference, voice_id, credential_id(settings.external_api_key))
 
 
-async def speech_until_disconnect(request: Request, operation):
+async def inference_until_disconnect(request: Request, operation):
     async def disconnected():
         while True:
             if (await request.receive())["type"] == "http.disconnect":
@@ -115,7 +128,7 @@ async def speech_until_disconnect(request: Request, operation):
         done, _ = await asyncio.wait({task, watcher}, return_when=asyncio.FIRST_COMPLETED)
         if watcher in done:
             request.state.inference_error_code = "REQUEST_CANCELLED"
-            raise ModelError("REQUEST_CANCELLED", "The speech client disconnected.", 499)
+            raise ModelError("REQUEST_CANCELLED", "The inference client disconnected.", 499)
         return await task
     finally:
         for pending in (task, watcher):
@@ -135,7 +148,7 @@ async def speech(request: Request, state: RuntimeState = Depends(get_state)):
     guard(request, settings)
     payload = await read_request(request, settings, SpeechRequest)
     profile = state.model_manager.external_profile(payload.model, "tts")
-    result = await speech_until_disconnect(request, state.model_manager.speech(profile.id, payload, credential=credential_id(settings.external_api_key)))
+    result = await inference_until_disconnect(request, state.model_manager.speech(profile.id, payload, credential=credential_id(settings.external_api_key)))
     return Response(result.data, media_type=FORMATS[result.response_format], headers={"Cache-Control": "no-store"})
 
 

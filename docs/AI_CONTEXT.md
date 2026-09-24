@@ -17,6 +17,8 @@ Kokoro ONNX and PyTorch Audio provide offline MP3/WAV TTS through
 `/v1/audio/speech`. Kokoro uses local language resources and presets; English Chatterbox and multilingual
 Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optional
 reference transcripts. Chat playback and live capture are deferred.
+Local WD14-family CPU workers tag 1..16 static inline images through `/v1/images/tags`.
+Models are manually supplied ONNX/CSV directories; usage accounting is reserved but unimplemented.
 
 Personas own identity, prompts and resource bindings; sessions own concrete model
 selection, context, generation and opt-in Harness configuration. Chat combines the

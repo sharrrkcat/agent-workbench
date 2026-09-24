@@ -1,5 +1,11 @@
 export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
-export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'chatterbox' | 'qwen3tts';
+export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts';
+
+export type VisionParameters = {
+  architecture: 'wd14';
+  task: 'tags';
+  thresholds: { general: number; character: number };
+};
 
 export type PresetVoice = {
   id: string; model: string; source: 'preset'; language: string; expires_at: null; available: boolean;
@@ -100,7 +106,7 @@ export type RuntimeCatalog = {
   architecture: string;
   supported: boolean;
   reason: string | null;
-  engines: { engine: LocalEngine; kind: 'llm' | 'tts'; options_schema: Record<string, unknown> }[];
+  engines: { engine: LocalEngine; kind: 'llm' | 'tts' | 'vision'; options_schema: Record<string, unknown> }[];
 };
 
 export type RuntimeInstallation = {

@@ -54,6 +54,8 @@ settings-layout.spec.ts covers all 11 grouped pages, collapsed menus, direct lin
 leave guards, retained drafts/hidden dialogs, shared navigation and responsive scroll regions.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
+test-wd14.mjs and wd14.spec.ts cover WD14 source/CPU defaults, inventory/manual references,
+threshold validation/round trips and lifecycle controls in both locales and desktop/touch viewports.
 Check stale responses, session isolation, approval visibility, draft persistence
 and nullable/empty values when affected. Layout/workflow changes also require
 desktop/mobile browser checks in both locales; fixture setup and commands are

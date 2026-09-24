@@ -23,7 +23,14 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
             if not resolved.is_relative_to(base.resolve()) or not path.is_file():
                 continue
             target = None
-            if model_kind == "tts":
+            if model_kind == "vision":
+                if path.name == "model.onnx" and (path.parent / "selected_tags.csv").is_file():
+                    from ai_workbench.workers.common import WorkerError, local_model
+                    try:
+                        target = local_model(root, path.parent.relative_to(root).as_posix(), wd14=True)
+                    except WorkerError:
+                        continue
+            elif model_kind == "tts":
                 if path.name == "model.onnx" and model_files(path.parent):
                     target = path.parent
                 elif path.name == "t3_cfg.safetensors" and chatterbox_files(path.parent):
