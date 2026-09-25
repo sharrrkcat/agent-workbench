@@ -270,7 +270,7 @@ def test_migration_preserves_rows_indexes_and_files(tmp_path):
         path.write_bytes(b"preserve")
     init_db(engine)
     init_db(engine)
-    assert migrations.current_revision(engine) == migrations.TEXT_EMBEDDING_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     assert ModelProfileStore(engine).get(original.id).model_dump() == before
     assert ProviderProfileStore(engine).get(provider.id).name == "Provider"
     local = ModelProfileStore(engine).create(profile(alias="local"))

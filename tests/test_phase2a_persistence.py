@@ -99,7 +99,7 @@ def test_sql_restart_preserves_only_current_configuration(tmp_path):
 
 
 @pytest.mark.parametrize("kind", ["reranker", "image_embedding", "vision"])
-def test_pending_kinds_are_first_class_but_require_an_executable_backend(tmp_path, kind):
+def test_unbound_nonchat_models_are_first_class_but_require_a_source(tmp_path, kind):
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
         response = client.post("/api/models/profiles", json={"name": kind, "alias": kind, "kind": kind, "model_ref": "local/file"})
         assert response.status_code == 200, response.text

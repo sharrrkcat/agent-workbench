@@ -294,7 +294,8 @@
     "chatterbox": "Chatterbox",
     "qwen3tts": "Qwen3-TTS Base",
     "siglip2": "SigLIP2",
-    "sentence-transformers": "Sentence Transformers"
+    "sentence-transformers": "Sentence Transformers",
+    "cross-encoder": "Cross-Encoder（Sentence Transformers）"
   },
   "providers": "服务提供商",
   "addProvider": "添加服务提供商",
@@ -347,6 +348,39 @@
       "remote_code": "不支持执行自定义模型代码。",
       "missing_token_limit": "无法确定有效的原生文本长度上限。",
       "missing_pooling": "需要明确声明池化方式。"
+    }
+  },
+  "reranker": {
+    "information": "重排序模型信息",
+    "informationHint": "架构与评分方式自动读取自模型目录，保留模型原生的文本处理和分数。",
+    "directoryHint": "选择 data/models/rerankers 下的 CrossEncoder 模型目录。",
+    "undetermined": "尚未确定",
+    "inspecting": "正在读取目录配置…",
+    "inspectionFailed": "无法读取目录信息。",
+    "configurationNeeded": "配置需要完善",
+    "draftHint": "可以保存此配置，请先解决下列问题再加载模型。",
+    "fields": {
+      "architecture": "架构",
+      "modelType": "基础模型类型",
+      "textLimit": "输入 token 上限",
+      "scoring": "评分方式",
+      "activation": "分数激活函数",
+      "pipeline": "处理流程"
+    },
+    "methods": {
+      "sequence_classification": "单分数分类",
+      "logit_score": "原生 token logit 评分",
+      "dense": "单分数投影"
+    },
+    "diagnostics": {
+      "missing_config": "缺少必需的配置文件。",
+      "invalid_config": "无法读取配置文件或模板。",
+      "invalid_field": "模型声明的设置无效。",
+      "unsupported_configuration": "暂不支持声明的评分流程或处理设置。",
+      "remote_code": "不支持执行自定义模型或激活函数代码。",
+      "missing_scoring": "需要明确声明原生的单分数评分头。",
+      "missing_template": "需要模型原生的查询和文档对话模板。",
+      "missing_token_limit": "无法确定有效的原生文本长度上限。"
     }
   },
   "viewHelp": {

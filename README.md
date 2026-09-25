@@ -38,7 +38,7 @@ Titles use only the auxiliary model and remain unchanged when it is missing or f
 | --- | --- | --- |
 | llm | data/models/llms | llama-server GGUF or Windows Transformers |
 | embedding | data/models/embeddings | Native Sentence Transformers, Windows CUDA or CPU; external providers also supported |
-| reranker | data/models/rerankers | Deferred |
+| reranker | data/models/rerankers | Native CrossEncoder, Windows CUDA or CPU |
 | image_embedding | data/models/image_embeddings | SigLIP image/text towers, Windows CUDA or CPU |
 | vision | data/models/vision | WD14-family ONNX CPU |
 | tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
@@ -49,14 +49,9 @@ Chat accepts static PNG/JPEG/WebP through file selection, paste and drag/drop; s
 Local `/v1` images require inline data URLs and detail=auto, with a 32 MiB complete-request limit.
 Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
 
-The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation) describes the shared Python environment and both native llama-server builds.
-Execution options select CPU or NVIDIA CUDA; capable engines default to CUDA, Kokoro/WD14 to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
-CUDA requires a usable NVIDIA device; GGUF must confirm positive offload. Local Runtime provides installation/repair/uninstall, jobs/logs and cache prune/clean.
-Storage deduplicates hard links; exclusive size estimates recovery. Cache cleanup preserves installations; download settings never fetch model weights.
-Load/health/reference preparation checks entry/model availability without environment/cache scans. [Models](docs/contracts/models.md#managed-processes-and-workers) owns correlated host/worker timing.
-Repair rebuilds dependencies; source-only worker updates reuse installation after reload/restart.
-
-Local models expose health/load/unload. Providers start unknown, then ready/failed after inference with retry allowed; discovery/cancellation preserve availability. Default queues allow concurrency 1, 32 waiting requests and a 30-second timeout.
+The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation) owns engine/dependency details. Capable engines default to CUDA, Kokoro/WD14 to CPU; GGUF supports automatic/manual GPU layers and requires confirmed positive offload.
+Local Runtime manages installation/repair/uninstall, jobs/logs and cache prune/clean; storage deduplicates hard links and reports exclusive recovery estimates. Model weights are never downloaded.
+Local health/load/unload and provider request status follow [Models](docs/contracts/models.md#lifecycle-and-status). Source-only worker updates reuse installation after reload/restart; Repair rebuilds dependencies.
 
 ## Chat and tools
 
@@ -84,9 +79,8 @@ owns reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecy
 
 ## External API
 
-In **Models > External API**, configure a key and enable the service. Mark LLM/embedding/TTS/vision/image_embedding profiles externally visible.
-Requests use public aliases. The service defaults disabled, accepts loopback clients only and shares inference/lifecycle with internal callers
-without writing chat or Knowledge records. It forwards tool definitions/calls and never executes tools.
+In **Models > External API**, configure a key, enable the service and mark model profiles externally visible; requests use public aliases.
+The service defaults disabled and loopback-only, shares ModelManager without chat/Knowledge writes, and forwards tool definitions/calls without executing tools.
 
 The examples below are PowerShell. Set the key and aliases to your configuration:
 
@@ -118,7 +112,7 @@ Embeddings accept strings/string arrays, float/base64, dimensions and purpose=qu
 Unsupported fields/capabilities and unavailable models produce explicit errors without substitution.
 [Models](docs/contracts/models.md#external-inference-api) owns request rules;
 [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior.
-Public rerank and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
+Other reranker architectures and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
 
 ### Offline text embeddings
 
@@ -129,6 +123,18 @@ Harrier-oss-v1-0.6b resolves 1024 dimensions, last-token pooling, L2 normalizati
 Missing/unsupported semantics permit saving but prevent loading. Local dimensions must match native output. Model files are never hashed.
 Select this profile in Knowledge or use `/v1/embeddings`; set purpose=query for retrieval queries. Model replacement requires unload/reload and reindexing.
 [Models](docs/contracts/models.md#local-text-embeddings) owns semantics and Harrier-only real-model acceptance; other checkpoints need representative acceptance.
+
+### Offline reranking
+
+Select a CrossEncoder directory under data/models/rerankers. Architecture, native scoring and token limits are automatic; CPU/CUDA, batch size and release policy remain editable.
+Defaults are CUDA/checkpoint precision, four threads, batch one and manual release. No model files are hashed; other reranker architectures remain deferred.
+
+```powershell
+$rerankBody = @{ model = 'reranker'; query = 'Who wrote To Kill a Mockingbird?'; documents = @('Harper Lee wrote the novel.', 'A soccer match lasts ninety minutes.'); top_n = 1; return_documents = $true } | ConvertTo-Json
+Invoke-RestMethod "$apiBase/rerank" -Method Post -Headers $headers -ContentType 'application/json' -Body $rerankBody
+```
+
+Results contain original `index`, native `relevance_score` and optional `document.text`, sorted descending with stable ties. Enable the same profile in Knowledge settings; unavailable reranking preserves RRF order. [Models](docs/contracts/models.md#local-reranking) owns limits and scoring semantics.
 
 ### Offline WD14 image tagging
 
@@ -175,16 +181,9 @@ Image indexing, remote providers and usage/timing collection remain deferred.
 
 ### Offline Kokoro Speech
 
-Place the Kokoro v1.0 FP32 ONNX model, config/tokenizer JSON files and
-`voices/<id>.bin` under `data/models/tts/Kokoro-82M-onnx`. The fixed catalog has
-54 voices; extra files are ignored and missing/invalid voices are unavailable.
-Manually unpack the en_core_web_sm 3.7.1 pipeline into `data/models/_auxiliary/en_core_web_sm`, with meta.json, config.cfg,
-tokenizer, tok2vec/, tagger/ and vocab/ directly inside it. Missing/corrupt resources fail loading without downloads,
-shared-environment changes or blocking installation/other engines.
-
-Install the local runtime under Models > Local Runtime, then create a TTS model with
-architecture Kokoro and reference `tts/Kokoro-82M-onnx`. Its ONNX execution stays
-on CPU; language processors and MP3 encoding use the shared environment.
+Place Kokoro v1.0 FP32 model.onnx, config/tokenizer JSON and voices/<id>.bin under data/models/tts/Kokoro-82M-onnx; the 54-voice catalog ignores extras and excludes missing/invalid voices.
+Unpack en_core_web_sm 3.7.1 into data/models/_auxiliary/en_core_web_sm with meta.json, config.cfg, tokenizer, tok2vec/, tagger/ and vocab/ directly inside. Missing/corrupt resources fail only Kokoro loading without downloads or environment changes.
+Install Local Runtime and create a Kokoro TTS profile referencing `tts/Kokoro-82M-onnx`; ONNX runs on CPU, with shared language processors and MP3 encoding.
 
 ```powershell
 Invoke-RestMethod "$apiBase/audio/voices?model=kokoro" -Headers $headers
@@ -194,10 +193,8 @@ Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
   -ContentType 'application/json' -Body $speechBody -OutFile speech.wav
 ```
 
-Use `response_format=mp3` for MP3 (the default). The response is a complete audio
-file; no chat or attachment record is created. `tts.language`, when supplied,
-must match the voice. SSE and application playback are deferred.
-`GET /v1/audio/voices` is a Cogita extension; source=preset selects Kokoro voices.
+MP3 is the default; responses are complete files without chat/attachment writes. Optional tts.language must match the voice; SSE/playback are deferred.
+`GET /v1/audio/voices` is a Cogita extension; source=preset selects Kokoro voices. [Models](docs/contracts/models.md#kokoro-tts) owns limits.
 
 ### Offline Chatterbox Speech
 
@@ -321,12 +318,16 @@ SigLIP routine CUDA: `uv run python -m scripts.smoke_siglip_runtime --model-ref 
 Both require supplied directories and reuse installation. WD14 checks tagging API/lifecycle; the default SigLIP smoke checks image→text→image, reuse and unload.
 Add SigLIP `--native-reference` to compare standalone towers with native FP16 CUDA outputs. Reports go to build/wd14-smoke or build/siglip-smoke.
 SigLIP `--full-lifecycle` includes 20 switches and 10 dual-resident pairs and requires an explicit user request; exclude it from routine regression, CI and default acceptance. `--case switching|residency|cancellation|faults|identity|release` narrows that opt-in matrix; each run saves a separate lifecycle report, including failures.
-[Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. Bilingual desktop/touch settings: `npm run test:browser -- siglip.spec.ts wd14.spec.ts text-embeddings.spec.ts model-sources.spec.ts` in frontend.
+[Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. Bilingual desktop/touch settings: `npm run test:browser -- siglip.spec.ts wd14.spec.ts text-embeddings.spec.ts rerankers.spec.ts model-sources.spec.ts` in frontend.
 
 Text embedding CUDA: `uv run python -m scripts.smoke_text_embedding_runtime --model-ref embeddings/harrier-oss-v1-0.6b --native-reference --expected-dimensions 1024`.
 Run the same command with `--device cpu` and without `--native-reference` for short-text CPU inference/release. An explicit model reference is required; installation is reused.
 CUDA runs native/application processes sequentially, comparing query/document float/base64 vectors, mixed lengths, retrieval and unload/reload.
 BF16 acceptance requires cosine >=0.9998 and maximum absolute error <=0.005; reports go to build/text-embedding-smoke. No model hashes are calculated.
+
+Reranker CUDA/native/Knowledge: `uv run python -m scripts.smoke_reranker_runtime --model-ref rerankers/mxbai-rerank-base-v2 --embedding-model-ref embeddings/harrier-oss-v1-0.6b`.
+Short-text CPU: `uv run python -m scripts.smoke_reranker_runtime --model-ref rerankers/mxbai-rerank-base-v2 --device cpu`.
+Both reuse installation without model hashes. CUDA compares native scores at matching batch sizes with maximum absolute error <=0.005 and preserves ordering for score gaps >0.01; reports go to build/reranker-smoke.
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
@@ -346,5 +347,4 @@ use --engine llama-server for GGUF. Add --vision for image-only/multiple images,
 GGUF vision also needs `--mmproj-ref llms/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf`; Qwen3.5-0.8B files are the validated reference.
 Image answers check fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke and defaults to LLM CPU/CUDA/Kokoro CPU; Audio CPU needs --backend chatterbox-cpu or --backend qwen3tts-cpu.
 
-Before changing code, read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests.
-[Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md) defines English-only documentation and active-plan completion rules.
+Read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests before changes; [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md) owns English-only documentation and plan completion.

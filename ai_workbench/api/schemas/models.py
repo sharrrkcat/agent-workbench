@@ -9,7 +9,7 @@ from ai_workbench.core.models.schema import (
 )
 from ai_workbench.core.models.runtimes.schema import (
     DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions,
-    PythonOptions, OnnxCPUOptions, SiglipOptions, EmbeddingOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
+    PythonOptions, OnnxCPUOptions, SiglipOptions, EmbeddingOptions, RerankerOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
 )
 
 
@@ -18,7 +18,7 @@ class EmptyExecutionOptions(ApiModel):
 
 
 LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | PythonOptions
-ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions
+ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions | RerankerOptions
 Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "source"})
 
@@ -49,6 +49,10 @@ class LocalEmbeddingSource(LocalModelSource):
     execution_options: EmptyExecutionOptions | EmbeddingOptions = Field(default_factory=EmptyExecutionOptions)
 
 
+class LocalRerankerSource(LocalModelSource):
+    execution_options: EmptyExecutionOptions | RerankerOptions = Field(default_factory=EmptyExecutionOptions)
+
+
 ModelSource = ProviderSource | LocalModelSource
 
 
@@ -67,7 +71,7 @@ class EmbeddingModel(ModelFields):
 class RerankerModel(ModelFields):
     kind: Literal["reranker"]
     parameters: RerankParameters = Field(default_factory=RerankParameters)
-    source: None = None
+    source: LocalRerankerSource | None = None
 
 
 class ImageEmbeddingModel(ModelFields):
@@ -149,7 +153,7 @@ InstallationResponse = public_model("InstallationResponse", Installation, omit={
 RuntimeJobResponse = public_model("RuntimeJobResponse", RuntimeJob, omit={"log_path"})
 class EngineCatalogResponse(ApiModel):
     engine: LocalEngine
-    kind: Literal["llm", "tts", "vision", "image_embedding", "embedding"]
+    kind: Literal["llm", "tts", "vision", "image_embedding", "embedding", "reranker"]
     options_schema: JsonObject = Field(description="JSON Schema for this code-owned local engine's execution options.")
 
 

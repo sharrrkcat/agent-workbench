@@ -1,39 +1,33 @@
 # Models contract
 
-ChatRunner, Utility LLM, Knowledge and `/v1` share `core/models/ModelManager` without HTTP loopback.
-The API process imports no torch, transformers, onnxruntime or llama.cpp binding.
+ChatRunner, Utility LLM, Knowledge and `/v1` share `core/models/ModelManager` without HTTP loopback or API-process inference imports.
 
 ## Profiles and sources
 
 `model_profiles` has immutable llm/embedding/reranker/image_embedding/vision/tts kinds, internal UUIDs and unique lowercase public aliases; CRUD: `/api/models/profiles?kind=...`.
-`provider_profiles` stores name, enablement, connection and timestamps; connections own URL/key, timeouts and queue limits.
-Only OpenAI-compatible is supported. CRUD: `/api/models/providers`; optional discovery: `/{id}/models`.
+`provider_profiles` owns name, enablement, timestamps and OpenAI-compatible URL/key, timeouts and queue limits; CRUD: `/api/models/providers`, optional discovery: `/{id}/models`.
 GET/PATCH `/api/models/local-runtime/settings` owns enabled/download in appmetadatarecord.local_runtime_settings; enabled defaults true, identity/name are fixed.
 
 Model source is a strict nullable union:
 - null: a saveable unbound draft; execution returns MODEL_NOT_CONFIGURED before admission/transport.
 - {type: provider, provider_profile_id}: provider LLM/text-embedding only.
-- {type: local, execution_options, lifecycle}: local LLM/TTS/WD14/SigLIP/text embedding; engine defaults populate omitted local fields.
+- {type: local, execution_options, lifecycle}: local LLM/TTS/WD14/SigLIP/text embedding/reranker; engine defaults populate omitted local fields.
 
-Profiles own model_ref, capabilities, parameters, enabled and external_enabled. PATCH omission preserves source; null unbinds; supplied source replaces it.
-Invalid combinations, busy connection edits and referenced provider deletion fail; edits invalidate clients/status.
+Profiles own model_ref, capabilities, parameters, enabled and external_enabled. PATCH preserves omitted source, null unbinds, supplied source replaces; edits invalidate clients/status. Invalid combinations, busy edits and referenced provider deletion fail.
 [Settings](settings.md#model-settings) owns secrets/PATCH semantics; [Knowledge](knowledge.md) owns index invalidation.
 
 ## Resolution and capabilities
 
 New sessions save the enabled default LLM or first enabled LLM (name/id order). Missing configuration returns MODEL_NOT_CONFIGURED; unavailable/wrong-kind selections fail without substitution.
 Default selection and `/api/health/details` are cached, degraded without an enabled LLM; [chat/context](chat-context.md) owns Persona/session/title selection.
-LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties, seed and stop; explicit requests override defaults.
-Capabilities are streaming, tools, vision, json_object and json_schema.
-Providers execute chat/text embeddings; local engines provide chat, TTS, tagging, Sentence Transformers text embeddings and SigLIP image/text vectors.
-Vision-capable LLMs accept images through providers, GGUF and Transformers. Reranking remains pending; reranker profiles stay unbound.
+LLM parameters: temperature, top_p, max_tokens, presence/frequency penalties, seed, stop; requests override defaults. Capabilities: streaming, tools, vision, json_object, json_schema.
+Providers execute chat/text embeddings; local engines provide chat, TTS, tagging, Sentence Transformers embeddings/reranking and SigLIP vectors. Vision-capable LLMs accept images through providers, GGUF and Transformers.
 
 ## Lifecycle and status
 
-Queues are namespaced by source; provider/local defaults are concurrency 1, 32 waiting slots and 30-second queue timeout.
-Provider limits/discovery share one provider queue; overflow/timeout returns MODEL_BUSY. Cancellation/stream closure releases occupancy.
+Source queues default to concurrency 1, 32 waiting slots and 30-second timeout; provider discovery shares its queue. Overflow/timeout returns MODEL_BUSY; cancellation/stream closure releases occupancy.
 Provider aliases share status/occupancy by provider id and model_ref. GGUF shares normalized model/projector paths, device, process and identical options; Transformers shares path/options, Kokoro an engine queue.
-Audio, WD14, SigLIP and text embedding profiles have separate processes, queues and cancellation scopes, even for the same path.
+Audio, WD14, SigLIP, text embedding and reranker profiles have separate processes, queues and cancellation scopes, even for the same path.
 Local models autoload with manual release by default, or after_request/idle (300 seconds). Enabled manual aliases retain shared weights; otherwise the longest idle timeout wins.
 Release errors preserve successful inference. Local crashes require explicit load; provider failures permit another request.
 
@@ -43,10 +37,10 @@ Release errors preserve successful inference. Local crashes require explicit loa
 | Local health/load/unload | POST `/profiles/{id}/{health,load,unload}` | Local lifecycle; provider bindings return 422 UNSUPPORTED_CAPABILITY |
 | Provider discovery | GET `/providers/{id}/models` | Optional queued list; never an inference preflight |
 | Local inventory | GET `/inventory?kind=...` | Relative file references only |
-| Directory information | GET `/inspect?kind=embedding\|image_embedding&model_ref=...` | Configuration metadata, independent of installation |
+| Directory information | GET `/inspect?kind=embedding\|image_embedding\|reranker&model_ref=...` | Configuration metadata, independent of installation |
 
 Inventory/status never load weights, import heavy runtimes or download models. Roots are data/models/{llms,embeddings,rerankers,image_embeddings,vision,tts}.
-Inventory recognizes GGUF/model directories, Kokoro, WD14, Audio, SigLIP and complete Sentence Transformers package roots, excluding their component directories.
+Inventory recognizes GGUF/model directories, Kokoro, WD14, Audio, SigLIP, Sentence Transformers embeddings and CrossEncoder roots, excluding their component directories.
 Qwen3-TTS 12Hz Base needs checkpoint/generation config and text/nested speech tokenizers; unsupported types fail before imports; auxiliary resources/tokenizers are excluded.
 Status has state (unknown/ready/unavailable/failed/unloaded), residency, unload_supported, active, queued and error_code.
 Providers start unknown; inference sets ready/clears errors or failed on upstream errors. Discovery/validation/queue rejection/cancellation preserve availability; manual IDs need not appear in discovery. runtime=null, residency=unknown, unloading unsupported.
@@ -55,13 +49,13 @@ Local status adds engine, version, installation/process state, latest job id and
 
 ## Managed catalog and installation
 
-`GET /api/models/local-runtime/catalog` exposes one Windows x64 release (1.0.0), engines and strict option schemas. Linux/reranking remain [deferred](../FUTURE_MODEL_SERVICES.md#local-engine-and-platform-expansion).
+`GET /api/models/local-runtime/catalog` exposes one Windows x64 release (1.0.0), engines and strict option schemas. Linux remains [deferred](../FUTURE_MODEL_SERVICES.md#local-engine-and-platform-expansion).
 
-GGUF selects llama-server, LLM directories select Transformers, TTS architecture selects Kokoro/Chatterbox/Qwen3-TTS Base, vision selects WD14.
+GGUF selects llama-server, LLM directories select Transformers, TTS architecture selects Kokoro/Chatterbox/Qwen3-TTS Base, vision selects WD14 and local rerankers select cross-encoder.
 model_ref is a safe relative path under data/models. Profiles cannot supply executables/arguments and may be saved before installation.
 source.execution_options selects CPU or CUDA; capable engines default to CUDA, Kokoro/WD14 to CPU only.
 Llama accepts threads, context_size, batch_size, nullable mmproj_ref and gpu_layers (0 on CPU; auto or integer 1..999 on CUDA). Python options are intraop_threads=4;
-Kokoro/WD14 add max_batch_size=1; SigLIP/text embeddings allow 1..16 (default 1). Unavailable CUDA fails without CPU substitution.
+Kokoro/WD14 add max_batch_size=1; SigLIP/text embeddings/rerankers allow 1..16 (default 1). Unavailable CUDA fails without CPU substitution.
 GGUF vision requires a safe relative mmproj_ref; text-only profiles require null. Inventory suggests same-directory projectors; CPU disables projector GPU offload and CUDA uses the main device.
 
 GET `/api/models/local-runtime` returns installation; POST `/install`, `/repair` or `/uninstall` returns a RuntimeJob.
@@ -79,19 +73,16 @@ scripts/build_runtime_wheels.py reproduces Chatterbox, Qwen and Misaki patches; 
 After dependency checks, a pinned offline source patch defers auto_factory's GenerationMixin import, replacing its file to preserve hard-linked caches; package pins and installation identity stay unchanged.
 Python incrementally compiles Lib/site-packages before six isolated offline engine imports and native checks, without weights/GPU. Dependency changes require Repair; source-only preparation follows the [README](../../README.md#verification). User PATH/registry stay untouched; [Settings](settings.md) owns downloads.
 
-Both llama.cpp b10809 CPU/CUDA programs are included; pinned CUDA main/cudart ZIPs use combined byte progress. Native archives are SHA-256 checked before extraction and cache reuse.
-Llama's CUDA 12.4 DLLs stay beside its executable, separate from Torch CUDA 12.8; different-content DLL collisions fail.
-Native --version checks precede promotion; dependency paths apply only to child processes.
+Both llama.cpp b10809 CPU/CUDA programs are included; CUDA main/cudart ZIPs share byte progress and archive hash checks before extraction/cache reuse.
+Llama CUDA 12.4 DLLs stay beside its executable, separate from Torch CUDA 12.8; different-content collisions fail. Native --version checks precede promotion; dependency paths affect only children.
 
 Jobs expose state, stage, bytes, error, revision and bounded logs. Cancellation stops subprocesses and awaits file work before clearing staging; restart interrupts unfinished jobs/clears staging. Failed/cancelled logs persist; retries create jobs.
 Uninstall stops workers/removes the recorded installation, retaining caches/models. Under `/api/models/local-runtime`, GET `/jobs`, `/jobs/{id}`, `/jobs/{id}/log` expose history/details/logs; POST `/jobs/{id}/cancel` cancels. `/api/models/profiles/{id}/log` returns process logs.
-Runtime/job/storage responses have no provider reference. Responses omit absolute paths, ports, tokens and raw provider errors.
-Failures use RUNTIME_NOT_INSTALLED, RUNTIME_INSTALLING, RUNTIME_BROKEN, RUNTIME_UNSUPPORTED, RUNTIME_DEVICE_UNAVAILABLE, MODEL_NOT_FOUND, MODEL_BUSY or MODEL_UNAVAILABLE.
+Runtime/job/storage responses omit provider references, absolute paths, ports, tokens and raw provider errors; failures use RUNTIME_NOT_INSTALLED, RUNTIME_INSTALLING, RUNTIME_BROKEN, RUNTIME_UNSUPPORTED, RUNTIME_DEVICE_UNAVAILABLE, MODEL_NOT_FOUND, MODEL_BUSY or MODEL_UNAVAILABLE.
 
 ## Storage and cache maintenance
 
-GET `/api/models/local-runtime/storage` scans metadata off-loop, returning scanned_at, complete, totals, groups, warnings and skipped_links.
-Groups cover installations, shared Python, cache, staging, process and other files under data/runtimes; links/junctions are not followed.
+GET `/api/models/local-runtime/storage` scans metadata off-loop, returning scanned_at, complete, totals, groups, warnings and skipped_links for installations/shared Python/cache/staging/process/other files under data/runtimes, without following links/junctions.
 Usage includes file_count, logical_bytes, unique_bytes, shared_bytes and exclusive_bytes. File identities deduplicate hard links; exclusive size excludes outside links and totals deduplicate independently. Logical sizes omit compression/copy-on-write and do not predict disk recovery.
 Unreadable/changing metadata yields incomplete groups/totals and null unknown values; reads never load models.
 POST `/api/models/local-runtime/cache/cleanup` accepts mode=prune|clean and returns 202/RuntimeJob. Bundled uv uses explicit .cache,
@@ -138,6 +129,19 @@ Harrier-oss-v1-0.6b is the sole accepted real checkpoint: CUDA/native BF16 compa
 CPU acceptance covers short-text service inference/release. Its configuration resolves 1024 dimensions, lasttoken/L2, 32768 tokens,
 web_search_query and no document prompt. These are observations, not model/backbone/dimension allowlists.
 Other checkpoints require representative acceptance even when metadata is understood. [README](../../README.md#verification) owns smoke commands and tolerances.
+
+## Local reranking
+
+Local reranker selects cross-encoder and native Sentence Transformers CrossEncoder with offline/local-only loading and trust_remote_code=False.
+Directory metadata selects joint-input single-score classification, explicit Transformer/LogitScore or a native scalar projection; no checkpoint/backbone allowlists or inferred causal scoring tokens.
+Inspect reports architecture, pipeline, scoring/activation, effective model/tokenizer limit and diagnostics without loading. Missing scoring/templates, custom code, multiclass selection and other architectures block loading; drafts remain saveable.
+Parameters are empty; CPU/CUDA precision, threads, batch 1..16 (default 1), manual release and 300-second timeouts follow text embeddings.
+Native prompts, templates, tokenization, truncation, scoring and activation run once. One finite score per original document is required; malformed output fails the whole request.
+No model file hashes, fingerprints or manifests are created. Same-path replacement requires unload/reload, without rebuilding embedding indexes.
+POST `/v1/rerank` accepts model alias, nonblank query, 1..2048 nonblank string documents, nullable positive top_n and return_documents=false.
+All inputs are scored before top_n; omitted/null returns all. Response: {model, results:[{index,relevance_score,document?:{text}}]}, descending with original-index ties and original optional text.
+Scores retain native semantics, without a universal probability guarantee or fabricated usage. Incoming/private bodies are limited to 32 MiB; public requests also obey max_request_mb.
+Public failures are explicit; Knowledge retains RRF fallback. mxbai-rerank-base-v2 has CUDA/native/RAG and short CPU acceptance; other checkpoints/architectures require acceptance/implementation. [README](../../README.md#verification) owns commands and tolerances.
 
 ## WD14 image tagging
 
@@ -207,18 +211,13 @@ Extended CUDA switching, dual residency, cancellation/failure recovery, identity
 
 ## Kokoro TTS
 
-Kokoro uses CPU ONNX, architecture=kokoro, v1.0 FP32 model.onnx, config/tokenizer JSON and voices/<id>.bin; its 54-ID catalog intersects finite float32 [510,1,256] files.
-Extras such as af.bin are ignored. Off-loop file checks power GET /api/models/profiles/{id}/voices without loading weights or creating voice-profile records.
-
-The shared environment supplies Misaki, spaCy 3.7.5, NumPy 1.26.4, eSpeak NG and UniDic. Kokoro explicitly passes the manually supplied
-en_core_web_sm 3.7.1 pipeline at data/models/_auxiliary/en_core_web_sm to Misaki. All language frontends initialize before readiness with Python networking blocked.
-Missing/corrupt resources fail Kokoro loading without downloads, shared-environment changes or blocking other engines.
-
-Speech accepts 1..4096 nonblank characters, voice, speed=0.25..4, response_format=mp3|wav, stream_format=audio and tts.language matching the voice.
-Requests override profile speed=1 and format=mp3; other fields fail. Chunks retain supported text, use at most 510 tokens and voice row N-1; oversized unsplit words fail.
-Complete 24 kHz mono PCM16 WAV or 128 kbps MP3 is returned; PCM/encoded data each have a 32 MiB limit and timeout is 300 seconds.
-Disconnects stop workers before releasing occupancy and log REQUEST_CANCELLED with 499.
-SSE, provider TTS and playback are unimplemented. Local execution supports Windows x64 only.
+Kokoro CPU ONNX uses architecture=kokoro, v1.0 FP32 model.onnx, config/tokenizer JSON and voices/<id>.bin. Its 54-ID catalog selects finite float32 [510,1,256] files, ignoring extras such as af.bin.
+GET /api/models/profiles/{id}/voices checks files off-loop without loading weights or creating voice records.
+The environment supplies Misaki, spaCy 3.7.5, NumPy 1.26.4, eSpeak NG and UniDic; Misaki uses manually supplied en_core_web_sm 3.7.1 at data/models/_auxiliary/en_core_web_sm.
+All language frontends initialize offline before readiness. Missing/corrupt resources fail only Kokoro loading, without downloads or environment changes.
+Speech accepts 1..4096 nonblank characters, voice, speed=0.25..4, response_format=mp3|wav, stream_format=audio and matching tts.language; requests override speed=1/format=mp3, other fields fail.
+Chunks retain supported text, use at most 510 tokens and voice row N-1; oversized unsplit words fail. Output is complete 24 kHz mono PCM16 WAV or 128 kbps MP3, with 32 MiB PCM/encoded limits and 300-second timeout.
+Disconnects stop workers before queue release and log REQUEST_CANCELLED/499. Windows x64 only; SSE, provider TTS and playback are unimplemented.
 
 ## Audio TTS and temporary references
 
@@ -261,9 +260,10 @@ The service defaults disabled and requires loopback clients plus one key via `Au
 
 | Endpoint | Supported operation |
 | --- | --- |
-| GET `/v1/models` | Enabled public llm/embedding/tts/vision/image_embedding aliases; optional kind filter, no weight loading |
+| GET `/v1/models` | Enabled public model aliases; optional kind filter, no weight loading |
 | POST `/v1/chat/completions` | Non-streaming or SSE chat |
 | POST `/v1/embeddings` | Text embeddings |
+| POST `/v1/rerank` | Native CrossEncoder text-pair scoring (Cogita extension) |
 | POST `/v1/images/tags` | Static WD14 image tagging (Cogita extension) |
 | POST `/v1/images/embeddings` | SigLIP image/text embeddings (Cogita extension) |
 | POST `/v1/audio/speech` | Complete MP3/WAV speech |
@@ -294,7 +294,7 @@ Assistant messages/deltas accept string reasoning_content, including native tool
 `/v1` forwards literal content/reasoning without interpreting <think> markers. ChatRunner/Harness normalize reasoning for the UI.
 
 Text embeddings accept string/nonempty string arrays, float/base64 (little-endian float32), optional dimensions and purpose=query|document (default document). Local dimensions must be omitted or native (otherwise 422); processing matches Knowledge and disconnects cancel inference.
-Public rerank and image generation are deferred; see [future services](../FUTURE_MODEL_SERVICES.md).
+Other reranker architectures and image generation remain [future services](../FUTURE_MODEL_SERVICES.md).
 
 OpenAPI 3.1 covers management and `/v1`; [check/export commands](../../README.md#http-contract) verify schemas and JSON/SSE/audio responses.
 Reads omit keys, manifest hashes and log paths; invalid results become sanitized 500 INTERNAL_ERROR. Omission/null and timestamp precision survive.

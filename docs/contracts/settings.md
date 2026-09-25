@@ -152,8 +152,8 @@ Models has four sidebar pages. Default chat/auxiliary model selectors appear onl
 on Model profiles. Providers manages external connections; Local Runtime shows installation,
 storage, download settings and task history, with a log dialog. Forms and the kind filter
 retain drafts across subpages. Models use grouped Unbound, Local Runtime and configured-provider
-choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro, vision to local WD14 CPU, image_embedding to local SigLIP CUDA and embedding to local Sentence Transformers CUDA;
-other new profiles start unbound. Local models expose inventory, execution options and release policy.
+choices, filtered to supported kinds; disabled providers are marked. Defaults: local Kokoro TTS, WD14 CPU vision, SigLIP CUDA image embedding,
+Sentence Transformers CUDA text embedding and CrossEncoder CUDA reranking; LLMs start unbound. Local models expose inventory, execution options and release policy.
 Vision offers only Unbound/Local Runtime, WD14/Tags read-only fields, general/character thresholds (0.35/0.85),
 CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and
 fractions round-trip, while blank fields prevent submission. The removed vision batch-size field is rejected by the API.
@@ -194,6 +194,10 @@ Resolved query/document templates are visible; collapsed advanced controls selec
 Directory changes clear stale information and prompt selections; source changes reset incompatible parameters/options.
 Diagnostics block loading, not saving. Runtime controls retain CPU/CUDA, four threads, batch 1..16 and manual release defaults.
 [Models](models.md#local-text-embeddings) owns native semantics and Harrier-only acceptance limits.
+Rerankers offer Local Runtime/unbound drafts and automatically inspect architecture, scoring/activation, pipeline and effective token limit.
+Directory changes clear old information and ignore late responses; unnamed new drafts receive directory-name suggestions. Diagnostics block loading, not saving.
+Parameters are empty: architecture, templates and scoring tokens are not editable. CPU/CUDA, four threads, batch 1..16 (default 1), manual release
+and external visibility use existing controls. [Models](models.md#local-reranking) owns native processing and acceptance limits.
 
 Provider/settings reads omit secret keys and expose presence flags. PATCH omission retains keys; empty strings clear them.
 External enablement requires a nonempty key; storage is unencrypted. Busy connection edits, referenced deletion and invalid combinations fail.

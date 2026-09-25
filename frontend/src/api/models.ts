@@ -17,12 +17,15 @@ import type {
   RuntimeStorage,
   SiglipInspection,
   TextEmbeddingInspection,
+  RerankerInspection,
   LocalEmbeddingParameters,
   SiglipTower,
 } from '../types/models';
 import { request } from './http';
 
 export const modelsApi = {
+  inspectReranker: (model_ref: string) =>
+    request<RerankerInspection>('/api/models/inspect?' + new URLSearchParams({ kind: 'reranker', model_ref })),
   localRuntimeSettings: () => request<LocalRuntimeSettings>('/api/models/local-runtime/settings'),
   patchLocalRuntimeSettings: (patch: LocalRuntimeSettingsPatch) =>
     request<LocalRuntimeSettings>('/api/models/local-runtime/settings', { method: 'PATCH', body: JSON.stringify(patch) }),

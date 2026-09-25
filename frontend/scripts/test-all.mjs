@@ -18,6 +18,7 @@ for (const script of [
   'test-wd14',
   'test-siglip',
   'test-text-embeddings',
+  'test-rerankers',
   'test-transformers',
   'test-harness',
   'test-chat-presentation',

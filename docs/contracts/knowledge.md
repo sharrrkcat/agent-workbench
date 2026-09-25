@@ -48,7 +48,7 @@ rendered context preview. RRF ordering is deterministic for equal candidates.
 
 `KnowledgeSettings` retains `reranker_enabled`,
 `reranker_model_profile_id`, and `reranker_candidate_limit`. There is no
-independent reranker profile store or public rerank endpoint. If a
+independent reranker profile store. `/v1/rerank` shares ModelManager with Knowledge. If a
 reranker is not configured, unavailable, or fails, retrieval returns the RRF
 order and records `metadata.rerank_fallback` without failing the chat.
 
@@ -77,7 +77,9 @@ owns processing and acceptance limits. Indexing passes purpose=document and retr
 passes purpose=query, sharing `/v1/embeddings` preprocessing without importing runtimes.
 Both SQLite and memory score native cosine by vector norms or native dot directly;
 vectors retain native output normalization. Unsupported similarities block local loading.
-Local reranking remains deferred; unavailable reranking retains the documented RRF order.
+Local CrossEncoder reranking returns native scores in candidate order; Knowledge sorts them descending, preserving RRF ties.
+Unavailable or failed reranking retains RRF order; public rerank requests instead return explicit errors.
+Reranker profile changes do not invalidate embedding indexes. [Models](models.md#local-reranking) owns native scoring and limits.
 
 Changing an embedding profile's source binding, model reference or parameters, or
 its provider URL, marks associated bases and sources `needs_reindex` in both

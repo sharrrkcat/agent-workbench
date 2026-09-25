@@ -608,7 +608,7 @@ class RuntimeSupervisor:
         await self._command([python, "-I", "-B", "-X", "utf8", "-m", "compileall", "-q", "-j", "4", "-o", "0",
             "--invalidation-mode", "timestamp", "-e", site_packages, site_packages], env, self.root, log)
         checks = [
-            "from embedding_engine import require_offline; require_offline(); import sentence_transformers; from sentence_transformers import SentenceTransformer; assert sentence_transformers.__version__ == '6.1.0'",
+            "from embedding_engine import require_offline; require_offline(); import sentence_transformers; from sentence_transformers import SentenceTransformer, CrossEncoder; assert sentence_transformers.__version__ == '6.1.0'",
             "from tts_engine import require_offline; require_offline(); import onnxruntime, spacy, thinc, lameenc, tokenizers; from misaki import en, espeak, zh; from misaki.cutlet import Cutlet",
             "from transformers_engine import require_offline; require_offline(); import torch, torchvision, transformers; from transformers.cli.serving.chat_completion import ChatCompletionHandler; from transformers.cli.serving.model_manager import ModelManager; from transformers.cli.serving.utils import GenerationState; assert torch.__version__ == '2.11.0+cu128' and torch.version.cuda == '12.8'; assert torchvision.__version__ == '0.26.0+cu128' and transformers.__version__ == '5.16.1'",
             "from audio_engine import require_offline; require_offline(); import torch, torchaudio, numpy; from chatterbox.tts import ChatterboxTTS; assert torch.__version__ == torchaudio.__version__ == '2.11.0+cu128' and numpy.__version__ == '1.26.4'",

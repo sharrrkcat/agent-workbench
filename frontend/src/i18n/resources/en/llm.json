@@ -294,7 +294,8 @@
     "chatterbox": "Chatterbox",
     "qwen3tts": "Qwen3-TTS Base",
     "siglip2": "SigLIP2",
-    "sentence-transformers": "Sentence Transformers"
+    "sentence-transformers": "Sentence Transformers",
+    "cross-encoder": "Cross-Encoder (Sentence Transformers)"
   },
   "providers": "Providers",
   "addProvider": "Add provider",
@@ -347,6 +348,39 @@
       "remote_code": "Custom model code is unsupported.",
       "missing_token_limit": "No finite native text limit could be determined.",
       "missing_pooling": "An explicit pooling mode is required."
+    }
+  },
+  "reranker": {
+    "information": "Reranker model information",
+    "informationHint": "Architecture and scoring are read automatically from the directory. Native text processing and scores are preserved.",
+    "directoryHint": "Choose a CrossEncoder model directory under data/models/rerankers.",
+    "undetermined": "Not determined",
+    "inspecting": "Reading directory configuration…",
+    "inspectionFailed": "Directory information could not be read.",
+    "configurationNeeded": "Configuration needs attention",
+    "draftHint": "You can save this profile. Resolve the listed issues before loading.",
+    "fields": {
+      "architecture": "Architecture",
+      "modelType": "Backbone model type",
+      "textLimit": "Maximum input tokens",
+      "scoring": "Scoring method",
+      "activation": "Score activation",
+      "pipeline": "Processing pipeline"
+    },
+    "methods": {
+      "sequence_classification": "Single-score classification",
+      "logit_score": "Native token-logit score",
+      "dense": "Single-score projection"
+    },
+    "diagnostics": {
+      "missing_config": "Required configuration is missing.",
+      "invalid_config": "A configuration or template file could not be read.",
+      "invalid_field": "A declared setting is invalid.",
+      "unsupported_configuration": "The declared scoring pipeline or processing settings are unsupported.",
+      "remote_code": "Custom model or activation code is unsupported.",
+      "missing_scoring": "An explicit native single-score head is required.",
+      "missing_template": "A native query/document chat template is required.",
+      "missing_token_limit": "No finite native text limit could be determined."
     }
   },
   "viewHelp": {

@@ -18,6 +18,21 @@ class ModelList(ApiModel):
     data: list[PublicModel]
 
 
+class RerankDocument(ApiModel):
+    text: str
+
+
+class RerankItem(ApiModel):
+    index: int = Field(ge=0)
+    relevance_score: float = Field(strict=True, description="Native model score; higher is more relevant. Not a universal probability.")
+    document: RerankDocument | None = None
+
+
+class RerankResponse(ApiModel):
+    model: str
+    results: list[RerankItem]
+
+
 class ImageTagsResponse(ApiModel):
     object: Literal["list"]
     model: str

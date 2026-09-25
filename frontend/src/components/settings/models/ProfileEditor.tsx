@@ -44,6 +44,7 @@ import { CudaLayersField } from './CudaLayersField';
 import { PresetVoices } from './PresetVoices';
 import { SiglipInspectionPanel } from './SiglipInspection';
 import { TextEmbeddingInspectionPanel } from './TextEmbeddingInspection';
+import { RerankerInspectionPanel } from './RerankerInspection';
 
 export type ProfileDraft = { id?: string; value: ModelInput };
 export function ProfileEditor({
@@ -102,7 +103,7 @@ export function ProfileEditor({
   const patchReference = (modelRef: string, suggestName = false) => setModel((draft) => draft ? {
     ...draft, value: selectModelReference(draft.value, modelRef,
       suggestName && !draft.id && (draft.value.kind === 'image_embedding'
-        || draft.value.kind === 'embedding' && draft.value.source?.type === 'local')),
+        || ['embedding', 'reranker'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
   } : null);
   const patchLocal = (patch: Partial<LocalModelSource>) =>
     setModel((draft) =>
@@ -204,7 +205,7 @@ export function ProfileEditor({
                       }}
                       items={[
                         { value: '', label: t('unbound') },
-                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding'].includes(model.value.kind)
+                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
                         ...(['llm', 'embedding'].includes(model.value.kind) && providers.length
@@ -225,7 +226,7 @@ export function ProfileEditor({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">{t('unbound')}</SelectItem>
-                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding'].includes(model.value.kind) ? (
+                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker'].includes(model.value.kind) ? (
                           <SelectGroup>
                             <SelectLabel>{t('localSourceGroup')}</SelectLabel>
                             <SelectItem value="local">{t('localRuntime')}</SelectItem>
@@ -264,7 +265,7 @@ export function ProfileEditor({
                         onBlur={() => setModel((draft) => draft ? { ...draft,
                           value: selectModelReference(draft.value, draft.value.model_ref,
                             !draft.id && (draft.value.kind === 'image_embedding'
-                              || draft.value.kind === 'embedding' && draft.value.source?.type === 'local')),
+                              || ['embedding', 'reranker'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
                         } : null)} />
                       <ComboboxContent>
                         <ComboboxEmpty>{t('common:noSuggestions')}</ComboboxEmpty>
@@ -285,6 +286,9 @@ export function ProfileEditor({
                     ) : null}
                     {model.value.kind === 'embedding' && local ? (
                       <FieldDescription>{t('textEmbedding.directoryHint')}</FieldDescription>
+                    ) : null}
+                    {model.value.kind === 'reranker' && local ? (
+                      <FieldDescription>{t('reranker.directoryHint')}</FieldDescription>
                     ) : null}
                   </Field>
                   <FieldGroup className="grid gap-4 sm:grid-cols-2">
@@ -314,6 +318,9 @@ export function ProfileEditor({
                 ) : null}
                 {model.value.kind === 'image_embedding' && local && model.value.model_ref.trim() ? (
                   <SiglipInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref} />
+                ) : null}
+                {model.value.kind === 'reranker' && local && model.value.model_ref.trim() ? (
+                  <RerankerInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref} />
                 ) : null}
                 {model.value.kind === 'embedding' && local && model.value.model_ref.trim() ? (
                   <TextEmbeddingInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref}
@@ -364,7 +371,7 @@ export function ProfileEditor({
                             ['context_size', 4096, 512, 1048576],
                             ['batch_size', 512, 1, 4096],
                           ]
-                        : engine === 'siglip2' || engine === 'sentence-transformers' ? [['intraop_threads', 4, 1, 256], ['max_batch_size', 1, 1, 16]]
+                        : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? [['intraop_threads', 4, 1, 256], ['max_batch_size', 1, 1, 16]]
                         : [['intraop_threads', 4, 1, 256]]
                       ).map(([key, initial, min, max]) => (
                         <Field key={String(key)}>
@@ -409,7 +416,7 @@ export function ProfileEditor({
                     {transformers ? <p className="model-empty">{t('transformersDeviceHint')}</p> : null}
                     {audio ? <p className="model-empty">{t('audioDeviceHint')}</p> : null}
                     {engine === 'siglip2' ? <p className="model-empty">{t('siglip.deviceHint')}</p> : null}
-                    {engine === 'sentence-transformers' ? <p className="model-empty">{t('textEmbedding.deviceHint')}</p> : null}
+                    {engine === 'sentence-transformers' || engine === 'cross-encoder' ? <p className="model-empty">{t('textEmbedding.deviceHint')}</p> : null}
                   </>
                 ) : null}
                 {model.value.kind === 'llm' ? (
@@ -483,7 +490,7 @@ export function ProfileEditor({
                     ) : null}
                   </>
                 ) : null}
-                {engine !== 'sentence-transformers' ? <>
+                {engine !== 'sentence-transformers' && model.value.kind !== 'reranker' ? <>
                   <h3>{t('parameters')}</h3>
                   <ProfileParameters value={model.value} onChange={(parameters) => patchModel({ parameters })} />
                 </> : null}

@@ -8,9 +8,9 @@ authority and makes no delivery commitment.
 ## Local engine and platform expansion
 
 The shared local release supports Windows x64 GGUF, Transformers LLM, Kokoro,
-WD14 CPU, SigLIP, Sentence Transformers text embeddings, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
+WD14 CPU, SigLIP, Sentence Transformers text embeddings, CrossEncoder reranking, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
 native components and real-runtime acceptance before it can be advertised.
-Local reranker execution is deferred. [Local text embeddings](contracts/models.md#local-text-embeddings) use native metadata with Harrier acceptance.
+[Local text embeddings](contracts/models.md#local-text-embeddings) and [CrossEncoder reranking](contracts/models.md#local-reranking) use native directory metadata.
 [SigLIP image/text encoding](contracts/models.md#siglip-image-and-text-embeddings)
 is implemented through local profiles, serial tower scheduling, configuration UI and `/v1/images/embeddings`.
 Image indexes, internal consumers, remote image-embedding providers and usage collection remain out of scope.
@@ -22,19 +22,13 @@ ONNX GPU, Vulkan, DINOv2, Florence and CosyVoice3 remain outside scope.
 WD14 static tagging is implemented under [Models](contracts/models.md#wd14-image-tagging).
 Video, frame sampling and cross-frame aggregation are excluded, rather than deferred extensions.
 
-## Public rerank
+## Other reranker architectures
 
-The reranker profile kind and ModelManager operation remain in Knowledge;
-local execution is pending. A future `/v1/rerank` should call that same manager
-operation and reuse external enablement, single-key loopback authentication,
-public aliases, capability/kind checks, byte limits and access observations.
-No second profile table, provider protocol or lifecycle owner is needed.
-
-The endpoint's request/response format and public visibility rules will be
-decided when implementing it. Direct API failures should be explicit; Knowledge's
-intentional RRF ordering on unavailable rerank remains a separate retrieval rule.
-Acceptance must cover aliases, invalid input, cancellation, queue release and
-absence of chat/Knowledge writes from stateless requests.
+Joint-input native CrossEncoders serve Knowledge and `/v1/rerank` through the same ModelManager operation.
+Late-interaction, listwise and other scoring architectures require separate representative-model implementation and acceptance.
+Multiclass label selection, custom model code and remote reranking providers are not implemented.
+Future architectures must retain automatic directory configuration and independent workers without checkpoint/backbone allowlists,
+model hashing, a second profile store or an extension registry. Public failures remain explicit; Knowledge's RRF fallback is intentional.
 
 ## Image service
 

@@ -18,7 +18,7 @@ from ai_workbench.core.models.runtimes.schema import is_transformers, local_engi
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingPurpose, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
-    ImageEmbeddingRequest, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
+    ImageEmbeddingRequest, MAX_RERANK_BYTES, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
@@ -107,7 +107,7 @@ class ModelManager:
             return ("provider", profile.source.provider_profile_id)
         engine = local_engine(profile)
         key = ("local", engine)
-        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2", "sentence-transformers"}:
+        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2", "sentence-transformers", "cross-encoder"}:
             return key + (getattr(profile, "id", "draft"), profile.model_ref,
                           json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")))
         if engine in {"llama-server", "transformers"}:
@@ -167,7 +167,7 @@ class ModelManager:
                     elif engine == "siglip2":
                         from ai_workbench.workers.siglip_catalog import model_presence
                         model_presence(self.runtime_supervisor.root / "data/models", profile.model_ref)
-                    elif engine == "sentence-transformers":
+                    elif engine in {"sentence-transformers", "cross-encoder"}:
                         from ai_workbench.workers.embedding_catalog import package_path
                         package_path(self.runtime_supervisor.root / "data/models", profile.model_ref)
                     else:
@@ -233,10 +233,10 @@ class ModelManager:
     def _managed_slot(self, profile):
         key = self.execution_key(profile)
         if key not in self._slots:
-            from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
+            from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, RerankerWorkerAdapter, TransformersServerAdapter
             from ai_workbench.core.models.siglip_adapter import SiglipAdapter
             engine = local_engine(profile)
-            cls = SiglipAdapter if engine == "siglip2" else EmbeddingWorkerAdapter if engine == "sentence-transformers" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
+            cls = SiglipAdapter if engine == "siglip2" else EmbeddingWorkerAdapter if engine == "sentence-transformers" else RerankerWorkerAdapter if engine == "cross-encoder" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
             adapter: LocalAdapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
             self._slots[key] = InferenceSlot(adapter, asyncio.Semaphore(1))
         return self._slots[key]
@@ -569,11 +569,13 @@ class ModelManager:
 
     async def rerank(self, profile_id: str, query: str, documents: list[str]):
         profile = self.profile(profile_id, "reranker")
+        size = await asyncio.to_thread(lambda: len(json.dumps(
+            {"profile_id": profile.id, "query": query, "documents": documents},
+            ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")))
+        if size > MAX_RERANK_BYTES:
+            raise ModelError("REQUEST_TOO_LARGE", "The private rerank request exceeds 32 MiB.", 413)
         async with self._lease(profile) as adapter:
-            result = await adapter.rerank(profile, query, documents)
-            if len(result.scores) != len(documents) or not all(math.isfinite(x) for x in result.scores):
-                raise ModelError("PROVIDER_PROTOCOL_ERROR", "Reranker returned invalid scores.", 502)
-            return result
+            return await adapter.rerank(profile, query, documents)
 
     async def image_embed(self, profile_id: str, request: ImageEmbeddingRequest) -> SiglipResult:
         profile = self.profile(profile_id, "image_embedding")

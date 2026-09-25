@@ -16,6 +16,7 @@ EmbeddingPurpose = Literal["query", "document"]
 EmbeddingSimilarity = Literal["cosine", "dot"]
 Tower = Literal["image", "text"]
 ModelDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$", strict=True)]
+MAX_RERANK_BYTES = 32 * 1024 * 1024
 
 
 class StrictModel(BaseModel):
@@ -117,7 +118,7 @@ class LocalEmbeddingParameters(StrictModel):
 
 
 class RerankParameters(StrictModel):
-    batch_size: int = Field(default=16, ge=1, le=2048)
+    """Processing and scoring come from the native model directory."""
 
 
 class ImageEmbeddingParameters(StrictModel):
@@ -206,7 +207,7 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import EmbeddingOptions, OnnxCPUOptions, PythonOptions, SiglipOptions, local_engine, llama_options, relative_ref
+        from ai_workbench.core.models.runtimes.schema import EmbeddingOptions, OnnxCPUOptions, PythonOptions, RerankerOptions, SiglipOptions, local_engine, llama_options, relative_ref
         local_embedding = self.kind == "embedding" and (isinstance(self.source, LocalSource)
             or self.source is None and bool(self.parameters.keys() & LocalEmbeddingParameters.model_fields.keys()))
         parameters_schema = LocalEmbeddingParameters if local_embedding else PARAMETERS[self.kind]
@@ -227,6 +228,8 @@ class ModelInput(StrictModel):
                 options_schema = SiglipOptions
             elif engine == "sentence-transformers":
                 options_schema = EmbeddingOptions
+            elif engine == "cross-encoder":
+                options_schema = RerankerOptions
             else:
                 options_schema = PythonOptions
             self.source.execution_options = options_schema.model_validate(self.source.execution_options).model_dump()
@@ -418,6 +421,23 @@ class EmbeddingRequest(StrictModel):
         return value
 
 
+class RerankRequest(StrictModel):
+    model: str = Field(min_length=1, strict=True)
+    query: str = Field(min_length=1, strict=True)
+    documents: list[Annotated[str, Field(min_length=1, strict=True)]] = Field(min_length=1, max_length=2048)
+    top_n: int | None = Field(default=None, ge=1, strict=True,
+        description="Return at most this many ranked results; omission/null returns all. Every input is scored.")
+    return_documents: bool = Field(default=False, strict=True,
+        description="Include original input text, even when native model processing truncates it.")
+
+    @field_validator("query", "documents")
+    @classmethod
+    def nonblank_text(cls, value):
+        if any(not text.strip() for text in ([value] if isinstance(value, str) else value)):
+            raise ValueError("Reranking requires a nonblank query and nonblank documents")
+        return value
+
+
 class ImageEmbeddingRequest(StrictModel):
     model: str = Field(min_length=1, strict=True)
     input_type: Tower
@@ -575,7 +595,7 @@ class EmbeddingResult(StrictModel):
 
 
 class RerankResult(StrictModel):
-    scores: list[float]
+    scores: list[Annotated[float, Field(strict=True)]] = Field(min_length=1, max_length=2048)
 
 
 class InferenceUsage(StrictModel):

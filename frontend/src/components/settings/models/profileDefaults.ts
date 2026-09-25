@@ -11,7 +11,7 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   alias: '',
   kind,
   model_ref: '',
-  source: kind === 'image_embedding' || kind === 'embedding' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
+  source: kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
     : kind === 'tts' || kind === 'vision' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
   enabled: true,
   external_enabled: false,
@@ -39,6 +39,7 @@ export function localEngine(value: ModelInput): LocalEngine | null {
   if (value.kind === 'llm') return value.model_ref.endsWith('.gguf') ? 'llama-server' : 'transformers';
   if (value.kind === 'image_embedding') return 'siglip2';
   if (value.kind === 'embedding') return 'sentence-transformers';
+  if (value.kind === 'reranker') return 'cross-encoder';
   return value.kind === 'tts' || value.kind === 'vision' ? value.parameters.architecture as LocalEngine : null;
 }
 
@@ -49,7 +50,7 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
     next.source = { ...next.source, execution_options: engine === 'llama-server'
       ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto', mmproj_ref: null }
       : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
-      : engine === 'siglip2' || engine === 'sentence-transformers' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
+      : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
       : { device: 'cuda', intraop_threads: 4 } };
   }
   if (engine === 'llama-server' && next.source?.type === 'local' &&

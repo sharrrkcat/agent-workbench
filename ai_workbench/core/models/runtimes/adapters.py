@@ -18,7 +18,7 @@ from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offlo
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog, prune_process_logs
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ExternalConnection, VisionResult
+from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ExternalConnection, RerankResult, VisionResult
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
 from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing
@@ -130,6 +130,9 @@ class ManagedAdapter:
                     if self.engine == "sentence-transformers":
                         from ai_workbench.workers.embedding_catalog import load_configuration
                         return load_configuration(self.supervisor.root / "data/models", profile.model_ref, profile.parameters)[0]
+                    if self.engine == "cross-encoder":
+                        from ai_workbench.workers.reranker_catalog import load_configuration
+                        return load_configuration(self.supervisor.root / "data/models", profile.model_ref)[0]
                     return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
                         tts=self.engine == "kokoro", wd14=self.engine == "wd14")
                 except WorkerError as exc:
@@ -173,7 +176,7 @@ class ManagedAdapter:
                         with stage("worker_load_rpc"):
                             metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
                                 "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.source.execution_options})
-                            if self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers"}:
+                            if self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers", "cross-encoder"}:
                                 if not isinstance(metadata.get("device_name"), str):
                                     raise ModelError("RUNTIME_BROKEN", "The worker did not report its execution device.", 503)
                                 self.device_name = metadata["device_name"]
@@ -209,7 +212,7 @@ class ManagedAdapter:
                 env.update(COGITA_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
                 if getattr(self, "validation", False):
                     env["COGITA_AUDIO_VALIDATION"] = "1"
-            if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers"}:
+            if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers", "cross-encoder"}:
                 cache = self.run_dir / "cache"
                 env.update(COGITA_MODEL_REF=profile.model_ref,
                            COGITA_RUNTIME_OPTIONS=json.dumps(profile.source.execution_options),
@@ -309,19 +312,25 @@ class ManagedAdapter:
     async def _rpc(self, method, operation, body=None, *, audio_format=None):
         if self.failed or not self.client:
             raise ModelError("MODEL_UNAVAILABLE", "The managed worker is not running.", 503)
-        try:
+        client = self.client
+        async def send():
             trace = current_trace()
             headers = {TRACE_HEADER: trace.transport_value()} if trace and operation in {"/load", "/reference"} else None
             if audio_format:
-                async with self.client.stream(method, operation, json=body) as stream:
+                async with client.stream(method, operation, json=body) as stream:
                     chunks = bytearray()
                     async for chunk in stream.aiter_bytes():
                         if len(chunks) + len(chunk) > MAX_AUDIO_BYTES:
                             raise ValueError("Audio response exceeds limit")
                         chunks.extend(chunk)
-                    response = httpx.Response(stream.status_code, headers=stream.headers, content=bytes(chunks))
-            else:
-                response = await self.client.request(method, operation, json=body, headers=headers)
+                    return httpx.Response(stream.status_code, headers=stream.headers, content=bytes(chunks))
+            return await client.request(method, operation, json=body, headers=headers)
+        # AnyIO 4.13.0 on Python 3.10 can swallow caller cancellation while
+        # connect_tcp exits its task group. Keep transport isolated until supported
+        # AnyIO versions reliably propagate cancellation at this boundary.
+        pending = asyncio.create_task(send())
+        try:
+            response = await asyncio.shield(pending)
             if audio_format and response.is_success:
                 if response.headers.get("content-type") != FORMATS[audio_format]:
                     raise ValueError("Unexpected audio MIME type")
@@ -347,12 +356,19 @@ class ManagedAdapter:
                 if len(result.vectors) != len(body["input"]) or any(not vector or not any(vector) for vector in result.vectors):
                     raise ValueError("Embeddings do not match the input or contain zero vectors")
                 return result
+            if operation == "/rerank":
+                result = RerankResult.model_validate(value)
+                if len(result.scores) != len(body["documents"]):
+                    raise ValueError("Rerank scores do not match the input documents")
+                return result
             return value
         except asyncio.CancelledError:
             # A synchronous CPU call cannot be cancelled safely within its thread.
             # Stop the shared worker before the manager releases its queue slot.
+            pending.cancel()
             with stage("failure_cleanup"):
                 await self._stop()
+            await asyncio.gather(pending, return_exceptions=True)
             self.changed()
             raise
         except httpx.TimeoutException as exc:
@@ -471,6 +487,11 @@ class EmbeddingWorkerAdapter(ManagedAdapter):
     async def embed(self, profile, texts, dimensions, *, purpose="document"):
         return await self._rpc("POST", "/embed", {"profile_id": profile.id,
             "input": texts, "purpose": purpose, "dimensions": dimensions})
+
+
+class RerankerWorkerAdapter(ManagedAdapter):
+    async def rerank(self, profile, query, documents):
+        return await self._rpc("POST", "/rerank", {"profile_id": profile.id, "query": query, "documents": documents})
 
 
 class PythonWorkerAdapter(ManagedAdapter):

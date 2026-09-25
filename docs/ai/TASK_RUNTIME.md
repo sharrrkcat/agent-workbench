@@ -18,6 +18,7 @@ Paths below are under ai_workbench:
   and the tower client; siglip_adapter.py owns the two clients and shared identity under ModelManager's queue.
   workers/siglip_catalog.py, siglip_engine.py and siglip_server.py own local files and single-tower execution.
 - workers/embedding_catalog.py inspects native text metadata; embedding_engine.py/embedding_server.py provide independent Sentence Transformers execution.
+- workers/reranker_catalog.py inspects CrossEncoder metadata; reranker_engine.py/reranker_server.py provide independent native pair scoring.
 - core/stores.py, core/run_lifecycle.py and core/events.py work with db/stores.py and
   API message/tool/run/WebSocket routes for persistence and transport.
 
@@ -39,6 +40,7 @@ public API, queue cancellation, crash recovery and profile/Kokoro isolation.
 scripts/smoke_wd14_runtime.py requires an explicit local model and reuses installation for real CPU API acceptance.
 test_text_embeddings.py/test_text_embedding_runtime.py cover metadata, prompts, scoring, migration and worker lifecycle.
 scripts/smoke_text_embedding_runtime.py reuses installation for native CUDA comparison, API/Knowledge and short-text CPU acceptance.
+test_rerankers.py/test_reranker_runtime.py cover metadata, scoring, API, migration, RAG and lifecycle; scripts/smoke_reranker_runtime.py owns native CUDA/Knowledge and short-text CPU acceptance.
 test_siglip.py, test_siglip_runtime.py and test_siglip_service.py cover inspection, identity, engines, shared queues,
 tower cleanup, public API, profiles and migration. scripts/smoke_siglip_runtime.py defaults to a short CUDA API smoke, with optional native comparison.
 scripts/siglip_lifecycle.py supplies the extended --full-lifecycle matrix only for explicit user requests, outside routine tests and CI;

@@ -33,7 +33,7 @@ def model_path(root: Path, ref: str) -> Path:
     return path
 
 
-LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper", "siglip2", "sentence-transformers"]
+LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper", "siglip2", "sentence-transformers", "cross-encoder"]
 
 
 class LlamaOptions(Strict):
@@ -87,6 +87,10 @@ class EmbeddingOptions(PythonOptions):
     max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
 
 
+class RerankerOptions(PythonOptions):
+    max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
+
+
 def local_engine(profile) -> LocalEngine | None:
     if profile.source is None or profile.source.type != "local":
         return None
@@ -96,6 +100,8 @@ def local_engine(profile) -> LocalEngine | None:
         return "siglip2"
     if profile.kind == "embedding":
         return "sentence-transformers"
+    if profile.kind == "reranker":
+        return "cross-encoder"
     if profile.kind in {"tts", "asr", "vision"}:
         return profile.parameters["architecture"]
     return None

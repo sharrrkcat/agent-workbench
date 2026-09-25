@@ -166,7 +166,7 @@ def test_auth_localhost_size_and_removed_routes(app_client):
     assert client.get("/v1/models", headers={"Authorization": "Bearer wrong"}).status_code == 401
     assert client.get("/v1/models", headers={"Authorization": "Bearer public-key", "x-api-key": "different"}).status_code == 401
     assert client.get("/v1/models", headers={"x-api-key": "public-key"}).status_code == 200
-    for path in ("/api/llm-profiles", "/api/llm-provider-profiles", "/api/knowledge/embedding-models", "/api/inference/vision-models", "/v1/vision", "/v1/embeddings/multimodal", "/v1/rerank", "/api/runtime/free-memory"):
+    for path in ("/api/llm-profiles", "/api/llm-provider-profiles", "/api/knowledge/embedding-models", "/api/inference/vision-models", "/v1/vision", "/v1/embeddings/multimodal", "/api/runtime/free-memory"):
         assert client.get(path).status_code == 404
     payload = {"model": "x", "messages": [{"role": "user", "content": "x"}]}
     assert client.post("/v1/chat/completions", headers={"Authorization": "Bearer public-key", "content-length": "999999999"}, json=payload).status_code == 413

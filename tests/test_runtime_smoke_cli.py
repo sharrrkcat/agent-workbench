@@ -6,10 +6,20 @@ import pytest
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ProviderProfileStore, ModelProfileStore, ModelSettingsStore
-from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_siglip_runtime, smoke_text_embedding_runtime, smoke_tts_runtime, smoke_wd14_runtime
+from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_reranker_runtime, smoke_siglip_runtime, smoke_text_embedding_runtime, smoke_tts_runtime, smoke_wd14_runtime
 
 
 SCRIPTS = (smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_tts_runtime)
+
+
+def test_reranker_smoke_requires_supplied_models_and_has_no_install_mode():
+    model = ["--model-ref", "rerankers/example"]
+    for argv in ([], model, [*model, "--device", "cpu", "--install-only"]):
+        with pytest.raises(SystemExit):
+            smoke_reranker_runtime.parse_args(argv)
+    assert smoke_reranker_runtime.parse_args([*model, "--device", "cpu"]).device == "cpu"
+    cuda = smoke_reranker_runtime.parse_args([*model, "--embedding-model-ref", "embeddings/example"])
+    assert cuda.device == "cuda" and cuda.embedding_model_ref == "embeddings/example"
 
 
 def test_text_embedding_smoke_requires_a_model_and_preserves_device_scope():

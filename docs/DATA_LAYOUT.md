@@ -106,6 +106,11 @@ Profiles, source/chunk/vector records, indexes, other settings and all filesyste
 Text packages remain under data/models/embeddings. Inspection reads JSON metadata and no text-embedding path hashes model files,
 creates model manifests or detects same-path replacements. Explicit unload/reload and Knowledge reindexing are required after replacement.
 
+Revision `0018_local_rerankers` permits local reranker bindings and resets only abandoned reranker parameters to an empty object.
+It preserves profile IDs/references, Knowledge indexes, other records and every file directory; repeated upgrades preserve new configurations.
+CrossEncoder packages remain under data/models/rerankers, with configuration-only inspection and no model hashes or fingerprints.
+Same-path replacement requires explicit unload/reload and does not require rebuilding embedding indexes.
+
 Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
 The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under
 data/models/_auxiliary/en_core_web_sm and is excluded from inventory. Kokoro

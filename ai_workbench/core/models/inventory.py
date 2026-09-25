@@ -43,6 +43,18 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
             elif model_kind == "embedding":
                 if path.name == "modules.json":
                     target = path.parent
+            elif model_kind == "reranker":
+                if path.name in {"modules.json", "config.json"} and not any(
+                    (parent / "modules.json").is_file() for parent in path.parent.parents
+                    if parent.is_relative_to(base)
+                ):
+                    from ai_workbench.workers.common import WorkerError
+                    from ai_workbench.workers.reranker_catalog import is_reranker_directory
+                    try:
+                        if is_reranker_directory(path.parent.resolve()):
+                            target = path.parent
+                    except WorkerError:
+                        continue
             elif path.suffix.lower() == ".gguf" and not path.name.lower().startswith("mmproj"):
                 target = path
             elif path.name in {"config.json", "model.onnx"} and model_kind != "tts":

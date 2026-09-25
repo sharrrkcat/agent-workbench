@@ -1,5 +1,5 @@
 export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
-export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers';
+export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers' | 'cross-encoder';
 export type SiglipTower = 'image' | 'text';
 export type SiglipTowerInfo = {
   tower: SiglipTower; device: 'cpu' | 'cuda'; device_name: string;
@@ -50,6 +50,16 @@ export type TextEmbeddingInspection = {
     code: 'missing_config' | 'invalid_config' | 'invalid_field' | 'unsupported_configuration'
       | 'invalid_prompt' | 'ambiguous_prompt' | 'missing_pipeline' | 'remote_code'
       | 'missing_token_limit' | 'missing_pooling' }[];
+};
+
+export type RerankerInspection = {
+  kind: 'reranker'; model_ref: string; architecture: 'cross-encoder' | null; model_type: string | null;
+  modules: { name: string; path: string; type: string }[];
+  scoring: { method: 'sequence_classification' | 'logit_score' | 'dense' | null; activation: string | null };
+  max_seq_length: number | null; has_chat_template: boolean; default_prompt_name: string | null;
+  diagnostics: { file: string; message: string; blocking: boolean;
+    code: 'missing_config' | 'invalid_config' | 'invalid_field' | 'unsupported_configuration'
+      | 'remote_code' | 'missing_scoring' | 'missing_template' | 'missing_token_limit' }[];
 };
 
 export type PresetVoice = {
@@ -152,7 +162,7 @@ export type RuntimeCatalog = {
   architecture: string;
   supported: boolean;
   reason: string | null;
-  engines: { engine: LocalEngine; kind: 'llm' | 'tts' | 'vision' | 'image_embedding'; options_schema: Record<string, unknown> }[];
+  engines: { engine: LocalEngine; kind: ModelKind; options_schema: Record<string, unknown> }[];
 };
 
 export type RuntimeInstallation = {

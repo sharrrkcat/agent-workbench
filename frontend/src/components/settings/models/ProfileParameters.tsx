@@ -23,7 +23,7 @@ export function ProfileParameters({
   onChange: (parameters: ModelInput['parameters']) => void;
 }) {
   const { t } = useTranslation('llm');
-  if (value.kind === 'embedding' && value.source?.type === 'local') return null;
+  if (value.kind === 'reranker' || value.kind === 'embedding' && value.source?.type === 'local') return null;
   const patchParam = (key: string, next: unknown) => onChange({ ...value.parameters, [key]: next });
   // Viewport columns need no size containment, which can hide unchanged fields
   // in Chromium when an architecture removes sibling controls.
@@ -293,13 +293,13 @@ export function ProfileParameters({
                 Number.isNaN(
                   Number(
                     value.parameters.batch_size ||
-                      (value.kind === 'embedding' || value.kind === 'reranker' ? 16 : 1),
+                      (value.kind === 'embedding' ? 16 : 1),
                   ),
                 )
                   ? ''
                   : (Number(
                       value.parameters.batch_size ||
-                        (value.kind === 'embedding' || value.kind === 'reranker' ? 16 : 1),
+                        (value.kind === 'embedding' ? 16 : 1),
                     ) ?? '')
               }
               onChange={(event) =>

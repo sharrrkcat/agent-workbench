@@ -23,6 +23,8 @@ Local SigLIP profiles encode images/text through `/v1/images/embeddings`, with a
 serial tower switching and a default unload-other-tower option. Image indexing and usage collection remain deferred.
 Directory-selected Sentence Transformers text embeddings serve Knowledge and `/v1/embeddings`, with native processing and query/document prompts.
 Harrier has CUDA and short-text CPU acceptance; other text checkpoints require representative acceptance.
+Directory-selected native CrossEncoder rerankers serve Knowledge and `/v1/rerank`, with automatic scoring configuration and independent workers.
+mxbai-rerank-base-v2 has CUDA/native, Knowledge and short-text CPU acceptance; other reranker checkpoints require representative acceptance.
 
 Personas own identity, prompts and resource bindings; sessions own concrete model
 selection, context, generation and opt-in Harness configuration. Chat combines the

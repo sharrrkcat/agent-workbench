@@ -19,12 +19,12 @@ from pydantic import ValidationError
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import SSE_RESPONSE, request_body
 from ai_workbench.api.schemas.common import error_responses
-from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ImageEmbeddingResponse, ImageTagsResponse, ModelList, VoiceList,
+from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ImageEmbeddingResponse, ImageTagsResponse, ModelList, RerankResponse, VoiceList,
     VoiceReferenceDeleted, VoiceReferenceResponse, VoiceReferenceUpload)
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_body, read_request
 from ai_workbench.core.models.images import MAX_TAGGING_BYTES
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, ModelKind, SpeechRequest, VisionRequest
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, MAX_RERANK_BYTES, ModelKind, RerankRequest, SpeechRequest, VisionRequest
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
@@ -38,8 +38,23 @@ async def list_models(request: Request, kind: ModelKind | None = None, state: Ru
     guard(request, settings)
     return {"object": "list", "data": [
         {"id": p.alias, "object": "model", "created": int(p.created_at.timestamp()), "owned_by": "cogita"}
-        for p in state.model_profiles.list(kind) if p.enabled and p.external_enabled and p.kind in {"llm", "embedding", "tts", "vision", "image_embedding"}
+        for p in state.model_profiles.list(kind) if p.enabled and p.external_enabled
     ]}
+
+
+@router.post("/rerank", response_model=RerankResponse, response_model_exclude_none=True,
+             openapi_extra=request_body(RerankRequest), summary="Rank text documents with a local CrossEncoder (Cogita extension)",
+             responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 502, 503, 504))
+async def rerank(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    payload = await read_request(request, settings, RerankRequest, max_bytes=MAX_RERANK_BYTES)
+    profile = state.model_manager.external_profile(payload.model, "reranker")
+    result = await inference_until_disconnect(request,
+        state.model_manager.rerank(profile.id, payload.query, payload.documents))
+    order = sorted(range(len(result.scores)), key=lambda index: -result.scores[index])[:payload.top_n]
+    return {"model": profile.alias, "results": [{"index": index, "relevance_score": result.scores[index],
+        **({"document": {"text": payload.documents[index]}} if payload.return_documents else {})} for index in order]}
 
 
 @router.post("/images/tags", response_model=ImageTagsResponse, openapi_extra=request_body(VisionRequest),

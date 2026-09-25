@@ -9,6 +9,7 @@ from ai_workbench.core.models.schema import StrictModel
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.siglip_catalog import CONFIG_FILES, STRUCTURES, model_directory, model_file, read_config
 from ai_workbench.workers.embedding_catalog import inspect_embedding
+from ai_workbench.workers.reranker_catalog import inspect_reranker as inspect_reranker_directory
 
 PositiveInt = Annotated[int, Field(gt=0, strict=True)]
 Number = Annotated[float, Field(strict=True)]
@@ -100,7 +101,40 @@ class TextEmbeddingInspection(StrictModel):
     diagnostics: list[TextEmbeddingDiagnostic]
 
 
-ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection, Field(discriminator="kind")]
+class RerankerDiagnostic(StrictModel):
+    file: str
+    code: Literal["missing_config", "invalid_config", "invalid_field", "unsupported_configuration",
+                  "remote_code", "missing_scoring", "missing_template", "missing_token_limit"]
+    message: str
+    blocking: bool
+
+
+class RerankerScoring(StrictModel):
+    method: Literal["sequence_classification", "logit_score", "dense"] | None
+    activation: str | None
+
+
+class RerankerInspection(StrictModel):
+    kind: Literal["reranker"] = "reranker"
+    model_ref: str
+    architecture: Literal["cross-encoder"] | None
+    model_type: str | None
+    modules: list[TextEmbeddingModule]
+    scoring: RerankerScoring
+    max_seq_length: PositiveInt | None
+    has_chat_template: bool
+    default_prompt_name: str | None
+    diagnostics: list[RerankerDiagnostic]
+
+
+ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection | RerankerInspection, Field(discriminator="kind")]
+
+
+def inspect_reranker(repo_root: Path, model_ref: str) -> RerankerInspection:
+    try:
+        return RerankerInspection.model_validate(inspect_reranker_directory(repo_root / "data/models", model_ref))
+    except WorkerError as exc:
+        raise ModelError(exc.code, "Use an existing directory with a safe relative path under data/models.", exc.status) from exc
 
 
 def inspect_text_embedding(repo_root: Path, model_ref: str, parameters: dict | None = None) -> TextEmbeddingInspection:

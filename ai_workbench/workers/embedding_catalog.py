@@ -208,10 +208,15 @@ def load_configuration(root: Path, model_ref: str, parameters: dict) -> tuple[Pa
     if any(item["blocking"] for item in information["diagnostics"]):
         raise WorkerError("UNSUPPORTED_CAPABILITY")
     path = package_path(root, model_ref)
+    validate_module_files(path, information["modules"])
+    return path, information
+
+
+def validate_module_files(path: Path, modules: list[dict]) -> None:
     # Check links and shard references at the resource boundary, never file contents.
     for entry in path.rglob("*"):
         package_file(path, entry.relative_to(path).as_posix())
-    for module in information["modules"]:
+    for module in modules:
         directory = package_file(path, module["path"])
         if not directory.is_dir():
             if module["type"].rsplit(".", 1)[-1] == "Normalize":
@@ -235,4 +240,3 @@ def load_configuration(root: Path, model_ref: str, parameters: dict) -> tuple[Pa
                             raise ValueError()
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     raise WorkerError("MODEL_NOT_FOUND", 404) from exc
-    return path, information
