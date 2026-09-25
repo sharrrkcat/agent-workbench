@@ -1,7 +1,6 @@
 import { Switch } from '@/components/ui/switch';
 import { FieldGroup, Field, FieldLabel, FieldSet, FieldLegend } from '@/components/ui/field';
 import { Separator } from '@/components/ui/separator';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
@@ -78,27 +77,6 @@ export function GeneralSettingsForm({
         </FieldSet>
         <Separator />
         <FieldSet>
-          <FieldLegend>{t('generalSections.memory')}</FieldLegend>
-          <FieldGroup>
-            <Field orientation="horizontal">
-              <Switch
-                checked={settings.core_memory_enabled}
-                onCheckedChange={(value) => patch('core_memory_enabled', value)}
-              />
-              <FieldLabel>{t('generalFields.memoryEnabled')}</FieldLabel>
-            </Field>
-            <Field>
-              <FieldLabel>{t('generalFields.memoryContent')}</FieldLabel>
-              <Textarea
-                rows={4}
-                value={settings.core_memory_content}
-                onChange={(event) => patch('core_memory_content', event.currentTarget.value)}
-              />
-            </Field>
-          </FieldGroup>
-        </FieldSet>
-        <Separator />
-        <FieldSet>
           <FieldLegend>{t('generalSections.titles')}</FieldLegend>
           <FieldGroup>
             <Field orientation="horizontal">
@@ -128,31 +106,14 @@ export function GeneralSettingsForm({
             </Field>
           </FieldGroup>
         </FieldSet>
-        <Separator />
-        <FieldSet>
-          <FieldLegend>{t('generalSections.group')}</FieldLegend>
-          <Field>
-            <FieldLabel>{t('generalFields.groupInstruction')}</FieldLabel>
-            <Textarea
-              rows={4}
-              value={settings.group_transcript_system_instruction || ''}
-              onChange={(event) =>
-                patch('group_transcript_system_instruction', event.currentTarget.value || null)
-              }
-            />
-          </Field>
-        </FieldSet>
         <div className="settings-form-actions">
           <Button
             type="button"
             onClick={() =>
               onSave({
                 show_full_processing: settings.show_full_processing,
-                core_memory_enabled: settings.core_memory_enabled,
-                core_memory_content: settings.core_memory_content,
                 auto_generate_session_titles: settings.auto_generate_session_titles,
                 session_title_max_input_chars: settings.session_title_max_input_chars,
-                group_transcript_system_instruction: settings.group_transcript_system_instruction,
               })
             }
             variant="default"

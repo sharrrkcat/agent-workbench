@@ -125,9 +125,6 @@
     "queue_timeout_seconds": "排队超时（秒）"
   },
   "chatModel": "聊天模型",
-  "conversationMode": "对话模式",
-  "singleAssistant": "单助手",
-  "groupTranscript": "群聊转录",
   "newSession": "新会话",
   "waiting": "等待你的回复",
   "settings": "设置",

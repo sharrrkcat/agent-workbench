@@ -56,10 +56,10 @@ Local health/load/unload and provider request status follow [Models](docs/contra
 
 ## Chat and tools
 
-Personas own identity, avatar, mandatory system prompt and Knowledge/Worldbook bindings. New sessions start with Chat; added members support group transcripts, with one selected speaker per reply.
-Sessions own model, context, generation and Harness settings, plus additions to the speaker's fixed resources; clearing additions preserves Persona bindings.
+Personas share identity, avatar and prompt. User/Agent Personas bind Knowledge; roleplay User/Character Personas bind Worldbook. Ordinary sessions select one Agent, initially Cogita, and always use the singleton User Persona.
+Sessions own model, history policy, Temperature and Harness settings, plus additions to the User/Agent Knowledge bindings; clearing additions preserves both Personas' bindings.
 
-Chat supports Core Memory, Worldbook and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval.
+Chat supports User Persona background and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval. Worldbook management and matching remain available for future roleplay workflows.
 Embedding changes require reindexing; unavailable optional reranking intentionally preserves RRF order.
 
 Harness defaults off; enable it and choose tools in session settings to permit native model calls.
@@ -263,7 +263,7 @@ Checks enforce route/schema coverage, response validation, unique operationIds a
 
 ## Settings and storage
 
-Settings shares the home sidebar: three groups, six menus and 11 pages, with subpage URLs surviving refresh/back/forward.
+Settings shares the home sidebar: four groups, seven menus and 14 pages, with subpage URLs surviving refresh/back/forward.
 The [settings contract](docs/contracts/settings.md) owns APIs, fields and key PATCH semantics; keys remain unencrypted locally and absent from reads. Logs omit credentials and request/model content.
 
 Pet position, dragging and task-state foundations remain for a future UI; existing Pet files are retained without loading or serving them.

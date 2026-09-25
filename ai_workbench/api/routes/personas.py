@@ -9,7 +9,7 @@ from ai_workbench.api.schemas.chat import (
 )
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 from ai_workbench.core.models.schema import StrictModel
-from ai_workbench.core.schema.persona import PersonaInput
+from ai_workbench.core.schema.persona import PersonaCollection, PersonaCreate, PersonaInput, USER_PERSONA_ID
 
 
 router = APIRouter(prefix="/api/personas", tags=["personas"])
@@ -24,21 +24,21 @@ class WorldbookBindingsPatch(StrictModel):
 
 
 @router.get("", response_model=list[PersonaResponse], response_model_exclude_unset=True)
-def list_personas(state: RuntimeState = Depends(get_state)) -> list[dict]:
-    return [p.model_dump(mode="json") for p in state.personas.list()]
+def list_personas(collection: PersonaCollection | None = None, state: RuntimeState = Depends(get_state)) -> list[dict]:
+    return [p.public_response() for p in state.personas.list(collection)]
 
 
 @router.post("", response_model=PersonaResponse, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 422))
-async def create_persona(payload: PersonaInput, state: RuntimeState = Depends(get_state)) -> dict:
+async def create_persona(payload: PersonaCreate, state: RuntimeState = Depends(get_state)) -> dict:
     state.chat_service.validate_persona(payload)
-    return state.personas.create(payload).model_dump(mode="json")
+    return state.personas.create(payload).public_response()
 
 
 @router.get("/{persona_id}", response_model=PersonaResponse, response_model_exclude_unset=True,
     responses=error_responses(404))
 def get_persona(persona_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    return state.chat_service.persona(persona_id).model_dump(mode="json")
+    return state.chat_service.persona(persona_id).public_response()
 
 
 @router.patch("/{persona_id}", response_model=PersonaResponse, response_model_exclude_unset=True,
@@ -52,7 +52,7 @@ async def update_persona(persona_id: str, payload: dict, state: RuntimeState = D
     if current.avatar_attachment_id != updated.avatar_attachment_id:
         _cleanup_avatar(state, current.avatar_attachment_id)
     _notify_sessions(state, persona_id)
-    return updated.model_dump(mode="json")
+    return updated.public_response()
 
 
 @router.delete("/{persona_id}", response_model=PersonaDeleted, response_model_exclude_unset=True,
@@ -64,16 +64,16 @@ async def delete_persona(persona_id: str, state: RuntimeState = Depends(get_stat
 
 
 @router.get("/{persona_id}/knowledge-bases", response_model=KnowledgeBindingsResponse, response_model_exclude_unset=True,
-    responses=error_responses(404))
+    responses=error_responses(404, 422))
 def get_knowledge_bindings(persona_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    state.chat_service.persona(persona_id)
+    state.chat_service.persona_for_resource(persona_id, "knowledge")
     return {"knowledge_base_ids": state.personas.binding_ids(persona_id, "knowledge")}
 
 
 @router.patch("/{persona_id}/knowledge-bases", response_model=KnowledgeBindingsResponse, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 422))
 async def set_knowledge_bindings(persona_id: str, payload: KnowledgeBindingsPatch, state: RuntimeState = Depends(get_state)) -> dict:
-    state.chat_service.persona(persona_id)
+    state.chat_service.persona_for_resource(persona_id, "knowledge")
     state.chat_service.validate_bindings("knowledge", payload.knowledge_base_ids)
     ids = state.personas.replace_bindings(persona_id, "knowledge", payload.knowledge_base_ids)
     _notify_sessions(state, persona_id)
@@ -81,16 +81,16 @@ async def set_knowledge_bindings(persona_id: str, payload: KnowledgeBindingsPatc
 
 
 @router.get("/{persona_id}/worldbooks", response_model=WorldbookBindingsResponse, response_model_exclude_unset=True,
-    responses=error_responses(404))
+    responses=error_responses(404, 422))
 def get_worldbook_bindings(persona_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    state.chat_service.persona(persona_id)
+    state.chat_service.persona_for_resource(persona_id, "worldbook")
     return {"worldbook_ids": state.personas.binding_ids(persona_id, "worldbook")}
 
 
 @router.patch("/{persona_id}/worldbooks", response_model=WorldbookBindingsResponse, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 422))
 async def set_worldbook_bindings(persona_id: str, payload: WorldbookBindingsPatch, state: RuntimeState = Depends(get_state)) -> dict:
-    state.chat_service.persona(persona_id)
+    state.chat_service.persona_for_resource(persona_id, "worldbook")
     state.chat_service.validate_bindings("worldbook", payload.worldbook_ids)
     ids = state.personas.replace_bindings(persona_id, "worldbook", payload.worldbook_ids)
     _notify_sessions(state, persona_id)
@@ -105,6 +105,6 @@ def _cleanup_avatar(state, attachment_id):
 
 def _notify_sessions(state, persona_id):
     for session in state.sessions.list_sessions():
-        if any(m.persona_id == persona_id for m in session.personas):
+        if persona_id == USER_PERSONA_ID or session.persona_id == persona_id:
             state.events.emit("session_updated", session_id=session.session_id,
                 payload={"session": state.chat_service.session_response(session)})

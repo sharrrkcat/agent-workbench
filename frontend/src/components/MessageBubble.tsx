@@ -13,6 +13,7 @@ import { MessageActions } from './messages/MessageActions';
 
 export function MessageBubble({ message }: { message: Message }) {
   const { t } = useTranslation('personas');
+  const userPersona = useCogitaStore((s) => s.currentSession?.user_persona);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(messageText(message));
   const [busy, setBusy] = useState(false);
@@ -37,9 +38,9 @@ export function MessageBubble({ message }: { message: Message }) {
     <MessageFrame
       role={message.role}
       name={
-        isUser ? t('you') : message.speaker_name || t(message.role === 'assistant' ? 'assistant' : 'system')
+        isUser ? userPersona?.name || '' : message.speaker_name || t(message.role === 'assistant' ? 'assistant' : 'system')
       }
-      avatarId={avatarId}
+      avatarId={isUser ? userPersona?.avatar_attachment_id : avatarId}
       createdAt={message.created_at}
       messageId={message.message_id}
     >

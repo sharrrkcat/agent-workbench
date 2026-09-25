@@ -1,12 +1,12 @@
 # Runs and streaming contract
 
 This contract owns run status, steps, persistence and transport reconciliation.
-[Chat/context](chat-context.md) owns configuration snapshots and message content;
+[Chat/context](chat-context.md) owns Agent/User Persona configuration snapshots and message content;
 [harness/tools](harness-tools.md) owns tool execution and approval rules.
 
 ## Run lifecycle
 
-Run.kind is chat or tool and each run stores its selected persona_id. Statuses
+Run.kind is chat or tool and each run stores its selected Agent persona_id. Statuses
 are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and
 INTERRUPTED. Terminal runs never return to running.
 

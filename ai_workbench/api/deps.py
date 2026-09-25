@@ -112,13 +112,13 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     utility_llm = UtilityLLMService(model_manager=manager, app_settings_store=app_settings)
     personas = PersonaStore(engine)
     chat_service = ChatService(personas=personas, sessions=sessions, runs=runs, model_manager=manager,
-        app_settings=app_settings, knowledge=knowledge, worldbooks=worldbooks, tool_registry=tool_registry)
+        knowledge=knowledge, worldbooks=worldbooks, tool_registry=tool_registry)
     knowledge_service = KnowledgeService(store=knowledge, model_manager=manager, repo_root=repo_root,
-        session_binding_resolver=lambda session_id: chat_service.effective_binding_ids(sessions.get_session(session_id), "knowledge"))
+        session_binding_resolver=lambda session_id: chat_service.effective_knowledge_ids(sessions.get_session(session_id)))
     chat_runner = ChatRunner(
         sessions=sessions, messages=messages, runs=runs, events=events,
         model_manager=manager, app_settings=app_settings, utility_llm=utility_llm,
-        knowledge_service=knowledge_service, worldbooks=worldbooks, active_runs=active_runs,
+        knowledge_service=knowledge_service, active_runs=active_runs,
         chat_service=chat_service,
         tool_registry=tool_registry, harness_settings=harness_settings, network_policy=network_policy, repo_root=repo_root,
     )

@@ -79,7 +79,7 @@ const unselected = ModelSelect({ profiles, value: null, onChange: () => {} });
 assert.equal(unselected.props.value, '');
 assert.equal(descendants(unselected).find((node) => node.type === SelectItem && node.props.value === '').props.disabled, true);
 
-let headerSession = { model_profile_id: 'preferred', current_persona_id: 'chat', personas: [], effective: {} };
+let headerSession = { model_profile_id: 'preferred', persona_id: 'cogita', effective: {} };
 const headerLoad = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: (selector) => selector({ profiles }) }),
@@ -124,12 +124,26 @@ const { worldbookApi } = (await load('../src/api/worldbook.ts')).exports;
 const { chatApi } = (await load('../src/api/chat.ts')).exports;
 await knowledgeApi.updateSessionKnowledgeBases('session/1', ['extra']);
 assert.deepEqual(requests.at(-1), { url: '/api/sessions/session%2F1/knowledge-bases', method: 'PATCH', body: { knowledge_base_ids: ['extra'] } });
-await worldbookApi.updateSessionWorldbooks('session/1', []);
-assert.deepEqual(requests.at(-1).body, { worldbook_ids: [] });
+assert.equal('updateSessionWorldbooks' in worldbookApi, false);
+await worldbookApi.matchWorldbooks({ text: 'lore', worldbook_ids: ['book'] });
+assert.deepEqual(requests.at(-1).body, { text: 'lore', worldbook_ids: ['book'] });
 await chatApi.createSession();
 assert.deepEqual(requests.at(-1).body, {});
 await chatApi.updateSession('s', { harness_enabled: false, tools_allowed: [] });
 assert.deepEqual(requests.at(-1).body, { harness_enabled: false, tools_allowed: [] });
 await chatApi.updateSession('s', { model_profile_id: modelChoice });
 assert.deepEqual(requests.at(-1).body, { model_profile_id: 'first' });
+let generation = {};
+const { Input } = (await load('../src/components/ui/input.tsx')).exports;
+const generationNodes = descendants(GenerationFields({ value: generation, onChange: (value) => { generation = value; } }));
+const temperature = generationNodes.find((node) => node.type === Input);
+assert.equal(generationNodes.filter((node) => node.type === Input).length, 1);
+temperature.props.onChange({ currentTarget: { value: '0' } });
+assert.deepEqual(generation, { temperature: 0 });
+temperature.props.onChange({ currentTarget: { value: '' } });
+assert.deepEqual(generation, { temperature: null });
+await chatApi.listPersonas('character');
+assert.equal(requests.at(-1).url, '/api/personas?collection=character');
+await chatApi.createPersona({ collection: 'character', name: 'Role', avatar_attachment_id: null, system_prompt: '' });
+assert.equal(requests.at(-1).body.collection, 'character');
 console.log('Session configuration fields, concrete model selection, tool switches, locales and API requests passed.');

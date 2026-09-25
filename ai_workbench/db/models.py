@@ -14,10 +14,9 @@ from ai_workbench.core.time import utc_now
 class SessionRecord(SQLModel, table=True):
     session_id: str = Field(primary_key=True)
     title: str = ""
-    context_mode: str = "single_assistant"
     waiting_run_id: Optional[str] = None
     model_profile_id: Optional[str] = None
-    current_persona_id: str = Field(foreign_key="personas.id")
+    persona_id: str = Field(foreign_key="personas.id")
     context_policy_json: str
     generation_json: str = "{}"
     harness_enabled: bool = False
@@ -30,20 +29,17 @@ class SessionRecord(SQLModel, table=True):
 
 class PersonaRecord(SQLModel, table=True):
     __tablename__ = "personas"
+    __table_args__ = (
+        CheckConstraint("collection IN ('user', 'agent', 'roleplay_user', 'character')", name="ck_persona_collection"),
+        CheckConstraint("collection != 'user' OR id = '00000000-0000-4000-8000-000000000004'", name="ck_user_persona_singleton"),
+    )
     id: str = Field(primary_key=True)
+    collection: str = Field(index=True)
     name: str
     avatar_attachment_id: Optional[str] = None
     system_prompt: str = ""
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-
-
-class SessionPersonaRecord(SQLModel, table=True):
-    __tablename__ = "session_personas"
-    session_id: str = Field(primary_key=True, foreign_key="sessionrecord.session_id")
-    persona_id: str = Field(primary_key=True, foreign_key="personas.id", index=True)
-    sort_order: int = 0
-    enabled: bool = True
 
 
 class PersonaKnowledgeBindingRecord(SQLModel, table=True):
@@ -363,19 +359,6 @@ class WorldbookEntryRecord(SQLModel, table=True):
     keywords_text: str = ""
     content: str
     activation_mode: str = "keyword"
-    enabled: bool = True
-    sort_order: int = Field(default=0, index=True)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
-
-
-class SessionWorldbookBindingRecord(SQLModel, table=True):
-    __tablename__ = "session_worldbook_bindings"
-    __table_args__ = (UniqueConstraint("session_id", "worldbook_id"),)
-
-    id: str = Field(primary_key=True)
-    session_id: str = Field(index=True)
-    worldbook_id: str = Field(index=True)
     enabled: bool = True
     sort_order: int = Field(default=0, index=True)
     created_at: datetime = Field(default_factory=utc_now)

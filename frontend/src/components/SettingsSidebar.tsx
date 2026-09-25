@@ -44,7 +44,8 @@ function pageIcon(route: SettingsRoute) {
       : route.section === 'knowledge'
         ? Database
         : BookOpen;
-  return { general: Settings2, personas: Bot, tools: Wrench }[route.section];
+  if (route.section === 'personas') return Bot;
+  return { general: Settings2, tools: Wrench }[route.section];
 }
 
 export function SettingsSidebar({
@@ -93,9 +94,9 @@ export function SettingsSidebar({
                   const Icon = pageIcon(menu.pages[0]);
                   return (
                     <SidebarMenu
-                      key={menu.section}
+                      key={menu.id}
                       className="settings-domain-menu"
-                      aria-label={t(menu.section)}
+                      aria-label={menu.section === 'personas' ? `${t(menu.section)} / ${t('sidebarGroups.' + group.id)}` : t(menu.section)}
                     >
                       {menu.pages.length === 1 ? (
                         pageItem(menu.pages[0])
@@ -106,7 +107,7 @@ export function SettingsSidebar({
                               render={
                                 <SidebarMenuButton
                                   type="button"
-                                  data-settings-menu={menu.section}
+                                  data-settings-menu={menu.id}
                                 />
                               }
                             >

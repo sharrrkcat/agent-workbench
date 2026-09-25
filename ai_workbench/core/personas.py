@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlmodel import Session, delete, select
 
-from ai_workbench.core.schema.persona import Persona, PersonaInput, seed_personas
+from ai_workbench.core.schema.persona import Persona, PersonaCollection, PersonaCreate, PersonaInput, seed_personas
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.models import PersonaRecord, PersonaKnowledgeBindingRecord, PersonaWorldbookBindingRecord
 
@@ -29,11 +29,15 @@ class PersonaStore:
     def _encode(persona: Persona) -> dict:
         return persona.model_dump()
 
-    def list(self) -> list[Persona]:
+    def list(self, collection: PersonaCollection | None = None) -> list[Persona]:
         if self.engine is None:
-            return sorted((p.model_copy(deep=True) for p in self._personas.values()), key=lambda p: (p.name, p.id))
+            return sorted((p.model_copy(deep=True) for p in self._personas.values()
+                           if collection is None or p.collection == collection), key=lambda p: (p.name, p.id))
         with Session(self.engine) as db:
-            return [self._decode(r) for r in db.exec(select(PersonaRecord).order_by(PersonaRecord.name, PersonaRecord.id)).all()]
+            query = select(PersonaRecord).order_by(PersonaRecord.name, PersonaRecord.id)
+            if collection is not None:
+                query = query.where(PersonaRecord.collection == collection)
+            return [self._decode(r) for r in db.exec(query).all()]
 
     def get(self, persona_id: str) -> Persona:
         if self.engine is None:
@@ -44,7 +48,7 @@ class PersonaStore:
                 raise KeyError(persona_id)
             return self._decode(row)
 
-    def create(self, values: PersonaInput) -> Persona:
+    def create(self, values: PersonaCreate) -> Persona:
         persona = Persona(**values.model_dump())
         if self.engine is None:
             self._personas[persona.id] = persona

@@ -50,8 +50,10 @@ validation, busy locks, async navigation/history, attachments, IME and approvals
 app-layout.spec.ts covers sidebar scrolling/menus, deletion, drawer focus, Markdown,
 composer growth, disclosure position and breakpoint/short viewport behavior.
 chat-presentation.spec.ts and vision-input.spec.ts retain streaming and image workflows.
-settings-layout.spec.ts covers all 11 grouped pages, collapsed menus, direct links, history, resource
+settings-layout.spec.ts covers all 14 grouped pages, collapsed menus, direct links, history, resource
 leave guards, retained drafts/hidden dialogs, shared navigation and responsive scroll regions.
+personas.spec.ts covers shared Persona CRUD, protected identities, binding restrictions
+and live User Persona display across history and session switches.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
 test-wd14.mjs and wd14.spec.ts cover WD14 source/CPU defaults, inventory/manual references,

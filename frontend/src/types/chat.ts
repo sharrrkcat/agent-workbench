@@ -1,5 +1,3 @@
-export type ContextMode = 'single_assistant' | 'group_transcript';
-
 export type ContextPolicy = {
   mode: 'none' | 'current_message' | 'recent_messages' | 'session' | 'selected_message';
   max_messages: number | null;
@@ -17,29 +15,27 @@ export type GenerationParameters = {
   stop?: string | string[] | null;
 };
 
+export type SessionGenerationParameters = { temperature?: number | null };
+export type PersonaCollection = 'user' | 'agent' | 'roleplay_user' | 'character';
+
 export type PersonaInput = {
   name: string;
   avatar_attachment_id: string | null;
   system_prompt: string;
 };
 
-export type Persona = PersonaInput & { id: string; created_at: string; updated_at: string };
-
-export type SessionPersona = {
-  persona_id: string;
-  enabled: boolean;
-  name: string;
-  avatar_attachment_id: string | null;
+export type PersonaCreate = PersonaInput & { collection: Exclude<PersonaCollection, 'user'> };
+export type Persona = PersonaInput & {
+  id: string; collection: PersonaCollection; is_protected: boolean; created_at: string; updated_at: string;
 };
+export type PersonaIdentity = Pick<Persona, 'id' | 'name' | 'avatar_attachment_id'>;
 
 export type SessionPatch = Partial<{
   title: string;
-  context_mode: ContextMode;
-  current_persona_id: string;
-  personas: Array<Pick<SessionPersona, 'persona_id' | 'enabled'>>;
+  persona_id: string;
   model_profile_id: string | null;
   context_policy: ContextPolicy;
-  generation: GenerationParameters;
+  generation: SessionGenerationParameters;
   harness_enabled: boolean;
   tools_allowed: string[];
 }>;
@@ -50,25 +46,23 @@ export type EffectiveChatConfig = {
   avatar_attachment_id: string | null;
   model_profile_id: string | null;
   model_source: 'session';
-  context_mode: ContextMode;
+  user_persona_id: string;
   context_policy: ContextPolicy;
   generation: GenerationParameters;
   harness_enabled: boolean;
   tools_allowed: string[];
   knowledge_base_ids: string[];
-  worldbook_ids: string[];
 };
 
 export type Session = {
   session_id: string;
   title: string;
-  context_mode: ContextMode;
   waiting_run_id: string | null;
   model_profile_id: string | null;
-  current_persona_id: string;
-  personas: SessionPersona[];
+  persona_id: string;
+  user_persona: PersonaIdentity;
   context_policy: ContextPolicy;
-  generation: GenerationParameters;
+  generation: SessionGenerationParameters;
   harness_enabled: boolean;
   tools_allowed: string[];
   effective: EffectiveChatConfig;

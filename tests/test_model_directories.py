@@ -23,7 +23,7 @@ from ai_workbench.core.models.schema import ModelInput, ModelProfile
 from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
-from ai_workbench.db.models import MessageRecord, PersonaRecord, RunRecord, RuntimeInstallationRecord, RuntimeJobRecord, SessionRecord
+from ai_workbench.db.models import MessageRecord, RunRecord, RuntimeInstallationRecord, RuntimeJobRecord
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.model_catalog import inspect_directory
 from tests.model_fixtures import resolve_local_profile, write_local_model
@@ -292,12 +292,13 @@ def test_migration_removes_obsolete_profiles_and_preserves_files(tmp_path):
         db.execute(text("INSERT INTO appmetadatarecord (key,value,updated_at) VALUES ('model_settings',:value,CURRENT_TIMESTAMP)"),
             {"value": json.dumps({"default_model_profile_id": "old-gguf", "utility_model_profile_id": "keep"})})
     with Session(engine) as db:
-        db.add(PersonaRecord(id="persona", name="Persona"))
+        db.execute(text("INSERT INTO personas VALUES ('persona','Persona',NULL,'',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"))
         db.add(RuntimeInstallationRecord(version="1.0.0", state="installed", job_id="kept-job", manifest_sha256="a" * 64))
         db.add(RuntimeJobRecord(id="kept-job", version="1.0.0", operation="install", state="completed", stage="completed"))
         db.commit()
-        db.add(SessionRecord(session_id="session", current_persona_id="persona", context_policy_json="{}",
-            model_profile_id="old-gguf", waiting_run_id="pending"))
+        db.execute(text("""INSERT INTO sessionrecord (session_id,title,context_mode,current_persona_id,model_profile_id,waiting_run_id,
+                context_policy_json,generation_json,harness_enabled,tools_allowed_json,title_generation_state,title_generation_metadata_json,created_at,updated_at)
+                VALUES (:id,'','single_assistant',:persona,:model,:waiting,'{}','{}',0,'[]','pending','{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"""), {"id": "session", "persona": "persona", "model": "old-gguf", "waiting": "pending"})
         for identifier, status, model_id in [("pending", "RUNNING", "old-gguf"), ("completed", "DONE", "old-gguf"),
                                               ("unrelated", "RUNNING", "keep")]:
             db.add(RunRecord(run_id=identifier, kind="chat", persona_id="persona", session_id="session", status=status,
@@ -307,9 +308,9 @@ def test_migration_removes_obsolete_profiles_and_preserves_files(tmp_path):
     runtime_tables = ("runtime_installations", "runtime_jobs")
     with engine.connect() as db:
         runtime_before = {table: list(db.execute(text(f"SELECT * FROM {table}")).mappings()) for table in runtime_tables}
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.DIRECTORY_MODELS_REVISION)
     created = ModelProfileStore(engine).create(ModelProfile(name="New draft", alias="new-draft", kind="tts", model_ref="tts/new"))
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.DIRECTORY_MODELS_REVISION)
     with engine.begin() as db:
         assert set(db.execute(text("SELECT id FROM model_profiles")).scalars()) == {"keep", "keep-local", "keep-asr", "keep-image", created.id}
         assert {table: list(db.execute(text(f"SELECT * FROM {table}")).mappings()) for table in runtime_tables} == runtime_before

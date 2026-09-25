@@ -7,9 +7,9 @@ export async function openSidebar(page: Page) {
   await expect(page.locator('.session-sidebar, .settings-sidebar')).toBeInViewport();
 }
 
-export async function navigateSettings(page: Page, section: string, name = section) {
+export async function navigateSettings(page: Page, section: string, name = section, group?: string) {
   await openSidebar(page);
-  const menu = page.locator('.settings-sidebar nav').getByRole('list', { name: section, exact: true });
+  const menu = page.locator('.settings-sidebar nav').getByRole('list', { name: group ? `${section} / ${group}` : section, exact: true });
   const toggle = menu.locator('[data-settings-menu]');
   if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
   await menu.getByRole('button', { name, exact: true }).click();

@@ -140,8 +140,8 @@ previousSessionRead.resolve([final]);
 await oldSessionRefresh;
 assert.deepEqual(cogita.getState().messages, []);
 assert.equal(cogita.getState().currentSession.session_id, 'other');
-const beforePersona = { ...session, current_persona_id: 'first', effective: { persona_name: 'First' } };
-const afterPersona = { ...beforePersona, current_persona_id: 'second', effective: { persona_name: 'Second' } };
+const beforePersona = { ...session, persona_id: 'first', effective: { persona_name: 'First' } };
+const afterPersona = { ...beforePersona, persona_id: 'second', effective: { persona_name: 'Second' } };
 cogita.setState({ currentSession: beforePersona, sessions: [beforePersona], messages: [], runs: [] });
 const staleSession = deferred();
 mockApi.getSession = () => staleSession.promise;
@@ -151,7 +151,7 @@ const staleRefresh = cogita.getState().refreshCurrent();
 cogita.getState().applyRuntimeEvent(event('session_updated', { session: afterPersona }));
 staleSession.resolve(beforePersona);
 await staleRefresh;
-assert.equal(cogita.getState().currentSession.current_persona_id, 'second');
+assert.equal(cogita.getState().currentSession.persona_id, 'second');
 assert.equal(cogita.getState().sessions[0].effective.persona_name, 'Second');
 
 const speakerMessage = {

@@ -3,10 +3,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_serializer, model_validator
 
-from ai_workbench.core.models.schema import GenerationParameters
+from ai_workbench.core.models.schema import StrictModel
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.schema.persona import CHAT_PERSONA_ID, SessionPersona
+from ai_workbench.core.schema.persona import COGITA_PERSONA_ID
 from ai_workbench.core.time import isoformat_utc, utc_now
+
+
+class SessionGenerationParameters(StrictModel):
+    temperature: float | None = Field(default=None, ge=0, le=2)
 
 
 class Session(BaseModel):
@@ -16,13 +20,11 @@ class Session(BaseModel):
 
     session_id: str
     title: str = ""
-    context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
     waiting_run_id: str | None = None
     model_profile_id: str | None = None
-    current_persona_id: str = CHAT_PERSONA_ID
-    personas: list[SessionPersona] = Field(default_factory=lambda: [SessionPersona(persona_id=CHAT_PERSONA_ID)], min_length=1, max_length=64)
+    persona_id: str = COGITA_PERSONA_ID
     context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
-    generation: GenerationParameters = Field(default_factory=GenerationParameters)
+    generation: SessionGenerationParameters = Field(default_factory=SessionGenerationParameters)
     harness_enabled: StrictBool = False
     tools_allowed: list[str] = Field(default_factory=list, max_length=128)
     title_generation_state: Literal["pending", "done", "skipped", "failed", "manual"] = "pending"
@@ -31,12 +33,7 @@ class Session(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
     @model_validator(mode="after")
-    def validate_members(self):
-        ids = [member.persona_id for member in self.personas]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Session personas must be unique")
-        if not any(member.enabled and member.persona_id == self.current_persona_id for member in self.personas):
-            raise ValueError("Current persona must be an enabled session member")
+    def validate_tools(self):
         if len(self.tools_allowed) != len(set(self.tools_allowed)):
             raise ValueError("Tool names must be unique")
         return self
@@ -46,5 +43,5 @@ class Session(BaseModel):
         return isoformat_utc(value) or ""
 
     @field_serializer("generation")
-    def serialize_generation(self, value: GenerationParameters) -> dict[str, Any]:
+    def serialize_generation(self, value: SessionGenerationParameters) -> dict[str, Any]:
         return value.model_dump(exclude_none=True)

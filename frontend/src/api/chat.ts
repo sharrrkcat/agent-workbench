@@ -1,4 +1,4 @@
-import type { Persona, PersonaInput, Session, SessionPatch } from '../types/chat';
+import type { Persona, PersonaCollection, PersonaCreate, PersonaInput, Session, SessionPatch } from '../types/chat';
 import type { Attachment, Message } from '../types/messages';
 import type { HistoryPruned, RuntimeResponse } from '../types/runs';
 import { request, requestForm } from './http';
@@ -52,8 +52,8 @@ export const chatApi = {
       `/api/sessions/${encodeURIComponent(sessionId)}/notifications/${encodeURIComponent(notificationId)}/dismiss`,
       { method: 'POST' },
     ),
-  listPersonas: () => request<Persona[]>('/api/personas'),
-  createPersona: (value: PersonaInput) =>
+  listPersonas: (collection?: PersonaCollection) => request<Persona[]>('/api/personas' + (collection ? `?collection=${collection}` : '')),
+  createPersona: (value: PersonaCreate) =>
     request<Persona>('/api/personas', { method: 'POST', body: JSON.stringify(value) }),
   patchPersona: (id: string, value: Partial<PersonaInput>) =>
     request<Persona>(`/api/personas/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(value) }),

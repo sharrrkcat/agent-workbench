@@ -171,6 +171,7 @@ for (const locale of ['en', 'zh-CN']) {
           await sidebar.getByRole('button', { name: labels.settings, exact: true }).click();
           await expect(page).toHaveURL(/\/settings$/);
           await expect(sidebar).toHaveCount(0);
+          await page.goto('/settings?tab=personas&view=user');
           await page.setViewportSize({ width: viewport.width, height: 480 });
           await expect
             .poll(() => page.locator('.settings-scroll').evaluate((node) => node.scrollHeight > node.clientHeight))

@@ -325,18 +325,15 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('button', { name: personas.sessionSettings, exact: true }).click();
         const dialog = page.getByRole('dialog');
         await dialog.getByRole('tab', { name: personas.configuration, exact: true }).click();
-        const seed = dialog.getByLabel(llm.params.seed, { exact: true });
-        const penalty = dialog.getByLabel(llm.params.presence_penalty, { exact: true });
+        const temperature = dialog.getByLabel(llm.params.temperature, { exact: true });
+        await expect(dialog.getByLabel(llm.params.seed, { exact: true })).toHaveCount(0);
+        await expect(dialog.getByLabel(llm.params.presence_penalty, { exact: true })).toHaveCount(0);
         const tool = dialog.getByRole('checkbox', { name: 'base64_encode', exact: true });
         await tool.uncheck();
-        await seed.fill('0');
-        await penalty.fill('');
-        await penalty.pressSequentially('-0.2');
-        await expect(penalty).toHaveValue('-0.2');
-        await dialog.getByRole('tab', { name: personas.members, exact: true }).click();
+        await temperature.fill('0');
+        await dialog.getByRole('tab', { name: personas.knowledge, exact: true }).click();
         await dialog.getByRole('tab', { name: personas.configuration, exact: true }).click();
-        await expect(seed).toHaveValue('0');
-        await expect(penalty).toHaveValue('-0.2');
+        await expect(temperature).toHaveValue('0');
         await expect(tool).not.toBeChecked();
         if (viewport.width === 390) {
           const label = dialog.locator('[data-slot="field-label"]').filter({ hasText: /^base64_encode$/ });
@@ -347,11 +344,9 @@ for (const locale of ['en', 'zh-CN']) {
         await dialog.getByRole('button', { name: common.save, exact: true }).click();
         await expect(dialog).toBeHidden();
         expect(
-          (await (await request.get(`/api/sessions/${session.session_id}`)).json()).generation.seed,
+          (await (await request.get(`/api/sessions/${session.session_id}`)).json()).generation.temperature,
         ).toBe(0);
-        expect(
-          (await (await request.get(`/api/sessions/${session.session_id}`)).json()).generation.presence_penalty,
-        ).toBe(-0.2);
+        expect((await (await request.get(`/api/sessions/${session.session_id}`)).json()).generation).toEqual({ temperature: 0 });
         const composer = page.locator('.composer');
         const input = composer.getByRole('textbox');
         await input.fill('中文输入');
@@ -521,7 +516,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
   await expect(page.locator('.chat-model-select')).toContainText('Unavailable');
   await expect(page.locator('.chat-model-select')).toBeDisabled();
   await page.getByRole('button', { name: 'Session settings', exact: true }).click();
-  await dialog.getByRole('tab', { name: 'Session configuration', exact: true }).click();
+  await dialog.getByRole('tab', { name: 'Configuration', exact: true }).click();
   const model = dialog.getByRole('combobox', { name: 'Model', exact: true });
   await expect(model).toContainText('Unavailable');
   await expect(model).toBeDisabled();

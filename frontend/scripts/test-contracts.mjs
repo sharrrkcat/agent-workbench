@@ -28,11 +28,14 @@ const { settingsSections, settingsGroups, readSettingsRoute, settingsRouteUrl } 
 ).exports;
 assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools']);
 const settingsPages = settingsGroups.flatMap((group) => group.menus.flatMap((menu) => menu.pages));
-assert.equal(settingsPages.length, 11);
+assert.equal(settingsPages.length, 14);
 for (const route of settingsPages)
   assert.deepEqual(readSettingsRoute(new URL(settingsRouteUrl(route), 'http://localhost').search), route);
 for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities', '?tab=pet'])
   assert.deepEqual(readSettingsRoute(tab), { section: 'general' });
+assert.deepEqual(readSettingsRoute('?tab=personas'), { section: 'personas', view: 'user' });
+assert.deepEqual(readSettingsRoute('?tab=personas&view=unknown'), { section: 'personas', view: 'user' });
+assert.equal(new Set(settingsGroups.flatMap((g) => g.menus.map((m) => m.id))).size, 7);
 assert.deepEqual(readSettingsRoute('?tab=models'), { section: 'models', view: 'profiles' });
 assert.deepEqual(readSettingsRoute('?tab=models&view=settings'), { section: 'models', view: 'profiles' });
 assert.deepEqual(readSettingsRoute('?tab=knowledge&view=providers'), { section: 'knowledge', view: 'list' });
@@ -75,11 +78,8 @@ const { GeneralSettingsForm } = (await load('../src/components/settings/GeneralP
 const { Button } = (await load('../src/components/ui/button.tsx')).exports;
 const settings = {
   show_full_processing: false,
-  core_memory_enabled: true,
-  core_memory_content: 'Remember this',
   auto_generate_session_titles: false,
   session_title_max_input_chars: 1234,
-  group_transcript_system_instruction: null,
   pet: { position: { mode: 'default', x: null, y: null } },
   max_file_size_mb: 42,
 };
@@ -101,11 +101,8 @@ descendants(form)
   .props.onClick();
 assert.deepEqual(saved, {
   show_full_processing: false,
-  core_memory_enabled: true,
-  core_memory_content: 'Remember this',
   auto_generate_session_titles: false,
   session_title_max_input_chars: 1234,
-  group_transcript_system_instruction: null,
 });
 for (const [locale, label] of [
   ['en', 'Save general settings'],
@@ -116,7 +113,7 @@ for (const [locale, label] of [
     React.createElement(GeneralSettingsForm, { settings, onChange: () => {}, onSave: () => {} }),
   );
   assert.ok(html.includes(label));
-  assert.ok(html.includes('Remember this'));
+  assert.doesNotMatch(html, /Core memory|核心记忆|Group transcript|群聊/);
   assert.doesNotMatch(html, /appearance_font|resource_status|generalFields\./);
 }
 

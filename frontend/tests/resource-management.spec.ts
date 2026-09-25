@@ -236,7 +236,7 @@ test('advanced settings retain nullable fields and invalid drafts block departur
   await request.patch('/api/knowledge/settings', { data: { reranker_enabled: false, min_score_threshold: null, default_min_score: null } });
 });
 
-test('managed resources bind through Persona and session editors and enter chat context', async ({ page, request }) => {
+test('Knowledge bindings enter chat while roleplay Worldbooks remain inactive', async ({ page, request }) => {
   const book = await (await request.post('/api/worldbooks', { data: { name: 'Binding worldbook' } })).json();
   await request.post(`/api/worldbooks/${book.id}/entries`, { data: { name: 'Alpha', keywords_text: 'alpha', content: 'Worldbook alpha context' } });
   const bases = [];
@@ -246,19 +246,20 @@ test('managed resources bind through Persona and session editors and enter chat 
     bases.push(base);
   }
   await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
-  await page.goto('/settings?tab=personas');
+  const character = await (await request.post('/api/personas', { data: { collection: 'character', name: 'Worldbook character' } })).json();
+  await request.patch(`/api/personas/${character.id}/worldbooks`, { data: { worldbook_ids: [book.id] } });
+  await page.goto('/settings?tab=personas&view=agent');
   await page.getByRole('button', { name: 'Add persona', exact: true }).click();
   let dialog = page.getByRole('dialog');
   await dialog.getByLabel('Name', { exact: true }).fill('Resource binding persona');
   await dialog.getByRole('tab', { name: 'Knowledge', exact: true }).click();
   await dialog.getByRole('checkbox', { name: 'Binding facts', exact: true }).check();
-  await dialog.getByRole('tab', { name: 'Worldbook', exact: true }).click();
-  await dialog.getByRole('checkbox', { name: 'Binding worldbook', exact: true }).check();
+  await expect(dialog.getByRole('tab', { name: 'Worldbook', exact: true })).toHaveCount(0);
   const created = page.waitForResponse((response) => response.url().endsWith('/api/personas') && response.request().method() === 'POST');
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   const persona = await (await created).json();
   await expect(dialog).toHaveCount(0);
-  const session = await (await request.post('/api/sessions', { data: { title: 'Resource binding workflow', current_persona_id: persona.id, personas: [{ persona_id: persona.id, enabled: true }] } })).json();
+  const session = await (await request.post('/api/sessions', { data: { title: 'Resource binding workflow', persona_id: persona.id } })).json();
   await page.goto('/');
   await page.locator('.session-select').filter({ hasText: 'Resource binding workflow' }).click();
   await page.getByRole('button', { name: 'Session settings', exact: true }).click();
@@ -267,9 +268,7 @@ test('managed resources bind through Persona and session editors and enter chat 
   await expect(dialog.getByRole('checkbox', { name: 'Binding facts', exact: true })).toBeChecked();
   await expect(dialog.getByRole('checkbox', { name: 'Binding facts', exact: true })).toBeDisabled();
   await dialog.getByRole('checkbox', { name: 'Session extra facts', exact: true }).check();
-  await dialog.getByRole('tab', { name: 'Worldbook', exact: true }).click();
-  await expect(dialog.getByRole('checkbox', { name: 'Binding worldbook', exact: true })).toBeChecked();
-  await expect(dialog.getByRole('checkbox', { name: 'Binding worldbook', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('tab', { name: 'Worldbook', exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   const bindings = await (await request.get(`/api/sessions/${session.session_id}/knowledge-bases`)).json();
@@ -282,5 +281,6 @@ test('managed resources bind through Persona and session editors and enter chat 
   const steps = await (await request.get(`/api/runs/${result.run.run_id}/steps`)).json();
   const context = steps.find((step: { kind: string }) => step.kind === 'context').metadata;
   expect(context.knowledge.injected).toBe(true); expect(context.knowledge.knowledge_base_ids).toEqual(bases.map((base) => base.id));
-  expect(context.worldbook.injected).toBe(true); expect(context.worldbook.worldbook_ids).toEqual([book.id]);
+  expect(context.worldbook).toBeUndefined();
+  await request.delete(`/api/personas/${character.id}`);
 });

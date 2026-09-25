@@ -1,8 +1,6 @@
 {
   "placeholder": "发送消息…",
   "waiting": "等待你的回复",
-  "single": "单助手",
-  "group": "群聊记录",
   "prefixes": "前缀会作为普通文本发送",
   "messages": "消息",
   "scrollToEnd": "最新消息",

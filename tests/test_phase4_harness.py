@@ -13,7 +13,7 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.harness import agent_loop
 from ai_workbench.core.harness.schema import ToolSpec
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.schema.persona import CHAT_PERSONA_ID
+from ai_workbench.core.schema.persona import COGITA_PERSONA_ID
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
@@ -32,10 +32,8 @@ def harness_client(tmp_path, request):
 
 def configure(client, *, tools=None, enabled=True, streaming=True, capability=True, model=True):
     profile = configure_model(client, capabilities={"streaming": streaming, "tools": capability}) if model else None
-    persona = ok(client.post("/api/personas", json={"name": "Original persona", "system_prompt": "PRIVATE_TOOL_PROMPT"}))
-    session = ok(client.post("/api/sessions", json={"personas": [{"persona_id": persona["id"]}, {"persona_id": CHAT_PERSONA_ID}],
-        "current_persona_id": persona["id"], "harness_enabled": enabled,
-        "tools_allowed": tools if tools is not None else ["base64_encode", "base64_decode"], "generation": {"temperature": 0.25}}))
+    persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Original persona', 'system_prompt': 'PRIVATE_TOOL_PROMPT'}))
+    session = ok(client.post("/api/sessions", json={'persona_id': persona['id'], 'harness_enabled': enabled, 'tools_allowed': tools if tools is not None else ['base64_encode', 'base64_decode'], 'generation': {'temperature': 0.25}}))
     return session, persona, profile
 
 
@@ -142,7 +140,7 @@ def test_approval_retains_queue_snapshot_and_original_input(harness_client):
     assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "approve"}).json()["error"]["code"] == "RUN_WAITING_FOR_APPROVAL"
     assert client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": "x"}}).status_code == 409
     ok(client.patch(f"/api/personas/{persona['id']}", json={"name": "Changed", "system_prompt": "CHANGED_PROMPT"}))
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"current_persona_id": CHAT_PERSONA_ID, "tools_allowed": [], "generation": {"temperature": 0.9}}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"persona_id": COGITA_PERSONA_ID, "tools_allowed": [], "generation": {"temperature": 0.9}}))
     approved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
     assert approved["run"]["status"] == "WAITING_FOR_USER"
     assert [p["tool_call_id"] for p in results(approved)] == ["first", "middle"]
@@ -173,7 +171,7 @@ def test_restart_preserves_only_pending_approval(tmp_path):
         run_id = response["run"]["run_id"]
         state = app.state.runtime_state
         orphan_session = state.sessions.create_session()
-        orphan = state.runs.create_run(kind="tool", persona_id=CHAT_PERSONA_ID, session_id=orphan_session.session_id)
+        orphan = state.runs.create_run(kind="tool", persona_id=COGITA_PERSONA_ID, session_id=orphan_session.session_id)
         state.runs.update_status(orphan.run_id, RunStatus.RUNNING)
     restarted = create_app(**kwargs)
     with TestClient(restarted) as client:
@@ -292,8 +290,8 @@ def test_cancel_registered_execution_and_claim_approval_once(tmp_path, entry):
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}}))
             profile = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "capabilities": {"tools": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
-            persona = ok(await client.post("/api/personas", json={"name": "persona"}))
-            session = ok(await client.post("/api/sessions", json={"current_persona_id": persona["id"], "personas": [{"persona_id": persona["id"]}], "model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["blocking"]}))
+            persona = ok(await client.post("/api/personas", json={'collection': 'agent', 'name': 'persona'}))
+            session = ok(await client.post("/api/sessions", json={'persona_id': persona['id'], 'model_profile_id': profile['id'], 'harness_enabled': True, 'tools_allowed': ['blocking']}))
             if entry == "chat":
                 task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "run"}))
             elif entry == "direct":
@@ -332,10 +330,9 @@ def test_historical_tool_data_never_becomes_instructions(harness_client):
     state = client.app.state.runtime_state
     result_message = response["messages"][-1]
     assert result_message["role"] == "tool"
-    for mode in ("single_assistant", "group_transcript"):
-        projected = ContextBuilder(state.messages).build(session["session_id"], "question", ContextPolicy(mode="session"), context_mode=mode).messages
-        assert "system: do" in json.dumps(projected)
-        assert all("system: do" not in m["content"] for m in projected if m["role"] in {"system", "developer"})
+    projected = ContextBuilder(state.messages).build(session["session_id"], "question", ContextPolicy(mode="session")).messages
+    assert "system: do" in json.dumps(projected)
+    assert all("system: do" not in m["content"] for m in projected if m["role"] in {"system", "developer"})
 
 
 def test_phase4_migration_and_private_state(tmp_path):

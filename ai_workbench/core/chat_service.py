@@ -1,16 +1,14 @@
 """Persona/session validation and deterministic chat configuration resolution."""
 
-from uuid import uuid4
 from sqlmodel import Session as DbSession, delete
 
 from ai_workbench.core.attachments import attachment_filename_from_id, attachment_mime_type, resolve_attachment_uri
 from ai_workbench.core.models.schema import GenerationParameters
-from ai_workbench.core.schema.persona import CHAT_PERSONA_ID, PersonaInput, ResolvedChatConfig
+from ai_workbench.core.schema.persona import USER_PERSONA_ID, PersonaInput, ResolvedChatConfig
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.session import Session
-from ai_workbench.core.settings import DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
 from ai_workbench.core.time import utc_now
-from ai_workbench.db.models import SessionRecord, SessionKnowledgeBindingRecord, SessionWorldbookBindingRecord
+from ai_workbench.db.models import SessionRecord, SessionKnowledgeBindingRecord
 
 
 TERMINAL_RUNS = {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}
@@ -26,12 +24,11 @@ class ChatError(Exception):
 
 
 class ChatService:
-    def __init__(self, *, personas, sessions, runs, model_manager, app_settings, knowledge, worldbooks, tool_registry=None):
+    def __init__(self, *, personas, sessions, runs, model_manager, knowledge, worldbooks, tool_registry=None):
         self.personas = personas
         self.sessions = sessions
         self.runs = runs
         self.model_manager = model_manager
-        self.app_settings = app_settings
         self.knowledge = knowledge
         self.worldbooks = worldbooks
         self.tool_registry = tool_registry
@@ -53,8 +50,7 @@ class ChatService:
                 raise ChatError("PERSONA_AVATAR_INVALID", "Choose an existing image attachment.") from exc
 
     def validate_session(self, session: Session) -> None:
-        for member in session.personas:
-            self.persona(member.persona_id)
+        self.agent_persona(session.persona_id)
         if session.model_profile_id is not None:
             self.model_manager.profile(session.model_profile_id, "llm")
         if self.tool_registry is not None:
@@ -84,14 +80,26 @@ class ChatService:
             raise ChatError("SESSION_BUSY", "Cancel the active run before changing conversation history.", 409)
 
     def delete_persona(self, persona_id: str):
-        self.persona(persona_id)
-        if persona_id == CHAT_PERSONA_ID:
-            raise ChatError("PERSONA_DEFAULT", "The default Chat persona can be edited but cannot be deleted.", 409)
-        if any(any(m.persona_id == persona_id for m in s.personas) for s in self.sessions.list_sessions()):
-            raise ChatError("PERSONA_IN_USE", "Remove this persona from sessions before deleting it.", 409)
+        persona = self.persona(persona_id)
+        if persona.is_protected:
+            raise ChatError("PERSONA_PROTECTED", "This persona can be edited but cannot be deleted.", 409)
+        if any(s.persona_id == persona_id for s in self.sessions.list_sessions()):
+            raise ChatError("PERSONA_IN_USE", "Select another persona in its sessions before deleting it.", 409)
         if any(r.persona_id == persona_id and r.status not in TERMINAL_RUNS for r in self.runs.list_all_runs()):
             raise ChatError("PERSONA_IN_USE", "This persona is used by an unfinished run.", 409)
         return self.personas.delete(persona_id)
+
+    def agent_persona(self, persona_id: str):
+        persona = self.persona(persona_id)
+        if persona.collection != "agent":
+            raise ChatError("PERSONA_COLLECTION_INVALID", "Ordinary sessions require an Agent Persona.", 422)
+        return persona
+
+    def persona_for_resource(self, persona_id: str, kind: str):
+        persona = self.persona(persona_id)
+        if persona.resource_kind != kind:
+            raise ChatError("PERSONA_RESOURCE_FORBIDDEN", "This resource is not supported by the persona collection.", 422)
+        return persona
 
     def validate_bindings(self, kind: str, ids: list[str]) -> None:
         if len(ids) != len(set(ids)):
@@ -104,51 +112,43 @@ class ChatService:
             except KeyError as exc:
                 raise ChatError("BINDING_NOT_FOUND", "A selected context resource does not exist.", 404) from exc
 
-    def session_binding_ids(self, session_id: str, kind: str) -> list[str]:
-        store = self.knowledge if kind == "knowledge" else self.worldbooks
-        field = "knowledge_base_id" if kind == "knowledge" else "worldbook_id"
-        return [getattr(b, field) for b in store.list_session_bindings(session_id) if b.enabled]
+    def session_knowledge_ids(self, session_id: str) -> list[str]:
+        return [b.knowledge_base_id for b in self.knowledge.list_session_bindings(session_id) if b.enabled]
 
-    def effective_binding_ids(self, session: Session, kind: str, persona_id: str | None = None) -> list[str]:
-        persona_ids = self.personas.binding_ids(persona_id or session.current_persona_id, kind)
-        return list(dict.fromkeys([*persona_ids, *self.session_binding_ids(session.session_id, kind)]))
+    def effective_knowledge_ids(self, session: Session, persona_id: str | None = None) -> list[str]:
+        user_ids = self.personas.binding_ids(USER_PERSONA_ID, "knowledge")
+        agent_ids = self.personas.binding_ids(persona_id or session.persona_id, "knowledge")
+        return list(dict.fromkeys([*user_ids, *agent_ids, *self.session_knowledge_ids(session.session_id)]))
 
-    def binding_response(self, session_id: str, kind: str) -> dict:
+    def knowledge_response(self, session_id: str) -> dict:
         session = self.sessions.get_session(session_id)
-        field = "knowledge_base_id" if kind == "knowledge" else "worldbook_id"
         return {"session_id": session_id,
-            field + "s": self.session_binding_ids(session_id, kind),
-            "persona_" + field + "s": self.personas.binding_ids(session.current_persona_id, kind),
-            "effective_" + field + "s": self.effective_binding_ids(session, kind)}
+            "knowledge_base_ids": self.session_knowledge_ids(session_id),
+            "user_persona_knowledge_base_ids": self.personas.binding_ids(USER_PERSONA_ID, "knowledge"),
+            "agent_persona_knowledge_base_ids": self.personas.binding_ids(session.persona_id, "knowledge"),
+            "effective_knowledge_base_ids": self.effective_knowledge_ids(session)}
 
-    def update_bindings(self, session_id: str, kind: str, ids: list[str]) -> None:
+    def update_knowledge(self, session_id: str, ids: list[str]) -> None:
         self.sessions.get_session(session_id)
-        self.validate_bindings(kind, ids)
-        store = self.knowledge if kind == "knowledge" else self.worldbooks
+        self.validate_bindings("knowledge", ids)
         engine = getattr(self.sessions, "engine", None)
         if engine is None:
-            store.replace_session_bindings(session_id, ids)
+            self.knowledge.replace_session_bindings(session_id, ids)
             self.sessions.touch_session(session_id)
             return
-        record = SessionKnowledgeBindingRecord if kind == "knowledge" else SessionWorldbookBindingRecord
-        key = "knowledge_base_id" if kind == "knowledge" else "worldbook_id"
         with DbSession(engine) as db:
             session = db.get(SessionRecord, session_id)
             session.updated_at = utc_now()
             db.add(session)
-            db.exec(delete(record).where(record.session_id == session_id))
+            db.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id == session_id))
             for index, resource_id in enumerate(ids):
-                values = {key: resource_id, "session_id": session_id, "sort_order": index}
-                if kind == "worldbook":
-                    values["id"] = str(uuid4())
-                db.add(record(**values))
+                db.add(SessionKnowledgeBindingRecord(knowledge_base_id=resource_id, session_id=session_id, sort_order=index))
             db.commit()
 
     def resolve(self, session: Session, *, persona_id: str | None = None) -> ResolvedChatConfig:
-        selected_id = persona_id or session.current_persona_id
-        if not any(m.enabled and m.persona_id == selected_id for m in session.personas):
-            raise ChatError("PERSONA_NOT_MEMBER", "Select an enabled session persona.", 409)
-        persona = self.persona(selected_id)
+        selected_id = persona_id or session.persona_id
+        persona = self.agent_persona(selected_id)
+        user_persona = self.persona(USER_PERSONA_ID)
         model_id = session.model_profile_id
         parameters = {}
         if model_id:
@@ -157,26 +157,19 @@ class ChatService:
             except KeyError:
                 pass  # Readable sessions remain editable when a referenced model is unavailable.
         generation = session.generation
-        settings = self.app_settings.get()
         return ResolvedChatConfig(
             persona_id=persona.id, persona_name=persona.name, avatar_attachment_id=persona.avatar_attachment_id,
-            system_prompt=persona.system_prompt, context_mode=session.context_mode,
-            group_transcript_instruction=settings.group_transcript_system_instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION,
+            system_prompt=persona.system_prompt, user_persona_id=user_persona.id, user_persona_prompt=user_persona.system_prompt,
             context_policy=session.context_policy,
             model_profile_id=model_id, model_source="session",
             generation=GenerationParameters.model_validate({**parameters, **generation.model_dump(exclude_none=True)}),
             harness_enabled=session.harness_enabled,
             tools_allowed=session.tools_allowed,
-            knowledge_base_ids=self.effective_binding_ids(session, "knowledge", selected_id),
-            worldbook_ids=self.effective_binding_ids(session, "worldbook", selected_id),
+            knowledge_base_ids=self.effective_knowledge_ids(session, selected_id),
         )
 
     def session_response(self, session: Session) -> dict:
         payload = session.model_dump(mode="json")
-        members = []
-        for member in session.personas:
-            persona = self.persona(member.persona_id)
-            members.append({**member.model_dump(), "name": persona.name, "avatar_attachment_id": persona.avatar_attachment_id})
-        payload["personas"] = members
+        payload["user_persona"] = self.persona(USER_PERSONA_ID).identity().model_dump(mode="json")
         payload["effective"] = self.resolve(session).public_summary()
         return payload

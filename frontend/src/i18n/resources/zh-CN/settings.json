@@ -44,29 +44,25 @@
     "read_file": "读取 data/knowledge 或 data/attachments 下的 UTF-8 文件。",
     "web_search": "调用已配置的 SearXNG JSON 服务进行搜索。",
     "fetch_url": "获取公网 HTTP(S) 地址的文本内容。",
-    "knowledge_search": "搜索当前 Persona/会话绑定的知识库。",
+    "knowledge_search": "搜索用户身份、助手身份与会话绑定的知识库。",
     "base64_encode": "将 UTF-8 文本编码为 Base64。",
     "base64_decode": "将 Base64 解码为 UTF-8 文本。"
   },
   "generalFields": {
     "showFullProcessing": "显示完整处理过程",
-    "memoryEnabled": "启用核心记忆",
-    "memoryContent": "核心记忆",
     "titlesEnabled": "生成会话标题",
     "titleLimit": "标题输入长度上限",
-    "groupInstruction": "群聊记录指令",
     "save": "保存常规设置"
   },
   "backToChat": "返回聊天",
   "generalSections": {
     "conversation": "对话显示",
-    "memory": "核心记忆",
-    "titles": "会话标题",
-    "group": "群聊提示词"
+    "titles": "会话标题"
   },
   "sidebarGroups": {
     "application": "应用偏好",
     "execution": "模型与执行",
-    "context": "角色与上下文"
+    "daily": "日常对话与 Workspace",
+    "roleplay": "角色扮演与 Timeline"
   }
 }

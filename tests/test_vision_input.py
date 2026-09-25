@@ -178,22 +178,19 @@ def test_local_manager_prepares_images_before_admission_off_the_event_loop(tmp_p
     assert len(admitted) == 1
 
 
-@pytest.mark.parametrize("context_mode", ["single_assistant", "group_transcript"])
 @pytest.mark.parametrize("mode,history_images", [("none", 0), ("current_message", 0), ("session", 1), ("recent_messages", 0), ("selected_message", 1)])
-def test_context_selection_keeps_images_with_their_messages(context_mode, mode, history_images):
+def test_context_selection_keeps_images_with_their_messages(mode, history_images):
     store = MessageStore()
     first = store.add_message("s", "user", "first", metadata={"attachments": [{"type": "image", "uri": "local://attachments/aaaa.png"}]})
     store.add_message("s", "assistant", "answer", speaker_name="Alice")
     current = store.add_message("s", "user", "", metadata={"attachments": [{"type": "image", "uri": "local://attachments/bbbb.png"}]})
     policy = ContextPolicy(mode=mode, **({"max_messages": 1} if mode == "recent_messages" else {}))
-    built = ContextBuilder(store).build("s", "", policy, current_message_id=current.message_id, source_message_id=first.message_id, context_mode=context_mode)
+    built = ContextBuilder(store).build("s", "", policy, current_message_id=current.message_id, source_message_id=first.message_id)
     serialized = json.dumps(built.messages)
     assert serialized.count('"attachment_image"') == history_images + 1
     assert "bbbb.png" in serialized
     if history_images:
         assert serialized.index("aaaa.png") < serialized.index("bbbb.png")
-    if context_mode == "group_transcript" and mode == "session":
-        assert serialized.index("[User] first") < serialized.index("aaaa.png") < serialized.index("[Alice]") < serialized.index("bbbb.png")
 
 
 def test_budgeting_and_attachment_switch_happen_before_reading_images(tmp_path, monkeypatch):

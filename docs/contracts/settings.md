@@ -81,7 +81,7 @@ semantics belong to [chat/context](chat-context.md#personas-and-sessions).
 
 The fixed chat header contains the sidebar toggle, title, concrete model selector
 and session settings; the model selector occupies a second row on narrow screens.
-Mode and speaker changes live in the session dialog. The message column is at most
+Agent Persona selection lives in the session dialog. The message column is at most
 48rem wide, with an independent scroller and aligned fixed composer/status area.
 The composer uses InputGroup and a single horizontally scrolling AttachmentGroup;
 its textarea grows to at most 12rem, with a lower cap in short viewports.
@@ -91,21 +91,20 @@ MessageScroller uses pinned @shadcn/react 0.3.1; transcript behavior belongs to
 
 Settings fixes its title in the shared sidebar brand position and a Back to chat footer; the middle navigation
 scrolls independently. SidebarGroup reflects responsibility: Application preferences
-contains General; Models and execution contains Models/Tools; Personas and context
-contains Personas/Knowledge/Worldbook. Each domain is a SidebarMenu. Models, Knowledge
-and Worldbook have parent menu buttons and nested SidebarMenuItem pages; clicking a
-parent only toggles its menu. These menus start collapsed, keep their icons, and
-hide closed pages from keyboard navigation. Groups stay visible; single-page menus
-have direct entries. Parent menus have no selected state; active pages use aria-current.
-The 11 pages replace secondary Tabs:
-
+contains General; Models and execution contains Models/Tools; Daily Chat & Workspace
+contains Personas (User Persona, Agent Personas) and Knowledge; Roleplay & Timeline
+contains Personas (User Personas, Character Personas) and Worldbook. The two Personas
+menus have distinct ids and accessible group context. Each menu uses SidebarMenu;
+parents only toggle their nested pages and have no selected state. Menus start collapsed
+and closed pages leave keyboard navigation. Active pages use aria-current.
 | Domain | Pages / `view` values |
 | --- | --- |
-| General, Personas, Tools | Single page; no `view` |
+| General, Tools | Single page; no `view` |
+| Personas | User Persona `user`, Agent Personas `agent`, User Personas `roleplay_user`, Character Personas `character` |
 | Models | Model profiles `profiles`, Providers `providers`, Local Runtime `localRuntime`, External API `service` |
 | Knowledge, Worldbook | Resources `list`, Global settings `settings` |
 
-Missing/unknown views select profiles or list. Page changes push browser history;
+Missing/unknown views select user for Personas, profiles for Models or list for resources. Page changes push browser history;
 reselecting the effective current page adds no entry. Back to chat navigates to `/`.
 Refresh restores the domain/subpage; resource selection and detail Tabs are local.
 The fixed page header shares Home's primary-row height and toggle position and shows
@@ -117,13 +116,11 @@ screens. Code, logs and tables contain their own overflow.
 ## General
 
 GET/PATCH `/api/settings/general` owns attachment size/count and text-context
-limits, title behavior, Core Memory, group transcript instruction,
-streaming-delta persistence, show_full_processing and nested PetSettings. Derived title/group prompt
-defaults/effective values are read-only; frontend General submissions contain
-only the editable fields shown in that form. Remaining limits/prompts are
-available through this API even when the current form has no dedicated control.
-The form groups conversation display, Core Memory, titles and group prompts,
-with one explicit save action.
+limits, title behavior, streaming-delta persistence, show_full_processing and nested
+PetSettings. The derived title default is read-only; General submissions contain only
+fields shown in that form. Other attachment limits/title prompts remain available through
+the API. The form groups conversation display and titles with one explicit save action.
+Core Memory fields and group transcript instructions are removed and rejected by PATCH.
 
 show_full_processing is a strict boolean, default false, labeled Show full
 processing history in General. It controls initial expansion of active reply
@@ -218,10 +215,14 @@ manual value while switching modes. Defaults and execution belong to Models.
 
 ## Other domains
 
-Personas owns identity, avatar, prompt and ordered Knowledge/Worldbook bindings.
-Session configuration owns model selection, context, generation, the Harness
-boolean and a catalog-backed tool list. Resources show locked Persona bindings
-and editable session additions; there are no Persona configuration overrides.
+The four Persona collections share identity, avatar and prompt editing. User Persona
+opens its singleton editor directly without create/delete controls. The other collections
+use the shared list/dialog editor; Cogita has no delete control. User and Agent expose
+only Knowledge; roleplay User and Character expose only Worldbook. Collection pages keep
+drafts within editor tabs, guard unsaved navigation and clean unreferenced temporary avatars.
+Session configuration owns one Agent Persona selection, model, context, optional Temperature,
+Harness and a catalog-backed tool list. Knowledge shows separate locked User/Agent bindings
+and editable session additions. Worldbook and group controls are absent from sessions.
 See [chat/context](chat-context.md). Harness settings own only the optional
 searxng_base_url through `/api/tools/settings`.
 

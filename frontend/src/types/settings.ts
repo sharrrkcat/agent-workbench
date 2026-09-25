@@ -18,13 +18,8 @@ export type GeneralSettings = {
   auto_generate_session_titles: boolean;
   session_title_prompt: string;
   session_title_max_input_chars: number;
-  group_transcript_system_instruction: string | null;
-  core_memory_content: string;
-  core_memory_enabled: boolean;
   pet: PetSettings;
   session_title_prompt_default: string;
-  group_transcript_system_instruction_default: string;
-  group_transcript_system_instruction_effective: string;
 };
 
 export type PetSettingsPatch = {
@@ -36,7 +31,5 @@ export type GeneralSettingsPatch = Partial<
     GeneralSettings,
     | 'pet'
     | 'session_title_prompt_default'
-    | 'group_transcript_system_instruction_default'
-    | 'group_transcript_system_instruction_effective'
   >
 > & { pet?: PetSettingsPatch };

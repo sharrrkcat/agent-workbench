@@ -313,7 +313,7 @@ def test_documented_patch_types_distinguish_omission_and_null(api):
     client, _ = api
     document = client.get("/openapi.json").json()
     cases = [
-        ("/api/settings/general", {"group_transcript_system_instruction": None}, {"show_full_processing": None}),
+        ("/api/settings/general", {}, {"show_full_processing": None}),
         ("/api/models/settings", {"default_model_profile_id": None}, {"max_request_mb": None}),
         ("/api/knowledge/settings", {"default_min_score": None}, {"default_chunk_size": None}),
         ("/api/worldbook/settings", {}, {"worldbook_enabled": None}),
@@ -341,20 +341,18 @@ def test_management_reads_updates_and_deletions_keep_response_shapes(api):
     assert client.post("/api/data/attachments/scan-orphans").json()["orphans"] == []
     assert client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}).json()["errors"] == []
 
-    persona = client.post("/api/personas", json={"name": "Fixture persona"}).json()
+    persona = client.post("/api/personas", json={'collection': 'agent', 'name': 'Fixture persona'}).json()
     persona_path = f"/api/personas/{persona['id']}"
     assert client.get(persona_path).json()["name"] == "Fixture persona"
     assert client.patch(persona_path, json={"system_prompt": ""}).json()["system_prompt"] == ""
-    for resource, field in (("knowledge-bases", "knowledge_base_ids"), ("worldbooks", "worldbook_ids")):
+    for resource, field in (("knowledge-bases", "knowledge_base_ids"),):
         assert client.get(persona_path + "/" + resource).json()[field] == []
         assert client.patch(persona_path + "/" + resource, json={field: []}).json()[field] == []
     session = client.post("/api/sessions", json={}).json()
     session_path = f"/api/sessions/{session['session_id']}"
     assert client.get(session_path).status_code == 200
-    assert client.get(session_path + "/personas").status_code == 200
-    assert client.patch(session_path + "/personas", json={
-        "personas": [{"persona_id": persona["id"]}], "current_persona_id": persona["id"],
-    }).json()["current_persona_id"] == persona["id"]
+    assert client.get(session_path + "/personas").status_code == 404
+    assert client.patch(session_path, json={"persona_id": persona["id"]}).json()["persona_id"] == persona["id"]
     assert client.delete(session_path).json()["deleted"]
     assert client.delete(persona_path).json()["deleted"]
 

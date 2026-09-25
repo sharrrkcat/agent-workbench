@@ -17,8 +17,6 @@ GeneralSettingsRequest = patch_model("GeneralSettingsRequest", AppSettings, fiel
 
 class GeneralSettingsResponse(AppSettings):
     session_title_prompt_default: str = Field(description="Built-in title prompt.", json_schema_extra={"readOnly": True})
-    group_transcript_system_instruction_default: str = Field(json_schema_extra={"readOnly": True})
-    group_transcript_system_instruction_effective: str = Field(json_schema_extra={"readOnly": True})
 
 
 class HealthResponse(ApiModel):

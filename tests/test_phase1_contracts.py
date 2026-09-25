@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.personas import PersonaStore
-from ai_workbench.core.schema.persona import CHAT_PERSONA_ID, PersonaInput
+from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, PersonaInput
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.retrieval import RetrievalCandidate, rrf_merge, search_knowledge
@@ -42,8 +42,8 @@ def create_session(client: TestClient) -> dict[str, Any]:
 
 def test_persona_seeds_are_database_records_with_strict_input() -> None:
     catalog = PersonaStore()
-    assert [p.name for p in catalog.list()] == ["Chat", "Translate"]
-    assert catalog.get(CHAT_PERSONA_ID).system_prompt == "You are a helpful assistant."
+    assert [p.name for p in catalog.list()] == ["Cogita", "User"]
+    assert catalog.get(COGITA_PERSONA_ID).system_prompt == "You are a helpful assistant."
     with pytest.raises(KeyError):
         catalog.get("unknown")
     with pytest.raises(ValidationError):
@@ -60,7 +60,7 @@ def test_prefixes_are_plain_chat_text_and_openai_responses_are_saved(tmp_path: P
         response = client.post(f"/api/sessions/{session_id}/messages", json={"content": text})
         assert response.status_code == 200, response.text
         payload = response.json()
-        assert payload["run"]["persona_id"] == CHAT_PERSONA_ID
+        assert payload["run"]["persona_id"] == COGITA_PERSONA_ID
         assert "target" not in payload["run"]
         assert payload["messages"][0]["parts"][0]["text"] == text
         assert payload["messages"][1]["parts"][0]["text"] == "reply"
@@ -78,7 +78,7 @@ def test_waiting_run_blocks_new_chat_until_explicit_resolution(tmp_path: Path) -
     session = create_session(client)
     state = client.app.state.runtime_state
     config = state.chat_service.resolve(state.sessions.get_session(session["session_id"]))
-    waiting = state.runs.create_run(kind="chat", persona_id=CHAT_PERSONA_ID, session_id=session["session_id"], config_snapshot=config.model_dump(mode="json"))
+    waiting = state.runs.create_run(kind="chat", persona_id=COGITA_PERSONA_ID, session_id=session["session_id"], config_snapshot=config.model_dump(mode="json"))
     state.runs.update_status(waiting.run_id, status=RunStatus.WAITING_FOR_USER, current_step="approval")
     state.sessions.set_waiting_run(session["session_id"], waiting.run_id)
 
@@ -95,7 +95,7 @@ def test_new_schemas_forbid_removed_fields_and_limit_step_kinds() -> None:
     with pytest.raises(ValidationError):
         MessageSchema(message_id="m", session_id="s", role="user", parts=[], **{"action" + "_id": "old"})
     with pytest.raises(ValidationError):
-        RunSchema(run_id="r", session_id="s", kind="chat", persona_id=CHAT_PERSONA_ID, **{"target" + "_id": "old"})
+        RunSchema(run_id="r", session_id="s", kind="chat", persona_id=COGITA_PERSONA_ID, **{"target" + "_id": "old"})
     with pytest.raises(ValidationError):
         RunStepSchema(step_id="st", run_id="r", kind="legacy")
 

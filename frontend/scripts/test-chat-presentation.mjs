@@ -176,7 +176,13 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(waiting.includes(i18n.t('runs:reject')));
   assert.doesNotMatch(waiting, /role="switch"/, 'Approval is one button without a nested switch');
   assert.match(render(buildReply(failedEmpty, [], []), false), /MODEL_NOT_CONFIGURED/);
+  viewState = { ...viewState, currentSession: { ...session, user_persona: { id: 'user', name: 'Current user', avatar_attachment_id: null } } };
   const imageHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: imageOnly }));
+  assert.match(imageHtml, /Current user/);
+  viewState.currentSession.user_persona.name = 'Updated user';
+  const renamedUser = renderToStaticMarkup(React.createElement(MessageBubble, { message: imageOnly }));
+  assert.match(renamedUser, /Updated user/);
+  assert.doesNotMatch(renamedUser, /Current user/);
   assert.match(imageHtml, /attachments\/aaaa.png/);
   assert.equal((imageHtml.match(/<img /g) || []).length, 1);
   assert.doesNotMatch(imageHtml, /base64/);

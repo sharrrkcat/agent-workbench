@@ -1,8 +1,6 @@
 {
   "placeholder": "Message the chat…",
   "waiting": "Waiting for your reply",
-  "single": "Single assistant",
-  "group": "Group transcript",
   "prefixes": "Prefixes are sent as ordinary text",
   "messages": "Messages",
   "scrollToEnd": "Latest messages",

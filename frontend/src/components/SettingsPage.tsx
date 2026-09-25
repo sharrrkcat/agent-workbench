@@ -59,7 +59,7 @@ export function SettingsPage({
           <div className="settings-content">
             {route.section === 'general' ? <GeneralPanel /> : null}
             {route.section === 'models' ? <ModelsPanel view={route.view} onNavigate={onNavigate} /> : null}
-            {route.section === 'personas' ? <PersonasPanel /> : null}
+            {route.section === 'personas' ? <PersonasPanel key={route.view} collection={route.view} /> : null}
             {route.section === 'knowledge' ? <KnowledgePanel view={route.view} /> : null}
             {route.section === 'worldbook' ? <WorldbookPanel view={route.view} /> : null}
             {route.section === 'tools' ? <ToolsPanel /> : null}

@@ -7,20 +7,31 @@ syntax, allowlists, bounded loops and approvals.
 
 ## Personas and sessions
 
-Personas are strict editable database records, never executable agents,
-scripts, manifests or extension registrations. Fields are id, name, optional
-avatar_attachment_id, system_prompt and timestamps. Ordered Knowledge/Worldbook
-bindings are stored separately. The avatar references
-an existing local image filename; bytes remain in the attachment store.
+Personas are strict editable database records with id, immutable collection, name,
+optional avatar_attachment_id, system_prompt and timestamps. They are identities,
+never executable agents, scripts, manifests or extension registrations. All four
+collections share CRUD and ordered bindings. Avatars reference existing local image
+filenames; bytes remain in the attachment store.
 
-Migrations seed editable Chat and Translate records. New sessions bind Chat as
-their only member/current speaker. Chat may be edited but not deleted. Persona
-deletion fails while referenced by a session or unfinished run. Historical
-messages retain speaker id/name/avatar snapshots.
+| Collection | Settings page | Resources | Execution |
+| --- | --- | --- | --- |
+| user | User Persona | Knowledge | Singleton user background and display identity |
+| agent | Agent Personas | Knowledge | Selected ordinary-session assistant |
+| roleplay_user | User Personas | Worldbook | Management only |
+| character | Character Personas | Worldbook | Management only |
 
-`session_personas` is an ordered enabled member list. current_persona_id must
-refer to an enabled member. Group sessions generate one response from the
-manually selected speaker per input, without automatic round-robin.
+Migrations seed User (empty prompt) and Cogita (helpful-assistant prompt), with no
+roleplay defaults. Both may be edited but not deleted; protection follows stable
+ids and is exposed as read-only is_protected. POST requires a creatable collection;
+PATCH cannot change collection. The user singleton cannot be created through CRUD.
+Persona deletion fails while selected by a session or referenced by an unfinished run.
+Historical assistant messages retain identity/avatar snapshots. SessionResponse.user_persona
+contains the current singleton identity; all user-message and selected-context labels use
+its latest name/avatar without rewriting history. User messages reference the singleton id
+and do not snapshot its avatar. Updating the singleton notifies all sessions.
+
+Each session has one persona_id, initially Cogita; selection accepts only agent records.
+There are no members, speaker lists, conversation modes or group transcripts.
 New sessions persist a concrete model selection. When POST omits model_profile_id
 or supplies null, select the enabled global-default LLM if present, otherwise the
 first enabled LLM in profile-list order (name, then id). No eligible LLM leaves
@@ -35,26 +46,26 @@ Resolved configuration reports model_source=session; there is no inherited model
 source at execution time.
 
 Context, generation, Harness and tool selection belong only to the session. Context defaults to
-session history with explicit attachments; generation defaults to {} and its
-non-null fields override the selected model's parameters. Neither object is
-nullable. Harness defaults off. New sessions omit tools_allowed to allow all
+session history with explicit attachments. Session generation defaults to {} and accepts only
+optional temperature (0..2); a non-null value overrides the model. {} or temperature:null
+clears the override; PATCH omission preserves it. Other model generation parameters remain
+inherited and available in the resolved configuration. Neither context nor generation is nullable. Harness defaults off. New sessions omit tools_allowed to allow all
 currently registered built-ins; an explicit [] allows none. Saved allowlists
 do not change when the catalog grows. These settings never depend on Persona.
 
-Personas own ordered Knowledge and Worldbook bindings. Each run combines only
-the current speaker's bindings with independent ordered session additions,
-deduplicating by id in first-occurrence order. Clearing additions never removes
-Persona bindings; changing speaker preserves additions, including overlaps.
-Resource enablement and retrieval/matching limits still apply. Retrieval and
-Worldbook receive resolved ids explicitly.
+Each run combines Knowledge bindings in User Persona, selected Agent Persona, then
+session-addition order, deduplicating by first occurrence. Clearing additions never removes
+Persona bindings; changing the Agent preserves additions, including overlaps. Resource
+enablement and retrieval limits still apply. Retrieval receives resolved ids explicitly.
+Worldbook bindings are restricted to roleplay_user and character collections and do not
+participate in ordinary sessions. Wrong collection/resource combinations return 422.
 
 | Endpoint | Ownership |
 | --- | --- |
-| `/api/personas` and `/{id}` | Strict Persona CRUD |
+| `/api/personas` and `/{id}` | Strict Persona CRUD; optional collection list filter |
 | `/api/personas/{id}/knowledge-bases`, `/worldbooks` | Persona bindings |
 | `/api/sessions` and `/{id}` | Session creation, selection and configuration |
-| `/api/sessions/{id}/personas` | Ordered members/current speaker |
-| `/api/sessions/{id}/knowledge-bases`, `/worldbooks` | Session additions, Persona ids and effective ids |
+| `/api/sessions/{id}/knowledge-bases` | Session additions, User/Agent Persona ids and effective ids |
 | `/api/sessions/{id}/messages` | History and new input |
 | `/api/messages/{id}`, `/edit` | User-message deletion and edit |
 | `/api/runs/{id}`, `/{id}/retry` | Whole-reply deletion and chat retry |
@@ -70,18 +81,20 @@ session, or creates an empty one when it was the last. Delayed deletion/replacem
 responses preserve subsequent session selections. Failed deletion leaves the
 displayed state intact and reports the error.
 
-Binding PATCH bodies contain only knowledge_base_ids or worldbook_ids arrays;
-[] clears additions. Responses expose that array, read-only persona_* ids and
-effective_* ids. There is no mode field. The UI locks the Persona section and
-edits additions separately; it never writes effective ids back as additions.
+Session binding PATCH accepts only knowledge_base_ids; [] clears additions. Responses
+include user_persona_knowledge_base_ids, agent_persona_knowledge_base_ids and
+effective_knowledge_base_ids. The UI locks each Persona section and edits additions
+separately; it never writes effective ids back as additions. Persona resource endpoints
+accept the matching knowledge_base_ids or worldbook_ids array; [] clears its bindings.
 
 ## Configuration snapshots and context
 
 Each run privately stores the resolved chat configuration in
-config_snapshot_json. Its prompt/generation/context remain stable through
-Persona edits, speaker switches and approval waits. Public metadata exposes
-only ids, names, model selection, context mode, limits and binding ids.
-Retry selects the original run's speaker and resolves a new configuration. It
+config_snapshot_json. Its Agent prompt, User Persona background, bindings, generation and context remain stable
+through Persona edits, selection changes and approval waits. Public metadata exposes
+only identities, model selection, context policy, limits and binding ids.
+Retry resolves a new configuration for the original run's Agent Persona without changing
+the session selection. A missing/deleted Persona fails before pruning. It
 keeps the input user message and deletes the selected run plus all later
 conversation messages/runs. Tool runs cannot be retried as model answers.
 DELETE /api/runs/{id} deletes only that reply's messages, steps, events and
@@ -92,28 +105,27 @@ commit in one transaction. Responses and history_pruned events return
 deleted_message_ids/deleted_run_ids. Message-level retry is removed; individual
 assistant/tool deletion is rejected. Referenced attachment cleanup follows commit.
 
-ContextBuilder supports single_assistant and group_transcript projection, with
-none/current_message/recent_messages/session/selected_message policies, message
-and character bounds and explicit attachments. The current Persona's nonempty
-system prompt is always inserted once, independently of history mode; there is
-no include_system_prompt switch. The chat header selects the concrete model;
-the session dialog owns members/current speaker, conversation mode and configuration.
-Selected-message context uses an explicit source message and is cleared on session changes.
-Group transcripts preserve historical speaker labels and reply as the current
-speaker. Context sources are separate bounded data blocks, with compact
-diagnostics rather than copied content in metadata.
+ContextBuilder projects ordinary user/assistant history with none/current_message/
+recent_messages/session/selected_message policies, message/character bounds and explicit
+attachments. The selected Agent's nonempty system prompt is inserted once independently
+of history mode; there is no include_system_prompt switch. The header selects the concrete
+model; the session dialog owns one Agent selection and configuration. Selected-message
+context uses an explicit source message and clears on session changes. Context sources
+are bounded data blocks, with compact diagnostics rather than copied content in metadata.
 
-Core Memory injects trimmed core_memory_content when enabled and nonempty,
-wrapped in `<core_memory>` tags. Metadata contains flags, length, skip reason
-and warnings only. Configuration belongs to [settings](settings.md); reset
-effects belong to [data layout](../DATA_LAYOUT.md#database-revisions).
+The singleton User Persona is always active. Its trimmed nonempty system_prompt is
+background data wrapped in <user_persona> tags and appended once to the system context;
+empty text produces no block. The run snapshots this text before execution. Compact
+user_persona metadata contains identity, injection status, length and empty skip reason,
+never the content. General settings contain no Core Memory fields or enable switch.
 
 Worldbook is deterministic matching over current user text and configured
 keywords. Enabled entries obey entry/context limits, case sensitivity,
 whole-word matching and recursion depth. Books/entries have explicit CRUD;
-match-test is diagnostic and changes no session/run. Persona/session bindings
-use the resolution above. Memory, Worldbook, Knowledge and attachment content
-are data, never runtime instructions or routing decisions.
+match-test is diagnostic and changes no session/run. It requires explicit worldbook_ids
+and has no session target. Worldbooks have no ordinary-chat binding or injection path;
+roleplay Persona bindings are stored for later workflows. User Persona, Worldbook,
+Knowledge and attachment content are data, never routing decisions.
 
 Worldbook management opens inside its settings panel, with Configuration,
 Entries and Match test tabs. Existing books and newly saved books open Entries.
@@ -155,8 +167,7 @@ explicit separate operation and considers Persona avatar references.
 
 User images persist only as metadata.attachments references; message parts do not duplicate them.
 ContextBuilder selects history by policy, message count and character budget before reading images.
-Image bytes do not consume the text budget. Single-assistant projection keeps images with their user message;
-group projection interleaves each speaker label, text and images. Image-only messages can be selected context.
+Image bytes do not consume the text budget. History projection keeps images with their user message. Image-only messages can be selected context.
 Included references become OpenAI image_url parts immediately before inference, including historical follow-ups.
 The selected LLM must advertise vision; otherwise UNSUPPORTED_CAPABILITY ends the run.
 Missing selected images return ATTACHMENT_NOT_FOUND; corrupt local images and request limits follow
@@ -174,7 +185,7 @@ finite JSON object arguments. Results require tool role, matching call id,
 success/error/rejected/cancelled status, optional JSON data/error fields and
 truncation flag. Calls in one assistant message have distinct part ids.
 Live loops use native assistant/tool pairs. Historical tool parts are quoted
-as ordinary/group context data, allowing selected or truncated history without
+as ordinary context data, allowing selected or truncated history without
 orphan protocol calls. They never become system/developer instructions.
 
 Reasoning is assistant-only strict {id,type:reasoning,text} data. The shared
@@ -202,7 +213,8 @@ and warnings, never full part bodies, prompts or secrets. Stream merging belongs
 to [runs/streaming](runs-streaming.md).
 
 User messages use right-aligned secondary bubbles; assistant replies use open
-body layout. Both retain historical identity, avatars and time. Message bodies
+body layout. Assistant replies retain historical identity and avatars; user rows use the current
+User Persona identity. Both retain message timestamps. Message bodies
 use 16px text with Markdown headings, lists, quotes, code, tables and media.
 Wide code, tables and tool results scroll inside their own bounds; tool results
 are limited to 320px height on desktop and 240px below 768px.
@@ -226,7 +238,7 @@ releases the main model lease, then requests a title using max_tokens=64 and
 temperature=0. Only an empty/default title is eligible. Missing auxiliary
 selection, failed/empty output or concurrent manual renaming leaves the title
 unchanged and does not affect chat success. The bounded current user text is
-the only input: no history, attachments, Memory, Worldbook or Knowledge.
+the only input: no history, attachments, Persona context, Worldbook or Knowledge.
 
 ## HTTP schemas
 

@@ -9,14 +9,14 @@ import {
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { ArrowDown, ArrowUp, ShieldCheck, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import type { ContextPolicy, GenerationParameters } from '../../types/chat';
+import type { ContextPolicy, SessionGenerationParameters } from '../../types/chat';
 import type { ModelProfile } from '../../types/models';
 import type { HarnessTool } from '../../types/tools';
 import { API_BASE_URL } from '../../api/url';
@@ -24,16 +24,15 @@ import { resolveAttachmentUrlFromBase } from '../../api/url';
 
 export function PersonaAvatar({ name, attachmentId }: { name: string; attachmentId: string | null }) {
   return (
-    <span className="persona-avatar">
+    <Avatar className="persona-avatar">
       {attachmentId ? (
-        <img
+        <AvatarImage
           src={resolveAttachmentUrlFromBase(API_BASE_URL, `local://attachments/${attachmentId}`)}
           alt={name}
         />
-      ) : (
-        <UserRound size={19} aria-hidden="true" />
-      )}
-    </span>
+      ) : null}
+      <AvatarFallback><UserRound aria-hidden="true" /></AvatarFallback>
+    </Avatar>
   );
 }
 
@@ -199,55 +198,25 @@ export function GenerationFields({
   value,
   onChange,
 }: {
-  value: GenerationParameters;
-  onChange: (value: GenerationParameters) => void;
+  value: SessionGenerationParameters;
+  onChange: (value: SessionGenerationParameters) => void;
 }) {
   const { t } = useTranslation('llm');
   const { t: p } = useTranslation('personas');
-  const fields: Array<
-    [keyof Omit<GenerationParameters, 'stop'>, number | undefined, number | undefined, number]
-  > = [
-    ['temperature', 0, 2, 0.1],
-    ['top_p', 0, 1, 0.05],
-    ['max_tokens', 1, undefined, 1],
-    ['presence_penalty', -2, 2, 0.1],
-    ['frequency_penalty', -2, 2, 0.1],
-    ['seed', undefined, undefined, 1],
-  ];
-  const stopValue = Array.isArray(value.stop) ? value.stop.join('\n') : value.stop || '';
   return (
-    <FieldGroup className="grid gap-4 sm:grid-cols-2">
-      {fields.map(([key, min, max, step]) => (
-        <Field key={key}>
-          <FieldLabel>{t('params.' + key)}</FieldLabel>
-          <Input
-            type="number"
-            min={min}
-            max={max}
-            placeholder={p('modelDefault')}
-            step={step}
-            value={Number.isNaN(value[key]) ? '' : (value[key] ?? '')}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                [key]: event.currentTarget.value === '' ? null : Number(event.currentTarget.value),
-              })
-            }
-          />
-        </Field>
-      ))}
-      <Field>
-        <FieldLabel>{t('params.stop')}</FieldLabel>
-        <Textarea
-          rows={2}
-          value={stopValue}
-          onChange={(e) => {
-            const values = e.target.value.split('\n');
-            onChange({ ...value, stop: e.target.value ? (values.length > 1 ? values : values[0]) : null });
-          }}
-        ></Textarea>
-      </Field>
-    </FieldGroup>
+    <Field>
+      <FieldLabel htmlFor="session-temperature">{t('params.temperature')}</FieldLabel>
+      <Input
+        id="session-temperature"
+        type="number"
+        min={0}
+        max={2}
+        step={0.1}
+        placeholder={p('modelDefault')}
+        value={value.temperature ?? ''}
+        onChange={(event) => onChange({ temperature: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })}
+      />
+    </Field>
   );
 }
 

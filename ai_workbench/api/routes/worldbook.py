@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import request_body
 from ai_workbench.api.schemas.common import error_responses, patch_model
-from ai_workbench.api.schemas.chat import SessionWorldbooksResponse
 from ai_workbench.api.schemas.resources import (
     WorldbookResponse, WorldbookSettingsResponse, WorldbookEntryResponse,
     WorldbookDeleted, WorldbookEntryDeleted, WorldbookReordered, WorldbookMatchResponse,
@@ -36,18 +35,11 @@ class EntryReorderRequest(BaseModel):
     entry_ids: list[str] = Field(min_length=1)
 
 
-class SessionWorldbooksPatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    worldbook_ids: list[str] = Field(max_length=128)
-
-
 class MatchTestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str = ""
-    worldbook_ids: list[str] | None = None
-    session_id: str | None = None
+    worldbook_ids: list[str]
 
 
 @router.get("/worldbook/settings", response_model=WorldbookSettingsResponse, response_model_exclude_unset=True,
@@ -198,38 +190,13 @@ def reorder_entries(worldbook_id: str, payload: EntryReorderRequest, state: Runt
         raise_error(404, "WORLDBOOK_NOT_FOUND", f"Worldbook not found: {worldbook_id}")
 
 
-@router.get("/sessions/{session_id}/worldbooks", response_model=SessionWorldbooksResponse, response_model_exclude_unset=True,
-    responses=error_responses(400, 404))
-def get_session_worldbooks(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    _require_store(state)
-    _require_session(state, session_id)
-    return state.chat_service.binding_response(session_id, "worldbook")
-
-
-@router.patch("/sessions/{session_id}/worldbooks", response_model=SessionWorldbooksResponse, response_model_exclude_unset=True,
-    responses=error_responses(400, 404, 409, 422))
-async def patch_session_worldbooks(session_id: str, payload: SessionWorldbooksPatch, state: RuntimeState = Depends(get_state)) -> dict:
-    _require_store(state)
-    _require_session(state, session_id)
-    state.chat_service.update_bindings(session_id, "worldbook", payload.worldbook_ids)
-    state.events.emit("session_updated", session_id=session_id,
-        payload={"session": state.chat_service.session_response(state.sessions.get_session(session_id))})
-    return state.chat_service.binding_response(session_id, "worldbook")
-
-
 @router.post("/worldbooks/match-test", response_model=WorldbookMatchResponse, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 422))
 def match_test(payload: MatchTestRequest, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
     settings = state.worldbooks.get_settings()
     warnings: list[dict] = []
-    if payload.worldbook_ids is not None:
-        worldbook_ids = _dedupe(payload.worldbook_ids)
-    elif payload.session_id:
-        _require_session(state, payload.session_id)
-        worldbook_ids = state.chat_service.effective_binding_ids(state.sessions.get_session(payload.session_id), "worldbook")
-    else:
-        raise_error(422, "WORLDBOOK_MATCH_TARGET_REQUIRED", "worldbook_ids or session_id is required.")
+    worldbook_ids = _dedupe(payload.worldbook_ids)
 
     try:
         match_data = collect_worldbook_matches(
@@ -282,13 +249,6 @@ def match_test(payload: MatchTestRequest, state: RuntimeState = Depends(get_stat
 def _require_store(state: RuntimeState) -> None:
     if state.worldbooks is None:
         raise_error(400, "WORLDBOOK_STORE_UNAVAILABLE", "Worldbook APIs require the SQLite store.")
-
-
-def _require_session(state: RuntimeState, session_id: str) -> None:
-    try:
-        state.sessions.get_session(session_id)
-    except KeyError:
-        raise_error(404, "SESSION_NOT_FOUND", f"Session not found: {session_id}")
 
 
 def _dedupe(values: list[str]) -> list[str]:

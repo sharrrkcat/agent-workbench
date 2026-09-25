@@ -6,11 +6,11 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelsStore } from '../store/useModelsStore';
 import { useCogitaStore } from '../store/useCogitaStore';
-import type { SettingsSection } from './settings/navigation';
+import type { SettingsRoute } from './settings/navigation';
 import { SessionSettingsDialog } from './personas/SessionSettingsDialog';
 import { ModelSelect } from './personas/ConfigurationFields';
 
-export function ChatHeader({ onOpenSettings }: { onOpenSettings: (section?: SettingsSection) => void }) {
+export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: SettingsRoute) => void }) {
   const { t } = useTranslation('personas');
   const [editing, setEditing] = useState(false);
   const session = useCogitaStore((state) => state.currentSession);
@@ -60,7 +60,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (section?: Sett
           onClose={() => setEditing(false)}
           onManagePersonas={() => {
             setEditing(false);
-            onOpenSettings('personas');
+            onOpenSettings({ section: 'personas', view: 'agent' });
           }}
         />
       ) : null}

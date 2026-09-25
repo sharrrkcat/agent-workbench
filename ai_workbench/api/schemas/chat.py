@@ -9,7 +9,7 @@ from ai_workbench.core import message_parts as parts
 from ai_workbench.core.conversation_history import HistoryPruned
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.schema.message import MessageSchema
-from ai_workbench.core.schema.persona import Persona, PersonaInput, ResolvedChatConfig, SessionPersona
+from ai_workbench.core.schema.persona import Persona, PersonaIdentity, PersonaInput, ResolvedChatConfig
 from ai_workbench.core.schema.run import RunSchema, RunStepSchema
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
@@ -34,19 +34,16 @@ MessagePart = Annotated[
     Field(discriminator="type"),
 ]
 
-PersonaResponse = public_model("PersonaResponse", Persona)
+PersonaResponse = public_model("PersonaResponse", Persona, fields={
+    "is_protected": (bool, Field(description="Protected identities can be edited but cannot be deleted.", json_schema_extra={"readOnly": True})),
+})
 PersonaPatch = patch_model("PersonaPatch", PersonaInput)
 ResolvedConfiguration = public_model("ResolvedConfiguration", ResolvedChatConfig,
-    omit={"system_prompt", "group_transcript_instruction"})
-
-
-class SessionMember(SessionPersona):
-    name: str
-    avatar_attachment_id: str | None
+    omit={"system_prompt", "user_persona_prompt"})
 
 
 SessionResponse = public_model("SessionResponse", Session, fields={
-    "personas": (list[SessionMember], ...),
+    "user_persona": (PersonaIdentity, ...),
     "effective": (ResolvedConfiguration, ...),
     "title_generation_metadata": (JsonObject, Field(description="Auxiliary-title status diagnostics, without prompts or model content.")),
 })
@@ -161,11 +158,6 @@ RunEventResponse = Annotated[
 ]
 
 
-class SessionPersonasResponse(ApiModel):
-    personas: list[SessionMember]
-    current_persona_id: str
-
-
 class KnowledgeBindingsResponse(ApiModel):
     knowledge_base_ids: list[str]
 
@@ -176,14 +168,9 @@ class WorldbookBindingsResponse(ApiModel):
 
 class SessionKnowledgeResponse(KnowledgeBindingsResponse):
     session_id: str
-    persona_knowledge_base_ids: list[str]
+    user_persona_knowledge_base_ids: list[str]
+    agent_persona_knowledge_base_ids: list[str]
     effective_knowledge_base_ids: list[str]
-
-
-class SessionWorldbooksResponse(WorldbookBindingsResponse):
-    session_id: str
-    persona_worldbook_ids: list[str]
-    effective_worldbook_ids: list[str]
 
 
 class SessionDeleted(ApiModel):

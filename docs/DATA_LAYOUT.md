@@ -25,7 +25,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0019_asr`; there are 24 current business tables.
+Alembic head is `0021_persona_collections`; there are 22 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -181,3 +181,14 @@ These inputs have no TTL, voice IDs or persistent transcript records and do not 
 a dry run and `--yes` deletes only the selected database file.
 `scripts/cleanup_attachments.py` performs separate explicit orphan cleanup.
 No schema revision invokes either file-maintenance workflow.
+
+Revision `0020_directory_models` removes incompatible model drafts and their unfinished
+continuations, clears affected model selections and narrows local-only source constraints.
+Other records and all model/attachment/runtime files survive without data conversion.
+
+Revision `0021_persona_collections` recreates disposable Personas and sessions, removes
+session members and Worldbook additions, and clears Persona/Knowledge bindings, messages,
+runs, steps, events and private continuations. It resets the app_settings row and seeds
+only Cogita and the singleton User Persona; old Core Memory text is not converted.
+Knowledge/Worldbook resources and settings, model/provider/runtime records and every file
+directory survive. Repeating upgrade preserves newly saved identities and configuration.

@@ -26,7 +26,6 @@ export type Worldbook = {
   description: string;
   enabled: boolean;
   entry_count?: number;
-  active_binding_count?: number;
   created_at: string;
   updated_at: string;
 };
@@ -58,11 +57,4 @@ export type WorldbookMatchResponse = {
     activation_mode: ActivationMode; matched_keywords: string[]; matched_by_recursion: boolean;
     recursion_depth: number; sort_order: number; content_preview: string;
   }>;
-};
-
-export type SessionWorldbooksResponse = {
-  session_id: string;
-  persona_worldbook_ids: string[];
-  worldbook_ids: string[];
-  effective_worldbook_ids: string[];
 };

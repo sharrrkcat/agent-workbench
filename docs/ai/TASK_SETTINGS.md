@@ -17,12 +17,13 @@ Storage and revision effects belong to [data layout](../DATA_LAYOUT.md).
 
 ## Verification
 
-Start with tests/test_chat_configuration.py, test_pet_foundation.py,
+Start with tests/test_persona_collections.py, test_chat_configuration.py, test_pet_foundation.py,
 test_resource_management.py and test_openapi_contracts.py under tests/ plus
 the affected model/runtime/tool tests. Frontend scripts cover session settings,
 Pet foundations, runtime maintenance, resources and reply presentation.
 Check omission/null/empty semantics, secret clearing, reference guards, draft
 persistence and approval snapshots. Run backend tests when backend code changes;
 run frontend tests/build and documentation gates in the [README](../../README.md#verification).
-Browser settings-layout.spec.ts covers grouped navigation, drafts and responsive layout.
+Browser settings-layout.spec.ts covers grouped navigation, drafts and responsive layout; personas.spec.ts covers collection
+ownership, singleton identity updates and shared editors.
 UI copy follows the [i18n guide](../../frontend/src/i18n/README.md).

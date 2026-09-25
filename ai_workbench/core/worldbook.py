@@ -52,7 +52,6 @@ class Worldbook(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     entry_count: int = 0
-    active_binding_count: int = 0
 
     @field_validator("name")
     @classmethod
@@ -149,19 +148,6 @@ class WorldbookEntryPatch(BaseModel):
     activation_mode: ActivationMode | None = None
     enabled: StrictBool | None = None
     sort_order: int | None = None
-
-
-class SessionWorldbookBinding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    session_id: str
-    worldbook_id: str
-    enabled: StrictBool = True
-    sort_order: int = 0
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
-    worldbook: Worldbook | None = None
 
 
 def keyword_patterns(keywords_text: str) -> list[str]:
@@ -320,7 +306,6 @@ class MemoryWorldbookStore:
         self._settings = WorldbookSettings()
         self._worldbooks: dict[str, Worldbook] = {}
         self._entries: dict[str, WorldbookEntry] = {}
-        self._bindings: dict[str, list[SessionWorldbookBinding]] = {}
 
     def get_settings(self) -> WorldbookSettings:
         return self._settings
@@ -332,29 +317,27 @@ class MemoryWorldbookStore:
         return self._settings
 
     def list_worldbooks(self) -> list[Worldbook]:
-        return [_with_counts(worldbook, self._entries.values(), self._bindings) for worldbook in self._worldbooks.values()]
+        return [_with_counts(worldbook, self._entries.values()) for worldbook in self._worldbooks.values()]
 
     def create_worldbook(self, worldbook: Worldbook) -> Worldbook:
         self._worldbooks[worldbook.id] = worldbook
-        return _with_counts(worldbook, self._entries.values(), self._bindings)
+        return _with_counts(worldbook, self._entries.values())
 
     def get_worldbook(self, worldbook_id: str) -> Worldbook:
         if worldbook_id not in self._worldbooks:
             raise KeyError(f"unknown worldbook: {worldbook_id}")
-        return _with_counts(self._worldbooks[worldbook_id], self._entries.values(), self._bindings)
+        return _with_counts(self._worldbooks[worldbook_id], self._entries.values())
 
     def update_worldbook(self, worldbook_id: str, values: dict[str, Any]) -> Worldbook:
         current = self.get_worldbook(worldbook_id)
         updated = current.model_copy(update={**values, "updated_at": utc_now()})
-        self._worldbooks[worldbook_id] = Worldbook.model_validate(updated.model_dump(exclude={"entry_count", "active_binding_count"}))
+        self._worldbooks[worldbook_id] = Worldbook.model_validate(updated.model_dump(exclude={"entry_count"}))
         return self.get_worldbook(worldbook_id)
 
     def delete_worldbook(self, worldbook_id: str) -> Worldbook:
         deleted = self.get_worldbook(worldbook_id)
         self._worldbooks.pop(worldbook_id, None)
         self._entries = {entry_id: entry for entry_id, entry in self._entries.items() if entry.worldbook_id != worldbook_id}
-        for session_id, bindings in list(self._bindings.items()):
-            self._bindings[session_id] = [binding for binding in bindings if binding.worldbook_id != worldbook_id]
         return deleted
 
     def list_entries(self, worldbook_id: str) -> list[WorldbookEntry]:
@@ -393,52 +376,7 @@ class MemoryWorldbookStore:
             self._entries[entry_id] = self._entries[entry_id].model_copy(update={"sort_order": (index + 1) * 10, "updated_at": utc_now()})
         return self.list_entries(worldbook_id)
 
-    def list_session_bindings(self, session_id: str) -> list[SessionWorldbookBinding]:
-        bindings = self._bindings.get(session_id, [])
-        return sorted([self._binding_with_worldbook(binding) for binding in bindings], key=lambda item: (item.sort_order, item.created_at))
 
-    def replace_session_bindings(self, session_id: str, worldbook_ids: list[str]) -> tuple[list[SessionWorldbookBinding], list[str]]:
-        warnings: list[str] = []
-        bindings: list[SessionWorldbookBinding] = []
-        seen: set[str] = set()
-        now = utc_now()
-        for index, worldbook_id in enumerate(worldbook_ids):
-            if worldbook_id in seen:
-                continue
-            worldbook = self.get_worldbook(worldbook_id)
-            if not worldbook.enabled:
-                warnings.append(f"Worldbook is disabled and was not bound: {worldbook_id}")
-                continue
-            seen.add(worldbook_id)
-            bindings.append(
-                SessionWorldbookBinding(
-                    id=str(uuid4()),
-                    session_id=session_id,
-                    worldbook_id=worldbook_id,
-                    enabled=True,
-                    sort_order=(index + 1) * 10,
-                    created_at=now,
-                    updated_at=now,
-                    worldbook=worldbook,
-                )
-            )
-        self._bindings[session_id] = bindings
-        return self.list_session_bindings(session_id), warnings
-
-    def delete_session_bindings(self, session_id: str) -> None:
-        self._bindings.pop(session_id, None)
-
-    def _binding_with_worldbook(self, binding: SessionWorldbookBinding) -> SessionWorldbookBinding:
-        worldbook = self._worldbooks.get(binding.worldbook_id)
-        return binding.model_copy(update={"worldbook": _with_counts(worldbook, self._entries.values(), self._bindings) if worldbook else None})
-
-
-def _with_counts(worldbook: Worldbook, entries, bindings: dict[str, list[SessionWorldbookBinding]]) -> Worldbook:
+def _with_counts(worldbook: Worldbook, entries) -> Worldbook:
     entry_count = sum(1 for entry in entries if entry.worldbook_id == worldbook.id)
-    active_binding_count = sum(
-        1
-        for session_bindings in bindings.values()
-        for binding in session_bindings
-        if binding.worldbook_id == worldbook.id and binding.enabled
-    )
-    return worldbook.model_copy(update={"entry_count": entry_count, "active_binding_count": active_binding_count})
+    return worldbook.model_copy(update={"entry_count": entry_count})

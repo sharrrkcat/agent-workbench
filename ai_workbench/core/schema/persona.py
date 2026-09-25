@@ -4,15 +4,17 @@ from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import Field, StrictBool, field_serializer, field_validator
+from pydantic import Field, field_serializer, field_validator
 
 from ai_workbench.core.models.schema import GenerationParameters, StrictModel
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
-CHAT_PERSONA_ID = "00000000-0000-4000-8000-000000000001"
-TRANSLATE_PERSONA_ID = "00000000-0000-4000-8000-000000000002"
+COGITA_PERSONA_ID = "00000000-0000-4000-8000-000000000003"
+USER_PERSONA_ID = "00000000-0000-4000-8000-000000000004"
+PersonaCollection = Literal["user", "agent", "roleplay_user", "character"]
+CreatablePersonaCollection = Literal["agent", "roleplay_user", "character"]
 
 
 class PersonaInput(StrictModel):
@@ -28,8 +30,19 @@ class PersonaInput(StrictModel):
         return value.strip()
 
 
+class PersonaCreate(PersonaInput):
+    collection: CreatablePersonaCollection
+
+
+class PersonaIdentity(StrictModel):
+    id: str
+    name: str
+    avatar_attachment_id: str | None
+
+
 class Persona(PersonaInput):
     id: str = Field(default_factory=lambda: str(uuid4()))
+    collection: PersonaCollection
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -37,10 +50,19 @@ class Persona(PersonaInput):
     def serialize_time(self, value: datetime) -> str:
         return isoformat_utc(value) or ""
 
+    @property
+    def is_protected(self) -> bool:
+        return self.id in {USER_PERSONA_ID, COGITA_PERSONA_ID}
 
-class SessionPersona(StrictModel):
-    persona_id: str
-    enabled: StrictBool = True
+    @property
+    def resource_kind(self) -> Literal["knowledge", "worldbook"]:
+        return "knowledge" if self.collection in {"user", "agent"} else "worldbook"
+
+    def public_response(self) -> dict:
+        return {**self.model_dump(mode="json"), "is_protected": self.is_protected}
+
+    def identity(self) -> PersonaIdentity:
+        return PersonaIdentity(id=self.id, name=self.name, avatar_attachment_id=self.avatar_attachment_id)
 
 
 class ResolvedChatConfig(StrictModel):
@@ -48,8 +70,8 @@ class ResolvedChatConfig(StrictModel):
     persona_name: str
     avatar_attachment_id: str | None = None
     system_prompt: str
-    context_mode: Literal["single_assistant", "group_transcript"]
-    group_transcript_instruction: str
+    user_persona_id: str
+    user_persona_prompt: str
     context_policy: ContextPolicy
     model_profile_id: str | None
     model_source: Literal["session"]
@@ -57,15 +79,13 @@ class ResolvedChatConfig(StrictModel):
     harness_enabled: bool
     tools_allowed: list[str]
     knowledge_base_ids: list[str]
-    worldbook_ids: list[str]
 
     def public_summary(self) -> dict:
-        return self.model_dump(mode="json", exclude={"system_prompt", "group_transcript_instruction"})
+        return self.model_dump(mode="json", exclude={"system_prompt", "user_persona_prompt"})
 
 
 def seed_personas() -> list[Persona]:
     return [
-        Persona(id=CHAT_PERSONA_ID, name="Chat", system_prompt="You are a helpful assistant."),
-        Persona(id=TRANSLATE_PERSONA_ID, name="Translate",
-                system_prompt="Translate the user's text accurately. Return only the translation."),
+        Persona(id=COGITA_PERSONA_ID, collection="agent", name="Cogita", system_prompt="You are a helpful assistant."),
+        Persona(id=USER_PERSONA_ID, collection="user", name="User"),
     ]

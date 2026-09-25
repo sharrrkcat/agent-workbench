@@ -117,11 +117,11 @@ def test_orphan_cleanup_preserves_message_persona_and_running_snapshot_reference
     client, _ = resources
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a9sAAAAASUVORK5CYII=")
     ids = [ok(client.post("/api/attachments", files={"file": ("avatar.png", png, "image/png")}))["uri"].rsplit("/", 1)[-1] for _ in range(4)]
-    ok(client.post("/api/personas", json={"name": "Avatar owner", "avatar_attachment_id": ids[0]}))
+    ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Avatar owner', 'avatar_attachment_id': ids[0]}))
     session = ok(client.post("/api/sessions", json={}))
     state = client.app.state.runtime_state
     state.messages.add_message(session["session_id"], role="user", parts=[make_image_part(attachment_id=ids[1])])
-    run = state.runs.create_run(kind="chat", persona_id=session["current_persona_id"], session_id=session["session_id"], config_snapshot={"avatar_attachment_id": ids[2]})
+    run = state.runs.create_run(kind="chat", persona_id=session["persona_id"], session_id=session["session_id"], config_snapshot={"avatar_attachment_id": ids[2]})
     state.runs.update_status(run.run_id, RunStatus.RUNNING)
     orphans = ok(client.post("/api/data/attachments/scan-orphans"))["orphans"]
     assert [item["id"] for item in orphans] == [ids[3]]

@@ -1,4 +1,4 @@
-import type { SessionWorldbooksResponse, Worldbook, WorldbookEntry, WorldbookSettings, WorldbookInput, WorldbookEntryInput, WorldbookSettingsInput, WorldbookMatchResponse } from '../types/worldbook';
+import type { Worldbook, WorldbookEntry, WorldbookSettings, WorldbookInput, WorldbookEntryInput, WorldbookSettingsInput, WorldbookMatchResponse } from '../types/worldbook';
 import { request } from './http';
 
 export const worldbookApi = {
@@ -36,11 +36,4 @@ export const worldbookApi = {
     }),
   matchWorldbooks: (value: { text: string; worldbook_ids: string[] }) =>
     request<WorldbookMatchResponse>('/api/worldbooks/match-test', { method: 'POST', body: JSON.stringify(value) }),
-  getSessionWorldbooks: (sessionId: string) =>
-    request<SessionWorldbooksResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/worldbooks`),
-  updateSessionWorldbooks: (sessionId: string, ids: string[]) =>
-    request<SessionWorldbooksResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/worldbooks`, {
-      method: 'PATCH',
-      body: JSON.stringify({ worldbook_ids: ids }),
-    }),
 };

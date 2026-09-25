@@ -185,7 +185,7 @@ export function ChatInput() {
                 value: m.message_id,
                 label: (
                   <>
-                    {m.speaker_name || m.role}: {contextMessageLabel(m)}
+                    {m.role === 'user' ? session?.user_persona.name : m.speaker_name || m.role}: {contextMessageLabel(m)}
                   </>
                 ),
               })),
@@ -199,7 +199,7 @@ export function ChatInput() {
                 <SelectItem value="">{t('chooseContext')}</SelectItem>
                 {eligible.map((m) => (
                   <SelectItem key={m.message_id} value={m.message_id}>
-                    {m.speaker_name || m.role}: {contextMessageLabel(m)}
+                    {m.role === 'user' ? session?.user_persona.name : m.speaker_name || m.role}: {contextMessageLabel(m)}
                   </SelectItem>
                 ))}
               </SelectGroup>

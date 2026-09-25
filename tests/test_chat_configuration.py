@@ -7,7 +7,7 @@ from sqlmodel import Session as DbSession
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.harness.schema import ToolSpec
-from ai_workbench.core.schema.persona import CHAT_PERSONA_ID
+from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import (
@@ -33,11 +33,11 @@ def ok(response):
 
 def test_strict_persona_and_session_configuration(client_pair):
     client, _ = client_pair
-    persona = ok(client.post("/api/personas", json={"name": "Minimal", "system_prompt": "Prompt"}))
-    assert set(persona) == {"id", "name", "avatar_attachment_id", "system_prompt", "created_at", "updated_at"}
+    persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Minimal', 'system_prompt': 'Prompt'}))
+    assert set(persona) == {"id", "collection", "is_protected", "name", "avatar_attachment_id", "system_prompt", "created_at", "updated_at"}
     for field, value in {"model_profile_id": None, "generation": {}, "context_policy": {"mode": "none"},
                          "harness_enabled": True, "tools_allowed": []}.items():
-        assert client.post("/api/personas", json={"name": "Invalid", field: value}).status_code == 422
+        assert client.post("/api/personas", json={'collection': 'agent', 'name': 'Invalid', field: value}).status_code == 422
         assert client.patch(f"/api/personas/{persona['id']}", json={field: value}).status_code == 422
     session = ok(client.post("/api/sessions", json={}))
     path = f"/api/sessions/{session['session_id']}"
@@ -50,7 +50,7 @@ def test_strict_persona_and_session_configuration(client_pair):
         assert client.post("/api/sessions", json={field: "inherit"}).status_code == 422
         assert client.patch(path, json={field: "override"}).status_code == 422
     assert client.patch(path, json={"context_policy": {"mode": "none", "include_system_prompt": False}}).status_code == 422
-    for suffix in ("knowledge-bases", "worldbooks"):
+    for suffix in ("knowledge-bases",):
         assert client.patch(path + "/" + suffix, json={"mode": "inherit"}).status_code == 422
         assert client.patch(path + "/" + suffix, json={}).status_code == 422
     assert ok(client.get(path)) == session
@@ -166,13 +166,12 @@ def test_sessions_without_models_remain_unselected_until_an_explicit_choice(clie
     assert cleared["model_profile_id"] is None and cleared["effective"]["model_profile_id"] is None
 
 
-@pytest.mark.parametrize("context_mode", ["single_assistant", "group_transcript"])
-def test_prompt_is_always_included_once_in_every_history_mode(client_pair, context_mode):
+def test_prompt_is_always_included_once_in_every_history_mode(client_pair):
     client, upstream = client_pair
     configure_model(client)
-    persona = ok(client.post("/api/personas", json={"name": "Speaker", "system_prompt": "FIXED_PERSONA_PROMPT"}))
-    session = ok(client.post("/api/sessions", json={"current_persona_id": persona["id"],
-        "personas": [{"persona_id": persona["id"]}], "context_mode": context_mode}))
+    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "FIXED_USER_CONTEXT"}))
+    persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Speaker', 'system_prompt': 'FIXED_PERSONA_PROMPT'}))
+    session = ok(client.post("/api/sessions", json={'persona_id': persona['id']}))
     path = f"/api/sessions/{session['session_id']}"
     history = ok(client.post(path + "/messages", json={"content": "history"}))["messages"][0]
     for mode in ("none", "current_message", "recent_messages", "session", "selected_message"):
@@ -180,60 +179,47 @@ def test_prompt_is_always_included_once_in_every_history_mode(client_pair, conte
         result = ok(client.post(path + "/messages", json={"content": "current", "source_message_id": history["message_id"]}))
         assert result["success"]
         assert sum(message["content"].count("FIXED_PERSONA_PROMPT") for message in upstream.calls[-1]["messages"]) == 1
-        assert upstream.calls[-1]["messages"][0] == {"role": "system", "content": "FIXED_PERSONA_PROMPT"}
+        assert sum(message["content"].count("FIXED_USER_CONTEXT") for message in upstream.calls[-1]["messages"]) == 1
+        assert upstream.calls[-1]["messages"][0]["role"] == "system"
     ok(client.patch(f"/api/personas/{persona['id']}", json={"system_prompt": ""}))
     ok(client.post(path + "/messages", json={"content": "empty prompt", "source_message_id": history["message_id"]}))
     assert "FIXED_PERSONA_PROMPT" not in json.dumps(upstream.calls[-1])
 
 
-def test_ordered_additions_deduplicate_and_follow_only_the_current_speaker(client_pair):
+def test_user_agent_and_session_knowledge_order_and_tool_scope(client_pair):
     client, upstream = client_pair
     configure_model(client)
     embedding = configure_model(client, kind="embedding", alias="embedding")
-    bases, books = [], []
-    for name in ("first", "second", "extra", "outside"):
+    bases = []
+    for name in ("user", "agent", "extra", "outside"):
         base = ok(client.post("/api/knowledge/bases", json={"name": name, "embedding_model_profile_id": embedding["id"]}))
         ok(client.post(f"/api/knowledge/bases/{base['id']}/sources", json={"title": name, "text": f"artifact {name}", "source_type": "pasted_text"}))
-        book = ok(client.post("/api/worldbooks", json={"name": name}))
-        ok(client.post(f"/api/worldbooks/{book['id']}/entries", json={"name": name, "content": f"WORLD_{name}", "activation_mode": "always"}))
         bases.append(base["id"])
-        books.append(book["id"])
-    role = ok(client.post("/api/personas", json={"name": "First"}))
-    session = ok(client.post("/api/sessions", json={"current_persona_id": role["id"],
-        "personas": [{"persona_id": role["id"]}, {"persona_id": CHAT_PERSONA_ID}], "context_mode": "group_transcript"}))
+    role = ok(client.post("/api/personas", json={"collection": "agent", "name": "First"}))
+    session = ok(client.post("/api/sessions", json={"persona_id": role["id"]}))
     path = f"/api/sessions/{session['session_id']}"
-    for suffix, field, ids in (("knowledge-bases", "knowledge_base_ids", bases), ("worldbooks", "worldbook_ids", books)):
-        ok(client.patch(f"/api/personas/{role['id']}/{suffix}", json={field: ids[:2]}))
-        ok(client.patch(f"/api/personas/{CHAT_PERSONA_ID}/{suffix}", json={field: [ids[2]]}))
-        response = ok(client.patch(path + "/" + suffix, json={field: ids[1:3]}))
-        assert response == {"session_id": session["session_id"], field: ids[1:3],
-                            "persona_" + field: ids[:2], "effective_" + field: ids[:3]}
+    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}/knowledge-bases", json={"knowledge_base_ids": bases[:1]}))
+    ok(client.patch(f"/api/personas/{role['id']}/knowledge-bases", json={"knowledge_base_ids": bases[:2]}))
+    response = ok(client.patch(path + "/knowledge-bases", json={"knowledge_base_ids": bases[1:3]}))
+    assert response == {"session_id": session["session_id"], "knowledge_base_ids": bases[1:3],
+        "user_persona_knowledge_base_ids": bases[:1], "agent_persona_knowledge_base_ids": bases[:2], "effective_knowledge_base_ids": bases[:3]}
     ok(client.post(path + "/messages", json={"content": "artifact"}))
-    prompt = json.dumps(upstream.calls[-1])
-    assert all(f"WORLD_{name}" in prompt for name in ("first", "second", "extra"))
-    assert "WORLD_outside" not in prompt
     search = ok(client.post("/api/knowledge/search", json={"query": "artifact", "session_id": session["session_id"]}))
     assert {item["knowledge_base_id"] for item in search["results"]} == set(bases[:3])
     direct = ok(client.post("/api/tools/knowledge_search/call", json={"session_id": session["session_id"], "arguments": {"query": "artifact"}}))
     part = next(part for message in direct["messages"] for part in message["parts"] if part["type"] == "tool_result")
     assert {item["knowledge_base_id"] for item in part["data"]["results"]} == set(bases[:3])
-    forbidden = ok(client.post("/api/tools/knowledge_search/call", json={"session_id": session["session_id"],
-        "arguments": {"query": "artifact", "knowledge_base_ids": [bases[3]]}}))
+    forbidden = ok(client.post("/api/tools/knowledge_search/call", json={"session_id": session["session_id"], "arguments": {"query": "artifact", "knowledge_base_ids": bases[3:]}}))
     assert forbidden["run"]["error_code"] == "KNOWLEDGE_SCOPE_FORBIDDEN"
-    for suffix, ids in (("knowledge/bases", bases), ("worldbooks", books)):
-        ok(client.patch(f"/api/{suffix}/{ids[1]}", json={"enabled": False}))
+    ok(client.patch(f"/api/knowledge/bases/{bases[1]}", json={"enabled": False}))
     search = ok(client.post("/api/knowledge/search", json={"query": "artifact", "session_id": session["session_id"]}))
     assert {item["knowledge_base_id"] for item in search["results"]} == {bases[0], bases[2]}
-    matches = ok(client.post("/api/worldbooks/match-test", json={"session_id": session["session_id"]}))
-    assert {item["worldbook_id"] for item in matches["results"]} == {books[0], books[2]}
-    switched = ok(client.patch(path, json={"current_persona_id": CHAT_PERSONA_ID}))
-    assert switched["effective"]["knowledge_base_ids"] == [bases[2], bases[1]]
-    assert switched["effective"]["worldbook_ids"] == [books[2], books[1]]
-    ok(client.patch(path, json={"current_persona_id": role["id"]}))
-    for suffix, field, ids in (("knowledge-bases", "knowledge_base_ids", bases), ("worldbooks", "worldbook_ids", books)):
-        assert ok(client.get(path + "/" + suffix))[field] == ids[1:3]
-        cleared = ok(client.patch(path + "/" + suffix, json={field: []}))
-        assert cleared[field] == [] and cleared["effective_" + field] == ids[:2]
+    switched = ok(client.patch(path, json={"persona_id": COGITA_PERSONA_ID}))
+    assert switched["effective"]["knowledge_base_ids"] == bases[:3]
+    ok(client.patch(path, json={"persona_id": role["id"]}))
+    assert ok(client.get(path + "/knowledge-bases"))["knowledge_base_ids"] == bases[1:3]
+    cleared = ok(client.patch(path + "/knowledge-bases", json={"knowledge_base_ids": []}))
+    assert cleared["effective_knowledge_base_ids"] == bases[:2]
 
 
 def test_configuration_revision_discards_chat_only_and_preserves_files(tmp_path):
@@ -244,8 +230,8 @@ def test_configuration_revision_discards_chat_only_and_preserves_files(tmp_path)
             (session_id, title, context_mode, current_persona_id, knowledge_binding_mode,
              worldbook_binding_mode, title_generation_state, title_generation_metadata_json, created_at, updated_at)
             VALUES ('old', '', 'single_assistant', :persona, 'inherit', 'override', 'pending', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"""),
-            {"persona": CHAT_PERSONA_ID})
-        db.execute(text("INSERT INTO session_personas VALUES ('old', :persona, 0, 1)"), {"persona": CHAT_PERSONA_ID})
+            {"persona": "00000000-0000-4000-8000-000000000001"})
+        db.execute(text("INSERT INTO session_personas VALUES ('old', :persona, 0, 1)"), {"persona": "00000000-0000-4000-8000-000000000001"})
         db.exec_driver_sql("""INSERT INTO model_profiles
             (id,alias,name,kind,model_ref,capabilities_json,parameters_json,lifecycle_json,
              enabled,external_enabled,created_at,updated_at)
@@ -254,7 +240,7 @@ def test_configuration_revision_discards_chat_only_and_preserves_files(tmp_path)
         db.add(AppMetadataRecord(key="app_settings", value='{"core_memory_content":"Keep"}'))
         db.add(KnowledgeBaseRecord(id="base", name="Keep", embedding_model_profile_id="model"))
         db.add(WorldbookRecord(id="book", name="Keep"))
-        db.add(RunRecord(run_id="run", session_id="old", persona_id=CHAT_PERSONA_ID, kind="chat", status="WAITING_FOR_USER",
+        db.add(RunRecord(run_id="run", session_id="old", persona_id="00000000-0000-4000-8000-000000000001", kind="chat", status="WAITING_FOR_USER",
                          config_snapshot_json='{"model_source":"persona"}', harness_state_json='{"old":true}'))
         db.add(MessageRecord(message_id="message", session_id="old", role="user"))
         db.add(RunStepRecord(step_id="step", run_id="run", kind="approval", status="running"))

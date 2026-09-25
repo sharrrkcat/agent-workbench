@@ -63,9 +63,9 @@ def test_settings_revision_resets_only_application_json_and_preserves_files(tmp_
         assert db.get(AppMetadataRecord, "models").value == '{"external_enabled":false}'
     store = SqlAppSettingsStore(engine)
     assert store.get() == AppSettings()
-    store.patch({"core_memory_content": "New setting"})
+    store.patch({"session_title_prompt": "New setting"})
     migrations.upgrade(engine, migrations.PHASE5_REVISION)
-    assert store.get().core_memory_content == "New setting"
+    assert store.get().session_title_prompt == "New setting"
     engine.dispose()
 
 
@@ -91,9 +91,9 @@ def test_removed_display_fields_and_fonts_leave_current_settings_and_resources(t
         for path in ("/api/assets/fonts", "/api/assets/fonts/example", "/api/assets/font-families/example/font.woff2"):
             assert client.get(path).status_code == 404
         assert not (tmp_path / "data/assets/fonts").exists()
-        response = client.patch("/api/settings/general", json={"core_memory_content": "Remember"})
+        response = client.patch("/api/settings/general", json={"session_title_prompt": "Remember"})
         assert response.status_code == 200
-        assert response.json()["core_memory_content"] == "Remember"
+        assert response.json()["session_title_prompt"] == "Remember"
         assert client.get("/api/runtime/resources").status_code == 200
         assert "memory" in client.get("/api/runtime/resources").json()
         first = client.patch("/api/pets/settings", json={"values": {"position": {"mode": "custom", "x": 123}}})

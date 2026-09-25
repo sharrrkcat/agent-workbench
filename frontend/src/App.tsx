@@ -178,7 +178,7 @@ export default function App() {
         <>
           <SessionSidebar onOpenSettings={() => void navigate('/settings')} />
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
-            <ChatHeader onOpenSettings={(section = 'general') => void navigate('/settings?tab=' + section)} />
+            <ChatHeader onOpenSettings={(route) => void navigate(settingsRouteUrl(route))} />
             <ErrorBanner />
             <ChatView key={currentSession?.session_id} />
             <div className="chat-bottom">

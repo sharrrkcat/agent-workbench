@@ -27,7 +27,7 @@ from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine, init_db
 from ai_workbench.db.models import (
     AppMetadataRecord, ModelProfileRecord, RuntimeInstallationRecord, KnowledgeBaseRecord, KnowledgeSettingsRecord,
-    MessageRecord, PersonaKnowledgeBindingRecord, RunRecord, SessionRecord,
+    MessageRecord, PersonaKnowledgeBindingRecord, RunRecord,
 )
 from ai_workbench.workers.tts_catalog import language_model
 from tests.model_fixtures import MockOpenAI, configure_model, resolve_local_profile, write_local_model
@@ -312,7 +312,9 @@ def test_database_revision_resets_bindings_without_converting_or_removing_files(
         db.add(KnowledgeBaseRecord(id='kb', name='Dependent', embedding_model_profile_id='embed'))
         db.add(PersonaKnowledgeBindingRecord(persona_id=persona, knowledge_base_id='kb'))
         db.add(KnowledgeSettingsRecord(id=1, reranker_model_profile_id='embed'))
-        db.add(SessionRecord(session_id='s', current_persona_id=persona, model_profile_id='chat', waiting_run_id='active', context_policy_json='{}'))
+        db.execute(text("""INSERT INTO sessionrecord (session_id,title,context_mode,current_persona_id,model_profile_id,waiting_run_id,
+                context_policy_json,generation_json,harness_enabled,tools_allowed_json,title_generation_state,title_generation_metadata_json,created_at,updated_at)
+                VALUES (:id,'','single_assistant',:persona,:model,:waiting,'{}','{}',0,'[]','pending','{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"""), {'id': 's', 'persona': persona, 'model': 'chat', 'waiting': 'active'})
         for run_id, state in [('active','WAITING_APPROVAL'), ('finished','DONE')]:
             db.add(RunRecord(run_id=run_id, kind='chat', persona_id=persona, session_id='s', status=state, config_snapshot_json='{"model_profile_id":"chat"}'))
             db.add(MessageRecord(message_id=run_id, session_id='s', role='assistant', run_id=run_id))
@@ -322,8 +324,8 @@ def test_database_revision_resets_bindings_without_converting_or_removing_files(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'protected')
     before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
-    init_db(engine)
-    init_db(engine)
+    migrations.upgrade(engine, migrations.PROVIDER_RUNTIME_REVISION)
+    migrations.upgrade(engine, migrations.PROVIDER_RUNTIME_REVISION)
     assert ModelProfileStore(engine).list() == []
     assert ProviderProfileStore(engine).list() == []
     assert LocalRuntimeSettingsStore(engine).get().enabled
@@ -333,7 +335,7 @@ def test_database_revision_resets_bindings_without_converting_or_removing_files(
     with Session(engine) as db:
         assert db.get(KnowledgeBaseRecord, 'kb') is None
         assert db.get(KnowledgeSettingsRecord, 1).reranker_model_profile_id is None
-        assert db.get(SessionRecord, 's').model_profile_id is None and db.get(SessionRecord, 's').waiting_run_id is None
+        assert db.exec(text("SELECT model_profile_id,waiting_run_id FROM sessionrecord WHERE session_id='s'")).one() == (None, None)
         assert db.get(RunRecord, 'active') is None and db.get(MessageRecord, 'active') is None
         assert db.get(RunRecord, 'finished') is not None and db.get(MessageRecord, 'finished') is not None
         assert db.get(AppMetadataRecord, 'local_runtime_settings') is None

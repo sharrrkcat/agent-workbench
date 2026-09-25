@@ -1,22 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.schemas.chat import (
-    SessionResponse, SessionPersonasResponse, SessionDeleted, TimelineItem,
+    SessionResponse, SessionDeleted, TimelineItem,
     SessionKnowledgeResponse, NotificationDismissed,
 )
 from ai_workbench.api.openapi import request_body
 from ai_workbench.api.schemas.common import error_responses, patch_model
 from ai_workbench.api.errors import raise_error
-from ai_workbench.core.models.schema import GenerationParameters
+from ai_workbench.core.session import SessionGenerationParameters
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.schema.persona import CHAT_PERSONA_ID, SessionPersona
+from ai_workbench.core.schema.persona import COGITA_PERSONA_ID
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.time import ensure_utc, utc_now
@@ -30,12 +29,10 @@ class CreateSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = ""
-    context_mode: Literal["single_assistant", "group_transcript"] = "single_assistant"
     model_profile_id: str | None = None
-    current_persona_id: str = CHAT_PERSONA_ID
-    personas: list[SessionPersona] = Field(default_factory=lambda: [SessionPersona(persona_id=CHAT_PERSONA_ID)], min_length=1, max_length=64)
+    persona_id: str = COGITA_PERSONA_ID
     context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
-    generation: GenerationParameters = Field(default_factory=GenerationParameters)
+    generation: SessionGenerationParameters = Field(default_factory=SessionGenerationParameters)
     harness_enabled: StrictBool = False
     tools_allowed: list[str] = Field(default_factory=list, max_length=128,
         description="Omission selects all currently registered tools; an explicit empty array selects none.")
@@ -46,19 +43,11 @@ class UpdateSessionRequest(BaseModel):
 
     title: str | None = None
     model_profile_id: str | None = None
-    context_mode: Literal["single_assistant", "group_transcript"] | None = None
-    current_persona_id: str | None = None
-    personas: list[SessionPersona] | None = Field(default=None, min_length=1, max_length=64)
+    persona_id: str = COGITA_PERSONA_ID
     context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
-    generation: GenerationParameters = Field(default_factory=GenerationParameters)
+    generation: SessionGenerationParameters = Field(default_factory=SessionGenerationParameters)
     harness_enabled: StrictBool = False
     tools_allowed: list[str] = Field(default_factory=list, max_length=128)
-
-
-class SessionPersonasPatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    personas: list[SessionPersona] = Field(min_length=1, max_length=64)
-    current_persona_id: str
 
 
 class SessionKnowledgePatch(BaseModel):
@@ -94,13 +83,13 @@ def get_session(session_id: str, state: RuntimeState = Depends(get_state)) -> di
 
 @router.patch("/{session_id}", response_model=SessionResponse, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 409, 422, 503), openapi_extra=request_body(SessionPatchRequest,
-        description="Only submitted fields change. null clears model_profile_id; context, generation, members and title are non-nullable."))
+        description="Only submitted fields change. null clears model_profile_id; context, generation, persona and title are non-nullable."))
 async def update_session(
     session_id: str,
     payload: UpdateSessionRequest,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
-    session = _get_session_or_404(state, session_id)
+    _get_session_or_404(state, session_id)
     values = payload.model_dump(exclude_unset=True)
     if payload.title is not None:
         title = payload.title.strip()
@@ -114,34 +103,9 @@ async def update_session(
             )
         values.update(title=title, title_generation_state="manual")
     updated = state.chat_service.update_session(session_id, values)
-    if payload.context_mode is not None and payload.context_mode != session.context_mode:
-        previous = session.context_mode
-        state.messages.add_message(
-            session_id=session_id,
-            role="system",
-            content=f"Conversation mode changed to {_context_mode_label(payload.context_mode)}",
-            metadata={
-                "event_type": "context_mode_changed",
-                "context_mode": payload.context_mode,
-                "previous_context_mode": previous,
-            },
-        )
     response = state.chat_service.session_response(updated)
     state.events.emit("session_updated", session_id=session_id, payload={"session": response})
     return response
-
-
-@router.get("/{session_id}/personas", response_model=SessionPersonasResponse, response_model_exclude_unset=True,
-    responses=error_responses(404, 409))
-def get_session_personas(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
-    session = get_session(session_id, state)
-    return {"personas": session["personas"], "current_persona_id": session["current_persona_id"]}
-
-
-@router.patch("/{session_id}/personas", response_model=SessionResponse, response_model_exclude_unset=True,
-    responses=error_responses(400, 404, 409, 422, 503))
-async def update_session_personas(session_id: str, payload: SessionPersonasPatch, state: RuntimeState = Depends(get_state)) -> dict:
-    return await update_session(session_id, UpdateSessionRequest(**payload.model_dump()), state)
 
 
 @router.delete("/{session_id}", response_model=SessionDeleted, response_model_exclude_unset=True,
@@ -156,8 +120,6 @@ async def delete_session(session_id: str, state: RuntimeState = Depends(get_stat
     state.messages.delete_session(session_id)
     if state.knowledge is not None:
         state.knowledge.delete_session_bindings(session_id)
-    if state.worldbooks is not None:
-        state.worldbooks.delete_session_bindings(session_id)
     for message in messages:
         _cleanup_message_attachments(state, message)
     state.sessions.delete_session(session_id)
@@ -218,7 +180,7 @@ def get_session_timeline(session_id: str, state: RuntimeState = Depends(get_stat
     responses=error_responses(404))
 def get_session_knowledge_bases(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _get_session_or_404(state, session_id)
-    return state.chat_service.binding_response(session_id, "knowledge")
+    return state.chat_service.knowledge_response(session_id)
 
 
 @router.patch("/{session_id}/knowledge-bases", response_model=SessionKnowledgeResponse, response_model_exclude_unset=True,
@@ -229,10 +191,10 @@ async def update_session_knowledge_bases(
     state: RuntimeState = Depends(get_state),
 ) -> dict:
     _get_session_or_404(state, session_id)
-    state.chat_service.update_bindings(session_id, "knowledge", payload.knowledge_base_ids)
+    state.chat_service.update_knowledge(session_id, payload.knowledge_base_ids)
     state.events.emit("session_updated", session_id=session_id,
         payload={"session": state.chat_service.session_response(state.sessions.get_session(session_id))})
-    return state.chat_service.binding_response(session_id, "knowledge")
+    return state.chat_service.knowledge_response(session_id)
 
 
 @router.post("/{session_id}/notifications/{notification_id}/dismiss", response_model=NotificationDismissed, response_model_exclude_unset=True,
@@ -297,7 +259,3 @@ def _first_string(source: dict | None, keys: tuple[str, ...]) -> str | None:
         if isinstance(value, str) and value:
             return value
     return None
-
-
-def _context_mode_label(mode: str) -> str:
-    return "Group transcript" if mode == "group_transcript" else "Single assistant"

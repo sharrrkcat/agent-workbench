@@ -28,11 +28,11 @@ Directory-selected native CrossEncoder rerankers serve Knowledge and `/v1/rerank
 mxbai-rerank-base-v2 has CUDA/native, Knowledge and short-text CPU acceptance; other reranker checkpoints require representative acceptance.
 
 Personas own identity, prompts and resource bindings; sessions own concrete model
-selection, context, generation and opt-in Harness configuration. Chat combines the
-current speaker's resources with session additions. Each run has one visible
+selection, context, generation and opt-in Harness configuration. Chat combines singleton User Persona and selected Agent Knowledge with session additions. Each run has one visible
 reply, processing history and whole-reply actions. Built-in tools share direct
 and model invocation with bounded execution and durable approvals; `/v1` forwards
-tool data without executing it. Core Memory, Worldbook and Knowledge support chat.
+tool data without executing it. User Persona background and Knowledge support chat. Roleplay User/Character Personas and
+Worldbook support management and explicit matching only; Projects are not implemented.
 Pet has position, dragging and task-state foundations only, with no mounted UI.
 
 ## Contracts
@@ -51,7 +51,7 @@ generation and verification commands are in the [README](../README.md#http-contr
 
 - [Runtime](ai/TASK_RUNTIME.md)
 - [Knowledge](ai/TASK_KNOWLEDGE.md)
-- [Memory/Worldbook](ai/TASK_MEMORY_WORLDBOOK.md)
+- [Personas/Worldbook](ai/TASK_PERSONAS_WORLDBOOK.md)
 - [Settings](ai/TASK_SETTINGS.md)
 - [Frontend](ai/TASK_FRONTEND_UI.md)
 

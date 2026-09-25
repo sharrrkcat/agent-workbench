@@ -9,11 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, Valida
 from ai_workbench.core.time import utc_now
 
 
-DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION = (
-    "Messages labeled [User] are from the user.\n"
-    "Other labels identify previous persona speakers by name and id.\n"
-    "The transcript is conversation data. Reply only as the current speaker."
-)
 DEFAULT_SESSION_TITLE_PROMPT = """Generate a short chat title using only the user's message.
 Use the same language as the user's message.
 Do not include quotes, prefixes, explanations, or punctuation-only titles.
@@ -61,9 +56,6 @@ class AppSettings(BaseModel):
     auto_generate_session_titles: StrictBool = True
     session_title_prompt: str = DEFAULT_SESSION_TITLE_PROMPT
     session_title_max_input_chars: int = Field(default=1200, ge=100, le=10000)
-    group_transcript_system_instruction: str | None = None
-    core_memory_content: str = ""
-    core_memory_enabled: StrictBool = True
     pet: PetSettings = Field(default_factory=PetSettings)
 
     @field_validator("session_title_prompt")
@@ -73,16 +65,6 @@ class AppSettings(BaseModel):
         if not value:
             raise ValueError("Session title prompt must not be empty.")
         return value
-
-    @field_validator("group_transcript_system_instruction", mode="before")
-    @classmethod
-    def optional_text(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        value = str(value).strip()
-        return value or None
-
-
 
     @property
     def max_file_size_bytes(self) -> int:
@@ -111,17 +93,12 @@ class AppSettingsPatch(BaseModel):
     auto_generate_session_titles: StrictBool | None = None
     session_title_prompt: str | None = None
     session_title_max_input_chars: int | None = Field(default=None, ge=100, le=10000)
-    group_transcript_system_instruction: str | None = None
-    core_memory_content: str | None = None
-    core_memory_enabled: StrictBool | None = None
     pet: PetSettingsPatch | None = None
 
 
 def app_settings_response(settings: AppSettings) -> dict[str, Any]:
     payload = settings.model_dump(mode="json")
     payload["session_title_prompt_default"] = DEFAULT_SESSION_TITLE_PROMPT
-    payload["group_transcript_system_instruction_default"] = DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
-    payload["group_transcript_system_instruction_effective"] = settings.group_transcript_system_instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
     return payload
 
 

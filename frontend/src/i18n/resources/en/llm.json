@@ -125,9 +125,6 @@
     "queue_timeout_seconds": "Queue timeout (seconds)"
   },
   "chatModel": "Chat model",
-  "conversationMode": "Conversation mode",
-  "singleAssistant": "Single assistant",
-  "groupTranscript": "Group transcript",
   "newSession": "New session",
   "waiting": "Waiting for your reply",
   "settings": "Settings",

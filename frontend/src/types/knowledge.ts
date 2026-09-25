@@ -98,7 +98,8 @@ export type KnowledgeSearchInput = {
 
 export type SessionKnowledgeBindings = {
   session_id: string;
-  persona_knowledge_base_ids: string[];
+  user_persona_knowledge_base_ids: string[];
+  agent_persona_knowledge_base_ids: string[];
   knowledge_base_ids: string[];
   effective_knowledge_base_ids: string[];
 };

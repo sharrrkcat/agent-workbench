@@ -15,16 +15,15 @@ from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identi
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepKind, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session
-from ai_workbench.core.schema.persona import SessionPersona
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.schema import ModelProfile
-from ai_workbench.core.worldbook import SessionWorldbookBinding, Worldbook, WorldbookEntry, WorldbookSettings, sync_worldbook_settings_patch
+from ai_workbench.core.worldbook import Worldbook, WorldbookEntry, WorldbookSettings, sync_worldbook_settings_patch
 from ai_workbench.db.models import (
     AppMetadataRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord,
     KnowledgeSettingsRecord, KnowledgeSourceRecord, MessageRecord,
-    RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord, SessionPersonaRecord,
-    SessionWorldbookBindingRecord, WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord,
+    RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord,
+    WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord,
 )
 
 
@@ -43,27 +42,19 @@ class SqlSessionStore:
     def __init__(self, engine) -> None:
         self.engine = engine
 
-    def create_session(self, title: str = "", context_mode: str = "single_assistant", **values: Any) -> Session:
-        session = Session(session_id=str(uuid4()), title=title, context_mode=context_mode,
+    def create_session(self, title: str = "", **values: Any) -> Session:
+        session = Session(session_id=str(uuid4()), title=title,
             title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual", **values)
         with DbSession(self.engine) as db:
             db.add(SessionRecord(**_session_record_values(session)))
-            db.flush()
-            self._write_members(db, session)
             db.commit()
         return session
-
-    @staticmethod
-    def _write_members(db, session: Session) -> None:
-        db.exec(delete(SessionPersonaRecord).where(SessionPersonaRecord.session_id == session.session_id))
-        for index, member in enumerate(session.personas):
-            db.add(SessionPersonaRecord(session_id=session.session_id, sort_order=index, **member.model_dump()))
 
     def get_session(self, session_id: str) -> Session:
         with DbSession(self.engine) as db:
             record = db.get(SessionRecord, session_id)
             if record is None: raise KeyError(f"unknown session id: {session_id}")
-            return _session(record, db)
+            return _session(record)
 
     def _update(self, session_id: str, **values: Any) -> Session:
         if "title_generation_metadata_json" in values:
@@ -74,16 +65,13 @@ class SqlSessionStore:
         with DbSession(self.engine) as db:
             record = db.get(SessionRecord, session_id)
             if record is None: raise KeyError(f"unknown session id: {session_id}")
-            session = Session.model_validate({**_session(record, db).model_dump(), **values, "updated_at": utc_now()})
+            session = Session.model_validate({**_session(record).model_dump(), **values, "updated_at": utc_now()})
             for key, value in _session_record_values(session).items():
                 setattr(record, key, value)
             db.add(record)
-            if "personas" in values:
-                self._write_members(db, session)
             db.commit()
             return session
 
-    def set_context_mode(self, session_id: str, context_mode: str) -> Session: return self._update(session_id, context_mode=context_mode)
     def set_title(self, session_id: str, title: str) -> Session: return self._update(session_id, title=title, title_generation_state="manual")
     def set_generated_title(self, session_id: str, title: str, metadata: Optional[dict[str, Any]] = None) -> Session: return self._update(session_id, title=title, title_generation_state="done", title_generation_metadata_json=_dump(metadata or {}))
     def set_title_generation_state(self, session_id: str, state: str, metadata: Optional[dict[str, Any]] = None) -> Session: return self._update(session_id, title_generation_state=state, title_generation_metadata_json=_dump(metadata or {}))
@@ -101,12 +89,11 @@ class SqlSessionStore:
         with DbSession(self.engine) as db:
             row = db.get(SessionRecord, session_id)
             if row is None: raise KeyError(f"unknown session id: {session_id}")
-            db.exec(delete(SessionPersonaRecord).where(SessionPersonaRecord.session_id == session_id))
             db.delete(row); db.commit()
 
     def list_sessions(self) -> list[Session]:
         with DbSession(self.engine) as db:
-            return [_session(row, db) for row in db.exec(select(SessionRecord).order_by(SessionRecord.updated_at.desc(), SessionRecord.created_at.desc())).all()]
+            return [_session(row) for row in db.exec(select(SessionRecord).order_by(SessionRecord.updated_at.desc(), SessionRecord.created_at.desc())).all()]
 
 
 class SqlMessageStore:
@@ -377,7 +364,7 @@ class SqlWorldbookStore:
     def delete_worldbook(self, worldbook_id: str) -> Worldbook:
         current=self.get_worldbook(worldbook_id)
         with DbSession(self.engine) as db:
-            db.exec(delete(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id==worldbook_id)); db.exec(delete(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.worldbook_id==worldbook_id)); row=db.get(WorldbookRecord,worldbook_id); db.delete(row); db.commit()
+            db.exec(delete(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id==worldbook_id)); row=db.get(WorldbookRecord,worldbook_id); db.delete(row); db.commit()
         return current
     def list_entries(self, worldbook_id: str) -> list[WorldbookEntry]:
         self.get_worldbook(worldbook_id)
@@ -411,26 +398,6 @@ class SqlWorldbookStore:
                 row=db.get(WorldbookEntryRecord,item_id); row.sort_order=(index+1)*10; row.updated_at=utc_now(); db.add(row)
             db.commit()
         return self.list_entries(worldbook_id)
-    def list_session_bindings(self, session_id: str) -> list[SessionWorldbookBinding]:
-        with DbSession(self.engine) as db:
-            rows=db.exec(select(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.session_id==session_id).order_by(SessionWorldbookBindingRecord.sort_order)).all(); result=[]
-            for row in rows:
-                wb=db.get(WorldbookRecord,row.worldbook_id); result.append(SessionWorldbookBinding(id=row.id,session_id=row.session_id,worldbook_id=row.worldbook_id,enabled=row.enabled,sort_order=row.sort_order,created_at=row.created_at,updated_at=row.updated_at,worldbook=_worldbook(wb,db) if wb else None))
-            return result
-    def replace_session_bindings(self, session_id: str, worldbook_ids: list[str]) -> tuple[list[SessionWorldbookBinding], list[str]]:
-        warnings=[]
-        with DbSession(self.engine) as db:
-            db.exec(delete(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.session_id==session_id)); seen=set()
-            for index,worldbook_id in enumerate(worldbook_ids):
-                if worldbook_id in seen: continue
-                row=db.get(WorldbookRecord,worldbook_id)
-                if row is None: raise KeyError(f"unknown worldbook: {worldbook_id}")
-                if not row.enabled: warnings.append(f"Worldbook is disabled and was not bound: {worldbook_id}"); continue
-                seen.add(worldbook_id); db.add(SessionWorldbookBindingRecord(id=str(uuid4()),session_id=session_id,worldbook_id=worldbook_id,sort_order=(index+1)*10))
-            db.commit()
-        return self.list_session_bindings(session_id),warnings
-    def delete_session_bindings(self, session_id: str) -> None:
-        with DbSession(self.engine) as db: db.exec(delete(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.session_id==session_id)); db.commit()
 
 
 class SqlKnowledgeStore:
@@ -563,18 +530,16 @@ class SqlKnowledgeStore:
         source=self.get_source(source_id); return {"source_id":source.id,"uri":source.uri,"title":source.title}
 
 
-def _session(row: SessionRecord, db: DbSession) -> Session:
+def _session(row: SessionRecord) -> Session:
     values = row.model_dump()
     for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
         encoded = values.pop(key + "_json")
         values[key] = json.loads(encoded)
-    members = db.exec(select(SessionPersonaRecord).where(SessionPersonaRecord.session_id == row.session_id).order_by(SessionPersonaRecord.sort_order)).all()
-    values["personas"] = [SessionPersona(persona_id=m.persona_id, enabled=m.enabled) for m in members]
     return Session.model_validate(values)
 
 
 def _session_record_values(session: Session) -> dict:
-    values = session.model_dump(exclude={"personas"})
+    values = session.model_dump()
     for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
         value = values.pop(key)
         values[key + "_json"] = _dump(value)
@@ -589,7 +554,9 @@ def _event(row: RunEventRecord) -> RunEventSchema:
     return RunEventSchema(event_id=row.event_id,run_id=row.run_id,session_id=row.session_id,type=row.type,message=row.message,payload=_load(row.payload_json,{}),created_at=row.created_at)
 def _worldbook_settings(row: WorldbookSettingsRecord) -> WorldbookSettings: return WorldbookSettings(**{key:getattr(row,key) for key in WorldbookSettings.model_fields if hasattr(row,key)})
 def _worldbook(row: WorldbookRecord, db: DbSession) -> Worldbook:
-    entries=len(db.exec(select(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id==row.id)).all()); bindings=len(db.exec(select(SessionWorldbookBindingRecord).where(SessionWorldbookBindingRecord.worldbook_id==row.id,SessionWorldbookBindingRecord.enabled==True)).all()); return Worldbook(id=row.id,name=row.name,description=row.description,enabled=row.enabled,created_at=row.created_at,updated_at=row.updated_at,entry_count=entries,active_binding_count=bindings)
+    entries = len(db.exec(select(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id == row.id)).all())
+    return Worldbook(id=row.id, name=row.name, description=row.description, enabled=row.enabled,
+                     created_at=row.created_at, updated_at=row.updated_at, entry_count=entries)
 def _entry(row: WorldbookEntryRecord) -> WorldbookEntry: return WorldbookEntry(id=row.id,worldbook_id=row.worldbook_id,name=row.name,keywords_text=row.keywords_text,content=row.content,activation_mode=row.activation_mode,enabled=row.enabled,sort_order=row.sort_order,created_at=row.created_at,updated_at=row.updated_at)
 def _kb(row: KnowledgeBaseRecord) -> KnowledgeBase: return KnowledgeBase(**{key:getattr(row,key) for key in KnowledgeBase.model_fields if hasattr(row,key)})
 def _source(row: KnowledgeSourceRecord, db: DbSession) -> KnowledgeSource:

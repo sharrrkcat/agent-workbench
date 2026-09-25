@@ -23,11 +23,10 @@ class SessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
 
-    def create_session(self, title: str = "", context_mode: str = "single_assistant", **values: Any) -> Session:
+    def create_session(self, title: str = "", **values: Any) -> Session:
         session = Session(
             session_id=str(uuid4()),
             title=title,
-            context_mode=context_mode,
             title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual",
             **values,
         )
@@ -39,9 +38,6 @@ class SessionStore:
             return self._sessions[session_id].model_copy(deep=True)
         except KeyError as exc:
             raise KeyError(f"unknown session id: {session_id}") from exc
-
-    def set_context_mode(self, session_id: str, context_mode: str) -> Session:
-        return self._replace(session_id, context_mode=context_mode)
 
     def set_title(self, session_id: str, title: str) -> Session:
         return self._replace(session_id, title=title, title_generation_state="manual")

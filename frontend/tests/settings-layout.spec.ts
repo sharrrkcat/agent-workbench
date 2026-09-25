@@ -22,6 +22,7 @@ for (const locale of ['en', 'zh-CN']) {
   const settings = words(locale, 'settings'),
     llm = words(locale, 'llm');
   const knowledge = words(locale, 'knowledge');
+  const personas = words(locale, 'personas');
   for (const viewport of [
     { width: 1366, height: 900 },
     { width: 390, height: 844 },
@@ -74,7 +75,10 @@ for (const locale of ['en', 'zh-CN']) {
           ['models', 'providers'],
           ['models', 'localRuntime'],
           ['models', 'service'],
-          ['personas', ''],
+          ['personas', 'user'],
+          ['personas', 'agent'],
+          ['personas', 'roleplay_user'],
+          ['personas', 'character'],
           ['knowledge', 'list'],
           ['knowledge', 'settings'],
           ['worldbook', 'list'],
@@ -86,8 +90,8 @@ for (const locale of ['en', 'zh-CN']) {
             ? settings[section]
             : section === 'models'
               ? llm[view]
-              : settings.resources[view];
-          await navigateSettings(page, settings[section], label);
+              : section === 'personas' ? personas.collections[view] : settings.resources[view];
+          await navigateSettings(page, settings[section], label, section === 'personas' ? settings.sidebarGroups[['user', 'agent'].includes(view) ? 'daily' : 'roleplay'] : undefined);
           await expect(page).toHaveURL(`/settings?tab=${section}${view ? `&view=${view}` : ''}`);
           await expect(page.locator('.settings-heading h1')).toContainText(settings[section]);
           await noPageOverflow(page);
@@ -115,14 +119,15 @@ for (const locale of ['en', 'zh-CN']) {
           });
         }
         await openSidebar(page);
-        await expect(sidebar.locator('nav > [data-slot="sidebar-group"]')).toHaveCount(3);
+        await expect(sidebar.locator('nav > [data-slot="sidebar-group"]')).toHaveCount(4);
         await expect(sidebar.locator('[data-slot="sidebar-group-label"]')).toHaveText([
           settings.sidebarGroups.application,
           settings.sidebarGroups.execution,
-          settings.sidebarGroups.context,
+          settings.sidebarGroups.daily,
+          settings.sidebarGroups.roleplay,
         ]);
-        await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(6);
-        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(11);
+        await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(7);
+        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(14);
         for (const [section, count] of [
           ['models', 4],
           ['knowledge', 2],

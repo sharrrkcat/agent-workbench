@@ -17,11 +17,10 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
-from ai_workbench.core.memory_context import append_system_context, build_core_memory_context
+from ai_workbench.core.user_persona_context import append_system_context, build_user_persona_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
-from ai_workbench.core.worldbook_context import build_session_worldbook_context
 
 
 class ChatRunner:
@@ -37,7 +36,6 @@ class ChatRunner:
         app_settings: Any = None,
         utility_llm: Any = None,
         knowledge_service: Any = None,
-        worldbooks: Any = None,
         active_runs: Any = None,
         tool_registry: Any = None,
         harness_settings: Any = None,
@@ -52,7 +50,6 @@ class ChatRunner:
         self.app_settings = app_settings
         self.utility_llm = utility_llm
         self.knowledge_service = knowledge_service
-        self.worldbooks = worldbooks
         self.active_runs = active_runs
         self.chat_service = chat_service
         self.harness_loop = HarnessAgentLoop(
@@ -267,32 +264,18 @@ class ChatRunner:
             policy,
             current_message_id=current_message_id,
             source_message_id=source_message_id,
-            context_mode=config.context_mode,
-            group_instruction=config.group_transcript_instruction,
-            persona_id=config.persona_id, persona_name=config.persona_name,
         )
         messages = list(result.messages)
         metadata: dict[str, Any] = {
-            "context_mode": config.context_mode,
             "message_count": len(messages),
             "warnings": result.warnings,
             "persona_id": config.persona_id,
         }
         if config.system_prompt:
             messages.insert(0, {"role": "system", "content": config.system_prompt})
-        memory = build_core_memory_context(app_settings_store=self.app_settings, source="chat")
-        messages = append_system_context(messages, memory.rendered_text)
-        metadata["memory"] = memory.metadata
-        if self.worldbooks is not None:
-            worldbook = build_session_worldbook_context(
-                worldbook_store=self.worldbooks,
-                session_id=session.session_id,
-                worldbook_ids=config.worldbook_ids,
-                user_text=text,
-                source="chat",
-            )
-            messages = append_system_context(messages, worldbook.rendered_text)
-            metadata["worldbook"] = worldbook.metadata
+        user_context = build_user_persona_context(persona_id=config.user_persona_id, content=config.user_persona_prompt)
+        messages = append_system_context(messages, user_context.rendered_text)
+        metadata["user_persona"] = user_context.metadata
         if self.knowledge_service is not None:
             knowledge = await build_session_knowledge_context(
                 knowledge_service=self.knowledge_service, query=text, session_id=session.session_id, source="chat",

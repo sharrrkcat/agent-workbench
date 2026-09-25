@@ -2,14 +2,14 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlmodel import Session
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
-from ai_workbench.db.models import AppMetadataRecord, PersonaRecord, RunRecord
+from ai_workbench.db.models import AppMetadataRecord, RunRecord
 from ai_workbench.db.stores import SqlAppSettingsStore
 
 
@@ -73,7 +73,7 @@ def test_pet_revision_resets_settings_only_and_new_position_survives_restart(tmp
         db.add(AppMetadataRecord(key="app_settings", value=json.dumps({"core_memory_content": "Disposable",
             "pet": {"pet_enabled": True, "default_pet_id": "old", "bubble_texts": {"done": "Done"}}})))
         db.add(AppMetadataRecord(key="model_settings", value='{"external_enabled":false}'))
-        db.add(PersonaRecord(id="persona", name="Keep", system_prompt="Keep"))
+        db.execute(text("INSERT INTO personas VALUES ('persona','Keep',NULL,'Keep',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"))
         db.add(RunRecord(run_id="run", kind="chat", session_id="session", persona_id="persona", status="DONE"))
         db.commit()
     def preserved_rows():
@@ -97,9 +97,9 @@ def test_pet_revision_resets_settings_only_and_new_position_survives_restart(tmp
         assert db.get(AppMetadataRecord, "model_settings").value == '{"external_enabled":false}'
     store = SqlAppSettingsStore(engine)
     assert store.get() == AppSettings()
-    store.patch({"core_memory_content": "New", "pet": {"position": {"mode": "custom", "x": 88, "y": 99}}})
+    store.patch({"session_title_prompt": "New", "pet": {"position": {"mode": "custom", "x": 88, "y": 99}}})
     migrations.upgrade(engine, migrations.PET_FOUNDATION_REVISION)
     reloaded = SqlAppSettingsStore(engine).get()
-    assert reloaded.core_memory_content == "New"
+    assert reloaded.session_title_prompt == "New"
     assert reloaded.pet.position.model_dump() == {"mode": "custom", "x": 88, "y": 99}
     engine.dispose()

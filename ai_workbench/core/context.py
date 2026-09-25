@@ -8,7 +8,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.settings import DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
 from ai_workbench.core.models.images import ContextMessage
 
 
@@ -28,9 +27,7 @@ class ContextBuilder:
         self.message_store = message_store
 
     def build(self, session_id: str, text: str, policy: ContextPolicy | None = None, *,
-              source_message_id: str | None = None, current_message_id: str | None = None,
-              context_mode: str = "single_assistant", group_instruction: str | None = None,
-              persona_name: str | None = None, persona_id: str | None = None) -> ContextBuildResult:
+              source_message_id: str | None = None, current_message_id: str | None = None) -> ContextBuildResult:
         policy = policy or ContextPolicy(mode="session")
         current = self._current_text(text, current_message_id)
         current_refs = []
@@ -50,11 +47,6 @@ class ContextBuilder:
 
         projected = [_project(m, include_attachments=policy.include_attachments == "explicit") for m in selected]
         projected = [m for m in projected if m is not None]
-        if context_mode == "group_transcript":
-            projected = [{"role": "user", "content": _content(
-                _transcript_line(m, include_attachments=policy.include_attachments == "explicit"),
-                _image_refs(m) if policy.include_attachments == "explicit" else [],
-            )} for m in selected]
         # Budget history before adding framing and persona instructions, retaining the current input.
         warnings = []
         if policy.max_chars is not None:
@@ -62,22 +54,7 @@ class ContextBuilder:
             projected = _limit_history(projected, remaining)
             if len(current) > policy.max_chars:
                 warnings.append("Current message exceeds the history character budget; current input is retained.")
-        if context_mode == "group_transcript":
-            parts = [{"type": "text", "text": "<conversation_transcript>\n"}]
-            for index, message in enumerate(projected):
-                if index:
-                    parts.append({"type": "text", "text": "\n"})
-                parts.extend(_parts(message["content"]))
-            parts.append({"type": "text", "text": "\n</conversation_transcript>\n\n<current_user_message>\n"})
-            parts.extend(_parts(current_content))
-            parts.append({"type": "text", "text": "\n</current_user_message>"})
-            content = parts if any(part["type"] == "attachment_image" for part in parts) else "".join(part["text"] for part in parts)
-            instruction = group_instruction or DEFAULT_GROUP_TRANSCRIPT_SYSTEM_INSTRUCTION
-            if persona_id is not None:
-                instruction += "\nReply only as the current speaker: " + json.dumps({"persona_id": persona_id, "name": persona_name}, ensure_ascii=False) + "."
-            messages = [{"role": "system", "content": instruction}, {"role": "user", "content": content}]
-        else:
-            messages = [*projected, {"role": "user", "content": current_content}]
+        messages = [*projected, {"role": "user", "content": current_content}]
         return ContextBuildResult(messages=messages, warnings=warnings)
 
     def _current_text(self, text: str, message_id: str | None) -> str:
@@ -147,15 +124,6 @@ def _eligible(message: Any) -> bool:
     if any(isinstance(part,dict) and part.get("type")=="error" for part in getattr(message,"parts",[]) or []): return False
     metadata=getattr(message,"metadata",{}) or {}
     return not bool(metadata.get("event_type") or metadata.get("incomplete") or metadata.get("streaming"))
-
-
-def _transcript_line(message: Any, *, include_attachments: bool = True) -> str:
-    role = getattr(message, "role", "")
-    label = "User" if role == "user" else getattr(message, "speaker_name", None) or ("System" if role == "system" else "Assistant")
-    label = str(label).replace("\r", " ").replace("\n", " ")
-    speaker_id = getattr(message, "speaker_id", None)
-    identity = f" ({speaker_id})" if role == "assistant" and speaker_id else ""
-    return f"[{label}{identity}] {message_text(message, include_attachments=include_attachments)}".rstrip()
 
 
 def _limit_history(messages: list[ContextMessage], limit: int) -> list[ContextMessage]:

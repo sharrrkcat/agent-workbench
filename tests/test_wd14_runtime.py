@@ -19,7 +19,7 @@ from ai_workbench.core.models.schema import ModelProfile, ProviderProfile, Speec
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
-from ai_workbench.db.models import AppMetadataRecord, RuntimeInstallationRecord, SessionRecord
+from ai_workbench.db.models import AppMetadataRecord, RuntimeInstallationRecord
 from tests.test_phase2b_runtime import FAKE_ENGINE, installed_worker
 from tests.test_wd14 import DEFAULTS, data_url, model_tree, profile
 
@@ -223,7 +223,9 @@ def test_revision_deletes_only_old_vision_drafts_and_preserves_other_rows_and_fi
         with Session(engine) as db:
             db.add(AppMetadataRecord(key="model_settings", value='{"external_enabled":true,"external_api_key":"retained"}'))
             db.add(RuntimeInstallationRecord(id="local", version="1.0.0", state="installed", manifest_sha256="a" * 64))
-            db.add(SessionRecord(session_id="keep", current_persona_id="00000000-0000-4000-8000-000000000001", context_policy_json="{}"))
+            db.execute(text("""INSERT INTO sessionrecord (session_id,title,context_mode,current_persona_id,model_profile_id,waiting_run_id,
+                context_policy_json,generation_json,harness_enabled,tools_allowed_json,title_generation_state,title_generation_metadata_json,created_at,updated_at)
+                VALUES (:id,'','single_assistant',:persona,:model,:waiting,'{}','{}',0,'[]','pending','{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"""), {"id": "keep", "persona": "00000000-0000-4000-8000-000000000001", "model": None, "waiting": None})
             db.commit()
         tables = ("model_profiles", "provider_profiles", "runtime_installations", "runtime_jobs", "appmetadatarecord", "sessionrecord")
         def rows():

@@ -44,29 +44,25 @@
     "read_file": "Read a UTF-8 file under data/knowledge or data/attachments.",
     "web_search": "Search the configured SearXNG JSON service.",
     "fetch_url": "Fetch text from a public HTTP(S) address.",
-    "knowledge_search": "Search the current Persona/session Knowledge bindings.",
+    "knowledge_search": "Search the User Persona, Agent Persona and session Knowledge bindings.",
     "base64_encode": "Encode UTF-8 text as Base64.",
     "base64_decode": "Decode Base64 to UTF-8 text."
   },
   "generalFields": {
     "showFullProcessing": "Show full processing history",
-    "memoryEnabled": "Enable core memory",
-    "memoryContent": "Core memory",
     "titlesEnabled": "Generate session titles",
     "titleLimit": "Title input limit",
-    "groupInstruction": "Group transcript instruction",
     "save": "Save general settings"
   },
   "backToChat": "Back to chat",
   "generalSections": {
     "conversation": "Conversation display",
-    "memory": "Core memory",
-    "titles": "Session titles",
-    "group": "Group conversations"
+    "titles": "Session titles"
   },
   "sidebarGroups": {
     "application": "Application preferences",
     "execution": "Models and execution",
-    "context": "Personas and context"
+    "daily": "Daily Chat & Workspace",
+    "roleplay": "Roleplay & Timeline"
   }
 }
