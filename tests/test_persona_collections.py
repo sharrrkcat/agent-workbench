@@ -214,7 +214,7 @@ def test_persona_revision_resets_only_affected_state_and_keeps_files(tmp_path):
     with pytest.raises(IntegrityError), engine.begin() as db:
         db.execute(text("""INSERT INTO personas VALUES ('extra', 'user', 'Extra', NULL, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"""))
     personas.update(COGITA_PERSONA_ID, {"name": "Edited"})
-    migrations.upgrade(engine, "head")
+    migrations.upgrade(engine, migrations.PERSONA_COLLECTIONS_REVISION)
     assert migrations.inspect_schema(engine) == schema
     assert personas.get(COGITA_PERSONA_ID).name == "Edited"
     engine.dispose()

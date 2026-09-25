@@ -12,7 +12,7 @@ for domain settings; core/models/store.py owns provider and local runtime settin
 Under frontend/src/, components/SettingsPage.tsx composes components/settings/
 panels and domain API/type modules. SettingsSidebar.tsx and settings/navigation.ts
 own grouped page navigation; SettingsView.tsx retains inactive subpages.
-Persona/session controls are in components/personas/.
+Persona/session controls are in components/personas/; components/projects/ owns Project defaults and Workspace overrides.
 Storage and revision effects belong to [data layout](../DATA_LAYOUT.md).
 
 ## Verification

@@ -4,7 +4,7 @@ import { apiMocks, createModuleLoader } from './module-loader.mjs';
 const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
-const session = (id) => ({ session_id: id, title: id, effective: {}, updated_at: '2026-09-23T00:00:00Z' });
+const session = (id) => ({ session_id: id, kind: 'ordinary', project_id: null, title: id, effective: {}, updated_at: '2026-09-23T00:00:00Z' });
 const first = session('first'),
   second = session('second'),
   third = session('third'),

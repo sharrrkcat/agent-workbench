@@ -9,6 +9,9 @@ import type { ToolRunResponse } from '../../types/tools';
 export type CogitaState = {
   sessions: Session[];
   currentSession: Session | null;
+  currentProjectId: string | null;
+  lastOrdinarySessionId: string | null;
+  initialized: boolean;
   messages: Message[];
   runs: Run[];
   stepsByRunId: Record<string, RunStep[]>;
@@ -27,11 +30,13 @@ export type CogitaState = {
   sending: boolean;
   resolvingApprovals: string[];
   error: string | null;
-  initialize: () => Promise<void>;
+  initialize: (selectOrdinary?: boolean) => Promise<void>;
   refreshCurrent: () => Promise<void>;
-  reloadSessions: () => Promise<void>;
-  selectSession: (id: string) => Promise<void>;
-  createSession: () => Promise<void>;
+  reloadSessions: (projectId?: string | null) => Promise<void>;
+  selectSession: (id: string, projectId?: string | null) => Promise<void>;
+  createSession: (projectId?: string | null) => Promise<Session | undefined>;
+  activateLocation: (projectId: string | null, sessionId?: string | null) => Promise<void>;
+  forgetProject: (projectId: string) => void;
   deleteSession: (id: string) => Promise<void>;
   updateSession: (patch: SessionPatch) => Promise<void>;
   sendMessage: (content: string, attachments?: Record<string, unknown>[]) => Promise<RuntimeEvent | undefined>;

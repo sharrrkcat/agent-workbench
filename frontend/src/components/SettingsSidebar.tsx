@@ -51,9 +51,11 @@ function pageIcon(route: SettingsRoute) {
 export function SettingsSidebar({
   route,
   onNavigate,
+  returnTo = '/',
 }: {
   route: SettingsRoute;
   onNavigate: SettingsNavigate;
+  returnTo?: string;
 }) {
   const { t } = useTranslation('settings');
   const { setOpenMobile } = useSidebar();
@@ -137,7 +139,7 @@ export function SettingsSidebar({
       <SidebarFooter className="shrink-0 p-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton type="button" onClick={() => void navigate('/')}>
+            <SidebarMenuButton type="button" onClick={() => void navigate(returnTo)}>
               <ArrowLeft data-icon="inline-start" />
               <span>{t('backToChat')}</span>
             </SidebarMenuButton>

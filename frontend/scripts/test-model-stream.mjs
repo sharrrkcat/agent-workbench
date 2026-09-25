@@ -116,7 +116,7 @@ console.log('runtime progress, stale reads, cancellation, retry history and glob
 
 const cogitaModule = await loadStore('../src/store/useCogitaStore.ts');
 const cogita = cogitaModule.exports.useCogitaStore;
-const session = { session_id: 's', title: '', model_profile_id: null };
+const session = { session_id: 's', kind: 'ordinary', project_id: null, title: '', model_profile_id: null };
 cogita.setState({ currentSession: session, sessions: [session], messages: [], runs: [] });
 mockApi.getSession = async () => session;
 const historyRead = deferred();

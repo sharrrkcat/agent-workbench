@@ -30,7 +30,7 @@ export type Persona = PersonaInput & {
 };
 export type PersonaIdentity = Pick<Persona, 'id' | 'name' | 'avatar_attachment_id'>;
 
-export type SessionPatch = Partial<{
+export type OrdinarySessionPatch = Partial<{
   title: string;
   persona_id: string;
   model_profile_id: string | null;
@@ -40,12 +40,32 @@ export type SessionPatch = Partial<{
   tools_allowed: string[];
 }>;
 
+export type WorkspaceOverrides = {
+  persona_id?: string | null;
+  model_profile_id?: string | null;
+  context_policy?: ContextPolicy | null;
+  temperature?: number | null;
+  harness_enabled?: boolean | null;
+  tools_allowed?: string[] | null;
+};
+export type WorkspaceSessionPatch = { title?: string; overrides?: WorkspaceOverrides };
+export type SessionPatch = OrdinarySessionPatch | WorkspaceSessionPatch;
+
 export type EffectiveChatConfig = {
+  session_kind: 'ordinary' | 'workspace';
+  project_id: string | null;
+  sources: {
+    persona: 'session' | 'project';
+    context: 'session' | 'project';
+    temperature: 'session' | 'project' | 'model';
+    harness: 'session' | 'project';
+    tools: 'session' | 'project';
+  };
   persona_id: string;
   persona_name: string;
   avatar_attachment_id: string | null;
   model_profile_id: string | null;
-  model_source: 'session';
+  model_source: 'session' | 'project' | 'global';
   user_persona_id: string;
   context_policy: ContextPolicy;
   generation: GenerationParameters;
@@ -54,20 +74,33 @@ export type EffectiveChatConfig = {
   knowledge_base_ids: string[];
 };
 
-export type Session = {
+type SessionBase = {
   session_id: string;
   title: string;
   waiting_run_id: string | null;
-  model_profile_id: string | null;
-  persona_id: string;
   user_persona: PersonaIdentity;
-  context_policy: ContextPolicy;
-  generation: SessionGenerationParameters;
-  harness_enabled: boolean;
-  tools_allowed: string[];
   effective: EffectiveChatConfig;
   title_generation_state?: string;
   title_generation_metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
+
+export type OrdinarySession = SessionBase & {
+  kind: 'ordinary';
+  project_id: null;
+  model_profile_id: string | null;
+  persona_id: string;
+  context_policy: ContextPolicy;
+  generation: SessionGenerationParameters;
+  harness_enabled: boolean;
+  tools_allowed: string[];
+};
+
+export type WorkspaceSession = SessionBase & {
+  kind: 'workspace';
+  project_id: string;
+  overrides: WorkspaceOverrides;
+};
+
+export type Session = OrdinarySession | WorkspaceSession;

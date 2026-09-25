@@ -48,7 +48,7 @@ class _Budget:
 
 class HarnessAgentLoop:
     def __init__(self, *, sessions, messages, runs, events, model_manager, registry: ToolRegistry,
-                 network_policy, harness_settings, repo_root, knowledge_service=None, active_runs=None) -> None:
+                 network_policy, harness_settings, repo_root, allowed_tools, knowledge_service=None, active_runs=None) -> None:
         self.sessions = sessions
         self.messages = messages
         self.runs = runs
@@ -60,6 +60,7 @@ class HarnessAgentLoop:
         self.repo_root = repo_root
         self.knowledge_service = knowledge_service
         self.active_runs = active_runs
+        self.allowed_tools = allowed_tools
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                   user: MessageSchema, context: list[dict[str, Any]], max_image_bytes: int, active_seconds: float = 0.0) -> RunResult:
@@ -136,8 +137,8 @@ class HarnessAgentLoop:
                     call = state.pending_calls[0]
                     try:
                         spec = self.registry.get(call.function.name)
-                        if call.function.name not in config.tools_allowed:
-                            raise ToolExecutionError("TOOL_NOT_ALLOWED", "Tool is not allowed for this persona/session.")
+                        if call.function.name not in self.allowed_tools(config):
+                            raise ToolExecutionError("TOOL_NOT_ALLOWED", "Tool is not allowed for this session or Project.")
                         if state.direct and not spec.direct_callable:
                             raise ToolExecutionError("TOOL_NOT_DIRECT_CALLABLE", "Tool cannot be called directly.")
                         arguments = self._arguments(call)
@@ -189,7 +190,7 @@ class HarnessAgentLoop:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
-                 for spec in (self.registry.get(name) for name in config.tools_allowed)]
+                 for spec in (self.registry.get(name) for name in self.allowed_tools(config))]
         base_messages = await resolve_context_images(state.base_messages, vision=profile.capabilities.vision,
                                                      max_image_bytes=state.max_image_bytes)
         request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],

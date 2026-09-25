@@ -26,7 +26,7 @@ export function mockModule(exports) {
 
 export function apiMocks(api) {
   return Object.fromEntries(
-    ['chat', 'models', 'runs', 'tools', 'knowledge', 'worldbook', 'settings'].map((domain) => [
+    ['chat', 'models', 'runs', 'tools', 'knowledge', 'worldbook', 'settings', 'projects'].map((domain) => [
       sourceUrl(`api/${domain}.ts`),
       mockModule({ [domain + 'Api']: api }),
     ]),

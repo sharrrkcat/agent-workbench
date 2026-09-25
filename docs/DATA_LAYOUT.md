@@ -25,7 +25,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0021_persona_collections`; there are 22 current business tables.
+Alembic head is `0022_projects`; there are 25 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -189,6 +189,13 @@ Other records and all model/attachment/runtime files survive without data conver
 Revision `0021_persona_collections` recreates disposable Personas and sessions, removes
 session members and Worldbook additions, and clears Persona/Knowledge bindings, messages,
 runs, steps, events and private continuations. It resets the app_settings row and seeds
-only Cogita and the singleton User Persona; old Core Memory text is not converted.
+only Cogita and the singleton Cogita Persona; old Core Memory text is not converted.
 Knowledge/Worldbook resources and settings, model/provider/runtime records and every file
 directory survive. Repeating upgrade preserves newly saved identities and configuration.
+
+Revision `0022_projects` adds typed Projects and ordered Knowledge/Worldbook bindings.
+It recreates disposable sessions with immutable kind/project_id and configuration_json
+(ordinary settings or sparse Workspace overrides), clearing session bindings, messages,
+runs, steps, events and private continuations without converting old conversations.
+Personas and their bindings, global resources/settings, model/provider/runtime records and
+all file directories survive. Repeating upgrade preserves new Projects and conversations.

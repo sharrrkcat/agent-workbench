@@ -28,7 +28,7 @@ def test_phase2a_recreates_all_test_data_and_matches_orm(tmp_path):
     assert "model_profiles" in signature.tables and "provider_profiles" in signature.tables
     assert "backend_profiles" not in signature.tables
     assert not {"llm_profiles", "embedding_model_profiles", "vision_model_profiles", "multimodal_embedding_model_profiles"} & set(signature.tables)
-    assert "model_profile_id" in signature.columns["sessionrecord"]
+    assert "configuration_json" in signature.columns["sessionrecord"]
     assert "llm_profile_id" not in signature.columns["sessionrecord"]
     assert not any("last_announced" in c for c in signature.columns["sessionrecord"])
     expected = create_engine("sqlite:///:memory:")

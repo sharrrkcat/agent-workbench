@@ -232,8 +232,8 @@ def patch_knowledge_base(knowledge_base_id: str, payload: KnowledgeBasePatch, st
 @router.delete("/bases/{knowledge_base_id}", response_model=KnowledgeBaseDeleted, response_model_exclude_unset=True,
     responses=error_responses(404, 409))
 def delete_knowledge_base(knowledge_base_id: str, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    if state.personas.references_resource("knowledge", knowledge_base_id):
-        raise_error(409, "KNOWLEDGE_BASE_IN_USE", "Remove persona bindings before deleting this Knowledge Base.")
+    if state.personas.references_resource("knowledge", knowledge_base_id) or state.projects.references_resource("knowledge", knowledge_base_id):
+        raise_error(409, "KNOWLEDGE_BASE_IN_USE", "Remove Persona and Project bindings before deleting this Knowledge Base.")
     try:
         base = state.knowledge.delete_knowledge_base(knowledge_base_id)
         return {"deleted": True, "knowledge_base_id": base.id}

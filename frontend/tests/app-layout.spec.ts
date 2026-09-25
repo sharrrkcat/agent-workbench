@@ -84,8 +84,8 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(sidebar.locator('.sidebar-brand')).toHaveText('Cogita');
         const list = sidebar.locator('.session-list');
         expect((await sidebar.boundingBox())!.width).toBeCloseTo(viewport.width === 390 ? 288 : 256, 1);
-        await expect(sidebar.getByRole('button', { name: labels.featureOne, exact: true })).toBeDisabled();
-        await expect(sidebar.getByRole('button', { name: labels.featureTwo, exact: true })).toBeDisabled();
+        await expect(sidebar.getByRole('button', { name: labels.newWorkspace, exact: true })).toBeEnabled();
+        await expect(sidebar.getByRole('button', { name: labels.newTimeline, exact: true })).toBeEnabled();
         const currentRow = sidebar.locator('.session-item.selected');
         const currentTitle = currentRow.locator('.session-select > span');
         await expect(currentTitle).toHaveCSS('white-space', 'nowrap');

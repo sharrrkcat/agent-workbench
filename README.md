@@ -56,14 +56,14 @@ Local health/load/unload and provider request status follow [Models](docs/contra
 
 ## Chat and tools
 
-Personas share identity, avatar and prompt. User/Agent Personas bind Knowledge; roleplay User/Character Personas bind Worldbook. Ordinary sessions select one Agent, initially Cogita, and always use the singleton User Persona.
-Sessions own model, history policy, Temperature and Harness settings, plus additions to the User/Agent Knowledge bindings; clearing additions preserves both Personas' bindings.
+Personas share identity, avatar and prompt. Cogita/Agent Personas bind Knowledge; roleplay User/Character Personas bind Worldbook. Ordinary sessions select one Agent, initially Cogita, and always use the singleton Cogita Persona.
+New Workspace and New Timeline create immutable Project types in the sidebar tree. Workspace sessions inherit editable Project defaults and Knowledge, with explicit overrides; model selection resolves session > Project > global. Ordinary sessions keep their own settings.
 
-Chat supports User Persona background and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval. Worldbook management and matching remain available for future roleplay workflows.
+Chat supports Cogita Persona background and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval. Timeline supports Project settings, roleplay Persona selection and Worldbook bindings; its internal conversations/context are deferred.
 Embedding changes require reindexing; unavailable optional reranking intentionally preserves RRF order.
 
-Harness defaults off; enable it and choose tools in session settings to permit native model calls.
-New sessions select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search,
+Harness defaults off; enable it and choose tools in session settings to permit native model calls. Workspace tools are capped by their Project, including pending approvals.
+New ordinary sessions select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search,
 fetch_url, knowledge_search, base64_encode and base64_decode. File/network calls require approval every time;
 waiting survives restart, blocks other input and resumes through approval, rejection or cancellation.
 

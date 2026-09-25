@@ -202,7 +202,8 @@ def test_user_agent_and_session_knowledge_order_and_tool_scope(client_pair):
     ok(client.patch(f"/api/personas/{role['id']}/knowledge-bases", json={"knowledge_base_ids": bases[:2]}))
     response = ok(client.patch(path + "/knowledge-bases", json={"knowledge_base_ids": bases[1:3]}))
     assert response == {"session_id": session["session_id"], "knowledge_base_ids": bases[1:3],
-        "user_persona_knowledge_base_ids": bases[:1], "agent_persona_knowledge_base_ids": bases[:2], "effective_knowledge_base_ids": bases[:3]}
+        "user_persona_knowledge_base_ids": bases[:1], "agent_persona_knowledge_base_ids": bases[:2],
+        "project_knowledge_base_ids": [], "effective_knowledge_base_ids": bases[:3]}
     ok(client.post(path + "/messages", json={"content": "artifact"}))
     search = ok(client.post("/api/knowledge/search", json={"query": "artifact", "session_id": session["session_id"]}))
     assert {item["knowledge_base_id"] for item in search["results"]} == set(bases[:3])

@@ -22,6 +22,7 @@ const storeModule = await load('../src/store/useCogitaStore.ts');
 const store = storeModule.exports.useCogitaStore;
 const at = (microseconds) => '2026-09-07T00:00:00.' + microseconds.padStart(6, '0') + 'Z';
 const session = {
+  kind: 'ordinary', project_id: null,
   session_id: 's',
   title: 'Chat',
   updated_at: at('0'),

@@ -14,6 +14,8 @@ from ai_workbench.core.harness import HarnessSettingsStore, ToolRegistry, regist
 from ai_workbench.core.chat_service import ChatService
 from ai_workbench.core.conversation_history import ConversationHistory, MemoryHistoryStore
 from ai_workbench.core.personas import PersonaStore
+from ai_workbench.core.projects import ProjectStore
+from ai_workbench.core.project_service import ProjectService
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.knowledge_service import KnowledgeService
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
@@ -49,6 +51,8 @@ class RuntimeState:
     chat_service: ChatService
     history: ConversationHistory
     personas: PersonaStore
+    projects: ProjectStore
+    project_service: ProjectService
     active_runs: ActiveRunRegistry
     model_manager: ModelManager
     model_profiles: ModelProfileStore
@@ -111,8 +115,10 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     manager = ModelManager(profiles, providers, model_settings, events, adapter_factory, supervisor)
     utility_llm = UtilityLLMService(model_manager=manager, app_settings_store=app_settings)
     personas = PersonaStore(engine)
-    chat_service = ChatService(personas=personas, sessions=sessions, runs=runs, model_manager=manager,
+    projects = ProjectStore(engine)
+    chat_service = ChatService(personas=personas, projects=projects, sessions=sessions, runs=runs, model_manager=manager,
         knowledge=knowledge, worldbooks=worldbooks, tool_registry=tool_registry)
+    project_service = ProjectService(projects=projects, chat_service=chat_service)
     knowledge_service = KnowledgeService(store=knowledge, model_manager=manager, repo_root=repo_root,
         session_binding_resolver=lambda session_id: chat_service.effective_knowledge_ids(sessions.get_session(session_id)))
     chat_runner = ChatRunner(
@@ -130,7 +136,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     return RuntimeState(
         sessions=sessions, messages=messages, runs=runs, run_events=run_events, events=events,
         runtime=runtime, chat_runner=chat_runner, active_runs=active_runs,
-        chat_service=chat_service, history=history, personas=personas,
+        chat_service=chat_service, history=history, personas=personas, projects=projects, project_service=project_service,
         model_manager=manager, model_profiles=profiles, provider_profiles=providers, local_runtime_settings=local_runtime_settings,
         model_settings=model_settings, app_settings=app_settings, knowledge=knowledge,
         knowledge_service=knowledge_service, worldbooks=worldbooks,

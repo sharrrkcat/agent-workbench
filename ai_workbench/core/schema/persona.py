@@ -65,7 +65,19 @@ class Persona(PersonaInput):
         return PersonaIdentity(id=self.id, name=self.name, avatar_attachment_id=self.avatar_attachment_id)
 
 
+class ConfigurationSources(StrictModel):
+    persona: Literal["session", "project"]
+    context: Literal["session", "project"]
+    temperature: Literal["session", "project", "model"]
+    harness: Literal["session", "project"]
+    tools: Literal["session", "project"]
+
+
 class ResolvedChatConfig(StrictModel):
+    session_kind: Literal["ordinary", "workspace"]
+    project_id: str | None
+    project_system_prompt: str = ""
+    sources: ConfigurationSources
     persona_id: str
     persona_name: str
     avatar_attachment_id: str | None = None
@@ -74,14 +86,14 @@ class ResolvedChatConfig(StrictModel):
     user_persona_prompt: str
     context_policy: ContextPolicy
     model_profile_id: str | None
-    model_source: Literal["session"]
+    model_source: Literal["session", "project", "global"]
     generation: GenerationParameters
     harness_enabled: bool
     tools_allowed: list[str]
     knowledge_base_ids: list[str]
 
     def public_summary(self) -> dict:
-        return self.model_dump(mode="json", exclude={"system_prompt", "user_persona_prompt"})
+        return self.model_dump(mode="json", exclude={"system_prompt", "project_system_prompt", "user_persona_prompt"})
 
 
 def seed_personas() -> list[Persona]:

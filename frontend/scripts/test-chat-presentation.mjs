@@ -66,7 +66,7 @@ assert.equal(classified.answer, undefined);
 assert.ok(classified.process.some((i) => i.kind === 'content' && i.part.text === 'working live'));
 
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { resolve, promise }; }
-const session = { session_id: 's', title: 'Session', updated_at: at(1), waiting_run_id: null, effective: { context_policy: { mode: 'selected_message' } } };
+const session = { session_id: 's', kind: 'ordinary', project_id: null, title: 'Session', updated_at: at(1), waiting_run_id: null, effective: { context_policy: { mode: 'selected_message' } } };
 function reset() {
   store.setState({ currentSession: session, sessions: [session], messages: [user, calls, output, answer], runs: [done], stepsByRunId: {},
     deletedMessageIds: [], deletedRunIds: [], resolvingApprovals: [], sourceMessageId: 'answer', sending: false, mutatingHistory: false,

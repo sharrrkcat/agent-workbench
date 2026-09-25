@@ -9,6 +9,7 @@ Core modules under ai_workbench/core/ include schema/persona.py, personas.py,
 user_persona_context.py, worldbook.py, context.py and chat_service.py.
 HTTP routes live in ai_workbench/api/routes/personas.py and worldbook.py;
 persistence lives in ai_workbench/db/stores.py and core/personas.py.
+Project schema/service/store live in core/schema/project.py, core/project_service.py and core/projects.py; api/routes/projects.py owns HTTP.
 The frontend uses PersonasPanel.tsx, WorldbookPanel.tsx and worldbook/ components
 under frontend/src/components/settings/, plus components/personas/ session controls.
 
@@ -16,7 +17,7 @@ under frontend/src/components/settings/, plus components/personas/ session contr
 
 Start with tests/test_persona_collections.py, test_user_persona_context.py,
 test_worldbook_matching.py, test_phase3_personas.py, test_chat_configuration.py
-and test_resource_management.py. Check collection isolation, protected identities,
+and test_resource_management.py; test_projects.py covers Project types, inheritance, snapshots and tool revocation. Check collection isolation, protected identities,
 resource permissions, snapshot stability, current user identity, ordered Knowledge
 resolution and deterministic explicit Worldbook matching in both stores.
 Frontend/browser tests cover shared editors, live identity/avatars, independent

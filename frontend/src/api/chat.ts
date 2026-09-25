@@ -1,11 +1,11 @@
-import type { Persona, PersonaCollection, PersonaCreate, PersonaInput, Session, SessionPatch } from '../types/chat';
+import type { Persona, PersonaCollection, PersonaCreate, PersonaInput, OrdinarySessionPatch, Session, SessionPatch } from '../types/chat';
 import type { Attachment, Message } from '../types/messages';
 import type { HistoryPruned, RuntimeResponse } from '../types/runs';
 import { request, requestForm } from './http';
 
 export const chatApi = {
   listSessions: () => request<Session[]>('/api/sessions'),
-  createSession: (values: SessionPatch = {}) =>
+  createSession: (values: OrdinarySessionPatch = {}) =>
     request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(values) }),
   getSession: (sessionId: string) => request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`),
   updateSession: (sessionId: string, patch: SessionPatch) =>

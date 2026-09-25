@@ -6,7 +6,7 @@ import { Field, FieldLabel, FieldSet, FieldGroup } from '@/components/ui/field';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { LockKeyhole, RefreshCw, Save } from 'lucide-react';
+import { RefreshCw, Save } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { knowledgeApi } from '../../api/knowledge';
@@ -15,18 +15,28 @@ import { toolsApi } from '../../api/tools';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
-import type { Session, SessionPatch } from '../../types/chat';
+import type { OrdinarySession, Session, SessionPatch } from '../../types/chat';
 import type { HarnessTool } from '../../types/tools';
 import type { KnowledgeBase } from '../../types/knowledge';
 import { ResourceLoading, errorText } from '../settings/resources/ResourceUI';
-import { BindingsField, ContextFields, GenerationFields, ModelField, ToolsField } from './ConfigurationFields';
+import { ContextFields, GenerationFields, ModelField, ToolsField } from './ConfigurationFields';
+import { SessionBindings } from './SessionBindings';
+import { WorkspaceSessionSettingsDialog } from '../projects/WorkspaceSessionSettingsDialog';
 
 type Tab = 'configuration' | 'knowledge';
 
-export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
+export function SessionSettingsDialog(props: {
   session: Session;
   onClose: () => void;
   onManagePersonas: () => void;
+}) {
+  return props.session.kind === 'workspace'
+    ? <WorkspaceSessionSettingsDialog {...props} session={props.session} />
+    : <OrdinarySessionSettingsDialog {...props} session={props.session} />;
+}
+
+function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
+  session: OrdinarySession; onClose: () => void; onManagePersonas: () => void;
 }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('personas');
@@ -34,7 +44,7 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
   const allPersonas = usePersonasStore((s) => s.personas);
   const personas = allPersonas.filter((p) => p.collection === 'agent');
   const profiles = useModelsStore((s) => s.profiles);
-  const [draft, setDraft] = useState<Session>(() => structuredClone(session));
+  const [draft, setDraft] = useState<OrdinarySession>(() => structuredClone(session));
   const [tab, setTab] = useState<Tab>('configuration');
   const [knowledge, setKnowledge] = useState<string[]>([]);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
@@ -62,7 +72,7 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
     }).catch((reason) => { if (live) setError(errorText(reason)); });
     return () => { live = false; };
   }, [session.session_id, reload]);
-  const patch = (values: Partial<Session>) => setDraft((current) => ({ ...current, ...values }));
+  const patch = (values: Partial<OrdinarySession>) => setDraft((current) => ({ ...current, ...values }));
   async function save() {
     setBusy(true);
     setError('');
@@ -151,51 +161,5 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
         {confirmation}
       </DialogContent>
     </Dialog>
-  );
-}
-
-export function SessionBindings({ personaId, userPersonaId, items, ids, onChange }: {
-  personaId: string;
-  userPersonaId: string;
-  items: Array<{ id: string; name: string; enabled: boolean }>;
-  ids: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const { t } = useTranslation('personas');
-  const [bindings, setBindings] = useState<{ user: string[]; agent: string[] } | null>(null);
-  const [error, setError] = useState('');
-  const [reload, setReload] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setBindings(null);
-    setError('');
-    void Promise.all([chatApi.getPersonaKnowledge(userPersonaId), chatApi.getPersonaKnowledge(personaId)])
-      .then(([user, agent]) => { if (live) setBindings({ user: user.knowledge_base_ids, agent: agent.knowledge_base_ids }); })
-      .catch((reason) => { if (live) setError(errorText(reason)); });
-    return () => { live = false; };
-  }, [personaId, userPersonaId, reload]);
-  if (!bindings) return <>
-    <ResourceLoading error={error} />
-    {error ? <Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>
-      <RefreshCw data-icon="inline-start" />{t('refresh')}
-    </Button> : null}
-  </>;
-  const inherited = new Set([...bindings.user, ...bindings.agent]);
-  return (
-    <div className="flex flex-col gap-4">
-      {(['user', 'agent'] as const).map((collection) => (
-        <section key={collection} aria-label={t(collection + 'PersonaBindings')}>
-          <h3 className="binding-section-heading"><LockKeyhole size={15} aria-hidden="true" />{t(collection + 'PersonaBindings')}</h3>
-          {bindings[collection].length ? (
-            <BindingsField items={items.filter((item) => bindings[collection].includes(item.id))}
-              ids={bindings[collection]} onChange={() => undefined} disabled />
-          ) : <p className="model-empty">{t('noBindings')}</p>}
-        </section>
-      ))}
-      <section aria-label={t('sessionAdditions')}>
-        <h3>{t('sessionAdditions')}</h3>
-        <BindingsField items={items.filter((item) => !inherited.has(item.id) || ids.includes(item.id))} ids={ids} onChange={onChange} />
-      </section>
-    </div>
   );
 }

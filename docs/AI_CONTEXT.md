@@ -27,18 +27,18 @@ Harrier has CUDA and short-text CPU acceptance; other text checkpoints require r
 Directory-selected native CrossEncoder rerankers serve Knowledge and `/v1/rerank`, with automatic scoring configuration and independent workers.
 mxbai-rerank-base-v2 has CUDA/native, Knowledge and short-text CPU acceptance; other reranker checkpoints require representative acceptance.
 
-Personas own identity, prompts and resource bindings; sessions own concrete model
-selection, context, generation and opt-in Harness configuration. Chat combines singleton User Persona and selected Agent Knowledge with session additions. Each run has one visible
+Personas own identity, prompts and resource bindings. Ordinary sessions own configuration;
+Workspace sessions continuously inherit Project defaults with sparse overrides. Chat combines singleton Cogita Persona, selected Agent, Project and session Knowledge. Each run has one visible
 reply, processing history and whole-reply actions. Built-in tools share direct
 and model invocation with bounded execution and durable approvals; `/v1` forwards
-tool data without executing it. User Persona background and Knowledge support chat. Roleplay User/Character Personas and
-Worldbook support management and explicit matching only; Projects are not implemented.
+tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.
+Timeline Projects support creation/settings and roleplay Persona/Worldbook selection; internal sessions and context injection remain deferred.
 Pet has position, dragging and task-state foundations only, with no mounted UI.
 
 ## Contracts
 
 - [Models](contracts/models.md): profiles, lifecycle, runtimes, CUDA, storage/cache, `/v1`.
-- [Chat/context](contracts/chat-context.md): Personas, sessions, Worldbook, parts, titles.
+- [Chat/context](contracts/chat-context.md): Projects, Personas, session inheritance, Worldbook, parts, titles.
 - [Harness/tools](contracts/harness-tools.md): direct calls, loops, permissions, approval.
 - [Knowledge](contracts/knowledge.md): sources, indexing, hybrid retrieval and rerank.
 - [Runs/streaming](contracts/runs-streaming.md): status, WS/SSE, persistence, reconciliation.

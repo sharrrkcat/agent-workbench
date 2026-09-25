@@ -64,20 +64,20 @@ App commits routes only after acceptance. For guarded browser back/forward,
 it restores the current history entry before asking and replays the target once
 on acceptance; cancellation preserves the page, drafts and history order.
 
-Home and Settings share one SidebarProvider/SidebarInset shell bounded to the
-dynamic viewport height. The desktop sidebar
-is 16rem wide, initially expanded and can be fully hidden; hidden controls leave
-the focus order. Visibility is shared across routes but not persisted. Below 768px it becomes an initially
-closed Sheet, at most 18rem wide with viewport margins. Close, backdrop and Escape
-return focus to the toggle. Drawers are titled Sessions or Settings. Selecting/creating
-a session, opening Settings or accepting settings navigation closes the drawer;
+Home and Settings share one SidebarProvider/SidebarInset shell bounded to dynamic viewport height.
+The 16rem desktop sidebar starts expanded and can be hidden, removing controls from focus order.
+Visibility is shared across routes without persistence. Below 768px an initially closed Sheet
+is at most 18rem wide with viewport margins; Close/backdrop/Escape return focus to its toggle.
+Drawers are titled Sessions or Settings. Accepted navigation/creation closes the drawer;
 rejected navigation keeps it open.
 
-The sidebar fixes its brand/new-session header, two disabled feature placeholders
-and Settings footer; only the session list scrolls. Each row has one truncated
-title, with its full title available, and a delete menu shown on hover, focus,
-menu opening or coarse pointers. Placeholders have no routes. Session deletion
-semantics belong to [chat/context](chat-context.md#personas-and-sessions).
+The sidebar fixes its brand, New session/New Workspace/New Timeline actions and Settings footer.
+The scrolling tree contains Projects and ordinary sessions; Workspace nodes expand to internal
+sessions and a scoped New session action. Rows truncate titles and expose settings/delete menus.
+Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace session.
+Routes survive refresh/history, reject mismatched membership and retain unsaved-navigation guards.
+Timeline opens settings only. Global Settings returns to the previous home route.
+Creation, inheritance and deletion follow [chat/context](chat-context.md#personas-and-sessions).
 
 The fixed chat header contains the sidebar toggle, title, concrete model selector
 and session settings; the model selector occupies a second row on narrow screens.
@@ -92,7 +92,7 @@ MessageScroller uses pinned @shadcn/react 0.3.1; transcript behavior belongs to
 Settings fixes its title in the shared sidebar brand position and a Back to chat footer; the middle navigation
 scrolls independently. SidebarGroup reflects responsibility: Application preferences
 contains General; Models and execution contains Models/Tools; Daily Chat & Workspace
-contains Personas (User Persona, Agent Personas) and Knowledge; Roleplay & Timeline
+contains Personas (Cogita Persona, Agent Personas) and Knowledge; Roleplay & Timeline
 contains Personas (User Personas, Character Personas) and Worldbook. The two Personas
 menus have distinct ids and accessible group context. Each menu uses SidebarMenu;
 parents only toggle their nested pages and have no selected state. Menus start collapsed
@@ -100,12 +100,12 @@ and closed pages leave keyboard navigation. Active pages use aria-current.
 | Domain | Pages / `view` values |
 | --- | --- |
 | General, Tools | Single page; no `view` |
-| Personas | User Persona `user`, Agent Personas `agent`, User Personas `roleplay_user`, Character Personas `character` |
+| Personas | Cogita Persona `user`, Agent Personas `agent`, User Personas `roleplay_user`, Character Personas `character` |
 | Models | Model profiles `profiles`, Providers `providers`, Local Runtime `localRuntime`, External API `service` |
 | Knowledge, Worldbook | Resources `list`, Global settings `settings` |
 
 Missing/unknown views select user for Personas, profiles for Models or list for resources. Page changes push browser history;
-reselecting the effective current page adds no entry. Back to chat navigates to `/`.
+reselecting the effective current page adds no entry. Back to chat restores the previous ordinary/Project route.
 Refresh restores the domain/subpage; resource selection and detail Tabs are local.
 The fixed page header shares Home's primary-row height and toggle position and shows
 only the current location. Content scrolls
@@ -215,16 +215,15 @@ manual value while switching modes. Defaults and execution belong to Models.
 
 ## Other domains
 
-The four Persona collections share identity, avatar and prompt editing. User Persona
-opens its singleton editor directly without create/delete controls. The other collections
-use the shared list/dialog editor; Cogita has no delete control. User and Agent expose
-only Knowledge; roleplay User and Character expose only Worldbook. Collection pages keep
-drafts within editor tabs, guard unsaved navigation and clean unreferenced temporary avatars.
-Session configuration owns one Agent Persona selection, model, context, optional Temperature,
-Harness and a catalog-backed tool list. Knowledge shows separate locked User/Agent bindings
-and editable session additions. Worldbook and group controls are absent from sessions.
-See [chat/context](chat-context.md). Harness settings own only the optional
-searxng_base_url through `/api/tools/settings`.
+Persona editors share identity/avatar/prompts and collection-specific resources; [chat/context](chat-context.md) owns restrictions.
+Cogita Persona opens its singleton editor without create/delete controls. Other collections use lists/dialogs;
+the protected Agent Cogita also has no delete control. Editors retain tab drafts, guard navigation and clean temporary avatars.
+Ordinary session controls are unchanged. Workspace controls show inheritance and per-setting reset,
+submit only changed overrides, lock Cogita identity and inherited Knowledge, and disable Project-forbidden tools.
+Project editors offer type-specific Configuration and Knowledge/Worldbook tabs; missing required Personas
+have management links. Creation preselects session history, global model inheritance and, for Workspace,
+the default Agent, fixed Cogita Persona, Harness off and the explicit current tool catalog.
+Harness global settings own only searxng_base_url through `/api/tools/settings`.
 
 ToolsPanel shows catalog, risk, parameter schema, direct JSON calls, results and
 approval controls shared with RunPanel. Catalog and call/results use two columns

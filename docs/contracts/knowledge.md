@@ -41,8 +41,9 @@ overrides are in its collapsed advanced section.
 ## Retrieval
 
 Vector and keyword candidates are merged with reciprocal rank fusion (RRF).
-The singleton User Persona, selected Agent Persona and independent session additions
-define default Knowledge Bases, deduplicated in that order. An empty session list
+The singleton Cogita Persona, selected Agent Persona, Workspace Project and session additions
+define default Knowledge Bases, deduplicated in that order; ordinary sessions have no Project bindings.
+Project bindings remain inherited while additions are independently editable. An empty session list
 clears only additions. Callers may provide an explicit list. Search can return compact debug metadata and a
 rendered context preview. RRF ordering is deterministic for equal candidates.
 
@@ -65,9 +66,13 @@ background-indexing workflows are not part of this contract.
 - `/api/knowledge/sources/{id}/preview`, `/chunks` — original text and indexed chunks.
 - `/api/knowledge/sources/{id}` — get/delete a source.
 - `/api/knowledge/search` — explicit hybrid search.
-- `/api/sessions/{id}/knowledge-bases` — ordered additions, separate User/Agent Persona ids and effective ids.
-- `/api/personas/{id}/knowledge-bases` — ordered User/Agent Persona bindings.
+- `/api/sessions/{id}/knowledge-bases` — additions, separate Cogita/Agent/Project bindings and effective ids.
+- `/api/personas/{id}/knowledge-bases` — ordered Cogita/Agent Persona bindings.
+- `/api/projects/{id}/knowledge-bases` — ordered Workspace bindings, inherited by its sessions; Timeline rejects Knowledge.
 - Model selection uses `/api/models/profiles?kind=embedding` or `reranker`.
+
+Deleting a base referenced by a Persona or Project requires removing those bindings first.
+Project deletion removes only its bindings/conversations, preserving shared bases and sources.
 
 Indexing, query embedding and reranking are async calls to the app-scoped
 ModelManager. Local text profiles derive dimensions, pooling, normalization and

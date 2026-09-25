@@ -105,6 +105,6 @@ def _cleanup_avatar(state, attachment_id):
 
 def _notify_sessions(state, persona_id):
     for session in state.sessions.list_sessions():
-        if persona_id == USER_PERSONA_ID or session.persona_id == persona_id:
+        if persona_id == USER_PERSONA_ID or state.chat_service.selected_agent_id(session) == persona_id:
             state.events.emit("session_updated", session_id=session.session_id,
                 payload={"session": state.chat_service.session_response(session)})

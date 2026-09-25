@@ -15,24 +15,24 @@ filenames; bytes remain in the attachment store.
 
 | Collection | Settings page | Resources | Execution |
 | --- | --- | --- | --- |
-| user | User Persona | Knowledge | Singleton user background and display identity |
-| agent | Agent Personas | Knowledge | Selected ordinary-session assistant |
-| roleplay_user | User Personas | Worldbook | Management only |
-| character | Character Personas | Worldbook | Management only |
+| user | Cogita Persona | Knowledge | Singleton background and display identity |
+| agent | Agent Personas | Knowledge | Ordinary/Workspace assistant |
+| roleplay_user | User Personas | Worldbook | Management and Timeline selection only |
+| character | Character Personas | Worldbook | Management and Timeline selection only |
 
 Migrations seed User (empty prompt) and Cogita (helpful-assistant prompt), with no
 roleplay defaults. Both may be edited but not deleted; protection follows stable
 ids and is exposed as read-only is_protected. POST requires a creatable collection;
-PATCH cannot change collection. The user singleton cannot be created through CRUD.
-Persona deletion fails while selected by a session or referenced by an unfinished run.
+PATCH cannot change collection. The Cogita singleton cannot be created through CRUD;
+its category name does not replace its editable name/avatar. Persona deletion fails while referenced by a Project, session or unfinished run.
 Historical assistant messages retain identity/avatar snapshots. SessionResponse.user_persona
 contains the current singleton identity; all user-message and selected-context labels use
 its latest name/avatar without rewriting history. User messages reference the singleton id
 and do not snapshot its avatar. Updating the singleton notifies all sessions.
 
-Each session has one persona_id, initially Cogita; selection accepts only agent records.
+Ordinary sessions have one persona_id, initially Cogita; selection accepts only agent records.
 There are no members, speaker lists, conversation modes or group transcripts.
-New sessions persist a concrete model selection. When POST omits model_profile_id
+New ordinary sessions persist a concrete model selection. When POST omits model_profile_id
 or supplies null, select the enabled global-default LLM if present, otherwise the
 first enabled LLM in profile-list order (name, then id). No eligible LLM leaves
 the selection null. Explicit ids are validated and never substituted. Changing
@@ -42,10 +42,9 @@ an explicit choice even after a model is added. Neither chat model selector offe
 a Global default entry; both show the saved model and a disabled empty/unavailable
 state when appropriate. No model discovery, health check or inference is performed
 to initialize a session.
-Resolved configuration reports model_source=session; there is no inherited model
-source at execution time.
+Ordinary resolved configuration reports model_source=session.
 
-Context, generation, Harness and tool selection belong only to the session. Context defaults to
+Ordinary context, generation, Harness and tool selection belong to the session. Context defaults to
 session history with explicit attachments. Session generation defaults to {} and accepts only
 optional temperature (0..2); a non-null value overrides the model. {} or temperature:null
 clears the override; PATCH omission preserves it. Other model generation parameters remain
@@ -53,19 +52,47 @@ inherited and available in the resolved configuration. Neither context nor gener
 currently registered built-ins; an explicit [] allows none. Saved allowlists
 do not change when the catalog grows. These settings never depend on Persona.
 
-Each run combines Knowledge bindings in User Persona, selected Agent Persona, then
+Each run combines Knowledge bindings in Cogita Persona, selected Agent Persona, Project (Workspace only), then
 session-addition order, deduplicating by first occurrence. Clearing additions never removes
-Persona bindings; changing the Agent preserves additions, including overlaps. Resource
+inherited bindings; changing the Agent preserves additions, including overlaps. Resource
 enablement and retrieval limits still apply. Retrieval receives resolved ids explicitly.
-Worldbook bindings are restricted to roleplay_user and character collections and do not
-participate in ordinary sessions. Wrong collection/resource combinations return 422.
+Worldbook bindings belong to roleplay_user/character Personas and Timeline Projects;
+they do not participate in ordinary/Workspace sessions. Wrong resource combinations return 422.
+
+Projects share global resource catalogs but isolate sessions, history and configuration.
+Project.kind is immutable workspace|timeline. Workspace requires agent_persona_id,
+the fixed singleton cogita_persona_id, context_policy, harness_enabled and tools_allowed;
+system_prompt, model_profile_id, temperature (0..2) and ordered knowledge_base_ids are optional.
+Timeline requires character_persona_id, roleplay user_persona_id and context_policy;
+model_profile_id, temperature and ordered worldbook_ids are optional. Harness, Knowledge
+and Project prompts are not Timeline fields. Timeline supports CRUD/settings only;
+session creation/listing returns PROJECT_CHAT_UNAVAILABLE (409). Persona/Worldbook injection
+and per-speaker historical identity for Timeline conversations remain unimplemented.
+
+Session.kind and project_id follow the creation location and cannot be changed or moved.
+Ordinary and Workspace have distinct schemas; timeline is a reserved session identity.
+Workspace sessions store only sparse overrides for persona_id, context_policy, model_profile_id,
+temperature, harness_enabled and tools_allowed. PATCH accepts title/overrides; omission keeps
+values, null removes an override, and false/0/[] are explicit values. Inherited values are
+resolved on reads and runs, never copied into session storage. The fixed Cogita Persona has no override.
+Models resolve session > Project > global default using the ordinary default-selection rule;
+changes to the global default affect inheriting Workspace sessions, including existing ones.
+Temperature resolves session > Project > selected model. Other parameters remain model-owned.
+Responses include effective configuration, model_source=session|project|global and typed sources.
+Project settings and Persona/model edits refresh affected session responses through session_updated.
+Tools are bounded by the current Project list; [Harness](harness-tools.md) owns revocation during runs.
+Project deletion requires all its sessions idle, deletes their conversation state/bindings,
+and preserves shared resources. Persona/model/resource deletion rejects Project references.
 
 | Endpoint | Ownership |
 | --- | --- |
 | `/api/personas` and `/{id}` | Strict Persona CRUD; optional collection list filter |
 | `/api/personas/{id}/knowledge-bases`, `/worldbooks` | Persona bindings |
-| `/api/sessions` and `/{id}` | Session creation, selection and configuration |
-| `/api/sessions/{id}/knowledge-bases` | Session additions, User/Agent Persona ids and effective ids |
+| `/api/projects` and `/{id}` | Typed Project CRUD |
+| `/api/projects/{id}/knowledge-bases`, `/worldbooks` | Type-restricted Project bindings |
+| `/api/projects/{id}/sessions` | Workspace session creation and scoped listing |
+| `/api/sessions` and `/{id}` | Ordinary creation/listing; individual ordinary/Workspace configuration |
+| `/api/sessions/{id}/knowledge-bases` | Additions, Cogita/Agent/Project bindings and effective ids |
 | `/api/sessions/{id}/messages` | History and new input |
 | `/api/messages/{id}`, `/edit` | User-message deletion and edit |
 | `/api/runs/{id}`, `/{id}/retry` | Whole-reply deletion and chat retry |
@@ -76,22 +103,22 @@ A waiting approval blocks new messages and direct calls. Active overlapping
 execution returns SESSION_BUSY. The explicit approval API resumes the same run.
 
 Deleting a different session from the sidebar preserves the current conversation,
-draft and selected context. Deleting the current session selects the first remaining
-session, or creates an empty one when it was the last. Delayed deletion/replacement
-responses preserve subsequent session selections. Failed deletion leaves the
+draft and selected context. Deleting the current session selects its first remaining
+sibling. The last ordinary session is replaced; the last Workspace session leaves its Project settings/empty tree. Delayed deletion/replacement
+responses preserve subsequent session selections; delayed creation/selection cannot replace later navigation. Failed deletion leaves the
 displayed state intact and reports the error.
 
 Session binding PATCH accepts only knowledge_base_ids; [] clears additions. Responses
-include user_persona_knowledge_base_ids, agent_persona_knowledge_base_ids and
-effective_knowledge_base_ids. The UI locks each Persona section and edits additions
+include user_persona_knowledge_base_ids, agent_persona_knowledge_base_ids, project_knowledge_base_ids and
+effective_knowledge_base_ids. The UI locks inherited sections and edits additions
 separately; it never writes effective ids back as additions. Persona resource endpoints
 accept the matching knowledge_base_ids or worldbook_ids array; [] clears its bindings.
 
 ## Configuration snapshots and context
 
 Each run privately stores the resolved chat configuration in
-config_snapshot_json. Its Agent prompt, User Persona background, bindings, generation and context remain stable
-through Persona edits, selection changes and approval waits. Public metadata exposes
+config_snapshot_json. Agent/Project prompts, Cogita Persona background, model, bindings, generation and context remain stable
+through edits and approval waits; current Project tool revocations still apply. Public metadata exposes
 only identities, model selection, context policy, limits and binding ids.
 Retry resolves a new configuration for the original run's Agent Persona without changing
 the session selection. A missing/deleted Persona fails before pruning. It
@@ -113,7 +140,8 @@ model; the session dialog owns one Agent selection and configuration. Selected-m
 context uses an explicit source message and clears on session changes. Context sources
 are bounded data blocks, with compact diagnostics rather than copied content in metadata.
 
-The singleton User Persona is always active. Its trimmed nonempty system_prompt is
+Workspace inserts its Project prompt after the Agent prompt and before Persona/Knowledge data, independently of history mode.
+The singleton Cogita Persona is always active. Its trimmed nonempty system_prompt is
 background data wrapped in <user_persona> tags and appended once to the system context;
 empty text produces no block. The run snapshots this text before execution. Compact
 user_persona metadata contains identity, injection status, length and empty skip reason,
@@ -124,7 +152,7 @@ keywords. Enabled entries obey entry/context limits, case sensitivity,
 whole-word matching and recursion depth. Books/entries have explicit CRUD;
 match-test is diagnostic and changes no session/run. It requires explicit worldbook_ids
 and has no session target. Worldbooks have no ordinary-chat binding or injection path;
-roleplay Persona bindings are stored for later workflows. User Persona, Worldbook,
+roleplay Persona/Timeline bindings are stored for later workflows. Cogita Persona, Worldbook,
 Knowledge and attachment content are data, never routing decisions.
 
 Worldbook management opens inside its settings panel, with Configuration,
@@ -214,7 +242,7 @@ to [runs/streaming](runs-streaming.md).
 
 User messages use right-aligned secondary bubbles; assistant replies use open
 body layout. Assistant replies retain historical identity and avatars; user rows use the current
-User Persona identity. Both retain message timestamps. Message bodies
+Cogita Persona identity. Both retain message timestamps. Message bodies
 use 16px text with Markdown headings, lists, quotes, code, tables and media.
 Wide code, tables and tool results scroll inside their own bounds; tool results
 are limited to 320px height on desktop and 240px below 768px.

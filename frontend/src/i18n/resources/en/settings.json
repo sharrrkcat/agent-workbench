@@ -44,7 +44,7 @@
     "read_file": "Read a UTF-8 file under data/knowledge or data/attachments.",
     "web_search": "Search the configured SearXNG JSON service.",
     "fetch_url": "Fetch text from a public HTTP(S) address.",
-    "knowledge_search": "Search the User Persona, Agent Persona and session Knowledge bindings.",
+    "knowledge_search": "Search the Cogita Persona, Agent Persona, Project and session Knowledge bindings.",
     "base64_encode": "Encode UTF-8 text as Base64.",
     "base64_decode": "Decode Base64 to UTF-8 text."
   },

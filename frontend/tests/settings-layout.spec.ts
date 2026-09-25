@@ -37,6 +37,7 @@ for (const locale of ['en', 'zh-CN']) {
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await page.goto('/');
+        await expect(page.locator('.composer textarea')).toBeVisible();
         await expect(page.locator('.topbar')).toBeVisible();
         const homeHeader = (await page.locator('.topbar').boundingBox())!;
         const homeToggle = await page.locator('[data-sidebar="trigger"]').boundingBox();

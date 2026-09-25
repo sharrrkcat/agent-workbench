@@ -30,9 +30,10 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
         <ModelSelect
           className="chat-model-select w-full min-w-0"
           profiles={profiles}
-          value={session?.model_profile_id ?? null}
+          value={session?.effective.model_profile_id ?? null}
           disabled={!session}
-          onChange={(model_profile_id) => void updateSession({ model_profile_id })}
+          onChange={(model_profile_id) => void updateSession(session?.kind === 'workspace'
+            ? { overrides: { model_profile_id } } : { model_profile_id })}
         />
       </div>
       <Tooltip>

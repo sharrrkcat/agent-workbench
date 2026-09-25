@@ -12,19 +12,45 @@ from ai_workbench.core.time import utc_now
 
 
 class SessionRecord(SQLModel, table=True):
+    __table_args__ = (
+        CheckConstraint("kind IN ('ordinary', 'workspace')", name="ck_session_kind"),
+        CheckConstraint("(kind = 'ordinary' AND project_id IS NULL) OR (kind = 'workspace' AND project_id IS NOT NULL)", name="ck_session_project"),
+    )
     session_id: str = Field(primary_key=True)
+    kind: str
+    project_id: Optional[str] = Field(default=None, foreign_key="projects.id", index=True)
     title: str = ""
     waiting_run_id: Optional[str] = None
-    model_profile_id: Optional[str] = None
-    persona_id: str = Field(foreign_key="personas.id")
-    context_policy_json: str
-    generation_json: str = "{}"
-    harness_enabled: bool = False
-    tools_allowed_json: str = "[]"
+    configuration_json: str
     title_generation_state: str = "pending"
     title_generation_metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectRecord(SQLModel, table=True):
+    __tablename__ = "projects"
+    __table_args__ = (CheckConstraint("kind IN ('workspace', 'timeline')", name="ck_project_kind"),)
+    id: str = Field(primary_key=True)
+    kind: str
+    name: str
+    configuration_json: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectKnowledgeBindingRecord(SQLModel, table=True):
+    __tablename__ = "project_knowledge_bindings"
+    project_id: str = Field(primary_key=True, foreign_key="projects.id")
+    knowledge_base_id: str = Field(primary_key=True, foreign_key="knowledge_bases.id")
+    sort_order: int = 0
+
+
+class ProjectWorldbookBindingRecord(SQLModel, table=True):
+    __tablename__ = "project_worldbook_bindings"
+    project_id: str = Field(primary_key=True, foreign_key="projects.id")
+    worldbook_id: str = Field(primary_key=True, foreign_key="worldbooks.id")
+    sort_order: int = 0
 
 
 class PersonaRecord(SQLModel, table=True):

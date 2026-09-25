@@ -7,11 +7,15 @@ import { ErrorBanner } from './components/ErrorBanner';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
-import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from './components/ui/sidebar';
 import { useCogitaStore } from './store/useCogitaStore';
 import { useModelEvents } from './hooks/useModelEvents';
 import type { LeaveGuard } from './components/settings/resources/ResourceUI';
 import { readSettingsRoute, settingsRouteUrl } from './components/settings/navigation';
+import { ProjectPage } from './components/projects/ProjectPage';
+import { projectUrl, readProjectRoute } from './components/projects/navigation';
+import { useProjectsStore } from './store/useProjectsStore';
+import { ResourceLoading, errorText } from './components/settings/resources/ResourceUI';
 
 type Location = { pathname: string; search: string; url: string; index: number };
 const readLocation = (): Location => ({
@@ -20,15 +24,21 @@ const readLocation = (): Location => ({
   url: window.location.pathname + window.location.search + window.location.hash,
   index: window.history.state?.cogitaIndex ?? 0,
 });
+const guarded = (location: Location) => location.pathname === '/settings' ||
+  (!!readProjectRoute(location).projectId && !readProjectRoute(location).sessionId);
 
 export default function App() {
   useModelEvents();
   const initialize = useCogitaStore((state) => state.initialize);
   const currentSession = useCogitaStore((state) => state.currentSession);
+  const initialized = useCogitaStore((state) => state.initialized);
+  const error = useCogitaStore((state) => state.error);
+  const activateLocation = useCogitaStore((state) => state.activateLocation);
   const refreshCurrent = useCogitaStore((state) => state.refreshCurrent);
   const applyRuntimeEvent = useCogitaStore((state) => state.applyRuntimeEvent);
   const [location, setLocation] = useState(readLocation);
   const committed = useRef(location);
+  const lastHome = useRef(location.pathname === '/settings' ? '/' : location.url);
   const navigating = useRef(false);
   const leaveSettings = useRef<LeaveGuard>(async () => true);
   const setLeaveSettings = useCallback((guard: LeaveGuard) => {
@@ -36,35 +46,81 @@ export default function App() {
   }, []);
   const commit = useCallback((next: Location) => {
     committed.current = next;
+    if (next.pathname !== '/settings') lastHome.current = next.url;
     setLocation(next);
   }, []);
+  const commitUrl = useCallback((url: string) => {
+    if (url === committed.current.url) return;
+    window.history.pushState({ cogitaIndex: committed.current.index + 1 }, '', url);
+    commit(readLocation());
+  }, [commit]);
   const navigate = useCallback(
     async (url: string) => {
       if (navigating.current) return false;
       navigating.current = true;
       try {
         const target = new URL(url, window.location.href);
-        if (committed.current.pathname === '/settings' && !(await leaveSettings.current(target)))
-          return false;
         const sameSettingsPage =
           target.pathname === '/settings' &&
           committed.current.pathname === '/settings' &&
           settingsRouteUrl(readSettingsRoute(target.search)) ===
             settingsRouteUrl(readSettingsRoute(committed.current.search));
-        if (url === committed.current.url || sameSettingsPage) return true;
-        const index = committed.current.index + 1;
-        window.history.pushState({ cogitaIndex: index }, '', url);
-        commit(readLocation());
+        const changingRoute = url !== committed.current.url && !sameSettingsPage;
+        // Resource pages also use their existing URL to leave a local detail editor.
+        if (guarded(committed.current) && (committed.current.pathname === '/settings' || changingRoute) &&
+            !(await leaveSettings.current(target))) return false;
+        if (!changingRoute) return true;
+        commitUrl(url);
         return true;
       } finally {
         navigating.current = false;
       }
     },
-    [commit],
+    [commitUrl],
   );
   useEffect(() => {
-    void initialize();
+    void initialize(!readProjectRoute(committed.current).projectId);
+    void useProjectsStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
   }, [initialize]);
+  useEffect(() => {
+    if (!initialized || location.pathname === '/settings') return;
+    const route = readProjectRoute(location);
+    void activateLocation(route.projectId, route.sessionId);
+  }, [initialized, location.pathname, location.search, activateLocation]);
+
+  const selectSession = useCallback(async (id: string, projectId: string | null) => {
+    if (navigating.current) return false;
+    const origin = committed.current;
+    const url = projectId ? projectUrl(projectId, id) : '/';
+    if (guarded(committed.current) && !(await leaveSettings.current(new URL(url, window.location.href)))) return false;
+    await useCogitaStore.getState().selectSession(id, projectId);
+    if (committed.current !== origin || useCogitaStore.getState().currentSession?.session_id !== id) return false;
+    commitUrl(url);
+    return true;
+  }, [commitUrl]);
+  const createSession = useCallback(async (projectId: string | null = null) => {
+    if (navigating.current) return false;
+    const origin = committed.current;
+    const target = projectId ? projectUrl(projectId) : '/';
+    if (guarded(committed.current) && !(await leaveSettings.current(new URL(target, window.location.href)))) return false;
+    const session = await useCogitaStore.getState().createSession(projectId);
+    if (committed.current !== origin || !session || useCogitaStore.getState().currentSession?.session_id !== session.session_id) return false;
+    commitUrl(projectId ? projectUrl(projectId, session.session_id) : '/');
+    return true;
+  }, [commitUrl]);
+  const sessionDeleted = useCallback((id: string) => {
+    const route = readProjectRoute(committed.current);
+    if (route.projectId && route.sessionId === id) {
+      const selected = useCogitaStore.getState().currentSession;
+      commitUrl(projectUrl(route.projectId, selected?.project_id === route.projectId ? selected.session_id : null));
+    }
+  }, [commitUrl]);
+  const projectDeleted = useCallback((id: string) => {
+    if (readProjectRoute(committed.current).projectId === id) {
+      leaveSettings.current = async () => true;
+      commitUrl('/');
+    }
+  }, [commitUrl]);
   useEffect(() => {
     if (!currentSession) return;
     let closed = false;
@@ -156,7 +212,7 @@ export default function App() {
           window.history.go(committed.current.index - target.index);
         return;
       }
-      if (committed.current.pathname !== '/settings' || target.index === committed.current.index) {
+      if (!guarded(committed.current) || target.index === committed.current.index) {
         commit(target);
         return;
       }
@@ -170,21 +226,29 @@ export default function App() {
       window.removeEventListener('popstate', onPop);
     };
   }, [commit]);
+  const projectRoute = readProjectRoute(location);
+  const conversationReady = !!currentSession && currentSession.project_id === projectRoute.projectId &&
+    (!projectRoute.projectId || currentSession.session_id === projectRoute.sessionId);
   return (
     <SidebarProvider className="app-shell h-dvh min-h-0 overflow-hidden">
       {location.pathname === '/settings' ? (
-        <SettingsPage search={location.search} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} />
+        <SettingsPage search={location.search} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} returnTo={lastHome.current} />
       ) : (
         <>
-          <SessionSidebar onOpenSettings={() => void navigate('/settings')} />
+          <SessionSidebar onOpenSettings={() => navigate('/settings')} onNavigate={navigate}
+            onSelectSession={selectSession} onCreateSession={createSession} onSessionDeleted={sessionDeleted} onProjectDeleted={projectDeleted} />
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
-            <ChatHeader onOpenSettings={(route) => void navigate(settingsRouteUrl(route))} />
-            <ErrorBanner />
-            <ChatView key={currentSession?.session_id} />
-            <div className="chat-bottom">
-              <ChatInput key={currentSession?.session_id} />
-              <StatusBar />
-            </div>
+            {projectRoute.projectId && !projectRoute.sessionId ?
+              <ProjectPage projectId={projectRoute.projectId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} onCreateSession={createSession} /> :
+              conversationReady ? <>
+                <ChatHeader onOpenSettings={(route) => void navigate(settingsRouteUrl(route))} />
+                <ErrorBanner />
+                <ChatView key={currentSession.session_id} />
+                <div className="chat-bottom"><ChatInput key={currentSession.session_id} /><StatusBar /></div>
+              </> : <>
+                <header className="topbar"><SidebarTrigger /></header>
+                <ResourceLoading error={error || undefined} retry={() => void activateLocation(projectRoute.projectId, projectRoute.sessionId)} />
+              </>}
           </SidebarInset>
         </>
       )}

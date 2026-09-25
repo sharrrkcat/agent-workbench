@@ -15,10 +15,12 @@ export function SettingsPage({
   search,
   onNavigate,
   onLeaveGuardChange,
+  returnTo,
 }: {
   search: string;
   onNavigate: SettingsNavigate;
   onLeaveGuardChange: (guard: LeaveGuard) => void;
+  returnTo?: string;
 }) {
   const { t } = useTranslation('settings');
   const route = readSettingsRoute(search);
@@ -39,7 +41,7 @@ export function SettingsPage({
   }, [route.section, route.view]);
   return (
     <SettingsLeaveContext.Provider value={register}>
-      <SettingsSidebar route={route} onNavigate={onNavigate} />
+      <SettingsSidebar route={route} onNavigate={onNavigate} returnTo={returnTo} />
       <SidebarInset className="settings-page min-h-0 min-w-0 overflow-hidden">
         <header className="settings-header">
           <SidebarTrigger />

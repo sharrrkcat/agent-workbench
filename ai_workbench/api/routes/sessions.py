@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictBool
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.schemas.chat import (
@@ -12,6 +12,7 @@ from ai_workbench.api.schemas.chat import (
 )
 from ai_workbench.api.openapi import request_body
 from ai_workbench.api.schemas.common import error_responses, patch_model
+from ai_workbench.api.schemas.projects import WorkspaceSessionCreate
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.session import SessionGenerationParameters
 from ai_workbench.core.schema.context_policy import ContextPolicy
@@ -38,29 +39,24 @@ class CreateSessionRequest(BaseModel):
         description="Omission selects all currently registered tools; an explicit empty array selects none.")
 
 
-class UpdateSessionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: str | None = None
-    model_profile_id: str | None = None
-    persona_id: str = COGITA_PERSONA_ID
-    context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
-    generation: SessionGenerationParameters = Field(default_factory=SessionGenerationParameters)
-    harness_enabled: StrictBool = False
-    tools_allowed: list[str] = Field(default_factory=list, max_length=128)
-
-
 class SessionKnowledgePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     knowledge_base_ids: list[str] = Field(max_length=128)
 
 
-SessionPatchRequest = patch_model("SessionPatchRequest", CreateSessionRequest, fields={
+OrdinarySessionPatch = patch_model("OrdinarySessionPatch", CreateSessionRequest, fields={
     "title": (str, Field(default_factory=lambda: None, min_length=1, max_length=MAX_SESSION_TITLE_LENGTH,
         description="A nonempty title after trimming; updates mark the title as manually set.")),
     "tools_allowed": (list[str], Field(default_factory=lambda: None, max_length=128,
         description="Omission keeps the saved allowlist; an empty array disables all tools.")),
 })
+WorkspaceSessionPatch = patch_model("WorkspaceSessionPatch", WorkspaceSessionCreate, fields={
+    "title": (str, Field(default_factory=lambda: None, min_length=1, max_length=MAX_SESSION_TITLE_LENGTH)),
+})
+
+
+class SessionPatchRequest(RootModel[OrdinarySessionPatch | WorkspaceSessionPatch]):
+    pass
 
 
 @router.post("", response_model=SessionResponse, response_model_exclude_unset=True,
@@ -72,7 +68,7 @@ async def create_session(payload: CreateSessionRequest, state: RuntimeState = De
 
 @router.get("", response_model=list[SessionResponse], response_model_exclude_unset=True)
 def list_sessions(state: RuntimeState = Depends(get_state)) -> list[dict]:
-    return [state.chat_service.session_response(session) for session in state.sessions.list_sessions()]
+    return [state.chat_service.session_response(session) for session in state.sessions.list_sessions() if session.kind == "ordinary"]
 
 
 @router.get("/{session_id}", response_model=SessionResponse, response_model_exclude_unset=True,
@@ -83,16 +79,17 @@ def get_session(session_id: str, state: RuntimeState = Depends(get_state)) -> di
 
 @router.patch("/{session_id}", response_model=SessionResponse, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 409, 422, 503), openapi_extra=request_body(SessionPatchRequest,
-        description="Only submitted fields change. null clears model_profile_id; context, generation, persona and title are non-nullable."))
+        description="Ordinary sessions accept concrete settings. Workspace sessions accept title and sparse overrides; null inside overrides restores inheritance. Identity and Project membership are immutable."))
 async def update_session(
     session_id: str,
-    payload: UpdateSessionRequest,
+    payload: dict,
     state: RuntimeState = Depends(get_state),
 ) -> dict:
-    _get_session_or_404(state, session_id)
-    values = payload.model_dump(exclude_unset=True)
-    if payload.title is not None:
-        title = payload.title.strip()
+    session = _get_session_or_404(state, session_id)
+    schema = OrdinarySessionPatch if session.kind == "ordinary" else WorkspaceSessionPatch
+    values = schema.model_validate(payload).model_dump(exclude_unset=True)
+    if "title" in values:
+        title = values["title"].strip()
         if not title:
             raise_error(400, "SESSION_TITLE_EMPTY", "Session title cannot be empty.")
         if len(title) > MAX_SESSION_TITLE_LENGTH:
@@ -113,6 +110,11 @@ async def update_session(
 async def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     session = _get_session_or_404(state, session_id)
     state.chat_service.assert_idle(session_id)
+    delete_session_data(state, session_id)
+    return {"deleted": True, "session_id": session.session_id}
+
+
+def delete_session_data(state: RuntimeState, session_id: str) -> None:
     state.sessions.set_waiting_run(session_id, None)
     messages = state.messages.list_messages(session_id)
     state.run_events.delete_session(session_id)
@@ -123,7 +125,6 @@ async def delete_session(session_id: str, state: RuntimeState = Depends(get_stat
     for message in messages:
         _cleanup_message_attachments(state, message)
     state.sessions.delete_session(session_id)
-    return {"deleted": True, "session_id": session.session_id}
 
 
 @router.get("/{session_id}/timeline", response_model=list[TimelineItem], response_model_exclude_unset=True,

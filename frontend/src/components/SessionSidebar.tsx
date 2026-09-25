@@ -24,23 +24,34 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCogitaStore } from '../store/useCogitaStore';
+import { NewProjectDialog } from './projects/NewProjectDialog';
+import { ProjectsTree } from './projects/ProjectsTree';
+import { projectUrl } from './projects/navigation';
+import type { ProjectKind } from '../types/projects';
+import type { SettingsNavigate } from './settings/navigation';
 
-export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function SessionSidebar({ onOpenSettings, onNavigate, onSelectSession, onCreateSession, onSessionDeleted, onProjectDeleted }: {
+  onOpenSettings: () => Promise<boolean>; onNavigate: SettingsNavigate;
+  onSelectSession: (id: string, projectId: string | null) => Promise<boolean>;
+  onCreateSession: (projectId?: string | null) => Promise<boolean>;
+  onSessionDeleted: (id: string) => void; onProjectDeleted: (id: string) => void;
+}) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('personas');
   const { setOpenMobile } = useSidebar();
-  const sessions = useCogitaStore((state) => state.sessions);
+  const allSessions = useCogitaStore((state) => state.sessions);
+  const sessions = allSessions.filter((session) => session.kind === 'ordinary');
   const current = useCogitaStore((state) => state.currentSession);
-  const select = useCogitaStore((state) => state.selectSession);
-  const create = useCogitaStore((state) => state.createSession);
   const remove = useCogitaStore((state) => state.deleteSession);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [creating, setCreating] = useState<ProjectKind | null>(null);
 
   async function deleteSession(id: string) {
     if (!(await confirm(t('deleteSessionConfirm'), { destructive: true }))) return;
     setDeleting(id);
     try {
       await remove(id);
+      if (!useCogitaStore.getState().sessions.some((session) => session.session_id === id)) onSessionDeleted(id);
     } finally {
       setDeleting(null);
     }
@@ -55,9 +66,8 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
             <SidebarMenuItem>
               <SidebarMenuButton
                 type="button"
-                onClick={() => {
-                  void create();
-                  setOpenMobile(false);
+                onClick={async () => {
+                  if (await onCreateSession()) setOpenMobile(false);
                 }}
               >
                 <MessageSquarePlus data-icon="inline-start" />
@@ -65,22 +75,24 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton type="button" disabled>
+              <SidebarMenuButton type="button" onClick={() => { setCreating('workspace'); setOpenMobile(false); }}>
                 <Compass data-icon="inline-start" />
-                <span>{t('featureOne')}</span>
+                <span>{t('newWorkspace')}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton type="button" disabled>
+              <SidebarMenuButton type="button" onClick={() => { setCreating('timeline'); setOpenMobile(false); }}>
                 <Boxes data-icon="inline-start" />
-                <span>{t('featureTwo')}</span>
+                <span>{t('newTimeline')}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
-        <SidebarGroupLabel className="shrink-0 px-5">{t('sessions')}</SidebarGroupLabel>
         <SidebarContent className="session-list overflow-x-hidden overscroll-contain">
+          <ProjectsTree onNavigate={onNavigate} onSelectSession={onSelectSession} onCreateSession={onCreateSession}
+            onSessionDeleted={onSessionDeleted} onProjectDeleted={onProjectDeleted} />
           <SidebarGroup>
+            <SidebarGroupLabel>{t('sessions')}</SidebarGroupLabel>
             <SidebarMenu>
               {sessions.map((session) => {
                 const title = session.title.trim() || t('newSession');
@@ -97,9 +109,8 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
                       isActive={selected}
                       aria-current={selected ? 'page' : undefined}
                       disabled={deleting === session.session_id}
-                      onClick={() => {
-                        void select(session.session_id);
-                        setOpenMobile(false);
+                      onClick={async () => {
+                        if (await onSelectSession(session.session_id, null)) setOpenMobile(false);
                       }}
                     >
                       <span>{title}</span>
@@ -142,9 +153,8 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
               <SidebarMenuButton
                 type="button"
                 className="sidebar-settings-button"
-                onClick={() => {
-                  onOpenSettings();
-                  setOpenMobile(false);
+                onClick={async () => {
+                  if (await onOpenSettings()) setOpenMobile(false);
                 }}
               >
                 <Settings2 data-icon="inline-start" />
@@ -155,6 +165,8 @@ export function SessionSidebar({ onOpenSettings }: { onOpenSettings: () => void 
         </SidebarFooter>
         {confirmation}
       </Sidebar>
+      {creating ? <NewProjectDialog kind={creating} onClose={() => setCreating(null)} onNavigate={onNavigate}
+        onSaved={(project) => { setCreating(null); void onNavigate(projectUrl(project.id)); }} /> : null}
     </>
   );
 }

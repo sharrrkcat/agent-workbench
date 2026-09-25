@@ -15,8 +15,9 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { ArrowDown, ArrowUp, ShieldCheck, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useId } from 'react';
 
-import type { ContextPolicy, SessionGenerationParameters } from '../../types/chat';
+import type { ContextPolicy, Persona, SessionGenerationParameters } from '../../types/chat';
 import type { ModelProfile } from '../../types/models';
 import type { HarnessTool } from '../../types/tools';
 import { API_BASE_URL } from '../../api/url';
@@ -36,7 +37,7 @@ export function PersonaAvatar({ name, attachmentId }: { name: string; attachment
   );
 }
 
-type ModelSelectProps = { profiles: ModelProfile[]; value: string | null; onChange: (id: string) => void };
+type ModelSelectProps = { profiles: ModelProfile[]; value: string | null; onChange: (id: string) => void; inheritLabel?: string };
 
 export function ModelSelect({
   profiles,
@@ -44,19 +45,20 @@ export function ModelSelect({
   onChange,
   disabled,
   className,
+  inheritLabel,
 }: ModelSelectProps & { disabled?: boolean; className?: string }) {
   const { t } = useTranslation('personas');
   const options = profiles.filter((p) => p.kind === 'llm');
   const selected = options.find((p) => p.id === value);
   const available = options.some((p) => p.enabled);
-  const emptyLabel = t(available ? 'selectModel' : 'noModels');
+  const emptyLabel = inheritLabel || t(available ? 'selectModel' : 'noModels');
   return (
     <Select
       value={value || ''}
-      disabled={disabled || !available}
+      disabled={disabled || (!available && !inheritLabel)}
       onValueChange={(selected) => onChange(selected ?? '')}
       items={[
-        ...(!value ? [{ value: '', label: emptyLabel }] : []),
+        ...(!value || inheritLabel ? [{ value: '', label: emptyLabel }] : []),
         ...options.map((p) => ({
           value: p.id,
           label: (
@@ -78,8 +80,8 @@ export function ModelSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {!value ? (
-            <SelectItem value="" disabled>
+          {!value || inheritLabel ? (
+            <SelectItem value="" disabled={!inheritLabel}>
               {emptyLabel}
             </SelectItem>
           ) : null}
@@ -110,6 +112,26 @@ export function ModelField(props: ModelSelectProps) {
   );
 }
 
+export function PersonaField({ label, personas, value, onChange, invalid = false }: {
+  label: string; personas: Persona[]; value: string; onChange: (id: string) => void; invalid?: boolean;
+}) {
+  const id = useId();
+  const { t } = useTranslation('personas');
+  return (
+    <Field data-invalid={invalid || undefined}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Select value={value} onValueChange={(next) => { if (next) onChange(next); }}
+        items={[{ value: '', label: t('selectPersona') }, ...personas.map((p) => ({ value: p.id, label: p.name }))]}>
+        <SelectTrigger id={id} aria-invalid={invalid}><SelectValue /></SelectTrigger>
+        <SelectContent><SelectGroup>
+          <SelectItem value="" disabled>{t('selectPersona')}</SelectItem>
+          {personas.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+        </SelectGroup></SelectContent>
+      </Select>
+    </Field>
+  );
+}
+
 export function ContextFields({
   value,
   onChange,
@@ -136,13 +158,13 @@ export function ContextFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {(['session', 'recent_messages', 'current_message', 'selected_message', 'none'] as const).map(
+              <SelectGroup>{(['session', 'recent_messages', 'current_message', 'selected_message', 'none'] as const).map(
                 (mode) => (
                   <SelectItem key={mode} value={mode}>
                     {t('contextModes.' + mode)}
                   </SelectItem>
                 ),
-              )}
+              )}</SelectGroup>
             </SelectContent>
           </Select>
         </Field>
@@ -203,15 +225,16 @@ export function GenerationFields({
 }) {
   const { t } = useTranslation('llm');
   const { t: p } = useTranslation('personas');
+  const id = useId();
   return (
     <Field>
-      <FieldLabel htmlFor="session-temperature">{t('params.temperature')}</FieldLabel>
+      <FieldLabel htmlFor={id}>{t('params.temperature')}</FieldLabel>
       <Input
-        id="session-temperature"
+        id={id}
         type="number"
         min={0}
         max={2}
-        step={0.1}
+        step="any"
         placeholder={p('modelDefault')}
         value={value.temperature ?? ''}
         onChange={(event) => onChange({ temperature: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })}
@@ -224,10 +247,12 @@ export function ToolsField({
   tools,
   value,
   onChange,
+  allowed,
 }: {
   tools: HarnessTool[];
   value: string[];
   onChange: (values: string[]) => void;
+  allowed?: string[];
 }) {
   const { t } = useTranslation('settings');
   const { t: p } = useTranslation('personas');
@@ -238,20 +263,22 @@ export function ToolsField({
         <div className="context-binding-row" key={tool.name}>
           <Field orientation="horizontal">
             <Checkbox
-              checked={value.includes(tool.name)}
+              checked={value.includes(tool.name) && (!allowed || allowed.includes(tool.name))}
+              disabled={!!allowed && !allowed.includes(tool.name)}
               onCheckedChange={(enabled) =>
                 onChange(
                   enabled
                     ? tools
-                        .filter((item) => item.name === tool.name || value.includes(item.name))
+                        .filter((item) => (!allowed || allowed.includes(item.name)) && (item.name === tool.name || value.includes(item.name)))
                         .map((item) => item.name)
-                    : value.filter((name) => name !== tool.name),
+                    : value.filter((name) => name !== tool.name && (!allowed || allowed.includes(name))),
                 )
               }
             />
             <FieldLabel>{tool.name}</FieldLabel>
           </Field>
           <span className="tool-permission-detail">
+            {allowed && !allowed.includes(tool.name) ? <span>{p('projectToolDisabled')}</span> : null}
             <span>{t('toolRisk.' + tool.risk)}</span>
             {tool.requires_approval ? (
               <Tooltip>

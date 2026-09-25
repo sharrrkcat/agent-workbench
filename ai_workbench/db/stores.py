@@ -14,7 +14,7 @@ from ai_workbench.core.message_parts import make_text_part, validate_message_par
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepKind, RunStepSchema, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
-from ai_workbench.core.session import Session
+from ai_workbench.core.session import Session, SessionBase, parse_session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.schema import ModelProfile
@@ -42,9 +42,9 @@ class SqlSessionStore:
     def __init__(self, engine) -> None:
         self.engine = engine
 
-    def create_session(self, title: str = "", **values: Any) -> Session:
-        session = Session(session_id=str(uuid4()), title=title,
-            title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual", **values)
+    def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
+        session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
+            title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual", **values))
         with DbSession(self.engine) as db:
             db.add(SessionRecord(**_session_record_values(session)))
             db.commit()
@@ -65,7 +65,7 @@ class SqlSessionStore:
         with DbSession(self.engine) as db:
             record = db.get(SessionRecord, session_id)
             if record is None: raise KeyError(f"unknown session id: {session_id}")
-            session = Session.model_validate({**_session(record).model_dump(), **values, "updated_at": utc_now()})
+            session = parse_session({**_session(record).model_dump(), **values, "updated_at": utc_now()})
             for key, value in _session_record_values(session).items():
                 setattr(record, key, value)
             db.add(record)
@@ -532,17 +532,17 @@ class SqlKnowledgeStore:
 
 def _session(row: SessionRecord) -> Session:
     values = row.model_dump()
-    for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
-        encoded = values.pop(key + "_json")
-        values[key] = json.loads(encoded)
-    return Session.model_validate(values)
+    values.update(json.loads(values.pop("configuration_json")))
+    values["title_generation_metadata"] = json.loads(values.pop("title_generation_metadata_json"))
+    return parse_session(values)
 
 
 def _session_record_values(session: Session) -> dict:
     values = session.model_dump()
-    for key in ("context_policy", "generation", "tools_allowed", "title_generation_metadata"):
-        value = values.pop(key)
-        values[key + "_json"] = _dump(value)
+    configuration = {key: values.pop(key) for key in list(values)
+                     if key not in SessionBase.model_fields and key not in {"kind", "project_id"}}
+    values["configuration_json"] = _dump(configuration)
+    values["title_generation_metadata_json"] = _dump(values.pop("title_generation_metadata"))
     return values
 def _message(row: MessageRecord) -> MessageSchema:
     return MessageSchema(message_id=row.message_id,session_id=row.session_id,role=row.role,speaker_type=row.speaker_type,speaker_id=row.speaker_id,speaker_name=row.speaker_name,origin=row.origin,content_version=row.content_version,parts=_load(row.parts_json,[]),run_id=row.run_id,parent_message_id=row.parent_message_id,metadata=_load(row.metadata_json,{}),created_at=row.created_at)

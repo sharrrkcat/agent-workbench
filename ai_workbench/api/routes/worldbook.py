@@ -105,8 +105,8 @@ def patch_worldbook(worldbook_id: str, payload: WorldbookPatch, state: RuntimeSt
     responses=error_responses(400, 404, 409))
 def delete_worldbook(worldbook_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     _require_store(state)
-    if state.personas.references_resource("worldbook", worldbook_id):
-        raise_error(409, "WORLDBOOK_IN_USE", "Remove persona bindings before deleting this Worldbook.")
+    if state.personas.references_resource("worldbook", worldbook_id) or state.projects.references_resource("worldbook", worldbook_id):
+        raise_error(409, "WORLDBOOK_IN_USE", "Remove Persona and Project bindings before deleting this Worldbook.")
     try:
         deleted = state.worldbooks.delete_worldbook(worldbook_id)
         return {"deleted": True, "worldbook_id": deleted.id}

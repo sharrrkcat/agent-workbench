@@ -100,6 +100,7 @@ export type SessionKnowledgeBindings = {
   session_id: string;
   user_persona_knowledge_base_ids: string[];
   agent_persona_knowledge_base_ids: string[];
+  project_knowledge_base_ids: string[];
   knowledge_base_ids: string[];
   effective_knowledge_base_ids: string[];
 };

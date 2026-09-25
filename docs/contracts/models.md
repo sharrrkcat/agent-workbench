@@ -14,11 +14,13 @@ Model source is a strict nullable union:
 - {type: local, execution_options, lifecycle}: local LLM/TTS/ASR/WD14/SigLIP/text embedding/reranker; engine defaults populate omitted local fields.
 
 TTS, vision, image_embedding and ASR require Local Runtime; omitted source binds locally and explicit null/provider sources fail. Profiles own model_ref, capabilities, parameters, enabled and external_enabled. PATCH preserves omitted source, null unbinds eligible kinds, supplied source replaces; edits invalidate clients/status. Invalid combinations, busy edits and referenced provider deletion fail.
+Model deletion rejects saved Project/session, unfinished-run, global/utility/reranker and Knowledge references.
 [Settings](settings.md#model-settings) owns secrets/PATCH semantics; [Knowledge](knowledge.md) owns index invalidation.
 
 ## Resolution and capabilities
 
-New sessions save the enabled default LLM or first enabled LLM (name/id order). Missing configuration returns MODEL_NOT_CONFIGURED; unavailable/wrong-kind selections fail without substitution.
+New ordinary sessions save the enabled default LLM or first enabled LLM (name/id order); Workspace sessions resolve session > Project > global defaults continuously.
+Missing configuration returns MODEL_NOT_CONFIGURED; unavailable/wrong-kind selections fail without substitution.
 Default selection and `/api/health/details` are cached, degraded without an enabled LLM; [chat/context](chat-context.md) owns Persona/session/title selection.
 LLM parameters: temperature, top_p, max_tokens, presence/frequency penalties, seed, stop; requests override defaults. Capabilities: streaming, tools, vision, json_object, json_schema.
 Providers execute chat/text embeddings; local engines provide chat, TTS, ASR, tagging, Sentence Transformers embeddings/reranking and SigLIP vectors. Vision-capable LLMs accept images through providers, GGUF and Transformers.

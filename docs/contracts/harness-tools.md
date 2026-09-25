@@ -1,10 +1,16 @@
 # Harness and tools contract
 
-Harness execution is opt-in through the session's non-null `harness_enabled`
-boolean (default false) and `tools_allowed` list. Persona owns neither field.
-New sessions default to all registered tools; explicit [] disables every tool.
+Harness execution uses effective `harness_enabled` and `tools_allowed`. Ordinary
+sessions default off with all registered tools; explicit [] disables every tool.
+Workspace sessions inherit Project defaults and may override them; Persona owns neither field.
 Changing Harness enablement preserves the list, and new registry entries do
 not rewrite existing lists. The session UI uses catalog-backed tool switches.
+Workspace tools are intersected with the Project allowlist; forbidden override submissions return 422.
+A Project's Harness boolean is a default, so a session may enable it independently.
+Each model round and queued call, including approval resumption, rechecks the current
+Project tool ceiling. Revoked calls produce TOOL_NOT_ALLOWED without running their handler;
+already executing handlers continue. Expanding the ceiling does not expand a running snapshot.
+Timeline Projects expose no Harness or direct execution path.
 Ordinary chat sends no tools
 and rejects unexpected calls with `UNEXPECTED_TOOL_CALL`. An enabled harness
 with an empty allowlist uses ordinary chat. A model lacking native tool support
@@ -34,10 +40,11 @@ model loop. Invalid direct requests fail before creating a run.
 | knowledge_search | query, knowledge_base_ids?, top_k?, max_context_chars? | Automatic |
 | base64_encode / base64_decode | value | Automatic |
 
-File paths are relative to the workspace and restricted to `data/knowledge`
+File paths are relative to the application root and restricted to `data/knowledge`
 and `data/attachments`. Absolute paths, traversal, Windows alternate streams
 and symlink/junction escapes are rejected. Reads are bounded to 200,000 bytes;
 the result exposes a relative path, text, size and truncation flag.
+Projects share these directories and the existing per-call approval; there is no Project filesystem sandbox.
 
 Network tools accept public HTTP(S) URLs without credentials. Every DNS answer
 and redirect target is checked. HTTP connects to a validated address while

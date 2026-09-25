@@ -79,7 +79,7 @@ const unselected = ModelSelect({ profiles, value: null, onChange: () => {} });
 assert.equal(unselected.props.value, '');
 assert.equal(descendants(unselected).find((node) => node.type === SelectItem && node.props.value === '').props.disabled, true);
 
-let headerSession = { model_profile_id: 'preferred', persona_id: 'cogita', effective: {} };
+let headerSession = { kind: 'ordinary', model_profile_id: 'preferred', persona_id: 'cogita', effective: { model_profile_id: 'preferred' } };
 const headerLoad = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: (selector) => selector({ profiles }) }),
@@ -102,7 +102,7 @@ for (const [locale, labels] of [
   assert.doesNotMatch(html, /include_system_prompt|inheritPersona|overrideHarness|toolRisk\.|Global default|全局默认/);
   assert.equal((html.match(/aria-checked="true"/g) || []).length, 2);
   for (const modelId of ['preferred', 'first']) {
-    headerSession = { ...headerSession, model_profile_id: modelId };
+    headerSession = { ...headerSession, model_profile_id: modelId, effective: { model_profile_id: modelId } };
     const header = renderToStaticMarkup(React.createElement(SidebarProvider, null,
       React.createElement(ChatHeader, { onOpenSettings: () => {} })));
     const settings = renderToStaticMarkup(React.createElement(ModelField, { profiles, value: modelId, onChange: () => {} }));
@@ -135,7 +135,13 @@ await chatApi.updateSession('s', { model_profile_id: modelChoice });
 assert.deepEqual(requests.at(-1).body, { model_profile_id: 'first' });
 let generation = {};
 const { Input } = (await load('../src/components/ui/input.tsx')).exports;
-const generationNodes = descendants(GenerationFields({ value: generation, onChange: (value) => { generation = value; } }));
+let generationElement;
+function CaptureGeneration() {
+  generationElement = GenerationFields({ value: generation, onChange: (value) => { generation = value; } });
+  return generationElement;
+}
+renderToStaticMarkup(React.createElement(CaptureGeneration));
+const generationNodes = descendants(generationElement);
 const temperature = generationNodes.find((node) => node.type === Input);
 assert.equal(generationNodes.filter((node) => node.type === Input).length, 1);
 temperature.props.onChange({ currentTarget: { value: '0' } });

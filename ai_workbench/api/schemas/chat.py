@@ -12,7 +12,7 @@ from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.persona import Persona, PersonaIdentity, PersonaInput, ResolvedChatConfig
 from ai_workbench.core.schema.run import RunSchema, RunStepSchema
 from ai_workbench.core.schema.run_event import RunEventSchema
-from ai_workbench.core.session import Session
+from ai_workbench.core.session import OrdinarySession, WorkspaceSession
 
 
 class JsonPart(parts.JsonPart):
@@ -39,14 +39,17 @@ PersonaResponse = public_model("PersonaResponse", Persona, fields={
 })
 PersonaPatch = patch_model("PersonaPatch", PersonaInput)
 ResolvedConfiguration = public_model("ResolvedConfiguration", ResolvedChatConfig,
-    omit={"system_prompt", "user_persona_prompt"})
+    omit={"system_prompt", "project_system_prompt", "user_persona_prompt"})
 
 
-SessionResponse = public_model("SessionResponse", Session, fields={
+_session_fields = {
     "user_persona": (PersonaIdentity, ...),
     "effective": (ResolvedConfiguration, ...),
     "title_generation_metadata": (JsonObject, Field(description="Auxiliary-title status diagnostics, without prompts or model content.")),
-})
+}
+OrdinarySessionResponse = public_model("OrdinarySessionResponse", OrdinarySession, fields=_session_fields)
+WorkspaceSessionResponse = public_model("WorkspaceSessionResponse", WorkspaceSession, fields=_session_fields)
+SessionResponse = Annotated[OrdinarySessionResponse | WorkspaceSessionResponse, Field(discriminator="kind")]
 RunStepResponse = public_model("RunStepResponse", RunStepSchema, fields={
     "metadata": (JsonObject, Field(description="Compact public step diagnostics and tool identity; never private continuation state.")),
 })
@@ -170,6 +173,7 @@ class SessionKnowledgeResponse(KnowledgeBindingsResponse):
     session_id: str
     user_persona_knowledge_base_ids: list[str]
     agent_persona_knowledge_base_ids: list[str]
+    project_knowledge_base_ids: list[str]
     effective_knowledge_base_ids: list[str]
 
 

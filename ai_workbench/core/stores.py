@@ -15,7 +15,7 @@ from ai_workbench.core.message_parts import make_text_part, validate_message_par
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, RunStepKind, RunStepStatus
 from ai_workbench.core.schema.run_event import RunEventSchema
-from ai_workbench.core.session import Session
+from ai_workbench.core.session import Session, parse_session
 from ai_workbench.core.time import utc_now
 
 
@@ -23,13 +23,9 @@ class SessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
 
-    def create_session(self, title: str = "", **values: Any) -> Session:
-        session = Session(
-            session_id=str(uuid4()),
-            title=title,
-            title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual",
-            **values,
-        )
+    def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
+        session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
+            title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual", **values))
         self._sessions[session.session_id] = session
         return session
 
@@ -75,7 +71,7 @@ class SessionStore:
 
     def _replace(self, session_id: str, **updates: Any) -> Session:
         current = self.get_session(session_id)
-        updated = Session.model_validate({**current.model_dump(), **updates, "updated_at": utc_now()})
+        updated = parse_session({**current.model_dump(), **updates, "updated_at": utc_now()})
         self._sessions[session_id] = updated
         return updated
 

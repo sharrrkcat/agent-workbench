@@ -1,7 +1,7 @@
 # Runs and streaming contract
 
 This contract owns run status, steps, persistence and transport reconciliation.
-[Chat/context](chat-context.md) owns Agent/User Persona configuration snapshots and message content;
+[Chat/context](chat-context.md) owns Project/Agent/Cogita Persona configuration snapshots and message content;
 [harness/tools](harness-tools.md) owns tool execution and approval rules.
 
 ## Run lifecycle
@@ -67,7 +67,7 @@ Global model/runtime events use `/api/models/events`, including without a select
 
 | Event | Meaning |
 | --- | --- |
-| session_updated | Persisted session configuration/title |
+| session_updated | Session configuration/title or refreshed inherited Project/Persona/model settings |
 | message_updated | Persisted user message or metadata |
 | message_started | Assistant draft with stable ids |
 | message_delta | part_id, part_type=text/reasoning, delta and seq=1,2,... |
@@ -84,6 +84,8 @@ Approval requests include arguments, risk and step id. Global events have an
 empty session_id, create no business rows and share alias occupancy. Models
 subscriptions remain active without a session and across settings navigation.
 Runtime jobs use their own store, not chat runs.
+Workspace reads and new runs resolve current defaults; existing run context/model snapshots remain fixed.
+The Harness contract owns live Project tool revocation, including resumed approvals.
 The same global runtime_job_updated event carries cache_prune/cache_clean jobs,
 including version=null and optional before/after accounting; jobs carry no provider reference.
 Installation events describe the single local runtime. Cache maintenance never

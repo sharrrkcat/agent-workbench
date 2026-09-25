@@ -56,6 +56,7 @@ class ChatRunner:
             sessions=sessions, messages=messages, runs=runs, events=events, model_manager=model_manager,
             registry=tool_registry, network_policy=network_policy, harness_settings=harness_settings,
             repo_root=repo_root, knowledge_service=knowledge_service, active_runs=active_runs,
+            allowed_tools=chat_service.tools_for_run,
         ) if tool_registry is not None else None
         self.context_builder = ContextBuilder(messages)
 
@@ -273,6 +274,7 @@ class ChatRunner:
         }
         if config.system_prompt:
             messages.insert(0, {"role": "system", "content": config.system_prompt})
+        messages = append_system_context(messages, config.project_system_prompt.strip())
         user_context = build_user_persona_context(persona_id=config.user_persona_id, content=config.user_persona_prompt)
         messages = append_system_context(messages, user_context.rendered_text)
         metadata["user_persona"] = user_context.metadata

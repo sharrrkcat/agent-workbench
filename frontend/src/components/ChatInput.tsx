@@ -63,7 +63,7 @@ export function ChatInput() {
   const contextRequired = session?.effective.context_policy.mode === 'selected_message';
   const eligible = messages.filter(isContextMessage);
   const hasSource = !!sourceMessageId && eligible.some((m) => m.message_id === sourceMessageId);
-  const profile = profiles.find((item) => item.id === session?.model_profile_id);
+  const profile = profiles.find((item) => item.id === session?.effective.model_profile_id);
   const hasImages = attachments.some((item) => item.type === 'image');
   const imageIssue =
     hasImages && session?.effective.context_policy.include_attachments !== 'explicit'
@@ -84,7 +84,7 @@ export function ChatInput() {
     if (cannotSend || activeRun) return;
     const result = await send(draft, attachments);
     if (result && useCogitaStore.getState().sessionEpoch === sessionEpoch) {
-      setDraft('');
+      if (useCogitaStore.getState().composerDraftText === draft) setDraft('');
       setPreview(null);
       clear();
     }
