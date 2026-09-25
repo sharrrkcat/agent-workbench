@@ -30,7 +30,7 @@ In **Settings > Models**, use the Model profiles, Providers, Local Runtime and E
 1. **Local Runtime:** install the shared Windows x64 release once. Place model files manually under data/models, then select Local Runtime in a model. Its reference/architecture selects the engine; release policy defaults to manual.
 2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
-Profiles have one of six kinds, internal UUIDs, public aliases, capabilities and parameters; unbound drafts can be saved but cannot execute.
+Profiles have one of seven kinds, internal UUIDs, public aliases, capabilities and parameters; unbound drafts can be saved but cannot execute.
 Choose default chat and optional auxiliary models. New sessions select the default or first enabled LLM; changing defaults preserves sessions.
 Titles use only the auxiliary model and remain unchanged when it is missing or fails.
 
@@ -42,6 +42,7 @@ Titles use only the auxiliary model and remain unchanged when it is missing or f
 | image_embedding | data/models/image_embeddings | SigLIP image/text towers, Windows CUDA or CPU |
 | vision | data/models/vision | WD14-family ONNX CPU |
 | tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
+| asr | data/models/asr | Native Whisper, Windows CUDA or CPU |
 
 Inventory references are relative to data/models, such as `llms/example.gguf`; Transformers uses a model directory.
 Enable Vision for image input. GGUF also requires its matching mmproj_ref; suggestions appear in the editor.
@@ -179,6 +180,18 @@ Both towers share identity; SHA-256 identifies consumed files without preset has
 NaFlex has CUDA API acceptance; FixRes has automated tests only. [Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns queue/error and acceptance limits.
 Image indexing, remote providers and usage/timing collection remain deferred.
 
+### Offline speech recognition
+
+Choose **Speech to text** in Models, select a native Whisper directory under data/models/asr and save an alias. Architecture, processor, sample rate and languages are identified automatically; no model hashes are computed. Defaults are CUDA, four threads, manual release and external visibility off.
+Enable external visibility to call the API. Language=auto, empty prompt, temperature=0 and response_format=json are saved defaults; each internal/public request can override them. Explicit auto/empty prompt restores detection/clears saved context.
+
+```powershell
+Invoke-RestMethod "$apiBase/audio/transcriptions" -Method Post -Headers $headers `
+  -Form @{ model = 'whisper'; file = Get-Item './recording.wav'; response_format = 'verbose_json'; 'timestamp_granularities[]' = 'segment' }
+```
+
+WAV/MP3 uploads obey the configured HTTP limit. All formats transcribe beyond 30 seconds: json returns {text}, text returns plain text, and verbose_json returns language/duration/text plus segment timestamps. There is no fixed ASR duration/decoded-size ceiling; whole-audio processing uses memory proportional to recording length. [Models](docs/contracts/models.md#local-speech-recognition) owns unsupported features and execution details.
+
 ### Offline Kokoro Speech
 
 Place Kokoro v1.0 FP32 model.onnx, config/tokenizer JSON and voices/<id>.bin under data/models/tts/Kokoro-82M-onnx; the 54-voice catalog ignores extras and excludes missing/invalid voices.
@@ -198,9 +211,7 @@ MP3 is the default; responses are complete files without chat/attachment writes.
 
 ### Offline Chatterbox Speech
 
-On Windows x64, install the local runtime in Models > Local Runtime. Place the English ve.safetensors,
-t3_cfg.safetensors, s3gen.safetensors and tokenizer.json under `data/models/tts/chatterbox`.
-Create a Chatterbox profile for `tts/chatterbox`, choose CPU/CUDA and set generation defaults; preset voices are unavailable.
+On Windows x64, install the local runtime in Models > Local Runtime. Place the English ve.safetensors, t3_cfg.safetensors, s3gen.safetensors and tokenizer.json under `data/models/tts/chatterbox`. Create a Chatterbox profile for `tts/chatterbox`, choose CPU/CUDA and set generation defaults; preset voices are unavailable.
 
 Upload one WAV/MP3 reference (8 MiB, at most 30 decoded seconds) through the API:
 
@@ -221,14 +232,9 @@ Listing does not renew them. For one request, omit voice and send `tts.reference
 
 ### Offline Qwen3-TTS Base Speech
 
-Install the Windows local runtime, select **Qwen3-TTS (12Hz Base)**
-and explicit CPU/CUDA execution. Place the complete checkpoint, including generation config,
-text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is
-`tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
+Install the Windows local runtime, select **Qwen3-TTS (12Hz Base)** and explicit CPU/CUDA execution. Place the complete checkpoint, including generation config, text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is `tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
 
-Qwen shares Chatterbox's reference APIs/TTL. Optional reference_text in the upload form or
-tts.reference_audio enables full conditioning; absence uses speaker-embedding cloning.
-Supply the recording's actual words; the service does not transcribe or persist transcripts.
+Qwen shares Chatterbox's reference APIs/TTL. Optional reference_text in the upload form or tts.reference_audio enables full conditioning; absence uses speaker-embedding cloning. Supply the recording's actual words; the reference workflow does not generate or persist transcripts.
 
 ```powershell
 $voice = Invoke-RestMethod "$apiBase/audio/voice-references" -Method Post -Headers $headers `
@@ -239,10 +245,7 @@ Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
   -ContentType 'application/json' -Body $speechBody -OutFile speech.mp3
 ```
 
-Language omission/auto selects automatically; ten languages exclude Hindi. Token limits can stop speech early.
-Qwen has no presets; temporary voices have language=null. Both Audio architectures support optional seed=0..4294967295:
-0 is valid; omitted/null request seeds inherit the profile, whose blank/null default leaves randomness unfixed.
-Fixed seeds control randomness without guaranteeing identical audio. The editor/OpenAPI describe all controls.
+Language omission/auto selects automatically; ten languages exclude Hindi. Token limits can stop speech early. Qwen has no presets; temporary voices have language=null. Both Audio architectures support optional seed=0..4294967295: 0 is valid; omitted/null request seeds inherit the profile, whose blank/null default leaves randomness unfixed. Fixed seeds control randomness without guaranteeing identical audio. The editor/OpenAPI describe all controls.
 
 ## HTTP contract
 
@@ -318,7 +321,7 @@ SigLIP routine CUDA: `uv run python -m scripts.smoke_siglip_runtime --model-ref 
 Both require supplied directories and reuse installation. WD14 checks tagging API/lifecycle; the default SigLIP smoke checks image→text→image, reuse and unload.
 Add SigLIP `--native-reference` to compare standalone towers with native FP16 CUDA outputs. Reports go to build/wd14-smoke or build/siglip-smoke.
 SigLIP `--full-lifecycle` includes 20 switches and 10 dual-resident pairs and requires an explicit user request; exclude it from routine regression, CI and default acceptance. `--case switching|residency|cancellation|faults|identity|release` narrows that opt-in matrix; each run saves a separate lifecycle report, including failures.
-[Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. Bilingual desktop/touch settings: `npm run test:browser -- siglip.spec.ts wd14.spec.ts text-embeddings.spec.ts rerankers.spec.ts model-sources.spec.ts` in frontend.
+[Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. Bilingual desktop/touch settings: `npm run test:browser -- siglip.spec.ts wd14.spec.ts text-embeddings.spec.ts rerankers.spec.ts asr.spec.ts model-sources.spec.ts` in frontend.
 
 Text embedding CUDA: `uv run python -m scripts.smoke_text_embedding_runtime --model-ref embeddings/harrier-oss-v1-0.6b --native-reference --expected-dimensions 1024`.
 Run the same command with `--device cpu` and without `--native-reference` for short-text CPU inference/release. An explicit model reference is required; installation is reused.
@@ -329,22 +332,17 @@ Reranker CUDA/native/Knowledge: `uv run python -m scripts.smoke_reranker_runtime
 Short-text CPU: `uv run python -m scripts.smoke_reranker_runtime --model-ref rerankers/mxbai-rerank-base-v2 --device cpu`.
 Both reuse installation without model hashes. CUDA compares native scores at matching batch sizes with maximum absolute error <=0.005 and preserves ordering for score gaps >0.01; reports go to build/reranker-smoke.
 
-Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
+Routine Windows Audio acceptance uses supplied Chatterbox and Qwen3-TTS models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
 Use mono PCM16 24 kHz speech, stop Cogita first, and provide enough RAM/VRAM. CUDA is the default.
-The CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, seed PCM comparisons, references, cancellation/isolation
-and Whisper's 30-second boundary. `--engine chatterbox|qwen3tts|whisper` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected.
+The CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, seed PCM comparisons, references and cancellation/isolation. `--engine chatterbox|qwen3tts` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected.
 Use `--device cpu` only for affected changes under the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU.
 Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`.
 Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
 
-For Windows CUDA with an existing GGUF, run `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`.
-It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload
-with temporary model profiles. Runtime installation/jobs remain persisted.
-Stop Cogita before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility.
-`uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation;
-use --engine llama-server for GGUF. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks.
-GGUF vision also needs `--mmproj-ref llms/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf`; Qwen3.5-0.8B files are the validated reference.
-Image answers check fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke and defaults to LLM CPU/CUDA/Kokoro CPU; Audio CPU needs --backend chatterbox-cpu or --backend qwen3tts-cpu.
+Whisper CUDA: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --tail-text "unique words after thirty seconds" --mp3 ./short.mp3`. Repeat for asr/whisper-large-v3-turbo. Supply English PCM16 WAV longer than 60 seconds with an identifiable phrase after 30 seconds; English MP3 is optional.
+Focused base CPU: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --device cpu`. CPU checks the first six seconds. Both reuse installation; reports go to build/asr-smoke. CUDA covers the 30-second boundary, all response formats, tail/segment completeness, repeated inference, cancellation/reload and cleanup.
+
+For Windows CUDA with an existing GGUF, run `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload with temporary model profiles. Runtime installation/jobs remain persisted. Stop Cogita before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility. `uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation; use --engine llama-server for GGUF. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks. GGUF vision also needs `--mmproj-ref llms/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf`; Qwen3.5-0.8B files are the validated reference. Image answers check fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke and defaults to LLM CPU/CUDA/Kokoro CPU; Audio CPU needs --backend chatterbox-cpu or --backend qwen3tts-cpu.
 
 Read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests before changes; [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md) owns English-only documentation and plan completion.

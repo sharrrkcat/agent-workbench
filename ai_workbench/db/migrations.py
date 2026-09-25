@@ -35,7 +35,8 @@ WD14_REVISION = "0015_wd14_vision"
 SIGLIP_REVISION = "0016_siglip_image_embedding"
 TEXT_EMBEDDING_REVISION = "0017_local_text_embeddings"
 RERANKER_REVISION = "0018_local_rerankers"
-HEAD_REVISION = RERANKER_REVISION
+ASR_REVISION = "0019_asr"
+HEAD_REVISION = ASR_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

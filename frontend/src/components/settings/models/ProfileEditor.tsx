@@ -45,6 +45,7 @@ import { PresetVoices } from './PresetVoices';
 import { SiglipInspectionPanel } from './SiglipInspection';
 import { TextEmbeddingInspectionPanel } from './TextEmbeddingInspection';
 import { RerankerInspectionPanel } from './RerankerInspection';
+import { ASRInspectionPanel } from './ASRInspection';
 
 export type ProfileDraft = { id?: string; value: ModelInput };
 export function ProfileEditor({
@@ -103,7 +104,7 @@ export function ProfileEditor({
   const patchReference = (modelRef: string, suggestName = false) => setModel((draft) => draft ? {
     ...draft, value: selectModelReference(draft.value, modelRef,
       suggestName && !draft.id && (draft.value.kind === 'image_embedding'
-        || ['embedding', 'reranker'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
+        || ['embedding', 'reranker', 'asr'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
   } : null);
   const patchLocal = (patch: Partial<LocalModelSource>) =>
     setModel((draft) =>
@@ -205,7 +206,7 @@ export function ProfileEditor({
                       }}
                       items={[
                         { value: '', label: t('unbound') },
-                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker'].includes(model.value.kind)
+                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
                         ...(['llm', 'embedding'].includes(model.value.kind) && providers.length
@@ -226,7 +227,7 @@ export function ProfileEditor({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">{t('unbound')}</SelectItem>
-                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker'].includes(model.value.kind) ? (
+                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr'].includes(model.value.kind) ? (
                           <SelectGroup>
                             <SelectLabel>{t('localSourceGroup')}</SelectLabel>
                             <SelectItem value="local">{t('localRuntime')}</SelectItem>
@@ -265,7 +266,7 @@ export function ProfileEditor({
                         onBlur={() => setModel((draft) => draft ? { ...draft,
                           value: selectModelReference(draft.value, draft.value.model_ref,
                             !draft.id && (draft.value.kind === 'image_embedding'
-                              || ['embedding', 'reranker'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
+                              || ['embedding', 'reranker', 'asr'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
                         } : null)} />
                       <ComboboxContent>
                         <ComboboxEmpty>{t('common:noSuggestions')}</ComboboxEmpty>
@@ -289,6 +290,9 @@ export function ProfileEditor({
                     ) : null}
                     {model.value.kind === 'reranker' && local ? (
                       <FieldDescription>{t('reranker.directoryHint')}</FieldDescription>
+                    ) : null}
+                    {model.value.kind === 'asr' && local ? (
+                      <FieldDescription>{t('asr.directoryHint')}</FieldDescription>
                     ) : null}
                   </Field>
                   <FieldGroup className="grid gap-4 sm:grid-cols-2">
@@ -321,6 +325,9 @@ export function ProfileEditor({
                 ) : null}
                 {model.value.kind === 'reranker' && local && model.value.model_ref.trim() ? (
                   <RerankerInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref} />
+                ) : null}
+                {model.value.kind === 'asr' && local && model.value.model_ref.trim() ? (
+                  <ASRInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref} />
                 ) : null}
                 {model.value.kind === 'embedding' && local && model.value.model_ref.trim() ? (
                   <TextEmbeddingInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref}

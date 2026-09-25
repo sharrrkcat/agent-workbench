@@ -27,7 +27,9 @@ from pydantic import ValidationError
 
 @asynccontextmanager
 async def runtime_lifespan(app: FastAPI):
+    import asyncio
     try:
+        await asyncio.to_thread(lambda: app.state.runtime_state.model_manager.asr_inputs)
         yield
     finally:
         state = app.state.runtime_state

@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 
 if __package__:
-    from .common import WorkerError, safe_reference, local_model
+    from .common import WorkerError, safe_reference
 else:
-    from common import WorkerError, safe_reference, local_model
+    from common import WorkerError, safe_reference
 
 CHATTERBOX_FILES = ("ve.safetensors", "t3_cfg.safetensors", "s3gen.safetensors", "tokenizer.json")
 MAX_REFERENCE_BYTES = 8 * 1024 * 1024
@@ -104,7 +104,7 @@ def chatterbox_files(path: Path) -> bool:
 
 def audio_model(root: Path, ref: str, architecture: str) -> Path:
     if architecture not in AUDIO_DEFAULTS:
-        return local_model(root, ref)
+        raise WorkerError("UNSUPPORTED_CAPABILITY")
     path = (root / safe_reference(ref)).resolve()
     if not path.is_relative_to(root.resolve()) or any(
         not item.resolve().is_relative_to(path) for item in path.rglob("*")

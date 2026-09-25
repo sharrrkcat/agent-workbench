@@ -8,6 +8,7 @@ are never removed by schema revisions.
 | data/cogita.db | Application test state: Personas, sessions/messages/runs, settings, models/providers, Knowledge/Worldbook, runtime jobs |
 | data/attachments/ | Uploaded files and Persona avatars; explicit orphan cleanup |
 | data/tmp/voice-references/ | Model-service temporary reference audio; no database records |
+| data/tmp/asr-inputs/ | Request-scoped transcription uploads; no database records |
 | data/knowledge/ | Knowledge service source/index working files |
 | data/models/ | Manually managed model weights; no application downloader |
 | data/runtimes/ | Supervisor-owned local inference release, caches and staging |
@@ -24,7 +25,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0017_local_text_embeddings`; there are 24 current business tables.
+Alembic head is `0019_asr`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -111,6 +112,9 @@ It preserves profile IDs/references, Knowledge indexes, other records and every 
 CrossEncoder packages remain under data/models/rerankers, with configuration-only inspection and no model hashes or fingerprints.
 Same-path replacement requires explicit unload/reload and does not require rebuilding embedding indexes.
 
+Revision `0019_asr` extends the model-kind and local-source constraints with asr. Existing profiles, runtime registration/jobs and all other records survive unchanged; the revision never touches filesystem data.
+Native Whisper directories reside under data/models/asr. Inspection reads configuration JSON; no ASR path hashes model files or writes fingerprints/manifests. Replacing files requires explicit unload/reload.
+
 Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
 The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under
 data/models/_auxiliary/en_core_web_sm and is excluded from inventory. Kokoro
@@ -155,6 +159,12 @@ are owned by [Models](contracts/models.md#audio-tts-and-temporary-references).
 Optional Qwen transcripts exist only in reference memory and are discarded with it.
 These files are separate from attachments and manually supplied model resources;
 no schema revision, model uninstall or runtime cache job deletes them.
+
+## Temporary ASR inputs
+
+ASR input storage creates one random session under data/tmp/asr-inputs. Startup removes abandoned owned sessions; generated filenames and worker references must remain within their owned roots.
+Each transcription stores a file only after admission and removes it after completion, failure or cancellation. Cancellation stops the worker before file deletion; interrupted staging waits for the file write before cleanup. Normal shutdown removes the empty session. Unowned files are preserved.
+These inputs have no TTL, voice IDs or persistent transcript records and do not use voice-reference or attachment storage. Schema revisions, cache maintenance and model/runtime uninstall do not own their cleanup.
 
 ## Environment and maintenance
 

@@ -5,7 +5,7 @@ from typing import Protocol
 
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult, ModelProfile,
-    ModelStatus, RerankResult, SiglipResult, Tower, VisionResult, AudioOutput,
+    ModelStatus, RerankResult, SiglipResult, Tower, VisionResult, AudioOutput, ASRParameters, TranscriptionResult,
 )
 
 
@@ -17,6 +17,7 @@ class InferenceAdapter(Protocol):
     async def image_embed(self, profile: ModelProfile, tower: Tower, inputs: list[str]) -> SiglipResult: ...
     async def vision(self, profile: ModelProfile, images: list[str], thresholds: dict[str, float]) -> VisionResult: ...
     async def speech(self, profile: ModelProfile, text: str, voice: str, speed: float, response_format: str, language: str | None) -> AudioOutput: ...
+    async def transcribe(self, profile: ModelProfile, reference: str, options: ASRParameters) -> TranscriptionResult: ...
     async def close(self) -> None: ...
 
 

@@ -40,9 +40,10 @@ def catalog(state=Depends(get_state)):
     release = state.runtime_supervisor.release
     schemas = {"llama-server": LlamaCPUOptions | LlamaCUDAOptions, "transformers": PythonOptions,
                "kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions, "chatterbox": PythonOptions, "qwen3tts": PythonOptions,
-               "siglip2": SiglipOptions, "sentence-transformers": EmbeddingOptions, "cross-encoder": RerankerOptions}
+               "siglip2": SiglipOptions, "sentence-transformers": EmbeddingOptions, "cross-encoder": RerankerOptions,
+               "whisper": PythonOptions}
     return {**release.model_dump(include={"version", "platform", "architecture", "supported", "reason"}),
-            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "vision" if engine == "wd14" else "image_embedding" if engine == "siglip2" else "embedding" if engine == "sentence-transformers" else "reranker" if engine == "cross-encoder" else "tts",
+            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "vision" if engine == "wd14" else "image_embedding" if engine == "siglip2" else "embedding" if engine == "sentence-transformers" else "reranker" if engine == "cross-encoder" else "asr" if engine == "whisper" else "tts",
                          "options_schema": TypeAdapter(schema).json_schema()} for engine, schema in schemas.items()]}
 
 

@@ -1,6 +1,6 @@
 import type { ModelInput, ModelKind, ProviderInput, LocalEngine, LocalModelSource, ModelSource } from '../../../types/models';
 
-export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts'];
+export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr'];
 
 export const localSource = (): LocalModelSource => ({
   type: 'local', execution_options: {}, lifecycle: { unload: 'manual', idle_seconds: 300 },
@@ -12,6 +12,7 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   kind,
   model_ref: '',
   source: kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
+    : kind === 'asr' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4 } }
     : kind === 'tts' || kind === 'vision' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
   enabled: true,
   external_enabled: false,
@@ -19,7 +20,8 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   parameters: kind === 'tts' ? { architecture: 'kokoro', speed: 1, response_format: 'mp3' }
     : kind === 'vision' ? { architecture: 'wd14', task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
     : kind === 'image_embedding' ? { unload_other_tower_on_call: true }
-    : kind === 'embedding' ? { query_prompt_name: null, document_prompt_name: null } : {},
+    : kind === 'embedding' ? { query_prompt_name: null, document_prompt_name: null }
+    : kind === 'asr' ? { language: 'auto', prompt: '', temperature: 0, response_format: 'json' } : {},
 });
 
 export const ttsGenerationDefaults = {
@@ -40,6 +42,7 @@ export function localEngine(value: ModelInput): LocalEngine | null {
   if (value.kind === 'image_embedding') return 'siglip2';
   if (value.kind === 'embedding') return 'sentence-transformers';
   if (value.kind === 'reranker') return 'cross-encoder';
+  if (value.kind === 'asr') return 'whisper';
   return value.kind === 'tts' || value.kind === 'vision' ? value.parameters.architecture as LocalEngine : null;
 }
 

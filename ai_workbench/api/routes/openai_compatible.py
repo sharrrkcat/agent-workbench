@@ -20,11 +20,12 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.openapi import SSE_RESPONSE, request_body
 from ai_workbench.api.schemas.common import error_responses
 from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ImageEmbeddingResponse, ImageTagsResponse, ModelList, RerankResponse, VoiceList,
-    VoiceReferenceDeleted, VoiceReferenceResponse, VoiceReferenceUpload)
+    VoiceReferenceDeleted, VoiceReferenceResponse, VoiceReferenceUpload,
+    TranscriptionUpload, TranscriptionTextResponse, TranscriptionVerboseResponse)
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_body, read_request
 from ai_workbench.core.models.images import MAX_TAGGING_BYTES
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, MAX_RERANK_BYTES, ModelKind, RerankRequest, SpeechRequest, VisionRequest
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, MAX_RERANK_BYTES, ModelKind, RerankRequest, SpeechRequest, TranscriptionRequest, VisionRequest
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
@@ -172,6 +173,51 @@ async def inference_until_disconnect(request: Request, operation):
             if not pending.done():
                 pending.cancel()
         await asyncio.gather(task, watcher, return_exceptions=True)
+
+
+@router.post("/audio/transcriptions", response_model=TranscriptionTextResponse | TranscriptionVerboseResponse,
+             openapi_extra=request_body(TranscriptionUpload, "multipart/form-data"),
+             summary="Transcribe a complete local audio file; verbose_json includes segment timestamps",
+             responses={**error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 503, 504),
+                200: {"content": {"text/plain": {"schema": {"type": "string"}}}}})
+async def transcribe(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    raw = await read_body(request, settings)
+    async def stream():
+        yield raw
+    try:
+        form = await MultiPartParser(request.headers, stream(), max_files=1, max_fields=6,
+            max_part_size=settings.max_request_mb * 1024 * 1024).parse()
+    except (MultiPartException, ValueError) as exc:
+        raise ModelError("INVALID_REQUEST", "Upload model, one WAV/MP3 file and supported transcription options.", 422) from exc
+    try:
+        allowed = {"model", "file", "language", "prompt", "temperature", "response_format", "timestamp_granularities[]"}
+        if (len(form.multi_items()) != len(form) or not {"model", "file"} <= set(form)
+                or set(form) - allowed or not isinstance(form["file"], UploadFile)):
+            raise ModelError("INVALID_REQUEST", "Upload model, exactly one file and supported transcription options.", 422)
+        values = dict(form)
+        values["file"] = await form["file"].read()
+        audio_format = Path(form["file"].filename or "").suffix.lower().removeprefix(".")
+        try:
+            if "temperature" in values:
+                values["temperature"] = float(values["temperature"])
+            if "timestamp_granularities[]" in values:
+                values["timestamp_granularities[]"] = [values["timestamp_granularities[]"]]
+            payload = TranscriptionUpload.model_validate(values)
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise ModelError("INVALID_REQUEST", "Invalid transcription options; only segment timestamps are supported.", 422) from exc
+        profile = state.model_manager.external_profile(payload.model, "asr")
+        options = TranscriptionRequest.model_validate(payload.model_dump(exclude={"model", "file"}, exclude_unset=True))
+        result = await inference_until_disconnect(request,
+            state.model_manager.transcribe(profile.id, payload.file, audio_format, options))
+        if result.response_format == "text":
+            return Response(result.text, media_type="text/plain", headers={"Cache-Control": "no-store"})
+        if result.response_format == "json":
+            return {"text": result.text}
+        return result.model_dump(exclude={"response_format"})
+    finally:
+        await form.close()
 
 
 @router.post("/audio/speech", response_class=Response, openapi_extra=request_body(SpeechRequest),

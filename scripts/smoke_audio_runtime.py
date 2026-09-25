@@ -13,7 +13,6 @@ import platform
 import secrets
 import socket
 import time
-from types import SimpleNamespace
 import wave
 
 import httpx
@@ -22,10 +21,8 @@ import uvicorn
 from ai_workbench.api.deps import build_runtime_state
 from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.manager import InferenceSlot
-from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter
 from ai_workbench.core.models.runtimes.store import RuntimeStore
-from ai_workbench.core.models.schema import LocalSource, ModelProfile
+from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore
 from ai_workbench.db.database import get_engine, init_db
 from scripts.smoke_llm_runtime import until
@@ -225,66 +222,6 @@ async def reference_tts(state, client, args, architecture, device, reference, ou
             **({"cloning_modes": ["audio-only", "audio-and-transcript"], "languages": ["en-US", "zh-CN", "auto"]} if qwen else {})}
 
 
-async def whisper(state, args, device, reference, output, keeper):
-    manager = state.model_manager
-    # Whisper alone remains private acceptance tooling, outside public ModelInput.
-    profile = SimpleNamespace(id=f'acceptance-whisper-{device}', kind='asr', model_ref=args.whisper, parameters={'architecture': 'whisper'}, source=LocalSource(type='local', execution_options={'device': device, 'intraop_threads': 4}))
-    adapter = AudioWorkerAdapter(state.runtime_supervisor, profile, lambda: None)
-    adapter.validation = True
-    backend = manager.execution_key(profile)
-    manager._slots[backend] = InferenceSlot(adapter, asyncio.Semaphore(1))
-
-    async def call(operation):
-        async with manager._execution_lease(backend, (backend, profile.id), profile, require_runtime=False):
-            return await operation
-
-    try:
-        if device == "cuda":
-            await unavailable_cuda(adapter, profile)
-        await call(adapter.load(profile, explicit=True))
-        metadata = (await adapter.client.get("/health")).json()
-        check_device(metadata, device)
-        results = {}
-        async with reference_file(manager, reference.read_bytes(), reference.suffix[1:]) as entry:
-            for label, frames in (("below", 29 * 24000), ("exactly", 30 * 24000), ("above", 30 * 24000 + 1)):
-                path = output / f"whisper-{label}.wav"
-                with wave.open(str(reference), "rb") as source:
-                    assert source.getparams()[:3] == (1, 2, 24000), "Whisper acceptance reference must be mono PCM16 at 24 kHz"
-                    pcm = source.readframes(source.getnframes())
-                with wave.open(str(path), "wb") as target:
-                    target.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
-                    target.writeframes((pcm * (frames * 2 // len(pcm) + 1))[:frames * 2])
-                async with reference_file(manager, path.read_bytes(), "wav") as bounded:
-                    try:
-                        result = await call(adapter.transcribe(profile, bounded.path.name))
-                    except ModelError as exc:
-                        assert label == "above" and exc.code == "AUDIO_TOO_LONG", exc.code
-                        results[label] = "AUDIO_TOO_LONG"
-                    else:
-                        assert label != "above" and isinstance(result["text"], str), result
-                        results[label] = result
-            operation = adapter.transcribe(profile, entry.path.name)
-            offline_files(adapter)
-            process = adapter.process
-            pending = asyncio.create_task(call(operation))
-            await until(lambda: manager._slots[backend].active == 1)
-            await asyncio.sleep(0.1)
-            assert not pending.done(), "Inference completed before cancellation could be exercised"
-            pending.cancel()
-            await asyncio.gather(pending, return_exceptions=True)
-            assert process.process.returncode is not None and manager._slots[backend].active == 0
-            assert keeper.process and keeper.process.process.returncode is None
-            await call(adapter.load(profile, explicit=True))
-            process = adapter.process
-            await call(adapter.unload(profile))
-            assert process.process.returncode is not None
-        return {"metadata": metadata, "outputs": results, "cancellation": "passed", "manual_unload": "passed",
-                "unrelated_worker": "preserved"}
-    finally:
-        await adapter.close()
-        manager._slots.pop(backend, None)
-
-
 async def validate_engines(state, args):
     manager = state.model_manager
     root = args.root.resolve()
@@ -298,7 +235,7 @@ async def validate_engines(state, args):
     token = secrets.token_urlsafe(32)
     manager.settings.patch({"external_enabled": True, "external_api_key": token})
     report = {"platform": "windows", "runtime_version": state.runtime_supervisor.release.version,
-              "models": {name: getattr(args, name) for name in ("chatterbox", "qwen3tts", "whisper")}, "results": []}
+              "models": {name: getattr(args, name) for name in ("chatterbox", "qwen3tts")}, "results": []}
     keeper_profile = manager.profiles.create(ModelProfile(name='Audio isolation witness', alias='audio-witness', kind='tts', model_ref=args.chatterbox, parameters={'architecture': 'chatterbox'}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
     # Start only the reference decoder in this witness, keeping its process alive without weights.
     _, keeper_slot = manager._slot(manager.execution_key(keeper_profile), keeper_profile)
@@ -316,13 +253,12 @@ async def validate_engines(state, args):
             async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=360, trust_env=False,
                     headers={"Authorization": f"Bearer {token}"}) as client:
                 for device in args.device:
-                    for architecture in args.engine or ["chatterbox", "qwen3tts", "whisper"]:
+                    for architecture in args.engine or ["chatterbox", "qwen3tts"]:
                         started = time.monotonic()
                         print(json.dumps({"engine": architecture, "device": device, "state": "running"}), flush=True)
                         result = {"engine": architecture, "device": device}
                         try:
-                            result.update(await whisper(state, args, device, reference, output, keeper) if architecture == "whisper"
-                                else await reference_tts(state, client, args, architecture, device, reference, output, keeper))
+                            result.update(await reference_tts(state, client, args, architecture, device, reference, output, keeper))
                             result["state"] = "passed"
                         except Exception as exc:
                             result.update(state="failed", error=str(exc))
@@ -347,12 +283,11 @@ def parse_args(argv=None):
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--install-only", action="store_true")
     parser.add_argument("--device", choices=("cpu", "cuda"), action="append")
-    parser.add_argument("--engine", choices=("chatterbox", "qwen3tts", "whisper"), action="append")
+    parser.add_argument("--engine", choices=("chatterbox", "qwen3tts"), action="append")
     parser.add_argument("--reference", type=Path)
     parser.add_argument("--reference-text", help="Transcript of --reference; required for Qwen Base full-conditioning acceptance")
     parser.add_argument("--chatterbox", default="tts/chatterbox")
     parser.add_argument("--qwen3tts", default="tts/Qwen3-TTS-12Hz-0.6B-Base")
-    parser.add_argument("--whisper", default="asr/whisper-base")
     args = parser.parse_args(argv)
     args.device = args.device or ["cuda"]
     return args

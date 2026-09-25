@@ -50,7 +50,8 @@
     "reranker": "重排序",
     "image_embedding": "图像嵌入",
     "vision": "视觉",
-    "tts": "语音合成"
+    "tts": "语音合成",
+    "asr": "语音识别"
   },
   "states": {
     "unknown": "未检查",
@@ -295,7 +296,8 @@
     "qwen3tts": "Qwen3-TTS Base",
     "siglip2": "SigLIP2",
     "sentence-transformers": "Sentence Transformers",
-    "cross-encoder": "Cross-Encoder（Sentence Transformers）"
+    "cross-encoder": "Cross-Encoder（Sentence Transformers）",
+    "whisper": "Whisper"
   },
   "providers": "服务提供商",
   "addProvider": "添加服务提供商",
@@ -381,6 +383,39 @@
       "missing_scoring": "需要明确声明原生的单分数评分头。",
       "missing_template": "需要模型原生的查询和文档对话模板。",
       "missing_token_limit": "无法确定有效的原生文本长度上限。"
+    }
+  },
+  "asr": {
+    "information": "语音识别模型信息",
+    "informationHint": "架构和处理设置从模型目录自动识别。原生窗口用于内部处理，不限制整段录音时长。",
+    "directoryHint": "选择 data/models/asr 下的原生 Whisper 模型目录。",
+    "undetermined": "尚未确定",
+    "inspecting": "正在读取目录配置…",
+    "inspectionFailed": "无法读取模型目录信息。",
+    "supported": "支持",
+    "unavailable": "不可用",
+    "configurationNeeded": "配置需要处理",
+    "draftHint": "可以保存此配置。加载前请解决列出的问题。",
+    "defaultsHint": "保存的默认值用于内部和对外转写请求。每次请求均可单独覆盖，不会改变此配置。",
+    "language": "转写语言",
+    "responseFormat": "返回格式",
+    "languageHint": "填写支持的语言代码，例如 en 或 zh。填写 auto 可恢复自动检测。",
+    "temperatureHint": "零使用确定性解码；正值启用采样。",
+    "prompt": "转写提示",
+    "promptHint": "可选的录音上下文或词汇提示。留空会清除保存的提示。",
+    "timestampsHint": "JSON 和纯文本不返回时间戳；详细 JSON 返回段级时间戳。所有格式均转写完整录音。",
+    "formats": { "json": "JSON（仅文本）", "text": "纯文本", "verbose_json": "详细 JSON（段级时间戳）" },
+    "fields": {
+      "architecture": "架构", "processor": "处理器", "sampleRate": "采样率（Hz）",
+      "features": "梅尔特征维度", "window": "原生窗口（秒）",
+      "timestamps": "段级时间戳", "languages": "支持的语言代码"
+    },
+    "diagnostics": {
+      "missing_config": "缺少必需的原生配置。",
+      "invalid_config": "无法将配置读取为有效 JSON。",
+      "invalid_field": "模型声明的设置缺失或无效。",
+      "unsupported_configuration": "暂不支持声明的架构或处理设置。",
+      "remote_code": "不支持执行自定义模型或处理器代码。"
     }
   },
   "viewHelp": {

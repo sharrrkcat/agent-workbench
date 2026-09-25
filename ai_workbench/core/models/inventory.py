@@ -5,7 +5,7 @@ from ai_workbench.workers.tts_catalog import model_files
 from ai_workbench.workers.audio_catalog import chatterbox_files, qwen3tts_files
 
 ROOTS = {"llm": "llms", "embedding": "embeddings", "reranker": "rerankers",
-         "image_embedding": "image_embeddings", "vision": "vision", "tts": "tts"}
+         "image_embedding": "image_embeddings", "vision": "vision", "tts": "tts", "asr": "asr"}
 
 
 def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
@@ -37,7 +37,7 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
                     target = path.parent
                 elif path.name == "config.json" and qwen3tts_files(path.parent):
                     target = path.parent
-            elif model_kind == "image_embedding":
+            elif model_kind in {"image_embedding", "asr"}:
                 if path.name == "config.json":
                     target = path.parent
             elif model_kind == "embedding":

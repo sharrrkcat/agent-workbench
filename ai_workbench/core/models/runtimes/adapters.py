@@ -18,7 +18,7 @@ from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offlo
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog, prune_process_logs
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ExternalConnection, RerankResult, VisionResult
+from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ExternalConnection, RerankResult, TranscriptionResult, VisionResult
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
 from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing
@@ -124,7 +124,10 @@ class ManagedAdapter:
             if self.engine != "llama-server":
                 from ai_workbench.workers.common import WorkerError, local_model
                 try:
-                    if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
+                    if self.engine == "whisper":
+                        from ai_workbench.workers.asr_catalog import load_configuration
+                        return load_configuration(self.supervisor.root / "data/models", profile.model_ref)[0]
+                    if self.engine in {"chatterbox", "qwen3tts"}:
                         from ai_workbench.workers.audio_catalog import audio_model
                         return audio_model(self.supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
                     if self.engine == "sentence-transformers":
@@ -208,10 +211,10 @@ class ManagedAdapter:
             env.update(COGITA_WORKER_TOKEN=self.token, COGITA_WORKER_READY=str(ready),
                        COGITA_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
             env[TRACE_ENV] = trace.transport_value()
-            if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
+            if self.engine in {"chatterbox", "qwen3tts"}:
                 env.update(COGITA_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
-                if getattr(self, "validation", False):
-                    env["COGITA_AUDIO_VALIDATION"] = "1"
+            if self.engine == "whisper":
+                env["COGITA_ASR_INPUTS_ROOT"] = str(self.supervisor.manager.asr_inputs.base)
             if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers", "cross-encoder"}:
                 cache = self.run_dir / "cache"
                 env.update(COGITA_MODEL_REF=profile.model_ref,
@@ -309,7 +312,7 @@ class ManagedAdapter:
             self.loaded.clear()
             self.changed()
 
-    async def _rpc(self, method, operation, body=None, *, audio_format=None):
+    async def _rpc(self, method, operation, body=None, *, audio_format=None, timeout=httpx.USE_CLIENT_DEFAULT):
         if self.failed or not self.client:
             raise ModelError("MODEL_UNAVAILABLE", "The managed worker is not running.", 503)
         client = self.client
@@ -324,7 +327,7 @@ class ManagedAdapter:
                             raise ValueError("Audio response exceeds limit")
                         chunks.extend(chunk)
                     return httpx.Response(stream.status_code, headers=stream.headers, content=bytes(chunks))
-            return await client.request(method, operation, json=body, headers=headers)
+            return await client.request(method, operation, json=body, headers=headers, timeout=timeout)
         # AnyIO 4.13.0 on Python 3.10 can swallow caller cancellation while
         # connect_tcp exits its task group. Keep transport isolated until supported
         # AnyIO versions reliably propagate cancellation at this boundary.
@@ -360,6 +363,11 @@ class ManagedAdapter:
                 result = RerankResult.model_validate(value)
                 if len(result.scores) != len(body["documents"]):
                     raise ValueError("Rerank scores do not match the input documents")
+                return result
+            if operation == "/transcribe":
+                result = TranscriptionResult.model_validate(value)
+                if result.response_format != body["options"]["response_format"]:
+                    raise ValueError("Transcription format does not match the request")
                 return result
             return value
         except asyncio.CancelledError:
@@ -494,6 +502,12 @@ class RerankerWorkerAdapter(ManagedAdapter):
         return await self._rpc("POST", "/rerank", {"profile_id": profile.id, "query": query, "documents": documents})
 
 
+class ASRWorkerAdapter(ManagedAdapter):
+    async def transcribe(self, profile, reference, options):
+        return await self._rpc("POST", "/transcribe", {"profile_id": profile.id,
+            "input": reference, "options": options.model_dump()}, timeout=httpx.Timeout(300, read=None))
+
+
 class PythonWorkerAdapter(ManagedAdapter):
     async def vision(self, profile, images, thresholds):
         return await self._rpc("POST", "/tags", {"profile_id": profile.id, "images": images, "thresholds": thresholds})
@@ -535,6 +549,3 @@ class AudioWorkerAdapter(ManagedAdapter):
         return await self._rpc("POST", "/speech", {"profile_id": profile.id, "input": text, "reference": reference,
             "reference_text": reference_text, "speed": speed, "response_format": response_format,
             "language": language, "model_options": model_options}, audio_format=response_format)
-
-    async def transcribe(self, profile, reference):
-        return await self._rpc("POST", "/transcribe", {"profile_id": profile.id, "reference": reference})

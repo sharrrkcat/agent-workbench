@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
-from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ModelDigest, ReferenceTranscript, Tower, Usage
+from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ModelDigest, ReferenceTranscript, Tower, Usage, TranscriptionRequest, TranscriptionSegment
 
 
 class PublicModel(ApiModel):
@@ -61,6 +61,26 @@ class VoiceReferenceResponse(ApiModel):
 class VoiceReferenceUpload(ReferenceTranscript, ApiModel):
     model: str = Field(min_length=1)
     file: bytes = Field(description="One WAV or MP3 reference, at most 8 MiB and 30 decoded seconds.", json_schema_extra={"format": "binary"})
+
+
+class TranscriptionUpload(TranscriptionRequest, ApiModel):
+    model: str = Field(min_length=1, description="An enabled, externally visible ASR alias.")
+    file: bytes = Field(description="One complete WAV or MP3 file, subject to the configured HTTP body limit.",
+        json_schema_extra={"format": "binary"})
+    timestamp_granularities: list[Literal["segment"]] | None = Field(default=None,
+        alias="timestamp_granularities[]", min_length=1, max_length=1,
+        description="Only segment is supported; requires the effective verbose_json response format.")
+
+
+class TranscriptionTextResponse(ApiModel):
+    text: str
+
+
+class TranscriptionVerboseResponse(TranscriptionTextResponse):
+    task: Literal["transcribe"]
+    language: str | None = Field(description="Detected/selected language code, or null if no language was returned.")
+    duration: float = Field(gt=0, description="Actual decoded input duration in seconds.")
+    segments: list[TranscriptionSegment]
 
 
 class VoiceReferenceDeleted(ApiModel):

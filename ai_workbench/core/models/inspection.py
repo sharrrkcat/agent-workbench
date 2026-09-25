@@ -10,6 +10,7 @@ from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.siglip_catalog import CONFIG_FILES, STRUCTURES, model_directory, model_file, read_config
 from ai_workbench.workers.embedding_catalog import inspect_embedding
 from ai_workbench.workers.reranker_catalog import inspect_reranker as inspect_reranker_directory
+from ai_workbench.workers.asr_catalog import inspect_asr as inspect_asr_directory
 
 PositiveInt = Annotated[int, Field(gt=0, strict=True)]
 Number = Annotated[float, Field(strict=True)]
@@ -127,7 +128,35 @@ class RerankerInspection(StrictModel):
     diagnostics: list[RerankerDiagnostic]
 
 
-ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection | RerankerInspection, Field(discriminator="kind")]
+class ASRDiagnostic(StrictModel):
+    file: str
+    code: Literal["missing_config", "invalid_config", "invalid_field", "unsupported_configuration", "remote_code"]
+    message: str
+    blocking: bool
+
+
+class ASRInspection(StrictModel):
+    kind: Literal["asr"] = "asr"
+    model_ref: str
+    architecture: Literal["whisper"] | None
+    processor: str | None
+    sample_rate: PositiveInt | None
+    feature_size: PositiveInt | None
+    window_seconds: PositiveInt | None
+    multilingual: bool | None
+    languages: list[str]
+    segment_timestamps: bool
+    diagnostics: list[ASRDiagnostic]
+
+
+ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection | RerankerInspection | ASRInspection, Field(discriminator="kind")]
+
+
+def inspect_asr(repo_root: Path, model_ref: str) -> ASRInspection:
+    try:
+        return ASRInspection.model_validate(inspect_asr_directory(repo_root / "data/models", model_ref))
+    except WorkerError as exc:
+        raise ModelError(exc.code, "Use an existing directory with a safe relative path under data/models.", exc.status) from exc
 
 
 def inspect_reranker(repo_root: Path, model_ref: str) -> RerankerInspection:

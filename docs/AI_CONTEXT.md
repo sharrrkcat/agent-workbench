@@ -17,6 +17,7 @@ Kokoro ONNX and PyTorch Audio provide offline MP3/WAV TTS through
 `/v1/audio/speech`. Kokoro uses local language resources and presets; English Chatterbox and multilingual
 Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optional
 reference transcripts. Chat playback and live capture are deferred.
+Local ASR profiles use directory-configured Whisper for complete WAV/MP3 transcription through `/v1/audio/transcriptions`, with common generation controls and optional segment timestamps.
 Local WD14-family CPU workers tag 1..16 static inline images through `/v1/images/tags`.
 Models are manually supplied ONNX/CSV directories; usage accounting is reserved but unimplemented.
 Local SigLIP profiles encode images/text through `/v1/images/embeddings`, with automatic directory information,

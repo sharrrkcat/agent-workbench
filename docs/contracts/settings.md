@@ -153,7 +153,7 @@ on Model profiles. Providers manages external connections; Local Runtime shows i
 storage, download settings and task history, with a log dialog. Forms and the kind filter
 retain drafts across subpages. Models use grouped Unbound, Local Runtime and configured-provider
 choices, filtered to supported kinds; disabled providers are marked. Defaults: local Kokoro TTS, WD14 CPU vision, SigLIP CUDA image embedding,
-Sentence Transformers CUDA text embedding and CrossEncoder CUDA reranking; LLMs start unbound. Local models expose inventory, execution options and release policy.
+Sentence Transformers CUDA text embedding, CrossEncoder CUDA reranking and Whisper CUDA ASR; LLMs start unbound. Local models expose inventory, execution options and release policy.
 Vision offers only Unbound/Local Runtime, WD14/Tags read-only fields, general/character thresholds (0.35/0.85),
 CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and
 fractions round-trip, while blank fields prevent submission. The removed vision batch-size field is rejected by the API.
@@ -167,16 +167,11 @@ Changing local/provider source or provider id clears model_ref and replaces sour
 preserves model_ref; binding an unbound draft retains its reference for validation. Reselecting is a no-op.
 Local rows show health/load/unload/residency/logs; provider rows show recent-request state and occupancy,
 without lifecycle controls or a trial-inference action. Local engine selection follows reference/architecture.
-TTS profiles select Kokoro, Chatterbox or Qwen3-TTS Base, speed and MP3/WAV defaults.
-Chatterbox/Qwen expose an optional seed: blank saves null (unfixed), and 0 is a valid fixed seed.
-Speech requests may override it; omitted/null request seeds inherit the profile. Fixed seeds control
-randomness without guaranteeing identical audio. Seed edits use the existing profile save/lifecycle flow.
-Switching architecture preserves speed/format and clears incompatible generation
-and execution settings, resetting seed to null for Audio or removing it for Kokoro;
-reselecting the source retains the selected architecture and seed.
-Saved Kokoro editors show preset availability by language; Audio editors
-explain reference-based API usage and Qwen's optional transcripts. Voices are request
-selections, not profile records. Ownership/expiry belong to [Models](models.md#audio-tts-and-temporary-references).
+TTS profiles select Kokoro, Chatterbox or Qwen3-TTS Base, speed and MP3/WAV defaults. Chatterbox/Qwen expose an optional seed: blank saves null (unfixed), and 0 is a valid fixed seed. Speech requests may override it;
+omitted/null request seeds inherit the profile. Fixed seeds control randomness without guaranteeing identical audio. Seed edits use the existing profile save/lifecycle flow. Switching architecture preserves speed/format
+and clears incompatible generation and execution settings, resetting seed to null for Audio or removing it for Kokoro; reselecting the source retains the selected architecture and seed. Saved Kokoro editors show preset
+availability by language; Audio editors explain reference-based API usage and Qwen's optional transcripts. Voices are request selections, not profile records. Ownership/expiry belong to
+[Models](models.md#audio-tts-and-temporary-references).
 
 Image embedding offers only Unbound/Local Runtime. Choosing/editing a directory reads inspect information without loading;
 structure, image/text dimensions, native text position limit and processor settings are read-only, with missing values marked
@@ -198,6 +193,11 @@ Rerankers offer Local Runtime/unbound drafts and automatically inspect architect
 Directory changes clear old information and ignore late responses; unnamed new drafts receive directory-name suggestions. Diagnostics block loading, not saving.
 Parameters are empty: architecture, templates and scoring tokens are not editable. CPU/CUDA, four threads, batch 1..16 (default 1), manual release
 and external visibility use existing controls. [Models](models.md#local-reranking) owns native processing and acceptance limits.
+
+ASR offers Local Runtime/unbound drafts, with CUDA, four threads, manual release and external visibility off by default.
+Directory selection inspects architecture, processor, sample rate, features, native window, languages and timestamp support as read-only information. Changing directories clears stale results and preserves edited names/defaults; unnamed new drafts receive directory-name suggestions. Invalid directories remain saveable.
+Language (auto or supported code), prompt, temperature (0..1) and response format are editable defaults for internal/public requests. Explicit auto/empty prompt resets them; request overrides never change the profile.
+Both locales explain that json/text omit timestamps and verbose_json returns segment timestamps, while every format transcribes complete recordings. There is no architecture selector, duplicated preprocessing configuration or transcription page. [Models](models.md#local-speech-recognition) owns execution and limitations.
 
 Provider/settings reads omit secret keys and expose presence flags. PATCH omission retains keys; empty strings clear them.
 External enablement requires a nonempty key; storage is unencrypted. Busy connection edits, referenced deletion and invalid combinations fail.

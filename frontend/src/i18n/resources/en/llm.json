@@ -50,7 +50,8 @@
     "reranker": "Reranker",
     "image_embedding": "Image embedding",
     "vision": "Vision",
-    "tts": "Text to speech"
+    "tts": "Text to speech",
+    "asr": "Speech to text"
   },
   "states": {
     "unknown": "Unchecked",
@@ -295,7 +296,8 @@
     "qwen3tts": "Qwen3-TTS Base",
     "siglip2": "SigLIP2",
     "sentence-transformers": "Sentence Transformers",
-    "cross-encoder": "Cross-Encoder (Sentence Transformers)"
+    "cross-encoder": "Cross-Encoder (Sentence Transformers)",
+    "whisper": "Whisper"
   },
   "providers": "Providers",
   "addProvider": "Add provider",
@@ -381,6 +383,39 @@
       "missing_scoring": "An explicit native single-score head is required.",
       "missing_template": "A native query/document chat template is required.",
       "missing_token_limit": "No finite native text limit could be determined."
+    }
+  },
+  "asr": {
+    "information": "Speech recognition model information",
+    "informationHint": "Architecture and processing settings come from the model directory. The native window is an internal processing unit, not a recording length limit.",
+    "directoryHint": "Choose a native Whisper model directory under data/models/asr.",
+    "undetermined": "Not determined",
+    "inspecting": "Reading directory configuration…",
+    "inspectionFailed": "Directory information could not be read.",
+    "supported": "Supported",
+    "unavailable": "Unavailable",
+    "configurationNeeded": "Configuration needs attention",
+    "draftHint": "You can save this profile. Resolve the listed issues before loading.",
+    "defaultsHint": "Saved defaults apply to internal and external transcription requests. Each request can override them without changing this profile.",
+    "language": "Transcription language",
+    "responseFormat": "Response format",
+    "languageHint": "Use a supported language code such as en or zh. Use auto for automatic detection.",
+    "temperatureHint": "Zero uses deterministic decoding; a positive value enables sampling.",
+    "prompt": "Transcription prompt",
+    "promptHint": "Optional context or vocabulary for the recording. Leave empty to clear the saved prompt.",
+    "timestampsHint": "JSON and text omit timestamps; detailed JSON returns segment timestamps. Every format transcribes the complete recording.",
+    "formats": { "json": "JSON (text only)", "text": "Plain text", "verbose_json": "Detailed JSON (segment timestamps)" },
+    "fields": {
+      "architecture": "Architecture", "processor": "Processor", "sampleRate": "Sample rate (Hz)",
+      "features": "Mel feature dimensions", "window": "Native window (seconds)",
+      "timestamps": "Segment timestamps", "languages": "Supported language codes"
+    },
+    "diagnostics": {
+      "missing_config": "Required native configuration is missing.",
+      "invalid_config": "Configuration could not be read as valid JSON.",
+      "invalid_field": "A declared setting is missing or invalid.",
+      "unsupported_configuration": "The declared architecture or processing settings are unsupported.",
+      "remote_code": "Custom model or processor code is unsupported."
     }
   },
   "viewHelp": {

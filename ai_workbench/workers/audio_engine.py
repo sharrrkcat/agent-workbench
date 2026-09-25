@@ -86,7 +86,7 @@ def require_offline():
         _network_blocked = True
 
 
-def decode_audio(path: Path, *, max_seconds=MAX_REFERENCE_SECONDS):
+def decode_audio(path: Path):
     """Count decoded frames before resampling or model feature extraction."""
     require_offline()
     import numpy as np
@@ -104,7 +104,7 @@ def decode_audio(path: Path, *, max_seconds=MAX_REFERENCE_SECONDS):
                 if not len(block):
                     break
                 count += len(block)
-                if count > max_seconds * rate:
+                if count > MAX_REFERENCE_SECONDS * rate:
                     raise WorkerError("AUDIO_TOO_LONG")
                 if count * source.channels * 4 > MAX_DECODED_BYTES:
                     raise WorkerError("AUDIO_TOO_LARGE", 413)
@@ -252,30 +252,3 @@ class QwenTTSEngine:
                 ref_audio=(audio, reference_rate), ref_text=reference_text, x_vector_only_mode=reference_text is None,
                 **values)
             return encode_waveform(waves[0], rate, speed, response_format)
-
-
-class WhisperEngine:
-    """Short-form package acceptance engine; no public ASR endpoint."""
-    def __init__(self, path, options):
-        require_offline()
-        with stage("engine_imports"):
-            import torch
-            from transformers import WhisperForConditionalGeneration, WhisperProcessor
-        self.device, self.device_name = device_for(options)
-        self.dtype = torch.float32 if self.device == "cpu" else torch.float16
-        with stage("processor"):
-            self.processor = WhisperProcessor.from_pretrained(path, local_files_only=True)
-        with stage("weights"):
-            self.model = WhisperForConditionalGeneration.from_pretrained(path, local_files_only=True,
-                torch_dtype=self.dtype, attn_implementation="eager").to(self.device).eval()
-
-    def transcribe(self, reference):
-        import librosa
-        import torch
-        audio, rate = decode_audio(reference, max_seconds=30)
-        if rate != 16000:
-            audio = librosa.resample(audio, orig_sr=rate, target_sr=16000)
-        features = self.processor(audio, sampling_rate=16000, return_tensors="pt").input_features
-        with torch.inference_mode():
-            tokens = self.model.generate(features.to(self.device, dtype=self.dtype), task="transcribe")
-        return {"text": self.processor.batch_decode(tokens, skip_special_tokens=True)[0]}

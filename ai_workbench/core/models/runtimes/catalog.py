@@ -58,6 +58,8 @@ def requirements_digest(path: Path) -> str:
 
 
 def worker_entrypoint(engine: str) -> str:
+    if engine == "whisper":
+        return "asr_server.py"
     if engine == "cross-encoder":
         return "reranker_server.py"
     if engine == "sentence-transformers":

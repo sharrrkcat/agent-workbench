@@ -150,10 +150,10 @@ class ProviderProfileRecord(SQLModel, table=True):
 class ModelProfileRecord(SQLModel, table=True):
     __tablename__ = "model_profiles"
     __table_args__ = (
-        CheckConstraint("kind IN ('llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts')", name="ck_model_kind"),
+        CheckConstraint("kind IN ('llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr')", name="ck_model_kind"),
         CheckConstraint("(source_type IS NULL AND provider_profile_id IS NULL AND execution_options_json IS NULL AND lifecycle_json IS NULL) OR "
             "(source_type IS 'provider' AND kind IN ('llm', 'embedding') AND provider_profile_id IS NOT NULL AND execution_options_json IS NULL AND lifecycle_json IS NULL) OR "
-            "(source_type IS 'local' AND kind IN ('llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker') AND provider_profile_id IS NULL AND execution_options_json IS NOT NULL AND lifecycle_json IS NOT NULL)", name="ck_model_source"),
+            "(source_type IS 'local' AND kind IN ('llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr') AND provider_profile_id IS NULL AND execution_options_json IS NOT NULL AND lifecycle_json IS NOT NULL)", name="ck_model_source"),
     )
     id: str = Field(primary_key=True)
     alias: str = Field(index=True, unique=True)

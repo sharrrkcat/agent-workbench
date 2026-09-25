@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import type { ModelInput, VisionParameters } from '../../../types/models';
 
 import { localEngine, selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
+import { ASRParameters } from './ASRParameters';
 
 export function ProfileParameters({
   value,
@@ -23,6 +24,7 @@ export function ProfileParameters({
   onChange: (parameters: ModelInput['parameters']) => void;
 }) {
   const { t } = useTranslation('llm');
+  if (value.kind === 'asr') return <ASRParameters parameters={value.parameters} onChange={onChange} />;
   if (value.kind === 'reranker' || value.kind === 'embedding' && value.source?.type === 'local') return null;
   const patchParam = (key: string, next: unknown) => onChange({ ...value.parameters, [key]: next });
   // Viewport columns need no size containment, which can hide unchanged fields

@@ -18,12 +18,15 @@ import type {
   SiglipInspection,
   TextEmbeddingInspection,
   RerankerInspection,
+  ASRInspection,
   LocalEmbeddingParameters,
   SiglipTower,
 } from '../types/models';
 import { request } from './http';
 
 export const modelsApi = {
+  inspectASR: (model_ref: string) =>
+    request<ASRInspection>('/api/models/inspect?' + new URLSearchParams({ kind: 'asr', model_ref })),
   inspectReranker: (model_ref: string) =>
     request<RerankerInspection>('/api/models/inspect?' + new URLSearchParams({ kind: 'reranker', model_ref })),
   localRuntimeSettings: () => request<LocalRuntimeSettings>('/api/models/local-runtime/settings'),

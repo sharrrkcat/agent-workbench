@@ -59,9 +59,9 @@ def generation_options(value, architecture):
 
 
 class AudioWorker:
-    def __init__(self, root, references, engine_factory=None, validation=False):
+    def __init__(self, root, references, engine_factory=None):
         self.root, self.references = root, references
-        self.engine_factory, self.validation = engine_factory, validation
+        self.engine_factory = engine_factory
         self.engine = None
         self.profile_id = None
         self.architecture = None
@@ -93,8 +93,7 @@ class AudioWorker:
                 if not isinstance(parameters, dict):
                     raise WorkerError("INVALID_REQUEST")
                 architecture = parameters.get("architecture")
-                allowed = {*AUDIO_DEFAULTS, "whisper"} if self.validation else AUDIO_DEFAULTS
-                if not isinstance(architecture, str) or architecture not in allowed or body["kind"] != ("asr" if architecture == "whisper" else "tts"):
+                if not isinstance(architecture, str) or architecture not in AUDIO_DEFAULTS or body["kind"] != "tts":
                     raise WorkerError("UNSUPPORTED_CAPABILITY")
                 defaults = AUDIO_DEFAULTS.get(architecture, {})
                 fields(parameters, ("architecture",), ("speed", "response_format", *defaults))
@@ -115,10 +114,10 @@ class AudioWorker:
                     factory = self.engine_factory
                     if factory is None:
                         if __package__:
-                            from .audio_engine import ChatterboxEngine, QwenTTSEngine, WhisperEngine
+                            from .audio_engine import ChatterboxEngine, QwenTTSEngine
                         else:
-                            from audio_engine import ChatterboxEngine, QwenTTSEngine, WhisperEngine
-                        factory = {"chatterbox": ChatterboxEngine, "qwen3tts": QwenTTSEngine, "whisper": WhisperEngine}[architecture]
+                            from audio_engine import ChatterboxEngine, QwenTTSEngine
+                        factory = {"chatterbox": ChatterboxEngine, "qwen3tts": QwenTTSEngine}[architecture]
                     with stage("engine_init"):
                         self.engine = factory(path, options)
                     self.profile_id, self.architecture = body["profile_id"], architecture
@@ -152,10 +151,6 @@ class AudioWorker:
                 conditioning = {"language": language, "reference_text": transcript} if self.architecture == "qwen3tts" else {}
                 return self.engine.speech(body["input"], reference_path(self.references, body["reference"]),
                     speed, body["response_format"], values, **conditioning)
-            if operation == "/transcribe" and self.validation:
-                fields(body, ("profile_id", "reference"))
-                self.require_model(body["profile_id"], {"whisper"})
-                return self.engine.transcribe(reference_path(self.references, body["reference"]))
             raise WorkerError("UNSUPPORTED_CAPABILITY", 404)
         finally:
             self.lock.release()
@@ -175,7 +170,7 @@ def main():
             if len(token) < 32:
                 raise RuntimeError("Worker token is invalid")
             worker = AudioWorker(Path(os.environ["COGITA_MODELS_ROOT"]).resolve(),
-                Path(os.environ["COGITA_AUDIO_REFERENCES_ROOT"]).resolve(), validation=os.environ.get("COGITA_AUDIO_VALIDATION") == "1")
+                Path(os.environ["COGITA_AUDIO_REFERENCES_ROOT"]).resolve())
             server = ThreadingHTTPServer(("127.0.0.1", 0), handler(worker, token))
             server.daemon_threads = True
         with stage("ready_file"):

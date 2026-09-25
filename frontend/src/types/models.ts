@@ -1,5 +1,5 @@
-export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
-export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers' | 'cross-encoder';
+export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts' | 'asr';
+export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers' | 'cross-encoder' | 'whisper';
 export type SiglipTower = 'image' | 'text';
 export type SiglipTowerInfo = {
   tower: SiglipTower; device: 'cpu' | 'cuda'; device_name: string;
@@ -60,6 +60,14 @@ export type RerankerInspection = {
   diagnostics: { file: string; message: string; blocking: boolean;
     code: 'missing_config' | 'invalid_config' | 'invalid_field' | 'unsupported_configuration'
       | 'remote_code' | 'missing_scoring' | 'missing_template' | 'missing_token_limit' }[];
+};
+
+export type ASRInspection = {
+  kind: 'asr'; model_ref: string; architecture: 'whisper' | null; processor: string | null;
+  sample_rate: number | null; feature_size: number | null; window_seconds: number | null;
+  multilingual: boolean | null; languages: string[]; segment_timestamps: boolean;
+  diagnostics: { file: string; message: string; blocking: boolean;
+    code: 'missing_config' | 'invalid_config' | 'invalid_field' | 'unsupported_configuration' | 'remote_code' }[];
 };
 
 export type PresetVoice = {

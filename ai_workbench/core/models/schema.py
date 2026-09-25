@@ -11,7 +11,7 @@ from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 
-ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts"]
+ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts", "asr"]
 EmbeddingPurpose = Literal["query", "document"]
 EmbeddingSimilarity = Literal["cosine", "dot"]
 Tower = Literal["image", "text"]
@@ -126,6 +126,58 @@ class ImageEmbeddingParameters(StrictModel):
         description="Stop the other SigLIP tower before loading or calling the requested tower. False permits both towers to remain resident; inference is still serial.")
 
 
+ASRLanguage = Annotated[str, Field(pattern=r"^(auto|[a-z]{2,3})$", strict=True)]
+TranscriptionFormat = Literal["json", "text", "verbose_json"]
+
+
+class ASRParameters(StrictModel):
+    language: ASRLanguage = Field(default="auto", description="Native language code, or auto for language detection.")
+    prompt: str = Field(default="", strict=True, description="Transcription context or vocabulary; empty clears the prompt.")
+    temperature: float = Field(default=0.0, ge=0, le=1, strict=True,
+        description="Zero uses deterministic decoding; positive values enable sampling.")
+    response_format: TranscriptionFormat = Field(default="json",
+        description="JSON/text omit timestamps; verbose_json returns segment timestamps.")
+
+
+class TranscriptionRequest(StrictModel):
+    language: ASRLanguage | None = Field(default=None, description="Omitted/null inherits the profile; auto restores detection.")
+    prompt: str | None = Field(default=None, strict=True, description="Omitted/null inherits the profile; empty clears its prompt.")
+    temperature: float | None = Field(default=None, ge=0, le=1, strict=True)
+    response_format: TranscriptionFormat | None = None
+    timestamp_granularities: list[Literal["segment"]] | None = Field(default=None, min_length=1, max_length=1,
+        description="Only segment is supported, and only with the effective verbose_json response format.")
+
+
+class TranscriptionSegment(StrictModel):
+    id: int = Field(ge=0, strict=True)
+    start: float = Field(ge=0, strict=True)
+    end: float = Field(ge=0, strict=True)
+    text: str = Field(strict=True)
+
+    @model_validator(mode="after")
+    def ordered_times(self):
+        if self.end < self.start:
+            raise ValueError("Segment end precedes its start")
+        return self
+
+
+class TranscriptionResult(StrictModel):
+    response_format: TranscriptionFormat
+    task: Literal["transcribe"] = "transcribe"
+    language: str | None = Field(strict=True)
+    duration: float = Field(gt=0, strict=True)
+    text: str = Field(strict=True)
+    segments: list[TranscriptionSegment] | None = None
+
+    @model_validator(mode="after")
+    def valid_segments(self):
+        if (self.response_format == "verbose_json") != (self.segments is not None):
+            raise ValueError("Only verbose transcription results contain segments")
+        if self.segments is not None and [item.id for item in self.segments] != list(range(len(self.segments))):
+            raise ValueError("Transcription segment IDs must match their order")
+        return self
+
+
 class VisionThresholds(StrictModel):
     general: float = Field(default=0.35, ge=0, le=1, strict=True)
     character: float = Field(default=0.85, ge=0, le=1, strict=True)
@@ -191,7 +243,8 @@ class TTSParameters(RootModel):
 
 
 PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "reranker": RerankParameters,
-              "image_embedding": ImageEmbeddingParameters, "vision": VisionParameters, "tts": TTSParameters}
+              "image_embedding": ImageEmbeddingParameters, "vision": VisionParameters, "tts": TTSParameters,
+              "asr": ASRParameters}
 
 
 class ModelInput(StrictModel):

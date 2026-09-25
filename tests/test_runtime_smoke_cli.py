@@ -6,10 +6,21 @@ import pytest
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ProviderProfileStore, ModelProfileStore, ModelSettingsStore
-from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_reranker_runtime, smoke_siglip_runtime, smoke_text_embedding_runtime, smoke_tts_runtime, smoke_wd14_runtime
+from scripts import smoke_asr_runtime, smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_reranker_runtime, smoke_siglip_runtime, smoke_text_embedding_runtime, smoke_tts_runtime, smoke_wd14_runtime
 
 
 SCRIPTS = (smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_tts_runtime)
+
+
+def test_asr_acceptance_requires_supplied_models_and_meaningful_long_audio():
+    required = ["--model-ref", "asr/example", "--audio", "long.wav"]
+    for argv in ([], required, [*required, "--device", "cpu", "--install-only"]):
+        with pytest.raises(SystemExit):
+            smoke_asr_runtime.parse_args(argv)
+    assert smoke_asr_runtime.parse_args([*required, "--tail-text", "unique tail"]).device == "cuda"
+    assert smoke_asr_runtime.parse_args([*required, "--device", "cpu"]).device == "cpu"
+    with pytest.raises(SystemExit):
+        smoke_audio_runtime.parse_args(["--engine", "whisper"])
 
 
 def test_reranker_smoke_requires_supplied_models_and_has_no_install_mode():

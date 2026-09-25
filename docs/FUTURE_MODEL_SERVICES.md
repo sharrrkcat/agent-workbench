@@ -8,7 +8,7 @@ authority and makes no delivery commitment.
 ## Local engine and platform expansion
 
 The shared local release supports Windows x64 GGUF, Transformers LLM, Kokoro,
-WD14 CPU, SigLIP, Sentence Transformers text embeddings, CrossEncoder reranking, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
+WD14 CPU, SigLIP, Sentence Transformers text embeddings, CrossEncoder reranking, Whisper ASR, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
 native components and real-runtime acceptance before it can be advertised.
 [Local text embeddings](contracts/models.md#local-text-embeddings) and [CrossEncoder reranking](contracts/models.md#local-reranking) use native directory metadata.
 [SigLIP image/text encoding](contracts/models.md#siglip-image-and-text-embeddings)
@@ -49,9 +49,8 @@ product boundary. This note adds no route, runtime variant or model kind.
 Kokoro presets, English Chatterbox and Qwen3-TTS Base references are implemented
 under [Models](contracts/models.md#audio-tts-and-temporary-references), which owns
 uploads, optional Qwen transcripts, quotas, credential/profile binding and expiry.
-Qwen CustomVoice/VoiceDesign, public Whisper, multilingual Chatterbox, live capture
-and application playback remain deferred. Whisper is included in the shared Windows
-environment only for acceptance, without a public kind or endpoint.
+Qwen CustomVoice/VoiceDesign, multilingual Chatterbox, live capture and application playback remain deferred.
+Local Whisper transcription is implemented under [Models](contracts/models.md#local-speech-recognition). Word timestamps, translation, streaming, subtitles, advanced request controls, remote ASR, a transcription page and bounded-memory application chunking remain outside that release.
 
 The separate en_core_web_sm resource currently serves Misaki's English frontend.
 A future task-based text-analysis kind could support reusable tokenization,

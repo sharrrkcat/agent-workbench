@@ -4,7 +4,7 @@ from pydantic import Field, RootModel
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.core.models.schema import (
-    EmbeddingParameters, LocalEmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
+    ASRParameters, EmbeddingParameters, LocalEmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
     ModelKind, ModelSettings, ProviderInput, ProviderProfile, ProviderSource, Lifecycle, ExternalConnection, RerankParameters, VisionParameters, TTSParameters,
 )
 from ai_workbench.core.models.runtimes.schema import (
@@ -19,7 +19,7 @@ class EmptyExecutionOptions(ApiModel):
 
 LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | PythonOptions
 ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions | RerankerOptions
-Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
+Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters | ASRParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "source"})
 
 
@@ -51,6 +51,10 @@ class LocalEmbeddingSource(LocalModelSource):
 
 class LocalRerankerSource(LocalModelSource):
     execution_options: EmptyExecutionOptions | RerankerOptions = Field(default_factory=EmptyExecutionOptions)
+
+
+class LocalASRSource(LocalModelSource):
+    execution_options: EmptyExecutionOptions | PythonOptions = Field(default_factory=EmptyExecutionOptions)
 
 
 ModelSource = ProviderSource | LocalModelSource
@@ -92,7 +96,13 @@ class TTSModel(ModelFields):
     source: LocalTTSSource | None = None
 
 
-class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel,
+class ASRModel(ModelFields):
+    kind: Literal["asr"]
+    parameters: ASRParameters = Field(default_factory=ASRParameters)
+    source: LocalASRSource | None = None
+
+
+class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel | ASRModel,
                                     Field(discriminator="kind")]]):
     """One local/provider source or null; unbound profiles may be saved but cannot execute.
 
@@ -130,7 +140,11 @@ class TTSProfile(TTSModel, ProfileIdentity):
     pass
 
 
-ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile | TTSProfile,
+class ASRProfile(ASRModel, ProfileIdentity):
+    pass
+
+
+ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile | TTSProfile | ASRProfile,
                                  Field(discriminator="kind")]
 ModelPatch = patch_model("ModelPatch", ModelInput, fields={
     "parameters": (Parameters, Field(default_factory=lambda: None, description="Replaces parameters; must match the saved model kind.")),
@@ -153,7 +167,7 @@ InstallationResponse = public_model("InstallationResponse", Installation, omit={
 RuntimeJobResponse = public_model("RuntimeJobResponse", RuntimeJob, omit={"log_path"})
 class EngineCatalogResponse(ApiModel):
     engine: LocalEngine
-    kind: Literal["llm", "tts", "vision", "image_embedding", "embedding", "reranker"]
+    kind: Literal["llm", "tts", "vision", "image_embedding", "embedding", "reranker", "asr"]
     options_schema: JsonObject = Field(description="JSON Schema for this code-owned local engine's execution options.")
 
 

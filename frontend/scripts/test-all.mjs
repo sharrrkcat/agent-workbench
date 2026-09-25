@@ -19,6 +19,7 @@ for (const script of [
   'test-siglip',
   'test-text-embeddings',
   'test-rerankers',
+  'test-asr',
   'test-transformers',
   'test-harness',
   'test-chat-presentation',

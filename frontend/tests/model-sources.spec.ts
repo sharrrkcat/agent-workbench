@@ -108,13 +108,13 @@ for (const locale of ['en', 'zh-CN']) {
     await page.keyboard.press('Escape');
     await dialog.getByRole('button', { name: labels.close, exact: true }).click();
     const kind = page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true });
-    for (const selected of ['embedding', 'tts', 'reranker', 'image_embedding', 'vision']) {
+    for (const selected of ['embedding', 'tts', 'reranker', 'image_embedding', 'vision', 'asr']) {
       await chooseOption(kind, labels.kinds[selected]);
       await page.getByRole('button', { name: labels.addModel, exact: true }).click();
-      await expect(source.locator('[data-slot="select-value"]')).toHaveText(['tts', 'vision', 'image_embedding', 'embedding'].includes(selected) ? labels.localRuntime : labels.unbound);
+      await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
       await source.click();
       await expect(page.getByRole('listbox')).toBeVisible();
-      await expect(page.getByRole('option', { name: labels.localRuntime, exact: true })).toHaveCount(['tts', 'vision', 'image_embedding', 'embedding'].includes(selected) ? 1 : 0);
+      await expect(page.getByRole('option', { name: labels.localRuntime, exact: true })).toHaveCount(1);
       const providerGroup = page.getByRole('group', { name: labels.providers, exact: true });
       await expect(providerGroup).toHaveCount(selected === 'embedding' ? 1 : 0);
       if (selected === 'embedding') await expect.poll(() => providerGroup.getByRole('option').count()).toBeGreaterThan(0);

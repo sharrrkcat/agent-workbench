@@ -22,7 +22,7 @@ from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, catalog
 from ai_workbench.core.models.runtimes.process import RuntimeLog
 from ai_workbench.core.models.runtimes.schema import RuntimeJob
-from ai_workbench.core.models.schema import LocalSource, SpeechRequest
+from ai_workbench.core.models.schema import SpeechRequest
 from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers import audio_engine
@@ -73,28 +73,6 @@ def fake_decoder(monkeypatch, frames, *, rate=16000, file_format="WAV", finite=T
     return source
 
 
-@pytest.mark.parametrize("frames,success", [(29 * 16000, True), (30 * 16000, True), (30 * 16000 + 1, False)])
-def test_whisper_duration_guard_counts_decoded_samples_before_features(monkeypatch, frames, success):
-    fake_decoder(monkeypatch, frames)
-    monkeypatch.setitem(sys.modules, "librosa", SimpleNamespace())
-    from contextlib import nullcontext
-    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(inference_mode=nullcontext))
-    engine = audio_engine.WhisperEngine.__new__(audio_engine.WhisperEngine)
-    engine.device, engine.dtype = "cpu", "float32"
-    engine.processor, engine.model = MagicMock(), MagicMock()
-    engine.processor.batch_decode.return_value = ["complete transcript"]
-    if success:
-        assert engine.transcribe(Path("reference.wav")) == {"text": "complete transcript"}
-        assert len(engine.processor.call_args.args[0]) == frames
-        engine.model.generate.assert_called_once()
-    else:
-        with pytest.raises(WorkerError) as rejected:
-            engine.transcribe(Path("reference.wav"))
-        assert rejected.value.code == "AUDIO_TOO_LONG"
-        engine.processor.assert_not_called()
-        engine.model.generate.assert_not_called()
-
-
 @pytest.mark.parametrize("frames,kwargs,path", [(0, {}, "reference.wav"), (1, {"file_format": "FLAC"}, "reference.wav"),
     (1, {"rate": 4000}, "reference.wav"), (1, {"finite": False}, "reference.wav"),
     (1, {}, "reference.mp3")])
@@ -103,6 +81,26 @@ def test_reference_decoder_rejects_invalid_format_empty_and_nonfinite(monkeypatc
     with pytest.raises(WorkerError) as rejected:
         audio_engine.decode_audio(Path(path))
     assert rejected.value.code == "INVALID_AUDIO"
+
+
+@pytest.mark.parametrize("frames,success", [(29 * 16000, True), (30 * 16000, True), (30 * 16000 + 1, False)])
+def test_tts_reference_duration_limit_remains_inclusive(monkeypatch, frames, success):
+    fake_decoder(monkeypatch, frames)
+    if success:
+        audio, rate = audio_engine.decode_audio(Path("reference.wav"))
+        assert len(audio) == frames and rate == 16000
+    else:
+        with pytest.raises(WorkerError) as rejected:
+            audio_engine.decode_audio(Path("reference.wav"))
+        assert rejected.value.code == "AUDIO_TOO_LONG"
+
+
+def test_tts_reference_decoded_byte_limit_remains(monkeypatch):
+    source = fake_decoder(monkeypatch, 30 * 192000, rate=192000)
+    source.channels = 2
+    with pytest.raises(WorkerError) as rejected:
+        audio_engine.decode_audio(Path("reference.wav"))
+    assert rejected.value.code == "AUDIO_TOO_LARGE"
 
 
 def test_device_selection_never_falls_back_to_cpu(monkeypatch):
@@ -167,8 +165,6 @@ class ChatterboxEngine:
     device_name = 'CPU'
     dtype = 'torch.float32'
     def __init__(self, path, options): pass
-    def transcribe(self, path):
-        return {'text': 'private worker transcript'}
     def speech(self, text, reference, speed, response_format, model_options, **conditioning):
         if text == 'wait': time.sleep(60)
         if text == 'crash': os._exit(7)
@@ -177,7 +173,7 @@ class ChatterboxEngine:
             source.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
             source.writeframes(struct.pack('<h', 1000) * 200)
         return stream.getvalue(), 'audio/wav'
-QwenTTSEngine = WhisperEngine = ChatterboxEngine
+QwenTTSEngine = ChatterboxEngine
 '''
 
 
@@ -197,39 +193,6 @@ async def installed_audio(tmp_path):
     await service.task
     assert service.installation().state == "installed"
     return service
-
-
-def test_private_whisper_uses_audio_process_and_manager_admission(tmp_path):
-    async def scenario():
-        service = await installed_audio(tmp_path)
-        manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        private = SimpleNamespace(id="private-asr", kind="asr", model_ref="asr/whisper", parameters={"architecture": "whisper"}, source=LocalSource(type='local', execution_options={'device': 'cpu', 'intraop_threads': 4}))
-        path = tmp_path / "data/models/asr/whisper"
-        path.mkdir(parents=True)
-        (path / "config.json").write_text('{}')
-        (path / "model.safetensors").write_bytes(b'fixture')
-        backend = manager.execution_key(private)
-        other = SimpleNamespace(**{**vars(private), "id": "other-asr"})
-        assert manager.execution_key(other) != backend
-        try:
-            async with manager._execution_lease(backend, (backend, private.id), private) as slot:
-                slot.adapter.validation = True
-                loaded = await slot.adapter.load(private, explicit=True)
-                assert loaded.runtime.engine == 'whisper' and loaded.residency == 'loaded'
-                assert slot.active == 1
-                reference = await manager._stage_reference(wav_bytes(), 'wav')
-                try:
-                    assert await slot.adapter.transcribe(private, reference.path.name) == {'text': 'private worker transcript'}
-                finally:
-                    manager.voice_references.release(reference)
-                process = slot.adapter.process
-                await slot.adapter.unload(private)
-                assert process.process.returncode is not None
-            assert slot.active == 0
-        finally:
-            await manager.close()
-            await service.close()
-    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("architectures", [("chatterbox", "chatterbox"), ("qwen3tts", "chatterbox"), ("qwen3tts", "qwen3tts")])

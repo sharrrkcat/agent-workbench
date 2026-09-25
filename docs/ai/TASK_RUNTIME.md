@@ -19,6 +19,7 @@ Paths below are under ai_workbench:
   workers/siglip_catalog.py, siglip_engine.py and siglip_server.py own local files and single-tower execution.
 - workers/embedding_catalog.py inspects native text metadata; embedding_engine.py/embedding_server.py provide independent Sentence Transformers execution.
 - workers/reranker_catalog.py inspects CrossEncoder metadata; reranker_engine.py/reranker_server.py provide independent native pair scoring.
+- workers/asr_catalog.py inspects Whisper metadata; asr_engine.py/asr_server.py provide native long-form transcription. core/models/asr_inputs.py owns request-scoped files; ModelManager.transcribe serves internal callers and the multipart public API.
 - core/stores.py, core/run_lifecycle.py and core/events.py work with db/stores.py and
   API message/tool/run/WebSocket routes for persistence and transport.
 
@@ -46,10 +47,10 @@ tower cleanup, public API, profiles and migration. scripts/smoke_siglip_runtime.
 scripts/siglip_lifecycle.py supplies the extended --full-lifecycle matrix only for explicit user requests, outside routine tests and CI;
 [Models](../contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits.
 Audio references, queue admission and key/profile invalidation use test_audio.py;
-test_audio_runtime.py covers locks, offline workers, isolation, private Whisper
-dispatch and its decoded-duration boundary. test_qwen_tts.py covers Base layouts, transcripts, generation,
+test_audio_runtime.py covers locks, offline workers, isolation and TTS reference limits. test_qwen_tts.py covers Base layouts, transcripts, generation,
 languages and API/reference validation. test_tts_seed.py covers seed validation, inheritance and worker RNG scope.
-scripts/smoke_audio_runtime.py defaults to three Windows CUDA cases with TTS PCM seed comparisons;
+scripts/smoke_audio_runtime.py defaults to Chatterbox/Qwen Windows CUDA cases with TTS PCM seed comparisons.
+test_asr.py/test_asr_runtime.py cover configuration, schemas, migration, full-file generation, API, cancellation and request-file cleanup; scripts/smoke_asr_runtime.py reuses installation for real CUDA long-form and focused base CPU acceptance, without model hashing.
 scripts/smoke_llm_runtime.py covers real llama-server/Transformers CPU/CUDA, streaming and tools.
 Chat/Harness tests cover private snapshots, ordered approvals, active budgets,
 restart handling and cancellation; test_chat_presentation.py covers partial

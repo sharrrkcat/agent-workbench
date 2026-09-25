@@ -102,7 +102,9 @@ def local_engine(profile) -> LocalEngine | None:
         return "sentence-transformers"
     if profile.kind == "reranker":
         return "cross-encoder"
-    if profile.kind in {"tts", "asr", "vision"}:
+    if profile.kind == "asr":
+        return "whisper"
+    if profile.kind in {"tts", "vision"}:
         return profile.parameters["architecture"]
     return None
 

@@ -19,6 +19,7 @@ from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingPurpose, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
     ImageEmbeddingRequest, MAX_RERANK_BYTES, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
+    ASRParameters, TranscriptionRequest, TranscriptionResult,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
@@ -61,6 +62,14 @@ class ModelManager:
         self._invalidating: set[tuple] = set()
         self._closed = False
         self._voice_references = None
+        self._asr_inputs = None
+
+    @property
+    def asr_inputs(self):
+        if self._asr_inputs is None:
+            from ai_workbench.core.models.asr_inputs import ASRInputs
+            self._asr_inputs = ASRInputs(self.runtime_supervisor.root)
+        return self._asr_inputs
 
     @property
     def voice_references(self):
@@ -161,13 +170,13 @@ class ModelManager:
                         projector = profile.source.execution_options["mmproj_ref"]
                         if projector and not model_path(self.runtime_supervisor.root, projector).is_file():
                             raise ValueError()
-                    elif engine in {"chatterbox", "qwen3tts", "whisper"}:
+                    elif engine in {"chatterbox", "qwen3tts"}:
                         from ai_workbench.workers.audio_catalog import audio_model
                         audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
                     elif engine == "siglip2":
                         from ai_workbench.workers.siglip_catalog import model_presence
                         model_presence(self.runtime_supervisor.root / "data/models", profile.model_ref)
-                    elif engine in {"sentence-transformers", "cross-encoder"}:
+                    elif engine in {"sentence-transformers", "cross-encoder", "whisper"}:
                         from ai_workbench.workers.embedding_catalog import package_path
                         package_path(self.runtime_supervisor.root / "data/models", profile.model_ref)
                     else:
@@ -233,10 +242,10 @@ class ModelManager:
     def _managed_slot(self, profile):
         key = self.execution_key(profile)
         if key not in self._slots:
-            from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, RerankerWorkerAdapter, TransformersServerAdapter
+            from ai_workbench.core.models.runtimes.adapters import ASRWorkerAdapter, AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, RerankerWorkerAdapter, TransformersServerAdapter
             from ai_workbench.core.models.siglip_adapter import SiglipAdapter
             engine = local_engine(profile)
-            cls = SiglipAdapter if engine == "siglip2" else EmbeddingWorkerAdapter if engine == "sentence-transformers" else RerankerWorkerAdapter if engine == "cross-encoder" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
+            cls = SiglipAdapter if engine == "siglip2" else EmbeddingWorkerAdapter if engine == "sentence-transformers" else RerankerWorkerAdapter if engine == "cross-encoder" else ASRWorkerAdapter if engine == "whisper" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
             adapter: LocalAdapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
             self._slots[key] = InferenceSlot(adapter, asyncio.Semaphore(1))
         return self._slots[key]
@@ -595,6 +604,20 @@ class ModelManager:
         async with self._lease(profile) as adapter:
             return await adapter.vision(profile, images, thresholds)
 
+    async def transcribe(self, profile_id: str, data: bytes, audio_format: str,
+                         request: TranscriptionRequest) -> TranscriptionResult:
+        profile = self.profile(profile_id, "asr")
+        self.require_local(profile)
+        if not isinstance(data, bytes) or not data or audio_format not in {"wav", "mp3"}:
+            raise ModelError("INVALID_AUDIO", "Provide a nonempty WAV or MP3 file.", 422)
+        options = ASRParameters.model_validate({**profile.parameters,
+            **request.model_dump(exclude_none=True, exclude={"timestamp_granularities"})})
+        if request.timestamp_granularities is not None and options.response_format != "verbose_json":
+            raise ModelError("INVALID_REQUEST", "Segment timestamps require verbose_json.", 422)
+        async with self._lease(profile) as adapter:
+            async with self.asr_inputs.stage(data, audio_format) as reference:
+                return await adapter.transcribe(profile, reference, options)
+
     def voice_list(self, profile_id: str) -> list[dict]:
         from ai_workbench.workers.tts_catalog import voices
         from ai_workbench.core.models.runtimes.schema import model_path
@@ -871,3 +894,5 @@ class ModelManager:
         self._idle.clear()
         if self._voice_references:
             await asyncio.to_thread(self._voice_references.close)
+        if self._asr_inputs:
+            await asyncio.to_thread(self._asr_inputs.close)

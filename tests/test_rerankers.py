@@ -248,7 +248,7 @@ def test_migration_resets_only_abandoned_parameters_and_preserves_model_files(tm
     init_db(engine)
     restored = ModelProfileStore(engine).get(saved.id)
     assert restored.parameters == {} and restored.alias == saved.alias and restored.source is None
-    assert migrations.current_revision(engine) == migrations.RERANKER_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     assert ModelProfileStore(engine).create(profile(alias="local")).source.type == "local"
     assert all(path.read_bytes() == b"preserve" for path in files)
     engine.dispose()
