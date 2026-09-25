@@ -58,6 +58,8 @@ def requirements_digest(path: Path) -> str:
 
 
 def worker_entrypoint(engine: str) -> str:
+    if engine == "sentence-transformers":
+        return "embedding_server.py"
     if engine == "siglip2":
         return "siglip_server.py"
     if engine == "transformers":

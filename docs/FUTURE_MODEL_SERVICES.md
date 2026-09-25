@@ -8,9 +8,10 @@ authority and makes no delivery commitment.
 ## Local engine and platform expansion
 
 The shared local release supports Windows x64 GGUF, Transformers LLM, Kokoro,
-WD14 CPU, SigLIP, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
+WD14 CPU, SigLIP, Sentence Transformers text embeddings, Chatterbox and Qwen3-TTS Base. Linux requires its own complete dependency lock,
 native components and real-runtime acceptance before it can be advertised.
-Local text-embedding/reranker execution is deferred. [SigLIP image/text encoding](contracts/models.md#siglip-image-and-text-embeddings)
+Local reranker execution is deferred. [Local text embeddings](contracts/models.md#local-text-embeddings) use native metadata with Harrier acceptance.
+[SigLIP image/text encoding](contracts/models.md#siglip-image-and-text-embeddings)
 is implemented through local profiles, serial tower scheduling, configuration UI and `/v1/images/embeddings`.
 Image indexes, internal consumers, remote image-embedding providers and usage collection remain out of scope.
 Future support must use the same installation and dependency environment,

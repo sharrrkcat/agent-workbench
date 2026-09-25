@@ -293,7 +293,8 @@
     "wd14": "WD14 (ONNX)",
     "chatterbox": "Chatterbox",
     "qwen3tts": "Qwen3-TTS Base",
-    "siglip2": "SigLIP2"
+    "siglip2": "SigLIP2",
+    "sentence-transformers": "Sentence Transformers"
   },
   "providers": "Providers",
   "addProvider": "Add provider",
@@ -310,6 +311,44 @@
   "discoveryUnavailable": "Model discovery is unavailable. You can still enter a model ID and save.",
   "recentRequestState": "Status from recent requests",
   "defaultModels": "Default models",
+  "textEmbedding": {
+    "information": "Text embedding information",
+    "informationHint": "Processing settings come from the selected model directory.",
+    "directoryHint": "Select a Sentence Transformers package under data/models/embeddings.",
+    "pending": "Determined when loading",
+    "inspecting": "Reading directory configuration…",
+    "inspectionFailed": "Directory information could not be read.",
+    "automatic": "Automatic",
+    "noPrompt": "No prompt",
+    "queryPrompt": "Query prompt",
+    "documentPrompt": "Document prompt",
+    "promptSettings": "Advanced prompt selection",
+    "configurationNeeded": "Configuration needs attention",
+    "draftHint": "You can save this profile. Resolve the listed issues before loading.",
+    "deviceHint": "CUDA uses the model's checkpoint precision; CPU uses float32. CUDA requires an available NVIDIA GPU.",
+    "fields": {
+      "modelType": "Backbone model type",
+      "dimensions": "Embedding dimensions",
+      "textLimit": "Maximum input tokens",
+      "similarity": "Similarity",
+      "normalize": "Output normalization",
+      "pooling": "Pooling",
+      "includePrompt": "Include prompt in pooling",
+      "pipeline": "Processing pipeline"
+    },
+    "diagnostics": {
+      "missing_config": "Required configuration is missing.",
+      "invalid_config": "Configuration could not be read as valid JSON.",
+      "invalid_field": "A declared setting is invalid.",
+      "unsupported_configuration": "Declared processing or similarity is unsupported.",
+      "invalid_prompt": "The selected prompt is not declared in this directory.",
+      "ambiguous_prompt": "Choose a query prompt in Advanced prompt selection.",
+      "missing_pipeline": "An explicit Sentence Transformers pipeline is required.",
+      "remote_code": "Custom model code is unsupported.",
+      "missing_token_limit": "No finite native text limit could be determined.",
+      "missing_pooling": "An explicit pooling mode is required."
+    }
+  },
   "viewHelp": {
     "profiles": "Choose your default models and manage local or connected model profiles.",
     "providers": "Manage connections to OpenAI-compatible model providers.",

@@ -1,5 +1,5 @@
 export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts';
-export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2';
+export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers';
 export type SiglipTower = 'image' | 'text';
 export type SiglipTowerInfo = {
   tower: SiglipTower; device: 'cpu' | 'cuda'; device_name: string;
@@ -32,6 +32,24 @@ export type VisionParameters = {
   architecture: 'wd14';
   task: 'tags';
   thresholds: { general: number; character: number };
+};
+
+export type LocalEmbeddingParameters = {
+  query_prompt_name: string | null;
+  document_prompt_name: string | null;
+};
+
+export type TextEmbeddingInspection = {
+  kind: 'embedding'; model_ref: string; model_type: string | null;
+  modules: { name: string; path: string; type: string }[];
+  pooling: { module: string; modes: string[]; include_prompt: boolean | null }[];
+  normalize: boolean | null; dimensions: number | null; max_seq_length: number | null;
+  similarity: 'cosine' | 'dot' | null; prompts: Record<string, string>;
+  query_prompt_name: string | null; document_prompt_name: string | null;
+  diagnostics: { file: string; message: string; blocking: boolean;
+    code: 'missing_config' | 'invalid_config' | 'invalid_field' | 'unsupported_configuration'
+      | 'invalid_prompt' | 'ambiguous_prompt' | 'missing_pipeline' | 'remote_code'
+      | 'missing_token_limit' | 'missing_pooling' }[];
 };
 
 export type PresetVoice = {

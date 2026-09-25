@@ -15,6 +15,7 @@ knowledge/ and shared resources/ components.
 ## Verification
 
 Start with tests/test_phase2a_knowledge.py and tests/test_resource_management.py.
+tests/test_text_embedding_runtime.py covers local cosine/dot scoring and reindex invalidation in both stores.
 Cover indexing, partial invalidation/rebuild, attachment ownership, binding
 resolution, deterministic RRF and rerank failure diagnostics in memory and SQLite.
 frontend/scripts/test-resource-management.mjs and frontend/tests/resource-management.spec.ts

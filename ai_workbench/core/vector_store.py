@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from array import array
 from dataclasses import dataclass
+import math
 from typing import Any
 
 from sqlalchemy import text
+from ai_workbench.core.models.schema import EmbeddingSimilarity
+
+
+def embedding_score(left: list[float], right: list[float], similarity: EmbeddingSimilarity) -> float:
+    dot = sum(a * b for a, b in zip(left, right, strict=True))
+    if similarity == "dot":
+        return dot
+    norm = math.sqrt(sum(a * a for a in left) * sum(b * b for b in right))
+    return dot / norm if norm else 0.0
 
 
 @dataclass
@@ -26,6 +36,7 @@ def search_vectors(
     embedding_model_profile_id: str,
     knowledge_base_ids: list[str],
     top_k: int,
+    similarity: EmbeddingSimilarity = "dot",
 ) -> tuple[list[VectorSearchResult], list[str]]:
     if not knowledge_base_ids or top_k <= 0:
         return [], []
@@ -78,7 +89,7 @@ def search_vectors(
                 title=str(row["title"] or ""),
                 heading_path=str(row["heading_path"] or ""),
                 content=str(row["content"] or ""),
-                vector_score=sum(float(left) * float(right) for left, right in zip(query_vector, vector, strict=True)),
+                vector_score=embedding_score(query_vector, vector, similarity),
                 vector_rank=0,
             )
         )

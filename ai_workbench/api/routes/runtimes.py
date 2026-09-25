@@ -6,7 +6,7 @@ from ai_workbench.api.schemas.models import InstallationResponse, RuntimeCatalog
 from ai_workbench.api.openapi import request_body
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.schema import (
-    CacheCleanupRequest, LocalRuntimeSettings, LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, SiglipOptions, RuntimeStorage,
+    CacheCleanupRequest, LocalRuntimeSettings, LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, SiglipOptions, EmbeddingOptions, RuntimeStorage,
 )
 from pydantic import TypeAdapter
 
@@ -40,9 +40,9 @@ def catalog(state=Depends(get_state)):
     release = state.runtime_supervisor.release
     schemas = {"llama-server": LlamaCPUOptions | LlamaCUDAOptions, "transformers": PythonOptions,
                "kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions, "chatterbox": PythonOptions, "qwen3tts": PythonOptions,
-               "siglip2": SiglipOptions}
+               "siglip2": SiglipOptions, "sentence-transformers": EmbeddingOptions}
     return {**release.model_dump(include={"version", "platform", "architecture", "supported", "reason"}),
-            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "vision" if engine == "wd14" else "image_embedding" if engine == "siglip2" else "tts",
+            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "vision" if engine == "wd14" else "image_embedding" if engine == "siglip2" else "embedding" if engine == "sentence-transformers" else "tts",
                          "options_schema": TypeAdapter(schema).json_schema()} for engine, schema in schemas.items()]}
 
 

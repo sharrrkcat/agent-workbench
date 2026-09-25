@@ -16,7 +16,7 @@ from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.images import prepare_image_embedding_inputs, prepare_local_images, prepare_tagging_images, validate_local_image_options
 from ai_workbench.core.models.runtimes.schema import is_transformers, local_engine
 from ai_workbench.core.models.schema import (
-    ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingResult,
+    ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingPurpose, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
     ImageEmbeddingRequest, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
 )
@@ -107,7 +107,7 @@ class ModelManager:
             return ("provider", profile.source.provider_profile_id)
         engine = local_engine(profile)
         key = ("local", engine)
-        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2"}:
+        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2", "sentence-transformers"}:
             return key + (getattr(profile, "id", "draft"), profile.model_ref,
                           json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")))
         if engine in {"llama-server", "transformers"}:
@@ -167,6 +167,9 @@ class ModelManager:
                     elif engine == "siglip2":
                         from ai_workbench.workers.siglip_catalog import model_presence
                         model_presence(self.runtime_supervisor.root / "data/models", profile.model_ref)
+                    elif engine == "sentence-transformers":
+                        from ai_workbench.workers.embedding_catalog import package_path
+                        package_path(self.runtime_supervisor.root / "data/models", profile.model_ref)
                     else:
                         from ai_workbench.workers.common import local_model
                         local_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref,
@@ -230,10 +233,10 @@ class ModelManager:
     def _managed_slot(self, profile):
         key = self.execution_key(profile)
         if key not in self._slots:
-            from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
+            from ai_workbench.core.models.runtimes.adapters import AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, TransformersServerAdapter
             from ai_workbench.core.models.siglip_adapter import SiglipAdapter
             engine = local_engine(profile)
-            cls = SiglipAdapter if engine == "siglip2" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
+            cls = SiglipAdapter if engine == "siglip2" else EmbeddingWorkerAdapter if engine == "sentence-transformers" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts", "whisper"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
             adapter: LocalAdapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
             self._slots[key] = InferenceSlot(adapter, asyncio.Semaphore(1))
         return self._slots[key]
@@ -525,29 +528,33 @@ class ModelManager:
                 async for chunk in stream:
                     yield chunk
 
-    async def embed(self, profile_id: str, texts: list[str], *, purpose: str = "document", dimensions: int | None = None) -> EmbeddingResult:
+    async def embed(self, profile_id: str, texts: list[str], *, purpose: EmbeddingPurpose = "document", dimensions: int | None = None) -> EmbeddingResult:
         profile = self.profile(profile_id, "embedding")
-        params = EmbeddingParameters.model_validate(profile.parameters)
-        if purpose not in {"query", "document"} or not texts or any(not text.strip() for text in texts):
+        local = isinstance(profile.source, LocalSource)
+        params = None if local else EmbeddingParameters.model_validate(profile.parameters)
+        if purpose not in ("query", "document") or not texts or any(not isinstance(text, str) or not text.strip() for text in texts):
             raise ModelError("INVALID_REQUEST", "Embedding requires non-empty texts and query/document purpose.")
-        if dimensions is not None and params.dimensions is not None and dimensions != params.dimensions:
+        if dimensions is not None and (type(dimensions) is not int or not 1 <= dimensions <= 65536):
+            raise ModelError("INVALID_REQUEST", "Embedding dimensions must be a positive integer up to 65536.", 422)
+        if params and dimensions is not None and params.dimensions is not None and dimensions != params.dimensions:
             raise ModelError("EMBEDDING_DIMENSION_MISMATCH", "Requested dimensions differ from the model profile.", 422)
-        dimension = dimensions or params.dimensions
-        instruction = params.query_instruction if purpose == "query" else params.document_instruction
-        prepared = [instruction + text for text in texts]
+        dimension = dimensions or (params.dimensions if params else None)
+        batch_size = profile.source.execution_options["max_batch_size"] if local else params.batch_size
         vectors = []
         usage = None
+        similarity = "dot"
         async with self._lease(profile) as adapter:
-            for offset in range(0, len(prepared), params.batch_size):
-                batch = prepared[offset:offset + params.batch_size]
-                result = await adapter.embed(profile, batch, dimension)
+            for offset in range(0, len(texts), batch_size):
+                batch = texts[offset:offset + batch_size]
+                result = await adapter.embed(profile, batch, dimension, purpose=purpose)
+                similarity = result.similarity
                 if len(result.vectors) != len(batch):
                     raise ModelError("PROVIDER_PROTOCOL_ERROR", "Embedding count does not match input.", 502)
                 for vector in result.vectors:
                     dimension = dimension or len(vector)
                     if not vector or len(vector) != dimension or not all(math.isfinite(x) for x in vector):
-                        raise ModelError("EMBEDDING_DIMENSION_MISMATCH", "Provider returned invalid embedding dimensions or values.", 502)
-                    if params.normalize:
+                        raise ModelError("EMBEDDING_DIMENSION_MISMATCH", "The model returned invalid embedding dimensions or values.", 502)
+                    if params and params.normalize:
                         norm = math.sqrt(sum(x * x for x in vector))
                         if norm:
                             vector = [x / norm for x in vector]
@@ -558,7 +565,7 @@ class ModelManager:
                     else:
                         usage.prompt_tokens += result.usage.prompt_tokens
                         usage.total_tokens += result.usage.total_tokens
-        return EmbeddingResult(vectors=vectors, usage=usage)
+        return EmbeddingResult(vectors=vectors, usage=usage, similarity=similarity)
 
     async def rerank(self, profile_id: str, query: str, documents: list[str]):
         profile = self.profile(profile_id, "reranker")

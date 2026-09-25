@@ -133,6 +133,7 @@ scikit-learn==1.9.0
 scipy==1.17.1
 segments==2.4.0
 semantic-version==2.10.0
+sentence-transformers==6.1.0
 setuptools==80.9.0
 shellingham==1.5.4
 six==1.17.0

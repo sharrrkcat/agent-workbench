@@ -5,8 +5,7 @@ The API process imports no torch, transformers, onnxruntime or llama.cpp binding
 
 ## Profiles and sources
 
-`model_profiles` has six immutable kinds: llm, embedding, reranker, image_embedding, vision and tts.
-References use UUID ids internally and unique lowercase aliases externally. CRUD: `/api/models/profiles`, with `?kind=...`.
+`model_profiles` has immutable llm/embedding/reranker/image_embedding/vision/tts kinds, internal UUIDs and unique lowercase public aliases; CRUD: `/api/models/profiles?kind=...`.
 `provider_profiles` stores name, enablement, connection and timestamps; connections own URL/key, timeouts and queue limits.
 Only OpenAI-compatible is supported. CRUD: `/api/models/providers`; optional discovery: `/{id}/models`.
 GET/PATCH `/api/models/local-runtime/settings` owns enabled/download in appmetadatarecord.local_runtime_settings; enabled defaults true, identity/name are fixed.
@@ -14,32 +13,29 @@ GET/PATCH `/api/models/local-runtime/settings` owns enabled/download in appmetad
 Model source is a strict nullable union:
 - null: a saveable unbound draft; execution returns MODEL_NOT_CONFIGURED before admission/transport.
 - {type: provider, provider_profile_id}: provider LLM/text-embedding only.
-- {type: local, execution_options, lifecycle}: local LLM/TTS/WD14/SigLIP; engine defaults populate omitted local fields.
+- {type: local, execution_options, lifecycle}: local LLM/TTS/WD14/SigLIP/text embedding; engine defaults populate omitted local fields.
 
-Profiles own model_ref, capabilities, parameters, enabled and external_enabled. PATCH omission preserves source; null unbinds;
-a supplied source replaces it. Removed fields/combinations, busy connection edits and referenced provider deletion fail; edits invalidate clients/status.
+Profiles own model_ref, capabilities, parameters, enabled and external_enabled. PATCH omission preserves source; null unbinds; supplied source replaces it.
+Invalid combinations, busy connection edits and referenced provider deletion fail; edits invalidate clients/status.
 [Settings](settings.md#model-settings) owns secrets/PATCH semantics; [Knowledge](knowledge.md) owns index invalidation.
 
 ## Resolution and capabilities
 
-New sessions save the enabled default LLM or first enabled LLM (name/id order); execution uses that selection.
-Missing configuration returns MODEL_NOT_CONFIGURED; disabled/missing/wrong-kind selections fail without substitution.
+New sessions save the enabled default LLM or first enabled LLM (name/id order). Missing configuration returns MODEL_NOT_CONFIGURED; unavailable/wrong-kind selections fail without substitution.
 Default selection and `/api/health/details` are cached, degraded without an enabled LLM; [chat/context](chat-context.md) owns Persona/session/title selection.
 LLM parameters are temperature, top_p, max_tokens, presence/frequency penalties, seed and stop; explicit requests override defaults.
 Capabilities are streaming, tools, vision, json_object and json_schema.
-Providers execute chat/text embeddings, llama-server/Transformers chat, ONNX Kokoro/WD14 and Audio Chatterbox/Qwen3-TTS Base.
-Vision-capable LLMs accept chat images through providers, GGUF and Transformers.
-Local text-embedding/rerank remain pending; reranker profiles stay unbound. Local SigLIP encodes images and text in one vector space.
+Providers execute chat/text embeddings; local engines provide chat, TTS, tagging, Sentence Transformers text embeddings and SigLIP image/text vectors.
+Vision-capable LLMs accept images through providers, GGUF and Transformers. Reranking remains pending; reranker profiles stay unbound.
 
 ## Lifecycle and status
 
 Queues are namespaced by source; provider/local defaults are concurrency 1, 32 waiting slots and 30-second queue timeout.
 Provider limits/discovery share one provider queue; overflow/timeout returns MODEL_BUSY. Cancellation/stream closure releases occupancy.
 Provider aliases share status/occupancy by provider id and model_ref. GGUF shares normalized model/projector paths, device, process and identical options; Transformers shares path/options, Kokoro an engine queue.
-Audio, WD14 and SigLIP profiles have separate processes, queues and cancellation scopes, even for the same path.
-Local models load automatically with manual release by default, or after_request/idle (300 seconds).
-An enabled manual alias retains shared weights; otherwise the longest idle timeout wins. Release errors preserve successful inference.
-Local process crashes require explicit load; provider failures permit another request.
+Audio, WD14, SigLIP and text embedding profiles have separate processes, queues and cancellation scopes, even for the same path.
+Local models autoload with manual release by default, or after_request/idle (300 seconds). Enabled manual aliases retain shared weights; otherwise the longest idle timeout wins.
+Release errors preserve successful inference. Local crashes require explicit load; provider failures permit another request.
 
 | Operation | Endpoint under `/api/models` | Effect |
 | --- | --- | --- |
@@ -47,58 +43,48 @@ Local process crashes require explicit load; provider failures permit another re
 | Local health/load/unload | POST `/profiles/{id}/{health,load,unload}` | Local lifecycle; provider bindings return 422 UNSUPPORTED_CAPABILITY |
 | Provider discovery | GET `/providers/{id}/models` | Optional queued list; never an inference preflight |
 | Local inventory | GET `/inventory?kind=...` | Relative file references only |
-| Directory information | GET `/inspect?kind=image_embedding&model_ref=...` | SigLIP metadata, independent of installation |
+| Directory information | GET `/inspect?kind=embedding\|image_embedding&model_ref=...` | Configuration metadata, independent of installation |
 
 Inventory/status never load weights, import heavy runtimes or download models. Roots are data/models/{llms,embeddings,rerankers,image_embeddings,vision,tts}.
-Inventory recognizes GGUF/model directories, Kokoro, WD14, Audio and SigLIP configuration directories.
+Inventory recognizes GGUF/model directories, Kokoro, WD14, Audio, SigLIP and complete Sentence Transformers package roots, excluding their component directories.
 Qwen3-TTS 12Hz Base needs checkpoint/generation config and text/nested speech tokenizers; unsupported types fail before imports; auxiliary resources/tokenizers are excluded.
 Status has state (unknown/ready/unavailable/failed/unloaded), residency, unload_supported, active, queued and error_code.
-Providers start unknown; inference sets ready/clears errors or failed on upstream errors; discovery, validation, queue rejection/cancellation preserve availability.
-Manual IDs need not appear in discovery; runtime=null, residency=unknown, unloading unsupported.
+Providers start unknown; inference sets ready/clears errors or failed on upstream errors. Discovery/validation/queue rejection/cancellation preserve availability; manual IDs need not appear in discovery. runtime=null, residency=unknown, unloading unsupported.
 Local status adds engine, version, installation/process state, latest job id and device_name; CUDA counts clear on stop.
 [runs/streaming](runs-streaming.md) owns source metadata and events. Local process logs reject provider bindings without transport.
 
 ## Managed catalog and installation
 
-`GET /api/models/local-runtime/catalog` exposes one Windows x64 release (1.0.0), engines and strict option schemas.
-Linux and local text-embedding/rerank remain deferred; see [future services](../FUTURE_MODEL_SERVICES.md#local-engine-and-platform-expansion).
+`GET /api/models/local-runtime/catalog` exposes one Windows x64 release (1.0.0), engines and strict option schemas. Linux/reranking remain [deferred](../FUTURE_MODEL_SERVICES.md#local-engine-and-platform-expansion).
 
 GGUF selects llama-server, LLM directories select Transformers, TTS architecture selects Kokoro/Chatterbox/Qwen3-TTS Base, vision selects WD14.
 model_ref is a safe relative path under data/models. Profiles cannot supply executables/arguments and may be saved before installation.
 source.execution_options selects CPU or CUDA; capable engines default to CUDA, Kokoro/WD14 to CPU only.
 Llama accepts threads, context_size, batch_size, nullable mmproj_ref and gpu_layers (0 on CPU; auto or integer 1..999 on CUDA). Python options are intraop_threads=4;
-Kokoro/WD14 add max_batch_size=1; SigLIP selects engine=siglip2 and allows batches 1..16 (default 1). Unavailable CUDA fails without CPU substitution.
-GGUF vision requires a safe relative mmproj_ref under data/models; text-only profiles require null.
-Inventory returns same-directory mmproj_refs candidates. CPU disables projector GPU offload; CUDA uses the main model's device.
+Kokoro/WD14 add max_batch_size=1; SigLIP/text embeddings allow 1..16 (default 1). Unavailable CUDA fails without CPU substitution.
+GGUF vision requires a safe relative mmproj_ref; text-only profiles require null. Inventory suggests same-directory projectors; CPU disables projector GPU offload and CUDA uses the main device.
 
 GET `/api/models/local-runtime` returns installation; POST `/install`, `/repair` or `/uninstall` returns a RuntimeJob.
-One installation/cache task runs application-wide. Installation changes require idle local requests, block admission and stop local processes;
-cache cleanup preserves loaded models. File operations run off-loop; provider inference and model queues remain independent.
+One installation/cache task runs application-wide. Installation changes require idle requests, block local admission and stop workers; cache cleanup preserves loaded models. File work runs off-loop; providers and model queues remain independent.
 
 Downloads stage under data/runtimes/.staging/{job_id}, then promote to local/<version> with env/, native/cpu/ and native/cuda/.
-installation.json records Python/CPU/CUDA entry paths and dependency identity, bound by manifest_sha256. Identity covers platform/architecture,
-pinned Python, package pins/hashes and native hashes; formatting/order, comments, workers, release labels and download metadata do not affect it.
-Startup, reads, repeat install and process entry resolution check metadata schema/digest/dependencies and entry containment/existence,
-without environment scans or engine/GPU probes; other dependency edits remain undetected. Availability reads preserve job state;
-restored files/dependencies recover on refresh/restart. Failed/interrupted jobs and old manifests require explicit repair, without data conversion/reset.
+installation.json records Python/CPU/CUDA entries and manifest_sha256-bound identity: platform/architecture, Python, package pins/hashes and native hashes. Formatting/order, comments, workers, release labels and download metadata do not affect identity.
+Startup/reads/repeat install/entry resolution check metadata schema/digest/dependencies and entry containment/existence, without environment scans or engine/GPU probes; other dependency edits remain undetected.
+Availability reads preserve jobs; restored files/dependencies recover on refresh/restart. Failed/interrupted jobs and old manifests require explicit repair, without conversion/reset.
 Paths use the recorded version. Finalizing validates/promotes entries; healthy install returns already_installed, while repair always rebuilds.
 
 Bundled uv installs Python 3.12.11 with one hash lock: Torch/Torchaudio 2.11.0+cu128, Torchvision 0.26.0+cu128,
-Transformers 5.16.1, NumPy 1.26.4, ONNX Runtime 1.23.2 and Misaki/spaCy/Thinc. Only docopt, jieba, unidic-lite, antlr4-python3-runtime and sox build from locked sources; native packages require wheels.
+Transformers 5.16.1, Sentence Transformers 6.1.0, NumPy 1.26.4, ONNX Runtime 1.23.2 and Misaki/spaCy/Thinc. Only docopt, jieba, unidic-lite, antlr4-python3-runtime and sox build from locked sources; native packages require wheels.
 scripts/build_runtime_wheels.py reproduces Chatterbox, Qwen and Misaki patches; their +workbench.* versions, hashes, WORKBENCH_PATCH.json and patch payloads are fixed artifact identity, independent of branding.
 After dependency checks, a pinned offline source patch defers auto_factory's GenerationMixin import, replacing its file to preserve hard-linked caches; package pins and installation identity stay unchanged.
-The runtime's Python incrementally compiles only Lib/site-packages before five isolated offline engine imports and native checks, without weights/GPU.
-Existing installations use the [README preparation commands](../../README.md#verification) while stopped, without Repair or startup rewrites. User PATH/registry stay untouched; [Settings](settings.md) owns downloads.
+Python incrementally compiles Lib/site-packages before six isolated offline engine imports and native checks, without weights/GPU. Dependency changes require Repair; source-only preparation follows the [README](../../README.md#verification). User PATH/registry stay untouched; [Settings](settings.md) owns downloads.
 
-Both llama.cpp b10809 CPU/CUDA programs are included; CUDA's pinned main/cudart ZIPs use combined byte progress.
-Native archives are SHA-256 checked before extraction and on reuse from .cache/cogita-artifacts.
+Both llama.cpp b10809 CPU/CUDA programs are included; pinned CUDA main/cudart ZIPs use combined byte progress. Native archives are SHA-256 checked before extraction and cache reuse.
 Llama's CUDA 12.4 DLLs stay beside its executable, separate from Torch CUDA 12.8; different-content DLL collisions fail.
 Native --version checks precede promotion; dependency paths apply only to child processes.
 
-Jobs expose state, stage, byte progress, error code, revision and bounded logs. Cancellation stops subprocesses and awaits file operations
-before clearing staging; restart interrupts unfinished jobs and clears staging. Failed/cancelled logs persist; retries create jobs.
-Uninstall stops workers and removes the recorded installation, retaining caches/models. Under `/api/models/local-runtime`, GET `/jobs`,
-`/jobs/{id}` and `/jobs/{id}/log` expose history/details/logs; POST `/jobs/{id}/cancel` cancels. `/api/models/profiles/{id}/log` returns process logs.
+Jobs expose state, stage, bytes, error, revision and bounded logs. Cancellation stops subprocesses and awaits file work before clearing staging; restart interrupts unfinished jobs/clears staging. Failed/cancelled logs persist; retries create jobs.
+Uninstall stops workers/removes the recorded installation, retaining caches/models. Under `/api/models/local-runtime`, GET `/jobs`, `/jobs/{id}`, `/jobs/{id}/log` expose history/details/logs; POST `/jobs/{id}/cancel` cancels. `/api/models/profiles/{id}/log` returns process logs.
 Runtime/job/storage responses have no provider reference. Responses omit absolute paths, ports, tokens and raw provider errors.
 Failures use RUNTIME_NOT_INSTALLED, RUNTIME_INSTALLING, RUNTIME_BROKEN, RUNTIME_UNSUPPORTED, RUNTIME_DEVICE_UNAVAILABLE, MODEL_NOT_FOUND, MODEL_BUSY or MODEL_UNAVAILABLE.
 
@@ -106,8 +92,7 @@ Failures use RUNTIME_NOT_INSTALLED, RUNTIME_INSTALLING, RUNTIME_BROKEN, RUNTIME_
 
 GET `/api/models/local-runtime/storage` scans metadata off-loop, returning scanned_at, complete, totals, groups, warnings and skipped_links.
 Groups cover installations, shared Python, cache, staging, process and other files under data/runtimes; links/junctions are not followed.
-Usage is file_count, logical_bytes, unique_bytes, shared_bytes and exclusive_bytes. File identities deduplicate hard links;
-exclusive size excludes outside links and totals deduplicate independently. Logical sizes omit compression/copy-on-write, never predicting disk recovery.
+Usage includes file_count, logical_bytes, unique_bytes, shared_bytes and exclusive_bytes. File identities deduplicate hard links; exclusive size excludes outside links and totals deduplicate independently. Logical sizes omit compression/copy-on-write and do not predict disk recovery.
 Unreadable/changing metadata yields incomplete groups/totals and null unknown values; reads never load models.
 POST `/api/models/local-runtime/cache/cleanup` accepts mode=prune|clean and returns 202/RuntimeJob. Bundled uv uses explicit .cache,
 --no-config and normal locking; redirected roots/escaping links fail. Models remain loaded; occupancy failures retain retry diagnostics.
@@ -119,18 +104,15 @@ Startup interrupts unfinished jobs; 20 terminal cache logs are retained independ
 
 Workers publish readiness atomically on loopback. Process groups/Windows kill-on-job-close Job Objects stop full trees on unload, cancellation or exit.
 Sanitized logs in `data/logs/runtimes` have a 10 MiB cap; retention keeps 20 terminal task and process/load-attempt logs per runtime, plus active logs.
-Load/health/Audio references check installation entries; loaded inference/status use cached availability. Workers execute application sources
-in the installed interpreter: reload picks up changes without reinstalling; source failures affect model loading, not installation validity.
+Load/health/Audio references check installation entries; loaded inference/status use cached availability. Workers run application sources in the installed interpreter; reload applies source changes without reinstalling, and source failures affect model loading only.
 Model logs expose the latest attempt, including pre-spawn failures; UTC records share load_id through COGITA_LOAD_TRACE and the private X-Cogita-Load-Trace header.
 `duration_ms`/`elapsed_ms` measure monotonic wall time; `cpu_duration_ms`/`cpu_elapsed_ms` count all threads in the emitter, excluding children.
 CPU time includes concurrent work, can exceed wall time and is not I/O time. Totals include queueing/cleanup, end before inference; overlapping stages must not be summed.
 Host stages cover entry/resources, CUDA probe, spawn/readiness, load RPC and advertisement; workers time imports, device, processor/model and setup, with separate Transformers symbols/serving and Kokoro libraries/resources/ONNX/language build/warmup.
 SigLIP worker startup shares the host load_id and times individual imports, lazy class imports, device checks, processors/tokenizer, processing identity, weights, device transfer and readiness.
 Imports include transitive/cache effects. Reuse/outcomes are logged without content/credentials; logging failures are nonfatal.
-Llama/Transformers use private-key OpenAI health/models/chat with model-advertisement checks; ONNX/Audio use private-token RPC.
-Audio reference validation needs no weights; stdlib validation precedes engine imports.
-Llama CUDA selects the first enumerated device with split-mode=none; none returns RUNTIME_DEVICE_UNAVAILABLE.
-Auto uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx=context_size; manual uses fit=off.
+Llama/Transformers use private-key OpenAI health/models/chat with model-advertisement checks; other workers use private-token RPC. Audio reference validation needs no weights; stdlib validation precedes engine imports.
+Llama CUDA selects the first device with split-mode=none; none returns RUNTIME_DEVICE_UNAVAILABLE. Auto uses gpu-layers=auto, fit=on, a 1024 MiB margin and fit-ctx=context_size; manual uses fit=off.
 Logs must confirm positive GPU offload; missing/zero layers or insufficient memory stop loading without CPU substitution.
 Cached reads do not probe GPUs. Workers enforce offline/local-only loading without remote code or device substitution.
 Transformers uses float32 CPU/checkpoint dtype CUDA, disables upstream idle release and stops its process before releasing cancelled occupancy;
@@ -138,6 +120,24 @@ llama-server cancels only the request. Tools require a supported response templa
 process images; readiness reports vision capability. JSON output, nonzero presence/frequency penalties and explicit tool controls fail.
 Audio blocks Python networking; Chatterbox uses from_local with float32/attention adaptations, Qwen uses float32 CPU/bfloat16 CUDA and SDPA.
 Whisper is private acceptance only: decoded samples before resampling/features must fit 30 seconds inclusive; no truncation, segmentation or partial transcripts.
+
+## Local text embeddings
+
+Local embedding selects sentence-transformers, using the native ordered pipeline with offline loading and trust_remote_code=False.
+Inspect reads configuration JSON only: modules, pooling/prompt inclusion, projection dimensions, normalization, cosine/dot similarity,
+effective token limit, declared prompts and diagnostics. The limit respects both backbone and tokenizer constraints.
+Required missing/uninterpretable semantics, unknown modules or explicit processing limits beyond native capacity block loading with UNSUPPORTED_CAPABILITY; drafts remain saveable. Automatic mean-pooling construction is prohibited.
+Local parameters contain only nullable query_prompt_name/document_prompt_name; null resolves automatically from declared templates.
+Query priority is query, web_search_query, then the declared default; otherwise choices need explicit selection. Documents use document, passage, corpus, then the declared default; absent those, no prompt.
+Original text/purpose cross the adapter boundary; native processing applies prompts/pooling/normalization once. Providers retain their own parameters.
+Defaults are CUDA/checkpoint dtype, four threads, batch one, manual release; CPU uses float32. Batches allow 1..16; startup/inference timeouts are 300 seconds.
+Cancellation stops the worker before releasing occupancy. Invalid/nonfinite/zero vectors fail the whole request; dimensions must match native output.
+EmbeddingResult carries effective similarity internally; [Knowledge](knowledge.md) uses native cosine/dot and preserves vector normalization.
+No inventory/inspection/load/status/acceptance path hashes model files or creates manifests/fingerprints. Files remain immutable while loaded; same-path replacement requires explicit unload/reload and Knowledge reindexing.
+Harrier-oss-v1-0.6b is the sole accepted real checkpoint: CUDA/native BF16 comparison, float/base64, mixed lengths, retrieval and reload;
+CPU acceptance covers short-text service inference/release. Its configuration resolves 1024 dimensions, lasttoken/L2, 32768 tokens,
+web_search_query and no document prompt. These are observations, not model/backbone/dimension allowlists.
+Other checkpoints require representative acceptance even when metadata is understood. [README](../../README.md#verification) owns smoke commands and tolerances.
 
 ## WD14 image tagging
 
@@ -293,7 +293,7 @@ Non-streaming tool-only content=null; [runs/streaming](runs-streaming.md#externa
 Assistant messages/deltas accept string reasoning_content, including native tool continuations; other roles reject it.
 `/v1` forwards literal content/reasoning without interpreting <think> markers. ChatRunner/Harness normalize reasoning for the UI.
 
-Text embeddings accept a string/nonempty string array, float/base64 (little-endian float32) and optional dimensions; instructions, batching, dimension checks and normalization match Knowledge indexing/queries.
+Text embeddings accept string/nonempty string arrays, float/base64 (little-endian float32), optional dimensions and purpose=query|document (default document). Local dimensions must be omitted or native (otherwise 422); processing matches Knowledge and disconnects cancel inference.
 Public rerank and image generation are deferred; see [future services](../FUTURE_MODEL_SERVICES.md).
 
 OpenAPI 3.1 covers management and `/v1`; [check/export commands](../../README.md#http-contract) verify schemas and JSON/SSE/audio responses.

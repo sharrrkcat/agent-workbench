@@ -16,6 +16,38 @@ from tests.test_phase2b_runtime import installed_worker, supervisor
 from tests.test_tts import wav_bytes
 
 
+def test_python_archive_assembles_staged_environment_without_directory_rename(tmp_path, monkeypatch):
+    from ai_workbench.core.models.runtimes.schema import RuntimeArtifact, RuntimeJob
+    from ai_workbench.core.models.runtimes.process import RuntimeLog
+    from ai_workbench.core.models.runtimes.supervisor import extract_archive
+    from tests.test_phase2b_runtime import archive_bytes
+    async def scenario():
+        service = supervisor(tmp_path)
+        archive = archive_bytes({"python/python.exe": b"interpreter", "python/Lib/example.py": b"library"})
+        digest = hashlib.sha256(archive).hexdigest()
+        entry = service.release.model_copy(update={"python_artifact": RuntimeArtifact(
+            url="https://runtime.test/python.zip", sha256=digest, archive_format="zip")})
+        cached = service.base / "python/archives" / (digest + ".tar.gz")
+        cached.parent.mkdir(parents=True)
+        cached.write_bytes(archive)
+        calls = []
+        async def command(args, *rest): calls.append(args)
+        service._command = command
+        monkeypatch.setattr(service, "_uv", lambda: tmp_path / "uv.exe")
+        monkeypatch.setattr(Path, "replace", lambda *args: pytest.fail("Cached Python installation must not rename an extracted directory"))
+        target = service.base / ".staging/test/payload"
+        job = RuntimeJob(operation="install", version=entry.version)
+        await RuntimeSupervisor._install_python(service, entry, target, job, RuntimeLog(service.logs / "test.log", tmp_path))
+        assert (target / "env/python.exe").read_bytes() == b"interpreter"
+        assert (target / "env/Lib/example.py").read_bytes() == b"library"
+        assert not (target / "env/python").exists()
+        assert any("check" in command for command in calls)
+        with pytest.raises(ModelError, match="Unexpected archive root"):
+            extract_archive(cached, tmp_path / "wrong-root", "zip", strip_prefix="other")
+        await service.close()
+    asyncio.run(scenario())
+
+
 def save_metadata(service, data):
     marker = service.directory() / "installation.json"
     marker.write_text(json.dumps(data), encoding="utf-8")

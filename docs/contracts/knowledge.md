@@ -70,15 +70,20 @@ background-indexing workflows are not part of this contract.
 - Model selection uses `/api/models/profiles?kind=embedding` or `reranker`.
 
 Indexing, query embedding and reranking are async calls to the app-scoped
-ModelManager. Model instructions, dimensions, normalization and batch sizes
-belong to the unified profile. Indexing and `/v1/embeddings` use the same
-document preprocessing; retrieval uses query preprocessing. No local runtime
-is imported by Knowledge. Local reranking remains deferred;
-unavailable reranking retains the documented RRF order.
+ModelManager. Local text profiles derive dimensions, pooling, normalization and
+query/document prompts from Sentence Transformers metadata; provider profiles
+retain their explicit instructions/dimensions/normalization. [Models](models.md#local-text-embeddings)
+owns processing and acceptance limits. Indexing passes purpose=document and retrieval
+passes purpose=query, sharing `/v1/embeddings` preprocessing without importing runtimes.
+Both SQLite and memory score native cosine by vector norms or native dot directly;
+vectors retain native output normalization. Unsupported similarities block local loading.
+Local reranking remains deferred; unavailable reranking retains the documented RRF order.
 
 Changing an embedding profile's source binding, model reference or parameters, or
 its provider URL, marks associated bases and sources `needs_reindex` in both
 memory and SQLite stores. Retrieval excludes invalidated bases until reindex.
+Replacing model files at the same path also requires explicit unload/reload and reindex;
+model files are immutable while loaded and no content hashing detects replacements.
 One successful source does not clear a base's needs_reindex state while other
 sources still require rebuilding. Deleting the final source sets the base empty.
 Search forwards threshold, per-source and per-base chunk limits to retrieval.

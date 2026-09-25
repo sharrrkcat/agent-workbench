@@ -18,7 +18,7 @@ from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offlo
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog, prune_process_logs
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
-from ai_workbench.core.models.schema import AudioOutput, ModelStatus, ExternalConnection, VisionResult
+from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ExternalConnection, VisionResult
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
 from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing
@@ -127,6 +127,9 @@ class ManagedAdapter:
                     if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
                         from ai_workbench.workers.audio_catalog import audio_model
                         return audio_model(self.supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
+                    if self.engine == "sentence-transformers":
+                        from ai_workbench.workers.embedding_catalog import load_configuration
+                        return load_configuration(self.supervisor.root / "data/models", profile.model_ref, profile.parameters)[0]
                     return local_model(self.supervisor.root / "data" / "models", profile.model_ref,
                         tts=self.engine == "kokoro", wd14=self.engine == "wd14")
                 except WorkerError as exc:
@@ -170,9 +173,9 @@ class ManagedAdapter:
                         with stage("worker_load_rpc"):
                             metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
                                 "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.source.execution_options})
-                            if self.engine in {"chatterbox", "qwen3tts", "whisper"}:
+                            if self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers"}:
                                 if not isinstance(metadata.get("device_name"), str):
-                                    raise ModelError("RUNTIME_BROKEN", "Audio worker did not report its execution device.", 503)
+                                    raise ModelError("RUNTIME_BROKEN", "The worker did not report its execution device.", 503)
                                 self.device_name = metadata["device_name"]
                     self.loaded.add(profile.id)
                     return self.snapshot(profile)
@@ -206,7 +209,7 @@ class ManagedAdapter:
                 env.update(COGITA_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
                 if getattr(self, "validation", False):
                     env["COGITA_AUDIO_VALIDATION"] = "1"
-            if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper"}:
+            if is_transformers(profile) or self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers"}:
                 cache = self.run_dir / "cache"
                 env.update(COGITA_MODEL_REF=profile.model_ref,
                            COGITA_RUNTIME_OPTIONS=json.dumps(profile.source.execution_options),
@@ -339,6 +342,11 @@ class ManagedAdapter:
                 if [item.index for item in result.outputs] != list(range(len(body["images"]))):
                     raise ValueError("Tagging results do not match the requested images")
                 return result
+            if operation == "/embed":
+                result = EmbeddingResult.model_validate(value)
+                if len(result.vectors) != len(body["input"]) or any(not vector or not any(vector) for vector in result.vectors):
+                    raise ValueError("Embeddings do not match the input or contain zero vectors")
+                return result
             return value
         except asyncio.CancelledError:
             # A synchronous CPU call cannot be cancelled safely within its thread.
@@ -457,6 +465,12 @@ class TransformersServerAdapter(LlamaServerAdapter):
                 # Closing HTTP alone cannot prove a synchronous generation thread
                 # stopped. Terminate this model's process before releasing its lease.
                 await self._abort(error)
+
+
+class EmbeddingWorkerAdapter(ManagedAdapter):
+    async def embed(self, profile, texts, dimensions, *, purpose="document"):
+        return await self._rpc("POST", "/embed", {"profile_id": profile.id,
+            "input": texts, "purpose": purpose, "dimensions": dimensions})
 
 
 class PythonWorkerAdapter(ManagedAdapter):

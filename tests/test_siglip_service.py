@@ -328,7 +328,7 @@ def test_migration_deletes_only_obsolete_drafts_and_preserves_files(tmp_path):
         before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
         init_db(engine)
         init_db(engine)
-        assert migrations.current_revision(engine) == migrations.SIGLIP_REVISION
+        assert migrations.current_revision(engine) == migrations.HEAD_REVISION
         with engine.connect() as db:
             assert db.execute(text("SELECT COUNT(*) FROM model_profiles WHERE kind='image_embedding'")).scalar_one() == 0
         assert profiles.get(retained.id).model_dump() == before_profile

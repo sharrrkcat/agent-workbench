@@ -33,7 +33,8 @@ UNIFIED_BACKEND_REVISION = "0013_unified_backend"
 PROVIDER_RUNTIME_REVISION = "0014_provider_runtime_separation"
 WD14_REVISION = "0015_wd14_vision"
 SIGLIP_REVISION = "0016_siglip_image_embedding"
-HEAD_REVISION = SIGLIP_REVISION
+TEXT_EMBEDDING_REVISION = "0017_local_text_embeddings"
+HEAD_REVISION = TEXT_EMBEDDING_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

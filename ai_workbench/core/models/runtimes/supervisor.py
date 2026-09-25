@@ -79,12 +79,17 @@ async def file_work(work):
         raise
 
 
-def extract_archive(archive: Path, target: Path, archive_format: str):
+def extract_archive(archive: Path, target: Path, archive_format: str, *, strip_prefix: str | None = None):
     target.mkdir(parents=True, exist_ok=True)
 
     def destination(name):
         if "\\" in name or ":" in name or ".." in Path(name).parts or Path(name).is_absolute():
             raise ModelError("RUNTIME_BROKEN", "Unsafe archive member.", 503)
+        if strip_prefix is not None:
+            parts = Path(name).parts
+            if not parts or parts[0] != strip_prefix:
+                raise ModelError("RUNTIME_BROKEN", "Unexpected archive root.", 503)
+            name = Path(*parts[1:])
         return contained(target, target / name)
 
     if archive_format == "zip":
@@ -583,10 +588,8 @@ class RuntimeSupervisor:
             await self._download(artifact, staged_archive, job)
             archive.parent.mkdir(parents=True, exist_ok=True)
             staged_archive.replace(archive)
-        extracted = target.parent / "python-extracted"
-        await file_work(lambda _: extract_archive(archive, extracted, artifact.archive_format))
         target.mkdir(parents=True)
-        (extracted / "python").replace(target / "env")
+        await file_work(lambda _: extract_archive(archive, target / "env", artifact.archive_format, strip_prefix="python"))
         await self._command([target / entry.python_executable, "-I", "-B", "-c",
             f"import platform; assert platform.python_version() == {entry.python_version!r}"], env, self.root, log)
         self._stage(job, "installing_packages", log)
@@ -605,6 +608,7 @@ class RuntimeSupervisor:
         await self._command([python, "-I", "-B", "-X", "utf8", "-m", "compileall", "-q", "-j", "4", "-o", "0",
             "--invalidation-mode", "timestamp", "-e", site_packages, site_packages], env, self.root, log)
         checks = [
+            "from embedding_engine import require_offline; require_offline(); import sentence_transformers; from sentence_transformers import SentenceTransformer; assert sentence_transformers.__version__ == '6.1.0'",
             "from tts_engine import require_offline; require_offline(); import onnxruntime, spacy, thinc, lameenc, tokenizers; from misaki import en, espeak, zh; from misaki.cutlet import Cutlet",
             "from transformers_engine import require_offline; require_offline(); import torch, torchvision, transformers; from transformers.cli.serving.chat_completion import ChatCompletionHandler; from transformers.cli.serving.model_manager import ModelManager; from transformers.cli.serving.utils import GenerationState; assert torch.__version__ == '2.11.0+cu128' and torch.version.cuda == '12.8'; assert torchvision.__version__ == '0.26.0+cu128' and transformers.__version__ == '5.16.1'",
             "from audio_engine import require_offline; require_offline(); import torch, torchaudio, numpy; from chatterbox.tts import ChatterboxTTS; assert torch.__version__ == torchaudio.__version__ == '2.11.0+cu128' and numpy.__version__ == '1.26.4'",

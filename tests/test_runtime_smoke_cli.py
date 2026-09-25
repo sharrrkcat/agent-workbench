@@ -6,10 +6,19 @@ import pytest
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ProviderProfileStore, ModelProfileStore, ModelSettingsStore
-from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_siglip_runtime, smoke_tts_runtime, smoke_wd14_runtime
+from scripts import smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_siglip_runtime, smoke_text_embedding_runtime, smoke_tts_runtime, smoke_wd14_runtime
 
 
 SCRIPTS = (smoke_audio_runtime, smoke_cuda_runtime, smoke_llm_runtime, smoke_model_loading, smoke_tts_runtime)
+
+
+def test_text_embedding_smoke_requires_a_model_and_preserves_device_scope():
+    model = ["--model-ref", "embeddings/example"]
+    for argv in ([], [*model, "--install-only"], [*model, "--device", "cpu", "--native-reference"]):
+        with pytest.raises(SystemExit):
+            smoke_text_embedding_runtime.parse_args(argv)
+    assert smoke_text_embedding_runtime.parse_args(model).device == "cuda"
+    assert smoke_text_embedding_runtime.parse_args([*model, "--device", "cpu"]).device == "cpu"
 
 
 def test_siglip_smoke_requires_a_model_and_has_no_cpu_or_install_mode():

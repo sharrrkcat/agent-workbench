@@ -8,6 +8,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import StrictModel
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.siglip_catalog import CONFIG_FILES, STRUCTURES, model_directory, model_file, read_config
+from ai_workbench.workers.embedding_catalog import inspect_embedding
 
 PositiveInt = Annotated[int, Field(gt=0, strict=True)]
 Number = Annotated[float, Field(strict=True)]
@@ -60,6 +61,53 @@ class SiglipInspection(StrictModel):
     text: SiglipTextInfo
     processor: SiglipProcessorInfo
     diagnostics: list[InspectionDiagnostic]
+
+
+class TextEmbeddingDiagnostic(StrictModel):
+    file: str
+    code: Literal["missing_config", "invalid_config", "invalid_field", "unsupported_configuration",
+                  "invalid_prompt", "ambiguous_prompt", "missing_pipeline", "remote_code",
+                  "missing_token_limit", "missing_pooling"]
+    message: str
+    blocking: bool
+
+
+class TextEmbeddingModule(StrictModel):
+    name: str
+    path: str
+    type: str
+
+
+class TextEmbeddingPooling(StrictModel):
+    module: str
+    modes: list[str]
+    include_prompt: bool | None
+
+
+class TextEmbeddingInspection(StrictModel):
+    kind: Literal["embedding"] = "embedding"
+    model_ref: str
+    model_type: str | None
+    modules: list[TextEmbeddingModule]
+    pooling: list[TextEmbeddingPooling]
+    normalize: bool | None
+    dimensions: PositiveInt | None
+    max_seq_length: PositiveInt | None
+    similarity: Literal["cosine", "dot"] | None
+    prompts: dict[str, str]
+    query_prompt_name: str | None
+    document_prompt_name: str | None
+    diagnostics: list[TextEmbeddingDiagnostic]
+
+
+ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection, Field(discriminator="kind")]
+
+
+def inspect_text_embedding(repo_root: Path, model_ref: str, parameters: dict | None = None) -> TextEmbeddingInspection:
+    try:
+        return TextEmbeddingInspection.model_validate(inspect_embedding(repo_root / "data/models", model_ref, parameters))
+    except WorkerError as exc:
+        raise ModelError(exc.code, "Use an existing directory with a safe relative path under data/models.", exc.status) from exc
 
 
 def _information(schema, values, filename, diagnostics):

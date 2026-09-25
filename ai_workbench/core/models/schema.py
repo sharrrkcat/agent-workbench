@@ -12,6 +12,8 @@ from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 
 ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts"]
+EmbeddingPurpose = Literal["query", "document"]
+EmbeddingSimilarity = Literal["cosine", "dot"]
 Tower = Literal["image", "text"]
 ModelDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$", strict=True)]
 
@@ -107,6 +109,13 @@ class EmbeddingParameters(StrictModel):
     batch_size: int = Field(default=16, ge=1, le=2048)
 
 
+class LocalEmbeddingParameters(StrictModel):
+    query_prompt_name: str | None = Field(default=None, min_length=1, strict=True,
+        description="A directory-declared prompt name; null selects the automatic retrieval prompt.")
+    document_prompt_name: str | None = Field(default=None, min_length=1, strict=True,
+        description="A directory-declared prompt name; null follows native document prompt selection.")
+
+
 class RerankParameters(StrictModel):
     batch_size: int = Field(default=16, ge=1, le=2048)
 
@@ -197,8 +206,11 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import OnnxCPUOptions, PythonOptions, SiglipOptions, local_engine, llama_options, relative_ref
-        self.parameters = PARAMETERS[self.kind].model_validate(self.parameters).model_dump(exclude_none=self.kind != "tts")
+        from ai_workbench.core.models.runtimes.schema import EmbeddingOptions, OnnxCPUOptions, PythonOptions, SiglipOptions, local_engine, llama_options, relative_ref
+        local_embedding = self.kind == "embedding" and (isinstance(self.source, LocalSource)
+            or self.source is None and bool(self.parameters.keys() & LocalEmbeddingParameters.model_fields.keys()))
+        parameters_schema = LocalEmbeddingParameters if local_embedding else PARAMETERS[self.kind]
+        self.parameters = parameters_schema.model_validate(self.parameters).model_dump(exclude_none=self.kind != "tts" and not local_embedding)
         engine = local_engine(self)
         if isinstance(self.source, LocalSource):
             relative_ref(self.model_ref)
@@ -213,6 +225,8 @@ class ModelInput(StrictModel):
                 options_schema = OnnxCPUOptions
             elif engine == "siglip2":
                 options_schema = SiglipOptions
+            elif engine == "sentence-transformers":
+                options_schema = EmbeddingOptions
             else:
                 options_schema = PythonOptions
             self.source.execution_options = options_schema.model_validate(self.source.execution_options).model_dump()
@@ -392,6 +406,8 @@ class EmbeddingRequest(StrictModel):
     input: str | list[str]
     encoding_format: Literal["float", "base64"] = "float"
     dimensions: int | None = Field(default=None, ge=1, le=65536)
+    purpose: EmbeddingPurpose = Field(default="document",
+        description="Cogita extension: selects query or document preprocessing. Omission encodes documents.")
 
     @field_validator("input")
     @classmethod
@@ -555,6 +571,7 @@ class ChatChunk(StrictModel):
 class EmbeddingResult(StrictModel):
     vectors: list[list[float]]
     usage: Usage | None = None
+    similarity: EmbeddingSimilarity = "dot"
 
 
 class RerankResult(StrictModel):

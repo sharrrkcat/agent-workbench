@@ -16,6 +16,8 @@ import type {
   RuntimeJob,
   RuntimeStorage,
   SiglipInspection,
+  TextEmbeddingInspection,
+  LocalEmbeddingParameters,
   SiglipTower,
 } from '../types/models';
 import { request } from './http';
@@ -61,6 +63,11 @@ export const modelsApi = {
     request<{ text: string }>(`/api/models/profiles/${encodeURIComponent(id)}/log` + (tower ? `?tower=${tower}` : '')),
   inspectImageEmbedding: (model_ref: string) =>
     request<SiglipInspection>('/api/models/inspect?' + new URLSearchParams({ kind: 'image_embedding', model_ref })),
+  inspectTextEmbedding: (model_ref: string, parameters: LocalEmbeddingParameters) => {
+    const query = new URLSearchParams({ kind: 'embedding', model_ref });
+    for (const [key, value] of Object.entries(parameters)) if (value !== null) query.set(key, value);
+    return request<TextEmbeddingInspection>('/api/models/inspect?' + query);
+  },
   listModelInventory: (kind?: ModelKind) =>
     request<ModelInventoryItem[]>('/api/models/inventory' + (kind ? '?kind=' + kind : '')),
   listProviderProfiles: () => request<ProviderProfile[]>('/api/models/providers'),

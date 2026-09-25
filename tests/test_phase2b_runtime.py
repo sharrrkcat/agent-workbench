@@ -517,11 +517,12 @@ def test_python_installer_uses_pinned_artifact_and_offline_checks_without_models
         assert commands.index(install) < commands.index(check_packages) < commands.index(patch) < commands.index(compile_bytecode)
         assert "--compile-bytecode" not in install
         checks = [(args, env) for args, env in calls if "require_offline" in " ".join(args)]
-        assert len(checks) == 5
+        assert len(checks) == 6
         assert all(commands.index(compile_bytecode) < commands.index(args) for args, _ in checks)
         assert all(env["CUDA_VISIBLE_DEVICES"] == "" and env["HF_HUB_OFFLINE"] == "1" for _, env in checks)
         assert ["ChatterboxTTS" in " ".join(args) for args, _ in checks].count(True) == 1
         assert ["Qwen3TTSModel" in " ".join(args) for args, _ in checks].count(True) == 1
+        assert ["SentenceTransformer" in " ".join(args) for args, _ in checks].count(True) == 1
         assert not (tmp_path / "payload/worker").exists()
         assert all(args[-1] == str(service.worker_root) for args, _ in checks)
         assert (tmp_path / "payload/env/python.exe").read_bytes() == b"fixture"

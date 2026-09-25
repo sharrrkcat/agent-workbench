@@ -223,14 +223,15 @@ async def chat(request: Request, state: RuntimeState = Depends(get_state)):
 
 @router.post("/embeddings", response_model=EmbeddingResponse, response_model_exclude_unset=True,
              openapi_extra=request_body(EmbeddingRequest), summary="Create text embeddings",
-             responses=error_responses(400, 401, 403, 404, 413, 422, 429, 502, 503, 504))
+             responses=error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 502, 503, 504))
 async def embeddings(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
     payload = await read_request(request, settings, EmbeddingRequest)
     profile = state.model_manager.external_profile(payload.model, "embedding")
     inputs = [payload.input] if isinstance(payload.input, str) else payload.input
-    result = await state.model_manager.embed(profile.id, inputs, purpose="document", dimensions=payload.dimensions)
+    result = await inference_until_disconnect(request,
+        state.model_manager.embed(profile.id, inputs, purpose=payload.purpose, dimensions=payload.dimensions))
     response = {"object": "list", "model": profile.alias,
                 "data": embedding_data(result.vectors, payload.encoding_format)}
     if result.usage:

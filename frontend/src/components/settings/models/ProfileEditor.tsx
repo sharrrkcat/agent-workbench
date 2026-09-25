@@ -28,7 +28,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import type { LocalModelSource, ModelInput, ModelInventoryItem } from '../../../types/models';
+import type { LocalEmbeddingParameters, LocalModelSource, ModelInput, ModelInventoryItem } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
 import {
@@ -43,6 +43,7 @@ import {
 import { CudaLayersField } from './CudaLayersField';
 import { PresetVoices } from './PresetVoices';
 import { SiglipInspectionPanel } from './SiglipInspection';
+import { TextEmbeddingInspectionPanel } from './TextEmbeddingInspection';
 
 export type ProfileDraft = { id?: string; value: ModelInput };
 export function ProfileEditor({
@@ -100,7 +101,8 @@ export function ProfileEditor({
     setModel((draft) => (draft ? { ...draft, value: updateModel(draft.value, patch) } : null));
   const patchReference = (modelRef: string, suggestName = false) => setModel((draft) => draft ? {
     ...draft, value: selectModelReference(draft.value, modelRef,
-      suggestName && !draft.id && draft.value.kind === 'image_embedding'),
+      suggestName && !draft.id && (draft.value.kind === 'image_embedding'
+        || draft.value.kind === 'embedding' && draft.value.source?.type === 'local')),
   } : null);
   const patchLocal = (patch: Partial<LocalModelSource>) =>
     setModel((draft) =>
@@ -136,7 +138,8 @@ export function ProfileEditor({
           >
             <div className="settings-dialog-body">
               {feedback}
-              <FieldSet disabled={busy} className="model-form">
+              <FieldSet disabled={busy} className="block">
+                <FieldGroup className="model-form">
                 <FieldGroup className="grid gap-4 sm:grid-cols-2">
                   <Field>
                     <FieldLabel>{t('name')}</FieldLabel>
@@ -201,7 +204,7 @@ export function ProfileEditor({
                       }}
                       items={[
                         { value: '', label: t('unbound') },
-                        ...(['llm', 'tts', 'vision', 'image_embedding'].includes(model.value.kind)
+                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
                         ...(['llm', 'embedding'].includes(model.value.kind) && providers.length
@@ -222,7 +225,7 @@ export function ProfileEditor({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="">{t('unbound')}</SelectItem>
-                        {['llm', 'tts', 'vision', 'image_embedding'].includes(model.value.kind) ? (
+                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding'].includes(model.value.kind) ? (
                           <SelectGroup>
                             <SelectLabel>{t('localSourceGroup')}</SelectLabel>
                             <SelectItem value="local">{t('localRuntime')}</SelectItem>
@@ -260,7 +263,8 @@ export function ProfileEditor({
                       <ComboboxInput required aria-label={t('modelRef')} disabled={busy}
                         onBlur={() => setModel((draft) => draft ? { ...draft,
                           value: selectModelReference(draft.value, draft.value.model_ref,
-                            !draft.id && draft.value.kind === 'image_embedding'),
+                            !draft.id && (draft.value.kind === 'image_embedding'
+                              || draft.value.kind === 'embedding' && draft.value.source?.type === 'local')),
                         } : null)} />
                       <ComboboxContent>
                         <ComboboxEmpty>{t('common:noSuggestions')}</ComboboxEmpty>
@@ -278,6 +282,9 @@ export function ProfileEditor({
                     ) : null}
                     {model.value.kind === 'image_embedding' ? (
                       <FieldDescription>{t('siglip.directoryHint')}</FieldDescription>
+                    ) : null}
+                    {model.value.kind === 'embedding' && local ? (
+                      <FieldDescription>{t('textEmbedding.directoryHint')}</FieldDescription>
                     ) : null}
                   </Field>
                   <FieldGroup className="grid gap-4 sm:grid-cols-2">
@@ -307,6 +314,12 @@ export function ProfileEditor({
                 ) : null}
                 {model.value.kind === 'image_embedding' && local && model.value.model_ref.trim() ? (
                   <SiglipInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref} />
+                ) : null}
+                {model.value.kind === 'embedding' && local && model.value.model_ref.trim() ? (
+                  <TextEmbeddingInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref}
+                    parameters={{ query_prompt_name: null, document_prompt_name: null,
+                      ...model.value.parameters } as LocalEmbeddingParameters}
+                    onChange={(parameters) => patchModel({ parameters })} />
                 ) : null}
                 {engine && local ? (
                   <>
@@ -351,7 +364,7 @@ export function ProfileEditor({
                             ['context_size', 4096, 512, 1048576],
                             ['batch_size', 512, 1, 4096],
                           ]
-                        : engine === 'siglip2' ? [['intraop_threads', 4, 1, 256], ['max_batch_size', 1, 1, 16]]
+                        : engine === 'siglip2' || engine === 'sentence-transformers' ? [['intraop_threads', 4, 1, 256], ['max_batch_size', 1, 1, 16]]
                         : [['intraop_threads', 4, 1, 256]]
                       ).map(([key, initial, min, max]) => (
                         <Field key={String(key)}>
@@ -396,6 +409,7 @@ export function ProfileEditor({
                     {transformers ? <p className="model-empty">{t('transformersDeviceHint')}</p> : null}
                     {audio ? <p className="model-empty">{t('audioDeviceHint')}</p> : null}
                     {engine === 'siglip2' ? <p className="model-empty">{t('siglip.deviceHint')}</p> : null}
+                    {engine === 'sentence-transformers' ? <p className="model-empty">{t('textEmbedding.deviceHint')}</p> : null}
                   </>
                 ) : null}
                 {model.value.kind === 'llm' ? (
@@ -469,11 +483,10 @@ export function ProfileEditor({
                     ) : null}
                   </>
                 ) : null}
-                <h3>{t('parameters')}</h3>
-                <ProfileParameters
-                  value={model.value}
-                  onChange={(parameters) => patchModel({ parameters })}
-                />
+                {engine !== 'sentence-transformers' ? <>
+                  <h3>{t('parameters')}</h3>
+                  <ProfileParameters value={model.value} onChange={(parameters) => patchModel({ parameters })} />
+                </> : null}
                 {audio ? <p className="model-empty">{t('ttsSeedHint')}</p> : null}
                 {model.value.kind === 'tts' && model.value.parameters.architecture === 'chatterbox' ? (
                   <p className="model-empty">{t('chatterboxReferenceHint')}</p>
@@ -551,6 +564,7 @@ export function ProfileEditor({
                     </FieldGroup>
                   </>
                 ) : null}
+                </FieldGroup>
               </FieldSet>
             </div>
             <DialogFooter>

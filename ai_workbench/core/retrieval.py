@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ai_workbench.core.keyword_search import search_keywords
-from ai_workbench.core.vector_store import search_vectors
+from ai_workbench.core.vector_store import embedding_score, search_vectors
+from ai_workbench.core.models.schema import EmbeddingSimilarity
 
 
 @dataclass
@@ -61,9 +62,9 @@ async def search_knowledge(*, engine: Any, knowledge_store: Any, model_manager: 
             embedded=await model_manager.embed(profile.id, [query], purpose="query")
             candidate_k = max((int(base.vector_candidate_k_override or settings.default_vector_candidate_k) for base in bases if base.id in group), default=settings.default_vector_candidate_k)
             if engine is not None:
-                found, extra=search_vectors(engine=engine,query_vector=embedded.vectors[0],embedding_model_profile_id=profile.id,knowledge_base_ids=group,top_k=candidate_k); warnings.extend(extra); vector.extend(_vector(item) for item in found)
+                found, extra=search_vectors(engine=engine,query_vector=embedded.vectors[0],embedding_model_profile_id=profile.id,knowledge_base_ids=group,top_k=candidate_k,similarity=embedded.similarity); warnings.extend(extra); vector.extend(_vector(item) for item in found)
             else:
-                vector.extend(_memory_vector_candidates(knowledge_store, embedded.vectors[0], group, profile.id, candidate_k))
+                vector.extend(_memory_vector_candidates(knowledge_store, embedded.vectors[0], group, profile.id, candidate_k, embedded.similarity))
         except Exception as exc: warnings.append(f"Vector search unavailable: {exc}")
     if settings.hybrid_search_enabled:
         try:
@@ -123,7 +124,7 @@ def _vector(item: Any) -> RetrievalCandidate: return RetrievalCandidate(item.chu
 def _keyword(item: Any) -> RetrievalCandidate: return RetrievalCandidate(item.chunk_id,item.knowledge_base_id,item.source_id,item.title,item.heading_path,item.content,keyword_score=item.keyword_score,keyword_rank=item.keyword_rank)
 
 
-def _memory_vector_candidates(store: Any, query_vector: list[float], knowledge_base_ids: list[str], profile_id: str, top_k: int) -> list[RetrievalCandidate]:
+def _memory_vector_candidates(store: Any, query_vector: list[float], knowledge_base_ids: list[str], profile_id: str, top_k: int, similarity: EmbeddingSimilarity = "dot") -> list[RetrievalCandidate]:
     rows: list[RetrievalCandidate] = []
     sources = getattr(store, "_sources", {})
     chunks_by_source = getattr(store, "_chunks", {})
@@ -140,7 +141,7 @@ def _memory_vector_candidates(store: Any, query_vector: list[float], knowledge_b
             if chunk is None:
                 continue
             chunk_id = str(getattr(chunk, "id", "") or f"{source_id}:{index}")
-            rows.append(RetrievalCandidate(chunk_id, source.knowledge_base_id, source_id, source.title, chunk.heading_path, chunk.content, vector_score=sum(float(a) * float(b) for a, b in zip(query_vector, vector))))
+            rows.append(RetrievalCandidate(chunk_id, source.knowledge_base_id, source_id, source.title, chunk.heading_path, chunk.content, vector_score=embedding_score(query_vector, vector, similarity)))
     rows.sort(key=lambda item: item.vector_score or 0.0, reverse=True)
     for index, item in enumerate(rows[:top_k], start=1):
         item.vector_rank = index

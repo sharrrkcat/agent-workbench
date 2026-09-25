@@ -23,6 +23,7 @@ export function ProfileParameters({
   onChange: (parameters: ModelInput['parameters']) => void;
 }) {
   const { t } = useTranslation('llm');
+  if (value.kind === 'embedding' && value.source?.type === 'local') return null;
   const patchParam = (key: string, next: unknown) => onChange({ ...value.parameters, [key]: next });
   // Viewport columns need no size containment, which can hide unchanged fields
   // in Chromium when an architecture removes sibling controls.

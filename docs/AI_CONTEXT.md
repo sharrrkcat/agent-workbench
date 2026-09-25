@@ -21,6 +21,8 @@ Local WD14-family CPU workers tag 1..16 static inline images through `/v1/images
 Models are manually supplied ONNX/CSV directories; usage accounting is reserved but unimplemented.
 Local SigLIP profiles encode images/text through `/v1/images/embeddings`, with automatic directory information,
 serial tower switching and a default unload-other-tower option. Image indexing and usage collection remain deferred.
+Directory-selected Sentence Transformers text embeddings serve Knowledge and `/v1/embeddings`, with native processing and query/document prompts.
+Harrier has CUDA and short-text CPU acceptance; other text checkpoints require representative acceptance.
 
 Personas own identity, prompts and resource bindings; sessions own concrete model
 selection, context, generation and opt-in Harness configuration. Chat combines the

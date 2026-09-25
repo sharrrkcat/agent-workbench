@@ -7,7 +7,7 @@ import httpx
 from httpx_sse import aconnect_sse, SSEError
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import (
-    ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingResult,
+    ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult,
     ModelProfile, ExternalConnection, Usage,
 )
 
@@ -126,8 +126,9 @@ class OpenAIAdapter:
         except (httpx.HTTPError, ValueError, TypeError, KeyError, SSEError) as exc:
             raise transport_error(exc) from exc
 
-    async def embed(self, profile: ModelProfile, texts: list[str], dimensions: int | None) -> EmbeddingResult:
-        payload = {"model": profile.model_ref, "input": texts, "encoding_format": "float"}
+    async def embed(self, profile: ModelProfile, texts: list[str], dimensions: int | None, *, purpose: EmbeddingPurpose = "document") -> EmbeddingResult:
+        instruction = profile.parameters[purpose + "_instruction"]
+        payload = {"model": profile.model_ref, "input": [instruction + text for text in texts], "encoding_format": "float"}
         if dimensions is not None:
             payload["dimensions"] = dimensions
         data = await self._json("POST", "embeddings", payload)

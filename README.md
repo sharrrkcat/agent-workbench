@@ -18,8 +18,7 @@ Pop-Location
 uv run python scripts/run_app.py --no-open
 ```
 
-Open <http://127.0.0.1:8765>. Use `--port 8766` when that port is occupied.
-Windows `start.bat` and Linux/macOS `bash start.sh` open the built application.
+Open <http://127.0.0.1:8765>; use `--port 8766` if occupied. Windows `start.bat` and Linux/macOS `bash start.sh` open the built app.
 For development, start the API with `--port 8000`, then run `npm run dev` in frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy.
 
 See the [run guide](README_RUN.md) for launchers and portable packaging.
@@ -31,15 +30,14 @@ In **Settings > Models**, use the Model profiles, Providers, Local Runtime and E
 1. **Local Runtime:** install the shared Windows x64 release once. Place model files manually under data/models, then select Local Runtime in a model. Its reference/architecture selects the engine; release policy defaults to manual.
 2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
-Each profile has one of six kinds, an internal UUID, unique public alias, capabilities and parameters.
-Unbound drafts can be saved but cannot execute. Choose default chat and optional auxiliary models.
-New sessions save the default or first enabled LLM; chat selectors show concrete models and changing the default preserves sessions.
-Titles use only the auxiliary selection and remain unchanged when it is missing or fails.
+Profiles have one of six kinds, internal UUIDs, public aliases, capabilities and parameters; unbound drafts can be saved but cannot execute.
+Choose default chat and optional auxiliary models. New sessions select the default or first enabled LLM; changing defaults preserves sessions.
+Titles use only the auxiliary model and remain unchanged when it is missing or fails.
 
 | Kind | Local inventory root | Local execution |
 | --- | --- | --- |
 | llm | data/models/llms | llama-server GGUF or Windows Transformers |
-| embedding | data/models/embeddings | Deferred; external embeddings remain available |
+| embedding | data/models/embeddings | Native Sentence Transformers, Windows CUDA or CPU; external providers also supported |
 | reranker | data/models/rerankers | Deferred |
 | image_embedding | data/models/image_embeddings | SigLIP image/text towers, Windows CUDA or CPU |
 | vision | data/models/vision | WD14-family ONNX CPU |
@@ -53,27 +51,20 @@ Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#
 
 The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation) describes the shared Python environment and both native llama-server builds.
 Execution options select CPU or NVIDIA CUDA; capable engines default to CUDA, Kokoro/WD14 to CPU. GGUF CUDA defaults to automatic GPU layers; manual layers are available.
-CUDA requires a usable NVIDIA device and GGUF must confirm positive offload.
-Local Runtime provides install/repair/uninstall, cancellation, progress, logs and cache prune/clean.
-Storage deduplicates hard links; exclusive logical size is an estimate, not exact disk recovery.
-Cache cleanup preserves installations. Download settings affect dependencies/proxies, never model weights.
-Model load, health and reference preparation check entry/model availability, without installation integrity or cache scans.
-Model logs correlate UTC host/worker stages, imports and wall/process CPU times; [models](docs/contracts/models.md#managed-processes-and-workers) owns timing semantics.
-Repair rebuilds the current dependencies; application worker updates reuse the installed environment after reload/restart.
+CUDA requires a usable NVIDIA device; GGUF must confirm positive offload. Local Runtime provides installation/repair/uninstall, jobs/logs and cache prune/clean.
+Storage deduplicates hard links; exclusive size estimates recovery. Cache cleanup preserves installations; download settings never fetch model weights.
+Load/health/reference preparation checks entry/model availability without environment/cache scans. [Models](docs/contracts/models.md#managed-processes-and-workers) owns correlated host/worker timing.
+Repair rebuilds dependencies; source-only worker updates reuse installation after reload/restart.
 
-Local models expose health/load/unload. Provider outcomes are unknown before inference, ready on success or failed on upstream errors; retry is allowed.
-Discovery/cancellation preserve availability. Provider queues default to concurrency 1, 32 waiting requests and a 30-second queue timeout.
+Local models expose health/load/unload. Providers start unknown, then ready/failed after inference with retry allowed; discovery/cancellation preserve availability. Default queues allow concurrency 1, 32 waiting requests and a 30-second timeout.
 
 ## Chat and tools
 
-Personas own identity, avatar, nonempty system prompt and Knowledge/Worldbook bindings. Their prompt is always included.
-New sessions start with Chat. Add members and select a speaker for group transcripts; each input generates that speaker's reply.
-Sessions own model, context, generation and Harness settings, and may add resources to the speaker's fixed bindings.
-Clearing session additions preserves Persona bindings.
+Personas own identity, avatar, mandatory system prompt and Knowledge/Worldbook bindings. New sessions start with Chat; added members support group transcripts, with one selected speaker per reply.
+Sessions own model, context, generation and Harness settings, plus additions to the speaker's fixed resources; clearing additions preserves Persona bindings.
 
-Ordinary chat supports Core Memory, Worldbook and Knowledge with text/file/attachment sources,
-chunking, vector/keyword retrieval and optional reranking. Embedding changes require reindexing;
-unavailable reranking intentionally preserves RRF order.
+Chat supports Core Memory, Worldbook and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval.
+Embedding changes require reindexing; unavailable optional reranking intentionally preserves RRF order.
 
 Harness defaults off; enable it and choose tools in session settings to permit native model calls.
 New sessions select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search,
@@ -108,12 +99,10 @@ $chatBody = @{
   model = 'chat-model'
   messages = @(@{ role = 'user'; content = 'Hello' })
 } | ConvertTo-Json -Depth 10
-Invoke-RestMethod "$apiBase/chat/completions" -Method Post -Headers $headers `
-  -ContentType 'application/json' -Body $chatBody
+Invoke-RestMethod "$apiBase/chat/completions" -Method Post -Headers $headers -ContentType 'application/json' -Body $chatBody
 
 $embeddingBody = @{ model = 'embedding-model'; input = @('First text', 'Second text') } | ConvertTo-Json
-Invoke-RestMethod "$apiBase/embeddings" -Method Post -Headers $headers `
-  -ContentType 'application/json' -Body $embeddingBody
+Invoke-RestMethod "$apiBase/embeddings" -Method Post -Headers $headers -ContentType 'application/json' -Body $embeddingBody
 ```
 
 For SSE with curl (use `curl.exe` on Windows):
@@ -124,13 +113,22 @@ curl -N http://127.0.0.1:8765/v1/chat/completions \
   -d '{"model":"chat-model","messages":[{"role":"user","content":"Hello"}],"stream":true,"stream_options":{"include_usage":true}}'
 ```
 
-Chat accepts the documented OpenAI subset, including n=1, function tool data,
-user image_url parts and supported response_format capabilities. Embeddings
-accept strings/string arrays with float or base64 output. Unsupported fields,
-capabilities and unavailable models produce explicit errors without substitution.
+Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and supported response_format capabilities.
+Embeddings accept strings/string arrays, float/base64, dimensions and purpose=query|document (default document).
+Unsupported fields/capabilities and unavailable models produce explicit errors without substitution.
 [Models](docs/contracts/models.md#external-inference-api) owns request rules;
 [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior.
 Public rerank and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
+
+### Offline text embeddings
+
+Place a complete Sentence Transformers directory under data/models/embeddings, including modules.json and module configurations/weights.
+Create a Text embedding profile, select its directory and review automatic processing information. Use **Local Runtime > Repair** if the installation lacks Sentence Transformers 6.1.0.
+Defaults are CUDA/checkpoint dtype, four threads, batch one and manual release; CPU uses float32. Declared query/document prompt templates are selectable under advanced settings.
+Harrier-oss-v1-0.6b resolves 1024 dimensions, last-token pooling, L2 normalization and 32768 tokens; queries use web_search_query and documents no prompt.
+Missing/unsupported semantics permit saving but prevent loading. Local dimensions must match native output. Model files are never hashed.
+Select this profile in Knowledge or use `/v1/embeddings`; set purpose=query for retrieval queries. Model replacement requires unload/reload and reindexing.
+[Models](docs/contracts/models.md#local-text-embeddings) owns semantics and Harrier-only real-model acceptance; other checkpoints need representative acceptance.
 
 ### Offline WD14 image tagging
 
@@ -266,8 +264,7 @@ Checks enforce route/schema coverage, response validation, unique operationIds a
 ## Settings and storage
 
 Settings shares the home sidebar: three groups, six menus and 11 pages, with subpage URLs surviving refresh/back/forward.
-The [settings contract](docs/contracts/settings.md) lists APIs, editable fields and key omission/clearing semantics.
-Keys stay unencrypted locally but are omitted from management reads; logs omit credentials and request/model content.
+The [settings contract](docs/contracts/settings.md) owns APIs, fields and key PATCH semantics; keys remain unencrypted locally and absent from reads. Logs omit credentials and request/model content.
 
 Pet position, dragging and task-state foundations remain for a future UI; existing Pet files are retained without loading or serving them.
 
@@ -291,15 +288,13 @@ Pop-Location
 git diff --check
 ```
 
-Backend tests use temporary roots, mock providers and real loopback HTTP/SSE/WS. Frontend tests cover payloads, settings, translation, streaming, isolation, model/runtime events, approvals and Pet foundations.
-Installation/real-model/browser results are separate from deterministic tests. Frontend source uses domain types/APIs, explicit store actions and focused components.
+Backend tests use temporary roots, mock providers and loopback HTTP/SSE/WS; frontend tests cover domain payloads, settings, translation, streams/events and workflows. Installation/real-model/browser acceptance remains separate.
 
 After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts, grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
 For a focused layout check, use `npm run test:browser -- app-layout.spec.ts settings-layout.spec.ts`.
-Install Chromium once with `npx playwright install chromium`. Tests manage an isolated fixture server on
-port 18767; COGITA_BROWSER_PORT selects a free port. Screenshots/traces are under frontend/test-results.
+Install Chromium once with `npx playwright install chromium`. Tests use an isolated fixture server on port 18767 (override COGITA_BROWSER_PORT); screenshots/traces go to frontend/test-results.
 
-All local-runtime smoke commands reuse an installed release by default and fail if it needs installation or repair. Only --install-only installs (or confirms a healthy installation), without inference.
+Local-runtime smokes reuse installation and fail if repair is needed. Scripts offering --install-only install/confirm a release without inference; other scripts never install.
 For offline runtime preparation, stop Cogita and wait for its workers to exit. Apply the pinned Transformers patch and one incremental bytecode pass using the installed interpreter, without installation or Repair:
 
 ```powershell
@@ -326,7 +321,12 @@ SigLIP routine CUDA: `uv run python -m scripts.smoke_siglip_runtime --model-ref 
 Both require supplied directories and reuse installation. WD14 checks tagging API/lifecycle; the default SigLIP smoke checks image→text→image, reuse and unload.
 Add SigLIP `--native-reference` to compare standalone towers with native FP16 CUDA outputs. Reports go to build/wd14-smoke or build/siglip-smoke.
 SigLIP `--full-lifecycle` includes 20 switches and 10 dual-resident pairs and requires an explicit user request; exclude it from routine regression, CI and default acceptance. `--case switching|residency|cancellation|faults|identity|release` narrows that opt-in matrix; each run saves a separate lifecycle report, including failures.
-[Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. For bilingual desktop/touch settings checks, run `npm run test:browser -- siglip.spec.ts wd14.spec.ts model-sources.spec.ts` in frontend.
+[Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. Bilingual desktop/touch settings: `npm run test:browser -- siglip.spec.ts wd14.spec.ts text-embeddings.spec.ts model-sources.spec.ts` in frontend.
+
+Text embedding CUDA: `uv run python -m scripts.smoke_text_embedding_runtime --model-ref embeddings/harrier-oss-v1-0.6b --native-reference --expected-dimensions 1024`.
+Run the same command with `--device cpu` and without `--native-reference` for short-text CPU inference/release. An explicit model reference is required; installation is reused.
+CUDA runs native/application processes sequentially, comparing query/document float/base64 vectors, mixed lengths, retrieval and unload/reload.
+BF16 acceptance requires cosine >=0.9998 and maximum absolute error <=0.005; reports go to build/text-embedding-smoke. No model hashes are calculated.
 
 Routine Windows Audio acceptance uses supplied Chatterbox, Qwen3-TTS and Whisper models:
 `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.

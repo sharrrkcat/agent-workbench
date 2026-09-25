@@ -17,6 +17,7 @@ for (const script of [
   'test-tts',
   'test-wd14',
   'test-siglip',
+  'test-text-embeddings',
   'test-transformers',
   'test-harness',
   'test-chat-presentation',

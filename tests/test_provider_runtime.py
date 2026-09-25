@@ -114,7 +114,7 @@ def test_database_rejects_inconsistent_source_columns(tmp_path):
         {'source_type': 'provider', 'provider_profile_id': provider.id, 'kind': 'tts'},
         {'source_type': 'local', 'execution_options_json': '{}'},
         {'source_type': 'local', 'execution_options_json': '{}', 'lifecycle_json': '{}', 'provider_profile_id': provider.id},
-        {'source_type': 'local', 'execution_options_json': '{}', 'lifecycle_json': '{}', 'kind': 'embedding'},
+        {'source_type': 'local', 'execution_options_json': '{}', 'lifecycle_json': '{}', 'kind': 'reranker'},
     ]
     try:
         for index, values in enumerate(invalid):
@@ -154,7 +154,7 @@ def test_removed_routes_and_single_release_catalog(tmp_path):
             ('get', '/runtime/settings'), ('get', '/runtimes'), ('get', '/runtimes/catalog')]:
             assert client.request(method, '/api/models' + path).status_code == 404
         release = client.get('/api/models/local-runtime/catalog').json()
-        assert {item['engine'] for item in release['engines']} == {'llama-server', 'transformers', 'kokoro', 'wd14', 'chatterbox', 'qwen3tts', 'siglip2'}
+        assert {item['engine'] for item in release['engines']} == {'llama-server', 'transformers', 'kokoro', 'wd14', 'chatterbox', 'qwen3tts', 'siglip2', 'sentence-transformers'}
         assert 'whisper' not in str(release)
         assert 'backend_profile_id' not in client.get('/api/models/local-runtime').json()
         for kind in ('asr', 'tts'):
@@ -180,11 +180,14 @@ def test_execution_defaults_follow_model_engine(kind, ref, parameters, device):
 
 
 @pytest.mark.parametrize('kind', ['embedding', 'reranker'])
-def test_deferred_local_kinds_cannot_bind_but_unbound_profiles_can_be_saved(kind):
+def test_local_embedding_and_deferred_reranker_binding_with_unbound_drafts(kind):
     values = dict(name='Deferred', alias='deferred', kind=kind, model_ref='local/model')
     assert ModelProfile(**values).source is None
-    with pytest.raises(ValidationError):
-        ModelProfile(**values, source={'type': 'local'})
+    if kind == 'embedding':
+        assert ModelProfile(**values, source={'type': 'local'}).parameters == {'query_prompt_name': None, 'document_prompt_name': None}
+    else:
+        with pytest.raises(ValidationError):
+            ModelProfile(**values, source={'type': 'local'})
 
 
 @pytest.mark.parametrize('metadata', [[], {}, {'lang': 'en', 'version': '3.7.2'}])

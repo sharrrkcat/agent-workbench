@@ -4,12 +4,12 @@ from pydantic import Field, RootModel
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.core.models.schema import (
-    EmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
+    EmbeddingParameters, LocalEmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
     ModelKind, ModelSettings, ProviderInput, ProviderProfile, ProviderSource, Lifecycle, ExternalConnection, RerankParameters, VisionParameters, TTSParameters,
 )
 from ai_workbench.core.models.runtimes.schema import (
     DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions,
-    PythonOptions, OnnxCPUOptions, SiglipOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
+    PythonOptions, OnnxCPUOptions, SiglipOptions, EmbeddingOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
 )
 
 
@@ -18,8 +18,8 @@ class EmptyExecutionOptions(ApiModel):
 
 
 LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | PythonOptions
-ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions
-Parameters = GenerationParameters | EmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
+ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions
+Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "source"})
 
 
@@ -45,6 +45,10 @@ class LocalImageEmbeddingSource(LocalModelSource):
     execution_options: EmptyExecutionOptions | SiglipOptions = Field(default_factory=EmptyExecutionOptions)
 
 
+class LocalEmbeddingSource(LocalModelSource):
+    execution_options: EmptyExecutionOptions | EmbeddingOptions = Field(default_factory=EmptyExecutionOptions)
+
+
 ModelSource = ProviderSource | LocalModelSource
 
 
@@ -56,8 +60,8 @@ class LlmModel(ModelFields):
 
 class EmbeddingModel(ModelFields):
     kind: Literal["embedding"]
-    parameters: EmbeddingParameters = Field(default_factory=EmbeddingParameters)
-    source: ProviderSource | None = None
+    parameters: EmbeddingParameters | LocalEmbeddingParameters = Field(default_factory=EmbeddingParameters)
+    source: ProviderSource | LocalEmbeddingSource | None = None
 
 
 class RerankerModel(ModelFields):
@@ -145,7 +149,7 @@ InstallationResponse = public_model("InstallationResponse", Installation, omit={
 RuntimeJobResponse = public_model("RuntimeJobResponse", RuntimeJob, omit={"log_path"})
 class EngineCatalogResponse(ApiModel):
     engine: LocalEngine
-    kind: Literal["llm", "tts", "vision", "image_embedding"]
+    kind: Literal["llm", "tts", "vision", "image_embedding", "embedding"]
     options_schema: JsonObject = Field(description="JSON Schema for this code-owned local engine's execution options.")
 
 

@@ -24,7 +24,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0016_siglip_image_embedding`; there are 24 current business tables.
+Alembic head is `0017_local_text_embeddings`; there are 24 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -100,6 +100,11 @@ Revision `0016_siglip_image_embedding` permits local image_embedding sources and
 It performs no parameter conversion and preserves other records and all model/attachment/runtime files. Repeat upgrades preserve
 new SigLIP profiles. SigLIP keeps native safetensors/configuration under data/models/image_embeddings; loaded identity is held in memory,
 without model verification manifests or stored embeddings. [Models](contracts/models.md#siglip-image-and-text-embeddings) owns hashing and lifetime rules.
+
+Revision `0017_local_text_embeddings` permits local text embedding bindings and removes kb_embeddings.embedding_normalize_snapshot.
+Profiles, source/chunk/vector records, indexes, other settings and all filesystem data survive; repeated upgrades preserve them.
+Text packages remain under data/models/embeddings. Inspection reads JSON metadata and no text-embedding path hashes model files,
+creates model manifests or detects same-path replacements. Explicit unload/reload and Knowledge reindexing are required after replacement.
 
 Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
 The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under

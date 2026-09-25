@@ -11,14 +11,15 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   alias: '',
   kind,
   model_ref: '',
-  source: kind === 'image_embedding' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
+  source: kind === 'image_embedding' || kind === 'embedding' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
     : kind === 'tts' || kind === 'vision' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
   enabled: true,
   external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
   parameters: kind === 'tts' ? { architecture: 'kokoro', speed: 1, response_format: 'mp3' }
     : kind === 'vision' ? { architecture: 'wd14', task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
-    : kind === 'image_embedding' ? { unload_other_tower_on_call: true } : {},
+    : kind === 'image_embedding' ? { unload_other_tower_on_call: true }
+    : kind === 'embedding' ? { query_prompt_name: null, document_prompt_name: null } : {},
 });
 
 export const ttsGenerationDefaults = {
@@ -37,6 +38,7 @@ export function localEngine(value: ModelInput): LocalEngine | null {
   if (value.source?.type !== 'local') return null;
   if (value.kind === 'llm') return value.model_ref.endsWith('.gguf') ? 'llama-server' : 'transformers';
   if (value.kind === 'image_embedding') return 'siglip2';
+  if (value.kind === 'embedding') return 'sentence-transformers';
   return value.kind === 'tts' || value.kind === 'vision' ? value.parameters.architecture as LocalEngine : null;
 }
 
@@ -47,7 +49,7 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
     next.source = { ...next.source, execution_options: engine === 'llama-server'
       ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto', mmproj_ref: null }
       : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
-      : engine === 'siglip2' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
+      : engine === 'siglip2' || engine === 'sentence-transformers' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
       : { device: 'cuda', intraop_threads: 4 } };
   }
   if (engine === 'llama-server' && next.source?.type === 'local' &&
@@ -59,6 +61,9 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>): Mode
     delete next.parameters.presence_penalty;
     delete next.parameters.frequency_penalty;
     next.capabilities = { ...next.capabilities, json_object: false, json_schema: false };
+  }
+  if (engine === 'sentence-transformers' && next.model_ref !== value.model_ref) {
+    next.parameters = { query_prompt_name: null, document_prompt_name: null };
   }
   return next;
 }
@@ -76,8 +81,11 @@ export function sourceValue(source: ModelSource | null): string {
 
 export function selectModelSource(value: ModelInput, source: ModelSource | null): ModelInput {
   if (sourceValue(source) === sourceValue(value.source)) return value;
-  if (!source) return { ...value, source: null };
-  return updateModel(value, { source, model_ref: value.source ? '' : value.model_ref });
+  const parameters = value.kind === 'embedding'
+    ? source?.type === 'local' ? { query_prompt_name: null, document_prompt_name: null } : {}
+    : value.parameters;
+  if (!source) return { ...value, source: null, parameters };
+  return updateModel(value, { source, parameters, model_ref: value.source ? '' : value.model_ref });
 }
 
 export const newProvider = (): ProviderInput => ({

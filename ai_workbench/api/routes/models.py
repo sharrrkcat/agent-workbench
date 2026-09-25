@@ -10,7 +10,7 @@ from ai_workbench.api.schemas.models import (
 )
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.inventory import inventory
-from ai_workbench.core.models.inspection import SiglipInspection, inspect_siglip
+from ai_workbench.core.models.inspection import ModelInspection, inspect_siglip, inspect_text_embedding
 from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelLoadRequest, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile, Tower
 from ai_workbench.api.schemas.inference import VoiceAvailability
 
@@ -186,10 +186,17 @@ async def model_inventory(kind: ModelKind | None = None, state: RuntimeState = D
     return inventory(state.repo_root, kind)
 
 
-@router.get("/inspect", response_model=SiglipInspection, responses=error_responses(404, 422),
-            summary="Read local image-embedding configuration without loading weights")
-async def inspect_model(kind: Literal["image_embedding"], model_ref: str, state: RuntimeState = Depends(get_state)):
+@router.get("/inspect", response_model=ModelInspection, responses=error_responses(404, 422),
+            summary="Read local embedding configuration without loading weights")
+async def inspect_model(kind: Literal["image_embedding", "embedding"], model_ref: str,
+                        query_prompt_name: str | None = None, document_prompt_name: str | None = None,
+                        state: RuntimeState = Depends(get_state)):
     import asyncio
+    if kind == "embedding":
+        return await asyncio.to_thread(inspect_text_embedding, state.repo_root, model_ref,
+            {"query_prompt_name": query_prompt_name, "document_prompt_name": document_prompt_name})
+    if query_prompt_name is not None or document_prompt_name is not None:
+        raise ModelError("INVALID_REQUEST", "Prompt selections apply only to text embeddings.", 422)
     return await asyncio.to_thread(inspect_siglip, state.repo_root, model_ref)
 
 

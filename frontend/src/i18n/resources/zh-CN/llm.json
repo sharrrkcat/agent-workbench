@@ -293,7 +293,8 @@
     "wd14": "WD14 (ONNX)",
     "chatterbox": "Chatterbox",
     "qwen3tts": "Qwen3-TTS Base",
-    "siglip2": "SigLIP2"
+    "siglip2": "SigLIP2",
+    "sentence-transformers": "Sentence Transformers"
   },
   "providers": "服务提供商",
   "addProvider": "添加服务提供商",
@@ -310,6 +311,44 @@
   "discoveryUnavailable": "暂时无法发现模型。仍可手动输入模型 ID 并保存。",
   "recentRequestState": "状态来自最近请求",
   "defaultModels": "默认模型",
+  "textEmbedding": {
+    "information": "文本嵌入模型信息",
+    "informationHint": "处理设置自动读取自所选模型目录。",
+    "directoryHint": "选择 data/models/embeddings 下的 Sentence Transformers 模型目录。",
+    "pending": "加载时确定",
+    "inspecting": "正在读取目录配置…",
+    "inspectionFailed": "无法读取目录信息。",
+    "automatic": "自动",
+    "noPrompt": "不添加提示词",
+    "queryPrompt": "查询提示词",
+    "documentPrompt": "文档提示词",
+    "promptSettings": "高级提示词选择",
+    "configurationNeeded": "配置需要完善",
+    "draftHint": "可以保存此配置，请先解决下列问题再加载模型。",
+    "deviceHint": "CUDA 使用模型声明的精度，CPU 使用 float32。CUDA 需要可用的 NVIDIA 显卡。",
+    "fields": {
+      "modelType": "基础模型类型",
+      "dimensions": "嵌入维度",
+      "textLimit": "输入 token 上限",
+      "similarity": "相似度计算",
+      "normalize": "输出归一化",
+      "pooling": "池化方式",
+      "includePrompt": "提示词参与池化",
+      "pipeline": "处理流程"
+    },
+    "diagnostics": {
+      "missing_config": "缺少必需的配置文件。",
+      "invalid_config": "配置文件不是有效的 JSON。",
+      "invalid_field": "模型声明的设置无效。",
+      "unsupported_configuration": "暂不支持声明的处理方式或相似度算法。",
+      "invalid_prompt": "当前目录未声明所选提示词。",
+      "ambiguous_prompt": "请在高级提示词选择中指定查询提示词。",
+      "missing_pipeline": "需要明确声明 Sentence Transformers 处理流程。",
+      "remote_code": "不支持执行自定义模型代码。",
+      "missing_token_limit": "无法确定有效的原生文本长度上限。",
+      "missing_pooling": "需要明确声明池化方式。"
+    }
+  },
   "viewHelp": {
     "profiles": "选择默认模型，管理本地模型与外部连接的模型配置。",
     "providers": "管理兼容 OpenAI 协议的模型服务连接。",

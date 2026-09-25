@@ -33,7 +33,7 @@ def model_path(root: Path, ref: str) -> Path:
     return path
 
 
-LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper", "siglip2"]
+LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper", "siglip2", "sentence-transformers"]
 
 
 class LlamaOptions(Strict):
@@ -83,6 +83,10 @@ class SiglipOptions(PythonOptions):
     max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
 
 
+class EmbeddingOptions(PythonOptions):
+    max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
+
+
 def local_engine(profile) -> LocalEngine | None:
     if profile.source is None or profile.source.type != "local":
         return None
@@ -90,6 +94,8 @@ def local_engine(profile) -> LocalEngine | None:
         return "llama-server" if profile.model_ref.endswith(".gguf") else "transformers"
     if profile.kind == "image_embedding":
         return "siglip2"
+    if profile.kind == "embedding":
+        return "sentence-transformers"
     if profile.kind in {"tts", "asr", "vision"}:
         return profile.parameters["architecture"]
     return None

@@ -142,20 +142,17 @@ documented in [data layout](../DATA_LAYOUT.md#database-revisions).
 
 ## Model settings
 
-GET/PATCH `/api/models/settings` owns default_model_profile_id,
-utility_model_profile_id, external_enabled, external_api_key and max_request_mb.
-These persist as the model_settings object in appmetadatarecord. The chat default
-initializes new sessions; changing it preserves existing session selections.
-The header and session settings select concrete LLM profiles without a Global
-default option. Model selection and
-profile parameters are defined in [models](models.md); title behavior belongs
-to [chat/context](chat-context.md#auxiliary-tasks-and-titles).
+GET/PATCH `/api/models/settings` owns default_model_profile_id, utility_model_profile_id,
+external_enabled, external_api_key and max_request_mb in appmetadatarecord.model_settings.
+The default initializes new sessions; changing it preserves existing selections. Header/session
+settings select concrete LLMs without a Global default option. [Models](models.md) owns profile
+parameters; [chat/context](chat-context.md#auxiliary-tasks-and-titles) owns titles.
 
 Models has four sidebar pages. Default chat/auxiliary model selectors appear only
 on Model profiles. Providers manages external connections; Local Runtime shows installation,
 storage, download settings and task history, with a log dialog. Forms and the kind filter
 retain drafts across subpages. Models use grouped Unbound, Local Runtime and configured-provider
-choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro, vision to local WD14 CPU and image_embedding to local SigLIP CUDA;
+choices, filtered to supported kinds; disabled providers are marked. TTS defaults to local Kokoro, vision to local WD14 CPU, image_embedding to local SigLIP CUDA and embedding to local Sentence Transformers CUDA;
 other new profiles start unbound. Local models expose inventory, execution options and release policy.
 Vision offers only Unbound/Local Runtime, WD14/Tags read-only fields, general/character thresholds (0.35/0.85),
 CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and
@@ -166,7 +163,7 @@ Changing the main model or disabling vision clears the projector. Transformers v
 the worker verifies actual image capability during execution.
 Provider models expose model-ID entry and optional discovery; failed discovery leaves manual entry,
 saving and inference available. Late results from a previous source cannot replace current suggestions.
-Changing local/provider source or provider id clears model_ref and replaces source options. Unbinding
+Changing local/provider source or provider id clears model_ref and replaces source options and source-specific embedding parameters. Unbinding
 preserves model_ref; binding an unbound draft retains its reference for validation. Reselecting is a no-op.
 Local rows show health/load/unload/residency/logs; provider rows show recent-request state and occupancy,
 without lifecycle controls or a trial-inference action. Local engine selection follows reference/architecture.
@@ -191,10 +188,15 @@ Device, threads, worker batch limit (1..16) and release policy remain editable; 
 Rows expose separate tower badges and cached vector identity. Load and log menus select Image/Text; Unload releases the whole profile.
 Health, busy locks and hidden subpage menus use the shared lifecycle. [Models](models.md#siglip-image-and-text-embeddings) owns execution and acceptance limits.
 
-Provider/settings reads omit secret keys and expose presence flags. PATCH
-omission retains a key; an explicit empty string clears it. External enablement
-requires a nonempty key. Local key storage is unencrypted. Busy connection
-edits, referenced deletion and invalid model combinations return errors.
+Text embedding supports Local Runtime/providers/unbound drafts. Directory selection inspects metadata without loading;
+pipeline, pooling, prompt inclusion, normalization, similarity, dimensions and effective token limit are read-only.
+Resolved query/document templates are visible; collapsed advanced controls select declared prompt names or automatic resolution.
+Directory changes clear stale information and prompt selections; source changes reset incompatible parameters/options.
+Diagnostics block loading, not saving. Runtime controls retain CPU/CUDA, four threads, batch 1..16 and manual release defaults.
+[Models](models.md#local-text-embeddings) owns native semantics and Harrier-only acceptance limits.
+
+Provider/settings reads omit secret keys and expose presence flags. PATCH omission retains keys; empty strings clear them.
+External enablement requires a nonempty key; storage is unencrypted. Busy connection edits, referenced deletion and invalid combinations fail.
 
 LocalRuntimeSettings has no profile id or editable name. GET/PATCH `/api/models/local-runtime/settings`
 owns enabled=true and nested download defaults. It is independent of provider CRUD and runtime job identity.
@@ -205,13 +207,9 @@ Checks recover on refresh when files/dependencies are restored; failed/interrupt
 Install never rebuilds an unavailable installation; manual Repair also rebuilds healthy ones. Finalizing precedes promotion.
 The local settings download object owns http_proxy, pypi_index_url,
 pytorch_index_url and github_release_proxy_url, patched at `/api/models/local-runtime/settings`.
-Index/release
-proxy URLs require HTTPS; HTTP is allowed for the explicit proxy. URL credentials
-are rejected. These settings serve runtime artifacts/dependencies only.
-Storage is fetched on entry, explicit refresh and maintenance completion, with
-no timer. Incomplete scans show unknown values; cache recovery uses an exclusive
-logical-size estimate. Clear cache requires confirmation, including the estimate
-and future-download consequence. Maintenance actions share the runtime task lock.
+Index/release proxy URLs require HTTPS; HTTP is allowed for the explicit proxy. Credentials are rejected; these settings serve runtime artifacts/dependencies only.
+Storage is fetched on entry/refresh/maintenance completion, without a timer. Incomplete scans show unknown values;
+cache recovery uses an exclusive logical-size estimate. Clear cache confirms the estimate/future-download consequence; maintenance shares the runtime task lock.
 Cache history/results have their own labels and no synthetic runtime identity.
 CUDA profiles use an Automatic/Manual GPU-layer control, preserving a draft's
 manual value while switching modes. Defaults and execution belong to Models.
