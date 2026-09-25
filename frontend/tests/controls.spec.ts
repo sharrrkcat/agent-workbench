@@ -154,9 +154,9 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(source).toBeFocused();
         await expect(dialog.getByLabel(llm.kind, { exact: true })).toBeDisabled();
         const reference = dialog.getByLabel(llm.modelRef, { exact: true });
-        await reference.fill('llms/manual-model.gguf');
+        await reference.fill('llms/manual-model');
         await reference.press('Tab');
-        await expect(reference).toHaveValue('llms/manual-model.gguf');
+        await expect(reference).toHaveValue('llms/manual-model');
         const body = dialog.locator('.settings-dialog-body');
         const footer = dialog.locator('[data-slot="dialog-footer"]');
         const footerY = (await footer.boundingBox())!.y;

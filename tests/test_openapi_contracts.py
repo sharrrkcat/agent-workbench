@@ -18,7 +18,7 @@ from scripts.openapi import (
     OPAQUE_SCHEMA_PATHS, build_document, check_document, check_route_contracts,
     http_operations, main, render_document, resolve_ref,
 )
-from tests.model_fixtures import MockOpenAI, configure_model
+from tests.model_fixtures import MockOpenAI, configure_model, write_local_model
 
 
 @pytest.fixture(scope="module")
@@ -129,6 +129,8 @@ def test_cli_exports_are_isolated_deterministic_and_equal_to_served_schema(tmp_p
 
 def test_model_kinds_execution_options_and_secret_patch_semantics(api):
     client, _ = api
+    write_local_model(client.app.state.runtime_state.repo_root, 'llms/gguf', 'llama-server')
+    write_local_model(client.app.state.runtime_state.repo_root, 'llms/fixture', 'transformers')
     provider = client.post("/api/models/providers", json={'name': 'Provider', 'connection': {'base_url': 'http://provider.test/v1', 'api_key': 'private-provider-value'}}).json()
     provider_path = f"/api/models/providers/{provider['id']}"
     assert provider["connection"]["has_api_key"] and "api_key" not in provider["connection"]
@@ -139,11 +141,11 @@ def test_model_kinds_execution_options_and_secret_patch_semantics(api):
     for kind in ("llm", "embedding", "reranker", "image_embedding", "vision"):
         result = client.post("/api/models/profiles", json={"name": kind, "alias": kind, "kind": kind, "model_ref": "fixture"})
         assert result.status_code == 200, result.text
-        assert result.json()["source"] is None
+        assert (result.json()["source"] is None) == (kind in {'llm', 'embedding', 'reranker'})
         if kind == "llm":
             assert result.json()["parameters"] == {}
     for device, layers in (("cpu", 0), ("cuda", "auto")):
-        result = client.post("/api/models/profiles", json={'name': device, 'alias': device, 'kind': 'llm', 'model_ref': 'llms/fixture.gguf', 'source': {'type': 'local', 'execution_options': {'device': device, 'gpu_layers': layers}}})
+        result = client.post("/api/models/profiles", json={'name': device, 'alias': device, 'kind': 'llm', 'model_ref': 'llms/gguf', 'source': {'type': 'local', 'execution_options': {'device': device, 'gpu_layers': layers}}})
         assert result.status_code == 200, result.text
         assert result.json()["source"]["execution_options"]["gpu_layers"] == layers
     worker = client.post("/api/models/profiles", json={'name': 'Worker', 'alias': 'worker', 'kind': 'llm', 'model_ref': 'llms/fixture', 'source': {'type': 'local'}})

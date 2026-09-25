@@ -36,7 +36,8 @@ SIGLIP_REVISION = "0016_siglip_image_embedding"
 TEXT_EMBEDDING_REVISION = "0017_local_text_embeddings"
 RERANKER_REVISION = "0018_local_rerankers"
 ASR_REVISION = "0019_asr"
-HEAD_REVISION = ASR_REVISION
+DIRECTORY_MODELS_REVISION = "0020_directory_models"
+HEAD_REVISION = DIRECTORY_MODELS_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

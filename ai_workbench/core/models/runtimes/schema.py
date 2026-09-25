@@ -42,16 +42,6 @@ class LlamaOptions(Strict):
     context_size: int = Field(default=4096, ge=512, le=1048576)
     batch_size: int = Field(default=512, ge=1, le=4096)
     gpu_layers: int = Field(default=0, ge=0, le=999, strict=True)
-    mmproj_ref: str | None = Field(default=None, max_length=1024)
-
-    @field_validator("mmproj_ref")
-    @classmethod
-    def projector_reference(cls, value):
-        if value is not None:
-            relative_ref(value)
-            if not value.endswith(".gguf"):
-                raise ValueError("The multimodal projector must reference a GGUF file")
-        return value
 
 
 class LlamaCPUOptions(LlamaOptions):
@@ -94,8 +84,8 @@ class RerankerOptions(PythonOptions):
 def local_engine(profile) -> LocalEngine | None:
     if profile.source is None or profile.source.type != "local":
         return None
-    if profile.kind == "llm":
-        return "llama-server" if profile.model_ref.endswith(".gguf") else "transformers"
+    if profile.kind in {"llm", "tts", "vision"}:
+        return profile._directory.engine if profile._directory is not None else None
     if profile.kind == "image_embedding":
         return "siglip2"
     if profile.kind == "embedding":
@@ -104,9 +94,15 @@ def local_engine(profile) -> LocalEngine | None:
         return "cross-encoder"
     if profile.kind == "asr":
         return "whisper"
-    if profile.kind in {"tts", "vision"}:
-        return profile.parameters["architecture"]
     return None
+
+
+def engine_options(engine: LocalEngine, values: dict):
+    if engine == "llama-server":
+        return llama_options(values.get("device", "cuda"))
+    return {"kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions,
+        "siglip2": SiglipOptions, "sentence-transformers": EmbeddingOptions,
+        "cross-encoder": RerankerOptions}.get(engine, PythonOptions)
 
 
 def is_transformers(profile) -> bool:

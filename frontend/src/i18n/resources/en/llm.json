@@ -8,14 +8,12 @@
   "profiles": "Model profiles",
   "service": "External API",
   "kind": "Model kind",
-  "inventory": "Local model files",
+  "inventory": "Local model directories",
   "addModel": "Add model",
   "editModel": "Edit model",
   "name": "Name",
   "alias": "Public alias",
   "modelRef": "Model reference",
-  "mmprojRef": "Vision projector (mmproj)",
-  "mmprojHint": "Select the matching projector or enter its relative path under data/models. Changing the model clears this selection.",
   "baseUrl": "API base URL",
   "emptyModels": "No model profiles",
   "enabled": "Enabled",
@@ -93,7 +91,6 @@
     "normalize": "Normalize vectors",
     "document_instruction": "Document prefix",
     "query_instruction": "Query prefix",
-    "architecture": "Architecture",
     "task": "Task",
     "speed": "Speech speed",
     "response_format": "Audio format",
@@ -149,24 +146,55 @@
     "inspectionFailed": "Model information is unavailable. You can still save this profile.",
     "pending": "Determined when loading",
     "fixresHint": "This fixed-resolution structure is shared by SigLIP and SigLIP2; it does not identify the training generation.",
-    "structures": { "naflex": "SigLIP2 NaFlex", "fixres": "SigLIP-compatible FixRes" },
+    "structures": {
+      "naflex": "SigLIP2 NaFlex",
+      "fixres": "SigLIP-compatible FixRes"
+    },
     "fields": {
-      "structure": "Structure", "imageDimensions": "Image vector dimensions", "textDimensions": "Text vector dimensions",
-      "textLimit": "Text position limit", "imageSize": "Image size", "patchSize": "Patch size",
-      "maxPatches": "Maximum patches", "resample": "Resize filter", "rescale": "Rescale pixels",
-      "rescaleFactor": "Pixel scale factor", "normalize": "Normalize pixels", "imageMean": "Pixel mean",
-      "imageStd": "Pixel standard deviation", "lowercase": "Lowercase text", "bos": "Add start token", "eos": "Add end token"
+      "structure": "Structure",
+      "imageDimensions": "Image vector dimensions",
+      "textDimensions": "Text vector dimensions",
+      "textLimit": "Text position limit",
+      "imageSize": "Image size",
+      "patchSize": "Patch size",
+      "maxPatches": "Maximum patches",
+      "resample": "Resize filter",
+      "rescale": "Rescale pixels",
+      "rescaleFactor": "Pixel scale factor",
+      "normalize": "Normalize pixels",
+      "imageMean": "Pixel mean",
+      "imageStd": "Pixel standard deviation",
+      "lowercase": "Lowercase text",
+      "bos": "Add start token",
+      "eos": "Add end token"
     },
     "diagnostics": {
-      "missing_config": "Configuration is missing.", "invalid_config": "Configuration could not be read.",
-      "invalid_field": "A declared field could not be interpreted.", "unknown_structure": "The structure is not recognized."
+      "missing_config": "Configuration is missing.",
+      "invalid_config": "Configuration could not be read.",
+      "invalid_field": "A declared field could not be interpreted.",
+      "unknown_structure": "The structure is not recognized."
     },
     "towers": "Tower status",
-    "tower": { "image": "Image tower", "text": "Text tower" },
-    "load": { "image": "Load image tower", "text": "Load text tower" },
-    "log": { "image": "Image tower log", "text": "Text tower log" },
-    "states": { "stopped": "Unloaded", "starting": "Loading", "ready": "Loaded", "failed": "Failed" },
-    "revision": "Model revision", "vectorSpace": "Vector space"
+    "tower": {
+      "image": "Image tower",
+      "text": "Text tower"
+    },
+    "load": {
+      "image": "Load image tower",
+      "text": "Load text tower"
+    },
+    "log": {
+      "image": "Image tower log",
+      "text": "Text tower log"
+    },
+    "states": {
+      "stopped": "Unloaded",
+      "starting": "Loading",
+      "ready": "Loaded",
+      "failed": "Failed"
+    },
+    "revision": "Model revision",
+    "vectorSpace": "Vector space"
   },
   "tagThresholds": {
     "general": "General tag threshold",
@@ -404,11 +432,19 @@
     "prompt": "Transcription prompt",
     "promptHint": "Optional context or vocabulary for the recording. Leave empty to clear the saved prompt.",
     "timestampsHint": "JSON and text omit timestamps; detailed JSON returns segment timestamps. Every format transcribes the complete recording.",
-    "formats": { "json": "JSON (text only)", "text": "Plain text", "verbose_json": "Detailed JSON (segment timestamps)" },
+    "formats": {
+      "json": "JSON (text only)",
+      "text": "Plain text",
+      "verbose_json": "Detailed JSON (segment timestamps)"
+    },
     "fields": {
-      "architecture": "Architecture", "processor": "Processor", "sampleRate": "Sample rate (Hz)",
-      "features": "Mel feature dimensions", "window": "Native window (seconds)",
-      "timestamps": "Segment timestamps", "languages": "Supported language codes"
+      "architecture": "Architecture",
+      "processor": "Processor",
+      "sampleRate": "Sample rate (Hz)",
+      "features": "Mel feature dimensions",
+      "window": "Native window (seconds)",
+      "timestamps": "Segment timestamps",
+      "languages": "Supported language codes"
     },
     "diagnostics": {
       "missing_config": "Required native configuration is missing.",
@@ -423,5 +459,33 @@
     "providers": "Manage connections to OpenAI-compatible model providers.",
     "localRuntime": "Manage the local installation, storage and runtime tasks.",
     "service": "Configure the localhost OpenAI-compatible model API."
+  },
+  "directory": {
+    "information": "Model directory information",
+    "informationHint": "Architecture and model files are detected from the directory and cannot be edited here.",
+    "referenceHint": "Choose a model directory under data/models. Architecture and model files are detected automatically.",
+    "inspecting": "Reading model directory...",
+    "failed": "Could not inspect the model directory.",
+    "undetermined": "Not detected",
+    "configurationNeeded": "Directory diagnostics",
+    "draftHint": "You can save this profile. Resolve blocking diagnostics before loading.",
+    "blocking": "Required",
+    "warning": "Warning",
+    "fields": {
+      "engine": "Runtime engine",
+      "architecture": "Architecture",
+      "backbone": "Backbone",
+      "mainModel": "Main GGUF model",
+      "projector": "Vision projector (mmproj)"
+    },
+    "diagnostics": {
+      "missing_directory": "The model directory does not exist.",
+      "missing_file": "Required model files are missing or incomplete.",
+      "invalid_config": "The configuration is not a readable JSON object.",
+      "unsupported_configuration": "This model layout or architecture is not supported.",
+      "ambiguous_model": "Keep one model or complete shard group in this directory. Separate architectures and quantization variants.",
+      "ambiguous_projector": "Keep at most one mmproj GGUF file in this directory.",
+      "incomplete_shards": "All numbered GGUF shards must be present."
+    }
   }
 }

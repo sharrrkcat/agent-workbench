@@ -39,8 +39,8 @@ expanded targets and associated labels. Field labels/descriptions are connected
 to controls. Forms retain native required/range validation and existing blank,
 null and zero semantics. Hidden file inputs remain behind visible Buttons.
 Controlled Select preserves groups, disabled options, empty choices and missing
-selected records. Model IDs and projector paths use editable Comboboxes whose
-text is the field value, including values outside the suggestions.
+selected records. Model references use editable Comboboxes for local directories or provider IDs;
+their text is the field value, including values outside the suggestions. Detected file paths are read-only.
 
 Detail/editor Tabs use arrow keys for focus and Enter/Space for activation. Model
 and resource subpages retain mounted drafts; hidden panels and their overlays
@@ -151,29 +151,27 @@ parameters; [chat/context](chat-context.md#auxiliary-tasks-and-titles) owns titl
 Models has four sidebar pages. Default chat/auxiliary model selectors appear only
 on Model profiles. Providers manages external connections; Local Runtime shows installation,
 storage, download settings and task history, with a log dialog. Forms and the kind filter
-retain drafts across subpages. Models use grouped Unbound, Local Runtime and configured-provider
-choices, filtered to supported kinds; disabled providers are marked. Defaults: local Kokoro TTS, WD14 CPU vision, SigLIP CUDA image embedding,
-Sentence Transformers CUDA text embedding, CrossEncoder CUDA reranking and Whisper CUDA ASR; LLMs start unbound. Local models expose inventory, execution options and release policy.
-Vision offers only Unbound/Local Runtime, WD14/Tags read-only fields, general/character thresholds (0.35/0.85),
+retain drafts across subpages. LLM/text embedding offer Unbound, Local Runtime and configured providers; rerankers offer Unbound/Local Runtime. TTS, vision, image embedding and ASR fix Model source to Local Runtime; disabled providers are marked.
+Blank-form defaults are local for every kind except unbound LLMs; adding a local inventory entry always binds Local Runtime and retains its directory reference. Detected Kokoro/WD14 use CPU; other engines use CUDA. Unresolved LLM/TTS/WD14 directories expose no guessed engine options.
+Local models expose inventory, execution options and release policy. Vision shows detected WD14/backbone information, read-only Tags, general/character thresholds (0.35/0.85),
 CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and
 fractions round-trip, while blank fields prevent submission. The removed vision batch-size field is rejected by the API.
 WD14 directory suggestions require model.onnx and selected_tags.csv; arbitrary safe manual relative references remain editable.
-GGUF vision exposes required mmproj_ref with inventory suggestions and manual relative-path entry.
-Changing the main model or disabling vision clears the projector. Transformers vision remains selectable;
+GGUF references select directories; the information panel shows the main model and optional projector without file selectors. A newly selected directory with one projector enables Vision; users may disable it. Reopening/reinspecting preserves saved choices, and no projector disables Vision. Ambiguity is shown as a blocking load diagnostic while saving remains available. Transformers vision remains selectable;
 the worker verifies actual image capability during execution.
 Provider models expose model-ID entry and optional discovery; failed discovery leaves manual entry,
 saving and inference available. Late results from a previous source cannot replace current suggestions.
 Changing local/provider source or provider id clears model_ref and replaces source options and source-specific embedding parameters. Unbinding
-preserves model_ref; binding an unbound draft retains its reference for validation. Reselecting is a no-op.
+preserves model_ref for eligible kinds; binding an unbound draft retains its reference for validation. Reselecting is a no-op.
 Local rows show health/load/unload/residency/logs; provider rows show recent-request state and occupancy,
-without lifecycle controls or a trial-inference action. Local engine selection follows reference/architecture.
-TTS profiles select Kokoro, Chatterbox or Qwen3-TTS Base, speed and MP3/WAV defaults. Chatterbox/Qwen expose an optional seed: blank saves null (unfixed), and 0 is a valid fixed seed. Speech requests may override it;
+without lifecycle controls or a trial-inference action. Local engine selection follows directory inspection.
+TTS directories automatically identify Kokoro, Chatterbox or Qwen3-TTS Base; architecture is read-only. New drafts contain speed=1/MP3 defaults. Chatterbox/Qwen expose an optional seed: blank saves null (unfixed), and 0 is a valid fixed seed. Speech requests may override it;
 omitted/null request seeds inherit the profile. Fixed seeds control randomness without guaranteeing identical audio. Seed edits use the existing profile save/lifecycle flow. Switching architecture preserves speed/format
-and clears incompatible generation and execution settings, resetting seed to null for Audio or removing it for Kokoro; reselecting the source retains the selected architecture and seed. Saved Kokoro editors show preset
+and clears incompatible generation and execution settings, resetting seed to null for Audio or removing it for Kokoro. Same-engine directory changes preserve customized settings. Directory changes clear old information and ignore late responses; unnamed new local drafts receive directory-name suggestions. Saved Kokoro editors show preset
 availability by language; Audio editors explain reference-based API usage and Qwen's optional transcripts. Voices are request selections, not profile records. Ownership/expiry belong to
 [Models](models.md#audio-tts-and-temporary-references).
 
-Image embedding offers only Unbound/Local Runtime. Choosing/editing a directory reads inspect information without loading;
+Image embedding uses Local Runtime. Choosing/editing a directory reads inspect information without loading;
 structure, image/text dimensions, native text position limit and processor settings are read-only, with missing values marked
 Determined when loading. Tokenizer placeholder lengths are not presented as the position limit. Diagnostics/errors do not block saving.
 Changing the reference clears old information immediately and ignores late responses, preserving names and runtime policies;
@@ -194,7 +192,7 @@ Directory changes clear old information and ignore late responses; unnamed new d
 Parameters are empty: architecture, templates and scoring tokens are not editable. CPU/CUDA, four threads, batch 1..16 (default 1), manual release
 and external visibility use existing controls. [Models](models.md#local-reranking) owns native processing and acceptance limits.
 
-ASR offers Local Runtime/unbound drafts, with CUDA, four threads, manual release and external visibility off by default.
+ASR uses Local Runtime, with CUDA, four threads, manual release and external visibility off by default.
 Directory selection inspects architecture, processor, sample rate, features, native window, languages and timestamp support as read-only information. Changing directories clears stale results and preserves edited names/defaults; unnamed new drafts receive directory-name suggestions. Invalid directories remain saveable.
 Language (auto or supported code), prompt, temperature (0..1) and response format are editable defaults for internal/public requests. Explicit auto/empty prompt resets them; request overrides never change the profile.
 Both locales explain that json/text omit timestamps and verbose_json returns segment timestamps, while every format transcribes complete recordings. There is no architecture selector, duplicated preprocessing configuration or transcription page. [Models](models.md#local-speech-recognition) owns execution and limitations.

@@ -48,7 +48,7 @@ async def runtime(tmp_path, *, memory=True, **values):
 
 
 @pytest.mark.parametrize("audio_format", [None, "wav"])
-def test_rpc_cancellation_stops_worker_when_transport_swallows_cancellation(audio_format):
+def test_rpc_cancellation_stops_worker_when_transport_swallows_cancellation(tmp_path, audio_format):
     async def scenario():
         started, stopped, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
         async def transport():
@@ -66,7 +66,7 @@ def test_rpc_cancellation_stops_worker_when_transport_swallows_cancellation(audi
             @asynccontextmanager
             async def stream(self, *_args, **_kwargs):
                 yield await transport()
-        adapter = RerankerWorkerAdapter(SimpleNamespace(release=catalog("windows", "x86_64")), profile(), lambda: None)
+        adapter = RerankerWorkerAdapter(SimpleNamespace(root=tmp_path, release=catalog("windows", "x86_64")), profile(), lambda: None)
         adapter.client = Client()
         adapter._stop = AsyncMock(side_effect=stopped.set)
         task = asyncio.create_task(adapter._rpc("POST", "/rerank", {"documents": ["text"]}, audio_format=audio_format))

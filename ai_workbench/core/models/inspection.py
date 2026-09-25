@@ -11,6 +11,7 @@ from ai_workbench.workers.siglip_catalog import CONFIG_FILES, STRUCTURES, model_
 from ai_workbench.workers.embedding_catalog import inspect_embedding
 from ai_workbench.workers.reranker_catalog import inspect_reranker as inspect_reranker_directory
 from ai_workbench.workers.asr_catalog import inspect_asr as inspect_asr_directory
+from ai_workbench.workers.model_catalog import inspect_directory
 
 PositiveInt = Annotated[int, Field(gt=0, strict=True)]
 Number = Annotated[float, Field(strict=True)]
@@ -149,7 +150,59 @@ class ASRInspection(StrictModel):
     diagnostics: list[ASRDiagnostic]
 
 
-ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection | RerankerInspection | ASRInspection, Field(discriminator="kind")]
+class DirectoryDiagnostic(StrictModel):
+    file: str
+    code: Literal["missing_directory", "missing_file", "invalid_config", "unsupported_configuration",
+                  "ambiguous_model", "ambiguous_projector", "incomplete_shards"]
+    message: str
+    blocking: bool
+
+
+class LLMInspection(StrictModel):
+    kind: Literal["llm"] = "llm"
+    model_ref: str
+    engine: Literal["llama-server", "transformers"] | None
+    architecture: str | None
+    main_model_ref: str | None
+    mmproj_ref: str | None
+    model_files: list[str]
+    diagnostics: list[DirectoryDiagnostic]
+
+
+class TTSInspection(StrictModel):
+    kind: Literal["tts"] = "tts"
+    model_ref: str
+    engine: Literal["kokoro", "chatterbox", "qwen3tts"] | None
+    architecture: Literal["kokoro", "chatterbox", "qwen3tts"] | None
+    diagnostics: list[DirectoryDiagnostic]
+
+
+class VisionInspection(StrictModel):
+    kind: Literal["vision"] = "vision"
+    model_ref: str
+    engine: Literal["wd14"] | None
+    architecture: Literal["wd14"] | None
+    backbone: str | None
+    diagnostics: list[DirectoryDiagnostic]
+
+
+ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection | RerankerInspection | ASRInspection
+                           | LLMInspection | TTSInspection | VisionInspection, Field(discriminator="kind")]
+
+
+def inspect_local_directory(repo_root: Path, kind: str, model_ref: str):
+    try:
+        info = inspect_directory(repo_root / "data/models", kind, model_ref)
+    except WorkerError as exc:
+        raise ModelError(exc.code, "Use a model directory with a safe relative path under data/models.", exc.status) from exc
+    if any(item["code"] == "missing_directory" for item in info.diagnostics):
+        raise ModelError("MODEL_NOT_FOUND", "The model directory does not exist.", 404)
+    values = dict(model_ref=model_ref, engine=info.engine, architecture=info.architecture, diagnostics=info.diagnostics)
+    if kind == "llm":
+        return LLMInspection(**values, main_model_ref=info.main_model_ref, mmproj_ref=info.mmproj_ref, model_files=info.model_files)
+    if kind == "vision":
+        return VisionInspection(**{**values, "architecture": info.engine}, backbone=info.architecture)
+    return TTSInspection(**values)
 
 
 def inspect_asr(repo_root: Path, model_ref: str) -> ASRInspection:

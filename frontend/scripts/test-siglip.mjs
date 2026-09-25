@@ -40,9 +40,6 @@ const changed = selectModelReference(edited, 'image_embeddings/another', true);
 assert.equal(changed.name, edited.name);
 assert.deepEqual(changed.source, edited.source);
 assert.deepEqual(changed.parameters, edited.parameters);
-const unbound = selectModelSource(selected, null);
-assert.equal(unbound.model_ref, selected.model_ref);
-assert.deepEqual(selectModelSource(unbound, localSource()), selected);
 assert.equal(selectModelSource(edited, localSource()), edited);
 
 for (const locale of ['en', 'zh-CN']) {

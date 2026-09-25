@@ -129,7 +129,7 @@ def offline_files(adapter):
 async def reference_tts(state, client, args, architecture, device, reference, output, keeper):
     manager = state.model_manager
     qwen = architecture == "qwen3tts"
-    created = (await checked(client, "POST", "/api/models/profiles", json={'name': f'{architecture} {device}', 'alias': f'{architecture}-{device}', 'kind': 'tts', 'model_ref': getattr(args, architecture), 'parameters': {'architecture': architecture, 'response_format': 'wav', 'seed': 12345}, 'external_enabled': True, 'source': {'type': 'local', 'execution_options': {'device': device}}})).json()
+    created = (await checked(client, "POST", "/api/models/profiles", json={'name': f'{architecture} {device}', 'alias': f'{architecture}-{device}', 'kind': 'tts', 'model_ref': getattr(args, architecture), 'parameters': {'response_format': 'wav', 'seed': 12345}, 'external_enabled': True, 'source': {'type': 'local', 'execution_options': {'device': device}}})).json()
     profile = manager.profiles.get(created["id"])
     uploaded = (await checked(client, "POST", "/v1/audio/voice-references", data={"model": profile.alias},
         files={"file": (reference.name, reference.read_bytes())})).json()
@@ -236,7 +236,7 @@ async def validate_engines(state, args):
     manager.settings.patch({"external_enabled": True, "external_api_key": token})
     report = {"platform": "windows", "runtime_version": state.runtime_supervisor.release.version,
               "models": {name: getattr(args, name) for name in ("chatterbox", "qwen3tts")}, "results": []}
-    keeper_profile = manager.profiles.create(ModelProfile(name='Audio isolation witness', alias='audio-witness', kind='tts', model_ref=args.chatterbox, parameters={'architecture': 'chatterbox'}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
+    keeper_profile = manager.profiles.create(ModelProfile(name='Audio isolation witness', alias='audio-witness', kind='tts', model_ref=args.chatterbox, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
     # Start only the reference decoder in this witness, keeping its process alive without weights.
     _, keeper_slot = manager._slot(manager.execution_key(keeper_profile), keeper_profile)
     keeper = keeper_slot.adapter

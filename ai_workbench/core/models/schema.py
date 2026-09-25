@@ -5,11 +5,12 @@ import math
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, RootModel, TypeAdapter, field_validator, model_validator
 
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
+from ai_workbench.workers.model_catalog import DirectoryInformation
 
 ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts", "asr"]
 EmbeddingPurpose = Literal["query", "document"]
@@ -191,7 +192,6 @@ class VisionThresholdOverrides(StrictModel):
 
 
 class VisionParameters(StrictModel):
-    architecture: Literal["wd14"] = "wd14"
     task: Literal["tags"] = "tags"
     thresholds: VisionThresholds = Field(default_factory=VisionThresholds)
 
@@ -203,12 +203,10 @@ class SpeechOutputParameters(StrictModel):
 
 class KokoroParameters(SpeechOutputParameters):
     """Kokoro ONNX uses preset voices and has no generation model_options."""
-    architecture: Literal["kokoro"] = "kokoro"
 
 
 class ChatterboxParameters(SpeechOutputParameters):
     """English Chatterbox uses a temporary voice ID or one-request reference audio."""
-    architecture: Literal["chatterbox"] = "chatterbox"
     seed: int | None = Field(default=None, ge=0, le=4294967295, strict=True, description="Fixed speech seed; null leaves randomness unfixed. Controls randomness without guaranteeing identical audio.")
     exaggeration: float = Field(default=0.5, ge=0.0, le=2.0, strict=True, description="Expressiveness of the reference-conditioned voice.")
     cfg_weight: float = Field(default=0.5, ge=0.0, le=1.0, strict=True, description="Classifier-free conditioning guidance strength.")
@@ -220,7 +218,6 @@ class ChatterboxParameters(SpeechOutputParameters):
 
 class Qwen3TTSParameters(SpeechOutputParameters):
     """Qwen3-TTS 12Hz Base cloning; request model_options override these saved defaults."""
-    architecture: Literal["qwen3tts"] = "qwen3tts"
     seed: int | None = Field(default=None, ge=0, le=4294967295, strict=True, description="Fixed speech seed for main and secondary-codebook sampling; null leaves randomness unfixed. Does not guarantee identical audio.")
     do_sample: bool = Field(default=True, strict=True, description="Enable main talker sampling; false uses greedy decoding. Secondary-codebook sampling stays enabled.")
     temperature: float = Field(default=0.9, gt=0.0, strict=True, description="Main talker sampling temperature; used when do_sample is true.")
@@ -231,15 +228,7 @@ class Qwen3TTSParameters(SpeechOutputParameters):
 
 
 class TTSParameters(RootModel):
-    root: Annotated[KokoroParameters | ChatterboxParameters | Qwen3TTSParameters,
-                    Field(discriminator="architecture")] = Field(default_factory=KokoroParameters)
-
-    @model_validator(mode="before")
-    @classmethod
-    def default_architecture(cls, value):
-        if isinstance(value, dict) and "architecture" not in value:
-            return {"architecture": "kokoro", **value}
-        return value
+    root: KokoroParameters | ChatterboxParameters | Qwen3TTSParameters = Field(default_factory=KokoroParameters)
 
 
 PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "reranker": RerankParameters,
@@ -248,6 +237,7 @@ PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "re
 
 
 class ModelInput(StrictModel):
+    _directory: DirectoryInformation | None = PrivateAttr(default=None)
     name: str = Field(min_length=1, max_length=128)
     alias: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$")
     kind: ModelKind
@@ -258,41 +248,37 @@ class ModelInput(StrictModel):
     enabled: bool = True
     external_enabled: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def local_only_source(cls, values):
+        if isinstance(values, dict) and values.get("kind") in {"image_embedding", "vision", "tts", "asr"}:
+            if "source" not in values:
+                return {**values, "source": {"type": "local"}}
+            source = values["source"]
+            if not isinstance(source, LocalSource) and not (isinstance(source, dict) and source.get("type") == "local"):
+                raise ValueError("This model kind requires Local Runtime")
+        return values
+
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import EmbeddingOptions, OnnxCPUOptions, PythonOptions, RerankerOptions, SiglipOptions, local_engine, llama_options, relative_ref
+        from ai_workbench.core.models.runtimes.schema import LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, engine_options, local_engine, relative_ref
         local_embedding = self.kind == "embedding" and (isinstance(self.source, LocalSource)
             or self.source is None and bool(self.parameters.keys() & LocalEmbeddingParameters.model_fields.keys()))
         parameters_schema = LocalEmbeddingParameters if local_embedding else PARAMETERS[self.kind]
-        self.parameters = parameters_schema.model_validate(self.parameters).model_dump(exclude_none=self.kind != "tts" and not local_embedding)
+        parsed = parameters_schema.model_validate(self.parameters)
+        self.parameters = ({**SpeechOutputParameters().model_dump(), **parsed.model_dump(exclude_unset=True)}
+            if self.kind == "tts" else parsed.model_dump(exclude_none=not local_embedding))
         engine = local_engine(self)
         if isinstance(self.source, LocalSource):
             relative_ref(self.model_ref)
-            if engine is None:
-                raise ValueError("This model kind has no implemented local engine")
-            if engine == "llama-server":
-                device = self.source.execution_options.get("device", "cuda")
-                if device not in {"cpu", "cuda"}:
-                    raise ValueError("The local device must be cpu or cuda")
-                options_schema = llama_options(device)
-            elif engine in {"kokoro", "wd14"}:
-                options_schema = OnnxCPUOptions
-            elif engine == "siglip2":
-                options_schema = SiglipOptions
-            elif engine == "sentence-transformers":
-                options_schema = EmbeddingOptions
-            elif engine == "cross-encoder":
-                options_schema = RerankerOptions
+            if self.kind in {"llm", "tts", "vision"}:
+                if self.kind == "llm" and self.model_ref.lower().endswith(".gguf"):
+                    raise ValueError("Local LLM model_ref must reference a directory, not a GGUF file")
+                options = {"llm": LlamaCPUOptions | LlamaCUDAOptions | PythonOptions,
+                    "tts": OnnxCPUOptions | PythonOptions, "vision": OnnxCPUOptions}[self.kind]
+                self.source.execution_options = TypeAdapter(options).validate_python(self.source.execution_options).model_dump(exclude_unset=True)
             else:
-                options_schema = PythonOptions
-            self.source.execution_options = options_schema.model_validate(self.source.execution_options).model_dump()
-            if engine == "llama-server" and self.capabilities.vision != bool(self.source.execution_options["mmproj_ref"]):
-                raise ValueError("Managed GGUF vision requires mmproj_ref; text-only profiles must omit it")
-            if engine == "transformers":
-                if self.capabilities.json_object or self.capabilities.json_schema:
-                    raise ValueError("Transformers does not support structured JSON output")
-                if any(self.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
-                    raise ValueError("Transformers does not support nonzero presence or frequency penalties")
+                self.source.execution_options = engine_options(engine, self.source.execution_options).model_validate(self.source.execution_options).model_dump()
         elif isinstance(self.source, ProviderSource) and self.kind not in {"llm", "embedding"}:
             raise ValueError("Providers support only LLM and text embedding models")
         if not self.name.strip() or not self.model_ref.strip():

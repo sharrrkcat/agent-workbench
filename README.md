@@ -27,10 +27,10 @@ See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 In **Settings > Models**, use the Model profiles, Providers, Local Runtime and External API sidebar pages:
 
-1. **Local Runtime:** install the shared Windows x64 release once. Place model files manually under data/models, then select Local Runtime in a model. Its reference/architecture selects the engine; release policy defaults to manual.
+1. **Local Runtime:** install the shared Windows x64 release once. Place model directories manually under data/models and select a directory in the model profile. Directory information determines its engine and architecture; release policy defaults to manual.
 2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
-Profiles have one of seven kinds, internal UUIDs, public aliases, capabilities and parameters; unbound drafts can be saved but cannot execute.
+Profiles have seven kinds, internal UUIDs, public aliases, capabilities and parameters. LLM/text embedding allow local/provider/unbound sources; rerankers allow local/unbound. TTS, WD14, image embedding and ASR require Local Runtime. Safe incomplete or ambiguous directories remain saveable drafts but cannot load.
 Choose default chat and optional auxiliary models. New sessions select the default or first enabled LLM; changing defaults preserves sessions.
 Titles use only the auxiliary model and remain unchanged when it is missing or fails.
 
@@ -44,8 +44,8 @@ Titles use only the auxiliary model and remain unchanged when it is missing or f
 | tts | data/models/tts | Kokoro ONNX CPU or Chatterbox/Qwen3-TTS Base Windows Audio |
 | asr | data/models/asr | Native Whisper, Windows CUDA or CPU |
 
-Inventory references are relative to data/models, such as `llms/example.gguf`; Transformers uses a model directory.
-Enable Vision for image input. GGUF also requires its matching mmproj_ref; suggestions appear in the editor.
+Inventory references are directories relative to data/models, such as `llms/example`. GGUF needs one main model or complete numbered shard group and at most one `mmproj*.gguf` in that directory; multiple candidates require separate directories.
+A detected GGUF projector enables Vision when selecting a new directory; disabling Vision skips its loading. Main/projector files and TTS/WD14 architecture are read-only information. Transformers Vision remains selectable.
 Chat accepts static PNG/JPEG/WebP through file selection, paste and drag/drop; selected historical images support follow-ups.
 Local `/v1` images require inline data URLs and detail=auto, with a 32 MiB complete-request limit.
 Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
@@ -232,7 +232,7 @@ Listing does not renew them. For one request, omit voice and send `tts.reference
 
 ### Offline Qwen3-TTS Base Speech
 
-Install the Windows local runtime, select **Qwen3-TTS (12Hz Base)** and explicit CPU/CUDA execution. Place the complete checkpoint, including generation config, text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is `tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
+Install the Windows local runtime, select the Qwen3-TTS Base model directory and CPU/CUDA execution. Place the complete checkpoint, including generation config, text-tokenizer files and nested speech_tokenizer, under data/models/tts. The validated reference is `tts/Qwen3-TTS-12Hz-0.6B-Base`; other sizes are unverified. CustomVoice/VoiceDesign and Linux remain deferred.
 
 Qwen shares Chatterbox's reference APIs/TTL. Optional reference_text in the upload form or tts.reference_audio enables full conditioning; absence uses speaker-embedding cloning. Supply the recording's actual words; the reference workflow does not generate or persist transcripts.
 
@@ -343,6 +343,6 @@ Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` 
 Whisper CUDA: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --tail-text "unique words after thirty seconds" --mp3 ./short.mp3`. Repeat for asr/whisper-large-v3-turbo. Supply English PCM16 WAV longer than 60 seconds with an identifiable phrase after 30 seconds; English MP3 is optional.
 Focused base CPU: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --device cpu`. CPU checks the first six seconds. Both reuse installation; reports go to build/asr-smoke. CUDA covers the 30-second boundary, all response formats, tail/segment completeness, repeated inference, cancellation/reload and cleanup.
 
-For Windows CUDA with an existing GGUF, run `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-model>.gguf`. It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload with temporary model profiles. Runtime installation/jobs remain persisted. Stop Cogita before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility. `uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation; use --engine llama-server for GGUF. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks. GGUF vision also needs `--mmproj-ref llms/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf`; Qwen3.5-0.8B files are the validated reference. Image answers check fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke and defaults to LLM CPU/CUDA/Kokoro CPU; Audio CPU needs --backend chatterbox-cpu or --backend qwen3tts-cpu.
+For Windows CUDA with an existing GGUF, run `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-directory>`. It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload with temporary model profiles. Runtime installation/jobs remain persisted. Stop Cogita before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility. `uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation; use --engine llama-server for GGUF. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks. GGUF vision automatically resolves the projector in the model directory; Qwen3.5-0.8B files are the validated reference. Image answers check fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke and defaults to LLM CPU/CUDA/Kokoro CPU; Audio CPU needs --backend chatterbox-cpu or --backend qwen3tts-cpu.
 
 Read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests before changes; [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md) owns English-only documentation and plan completion.

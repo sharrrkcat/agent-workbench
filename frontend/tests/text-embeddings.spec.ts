@@ -25,7 +25,7 @@ for (const locale of ['en', 'zh-CN']) {
           name: `Embedding provider ${locale} ${viewport.width}`, connection: { base_url: 'http://127.0.0.1:1/v1' },
         } })).json();
         await page.route('**/api/models/inventory?kind=embedding', (route) => route.fulfill({ json: [
-          { kind: 'embedding', name: 'browser-text', model_ref: reference, mmproj_refs: [], state: 'unavailable', error_code: 'MODEL_UNAVAILABLE' },
+          { kind: 'embedding', name: 'browser-text', model_ref: reference, state: 'unavailable', error_code: 'MODEL_UNAVAILABLE' },
         ] }));
         await page.route('**/api/models/inspect?**', async (route) => {
           const query = new URL(route.request().url()).searchParams;

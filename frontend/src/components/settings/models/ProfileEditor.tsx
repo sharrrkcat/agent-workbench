@@ -28,12 +28,14 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import type { LocalEmbeddingParameters, LocalModelSource, ModelInput, ModelInventoryItem } from '../../../types/models';
+import type { DirectoryInspection, LocalEmbeddingParameters, LocalEngine, LocalModelSource, ModelInput } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
 import {
   kinds,
+  applyDirectoryInspection,
   localEngine,
+  localOnly,
   localSource,
   selectModelSource,
   selectModelReference,
@@ -46,8 +48,13 @@ import { SiglipInspectionPanel } from './SiglipInspection';
 import { TextEmbeddingInspectionPanel } from './TextEmbeddingInspection';
 import { RerankerInspectionPanel } from './RerankerInspection';
 import { ASRInspectionPanel } from './ASRInspection';
+import { DirectoryInspectionPanel } from './DirectoryInspection';
 
-export type ProfileDraft = { id?: string; value: ModelInput };
+export type ProfileDraft = {
+  id?: string; value: ModelInput; detectedEngine?: LocalEngine;
+  directory?: { ref: string; kind: string; information?: DirectoryInspection; error?: string };
+  visionInitializedRef?: string; visionEditedRef?: string;
+};
 export function ProfileEditor({
   model,
   setModel,
@@ -62,26 +69,56 @@ export function ProfileEditor({
   const activeView = useSettingsView();
   const { providers, profiles } = useModelsStore();
   const local = model?.value.source?.type === 'local' ? model.value.source : null;
-  const engine = model ? localEngine(model.value) : null;
+  const directory = model && local && model.directory?.ref === model.value.model_ref
+    && model?.directory?.kind === model?.value.kind ? model.directory : undefined;
+  const information = directory?.information;
+  const engine = model ? localEngine(model.value, information?.engine ?? null) : null;
   const transformers = engine === 'transformers';
   const onnx = engine === 'kokoro' || engine === 'wd14';
   const audio = engine === 'chatterbox' || engine === 'qwen3tts';
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
-  const [inventory, setInventory] = useState<ModelInventoryItem[]>([]);
   const [discoveryError, setDiscoveryError] = useState('');
   const selectedSource = model ? sourceValue(model.value.source) : '';
   const modelKind = model?.value.kind;
+  const modelRef = model?.value.model_ref ?? '';
+  const modelID = model?.id;
+  const opened = !!model;
+  const savedReference = profiles.find((profile) => profile.id === modelID)?.model_ref;
+  useEffect(() => {
+    if (!opened || selectedSource !== 'local' || !modelRef.trim()
+      || modelKind !== 'llm' && modelKind !== 'tts' && modelKind !== 'vision') return;
+    let cancelled = false;
+    void modelsApi.inspectLocalDirectory(modelKind, modelRef).then((information) => {
+      if (cancelled) return;
+      setModel((draft) => {
+        if (!draft || draft.id !== modelID || draft.value.model_ref !== modelRef
+          || draft.value.kind !== modelKind || draft.value.source?.type !== 'local') return draft;
+        const resetSettings = draft.detectedEngine !== undefined
+          ? draft.detectedEngine !== information.engine : !draft.id || savedReference !== modelRef;
+        const initializeVision = draft.visionEditedRef !== modelRef && draft.visionInitializedRef !== modelRef
+          && (!draft.id || savedReference !== modelRef);
+        return { ...draft,
+          value: applyDirectoryInspection(draft.value, information, resetSettings, initializeVision),
+          detectedEngine: information.engine ?? draft.detectedEngine,
+          directory: { ref: modelRef, kind: modelKind, information },
+          visionInitializedRef: information.kind === 'llm' && information.engine === 'llama-server'
+            ? modelRef : draft.visionInitializedRef,
+        };
+      });
+    }).catch((error) => {
+      if (!cancelled) setModel((draft) => draft && draft.id === modelID
+        && draft.value.model_ref === modelRef && draft.value.kind === modelKind && draft.value.source?.type === 'local'
+        ? { ...draft, directory: { ref: modelRef, kind: modelKind, error: String(error.message) } } : draft);
+    });
+    return () => { cancelled = true; };
+  }, [opened, selectedSource, modelKind, modelRef, modelID, savedReference, setModel]);
   useEffect(() => {
     let cancelled = false;
     setRemoteModels([]);
-    setInventory([]);
     setDiscoveryError('');
     const request =
       selectedSource === 'local'
-        ? modelsApi.listModelInventory(modelKind).then((items) => {
-            if (!cancelled) setInventory(items);
-            return items.map((item) => item.model_ref);
-          })
+        ? modelsApi.listModelInventory(modelKind).then((items) => items.map((item) => item.model_ref))
         : selectedSource.startsWith('provider:')
           ? modelsApi
               .listProviderModels(selectedSource.slice('provider:'.length))
@@ -100,16 +137,18 @@ export function ProfileEditor({
     };
   }, [selectedSource, modelKind]);
   const patchModel = (patch: Partial<ModelInput>) =>
-    setModel((draft) => (draft ? { ...draft, value: updateModel(draft.value, patch) } : null));
+    setModel((draft) => (draft ? { ...draft, value: updateModel(draft.value, patch, engine),
+      ...(patch.capabilities && patch.capabilities.vision !== draft.value.capabilities.vision
+        ? { visionEditedRef: draft.value.model_ref } : {}),
+    } : null));
   const patchReference = (modelRef: string, suggestName = false) => setModel((draft) => draft ? {
     ...draft, value: selectModelReference(draft.value, modelRef,
-      suggestName && !draft.id && (draft.value.kind === 'image_embedding'
-        || ['embedding', 'reranker', 'asr'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
+      suggestName && !draft.id && draft.value.source?.type === 'local'),
   } : null);
   const patchLocal = (patch: Partial<LocalModelSource>) =>
     setModel((draft) =>
       draft?.value.source?.type === 'local'
-        ? { ...draft, value: updateModel(draft.value, { source: { ...draft.value.source, ...patch } }) }
+        ? { ...draft, value: updateModel(draft.value, { source: { ...draft.value.source, ...patch } }, engine) }
         : draft,
     );
   return (
@@ -183,12 +222,15 @@ export function ProfileEditor({
                     <FieldLabel>{t('source')}</FieldLabel>
                     <Select
                       value={selectedSource}
+                      disabled={localOnly(model.value.kind)}
                       onValueChange={(nextSource) => {
                         const selected = nextSource ?? '';
                         setModel((draft) =>
                           draft
                             ? {
                                 ...draft,
+                                ...(selected !== selectedSource ? { directory: undefined, detectedEngine: undefined,
+                                  visionInitializedRef: undefined, visionEditedRef: undefined } : {}),
                                 value: selectModelSource(
                                   draft.value,
                                   selected === 'local'
@@ -205,7 +247,7 @@ export function ProfileEditor({
                         );
                       }}
                       items={[
-                        { value: '', label: t('unbound') },
+                        ...(!localOnly(model.value.kind) ? [{ value: '', label: t('unbound') }] : []),
                         ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
@@ -226,7 +268,7 @@ export function ProfileEditor({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">{t('unbound')}</SelectItem>
+                        {!localOnly(model.value.kind) ? <SelectGroup><SelectItem value="">{t('unbound')}</SelectItem></SelectGroup> : null}
                         {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr'].includes(model.value.kind) ? (
                           <SelectGroup>
                             <SelectLabel>{t('localSourceGroup')}</SelectLabel>
@@ -265,8 +307,7 @@ export function ProfileEditor({
                       <ComboboxInput required aria-label={t('modelRef')} disabled={busy}
                         onBlur={() => setModel((draft) => draft ? { ...draft,
                           value: selectModelReference(draft.value, draft.value.model_ref,
-                            !draft.id && (draft.value.kind === 'image_embedding'
-                              || ['embedding', 'reranker', 'asr'].includes(draft.value.kind) && draft.value.source?.type === 'local')),
+                            !draft.id && draft.value.source?.type === 'local'),
                         } : null)} />
                       <ComboboxContent>
                         <ComboboxEmpty>{t('common:noSuggestions')}</ComboboxEmpty>
@@ -281,6 +322,9 @@ export function ProfileEditor({
                     </Combobox>
                     {model.value.kind === 'vision' ? (
                       <FieldDescription>{t('visionDirectoryHint')}</FieldDescription>
+                    ) : null}
+                    {local && (model.value.kind === 'llm' || model.value.kind === 'tts') ? (
+                      <FieldDescription>{t('directory.referenceHint')}</FieldDescription>
                     ) : null}
                     {model.value.kind === 'image_embedding' ? (
                       <FieldDescription>{t('siglip.directoryHint')}</FieldDescription>
@@ -328,6 +372,9 @@ export function ProfileEditor({
                 ) : null}
                 {model.value.kind === 'asr' && local && model.value.model_ref.trim() ? (
                   <ASRInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref} />
+                ) : null}
+                {local && modelRef.trim() && ['llm', 'tts', 'vision'].includes(model.value.kind) ? (
+                  <DirectoryInspectionPanel information={information} error={directory?.error} />
                 ) : null}
                 {model.value.kind === 'embedding' && local && model.value.model_ref.trim() ? (
                   <TextEmbeddingInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref}
@@ -435,11 +482,13 @@ export function ProfileEditor({
                           <Field
                             key={key}
                             orientation="horizontal"
-                            disabled={transformers && ['json_object', 'json_schema'].includes(key)}
+                            disabled={transformers && ['json_object', 'json_schema'].includes(key)
+                              || key === 'vision' && information?.kind === 'llm' && engine === 'llama-server' && !information.mmproj_ref}
                           >
                             <Switch
                               checked={model.value.capabilities[key]}
-                              disabled={transformers && ['json_object', 'json_schema'].includes(key)}
+                              disabled={transformers && ['json_object', 'json_schema'].includes(key)
+                                || key === 'vision' && information?.kind === 'llm' && engine === 'llama-server' && !information.mmproj_ref}
                               onCheckedChange={(v) =>
                                 patchModel({ capabilities: { ...model.value.capabilities, [key]: v } })
                               }
@@ -449,70 +498,23 @@ export function ProfileEditor({
                         ),
                       )}
                     </FieldGroup>
-                    {engine === 'llama-server' && local && model.value.capabilities.vision ? (
-                      <>
-                        <Field>
-                          <FieldLabel>{t('mmprojRef')}</FieldLabel>
-                          <Combobox
-                            items={
-                              inventory.find((item) => item.model_ref === model.value.model_ref)
-                                ?.mmproj_refs ?? []
-                            }
-                            required
-                            disabled={busy}
-                            value={String(local.execution_options.mmproj_ref ?? '') || null}
-                            inputValue={String(local.execution_options.mmproj_ref ?? '')}
-                            onInputValueChange={(text, details) => {
-                              if (details.reason === 'input-change')
-                                patchLocal({
-                                  execution_options: { ...local.execution_options, mmproj_ref: text || null },
-                                });
-                            }}
-                            onValueChange={(choice) => {
-                              if (choice !== null)
-                                patchLocal({
-                                  execution_options: {
-                                    ...local.execution_options,
-                                    mmproj_ref: choice || null,
-                                  },
-                                });
-                            }}
-                          >
-                            <ComboboxInput required aria-label={t('mmprojRef')} disabled={busy} />
-                            <ComboboxContent>
-                              <ComboboxEmpty>{t('common:noSuggestions')}</ComboboxEmpty>
-                              <ComboboxList>
-                                {(choice: string) => (
-                                  <ComboboxItem key={choice} value={choice}>
-                                    {choice}
-                                  </ComboboxItem>
-                                )}
-                              </ComboboxList>
-                            </ComboboxContent>
-                          </Combobox>
-                        </Field>
-
-                        <p className="model-empty">{t('mmprojHint')}</p>
-                      </>
-                    ) : null}
                   </>
                 ) : null}
                 {engine !== 'sentence-transformers' && model.value.kind !== 'reranker' ? <>
                   <h3>{t('parameters')}</h3>
-                  <ProfileParameters value={model.value} onChange={(parameters) => patchModel({ parameters })} />
+                  <ProfileParameters value={model.value} engine={engine} onChange={(parameters) => patchModel({ parameters })} />
                 </> : null}
                 {audio ? <p className="model-empty">{t('ttsSeedHint')}</p> : null}
-                {model.value.kind === 'tts' && model.value.parameters.architecture === 'chatterbox' ? (
+                {engine === 'chatterbox' ? (
                   <p className="model-empty">{t('chatterboxReferenceHint')}</p>
                 ) : null}
-                {model.value.kind === 'tts' && model.value.parameters.architecture === 'qwen3tts' ? (
+                {engine === 'qwen3tts' ? (
                   <p className="model-empty">{t('qwenReferenceHint')}</p>
                 ) : null}
                 {local &&
                 model.value.kind === 'tts' &&
-                model.value.parameters.architecture === 'kokoro' &&
+                engine === 'kokoro' &&
                 model.id &&
-                profiles.find((profile) => profile.id === model.id)?.parameters.architecture === 'kokoro' &&
                 profiles.find((profile) => profile.id === model.id)?.model_ref === model.value.model_ref ? (
                   <PresetVoices profileId={model.id} />
                 ) : null}

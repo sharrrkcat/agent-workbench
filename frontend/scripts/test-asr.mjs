@@ -28,13 +28,10 @@ const changed = selectModelReference(edited, 'asr/another-model', true);
 assert.equal(changed.name, edited.name);
 assert.deepEqual(changed.source, edited.source);
 assert.deepEqual(changed.parameters, edited.parameters);
-const unbound = selectModelSource(edited, null);
-assert.equal(localEngine(unbound), null);
-assert.equal(unbound.model_ref, edited.model_ref);
-assert.equal(localEngine(selectModelSource(unbound, localSource())), 'whisper');
+assert.equal(selectModelSource(edited, localSource()), edited);
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
-  for (const value of [model, edited, unbound]) {
+  for (const value of [model, edited]) {
     const markup = renderToStaticMarkup(React.createElement(ProfileParameters, { value, onChange() {} }));
     for (const key of ['asr.language', 'asr.prompt', 'asr.responseFormat', 'asr.timestampsHint', 'asr.defaultsHint', 'params.temperature']) {
       assert.ok(markup.includes(i18n.t(key, { ns: 'llm' })), key);

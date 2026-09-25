@@ -113,7 +113,7 @@ def test_ready_readers_never_observe_partial_publication(tmp_path, monkeypatch, 
     {"source": {"type": "local", "execution_options": {"max_batch_size": 0}}},
 ])
 def test_managed_profile_rejects_unsafe_and_removed_fields(patch):
-    values = dict(name="local", alias="local", kind="llm", model_ref="llms/local.gguf", source={'type': 'local'})
+    values = dict(name="local", alias="local", kind="llm", model_ref="llms/local", source={'type': 'local'})
     with pytest.raises(ValidationError):
         ModelProfile(**{**values, **patch})
 
@@ -256,8 +256,11 @@ def test_sql_jobs_settings_and_interrupted_recovery(tmp_path):
 
 
 def test_api_install_actions_global_events_and_missing_runtime_details(tmp_path):
+    missing = tmp_path / 'data/models/llms/missing'
+    missing.mkdir(parents=True)
+    (missing / 'mmproj.gguf').write_bytes(b'projector without a main model')
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
-        model = client.post("/api/models/profiles", json={'name': 'managed', 'alias': 'managed', 'kind': 'llm', 'model_ref': 'llms/missing.gguf', 'source': {'type': 'local', 'execution_options': {'device': 'cpu'}}}).json()
+        model = client.post("/api/models/profiles", json={'name': 'managed', 'alias': 'managed', 'kind': 'llm', 'model_ref': 'llms/missing', 'source': {'type': 'local', 'execution_options': {'device': 'cpu'}}}).json()
         response = client.post(f"/api/models/profiles/{model['id']}/load")
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "RUNTIME_NOT_INSTALLED"
@@ -434,7 +437,7 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
         service = supervisor(tmp_path)
         await service.submit('install')
         await service.task
-        path = tmp_path / "data/models/llms/fixture.gguf"
+        path = tmp_path / "data/models/llms/fixture/model.gguf"
         path.parent.mkdir(parents=True)
         path.write_bytes(b"local fixture")
         upstream = MockOpenAI()
@@ -446,7 +449,7 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
         monkeypatch.setattr(LlamaServerAdapter, "_start", start)
         profiles = ModelProfileStore()
         manager = ModelManager(profiles, ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        first = profiles.create(ModelProfile(name='first', alias='first', kind='llm', model_ref='llms/fixture.gguf', capabilities={'streaming': True}, parameters={'temperature': 0.4}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
+        first = profiles.create(ModelProfile(name='first', alias='first', kind='llm', model_ref='llms/fixture', capabilities={'streaming': True}, parameters={'temperature': 0.4}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
         alias = profiles.create(ModelProfile(name='alias', alias='alias', kind='llm', model_ref=first.model_ref, capabilities={'streaming': True}, source={'type': 'local', 'execution_options': first.source.execution_options}))
         bad = alias.model_copy(update={"source": alias.source.model_copy(update={"execution_options": {**alias.source.execution_options, "threads": 8}})})
         with pytest.raises(ModelError, match="identical execution options"):

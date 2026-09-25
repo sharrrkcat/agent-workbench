@@ -11,16 +11,18 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
-import type { ModelInput, VisionParameters } from '../../../types/models';
+import type { LocalEngine, ModelInput, VisionParameters } from '../../../types/models';
 
-import { localEngine, selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
+import { ttsGenerationDefaults } from './profileDefaults';
 import { ASRParameters } from './ASRParameters';
 
 export function ProfileParameters({
   value,
+  engine = null,
   onChange,
 }: {
   value: ModelInput;
+  engine?: LocalEngine | null;
   onChange: (parameters: ModelInput['parameters']) => void;
 }) {
   const { t } = useTranslation('llm');
@@ -43,7 +45,7 @@ export function ProfileParameters({
           ]
             .filter(
               ([key]) =>
-                localEngine(value) !== 'transformers' ||
+                engine !== 'transformers' ||
                 !['presence_penalty', 'frequency_penalty'].includes(String(key)),
             )
             .map(([key, min, max, step]) => (
@@ -78,37 +80,7 @@ export function ProfileParameters({
         </>
       ) : value.kind === 'tts' ? (
         <>
-          <Field>
-            <FieldLabel>{t('params.architecture')}</FieldLabel>
-            <Select
-              value={String(value.parameters.architecture ?? 'kokoro')}
-              onValueChange={(selected) =>
-                onChange(
-                  selectTTSArchitecture(
-                    value.parameters,
-                    (selected ?? '') as keyof typeof ttsGenerationDefaults,
-                  ),
-                )
-              }
-              items={[
-                { value: 'kokoro', label: <>Kokoro-82M v1.0 (ONNX)</> },
-                { value: 'chatterbox', label: t('chatterboxEnglish') },
-                { value: 'qwen3tts', label: t('qwen3TTSBase') },
-              ]}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="kokoro">Kokoro-82M v1.0 (ONNX)</SelectItem>
-                  <SelectItem value="chatterbox">{t('chatterboxEnglish')}</SelectItem>
-                  <SelectItem value="qwen3tts">{t('qwen3TTSBase')}</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          {['chatterbox', 'qwen3tts'].includes(String(value.parameters.architecture)) ? (
+          {engine === 'chatterbox' || engine === 'qwen3tts' ? (
             <Field>
               <FieldLabel>{t('params.seed')}</FieldLabel>
               <Input
@@ -130,7 +102,7 @@ export function ProfileParameters({
               />
             </Field>
           ) : null}
-          {value.parameters.architecture === 'chatterbox'
+          {engine === 'chatterbox'
             ? [
                 ['exaggeration', 0.5, 0, 2, 0.05],
                 ['cfg_weight', 0.5, 0, 1, 0.05],
@@ -161,7 +133,7 @@ export function ProfileParameters({
                 </Field>
               ))
             : null}
-          {value.parameters.architecture === 'qwen3tts' ? (
+          {engine === 'qwen3tts' ? (
             <>
               <Field orientation="horizontal">
                 <Switch
@@ -245,10 +217,6 @@ export function ProfileParameters({
         </>
       ) : value.kind === 'vision' ? (
         <>
-          <Field>
-            <FieldLabel>{t('params.architecture')}</FieldLabel>
-            <Input value="WD14" readOnly />
-          </Field>
           <Field>
             <FieldLabel>{t('params.task')}</FieldLabel>
             <Input value={t('visionTags')} readOnly />

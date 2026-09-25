@@ -9,11 +9,11 @@ ChatRunner, Utility LLM, Knowledge and `/v1` share `core/models/ModelManager` wi
 GET/PATCH `/api/models/local-runtime/settings` owns enabled/download in appmetadatarecord.local_runtime_settings; enabled defaults true, identity/name are fixed.
 
 Model source is a strict nullable union:
-- null: a saveable unbound draft; execution returns MODEL_NOT_CONFIGURED before admission/transport.
+- null: an LLM/text-embedding/reranker unbound draft; execution returns MODEL_NOT_CONFIGURED before admission/transport.
 - {type: provider, provider_profile_id}: provider LLM/text-embedding only.
 - {type: local, execution_options, lifecycle}: local LLM/TTS/ASR/WD14/SigLIP/text embedding/reranker; engine defaults populate omitted local fields.
 
-Profiles own model_ref, capabilities, parameters, enabled and external_enabled. PATCH preserves omitted source, null unbinds, supplied source replaces; edits invalidate clients/status. Invalid combinations, busy edits and referenced provider deletion fail.
+TTS, vision, image_embedding and ASR require Local Runtime; omitted source binds locally and explicit null/provider sources fail. Profiles own model_ref, capabilities, parameters, enabled and external_enabled. PATCH preserves omitted source, null unbinds eligible kinds, supplied source replaces; edits invalidate clients/status. Invalid combinations, busy edits and referenced provider deletion fail.
 [Settings](settings.md#model-settings) owns secrets/PATCH semantics; [Knowledge](knowledge.md) owns index invalidation.
 
 ## Resolution and capabilities
@@ -36,8 +36,8 @@ Release errors preserve successful inference. Local crashes require explicit loa
 | Cached status | GET `/profiles/{id}/status` | No transport call |
 | Local health/load/unload | POST `/profiles/{id}/{health,load,unload}` | Local lifecycle; provider bindings return 422 UNSUPPORTED_CAPABILITY |
 | Provider discovery | GET `/providers/{id}/models` | Optional queued list; never an inference preflight |
-| Local inventory | GET `/inventory?kind=...` | Relative file references only |
-| Directory information | GET `/inspect?kind=embedding\|image_embedding\|reranker\|asr&model_ref=...` | Configuration metadata, independent of installation |
+| Local inventory | GET `/inventory?kind=...` | Relative model directory references |
+| Directory information | GET `/inspect?kind=llm\|tts\|vision\|embedding\|image_embedding\|reranker\|asr&model_ref=...` | Metadata and diagnostics, independent of installation |
 
 Inventory/status never load weights, import heavy runtimes or download models. Roots are data/models/{llms,embeddings,rerankers,image_embeddings,vision,tts,asr}.
 Inventory recognizes GGUF/model directories, Kokoro, WD14, Audio, Whisper, SigLIP, Sentence Transformers embeddings and CrossEncoder roots, excluding their component directories.
@@ -51,12 +51,13 @@ Local status adds engine, version, installation/process state, latest job id and
 
 `GET /api/models/local-runtime/catalog` exposes one Windows x64 release (1.0.0), engines and strict option schemas. Linux remains [deferred](../FUTURE_MODEL_SERVICES.md#local-engine-and-platform-expansion).
 
-GGUF selects llama-server, LLM directories select Transformers, TTS architecture selects Kokoro/Chatterbox/Qwen3-TTS Base, vision selects WD14, local rerankers select cross-encoder and ASR selects Whisper.
-model_ref is a safe relative path under data/models. Profiles cannot supply executables/arguments and may be saved before installation.
+Directory inspection selects llama-server/Transformers for LLMs and Kokoro/Chatterbox/Qwen3-TTS Base for TTS; vision selects WD14, local rerankers select cross-encoder and ASR selects Whisper.
+Local model_ref is a safe relative directory under data/models. TTS/WD14 architecture and GGUF file/projector references are derived, not writable profile fields. Safe missing/incomplete/ambiguous directories remain saveable; unknown engines receive no guessed defaults. Recognized engines apply strict parameter/options schemas; loading requires complete supported resources.
 source.execution_options selects CPU or CUDA; capable engines default to CUDA, Kokoro/WD14 to CPU only.
-Llama accepts threads, context_size, batch_size, nullable mmproj_ref and gpu_layers (0 on CPU; auto or integer 1..999 on CUDA). Python options are intraop_threads=4;
+Llama accepts threads, context_size, batch_size and gpu_layers (0 on CPU; auto or integer 1..999 on CUDA). Python options are intraop_threads=4;
 Kokoro/WD14 add max_batch_size=1; SigLIP/text embeddings/rerankers allow 1..16 (default 1). Unavailable CUDA fails without CPU substitution.
-GGUF vision requires a safe relative mmproj_ref; text-only profiles require null. Inventory suggests same-directory projectors; CPU disables projector GPU offload and CUDA uses the main device.
+GGUF directories contain one main model or complete standard numbered shard group and at most one case-insensitive mmproj*.gguf. Multiple candidates, missing shards and mixed GGUF/Transformers weights block loading; copied configuration alone does not select Transformers. Inspection exposes main_model_ref/mmproj_ref; llama-server receives resolved files with --no-mmproj-auto. Vision off omits the projector; CPU disables projector GPU offload and CUDA uses the main device.
+Inspection reads lightweight JSON/file metadata without runtime imports, weight reads or model hashes. TTS uses Kokoro configuration/layout, Chatterbox file signatures or Qwen Base metadata; WD14 uses ONNX/CSV presence with optional backbone information. Active adapters retain resolved paths through release; fresh loading resolves the directory again.
 
 GET `/api/models/local-runtime` returns installation; POST `/install`, `/repair` or `/uninstall` returns a RuntimeJob.
 One installation/cache task runs application-wide. Installation changes require idle requests, block local admission and stop workers; cache cleanup preserves loaded models. File work runs off-loop; providers and model queues remain independent.
@@ -166,7 +167,7 @@ Public failures are explicit; Knowledge retains RRF fallback. mxbai-rerank-base-
 
 ## WD14 image tagging
 
-Vision uses architecture=wd14, task=tags and thresholds={general:0.35, character:0.85}; vision.batch_size is removed.
+Vision uses directory-detected WD14, task=tags and thresholds={general:0.35, character:0.85}; architecture and vision.batch_size are not configurable parameters.
 Manual directories under data/models/vision require only model.onnx and selected_tags.csv. Inventory/status/load checks
 confirm existence and path containment, never model hashes, sizes, revisions, config, metadata or fixed dimensions/tag counts.
 Normal worker loading reads CSV order/categories and actual ONNX input/output names and spatial dimensions; errors fail loading/inference.
@@ -232,7 +233,7 @@ Extended CUDA switching, dual residency, cancellation/failure recovery, identity
 
 ## Kokoro TTS
 
-Kokoro CPU ONNX uses architecture=kokoro, v1.0 FP32 model.onnx, config/tokenizer JSON and voices/<id>.bin. Its 54-ID catalog selects finite float32 [510,1,256] files, ignoring extras such as af.bin.
+Directory-detected Kokoro CPU ONNX uses v1.0 FP32 model.onnx, config/tokenizer JSON and voices/<id>.bin. Its 54-ID catalog selects finite float32 [510,1,256] files, ignoring extras such as af.bin.
 GET /api/models/profiles/{id}/voices checks files off-loop without loading weights or creating voice records.
 The environment supplies Misaki, spaCy 3.7.5, NumPy 1.26.4, eSpeak NG and UniDic; Misaki uses manually supplied en_core_web_sm 3.7.1 at data/models/_auxiliary/en_core_web_sm.
 All language frontends initialize offline before readiness. Missing/corrupt resources fail only Kokoro loading, without downloads or environment changes.
@@ -242,13 +243,13 @@ Disconnects stop workers before queue release and log REQUEST_CANCELLED/499. Win
 
 ## Audio TTS and temporary references
 
-English Chatterbox (architecture=chatterbox) uses the Audio worker and Kokoro's text/speed/format/size/timeout contract. Local files: ve.safetensors, t3_cfg.safetensors, s3gen.safetensors, tokenizer.json; tts.language accepts only en-US. Profile defaults and tts.model_options accept exaggeration=0.5 [0,2], cfg_weight=0.5 [0,1], temperature=0.8 (0,5], repetition_penalty=1.2 [1,2], min_p=0.05 [0,1], top_p=1 (0,1]. Chatterbox has no presets.
+Directory-detected English Chatterbox uses the Audio worker and Kokoro's text/speed/format/size/timeout contract. Local files: ve.safetensors, t3_cfg.safetensors, s3gen.safetensors, tokenizer.json; tts.language accepts only en-US. Profile defaults and tts.model_options accept exaggeration=0.5 [0,2], cfg_weight=0.5 [0,1], temperature=0.8 (0,5], repetition_penalty=1.2 [1,2], min_p=0.05 [0,1], top_p=1 (0,1]. Chatterbox has no presets.
 
-Qwen3-TTS 12Hz Base (architecture=qwen3tts) shares the Audio output contract. Main defaults: do_sample=true, temperature=0.9, top_p=1, top_k=50, repetition_penalty=1.05, max_new_tokens=2048. Temperature/penalty are finite and positive; top_p is (0,1], top_k is an integer >=0, max_new_tokens is 1..8192. Input is passed whole; the token cap may stop speech early. Secondary-codebook sampling stays enabled at temperature=0.9, top_p=1, top_k=50. Strict architecture-specific profile/request schemas reject other-architecture options before staging/admission. Omitted/null request options inherit the profile. OpenAPI describes defaults, meanings and restrictions. Both Audio architectures accept seed=null or a strict integer 0..4294967295 in profiles and tts.model_options. Profile seed defaults to null (unfixed); 0 is valid. Seeded requests scope and restore Python/NumPy/PyTorch CPU/current-CUDA random states across conditioning, all chunks and encoding, including errors. Unfixed requests advance normally; identical audio is not guaranteed. Qwen accepts en-US/en-GB (English), zh-CN, ja-JP, ko-KR, de-DE, fr-FR, ru-RU, pt-BR, es-ES and it-IT; omission/null/auto selects Auto. Hindi is unsupported. Base has no presets; English/Chinese 0.6B Base is verified on CPU/CUDA. Other sizes are unverified; CustomVoice/VoiceDesign are deferred. Automatic transcripts can be ambiguous for short Chinese clones; pronunciation fidelity still needs listening review.
+Directory-detected Qwen3-TTS 12Hz Base shares the Audio output contract. Main defaults: do_sample=true, temperature=0.9, top_p=1, top_k=50, repetition_penalty=1.05, max_new_tokens=2048. Temperature/penalty are finite and positive; top_p is (0,1], top_k is an integer >=0, max_new_tokens is 1..8192. Input is passed whole; the token cap may stop speech early. Secondary-codebook sampling stays enabled at temperature=0.9, top_p=1, top_k=50. Strict architecture-specific profile/request schemas reject other-architecture options before staging/admission. Omitted/null request options inherit the profile. OpenAPI describes defaults, meanings and restrictions. Both Audio architectures accept seed=null or a strict integer 0..4294967295 in profiles and tts.model_options. Profile seed defaults to null (unfixed); 0 is valid. Seeded requests scope and restore Python/NumPy/PyTorch CPU/current-CUDA random states across conditioning, all chunks and encoding, including errors. Unfixed requests advance normally; identical audio is not guaranteed. Qwen accepts en-US/en-GB (English), zh-CN, ja-JP, ko-KR, de-DE, fr-FR, ru-RU, pt-BR, es-ES and it-IT; omission/null/auto selects Auto. Hindi is unsupported. Base has no presets; English/Chinese 0.6B Base is verified on CPU/CUDA. Other sizes are unverified; CustomVoice/VoiceDesign are deferred. Automatic transcripts can be ambiguous for short Chinese clones; pronunciation fidelity still needs listening review.
 
 Chatterbox/Qwen require exactly one temporary voice ID or tts.reference_audio={format=wav|mp3,data_base64}. Multipart uploads contain model alias and one file; responses contain voice_id, model, source=temporary and expires_at. Before synthesis, both validate 8 MiB encoded/32 MiB decoded, 1/2 channels, 8..192 kHz and at most 30 seconds. Uploaded names never choose storage paths. One-request files are removed on completion/cancellation. Kokoro rejects references and model_options. Qwen accepts optional reference_text (1..4096 nonblank characters) in uploads/inline references: absence uses speaker embeddings, presence audio/transcript conditioning. Transcripts stay in reference memory until cleanup, are never returned/logged, and are not generated by ASR.
 
-References bind to the key, profile/reference, local source, engine, execution options and release version. Release policies and generation parameters, including seed, do not define identity; clients sharing the key share access. Creation grants 30 minutes; valid execution/queue admission atomically applies max(expires_at, now+15 minutes). Overflow, discovery and pre-admission rejection do not renew. Expired IDs cannot reactivate. Active/queued requests pin files through completion/cancellation; deleting an unexpired active ID returns 409. Key replacement, service/profile disablement, profile removal/binding changes and restart invalidate IDs; access/release/restart trigger cleanup. Limits are 64 files/128 MiB per service, including one-request files. [Data layout](../DATA_LAYOUT.md) owns storage; no attachment, voice-profile or database records are created.
+References bind to the key, profile/reference, local source, engine, execution options and release version. Release policies and generation parameters, including seed, do not define identity; clients sharing the key share access. Creation grants 30 minutes; valid execution/queue admission atomically applies max(expires_at, now+15 minutes). Overflow, discovery and pre-admission rejection do not renew. Expired IDs cannot reactivate. Active/queued requests pin files through completion/cancellation; deleting an unexpired active ID returns 409. Key replacement, service/profile disablement, profile removal, binding changes (including detected architecture) and restart invalidate IDs; access/release/restart trigger cleanup. Limits are 64 files/128 MiB per service, including one-request files. [Data layout](../DATA_LAYOUT.md) owns storage; no attachment, voice-profile or database records are created.
 
 ## External inference API
 

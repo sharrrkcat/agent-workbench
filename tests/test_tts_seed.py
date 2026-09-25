@@ -10,6 +10,8 @@ import pytest
 from pydantic import ValidationError
 
 from ai_workbench.core.models.schema import ModelProfile
+from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.runtimes.schema import local_engine
 from ai_workbench.workers import audio_engine
 from ai_workbench.workers.audio_server import generation_options
 from ai_workbench.workers.common import WorkerError
@@ -32,7 +34,7 @@ def test_seed_profile_save_clear_and_openapi(seed_api):
         assert saved.json()["parameters"]["seed"] == seed
         assert client.get(f"/api/models/profiles/{profile.id}").json()["parameters"]["seed"] == seed
         assert manager.profiles.get(profile.id).parameters["seed"] == seed
-        assert generation_options({"seed": seed}, profile.parameters["architecture"])["seed"] == seed
+        assert generation_options({"seed": seed}, local_engine(manager.profile(profile.id)))["seed"] == seed
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
     for name in ("ChatterboxParameters", "Qwen3TTSParameters", "Documented__ChatterboxRequestOptions", "Documented__Qwen3TTSRequestOptions"):
         field = schemas[name]["properties"]["seed"]
@@ -83,7 +85,7 @@ def test_invalid_seed_rejected_before_staging_admission_or_renewal(seed_api, mon
     assert result.status_code == 422, result.text
     assert manager.profiles.get(profile.id).parameters["seed"] is None
     with pytest.raises(WorkerError):
-        generation_options({"seed": seed}, profile.parameters["architecture"])
+        generation_options({"seed": seed}, local_engine(manager.profile(profile.id)))
     voice = upload(client, alias=profile.alias).json()["voice_id"]
     entry = manager.voice_references._entries[voice]
     expiry = entry.expires_at
@@ -99,11 +101,13 @@ def test_invalid_seed_rejected_before_staging_admission_or_renewal(seed_api, mon
 
 def test_kokoro_and_other_request_locations_reject_seed(api):
     client, manager, _, _ = api
+    from tests.model_fixtures import write_local_model
+    write_local_model(manager.runtime_supervisor.root, 'tts/kokoro', 'kokoro')
     profile = ModelProfile(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", external_enabled=True, source={'type': 'local'})
     manager.profiles.create(profile)
     for seed in (None, 0):
-        with pytest.raises(ValidationError):
-            ModelProfile.model_validate({**profile.model_dump(), "parameters": {**profile.parameters, "seed": seed}})
+        with pytest.raises(ModelError):
+            manager.validate_binding(ModelProfile.model_validate({**profile.model_dump(), "parameters": {**profile.parameters, "seed": seed}}))
         for extra in ({"seed": seed}, {"tts": {"seed": seed}}, {"tts": {"model_options": {"seed": seed}}}):
             result = client.post("/v1/audio/speech", headers=HEADERS,
                 json={"model": profile.alias, "input": "Hello", "voice": "af_heart", **extra})

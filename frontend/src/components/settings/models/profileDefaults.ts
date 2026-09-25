@@ -1,6 +1,7 @@
-import type { ModelInput, ModelKind, ProviderInput, LocalEngine, LocalModelSource, ModelSource } from '../../../types/models';
+import type { DirectoryInspection, ModelInput, ModelKind, ProviderInput, LocalEngine, LocalModelSource, ModelSource } from '../../../types/models';
 
 export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr'];
+export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'tts', 'asr'].includes(kind);
 
 export const localSource = (): LocalModelSource => ({
   type: 'local', execution_options: {}, lifecycle: { unload: 'manual', idle_seconds: 300 },
@@ -13,12 +14,12 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   model_ref: '',
   source: kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
     : kind === 'asr' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4 } }
-    : kind === 'tts' || kind === 'vision' ? { ...localSource(), execution_options: { device: 'cpu', intraop_threads: 4, max_batch_size: 1 } } : null,
+    : kind === 'tts' || kind === 'vision' ? localSource() : null,
   enabled: true,
   external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
-  parameters: kind === 'tts' ? { architecture: 'kokoro', speed: 1, response_format: 'mp3' }
-    : kind === 'vision' ? { architecture: 'wd14', task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
+  parameters: kind === 'tts' ? { speed: 1, response_format: 'mp3' }
+    : kind === 'vision' ? { task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
     : kind === 'image_embedding' ? { unload_other_tower_on_call: true }
     : kind === 'embedding' ? { query_prompt_name: null, document_prompt_name: null }
     : kind === 'asr' ? { language: 'auto', prompt: '', temperature: 0, response_format: 'json' } : {},
@@ -30,35 +31,47 @@ export const ttsGenerationDefaults = {
   qwen3tts: { seed: null, do_sample: true, temperature: 0.9, top_p: 1, top_k: 50, repetition_penalty: 1.05, max_new_tokens: 2048 },
 };
 
-export function selectTTSArchitecture(parameters: ModelInput['parameters'], architecture: keyof typeof ttsGenerationDefaults) {
-  if (parameters.architecture === architecture) return { ...parameters };
-  return { architecture, speed: parameters.speed ?? 1, response_format: parameters.response_format ?? 'mp3',
-    ...ttsGenerationDefaults[architecture] };
-}
-
-export function localEngine(value: ModelInput): LocalEngine | null {
+export function localEngine(value: ModelInput, detected: LocalEngine | null = null): LocalEngine | null {
   if (value.source?.type !== 'local') return null;
-  if (value.kind === 'llm') return value.model_ref.endsWith('.gguf') ? 'llama-server' : 'transformers';
   if (value.kind === 'image_embedding') return 'siglip2';
   if (value.kind === 'embedding') return 'sentence-transformers';
   if (value.kind === 'reranker') return 'cross-encoder';
   if (value.kind === 'asr') return 'whisper';
-  return value.kind === 'tts' || value.kind === 'vision' ? value.parameters.architecture as LocalEngine : null;
+  return detected;
 }
 
-export function updateModel(value: ModelInput, patch: Partial<ModelInput>): ModelInput {
-  const next = { ...value, ...patch };
-  const engine = localEngine(next);
-  if (next.source?.type === 'local' && engine !== localEngine(value)) {
-    next.source = { ...next.source, execution_options: engine === 'llama-server'
-      ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto', mmproj_ref: null }
-      : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
-      : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
-      : { device: 'cuda', intraop_threads: 4 } };
+export function executionDefaults(engine: LocalEngine | null): LocalModelSource['execution_options'] {
+  return engine === 'llama-server'
+    ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto' }
+    : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
+    : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
+    : engine ? { device: 'cuda', intraop_threads: 4 } : {};
+}
+
+export function applyDirectoryInspection(value: ModelInput, information: DirectoryInspection,
+  resetSettings: boolean, initializeVision: boolean): ModelInput {
+  const engine = information.engine;
+  if (value.source?.type !== 'local' || !engine) return value;
+  let parameters = value.parameters;
+  if (information.kind === 'tts') {
+    const common = { speed: parameters.speed ?? 1, response_format: parameters.response_format ?? 'mp3' };
+    parameters = { ...common, ...ttsGenerationDefaults[information.engine!], ...(resetSettings ? {} : parameters) };
   }
-  if (engine === 'llama-server' && next.source?.type === 'local' &&
-    (next.model_ref !== value.model_ref || !next.capabilities.vision)) {
-    next.source = { ...next.source, execution_options: { ...next.source.execution_options, mmproj_ref: null } };
+  const next = updateModel(value, { parameters, source: { ...value.source,
+    execution_options: { ...executionDefaults(engine), ...(resetSettings ? {} : value.source.execution_options) },
+  } }, engine);
+  if (information.kind === 'llm' && engine === 'llama-server') {
+    if (!information.mmproj_ref || initializeVision) next.capabilities = { ...next.capabilities,
+      vision: !!information.mmproj_ref && !!information.main_model_ref };
+  }
+  return next;
+}
+
+export function updateModel(value: ModelInput, patch: Partial<ModelInput>, detected: LocalEngine | null = null): ModelInput {
+  const next = { ...value, ...patch };
+  const engine = localEngine(next, detected);
+  if (next.source?.type === 'local' && engine !== localEngine(value, detected)) {
+    next.source = { ...next.source, execution_options: executionDefaults(engine) };
   }
   if (engine === 'transformers') {
     next.parameters = { ...next.parameters };

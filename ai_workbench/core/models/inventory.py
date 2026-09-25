@@ -1,8 +1,8 @@
 """Read-only model-file inventory. Scanning never imports an inference runtime."""
 
 from pathlib import Path
-from ai_workbench.workers.tts_catalog import model_files
-from ai_workbench.workers.audio_catalog import chatterbox_files, qwen3tts_files
+from ai_workbench.workers.common import WorkerError
+from ai_workbench.workers.model_catalog import inspect_directory
 
 ROOTS = {"llm": "llms", "embedding": "embeddings", "reranker": "rerankers",
          "image_embedding": "image_embeddings", "vision": "vision", "tts": "tts", "asr": "asr"}
@@ -25,18 +25,18 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
             target = None
             if model_kind == "vision":
                 if path.name == "model.onnx" and (path.parent / "selected_tags.csv").is_file():
-                    from ai_workbench.workers.common import WorkerError, local_model
                     try:
-                        target = local_model(root, path.parent.relative_to(root).as_posix(), wd14=True)
+                        inspect_directory(root, model_kind, path.parent.relative_to(root).as_posix()).require_complete()
+                        target = path.parent
                     except WorkerError:
                         continue
             elif model_kind == "tts":
-                if path.name == "model.onnx" and model_files(path.parent):
-                    target = path.parent
-                elif path.name == "t3_cfg.safetensors" and chatterbox_files(path.parent):
-                    target = path.parent
-                elif path.name == "config.json" and qwen3tts_files(path.parent):
-                    target = path.parent
+                if path.name in {"model.onnx", "t3_cfg.safetensors", "config.json"}:
+                    try:
+                        inspect_directory(root, model_kind, path.parent.relative_to(root).as_posix()).require_complete()
+                        target = path.parent
+                    except WorkerError:
+                        continue
             elif model_kind in {"image_embedding", "asr"}:
                 if path.name == "config.json":
                     target = path.parent
@@ -48,7 +48,6 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
                     (parent / "modules.json").is_file() for parent in path.parent.parents
                     if parent.is_relative_to(base)
                 ):
-                    from ai_workbench.workers.common import WorkerError
                     from ai_workbench.workers.reranker_catalog import is_reranker_directory
                     try:
                         if is_reranker_directory(path.parent.resolve()):
@@ -56,17 +55,13 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
                     except WorkerError:
                         continue
             elif path.suffix.lower() == ".gguf" and not path.name.lower().startswith("mmproj"):
-                target = path
+                target = path.parent
             elif path.name in {"config.json", "model.onnx"} and model_kind != "tts":
                 target = path.parent
             if target is None or target in seen:
                 continue
             seen.add(target)
-            projectors = sorted(item.relative_to(root).as_posix() for item in target.parent.glob("*.gguf")
-                                if item.name.lower().startswith("mmproj") and item.is_file()
-                                and item.resolve().is_relative_to(root)) if target.suffix == ".gguf" else []
             items.append({"kind": model_kind, "name": target.name,
                           "model_ref": target.relative_to(root).as_posix(),
-                          "mmproj_refs": projectors,
                           "state": "unavailable", "error_code": "MODEL_UNAVAILABLE"})
     return items

@@ -10,12 +10,14 @@ from http.server import ThreadingHTTPServer
 if __package__:
     from .common import WorkerError, fields, integer, publish_ready
     from .audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
+    from .model_catalog import inspect_directory
     from .server import handler
     from .timing import TRACE_ENV, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from common import WorkerError, fields, integer, publish_ready
     from audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES, reference_path, audio_model
+    from model_catalog import inspect_directory
     from server import handler
     from timing import TRACE_ENV, current_trace, stage, tracing, worker_trace
 
@@ -92,19 +94,21 @@ class AudioWorker:
                 parameters = body["parameters"]
                 if not isinstance(parameters, dict):
                     raise WorkerError("INVALID_REQUEST")
-                architecture = parameters.get("architecture")
-                if not isinstance(architecture, str) or architecture not in AUDIO_DEFAULTS or body["kind"] != "tts":
+                if body["kind"] != "tts":
                     raise WorkerError("UNSUPPORTED_CAPABILITY")
+                with stage("model_resources"):
+                    architecture = inspect_directory(self.root, "tts", body["model_ref"]).require_complete().engine
+                    if architecture not in AUDIO_DEFAULTS:
+                        raise WorkerError("UNSUPPORTED_CAPABILITY")
+                    path = audio_model(self.root, body["model_ref"], architecture)
                 defaults = AUDIO_DEFAULTS.get(architecture, {})
-                fields(parameters, ("architecture",), ("speed", "response_format", *defaults))
+                fields(parameters, (), ("speed", "response_format", *defaults))
                 options = options_request(body["options"])
                 generation_options({key: value for key, value in parameters.items() if key in defaults}, architecture)
                 speed = parameters.get("speed", 1)
                 if (type(speed) not in {int, float} or not math.isfinite(speed) or not 0.25 <= speed <= 4
                         or parameters.get("response_format", "mp3") not in {"mp3", "wav"}):
                     raise WorkerError("INVALID_REQUEST")
-                with stage("model_resources"):
-                    path = audio_model(self.root, body["model_ref"], architecture)
                 if self.engine and self.profile_id != body["profile_id"]:
                     raise WorkerError("MODEL_BUSY", 409)
                 trace = current_trace()

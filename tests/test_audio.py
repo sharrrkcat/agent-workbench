@@ -21,10 +21,11 @@ from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ModelProfi
 from ai_workbench.core.models.voice_references import VoiceReferences, credential_id
 from ai_workbench.workers.audio_catalog import CHATTERBOX_DEFAULTS, CHATTERBOX_FILES, MAX_REFERENCE_BYTES
 from tests.test_tts import HEADERS, wav_bytes
+from tests.model_fixtures import resolve_local_profile, write_local_model
 
 
 def profile(**values):
-    return ModelProfile(**{**dict(name='Chatterbox', alias='chatterbox', kind='tts', model_ref='tts/chatterbox', parameters={'architecture': 'chatterbox'}, external_enabled=True, source={'type': 'local'}), **values})
+    return ModelProfile(**{**dict(name='Chatterbox', alias='chatterbox', kind='tts', model_ref='tts/chatterbox', parameters={}, external_enabled=True, source={'type': 'local'}), **values})
 
 
 class Clock:
@@ -111,26 +112,28 @@ def test_restart_cleanup_limits_and_shutdown_preserve_active_files(tmp_path):
 
 @pytest.mark.parametrize("patch", [
     {"runtime_variant": "onnx-cpu"}, {'source': {'type': 'provider', 'provider_profile_id': "external"}}, {"execution_options": {"device": "auto"}},
-    {"execution_options": {"intraop_threads": True}}, {"kind": "asr"},
-    {"parameters": {"architecture": "chatterbox", "temperature": 0}},
-    {"parameters": {"architecture": "chatterbox", "cfg_weight": 1.01}},
-    {"parameters": {"architecture": "chatterbox", "exaggeration": True}},
-    {"parameters": {"architecture": "chatterbox", "repetition_penalty": 0.5}},
-    {"parameters": {"architecture": "chatterbox", "min_p": -0.1}},
-    {"parameters": {"architecture": "chatterbox", "top_p": 0}},
-    {"parameters": {"architecture": "chatterbox", "language": "en-US"}},
+    {"execution_options": {"intraop_threads": True}},
+    {"parameters": {"temperature": 0}},
+    {"parameters": {"cfg_weight": 1.01}},
+    {"parameters": {"exaggeration": True}},
+    {"parameters": {"repetition_penalty": 0.5}},
+    {"parameters": {"min_p": -0.1}},
+    {"parameters": {"top_p": 0}},
+    {"parameters": {"language": "en-US"}},
 ])
-def test_strict_audio_profiles(patch):
-    with pytest.raises(ValidationError):
-        profile(**patch)
+def test_strict_audio_profiles(patch, tmp_path):
+    write_local_model(tmp_path, 'tts/chatterbox', 'chatterbox')
+    with pytest.raises((ValidationError, ModelError)):
+        resolve_local_profile(tmp_path, profile(**patch))
 
 
-def test_chatterbox_defaults_and_no_kokoro_option_leakage():
-    value = profile()
-    assert value.parameters == {"architecture": "chatterbox", "speed": 1.0, "response_format": "mp3", **CHATTERBOX_DEFAULTS}
+def test_chatterbox_defaults_and_no_kokoro_option_leakage(tmp_path):
+    write_local_model(tmp_path, 'tts/chatterbox', 'chatterbox')
+    value = resolve_local_profile(tmp_path, profile())
+    assert value.parameters == {"speed": 1.0, "response_format": "mp3", **CHATTERBOX_DEFAULTS}
     assert value.source.execution_options == {"device": "cuda", "intraop_threads": 4}
     with pytest.raises(ValidationError):
-        profile(runtime_variant="onnx-cpu", parameters={"architecture": "kokoro", "cfg_weight": None})
+        profile(runtime_variant="onnx-cpu", parameters={"cfg_weight": None})
 
 
 class Adapter:
@@ -179,7 +182,7 @@ def api(tmp_path):
     with TestClient(create_app(use_memory=True, root=tmp_path), client=("127.0.0.1", 40001)) as client:
         manager = client.app.state.runtime_state.model_manager
         manager.runtime_supervisor.assert_available = lambda *args, **kwargs: None
-        value = manager.profiles.create(profile(parameters={"architecture": "chatterbox", "response_format": "wav"}))
+        value = manager.profiles.create(manager.validate_binding(profile(parameters={"response_format": "wav"})))
         manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})
         adapter = Adapter(manager)
         manager._slots[manager.execution_key(value)] = InferenceSlot(adapter, asyncio.Semaphore(1))
@@ -255,9 +258,9 @@ def test_upload_limits_malformed_inputs_and_authentication(api):
     assert not adapter.calls
 
 
-def test_backendless_chatterbox_does_not_break_reference_discovery_or_deletion(api):
+def test_unresolved_tts_draft_does_not_break_reference_discovery_or_deletion(api):
     client, manager, _, _ = api
-    manager.profiles.create(profile(name="A draft", alias="draft", source=None))
+    manager.profiles.create(profile(name="A draft", alias="draft", model_ref='tts/missing'))
     voice_id = upload(client).json()["voice_id"]
     result = client.get("/v1/audio/voices?source=temporary", headers=HEADERS)
     assert result.status_code == 200, result.text
@@ -287,6 +290,7 @@ def test_disabling_or_replacing_ownership_invalidates_voice_ids(api, change):
 
 
 def make_manager(root):
+    write_local_model(root, 'tts/chatterbox', 'chatterbox')
     supervisor = RuntimeSupervisor(root, RuntimeStore(), LocalRuntimeSettingsStore())
     manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     manager.settings.patch({"external_enabled": True, "external_api_key": "test-key"})

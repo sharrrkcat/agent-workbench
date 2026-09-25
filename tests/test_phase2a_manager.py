@@ -81,13 +81,13 @@ def manager_fixture(*, queue_size=1, timeout=1):
 
 
 def local_manager_fixture(tmp_path, lifecycle):
-    path = tmp_path / 'data/models/llms/fixture.gguf'
+    path = tmp_path / 'data/models/llms/fixture/model.gguf'
     path.parent.mkdir(parents=True)
     path.write_bytes(b'model fixture')
     supervisor = SimpleNamespace(root=tmp_path, settings=LocalRuntimeSettingsStore(), blocked=False,
         assert_available=Mock(), installation=lambda **_: Installation(version='fixture', state='installed'))
     manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
-    profile = manager.profiles.create(ModelProfile(name='chat', alias='chat', kind='llm', model_ref='llms/fixture.gguf',
+    profile = manager.profiles.create(ModelProfile(name='chat', alias='chat', kind='llm', model_ref='llms/fixture',
         source={'type': 'local', 'lifecycle': lifecycle}, capabilities={'streaming': True}))
     adapter = ControlledLocalAdapter()
     manager._slots[manager.execution_key(profile)] = InferenceSlot(adapter, asyncio.Semaphore(1))

@@ -1,4 +1,4 @@
-import { chooseOption, fillCombobox } from './controls';
+import { fillCombobox } from './controls';
 import fs from 'node:fs';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
@@ -77,32 +77,49 @@ for (const locale of ['en', 'zh-CN']) {
         await page.screenshot({ path: info.outputPath('history.png') });
       });
 
-      test('projector selection is editable and resets with model or vision', async ({ page }, info) => {
-        await page.route('**/api/models/inventory*', (route) => route.fulfill({ json: [{
-          kind: 'llm', name: 'fixture.gguf', model_ref: 'llms/fixture.gguf', state: 'unavailable', error_code: 'MODEL_UNAVAILABLE',
-          mmproj_refs: ['llms/mmproj-fixture.gguf'],
-        }] }));
+      test('directories detect projectors, retain Vision choices and allow ambiguous drafts', async ({ page, request }, info) => {
         await page.goto('/settings?tab=models');
-        await page.getByRole('button', { name: llm.addModel, exact: true }).click();
+        await page.getByRole('button', { name: llm.inventory, exact: true }).click();
+        const inventoryRow = page.locator('.model-row').filter({ has: page.getByText('llms/fixture', { exact: true }) });
+        await expect(inventoryRow).toHaveCount(1);
+        await inventoryRow.getByRole('button', { name: llm.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
-        await chooseOption(dialog.getByLabel(llm.source, { exact: true }), llm.localRuntime);
-        await fillCombobox(dialog.getByLabel(llm.modelRef, { exact: true }), 'llms/fixture.gguf');
-        await dialog.getByRole('switch', { name: llm.cap.vision, exact: true }).check();
-        const projector = dialog.getByLabel(llm.mmprojRef, { exact: true });
-        await projector.press('ArrowDown');
-        await page.getByRole('option', { name: 'llms/mmproj-fixture.gguf', exact: true }).click();
-        await expect(projector).toHaveValue('llms/mmproj-fixture.gguf');
+        await expect(dialog.getByLabel(llm.source, { exact: true }).locator('[data-slot="select-value"]')).toHaveText(llm.localRuntime);
+        const reference = dialog.getByLabel(llm.modelRef, { exact: true });
+        const vision = dialog.getByRole('switch', { name: llm.cap.vision, exact: true });
+        const details = dialog.getByRole('group', { name: llm.directory.information, exact: true });
+        await expect(reference).toHaveValue('llms/fixture');
+        await expect(details).toContainText('llms/fixture/model.gguf');
+        await expect(details).toContainText('llms/fixture/mmproj-fixture.gguf');
+        await expect(vision).toBeChecked();
+        await expect(details.getByRole('combobox')).toHaveCount(0);
         await page.screenshot({ path: info.outputPath('projector.png') });
-        await fillCombobox(dialog.getByLabel(llm.modelRef, { exact: true }), 'llms/other.gguf');
-        await expect(projector).toHaveValue('');
-        await fillCombobox(projector, 'llms/manual.gguf');
-        await dialog.getByRole('switch', { name: llm.cap.vision, exact: true }).uncheck();
-        await expect(projector).toHaveCount(0);
-        await dialog.getByRole('switch', { name: llm.cap.vision, exact: true }).check();
-        await expect(projector).toHaveValue('');
-        await fillCombobox(dialog.getByLabel(llm.modelRef, { exact: true }), 'llms/transformers');
-        await expect(dialog.getByRole('switch', { name: llm.cap.vision, exact: true })).toBeEnabled();
-        await expect(projector).toHaveCount(0);
+        const alias = `runtime-fixture-gguf-${locale.toLowerCase()}-${width}`;
+        await dialog.getByLabel(llm.alias, { exact: true }).fill(alias);
+        await vision.uncheck();
+        await dialog.getByRole('button', { name: llm.save, exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        const saved = (await (await request.get('/api/models/profiles')).json()).find((profile: { alias: string }) => profile.alias === alias);
+        expect(saved.model_ref).toBe('llms/fixture');
+        expect(saved.source.execution_options).not.toHaveProperty('mmproj_ref');
+        await page.locator('.model-row').filter({ hasText: alias }).getByRole('button', { name: llm.edit, exact: true }).click();
+        await expect(details).toContainText('llms/fixture/mmproj-fixture.gguf');
+        await expect(vision).not.toBeChecked();
+        await fillCombobox(reference, 'llms/other');
+        await expect(vision).toBeChecked();
+        await fillCombobox(reference, 'llms/text-only');
+        await expect(vision).toBeDisabled();
+        await expect(vision).not.toBeChecked();
+        await fillCombobox(reference, 'llms/ambiguous');
+        await expect(details).toContainText(llm.directory.diagnostics.ambiguous_model);
+        await dialog.getByRole('button', { name: llm.save, exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        expect((await (await request.get(`/api/models/profiles/${saved.id}`)).json()).model_ref).toBe('llms/ambiguous');
+        await page.locator('.model-row').filter({ hasText: alias }).getByRole('button', { name: llm.edit, exact: true }).click();
+        await fillCombobox(reference, 'llms/transformers');
+        await expect(vision).toBeEnabled();
+        await expect(details).toContainText(llm.engines.transformers);
+        await expect(details.getByText(llm.directory.fields.projector, { exact: true })).toHaveCount(0);
         expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
       });
     });

@@ -83,11 +83,11 @@ def test_audio_and_loading_defaults_preserve_explicit_cpu_selection():
     assert smoke_llm_runtime.parse_args([]).device == "both"
 
 
-def test_vision_smoke_requires_explicit_gguf_projector_and_checks_answers():
+def test_vision_smoke_uses_directory_discovery_and_checks_answers():
     assert smoke_llm_runtime.parse_args(["--vision"]).vision
-    args = smoke_llm_runtime.parse_args(["--vision", "--engine", "llama-server", "--mmproj-ref", "llms/mmproj.gguf"])
-    assert args.mmproj_ref == "llms/mmproj.gguf"
-    for argv in (["--vision", "--engine", "llama-server"], ["--mmproj-ref", "llms/mmproj.gguf"]):
+    args = smoke_llm_runtime.parse_args(["--vision", "--engine", "llama-server", "--model-ref", "llms/vision"])
+    assert args.model_ref == "llms/vision"
+    for argv in (["--vision", "--engine", "llama-server", "--mmproj-ref", "llms/mmproj.gguf"], ["--mmproj-ref", "llms/mmproj.gguf"]):
         with pytest.raises(SystemExit):
             smoke_llm_runtime.parse_args(argv)
     smoke_llm_runtime.check_colors("First: red. Second: blue.", ["red", "blue"])

@@ -20,6 +20,7 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import prepare_tagging_images
 from ai_workbench.core.models.inventory import inventory
+from tests.model_fixtures import resolve_local_profile
 from ai_workbench.core.models.runtimes.catalog import worker_entrypoint
 from ai_workbench.core.models.runtimes.schema import Installation, local_engine
 from ai_workbench.core.models.schema import InferenceUsage, ModelProfile, VisionRequest, VisionResult
@@ -61,9 +62,10 @@ def api(tmp_path):
         yield client, response.json()
 
 
-def test_profile_defaults_and_reserved_usage():
-    value = profile()
-    assert value.parameters == {"architecture": "wd14", "task": "tags", "thresholds": DEFAULTS}
+def test_profile_defaults_and_reserved_usage(tmp_path):
+    model_tree(tmp_path)
+    value = resolve_local_profile(tmp_path, profile())
+    assert value.parameters == {"task": "tags", "thresholds": DEFAULTS}
     assert value.source.execution_options == {"device": "cpu", "intraop_threads": 4, "max_batch_size": 1}
     assert value.source.lifecycle.unload == "manual"
     assert local_engine(value) == "wd14" and worker_entrypoint("wd14") == "server.py"
@@ -92,31 +94,32 @@ def test_invalid_profile_configuration_is_rejected(values):
 def test_vision_crud_preserves_zero_and_local_source_in_both_stores(tmp_path, memory):
     with TestClient(create_app(root=tmp_path, use_memory=memory, database_url=f"sqlite:///{tmp_path / 'app.db'}")) as client:
         draft = client.post("/api/models/profiles", json={"name": "Draft", "alias": "draft", "kind": "vision", "model_ref": "vision/any"})
-        assert draft.status_code == 200 and draft.json()["source"] is None
+        assert draft.status_code == 200 and draft.json()["source"]["type"] == 'local'
         path = "/api/models/profiles/" + draft.json()["id"]
-        assert client.post(path + "/load").json()["error"]["code"] == "MODEL_NOT_CONFIGURED"
+        assert client.post(path + "/load").json()["error"]["code"] == "MODEL_NOT_FOUND"
         local = client.patch(path, json={"source": {"type": "local"}, "parameters": {"thresholds": {"general": 0, "character": 1}}})
         assert local.status_code == 200, local.text
         assert local.json()["parameters"]["thresholds"] == {"general": 0, "character": 1}
-        assert local.json()["source"]["execution_options"]["device"] == "cpu"
+        assert local.json()["source"]["execution_options"] == {}
         saved, fetched = local.json(), client.get(path).json()
         for result in (saved, fetched):
             for key in ("created_at", "updated_at"):
                 result[key] = result[key].removesuffix("Z")
         assert fetched == saved
         assert client.patch(path, json={"parameters": {"batch_size": 1}}).status_code == 422
-        assert client.patch(path, json={"source": None}).json()["parameters"] == local.json()["parameters"]
+        assert client.patch(path, json={"source": None}).status_code == 422
+        assert client.get(path).json()["parameters"] == local.json()["parameters"]
         assert client.delete(path).status_code == 200
 
 
-def test_inventory_and_status_use_file_presence_without_config_or_content_reads(tmp_path, api, monkeypatch):
+def test_inventory_and_status_read_only_configuration_not_weights_or_labels(tmp_path, api, monkeypatch):
     client, value = api
     manager = client.app.state.runtime_state.model_manager
     monkeypatch.setattr(manager.runtime_supervisor, "installation", lambda **_: Installation(version="1", state="installed"))
     original_open = Path.open
 
     def read_boundary(path, *args, **kwargs):
-        assert not path.is_relative_to(tmp_path / "data/models"), "Model content was read before loading"
+        assert not path.is_relative_to(tmp_path / "data/models") or path.suffix == '.json', "Model weights or labels were read before loading"
         return original_open(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", read_boundary)
@@ -267,7 +270,7 @@ def test_public_result_threshold_inheritance_and_statelessness(api, monkeypatch)
     assert not client.app.state.runtime_state.runs.list_all_runs()
 
 
-def test_service_auth_visibility_kind_discovery_and_unbound_failure(api, monkeypatch):
+def test_service_auth_visibility_kind_discovery_and_source_restriction(api, monkeypatch):
     client, value = api
     manager = client.app.state.runtime_state.model_manager
     monkeypatch.setattr(manager, "load", AsyncMock(side_effect=AssertionError("No load")))
@@ -280,9 +283,8 @@ def test_service_auth_visibility_kind_discovery_and_unbound_failure(api, monkeyp
     assert client.post("/v1/images/tags", json=payload).status_code == 401
     assert client.post("/v1/images/tags", headers={"X-Api-Key": "wrong"}, json=payload).status_code == 401
     path = "/api/models/profiles/" + value["id"]
-    client.patch(path, json={"source": None})
-    response = client.post("/v1/images/tags", headers=HEADERS, json=payload)
-    assert response.status_code == 503 and response.json()["error"]["code"] == "MODEL_NOT_CONFIGURED"
+    assert client.patch(path, json={"source": None}).status_code == 422
+    assert client.get(path).json()['source']['type'] == 'local'
     client.patch(path, json={"external_enabled": False})
     assert client.get("/v1/models?kind=vision", headers=HEADERS).json()["data"] == []
     assert client.post("/v1/images/tags", headers=HEADERS, json=payload).status_code == 404
@@ -373,7 +375,7 @@ def test_invalid_output_mapping_fails_instead_of_truncating(scores):
 
 def test_private_protocol_validates_before_engine_imports(tmp_path):
     path = model_tree(tmp_path)
-    p = profile()
+    p = resolve_local_profile(tmp_path, profile())
     body = {"profile_id": p.id, "kind": p.kind, "model_ref": p.model_ref, "parameters": p.parameters, "options": p.source.execution_options}
     assert load_request(body, tmp_path / "data/models") == path
     for patch in ({"options": {**body["options"], "device": "cuda"}}, {"parameters": {**p.parameters, "batch_size": 1}},

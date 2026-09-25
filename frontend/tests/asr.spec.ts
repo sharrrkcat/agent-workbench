@@ -18,7 +18,7 @@ for (const locale of ['en', 'zh-CN']) {
       test('directory information, editable defaults and draft persistence', async ({ page, request }, info) => {
         let releaseSlow: (() => void) | undefined;
         await page.route('**/api/models/inventory?kind=asr', (route) => route.fulfill({ json: [
-          { kind: 'asr', name: 'browser-model', model_ref: reference, mmproj_refs: [], state: 'unavailable', error_code: 'MODEL_UNAVAILABLE' },
+          { kind: 'asr', name: 'browser-model', model_ref: reference, state: 'unavailable', error_code: 'MODEL_UNAVAILABLE' },
         ] }));
         await page.route('**/api/models/inspect?**', async (route) => {
           const query = new URL(route.request().url()).searchParams;
@@ -79,9 +79,9 @@ for (const locale of ['en', 'zh-CN']) {
         expect(saved.source.execution_options).toEqual({ device: 'cuda', intraop_threads: 4 });
         expect(saved.source.lifecycle.unload).toBe('manual');
         await page.locator('.model-list .model-row').filter({ hasText: alias }).getByRole('button', { name: labels.edit, exact: true }).click();
-        await chooseOption(source, labels.unbound);
+        await expect(source).toBeDisabled();
         await expect(input).toHaveValue('asr/incomplete');
-        await expect(dialog.getByText(labels.asr.information, { exact: true })).toHaveCount(0);
+        await expect(dialog.getByText(labels.asr.information, { exact: true })).toBeVisible();
         await dialog.getByLabel(labels.asr.language, { exact: true }).fill('auto');
         await dialog.getByLabel(labels.asr.prompt, { exact: true }).fill('');
         await chooseOption(dialog.getByLabel(labels.asr.responseFormat, { exact: true }), labels.asr.formats.text);
@@ -89,7 +89,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(dialog).toHaveCount(0);
         const reset = await (await request.get(`/api/models/profiles/${saved.id}`)).json();
         expect(reset.parameters).toEqual({ language: 'auto', prompt: '', temperature: 0.3, response_format: 'text' });
-        expect(reset.source).toBeNull();
+        expect(reset.source.type).toBe('local');
       });
     });
   }

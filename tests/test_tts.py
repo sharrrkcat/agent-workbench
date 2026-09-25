@@ -25,6 +25,7 @@ from ai_workbench.workers.audio import validate_audio
 from ai_workbench.workers.protocol import WorkerError, local_model, speech_request
 from ai_workbench.workers.tts_catalog import MAX_AUDIO_BYTES, VOICE_BYTES, VOICE_IDS, valid_voice
 from ai_workbench.workers.tts_engine import phoneme_chunks
+from tests.model_fixtures import resolve_local_profile
 
 
 def wav_bytes():
@@ -159,14 +160,15 @@ def test_long_phonemes_are_complete_and_bounded():
         list(phoneme_chunks("a" * 511, encode))
 
 
-def test_tts_backend_and_catalog_constraints():
+def test_tts_backend_and_catalog_constraints(tmp_path):
+    model_tree(tmp_path)
     values = dict(name="TTS", alias="tts", kind="tts", model_ref="tts/kokoro")
-    assert ModelInput(**values).parameters == {"architecture": "kokoro", "speed": 1.0, "response_format": "mp3"}
-    assert ModelInput(**values, source={'type': 'local'}).source.execution_options["device"] == "cpu"
+    assert ModelInput(**values).parameters == {"speed": 1.0, "response_format": "mp3"}
+    assert resolve_local_profile(tmp_path, ModelInput(**values)).source.execution_options["device"] == "cpu"
     for binding in ({'source': {'type': 'provider', 'provider_profile_id': "external"}}, {"runtime_id": "python-worker"},
                     {'source': {'type': 'local', 'execution_options': {"device": "cuda"}}}):
-        with pytest.raises(ValidationError):
-            ModelInput(**values, **binding)
+        with pytest.raises((ValidationError, ModelError)):
+            resolve_local_profile(tmp_path, ModelInput(**values, **binding))
     assert catalog("windows", "x86_64").supported
     assert not catalog("linux", "x86_64").supported
     speech_request({"input": "Hello", "voice": "af_heart", "speed": 0.25, "response_format": "wav", "language": "en-US"})
@@ -184,11 +186,13 @@ def test_binary_validation():
         validate_audio(b"not mp3", "mp3")
 
 
-def test_worker_binary_transport_and_cancellation():
+def test_worker_binary_transport_and_cancellation(tmp_path):
+    model_tree(tmp_path)
     async def scenario():
         entry = catalog()
-        adapter = PythonWorkerAdapter(SimpleNamespace(release=entry),
-            ModelInput(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", source={'type': 'local'}), lambda: None)
+        from ai_workbench.core.models.schema import ModelProfile
+        adapter = PythonWorkerAdapter(SimpleNamespace(release=entry, root=tmp_path),
+            ModelProfile(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", source={'type': 'local'}), lambda: None)
         started = asyncio.Event()
         release = asyncio.Event()
         async def handle(request):

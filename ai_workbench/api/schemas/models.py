@@ -81,30 +81,30 @@ class RerankerModel(ModelFields):
 class ImageEmbeddingModel(ModelFields):
     kind: Literal["image_embedding"]
     parameters: ImageEmbeddingParameters = Field(default_factory=ImageEmbeddingParameters)
-    source: LocalImageEmbeddingSource | None = None
+    source: LocalImageEmbeddingSource = Field(default_factory=lambda: LocalImageEmbeddingSource(type="local"))
 
 
 class VisionModel(ModelFields):
     kind: Literal["vision"]
     parameters: VisionParameters = Field(default_factory=VisionParameters)
-    source: LocalVisionSource | None = None
+    source: LocalVisionSource = Field(default_factory=lambda: LocalVisionSource(type="local"))
 
 
 class TTSModel(ModelFields):
     kind: Literal["tts"]
     parameters: TTSParameters = Field(default_factory=TTSParameters)
-    source: LocalTTSSource | None = None
+    source: LocalTTSSource = Field(default_factory=lambda: LocalTTSSource(type="local"))
 
 
 class ASRModel(ModelFields):
     kind: Literal["asr"]
     parameters: ASRParameters = Field(default_factory=ASRParameters)
-    source: LocalASRSource | None = None
+    source: LocalASRSource = Field(default_factory=lambda: LocalASRSource(type="local"))
 
 
 class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel | ASRModel,
                                     Field(discriminator="kind")]]):
-    """One local/provider source or null; unbound profiles may be saved but cannot execute.
+    """Only LLM, text embedding and reranker profiles permit unbound sources.
 
     Parameters and execution options must match the kind and local engine.
     """
@@ -148,7 +148,7 @@ ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile
                                  Field(discriminator="kind")]
 ModelPatch = patch_model("ModelPatch", ModelInput, fields={
     "parameters": (Parameters, Field(default_factory=lambda: None, description="Replaces parameters; must match the saved model kind.")),
-    "source": (ModelSource | None, Field(default_factory=lambda: None, description="Replaces the complete source. Omission retains it; null unbinds. Local defaults apply to omitted local options.")),
+    "source": (ModelSource | None, Field(default_factory=lambda: None, description="Replaces the complete source. Omission retains it; null unbinds only LLM, text embedding or reranker profiles. Local defaults apply when the engine is known.")),
 })
 ConnectionPatch = patch_model("ConnectionPatch", ExternalConnection)
 DownloadSettingsPatch = patch_model("DownloadSettingsPatch", DownloadSettings)
@@ -188,6 +188,5 @@ class ModelInventoryItem(ApiModel):
     kind: ModelKind
     name: str
     model_ref: str
-    mmproj_refs: list[str] = Field(default_factory=list)
     state: Literal["unavailable"]
     error_code: Literal["MODEL_UNAVAILABLE"]

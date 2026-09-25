@@ -115,6 +115,8 @@ Same-path replacement requires explicit unload/reload and does not require rebui
 Revision `0019_asr` extends the model-kind and local-source constraints with asr. Existing profiles, runtime registration/jobs and all other records survive unchanged; the revision never touches filesystem data.
 Native Whisper directories reside under data/models/asr. Inspection reads configuration JSON; no ASR path hashes model files or writes fingerprints/manifests. Replacing files requires explicit unload/reload.
 
+Revision `0020_directory_models` requires local sources for TTS, vision, image_embedding and ASR. It deletes obsolete TTS/WD14 profiles, local GGUF file-reference profiles and newly invalid unbound profiles without converting configuration. Affected default/auxiliary/session selections and unfinished model runs are cleared; completed histories, other profiles/settings, runtime installations/jobs and every filesystem directory survive. Repeated upgrades preserve new profiles. Local references now select directories; detected architecture and GGUF main/projector paths are held in active adapters rather than persisted as editable settings.
+
 Kokoro ONNX files reside under data/models/tts; presets use voices/<id>.bin.
 The manually unpacked en_core_web_sm 3.7.1 pipeline resides directly under
 data/models/_auxiliary/en_core_web_sm and is excluded from inventory. Kokoro

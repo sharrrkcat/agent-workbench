@@ -111,9 +111,12 @@ def test_entry_links_cannot_escape_the_release(tmp_path, monkeypatch, owned):
 
 
 def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, monkeypatch):
+    missing = tmp_path / 'data/models/llms/missing'
+    missing.mkdir(parents=True)
+    (missing / 'mmproj.gguf').write_bytes(b'projector without a main model')
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
         state = client.app.state.runtime_state
-        value = state.model_profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref='llms/missing.gguf', source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
+        value = state.model_profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref='llms/missing', source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
         monkeypatch.setattr(ManagedProcess, "start", AsyncMock(side_effect=AssertionError("Unexpected process start")))
         response = client.post(f"/api/models/profiles/{value.id}/load")
         assert response.status_code == 503 and response.json()["error"]["code"] == "RUNTIME_NOT_INSTALLED"
@@ -185,9 +188,9 @@ def test_single_model_families_use_only_fast_checks_on_health_load_and_reload(tm
             (model / "config.json").write_text("{}")
             (model / "model.safetensors").write_bytes(b"fixture")
         else:
-            model = tmp_path / "data/models/llms/local.gguf"
-            model.parent.mkdir(parents=True)
-            model.write_bytes(b"fixture")
+            model = tmp_path / "data/models/llms/local"
+            model.mkdir(parents=True)
+            (model / 'model.gguf').write_bytes(b"fixture")
         manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
         profile = manager.profiles.create(ModelProfile(name='local', alias='local', kind='llm', model_ref=model.relative_to(tmp_path / 'data/models').as_posix(), source={'type': 'local', 'execution_options': {'device': 'cpu' if variant == 'cpu' else 'cuda'}}))
         adapter = manager._managed_slot(profile).adapter

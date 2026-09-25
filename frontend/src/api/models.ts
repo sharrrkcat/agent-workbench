@@ -1,5 +1,6 @@
 import type {
   ModelInput,
+  DirectoryInspection,
   LocalRuntimeSettings,
   LocalRuntimeSettingsPatch,
   ModelInventoryItem,
@@ -25,6 +26,8 @@ import type {
 import { request } from './http';
 
 export const modelsApi = {
+  inspectLocalDirectory: (kind: DirectoryInspection['kind'], model_ref: string) =>
+    request<DirectoryInspection>('/api/models/inspect?' + new URLSearchParams({ kind, model_ref })),
   inspectASR: (model_ref: string) =>
     request<ASRInspection>('/api/models/inspect?' + new URLSearchParams({ kind: 'asr', model_ref })),
   inspectReranker: (model_ref: string) =>

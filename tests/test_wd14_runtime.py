@@ -18,7 +18,7 @@ from ai_workbench.core.models.runtimes.catalog import catalog
 from ai_workbench.core.models.schema import ModelProfile, ProviderProfile, SpeechRequest, VisionRequest
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore
 from ai_workbench.db import migrations
-from ai_workbench.db.database import get_engine, init_db
+from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import AppMetadataRecord, RuntimeInstallationRecord, SessionRecord
 from tests.test_phase2b_runtime import FAKE_ENGINE, installed_worker
 from tests.test_wd14 import DEFAULTS, data_url, model_tree, profile
@@ -167,9 +167,10 @@ def test_queue_rejection_cancellation_and_release_policies(tmp_path, monkeypatch
     {"outputs": [{"index": 0, "tags": [{"name": "a", "score": "0.5", "category": "general"}]}]},
     {"outputs": [{"index": 0, "tags": [], "extra": True}]},
 ])
-def test_malformed_worker_results_fail_and_stop_before_returning(result):
+def test_malformed_worker_results_fail_and_stop_before_returning(tmp_path, result):
+    model_tree(tmp_path)
     async def scenario():
-        adapter = PythonWorkerAdapter(SimpleNamespace(release=catalog("windows", "x86_64")), profile(), lambda: None)
+        adapter = PythonWorkerAdapter(SimpleNamespace(root=tmp_path, release=catalog("windows", "x86_64")), profile(), lambda: None)
         adapter._stop = AsyncMock()
         adapter.client = httpx.AsyncClient(base_url="http://worker.test", transport=httpx.MockTransport(lambda _: httpx.Response(200, json=result)))
         try:
@@ -236,14 +237,15 @@ def test_revision_deletes_only_old_vision_drafts_and_preserves_other_rows_and_fi
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"protected test fixture")
         contents = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files}
-        init_db(engine)
-        init_db(engine)
-        assert migrations.current_revision(engine) == migrations.HEAD_REVISION
+        migrations.upgrade(engine, migrations.WD14_REVISION)
+        migrations.upgrade(engine, migrations.WD14_REVISION)
+        assert migrations.current_revision(engine) == migrations.WD14_REVISION
         assert rows() == before and not profiles.list("vision")
         assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files} == contents
         created = profiles.create(profile())
-        init_db(engine)
-        assert profiles.get(created.id).source.execution_options["device"] == "cpu"
+        saved = profiles.get(created.id).model_dump()
+        migrations.upgrade(engine, migrations.WD14_REVISION)
+        assert profiles.get(created.id).model_dump() == saved
         with engine.begin() as db, pytest.raises(IntegrityError):
             db.execute(text("UPDATE model_profiles SET source_type='provider', provider_profile_id=:provider, execution_options_json=NULL, lifecycle_json=NULL WHERE id=:id"),
                        {"provider": provider.id, "id": created.id})

@@ -9,8 +9,10 @@ from ai_workbench.api.schemas.models import (
     ModelSettingsResponse, ProviderModelsResponse, ProviderPatch, ProviderResponse,
 )
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.resolution import resolve_profile
+from ai_workbench.core.models.runtimes.schema import local_engine
 from ai_workbench.core.models.inventory import inventory
-from ai_workbench.core.models.inspection import ModelInspection, inspect_asr, inspect_reranker, inspect_siglip, inspect_text_embedding
+from ai_workbench.core.models.inspection import ModelInspection, inspect_asr, inspect_local_directory, inspect_reranker, inspect_siglip, inspect_text_embedding
 from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelLoadRequest, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile, Tower
 from ai_workbench.api.schemas.inference import VoiceAvailability
 
@@ -94,7 +96,9 @@ async def profiles(kind: ModelKind | None = None, state: RuntimeState = Depends(
 @router.post("/profiles", response_model=ModelProfileResponse, response_model_exclude_unset=True,
              openapi_extra=request_body(ModelCreate), responses=error_responses(404, 409, 422))
 async def create_profile(payload: ModelInput, state: RuntimeState = Depends(get_state)):
+    import asyncio
     profile = ModelProfile(**payload.model_dump())
+    await asyncio.to_thread(resolve_profile, state.repo_root, profile)
     state.model_manager.validate_binding(profile)
     return state.model_profiles.create(profile).model_dump(mode="json")
 
@@ -115,13 +119,15 @@ async def update_profile(profile_id: str, payload: dict, state: RuntimeState = D
     if payload.get("kind", current.kind) != current.kind:
         raise ModelError("MODEL_KIND_IMMUTABLE", "Create a new profile to use a different model kind.", 409)
     updated = ModelInput.model_validate({**current.model_dump(include=set(ModelInput.model_fields)), **payload})
-    state.model_manager.validate_binding(ModelProfile(**updated.model_dump(), id=profile_id))
+    import asyncio
+    updated = ModelProfile(**updated.model_dump(), id=profile_id)
+    await asyncio.to_thread(resolve_profile, state.repo_root, updated)
+    state.model_manager.validate_binding(updated)
     state.model_manager.require_idle(state.model_manager.execution_key(updated))
     await state.model_manager.invalidate(state.model_manager.execution_key(current))
-    result = state.model_profiles.update(profile_id, payload)
+    result = state.model_profiles.update(profile_id, updated.model_dump(include=set(ModelInput.model_fields)))
     if current.kind == "tts" and (not result.enabled or not result.external_enabled or
-            (current.model_ref, _binding(current), current.parameters.get("architecture")) !=
-            (result.model_ref, _binding(result), result.parameters.get("architecture"))):
+            (current.model_ref, local_engine(current), _binding(current)) != (result.model_ref, local_engine(updated), _binding(result))):
         state.model_manager.invalidate_voice_references(profile_id)
     if current.kind == "embedding" and (_binding(current), current.model_ref, current.parameters) != (_binding(result), result.model_ref, result.parameters):
         _invalidate_profile_indexes(state, profile_id)
@@ -183,12 +189,13 @@ async def unload_profile(profile_id: str, state: RuntimeState = Depends(get_stat
 
 @router.get("/inventory", response_model=list[ModelInventoryItem])
 async def model_inventory(kind: ModelKind | None = None, state: RuntimeState = Depends(get_state)):
-    return inventory(state.repo_root, kind)
+    import asyncio
+    return await asyncio.to_thread(inventory, state.repo_root, kind)
 
 
 @router.get("/inspect", response_model=ModelInspection, responses=error_responses(404, 422),
             summary="Read local model configuration without loading weights")
-async def inspect_model(kind: Literal["image_embedding", "embedding", "reranker", "asr"], model_ref: str,
+async def inspect_model(kind: Literal["image_embedding", "embedding", "reranker", "asr", "llm", "tts", "vision"], model_ref: str,
                         query_prompt_name: str | None = None, document_prompt_name: str | None = None,
                         state: RuntimeState = Depends(get_state)):
     import asyncio
@@ -201,6 +208,8 @@ async def inspect_model(kind: Literal["image_embedding", "embedding", "reranker"
         return await asyncio.to_thread(inspect_reranker, state.repo_root, model_ref)
     if kind == "asr":
         return await asyncio.to_thread(inspect_asr, state.repo_root, model_ref)
+    if kind in {"llm", "tts", "vision"}:
+        return await asyncio.to_thread(inspect_local_directory, state.repo_root, kind, model_ref)
     return await asyncio.to_thread(inspect_siglip, state.repo_root, model_ref)
 
 

@@ -13,20 +13,20 @@ for (const locale of ['en', 'zh-CN']) {
     await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds['tts']);
     await page.getByRole('button', { name: labels.addModel, exact: true }).click();
     const dialog = page.getByRole('dialog');
-    const architecture = dialog.getByLabel(labels.params.architecture, { exact: true });
-    await expect(architecture).toBeEnabled();
-    await expect(architecture.locator('[data-slot="select-value"]')).toHaveText('Kokoro-82M v1.0 (ONNX)');
+    const reference = dialog.getByLabel(labels.modelRef, { exact: true });
+    await expect(dialog.getByLabel(labels.directory.fields.architecture, { exact: true })).toHaveCount(0);
     await expect(dialog.getByLabel(labels.source, { exact: true }).locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
-    await chooseOption(architecture, labels.qwen3TTSBase);
+    await expect(dialog.getByLabel(labels.source, { exact: true })).toBeDisabled();
+    await fillCombobox(reference, 'tts/fixture-qwen');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('50');
     await expect(dialog.getByLabel(labels.params.temperature, { exact: true })).toHaveValue('0.9');
     await dialog.getByLabel(labels.params.speed, { exact: true }).fill('0.85');
     await chooseOption(dialog.getByLabel(labels.params.response_format, { exact: true }), 'WAV');
     await dialog.getByLabel(labels.params.top_k, { exact: true }).fill('0');
-    await chooseOption(architecture, labels.chatterboxEnglish);
+    await fillCombobox(reference, 'tts/fixture-chatterbox');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveCount(0);
     await expect(dialog.getByLabel(labels.params.temperature, { exact: true })).toHaveValue('0.8');
-    await chooseOption(architecture, labels.qwen3TTSBase);
+    await fillCombobox(reference, 'tts/fixture-qwen');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('50');
     await expect(dialog.getByLabel(labels.params.speed, { exact: true })).toHaveValue('0.85');
     await expect(dialog.getByLabel(labels.params.response_format, { exact: true }).locator('[data-slot="select-value"]')).toHaveText('WAV');
@@ -43,15 +43,14 @@ for (const locale of ['en', 'zh-CN']) {
     await expect(dialog).toHaveCount(0);
     const profiles = await (await request.get('/api/models/profiles')).json();
     const saved = profiles.find((profile: { alias: string }) => profile.alias === alias);
-    expect(saved.parameters).toEqual({ architecture: 'qwen3tts', speed: 0.85, response_format: 'wav', seed: null, do_sample: false,
+    expect(saved.parameters).toEqual({ speed: 0.85, response_format: 'wav', seed: null, do_sample: false,
       temperature: 0.9, top_p: 1, top_k: 0, repetition_penalty: 1.05, max_new_tokens: 512 });
     expect(saved.source.type).toBe('local');
     expect(saved.source.execution_options.device).toBe('cuda');
     const row = page.locator('.model-list .model-row').filter({ hasText: alias });
     await row.getByRole('button', { name: labels.edit, exact: true }).click();
-    await expect(architecture.locator('[data-slot="select-value"]')).toHaveText(labels.qwen3TTSBase);
-    await chooseOption(dialog.getByLabel(labels.source, { exact: true }), labels.localRuntime);
-    await expect(architecture.locator('[data-slot="select-value"]')).toHaveText(labels.qwen3TTSBase);
+    await expect(dialog.getByRole('group', { name: labels.directory.information, exact: true })).toContainText('qwen3tts');
+    await expect(dialog.getByLabel(labels.source, { exact: true })).toBeDisabled();
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('0');
     await expect(dialog.getByRole('switch', { name: labels.params.do_sample, exact: true })).not.toBeChecked();
     await expect(dialog.getByLabel(labels.params.max_new_tokens, { exact: true })).toHaveValue('512');

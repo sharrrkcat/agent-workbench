@@ -29,10 +29,29 @@ export type SiglipInspection = {
 };
 
 export type VisionParameters = {
-  architecture: 'wd14';
   task: 'tags';
   thresholds: { general: number; character: number };
 };
+
+export type DirectoryDiagnostic = {
+  file: string; message: string; blocking: boolean;
+  code: 'missing_directory' | 'missing_file' | 'invalid_config' | 'unsupported_configuration'
+    | 'ambiguous_model' | 'ambiguous_projector' | 'incomplete_shards';
+};
+export type LLMInspection = {
+  kind: 'llm'; model_ref: string; engine: 'llama-server' | 'transformers' | null;
+  architecture: string | null; main_model_ref: string | null; mmproj_ref: string | null;
+  model_files: string[]; diagnostics: DirectoryDiagnostic[];
+};
+export type TTSInspection = {
+  kind: 'tts'; model_ref: string; engine: 'kokoro' | 'chatterbox' | 'qwen3tts' | null;
+  architecture: 'kokoro' | 'chatterbox' | 'qwen3tts' | null; diagnostics: DirectoryDiagnostic[];
+};
+export type VisionInspection = {
+  kind: 'vision'; model_ref: string; engine: 'wd14' | null;
+  architecture: 'wd14' | null; backbone: string | null; diagnostics: DirectoryDiagnostic[];
+};
+export type DirectoryInspection = LLMInspection | TTSInspection | VisionInspection;
 
 export type LocalEmbeddingParameters = {
   query_prompt_name: string | null;
@@ -239,5 +258,4 @@ export type ModelInventoryItem = {
   model_ref: string;
   state: string;
   error_code: string;
-  mmproj_refs: string[];
 };

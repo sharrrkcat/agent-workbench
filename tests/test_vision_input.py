@@ -19,12 +19,15 @@ from ai_workbench.core.models.images import prepare_local_images, resolve_contex
 from ai_workbench.core.models.inventory import inventory
 from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.schema import model_path
+from ai_workbench.core.models.resolution import configure_profile, require_directory
+from ai_workbench.core.models.inspection import inspect_local_directory
+from ai_workbench.workers.model_catalog import DirectoryInformation
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile
 from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.stores import MessageStore
 from ai_workbench.workers.transformers_server import build_app
-from tests.model_fixtures import configure_model
+from tests.model_fixtures import configure_model, write_local_model, resolve_local_profile
 from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
 
 
@@ -43,9 +46,13 @@ def request(*parts, **options):
 
 
 def profile(engine="llama-server", **options):
-    return ModelProfile(name="Local", alias="local", kind="llm", model_ref="llms/a.gguf" if engine == "llama-server" else "llms/a",
+    value = ModelProfile(name="Local", alias="local", kind="llm", model_ref="llms/a",
         capabilities={"vision": True, "streaming": True}, source={"type": "local", "execution_options":
-            {"device": "cpu", **({"mmproj_ref": "llms/mmproj.gguf"} if engine == "llama-server" else {}), **options}})
+            {"device": "cpu", **options}})
+    # Image preprocessing tests start after the directory-resolution boundary.
+    value._directory = DirectoryInformation(kind='llm', model_ref='llms/a', engine=engine,
+        main_model_ref='llms/a/model.gguf', mmproj_ref='llms/a/mmproj-F16.gguf', model_files=['llms/a/model.gguf'])
+    return configure_profile(value)
 
 
 def manager(root):
@@ -111,7 +118,7 @@ def test_full_local_request_limit_includes_json_defaults_and_image_expansion(mon
 
 
 @pytest.mark.parametrize("reference", ["../mmproj.gguf", "D:/mmproj.gguf", "llms/../mmproj.gguf", "llms/projector.bin", ""])
-def test_gguf_projector_paths_are_safe_and_explicit(reference):
+def test_gguf_projector_cannot_be_supplied_as_an_execution_option(reference):
     with pytest.raises(ValidationError):
         profile(mmproj_ref=reference)
 
@@ -120,18 +127,22 @@ def test_projector_presence_identity_and_inventory(tmp_path):
     with pytest.raises(ValidationError):
         profile(mmproj_ref=None)
     assert profile("transformers").capabilities.vision
+    directory = write_local_model(tmp_path, 'llms/a', 'llama-server')
+    (directory / 'mmproj-F16.gguf').write_bytes(b'fixture')
     service = manager(tmp_path)
     original = profile()
     assert service.execution_key(original) == service.execution_key(profile())
-    assert service.execution_key(original) != service.execution_key(profile(mmproj_ref="llms/mmproj-other.gguf"))
+    text_only = ModelProfile(**{**original.model_dump(), 'capabilities': {'vision': False}})
+    assert service.execution_key(original) != service.execution_key(text_only)
     assert service.execution_key(original) != service.execution_key(profile(device="cuda"))
-    directory = tmp_path / "data/models/llms/model"
-    directory.mkdir(parents=True)
-    for name in ("model.gguf", "mmproj-F16.gguf", "mmproj-Q8.gguf"):
-        (directory / name).write_bytes(b"fixture")
+    (directory / 'mmproj-Q8.gguf').write_bytes(b'fixture')
     items = inventory(tmp_path, "llm")
     assert len(items) == 1
-    assert items[0]["mmproj_refs"] == ["llms/model/mmproj-F16.gguf", "llms/model/mmproj-Q8.gguf"]
+    assert items[0]['model_ref'] == 'llms/a'
+    assert inspect_local_directory(tmp_path, 'llm', 'llms/a').diagnostics[0].code == 'ambiguous_projector'
+    unresolved = resolve_local_profile(tmp_path, ModelProfile(**original.model_dump()))
+    with pytest.raises(ModelError):
+        require_directory(unresolved)
     with pytest.raises(ValueError):
         model_path(tmp_path, "../escape.gguf")
 

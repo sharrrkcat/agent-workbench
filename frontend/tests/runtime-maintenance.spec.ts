@@ -73,7 +73,7 @@ for (const locale of ['en', 'zh-CN']) {
         const alias = `runtime-fixture-${locale.toLowerCase()}-${viewport.width}`;
         await dialog.getByLabel(locale === 'en' ? 'Public alias' : '公开别名', { exact: true }).fill(alias);
         await chooseOption(dialog.getByLabel(locale === 'en' ? 'Model source' : '模型来源', { exact: true }), locale === 'en' ? 'Local Runtime' : '本地运行环境');
-        await fillCombobox(dialog.getByLabel(locale === 'en' ? 'Model reference' : '模型引用', { exact: true }), 'llms/fixture.gguf');
+        await fillCombobox(dialog.getByLabel(locale === 'en' ? 'Model reference' : '模型引用', { exact: true }), 'llms/fixture');
         const automatic = locale === 'en' ? 'Automatic' : '自动';
         const manual = locale === 'en' ? 'Manual' : '手动';
         const group = dialog.locator('.runtime-gpu-mode');

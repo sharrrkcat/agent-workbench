@@ -25,9 +25,7 @@ for (const locale of ['en', 'zh-CN']) {
         const batch = dialog.getByLabel(labels.runtimeParams.max_batch_size, { exact: true });
         const save = dialog.getByRole('button', { name: labels.save, exact: true });
         await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
-        await source.click();
-        await expect(page.getByRole('option')).toHaveText([labels.unbound, labels.localRuntime]);
-        await page.keyboard.press('Escape');
+        await expect(source).toBeDisabled();
         await expect(autoUnload).toBeChecked();
         await expect(device.locator('[data-slot="select-value"]')).toHaveText('NVIDIA CUDA');
         await expect(batch).toHaveValue('1');
@@ -37,7 +35,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(dialog).toContainText(labels.siglip.structures.naflex);
         await expect(dialog.getByText(labels.siglip.fields.textLimit, { exact: true }).locator('..')).toContainText('64');
         await expect(dialog).not.toContainText('1e+30');
-        await expect(dialog.getByLabel(labels.params.architecture, { exact: true })).toHaveCount(0);
+        await expect(dialog.getByLabel(labels.directory.fields.architecture, { exact: true })).toHaveCount(0);
         await expect(dialog.getByLabel(labels.params.dimensions, { exact: true })).toHaveCount(0);
         await expect(dialog.getByLabel(labels.params.batch_size, { exact: true })).toHaveCount(0);
         await name.fill('My model');
@@ -85,10 +83,9 @@ for (const locale of ['en', 'zh-CN']) {
         await row.getByRole('button', { name: labels.edit, exact: true }).click();
         await expect(name).toHaveValue('My model');
         await expect(autoUnload).not.toBeChecked();
-        await chooseOption(source, labels.unbound);
+        await expect(source).toBeDisabled();
         await expect(reference).toHaveValue('image_embeddings/missing');
-        await expect(dialog.getByText(labels.siglip.information, { exact: true })).toHaveCount(0);
-        await chooseOption(source, labels.localRuntime);
+        await expect(dialog.getByText(labels.siglip.information, { exact: true })).toBeVisible();
         await fillCombobox(reference, 'image_embeddings/browser-naflex');
         await expect(name).toHaveValue('My model');
         await expect(autoUnload).not.toBeChecked();

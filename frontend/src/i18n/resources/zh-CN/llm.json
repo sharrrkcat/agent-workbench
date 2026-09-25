@@ -8,14 +8,12 @@
   "profiles": "模型配置",
   "service": "对外 API",
   "kind": "模型种类",
-  "inventory": "本地模型文件",
+  "inventory": "本地模型目录",
   "addModel": "添加模型",
   "editModel": "编辑模型",
   "name": "名称",
   "alias": "公开别名",
   "modelRef": "模型引用",
-  "mmprojRef": "视觉投影文件（mmproj）",
-  "mmprojHint": "选择配套投影文件，或填写 data/models 下的相对路径。更换模型会清空此选项。",
   "baseUrl": "API 基础地址",
   "emptyModels": "暂无模型配置",
   "enabled": "启用",
@@ -93,7 +91,6 @@
     "normalize": "归一化向量",
     "document_instruction": "文档前缀",
     "query_instruction": "查询前缀",
-    "architecture": "架构",
     "task": "任务",
     "speed": "语速",
     "response_format": "音频格式",
@@ -149,24 +146,55 @@
     "inspectionFailed": "暂时无法读取模型信息，仍可保存此配置。",
     "pending": "待加载确定",
     "fixresHint": "SigLIP 和 SigLIP2 共用此固定分辨率结构，不能据此确定训练代际。",
-    "structures": { "naflex": "SigLIP2 NaFlex", "fixres": "SigLIP 兼容 FixRes" },
+    "structures": {
+      "naflex": "SigLIP2 NaFlex",
+      "fixres": "SigLIP 兼容 FixRes"
+    },
     "fields": {
-      "structure": "模型结构", "imageDimensions": "图像向量维度", "textDimensions": "文本向量维度",
-      "textLimit": "文本位置上限", "imageSize": "图像尺寸", "patchSize": "图块尺寸",
-      "maxPatches": "最大图块数", "resample": "缩放滤镜", "rescale": "缩放像素值",
-      "rescaleFactor": "像素缩放系数", "normalize": "归一化像素", "imageMean": "像素均值",
-      "imageStd": "像素标准差", "lowercase": "文本转小写", "bos": "添加起始标记", "eos": "添加结束标记"
+      "structure": "模型结构",
+      "imageDimensions": "图像向量维度",
+      "textDimensions": "文本向量维度",
+      "textLimit": "文本位置上限",
+      "imageSize": "图像尺寸",
+      "patchSize": "图块尺寸",
+      "maxPatches": "最大图块数",
+      "resample": "缩放滤镜",
+      "rescale": "缩放像素值",
+      "rescaleFactor": "像素缩放系数",
+      "normalize": "归一化像素",
+      "imageMean": "像素均值",
+      "imageStd": "像素标准差",
+      "lowercase": "文本转小写",
+      "bos": "添加起始标记",
+      "eos": "添加结束标记"
     },
     "diagnostics": {
-      "missing_config": "缺少配置文件。", "invalid_config": "无法读取配置文件。",
-      "invalid_field": "无法识别某个已声明字段。", "unknown_structure": "未识别出模型结构。"
+      "missing_config": "缺少配置文件。",
+      "invalid_config": "无法读取配置文件。",
+      "invalid_field": "无法识别某个已声明字段。",
+      "unknown_structure": "未识别出模型结构。"
     },
     "towers": "双塔状态",
-    "tower": { "image": "图塔", "text": "文本塔" },
-    "load": { "image": "加载图塔", "text": "加载文本塔" },
-    "log": { "image": "图塔日志", "text": "文本塔日志" },
-    "states": { "stopped": "未加载", "starting": "加载中", "ready": "已加载", "failed": "失败" },
-    "revision": "模型版本标识", "vectorSpace": "向量空间标识"
+    "tower": {
+      "image": "图塔",
+      "text": "文本塔"
+    },
+    "load": {
+      "image": "加载图塔",
+      "text": "加载文本塔"
+    },
+    "log": {
+      "image": "图塔日志",
+      "text": "文本塔日志"
+    },
+    "states": {
+      "stopped": "未加载",
+      "starting": "加载中",
+      "ready": "已加载",
+      "failed": "失败"
+    },
+    "revision": "模型版本标识",
+    "vectorSpace": "向量空间标识"
   },
   "tagThresholds": {
     "general": "通用标签阈值",
@@ -404,11 +432,19 @@
     "prompt": "转写提示",
     "promptHint": "可选的录音上下文或词汇提示。留空会清除保存的提示。",
     "timestampsHint": "JSON 和纯文本不返回时间戳；详细 JSON 返回段级时间戳。所有格式均转写完整录音。",
-    "formats": { "json": "JSON（仅文本）", "text": "纯文本", "verbose_json": "详细 JSON（段级时间戳）" },
+    "formats": {
+      "json": "JSON（仅文本）",
+      "text": "纯文本",
+      "verbose_json": "详细 JSON（段级时间戳）"
+    },
     "fields": {
-      "architecture": "架构", "processor": "处理器", "sampleRate": "采样率（Hz）",
-      "features": "梅尔特征维度", "window": "原生窗口（秒）",
-      "timestamps": "段级时间戳", "languages": "支持的语言代码"
+      "architecture": "架构",
+      "processor": "处理器",
+      "sampleRate": "采样率（Hz）",
+      "features": "梅尔特征维度",
+      "window": "原生窗口（秒）",
+      "timestamps": "段级时间戳",
+      "languages": "支持的语言代码"
     },
     "diagnostics": {
       "missing_config": "缺少必需的原生配置。",
@@ -423,5 +459,33 @@
     "providers": "管理兼容 OpenAI 协议的模型服务连接。",
     "localRuntime": "管理本地安装、存储空间和运行环境任务。",
     "service": "配置本机兼容 OpenAI 协议的模型 API。"
+  },
+  "directory": {
+    "information": "模型目录信息",
+    "informationHint": "架构和模型文件由目录内容自动识别，在此处只读显示。",
+    "referenceHint": "选择 data/models 下的模型目录，架构和模型文件将自动识别。",
+    "inspecting": "正在读取模型目录…",
+    "failed": "无法检查模型目录。",
+    "undetermined": "未识别",
+    "configurationNeeded": "目录诊断",
+    "draftHint": "可以保存此配置，请在加载前处理必需项。",
+    "blocking": "必需",
+    "warning": "提示",
+    "fields": {
+      "engine": "运行引擎",
+      "architecture": "架构",
+      "backbone": "骨干网络",
+      "mainModel": "GGUF 主模型",
+      "projector": "视觉投影模型（mmproj）"
+    },
+    "diagnostics": {
+      "missing_directory": "模型目录不存在。",
+      "missing_file": "必需的模型文件缺失或不完整。",
+      "invalid_config": "配置无法读取为 JSON 对象。",
+      "unsupported_configuration": "尚不支持此模型目录结构或架构。",
+      "ambiguous_model": "目录中应只有一个模型或一组完整分片，请将不同架构和量化版本放入各自的目录。",
+      "ambiguous_projector": "目录中最多只能有一个 mmproj GGUF 文件。",
+      "incomplete_shards": "必须包含所有编号对应的 GGUF 分片。"
+    }
   }
 }

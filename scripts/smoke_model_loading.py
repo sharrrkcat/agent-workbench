@@ -66,7 +66,7 @@ def profile_for(backend, args):
     if backend == "kokoro":
         return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=args.kokoro_model, source={'type': 'local'})
     architecture, device = backend.rsplit("-", 1)
-    return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=getattr(args, architecture + '_model'), parameters={'architecture': architecture}, external_enabled=True, source={'type': 'local', 'execution_options': {'device': device}})
+    return ModelProfile(name=backend, alias=backend, kind='tts', model_ref=getattr(args, architecture + '_model'), external_enabled=True, source={'type': 'local', 'execution_options': {'device': device}})
 
 
 async def minimal_inference(manager, profile, args, voice):
@@ -75,7 +75,9 @@ async def minimal_inference(manager, profile, args, voice):
             messages=[{"role": "user", "content": "Say hello."}]))
         assert reply.message.content or reply.message.reasoning_content
         return {"kind": "chat", "state": "passed"}, voice
-    if profile.kind == "tts" and profile.parameters["architecture"] in {"chatterbox", "qwen3tts"} and voice is None:
+    from ai_workbench.core.models.runtimes.schema import local_engine
+    profile = manager.profile(profile.id)
+    if profile.kind == "tts" and local_engine(profile) in {"chatterbox", "qwen3tts"} and voice is None:
         reference = (args.reference or args.root / "build/tts-smoke/af_heart.wav").resolve()
         created = await manager.create_voice_reference(profile.id, reference.read_bytes(), reference.suffix[1:],
             credential_id(manager.settings.get().external_api_key))
@@ -199,7 +201,7 @@ def parse_args(argv=None):
     parser.add_argument("--install-only", action="store_true")
     parser.add_argument("--backend", choices=BACKENDS, action="append")
     parser.add_argument("--reference", type=Path)
-    parser.add_argument("--gguf-model", default="llms/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf")
+    parser.add_argument("--gguf-model", default="llms/Qwen3.5-0.8B-GGUF")
     parser.add_argument("--transformers-model", default="llms/Qwen3.5-0.8B-TF")
     parser.add_argument("--kokoro-model", default="tts/Kokoro-82M-onnx")
     parser.add_argument("--chatterbox-model", default="tts/chatterbox")

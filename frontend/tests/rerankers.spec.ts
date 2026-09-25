@@ -20,7 +20,7 @@ for (const locale of ['en', 'zh-CN']) {
       test('automatic configuration, stale responses and invalid directory drafts', async ({ page, request }, info) => {
         let releaseSlow: (() => void) | undefined;
         await page.route('**/api/models/inventory?kind=reranker', (route) => route.fulfill({ json: [
-          { kind: 'reranker', name: 'browser-model', model_ref: reference, mmproj_refs: [], state: 'unavailable', error_code: 'MODEL_UNAVAILABLE' },
+          { kind: 'reranker', name: 'browser-model', model_ref: reference, state: 'unavailable', error_code: 'MODEL_UNAVAILABLE' },
         ] }));
         await page.route('**/api/models/inspect?**', async (route) => {
           const query = new URL(route.request().url()).searchParams;

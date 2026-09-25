@@ -14,7 +14,9 @@ Paths below are under ai_workbench:
   catalog, supervision, storage accounting and cache maintenance.
 - workers/server.py dispatches the shared ONNX control service; workers/wd14_engine.py owns tagging,
   while core/models/images.py validates/normalizes inline images before admission.
-- core/models/inspection.py reads SigLIP configuration; core/models/siglip.py owns prepared identity
+- core/models/inspection.py exposes directory information; resolution.py applies detected engine schemas,
+  while workers/model_catalog.py resolves LLM/TTS/WD14 layouts without inference imports.
+- core/models/siglip.py owns prepared identity
   and the tower client; siglip_adapter.py owns the two clients and shared identity under ModelManager's queue.
   workers/siglip_catalog.py, siglip_engine.py and siglip_server.py own local files and single-tower execution.
 - workers/embedding_catalog.py inspects native text metadata; embedding_engine.py/embedding_server.py provide independent Sentence Transformers execution.
@@ -28,6 +30,7 @@ Paths below are under ai_workbench:
 Model tests are tests/test_phase2a_manager.py, test_phase2a_protocol.py and
 test_phase2a_transport.py under tests/. Managed runtime tests are
 test_phase2b_runtime.py, test_runtime_maintenance.py and test_llama_cuda.py.
+test_model_directories.py covers discovery, draft/source rules, resolved paths, aliases and directory-profile migration.
 test_runtime_installation.py covers fixed-file checks, explicit repair and traversal guards;
 test_runtime_dependencies.py covers normalized identity, version paths, recoverable checks and application workers.
 test_runtime_smoke_cli.py covers installation-only modes and device defaults.

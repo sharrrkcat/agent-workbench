@@ -30,7 +30,7 @@ from ai_workbench.db.models import (
     MessageRecord, PersonaKnowledgeBindingRecord, RunRecord, SessionRecord,
 )
 from ai_workbench.workers.tts_catalog import language_model
-from tests.model_fixtures import MockOpenAI, configure_model
+from tests.model_fixtures import MockOpenAI, configure_model, resolve_local_profile, write_local_model
 from tests.test_phase2a_manager import ControlledAdapter
 from tests.test_phase2b_runtime import installed_worker
 from tests.test_tts import language_tree
@@ -38,6 +38,7 @@ from tests.test_tts import language_tree
 
 @pytest.mark.parametrize('memory', [True, False])
 def test_providers_and_local_settings_have_separate_ownership(tmp_path, memory):
+    write_local_model(tmp_path, 'llms/weights', 'llama-server')
     app = create_app(root=tmp_path, use_memory=memory, database_url=f"sqlite:///{tmp_path / 'app.db'}", adapter_factory=MockOpenAI().factory)
     with TestClient(app) as client:
         assert client.get('/api/models/providers').json() == []
@@ -63,7 +64,7 @@ def test_providers_and_local_settings_have_separate_ownership(tmp_path, memory):
         assert client.get(path + '/models').json()['models'] == ['embed', 'fake', 'other']
         assert client.patch(local_path, json={'enabled': False}).json()['enabled'] is False
         profile = client.post('/api/models/profiles', json={'name': 'Local', 'alias': 'managed', 'kind': 'llm',
-            'model_ref': 'llms/weights.gguf', 'source': {'type': 'local'}}).json()
+            'model_ref': 'llms/weights', 'source': {'type': 'local'}}).json()
         assert client.post(f"/api/models/profiles/{profile['id']}/load").json()['error']['code'] == 'MODEL_UNAVAILABLE'
 
 
@@ -71,7 +72,7 @@ def test_providers_and_local_settings_have_separate_ownership(tmp_path, memory):
     ('provider_profile_id', None), ('runtime_id', 'llama-server'), ('runtime_variant', 'cpu'), ('runtime_options', {})])
 def test_removed_model_fields_are_rejected_on_create_and_patch(tmp_path, field, value):
     with TestClient(create_app(root=tmp_path, use_memory=True)) as client:
-        payload = {'name': 'Draft', 'alias': 'draft', 'kind': 'llm', 'model_ref': 'llms/model.gguf'}
+        payload = {'name': 'Draft', 'alias': 'draft', 'kind': 'llm', 'model_ref': 'llms/gguf'}
         draft = client.post('/api/models/profiles', json=payload).json()
         assert client.post('/api/models/profiles', json={**payload, field: value}).status_code == 422
         assert client.patch(f"/api/models/profiles/{draft['id']}", json={field: value}).status_code == 422
@@ -80,11 +81,12 @@ def test_removed_model_fields_are_rejected_on_create_and_patch(tmp_path, field, 
 
 @pytest.mark.parametrize('memory', [True, False])
 def test_source_roundtrip_and_atomic_patch(tmp_path, memory):
+    write_local_model(tmp_path, 'llms/gguf', 'llama-server')
     app = create_app(root=tmp_path, use_memory=memory, database_url=f"sqlite:///{tmp_path / 'app.db'}")
     with TestClient(app) as client:
         provider = client.post('/api/models/providers', json={'name': 'Cloud', 'connection': {'base_url': 'https://example.test/v1'}}).json()
         binding = {'type': 'provider', 'provider_profile_id': provider['id']}
-        draft = client.post('/api/models/profiles', json={'name': 'Draft', 'alias': 'draft', 'kind': 'llm', 'model_ref': 'llms/model.gguf'}).json()
+        draft = client.post('/api/models/profiles', json={'name': 'Draft', 'alias': 'draft', 'kind': 'llm', 'model_ref': 'llms/gguf'}).json()
         path = '/api/models/profiles/' + draft['id']
         assert draft['source'] is None
         local = client.patch(path, json={'source': {'type': 'local', 'lifecycle': {'unload': 'idle'}}})
@@ -162,19 +164,20 @@ def test_removed_routes_and_single_release_catalog(tmp_path):
                 'parameters': {'architecture': 'whisper'}}).status_code == 422
 
 
-@pytest.mark.parametrize('kind,ref,parameters,device', [
-    ('llm', 'llms/model.gguf', {}, 'cuda'), ('llm', 'llms/model', {}, 'cuda'),
-    ('tts', 'tts/kokoro', {'architecture': 'kokoro'}, 'cpu'),
-    ('vision', 'vision/tagger', {'architecture': 'wd14'}, 'cpu'),
-    ('tts', 'tts/chatterbox', {'architecture': 'chatterbox'}, 'cuda'),
-    ('tts', 'tts/qwen', {'architecture': 'qwen3tts'}, 'cuda'),
+@pytest.mark.parametrize('kind,ref,engine,device', [
+    ('llm', 'llms/gguf', 'llama-server', 'cuda'), ('llm', 'llms/model', 'transformers', 'cuda'),
+    ('tts', 'tts/kokoro', 'kokoro', 'cpu'),
+    ('vision', 'vision/tagger', 'wd14', 'cpu'),
+    ('tts', 'tts/chatterbox', 'chatterbox', 'cuda'),
+    ('tts', 'tts/qwen', 'qwen3tts', 'cuda'),
 ])
-def test_execution_defaults_follow_model_engine(kind, ref, parameters, device):
-    profile = ModelProfile(name='Local', alias='local', kind=kind, model_ref=ref, parameters=parameters, source={'type': 'local'})
+def test_execution_defaults_follow_model_engine(tmp_path, kind, ref, engine, device):
+    write_local_model(tmp_path, ref, engine)
+    profile = resolve_local_profile(tmp_path, ModelProfile(name='Local', alias='local', kind=kind, model_ref=ref, source={'type': 'local'}))
     assert profile.source.execution_options['device'] == device and profile.source.lifecycle.unload == 'manual'
-    if ref.endswith('.gguf'):
+    if engine == 'llama-server':
         assert profile.source.execution_options['gpu_layers'] == 'auto'
-        cpu = ModelProfile(**{**profile.model_dump(), 'source': {'type': 'local', 'execution_options': {'device': 'cpu'}}})
+        cpu = resolve_local_profile(tmp_path, ModelProfile(**{**profile.model_dump(), 'source': {'type': 'local', 'execution_options': {'device': 'cpu'}}}))
         assert cpu.source.execution_options['gpu_layers'] == 0
 
 

@@ -18,7 +18,7 @@ from ai_workbench.core.models.inventory import inventory
 from ai_workbench.core.models.schema import TranscriptionRequest, TranscriptionResult
 from ai_workbench.core.models.store import ModelProfileStore
 from ai_workbench.db import migrations
-from ai_workbench.db.database import get_engine, init_db
+from ai_workbench.db.database import get_engine
 from ai_workbench.workers import asr_engine
 from ai_workbench.workers.asr_catalog import input_path, load_configuration
 from ai_workbench.workers.asr_server import ASRWorker
@@ -115,8 +115,9 @@ def test_profile_crud_drafts_inspection_and_local_only_sources(tmp_path, memory)
                 {"source": {"type": "provider", "provider_profile_id": "x"}},
                 {"source": {"type": "local", "execution_options": {"max_batch_size": 2}}}):
             assert client.patch(route, json=patch).status_code == 422
-        assert client.patch(route, json={"model_ref": "asr/missing", "source": None}).status_code == 200
-        assert client.post(route + "/load").json()["error"]["code"] == "MODEL_NOT_CONFIGURED"
+        assert client.patch(route, json={"source": None}).status_code == 422
+        assert client.patch(route, json={"model_ref": "asr/missing"}).status_code == 200
+        assert client.get(route).json()['source']['type'] == 'local'
         assert client.delete(route).status_code == 200
 
 
@@ -234,7 +235,7 @@ def test_migration_extends_constraints_preserving_profiles_and_data(tmp_path):
     for path in sentinels:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"keep")
-    init_db(engine)
+    migrations.upgrade(engine, migrations.ASR_REVISION)
     with engine.begin() as connection:
         assert list(connection.execute(text("SELECT * FROM model_profiles")).mappings()) == before
     assert store.get(saved.id).source is None and migrations.current_revision(engine) == migrations.ASR_REVISION

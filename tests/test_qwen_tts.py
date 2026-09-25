@@ -18,13 +18,14 @@ from ai_workbench.workers.audio_engine import QwenTTSEngine
 from ai_workbench.workers.audio_server import AudioWorker
 from ai_workbench.workers.common import WorkerError
 from tests.audio_fixtures import qwen_model
+from tests.model_fixtures import resolve_local_profile, write_local_model
 from tests.test_audio import Adapter, Clock, api, make_manager
 from tests.test_openapi import validate_response
 from tests.test_tts import HEADERS, wav_bytes
 
 
 def qwen_profile(**values):
-    return ModelProfile(**{**dict(name='Qwen', alias='qwen', kind='tts', model_ref='tts/qwen', external_enabled=True, parameters={'architecture': 'qwen3tts', 'response_format': 'wav'}, source={'type': 'local'}), **values})
+    return ModelProfile(**{**dict(name='Qwen', alias='qwen', kind='tts', model_ref='tts/qwen', external_enabled=True, parameters={'response_format': 'wav'}, source={'type': 'local'}), **values})
 
 
 @pytest.fixture
@@ -59,12 +60,13 @@ def inline(transcript=None):
 ])
 def test_strict_qwen_profile_options(options):
     with pytest.raises(ValidationError):
-        qwen_profile(parameters={"architecture": "qwen3tts", **options})
+        Qwen3TTSParameters(**options)
 
 
-def test_qwen_defaults_and_binding():
-    profile = qwen_profile()
-    assert profile.parameters == {"architecture": "qwen3tts", "speed": 1, "response_format": "wav", **QWEN3TTS_DEFAULTS}
+def test_qwen_defaults_and_binding(tmp_path):
+    qwen_model(tmp_path / 'data/models/tts/qwen')
+    profile = resolve_local_profile(tmp_path, qwen_profile())
+    assert profile.parameters == {"speed": 1, "response_format": "wav", **QWEN3TTS_DEFAULTS}
     assert profile.source.execution_options == {"device": "cuda", "intraop_threads": 4}
     assert profile.source.lifecycle.unload == "manual"
     assert Qwen3TTSParameters(top_k=0, repetition_penalty=0.5, temperature=6, max_new_tokens=8192).top_k == 0
@@ -195,12 +197,12 @@ def test_qwen_engine_uses_decoded_audio_full_text_and_language(monkeypatch, lang
 
 
 def test_qwen_worker_is_public_and_validates_before_engine_calls(tmp_path):
-    qwen_model(tmp_path / "tts/qwen")
+    qwen_model(tmp_path / "data/models/tts/qwen")
     (tmp_path / "voice.wav").write_bytes(wav_bytes())
     engine = SimpleNamespace(device="cpu", device_name="CPU", speech=MagicMock(return_value=(wav_bytes(), "audio/wav")))
     factory = MagicMock(return_value=engine)
-    worker = AudioWorker(tmp_path, tmp_path, engine_factory=factory)
-    profile = qwen_profile()
+    worker = AudioWorker(tmp_path / "data/models", tmp_path, engine_factory=factory)
+    profile = resolve_local_profile(tmp_path, qwen_profile())
     load = {"profile_id": profile.id, "kind": "tts", "model_ref": profile.model_ref,
             "parameters": profile.parameters, "options": profile.source.execution_options}
     assert worker.dispatch("/load", load)["loaded"] == [profile.id]
@@ -215,14 +217,15 @@ def test_qwen_worker_is_public_and_validates_before_engine_calls(tmp_path):
         with pytest.raises(WorkerError):
             worker.dispatch("/speech", {**body, **patch})
     assert engine.speech.call_count == 1
-    blocked = AudioWorker(tmp_path, tmp_path, engine_factory=MagicMock(side_effect=AssertionError("Unexpected load")))
-    (tmp_path / "tts/qwen/speech_tokenizer/model.safetensors").unlink()
+    blocked = AudioWorker(tmp_path / "data/models", tmp_path, engine_factory=MagicMock(side_effect=AssertionError("Unexpected load")))
+    (tmp_path / "data/models/tts/qwen/speech_tokenizer/model.safetensors").unlink()
     with pytest.raises(WorkerError):
         blocked.dispatch("/load", load)
 
 
 def test_qwen_reference_queue_expiry_and_cancellation_keep_transcript_scoped(tmp_path):
     async def scenario():
+        qwen_model(tmp_path / "data/models/tts/qwen")
         manager = make_manager(tmp_path)
         clock = Clock()
         manager._voice_references = VoiceReferences(tmp_path, clock=clock)
@@ -297,8 +300,31 @@ def test_qwen_reference_invalidation_discards_transcript(qwen_api, change):
     elif change == "delete":
         result = client.delete(f"/api/models/profiles/{profile.id}")
     else:
-        patch = {"parameters": {"architecture": "chatterbox"}} if change == "architecture" else (
+        patch = {"model_ref": "tts/chatterbox", "parameters": {}} if change == "architecture" else (
             {"model_ref": "tts/other"} if change == "binding" else {change: False})
         result = client.patch(f"/api/models/profiles/{profile.id}", json=patch)
     assert result.status_code == 200, result.text
     assert not entry.path.exists() and entry.reference_text is None and identifier not in manager.voice_references._entries
+
+
+def test_generation_edits_preserve_temporary_voice_binding(qwen_api):
+    client, manager, profile, _ = qwen_api
+    identifier = upload(client, "Reference words").json()["voice_id"]
+    response = client.patch(f"/api/models/profiles/{profile.id}", json={"parameters": {"seed": 7, "temperature": 0.7}})
+    assert response.status_code == 200, response.text
+    assert identifier in manager.voice_references._entries
+    assert manager.temporary_voice_list(profile.id, None)[0]["id"] == identifier
+
+
+def test_detected_architecture_change_in_same_directory_invalidates_voice(qwen_api, tmp_path):
+    client, manager, profile, adapter = qwen_api
+    identifier = upload(client, "Reference words").json()["voice_id"]
+    entry = manager.voice_references._entries[identifier]
+    adapter.directories = {profile.id: manager.profile(profile.id)._directory}
+    adapter.process = object()
+    path = write_local_model(tmp_path, profile.model_ref, "chatterbox")
+    (path / "config.json").write_text("{}")
+    response = client.patch(f"/api/models/profiles/{profile.id}", json={"parameters": {}})
+    assert response.status_code == 200, response.text
+    assert identifier not in manager.voice_references._entries
+    assert not entry.path.exists() and entry.reference_text is None

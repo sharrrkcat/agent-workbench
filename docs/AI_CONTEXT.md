@@ -12,7 +12,7 @@ OpenAI-compatible model service. Internal and external inference share
 ModelManager. One Windows x64 local runtime installs shared Python dependencies
 and separate CPU/CUDA llama-server components. Models run in independent processes;
 external ProviderProfiles use the OpenAI-compatible protocol.
-Vision-capable LLMs accept static PNG/JPEG/WebP in chat, including selected history; GGUF requires an explicit projector.
+Vision-capable LLMs accept static PNG/JPEG/WebP in chat, including selected history; directory-selected GGUF resolves its main model and optional projector automatically.
 Kokoro ONNX and PyTorch Audio provide offline MP3/WAV TTS through
 `/v1/audio/speech`. Kokoro uses local language resources and presets; English Chatterbox and multilingual
 Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optional

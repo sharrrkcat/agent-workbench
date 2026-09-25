@@ -137,12 +137,14 @@ assert not {'torch', 'torchaudio', 'transformers', 'onnxruntime', 'chatterbox', 
 
 
 def test_private_worker_rejects_unsupported_engines_and_fields_before_loading(tmp_path):
+    from tests.model_fixtures import write_local_model
+    write_local_model(tmp_path, 'tts/chatterbox', 'chatterbox')
     factory = MagicMock(side_effect=AssertionError("No engine loading"))
-    worker = AudioWorker(tmp_path, tmp_path, engine_factory=factory)
-    body = {"profile_id": "test", "kind": "tts", "model_ref": "tts/chatterbox", "parameters": {"architecture": "chatterbox"},
+    worker = AudioWorker(tmp_path / 'data/models', tmp_path, engine_factory=factory)
+    body = {"profile_id": "test", "kind": "tts", "model_ref": "tts/chatterbox", "parameters": {},
             "options": {"device": "cpu", "intraop_threads": 4}}
     for patch in ({"extra": True}, {"model_ref": "../outside"}, {"parameters": {"architecture": "whisper"}},
-                  {"parameters": {"architecture": "chatterbox", "temperature": 0}}, {"options": {"device": "auto", "intraop_threads": 4}}):
+                  {"parameters": {"temperature": 0}}, {"options": {"device": "auto", "intraop_threads": 4}}):
         with pytest.raises(WorkerError):
             worker.dispatch("/load", {**body, **patch})
     assert worker.health()["loaded"] == []
@@ -211,7 +213,7 @@ def test_real_audio_processes_have_separate_queues_cancellation_and_crash_scope(
         from tests.audio_fixtures import qwen_model
         qwen_model(tmp_path / "data/models/tts/qwen")
         first, second = [manager.profiles.create(profile(alias=alias, source={"type": "local", "execution_options": {"device": "cpu"}},
-            model_ref="tts/qwen" if architecture == "qwen3tts" else "tts/chatterbox", parameters={"architecture": architecture}))
+            model_ref="tts/qwen" if architecture == "qwen3tts" else "tts/chatterbox"))
             for alias, architecture in zip(("first", "second"), architectures)]
         try:
             voices = [await manager.create_voice_reference(value.id, wav_bytes(), "wav", credential_id("test-key")) for value in (first, second)]

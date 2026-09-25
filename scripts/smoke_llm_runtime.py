@@ -41,14 +41,13 @@ async def checked_json(client, method, path, **kwargs):
     return response.json()
 
 
-async def validate_device(state, client, model_ref, device, engine_name, vision=False, mmproj_ref=None):
+async def validate_device(state, client, model_ref, device, engine_name, vision=False):
     manager = state.model_manager
     options = {"device": device}
-    if mmproj_ref:
-        options["mmproj_ref"] = mmproj_ref
     profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, capabilities={'streaming': True, 'tools': not vision, 'vision': vision}, parameters={'temperature': 0, 'max_tokens': 128}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
     manager.settings.patch({"utility_model_profile_id": profile.id})
     loaded = await manager.load(profile.id)
+    profile = manager.profile(profile.id)
     assert loaded.residency == "loaded"
     if engine_name == "transformers" or device == "cuda":
         assert loaded.runtime.device_name
@@ -237,7 +236,7 @@ async def validate_vision(state, client, profile, engine_name):
             "history": "passed", "stream": "passed", "cancellation": "passed", "answers": answers}
 
 
-async def smoke(root, model_ref, devices, install_only, engine_name, vision=False, mmproj_ref=None):
+async def smoke(root, model_ref, devices, install_only, engine_name, vision=False):
     engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
@@ -275,10 +274,10 @@ async def smoke(root, model_ref, devices, install_only, engine_name, vision=Fals
         await until(lambda: server.started)
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=360,
                 headers={"Authorization": f"Bearer {token}"}, trust_env=False) as client:
-            results = [await validate_device(state, client, model_ref, device, engine_name, vision, mmproj_ref) for device in devices]
+            results = [await validate_device(state, client, model_ref, device, engine_name, vision) for device in devices]
         output = root / "build/llm-smoke" / engine_name
         output.mkdir(parents=True, exist_ok=True)
-        report = {"model_ref": model_ref, "mmproj_ref": mmproj_ref, "runtime_version": supervisor.release.version,
+        report = {"model_ref": model_ref, "runtime_version": supervisor.release.version,
                   "results": results, "elapsed_seconds": round(time.monotonic() - started, 2)}
         (output / ("vision-report.json" if vision else "report.json")).write_text(json.dumps(report, indent=2), encoding="utf-8")
     finally:
@@ -297,20 +296,15 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--engine", choices=("transformers", "llama-server"), default="transformers")
-    parser.add_argument("--model-ref")
+    parser.add_argument("--model-ref", help="Existing model directory relative to data/models")
     parser.add_argument("--device", choices=("cpu", "cuda", "both"), default="both")
     parser.add_argument("--install-only", action="store_true")
     parser.add_argument("--vision", action="store_true", help="Verify static images, multi-image order, history, streaming and cancellation")
-    parser.add_argument("--mmproj-ref", help="GGUF vision projector path relative to data/models")
     args = parser.parse_args(argv)
-    if args.vision and args.engine == "llama-server" and not args.mmproj_ref:
-        parser.error("--vision with llama-server requires --mmproj-ref")
-    if args.mmproj_ref and (not args.vision or args.engine != "llama-server"):
-        parser.error("--mmproj-ref requires --vision --engine llama-server")
     return args
 
 
 if __name__ == "__main__":
     args = parse_args()
-    reference = args.model_ref or ("llms/Qwen3.5-0.8B-TF" if args.engine == "transformers" else "llms/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf")
-    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision, args.mmproj_ref))
+    reference = args.model_ref or ("llms/Qwen3.5-0.8B-TF" if args.engine == "transformers" else "llms/Qwen3.5-0.8B-GGUF")
+    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision))

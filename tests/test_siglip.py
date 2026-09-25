@@ -117,13 +117,13 @@ def test_inspection_api_has_no_runtime_weights_or_hash_dependency(tmp_path, monk
         for invalid in ("../escape", "/absolute", "image_embeddings/../escape", "C:/absolute", "a\\b", "invalid\0"):
             result = client.get("/api/models/inspect", params={"kind": "image_embedding", "model_ref": invalid})
             assert result.status_code == 422 and result.json()["error"]["code"] == "INVALID_REQUEST"
-        assert client.get("/api/models/inspect", params={"kind": "llm", "model_ref": REF}).status_code == 422
+        assert client.get("/api/models/inspect", params={"kind": "llm", "model_ref": REF}).status_code == 200
         assert client.get("/api/models/inspect", params={"kind": "image_embedding", "model_ref": "missing"}).status_code == 404
         (path / "config.json").unlink()
         assert client.get("/api/models/inspect", params={"kind": "image_embedding", "model_ref": REF}).status_code == 200
         draft = client.post("/api/models/profiles", json={"name": "Draft", "alias": "draft", "kind": "image_embedding", "model_ref": REF})
-        assert draft.status_code == 200 and draft.json()["source"] is None
-        assert client.post(f"/api/models/profiles/{draft.json()['id']}/load").json()["error"]["code"] == "MODEL_NOT_CONFIGURED"
+        assert draft.status_code == 200 and draft.json()["source"]['type'] == 'local'
+        assert client.patch(f"/api/models/profiles/{draft.json()['id']}", json={'source': None}).status_code == 422
 
 
 def test_inspection_rejects_directory_and_config_links_outside_boundary(tmp_path):

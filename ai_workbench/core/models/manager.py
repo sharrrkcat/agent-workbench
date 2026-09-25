@@ -14,7 +14,8 @@ from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, Pro
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.images import prepare_image_embedding_inputs, prepare_local_images, prepare_tagging_images, validate_local_image_options
-from ai_workbench.core.models.runtimes.schema import is_transformers, local_engine
+from ai_workbench.core.models.runtimes.schema import engine_options, is_transformers, local_engine
+from ai_workbench.core.models.resolution import configure_profile, require_directory, resolve_profile
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingPurpose, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
@@ -81,10 +82,23 @@ class ModelManager:
         return self._voice_references
 
     def voice_binding(self, profile):
+        configure_profile(self._resolve(profile))
         version = self.runtime_supervisor.release.version
         value = [profile.id, profile.model_ref, profile.source.type, local_engine(profile),
-                 profile.parameters["architecture"], profile.source.execution_options, version]
+                 profile.source.execution_options, version]
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+    def _resolve(self, profile):
+        if not isinstance(profile.source, LocalSource) or profile.kind not in {"llm", "tts", "vision"} or profile._directory is not None:
+            return profile
+        for slot in self._slots.values():
+            if not (getattr(slot.adapter, "process", None) or getattr(slot.adapter, "failed", False) or slot.active or slot.queued):
+                continue
+            for info in getattr(slot.adapter, "directories", {}).values():
+                if info.kind == profile.kind and info.model_ref == profile.model_ref:
+                    profile._directory = info
+                    return profile
+        return resolve_profile(self.runtime_supervisor.root, profile) if self.runtime_supervisor else profile
 
     def profile(self, profile_id: str, kind: str | None = None) -> ModelProfile:
         try:
@@ -95,7 +109,7 @@ class ModelManager:
             raise ModelError("MODEL_KIND_MISMATCH", f"This operation requires a {kind} profile.")
         if not profile.enabled:
             raise ModelError("MODEL_UNAVAILABLE", "Model profile is disabled.", 503)
-        return profile
+        return configure_profile(self._resolve(profile))
 
     def external_profile(self, alias: str, kind: str | None = None) -> ModelProfile:
         profile = self.profiles.find_by_alias(alias)
@@ -114,19 +128,24 @@ class ModelManager:
             return ("unbound", getattr(profile, "id", "draft"))
         if isinstance(profile.source, ProviderSource):
             return ("provider", profile.source.provider_profile_id)
-        engine = local_engine(profile)
+        engine = local_engine(self._resolve(profile))
         key = ("local", engine)
+        if engine is None:
+            return key + (getattr(profile, "id", "draft"),)
+        options = {**engine_options(engine, profile.source.execution_options)().model_dump(), **profile.source.execution_options}
         if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2", "sentence-transformers", "cross-encoder"}:
             return key + (getattr(profile, "id", "draft"), profile.model_ref,
-                          json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")))
+                          json.dumps(options, sort_keys=True, separators=(",", ":")))
         if engine in {"llama-server", "transformers"}:
-            path = self.runtime_supervisor.root / "data" / "models" / profile.model_ref
-            key += (profile.source.execution_options["device"], os.path.normcase(str(path)))
+            from ai_workbench.core.models.runtimes.schema import model_path
+            reference = profile._directory.main_model_ref if engine == "llama-server" else profile.model_ref
+            path = model_path(self.runtime_supervisor.root, reference or profile.model_ref)
+            key += (options["device"], os.path.normcase(str(path)))
         if engine == "transformers":
-            key += (json.dumps(profile.source.execution_options, sort_keys=True, separators=(",", ":")),)
+            key += (json.dumps(options, sort_keys=True, separators=(",", ":")),)
         if engine == "llama-server":
-            projector = profile.source.execution_options["mmproj_ref"]
-            key += (os.path.normcase(str(self.runtime_supervisor.root / "data" / "models" / projector)) if projector else None,)
+            projector = profile._directory.mmproj_ref if profile.capabilities.vision else None
+            key += (os.path.normcase(str(model_path(self.runtime_supervisor.root, projector))) if projector else None,)
         return key
 
     def _key(self, profile: ModelProfile) -> tuple:
@@ -137,13 +156,20 @@ class ModelManager:
     def validate_binding(self, profile):
         if isinstance(profile.source, ProviderSource):
             self.providers.get(profile.source.provider_profile_id)
+        if isinstance(profile.source, LocalSource) and self.runtime_supervisor:
+            configure_profile(resolve_profile(self.runtime_supervisor.root, profile))
         if local_engine(profile) == "llama-server":
             for alias in self.profiles.list("llm"):
-                if alias.id != getattr(profile, "id", None) and self.execution_key(alias) == self.execution_key(profile) and alias.source.execution_options != profile.source.execution_options:
+                if alias.id != getattr(profile, "id", None) and self.execution_key(alias) == self.execution_key(profile) and configure_profile(alias).source.execution_options != profile.source.execution_options:
                     raise ModelError("MODEL_CONFLICT", "Aliases of a managed GGUF must use identical execution options.", 409)
+        return profile
 
     def status(self, profile_id: str) -> ModelStatus:
         profile = self.profiles.get(profile_id)
+        try:
+            self._resolve(profile)
+        except ModelError as exc:
+            return ModelStatus(state="unavailable", error_code=exc.code, residency="unloaded", unload_supported=True)
         status = self._statuses.get(self._key(profile), ModelStatus()).model_copy()
         source = profile.source
         provider = next((p for p in self.providers.list() if isinstance(source, ProviderSource) and p.id == source.provider_profile_id), None)
@@ -164,15 +190,16 @@ class ModelManager:
             else:
                 try:
                     path = model_path(self.runtime_supervisor.root, profile.model_ref)
+                    require_directory(profile)
                     if engine == "llama-server":
-                        if not path.is_file():
+                        if not all(model_path(self.runtime_supervisor.root, ref).is_file() for ref in profile._directory.model_files):
                             raise ValueError()
-                        projector = profile.source.execution_options["mmproj_ref"]
+                        projector = profile._directory.mmproj_ref if profile.capabilities.vision else None
                         if projector and not model_path(self.runtime_supervisor.root, projector).is_file():
                             raise ValueError()
                     elif engine in {"chatterbox", "qwen3tts"}:
                         from ai_workbench.workers.audio_catalog import audio_model
-                        audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
+                        audio_model(self.runtime_supervisor.root / "data" / "models", profile.model_ref, engine)
                     elif engine == "siglip2":
                         from ai_workbench.workers.siglip_catalog import model_presence
                         model_presence(self.runtime_supervisor.root / "data/models", profile.model_ref)
@@ -186,9 +213,15 @@ class ModelManager:
                         if engine == "kokoro":
                             from ai_workbench.workers.tts_catalog import language_model
                             language_model(self.runtime_supervisor.root / "data" / "models")
-                except (OSError, ValueError, WorkerError):
+                except (OSError, ValueError, WorkerError, ModelError) as exc:
                     status.state = "unavailable"
-                    status.error_code = "MODEL_NOT_FOUND"
+                    status.error_code = exc.code if isinstance(exc, (WorkerError, ModelError)) else "MODEL_NOT_FOUND"
+        elif isinstance(source, LocalSource) and profile._directory is not None:
+            status.state, status.residency, status.unload_supported = "unavailable", "unloaded", True
+            try:
+                require_directory(profile)
+            except ModelError as exc:
+                status.error_code = exc.code
         if source is None:
             status.state, status.error_code = "unavailable", "MODEL_NOT_CONFIGURED"
         elif not profile.enabled or (isinstance(source, ProviderSource) and (provider is None or not provider.enabled)) or (
@@ -240,6 +273,10 @@ class ModelManager:
         return provider.connection, self._slots[execution_key]
 
     def _managed_slot(self, profile):
+        configure_profile(self._resolve(profile))
+        if local_engine(profile) is None:
+            require_directory(profile)
+            raise ModelError("RUNTIME_UNSUPPORTED", "No local engine was identified for this model directory.", 503)
         key = self.execution_key(profile)
         if key not in self._slots:
             from ai_workbench.core.models.runtimes.adapters import ASRWorkerAdapter, AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, RerankerWorkerAdapter, TransformersServerAdapter
@@ -621,10 +658,10 @@ class ModelManager:
     def voice_list(self, profile_id: str) -> list[dict]:
         from ai_workbench.workers.tts_catalog import voices
         from ai_workbench.core.models.runtimes.schema import model_path
-        profile = self.profiles.get(profile_id)
+        profile = self._resolve(self.profiles.get(profile_id))
         if profile.kind != "tts":
             raise ModelError("MODEL_KIND_MISMATCH", "Voice discovery requires a tts profile.")
-        if profile.parameters["architecture"] != "kokoro":
+        if local_engine(profile) != "kokoro":
             return []
         path = None
         if self.runtime_supervisor:
@@ -639,7 +676,8 @@ class ModelManager:
         from ai_workbench.core.models.runtimes.schema import model_path
         from ai_workbench.workers.audio import validate_audio
         profile = self.profile(profile_id, "tts")
-        if profile.parameters["architecture"] in {"chatterbox", "qwen3tts"}:
+        require_directory(profile)
+        if local_engine(profile) in {"chatterbox", "qwen3tts"}:
             return await self._reference_speech(profile, request, credential)
         if request.tts.reference_audio is not None or request.tts.model_options is not None:
             raise ModelError("INVALID_REQUEST", "Reference audio and model_options require Chatterbox or Qwen3-TTS Base.")
@@ -678,7 +716,8 @@ class ModelManager:
 
     def _reference_profile(self, profile_id):
         profile = self.profile(profile_id, "tts")
-        if profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"} or local_engine(profile) not in {"chatterbox", "qwen3tts"}:
+        require_directory(profile)
+        if local_engine(profile) not in {"chatterbox", "qwen3tts"}:
             raise ModelError("UNSUPPORTED_CAPABILITY", "Reference audio requires a managed Chatterbox or Qwen3-TTS Base profile.")
         return profile
 
@@ -720,7 +759,7 @@ class ModelManager:
             ReferenceTranscript(reference_text=reference_text)
         except ValidationError as exc:
             raise ModelError("INVALID_REQUEST", "Reference transcript must contain 1 to 4096 nonblank characters.") from exc
-        if reference_text is not None and profile.parameters["architecture"] != "qwen3tts":
+        if reference_text is not None and local_engine(profile) != "qwen3tts":
             raise ModelError("INVALID_REQUEST", "Reference transcripts require Qwen3-TTS Base.")
         credential = self._voice_credential(credential)
         binding = self.voice_binding(profile)
@@ -739,9 +778,9 @@ class ModelManager:
     def temporary_voice_list(self, profile_id, credential):
         profile = self.profile(profile_id, "tts")
         credential = self._voice_credential(credential)
-        if self._voice_references is None or local_engine(profile) not in {"chatterbox", "qwen3tts"} or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
+        if self._voice_references is None or local_engine(profile) not in {"chatterbox", "qwen3tts"}:
             return []
-        language = None if profile.parameters["architecture"] == "qwen3tts" else "en-US"
+        language = None if local_engine(profile) == "qwen3tts" else "en-US"
         return [{**item, "model": profile.alias} for item in self._voice_references.list(
             profile.id, self.voice_binding(profile), credential, language=language)]
 
@@ -749,7 +788,8 @@ class ModelManager:
         credential = self._voice_credential(credential)
         if self._voice_references is not None:
             for profile in self.profiles.list("tts"):
-                if not profile.enabled or not profile.external_enabled or local_engine(profile) not in {"chatterbox", "qwen3tts"} or profile.parameters["architecture"] not in {"chatterbox", "qwen3tts"}:
+                self._resolve(profile)
+                if not profile.enabled or not profile.external_enabled or local_engine(profile) not in {"chatterbox", "qwen3tts"}:
                     continue
                 try:
                     self._voice_references.delete(identifier, profile.id, self.voice_binding(profile), credential)
@@ -770,7 +810,7 @@ class ModelManager:
         from ai_workbench.workers.audio_catalog import AUDIO_DEFAULTS, QWEN3TTS_LANGUAGES
         self._reference_profile(profile.id)
         credential = self._voice_credential(credential)
-        architecture = profile.parameters["architecture"]
+        architecture = local_engine(profile)
         languages = QWEN3TTS_LANGUAGES if architecture == "qwen3tts" else {"en-US"}
         if request.tts.language is not None and request.tts.language not in languages:
             raise ModelError("INVALID_REQUEST", "The selected TTS architecture does not support this language.")

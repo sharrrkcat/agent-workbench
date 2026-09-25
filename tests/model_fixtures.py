@@ -1,8 +1,34 @@
 import json
+from pathlib import Path
 
 import httpx
 
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+
+
+def write_local_model(root: Path, reference: str, engine: str) -> Path:
+    """Write a minimal recognizable model package under an isolated test root."""
+    path = root / "data/models" / reference
+    path.mkdir(parents=True, exist_ok=True)
+    if engine == "qwen3tts":
+        from tests.audio_fixtures import qwen_model
+        return qwen_model(path)
+    files = {
+        "llama-server": {"model.gguf": b"fixture"},
+        "transformers": {"config.json": b"{}", "model.safetensors": b"fixture"},
+        "kokoro": {"config.json": b'{"model_type":"style_text_to_speech_2"}',
+            "tokenizer.json": b"{}", "tokenizer_config.json": b"{}", "model.onnx": b"fixture"},
+        "chatterbox": {name: b"fixture" for name in ("ve.safetensors", "t3_cfg.safetensors", "s3gen.safetensors", "tokenizer.json")},
+        "wd14": {"model.onnx": b"fixture", "selected_tags.csv": b"name,category\ntag,0\n"},
+    }[engine]
+    for name, data in files.items():
+        (path / name).write_bytes(data)
+    return path
+
+
+def resolve_local_profile(root: Path, profile):
+    from ai_workbench.core.models.resolution import configure_profile, resolve_profile
+    return configure_profile(resolve_profile(root, profile))
 
 
 class MockOpenAI:

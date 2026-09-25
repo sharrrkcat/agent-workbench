@@ -69,11 +69,13 @@ def test_engine_rejects_nonfinite_waveforms(tmp_path):
 
 
 @pytest.mark.parametrize("failure", ["timeout", "bad-mime", "truncated", "large", "error-list", "error-value", "error-code"])
-def test_worker_audio_failures_stop_execution_and_sanitize_errors(monkeypatch, failure):
+def test_worker_audio_failures_stop_execution_and_sanitize_errors(tmp_path, monkeypatch, failure):
     from ai_workbench.core.models.runtimes import adapters
+    from tests.model_fixtures import write_local_model
+    write_local_model(tmp_path, 'tts/kokoro', 'kokoro')
 
     async def scenario():
-        adapter = PythonWorkerAdapter(SimpleNamespace(release=catalog("windows", "x86_64")),
+        adapter = PythonWorkerAdapter(SimpleNamespace(root=tmp_path, release=catalog("windows", "x86_64")),
             ModelProfile(name="speech", alias="speech", kind="tts", model_ref="tts/kokoro", source={'type': 'local'}), lambda: None)
         adapter._stop = AsyncMock()
 
@@ -119,8 +121,8 @@ def test_speech_rejects_escaped_model_and_voice_directories(api, tmp_path):
     link_directory(path.parent / "escaped-model", outside)
     manager.profiles.update(profile["id"], {"model_ref": "tts/escaped-model"})
     response = client.post("/v1/audio/speech", headers=HEADERS, json=PAYLOAD)
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "MODEL_NOT_FOUND"
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_invalid_audio_remains_json_before_success_headers(api):

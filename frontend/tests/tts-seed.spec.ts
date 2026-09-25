@@ -17,10 +17,10 @@ for (const locale of ['en', 'zh-CN']) {
         for (const selected of ['chatterbox', 'qwen3tts']) {
           await page.getByRole('button', { name: labels.addModel, exact: true }).click();
           const dialog = page.getByRole('dialog');
-          const selector = dialog.getByLabel(labels.params.architecture, { exact: true });
+          const reference = dialog.getByLabel(labels.modelRef, { exact: true });
           const seed = dialog.getByLabel(labels.params.seed, { exact: true });
           await expect(seed).toHaveCount(0);
-          await chooseOption(selector, selected === 'chatterbox' ? labels.chatterboxEnglish : labels.qwen3TTSBase);
+          await fillCombobox(reference, `tts/fixture-${selected}`);
           await expect(seed).toHaveValue('');
           await expect(seed).toHaveAttribute('min', '0');
           await expect(seed).toHaveAttribute('max', '4294967295');
@@ -43,7 +43,7 @@ for (const locale of ['en', 'zh-CN']) {
           const row = page.locator('.model-list .model-row').filter({ hasText: alias });
           await row.getByRole('button', { name: labels.edit, exact: true }).click();
           await expect(seed).toHaveValue('0');
-          await chooseOption(dialog.getByLabel(labels.source, { exact: true }), labels.localRuntime);
+          await expect(dialog.getByLabel(labels.source, { exact: true })).toBeDisabled();
           await expect(seed).toHaveValue('0');
           await seed.fill('4294967295');
           await expect(seed).toHaveValue('4294967295');
@@ -54,14 +54,79 @@ for (const locale of ['en', 'zh-CN']) {
           await row.getByRole('button', { name: labels.edit, exact: true }).click();
           await expect(seed).toHaveValue('');
           await seed.fill('123');
-          await chooseOption(selector, selected === 'chatterbox' ? labels.qwen3TTSBase : labels.chatterboxEnglish);
+          await fillCombobox(reference, selected === 'chatterbox' ? 'tts/fixture-qwen3tts' : 'tts/fixture-chatterbox');
           await expect(seed).toHaveValue('');
-          await chooseOption(selector, 'Kokoro-82M v1.0 (ONNX)');
+          await fillCombobox(reference, 'tts/kokoro');
+          await expect(dialog.getByRole('group', { name: labels.directory.information, exact: true })).toContainText('kokoro');
           await expect(seed).toHaveCount(0);
           await dialog.getByRole('button', { name: labels.close, exact: true }).click();
           await expect(dialog).toHaveCount(0);
         }
         expect(errors).toEqual([]);
+      });
+
+      test('directory changes preserve common settings and ignore late inspection', async ({ page, request }) => {
+        await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
+        await page.goto('/settings?tab=models');
+        await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds.tts);
+        await page.getByRole('button', { name: labels.addModel, exact: true }).click();
+        const dialog = page.getByRole('dialog');
+        const reference = dialog.getByLabel(labels.modelRef, { exact: true });
+        const details = dialog.getByRole('group', { name: labels.directory.information, exact: true });
+        const speed = dialog.getByLabel(labels.params.speed, { exact: true });
+        const seed = dialog.getByLabel(labels.params.seed, { exact: true });
+        const threads = dialog.getByLabel(labels.runtimeParams.intraop_threads, { exact: true });
+        await fillCombobox(reference, 'tts/fixture-qwen');
+        await expect(seed).toBeVisible();
+        await speed.fill('0.75');
+        await seed.fill('17');
+        await threads.fill('6');
+        await chooseOption(dialog.getByLabel(labels.release, { exact: true }), labels.policy.idle);
+        await dialog.getByLabel(labels.idleSeconds, { exact: true }).fill('75');
+        await dialog.getByLabel(labels.name, { exact: true }).fill('Named speech');
+        await fillCombobox(reference, 'tts/fixture-qwen3tts');
+        await expect(seed).toHaveValue('17');
+        await expect(threads).toHaveValue('6');
+
+        let release!: () => void;
+        let started!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const pending = new Promise<void>((resolve) => { started = resolve; });
+        await page.route('**/api/models/inspect?**', async (route) => {
+          if (new URL(route.request().url()).searchParams.get('model_ref') !== 'tts/fixture-chatterbox') return route.continue();
+          const response = await route.fetch();
+          started();
+          await gate;
+          await route.fulfill({ response });
+        });
+        try {
+          await fillCombobox(reference, 'tts/fixture-chatterbox');
+          await pending;
+          await expect(details).toContainText(labels.directory.inspecting);
+          await expect(details).not.toContainText(labels.engines.qwen3tts);
+          await fillCombobox(reference, 'tts/kokoro');
+          await expect(details).toContainText('kokoro');
+          const late = page.waitForResponse((response) => new URL(response.url()).searchParams.get('model_ref') === 'tts/fixture-chatterbox');
+          release();
+          await (await late).finished();
+          await page.waitForLoadState('networkidle');
+          await expect(details).toContainText('kokoro');
+          await expect(seed).toHaveCount(0);
+          await expect(speed).toHaveValue('0.75');
+          await expect(threads).toHaveValue('4');
+          await expect(dialog.getByLabel(labels.idleSeconds, { exact: true })).toHaveValue('75');
+          await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('Named speech');
+          const alias = `runtime-fixture-late-${locale.toLowerCase()}-${viewport.width}`;
+          await dialog.getByLabel(labels.alias, { exact: true }).fill(alias);
+          await dialog.getByRole('button', { name: labels.save, exact: true }).click();
+          await expect(dialog).toHaveCount(0);
+          const saved = (await (await request.get('/api/models/profiles')).json()).find((profile: { alias: string }) => profile.alias === alias);
+          expect(saved.parameters).toEqual({ speed: 0.75, response_format: 'mp3' });
+          expect(saved.source.lifecycle).toEqual({ unload: 'idle', idle_seconds: 75 });
+          expect(saved.source.execution_options.device).toBe('cpu');
+        } finally {
+          release();
+        }
       });
     });
   }

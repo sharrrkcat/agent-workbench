@@ -50,6 +50,8 @@ for (const locale of ['en', 'zh-CN']) {
         await chooseOption(source, labels.localRuntime);
         await expect(reference).toHaveValue('');
         await expect(dialog.getByLabel(labels.release, { exact: true }).locator('[data-slot="select-value"]')).toHaveText(labels.policy.manual);
+        await expect(dialog.getByLabel(labels.runtimeDevice, { exact: true })).toHaveCount(0);
+        await fillCombobox(reference, 'llms/fixture');
         await expect(dialog.getByLabel(labels.runtimeDevice, { exact: true })).toBeVisible();
         await dialog.getByRole('button', { name: labels.close, exact: true }).click();
         await navigateSettings(page, labels.title, labels.localRuntime);
@@ -112,14 +114,19 @@ for (const locale of ['en', 'zh-CN']) {
       await chooseOption(kind, labels.kinds[selected]);
       await page.getByRole('button', { name: labels.addModel, exact: true }).click();
       await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
-      await source.click();
-      await expect(page.getByRole('listbox')).toBeVisible();
-      await expect(page.getByRole('option', { name: labels.localRuntime, exact: true })).toHaveCount(1);
-      const providerGroup = page.getByRole('group', { name: labels.providers, exact: true });
-      await expect(providerGroup).toHaveCount(selected === 'embedding' ? 1 : 0);
-      if (selected === 'embedding') await expect.poll(() => providerGroup.getByRole('option').count()).toBeGreaterThan(0);
-      await page.keyboard.press('Escape');
-      await expect(source).toHaveAttribute('aria-expanded', 'false');
+      if (['tts', 'image_embedding', 'vision', 'asr'].includes(selected)) {
+        await expect(source).toBeDisabled();
+      } else {
+        await source.click();
+        await expect(page.getByRole('listbox')).toBeVisible();
+        await expect(page.getByRole('option', { name: labels.localRuntime, exact: true })).toHaveCount(1);
+        await expect(page.getByRole('option', { name: labels.unbound, exact: true })).toHaveCount(1);
+        const providerGroup = page.getByRole('group', { name: labels.providers, exact: true });
+        await expect(providerGroup).toHaveCount(selected === 'embedding' ? 1 : 0);
+        if (selected === 'embedding') await expect.poll(() => providerGroup.getByRole('option').count()).toBeGreaterThan(0);
+        await page.keyboard.press('Escape');
+        await expect(source).toHaveAttribute('aria-expanded', 'false');
+      }
       await dialog.getByRole('button', { name: labels.close, exact: true }).click();
     }
   });

@@ -194,9 +194,9 @@ def test_cancellation_queue_isolation_failure_recovery_and_input_cleanup(tmp_pat
     asyncio.run(scenario())
 
 
-def test_only_asr_inference_disables_the_fixed_read_timeout():
+def test_only_asr_inference_disables_the_fixed_read_timeout(tmp_path):
     async def scenario():
-        adapter = ASRWorkerAdapter(SimpleNamespace(release=catalog("windows", "x86_64")), profile(), lambda: None)
+        adapter = ASRWorkerAdapter(SimpleNamespace(root=tmp_path, release=catalog("windows", "x86_64")), profile(), lambda: None)
         adapter._rpc = AsyncMock()
         await adapter.transcribe(profile(), "input.wav", ASRParameters())
         timeout = adapter._rpc.call_args.kwargs["timeout"]

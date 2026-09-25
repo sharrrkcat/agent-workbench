@@ -26,6 +26,7 @@ from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeSettingsRecord,
 from ai_workbench.workers.common import WorkerError, local_model
 from ai_workbench.workers.transformers_engine import StopFilter
 from ai_workbench.workers.transformers_server import build_app, chat_request, options_request
+from tests.model_fixtures import resolve_local_profile, write_local_model
 
 
 def profile(**values):
@@ -40,15 +41,17 @@ def profile(**values):
     {"capabilities": {"json_schema": True}},
     {"parameters": {"presence_penalty": 0.1}}, {"parameters": {"frequency_penalty": -0.1}},
 ])
-def test_transformers_profile_rejects_unimplemented_combinations(patch):
-    with pytest.raises(ValidationError):
-        profile(**patch)
+def test_transformers_profile_rejects_unimplemented_combinations(tmp_path, patch):
+    write_local_model(tmp_path, "llms/local", "transformers")
+    with pytest.raises((ValidationError, ModelError)):
+        resolve_local_profile(tmp_path, profile(**patch))
 
 
 def test_alias_identity_devices_and_request_limits(tmp_path):
+    write_local_model(tmp_path, "llms/local", "transformers")
     supervisor = RuntimeSupervisor(tmp_path, RuntimeStore(), LocalRuntimeSettingsStore())
     manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
-    first, alias = profile(), profile(alias="alias")
+    first, alias = resolve_local_profile(tmp_path, profile()), profile(alias="alias")
     cpu = profile(alias="cpu", source={"type": "local", "execution_options": {"device": "cpu"}})
     assert manager.execution_key(first) == manager.execution_key(alias)
     assert manager._key(first) == manager._key(alias)
@@ -118,10 +121,11 @@ def test_private_server_authentication_and_local_text_boundary():
     assert "frequency_penalty" not in chat_request({**base, "frequency_penalty": 0})
 
 
-def test_transformers_stream_closure_stops_process_before_returning():
+def test_transformers_stream_closure_stops_process_before_returning(tmp_path):
+    write_local_model(tmp_path, "llms/local", "transformers")
     async def scenario():
         entry = catalog("windows", "x86_64")
-        adapter = TransformersServerAdapter(SimpleNamespace(release=entry), profile(), lambda: None)
+        adapter = TransformersServerAdapter(SimpleNamespace(root=tmp_path, release=entry), profile(), lambda: None)
         stopped = asyncio.Event()
         adapter._stop = AsyncMock(side_effect=lambda: stopped.set())
         adapter.tool_calls_supported = True

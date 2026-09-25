@@ -98,7 +98,7 @@ def test_sql_restart_preserves_only_current_configuration(tmp_path):
         assert "test-key" not in client.get("/api/models/settings").text
 
 
-@pytest.mark.parametrize("kind", ["reranker", "image_embedding", "vision"])
+@pytest.mark.parametrize("kind", ["embedding", "reranker"])
 def test_unbound_nonchat_models_are_first_class_but_require_a_source(tmp_path, kind):
     with TestClient(create_app(use_memory=True, root=tmp_path)) as client:
         response = client.post("/api/models/profiles", json={"name": kind, "alias": kind, "kind": kind, "model_ref": "local/file"})

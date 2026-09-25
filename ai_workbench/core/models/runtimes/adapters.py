@@ -12,6 +12,7 @@ from uuid import uuid4
 import httpx
 
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.resolution import configure_profile, require_directory, resolve_profile
 from ai_workbench.core.models.images import request_images
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
@@ -26,7 +27,9 @@ from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, curr
 
 class ManagedAdapter:
     def __init__(self, supervisor, profile, changed):
+        configure_profile(resolve_profile(supervisor.root, profile))
         self.supervisor, self.profile, self.changed = supervisor, profile, changed
+        self.directories = {profile.id: profile._directory} if profile._directory is not None else {}
         self.entry = supervisor.release
         self.engine = local_engine(profile)
         self.device = profile.source.execution_options["device"]
@@ -114,11 +117,15 @@ class ManagedAdapter:
 
     def _model_path(self, profile):
         try:
-            path = model_path(self.supervisor.root, profile.model_ref)
+            require_directory(profile)
+            reference = profile._directory.main_model_ref if self.engine == "llama-server" else profile.model_ref
+            path = model_path(self.supervisor.root, reference)
             if not path.exists() or self.engine == "llama-server" and not path.is_file() or self.engine != "llama-server" and not path.is_dir():
                 raise FileNotFoundError()
             if self.engine == "llama-server":
-                projector = profile.source.execution_options["mmproj_ref"]
+                if not all(model_path(self.supervisor.root, ref).is_file() for ref in profile._directory.model_files):
+                    raise FileNotFoundError()
+                projector = profile._directory.mmproj_ref if profile.capabilities.vision else None
                 if projector and not model_path(self.supervisor.root, projector).is_file():
                     raise FileNotFoundError()
             if self.engine != "llama-server":
@@ -129,7 +136,7 @@ class ManagedAdapter:
                         return load_configuration(self.supervisor.root / "data/models", profile.model_ref)[0]
                     if self.engine in {"chatterbox", "qwen3tts"}:
                         from ai_workbench.workers.audio_catalog import audio_model
-                        return audio_model(self.supervisor.root / "data" / "models", profile.model_ref, profile.parameters["architecture"])
+                        return audio_model(self.supervisor.root / "data" / "models", profile.model_ref, self.engine)
                     if self.engine == "sentence-transformers":
                         from ai_workbench.workers.embedding_catalog import load_configuration
                         return load_configuration(self.supervisor.root / "data/models", profile.model_ref, profile.parameters)[0]
@@ -157,6 +164,8 @@ class ManagedAdapter:
             return self.snapshot(profile)
 
     async def load(self, profile, *, explicit=False):
+        if profile._directory is not None:
+            self.directories[profile.id] = profile._directory
         with tracing(self._trace(profile, "explicit" if explicit else "autoload")) as trace:
             async with self.lock:
                 self._activate_trace(trace)
@@ -239,8 +248,8 @@ class ManagedAdapter:
                     "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],
                     "--batch-size", options["batch_size"], "--parallel", 1,
                     "--reasoning-format", "none", "--offline", "--no-mmproj-auto", "--log-verbosity", 4 if cuda else 1]
-            if options["mmproj_ref"]:
-                args.extend(["--mmproj", model_path(self.supervisor.root, options["mmproj_ref"])])
+            if profile.capabilities.vision:
+                args.extend(["--mmproj", model_path(self.supervisor.root, profile._directory.mmproj_ref)])
                 args.extend(["--mmproj-offload", "--mmproj-device", device_id] if cuda else ["--no-mmproj-offload"])
             if cuda:
                 args.extend(["--log-colors", "off"])
@@ -400,6 +409,7 @@ class ManagedAdapter:
                     self.loaded.discard(profile.id)
                 elif self.failed:
                     self.loaded.clear()
+                self.directories.pop(profile.id, None)
             else:
                 self.loaded.clear()
             if not self.loaded or self.single_model:
@@ -421,6 +431,7 @@ class ManagedAdapter:
             await self.openai.close()
             self.openai = None
         self.loaded.clear()
+        self.directories.clear()
         self.state = "stopped"
         self.error_code = None
         self.device_name = self.gpu_layers_loaded = self.gpu_layers_total = None

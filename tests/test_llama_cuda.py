@@ -64,7 +64,7 @@ def test_cuda_catalog_is_pinned_to_windows_x64_and_two_artifacts():
 @pytest.mark.parametrize("value", [0, -1, 1000, True, 1.0, "1", "all", None])
 def test_cuda_layers_reject_non_strict_or_out_of_range_values(value):
     with pytest.raises(ValidationError):
-        ModelProfile(name='cuda', alias='cuda', kind='llm', model_ref='llms/model.gguf', source={'type': 'local', 'execution_options': {'gpu_layers': value}})
+        ModelProfile(name='cuda', alias='cuda', kind='llm', model_ref='llms/model', source={'type': 'local', 'execution_options': {'device': 'cuda', 'gpu_layers': value}})
 
 
 def test_cuda_defaults_and_manual_arguments_preserve_context_and_device(tmp_path, monkeypatch):
@@ -172,11 +172,11 @@ def test_cuda_startup_requires_device_and_positive_offload_and_releases_processe
         service, _, _ = cuda_supervisor(tmp_path)
         await service.submit('install')
         await service.task
-        weight = tmp_path / "data/models/llms/fixture.gguf"
+        weight = tmp_path / "data/models/llms/fixture/model.gguf"
         weight.parent.mkdir(parents=True)
         weight.write_bytes(b"fixture")
         manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        profile = manager.profiles.create(ModelProfile(name='cuda', alias='cuda', kind='llm', model_ref='llms/fixture.gguf', source={'type': 'local'}))
+        profile = manager.profiles.create(ModelProfile(name='cuda', alias='cuda', kind='llm', model_ref='llms/fixture', source={'type': 'local'}))
         processes = []
 
         class Process:
@@ -230,7 +230,7 @@ def test_cuda_startup_requires_device_and_positive_offload_and_releases_processe
             assert manager.status(profile.id).runtime.gpu_layers_loaded == 4
             args = processes[-1].args
             assert args[args.index("--device") + 1] == "CUDA0"
-            assert args[args.index("--fit-ctx") + 1] == profile.source.execution_options["context_size"]
+            assert args[args.index("--fit-ctx") + 1] == manager.profile(profile.id).source.execution_options["context_size"]
             await manager.unload(profile.id)
             assert manager.status(profile.id).runtime.device_name is None
         assert all(process.stopping for process in processes)

@@ -7,9 +7,20 @@ from fastapi import Body
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.catalog import catalog
+from tests.model_fixtures import write_local_model
+from tests.test_tts import model_tree
 
 
 def install_runtime_fixture(app, root):
+    model_tree(root)
+    for reference, engine in [('llms/fixture', 'llama-server'), ('llms/other', 'llama-server'),
+            ('llms/text-only', 'llama-server'), ('llms/manual-model', 'llama-server'), ('llms/transformers', 'transformers'),
+            ('tts/fixture-chatterbox', 'chatterbox'), ('tts/fixture-qwen', 'qwen3tts'), ('tts/fixture-qwen3tts', 'qwen3tts')]:
+        path = write_local_model(root, reference, engine)
+        if reference in {'llms/fixture', 'llms/other'}:
+            (path / 'mmproj-fixture.gguf').write_bytes(b'projector fixture')
+    ambiguous = write_local_model(root, 'llms/ambiguous', 'llama-server')
+    (ambiguous / 'second.gguf').write_bytes(b'second quantization')
     state = app.state.runtime_state
     supervisor = state.runtime_supervisor
     cache = supervisor.base / ".cache"

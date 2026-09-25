@@ -21,7 +21,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import ImageEmbeddingRequest, ModelProfile
 from ai_workbench.core.models.siglip import SiglipModelUse
 from ai_workbench.db import migrations
-from ai_workbench.db.database import get_engine, init_db
+from ai_workbench.db.database import get_engine
 from tests.test_phase2b_runtime import installed_worker
 from tests.test_siglip import REF, model_tree
 from tests.test_siglip_runtime import FAKE_ENGINE, until
@@ -86,8 +86,8 @@ def test_profile_and_inspection_defaults_roundtrip_and_removed_fields(tmp_path, 
         (tmp_path / "data/models" / REF / "config.json").write_text("broken", encoding="utf-8")
         assert caller.get("/api/models/inspect", params={"kind": "image_embedding", "model_ref": REF}).json()["diagnostics"]
         assert caller.patch(path, json={"name": "Incomplete local model"}).status_code == 200
-        assert caller.patch(path, json={"source": None}).json()["source"] is None
-        assert caller.post(path + "/load", json={"tower": "text"}).json()["error"]["code"] == "MODEL_NOT_CONFIGURED"
+        assert caller.patch(path, json={"source": None}).status_code == 422
+        assert caller.get(path).json()['source']['type'] == 'local'
         catalog = caller.get("/api/models/local-runtime/catalog").json()
         entry = next(item for item in catalog["engines"] if item["engine"] == "siglip2")
         assert entry["kind"] == "image_embedding" and entry["options_schema"]["properties"]["max_batch_size"]["maximum"] == 16
@@ -326,14 +326,14 @@ def test_migration_deletes_only_obsolete_drafts_and_preserves_files(tmp_path):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"protected fixture")
         before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
-        init_db(engine)
-        init_db(engine)
-        assert migrations.current_revision(engine) == migrations.HEAD_REVISION
+        migrations.upgrade(engine, migrations.SIGLIP_REVISION)
+        migrations.upgrade(engine, migrations.SIGLIP_REVISION)
+        assert migrations.current_revision(engine) == migrations.SIGLIP_REVISION
         with engine.connect() as db:
             assert db.execute(text("SELECT COUNT(*) FROM model_profiles WHERE kind='image_embedding'")).scalar_one() == 0
         assert profiles.get(retained.id).model_dump() == before_profile
         saved = ModelProfileStore(engine).create(profile())
-        init_db(engine)
+        migrations.upgrade(engine, migrations.SIGLIP_REVISION)
         assert ModelProfileStore(engine).get(saved.id).source.execution_options["device"] == "cuda"
         with engine.begin() as db, pytest.raises(IntegrityError):
             db.execute(text("UPDATE model_profiles SET source_type='provider', provider_profile_id='invalid', execution_options_json=NULL, lifecycle_json=NULL WHERE id=:id"), {"id": saved.id})
@@ -478,7 +478,7 @@ def test_busy_edits_and_all_profile_or_runtime_release_paths(tmp_path):
             active.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await active
-            for operation in ("edit", "unbind", "disable", "delete", "maintenance", "shutdown"):
+            for operation in ("edit", "source", "disable", "delete", "maintenance", "shutdown"):
                 current = manager.profiles.create(profile(alias="release-" + operation,
                     parameters={"unload_other_tower_on_call": False}))
                 for tower in ("image", "text"):
@@ -493,7 +493,7 @@ def test_busy_edits_and_all_profile_or_runtime_release_paths(tmp_path):
                 elif operation == "delete":
                     assert (await caller.delete(path)).status_code == 200
                 else:
-                    patch = {"edit": {"name": "Edited"}, "unbind": {"source": None}, "disable": {"enabled": False}}[operation]
+                    patch = {"edit": {"name": "Edited"}, "source": {"source": {"type": "local", "execution_options": {"intraop_threads": 2}}}, "disable": {"enabled": False}}[operation]
                     response = await caller.patch(path, json=patch)
                     assert response.status_code == 200, response.text
                 assert all(process.returncode is not None for process in processes)

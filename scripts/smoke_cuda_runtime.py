@@ -71,7 +71,7 @@ async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--model-ref", help="An existing GGUF reference relative to data/models")
+    parser.add_argument("--model-ref", help="An existing GGUF model directory relative to data/models")
     parser.add_argument("--install-only", action="store_true")
     args = parser.parse_args(argv)
     if not args.install_only and not args.model_ref:

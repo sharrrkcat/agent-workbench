@@ -21,7 +21,7 @@ import { useModelsStore } from '../../../store/useModelsStore';
 import type { ModelKind, ModelInventoryItem, SiglipTower } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
-import { kinds, newModel } from './profileDefaults';
+import { kinds, localSource, newModel } from './profileDefaults';
 import { ProfileEditor, type ProfileDraft } from './ProfileEditor';
 import { SiglipStatus, TowerActionMenu } from './SiglipControls';
 
@@ -338,11 +338,13 @@ export function ProfilesTab({
                           variant="ghost"
                           size="icon"
                           aria-label={t('addModel')}
-                          onClick={() =>
+                          onClick={() => {
+                            const value = newModel(kind);
                             setModel({
-                              value: { ...newModel(kind), name: item.name, model_ref: item.model_ref },
-                            })
-                          }
+                              value: { ...value, name: item.name, model_ref: item.model_ref,
+                                source: value.source ?? localSource() },
+                            });
+                          }}
                         />
                       }
                     >
