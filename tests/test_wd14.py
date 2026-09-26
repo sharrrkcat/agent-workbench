@@ -146,7 +146,7 @@ def test_inventory_and_loading_reject_model_links_outside_models_root(tmp_path):
 @pytest.mark.parametrize("format", ["PNG", "JPEG", "WEBP"])
 def test_static_inputs_are_normalized_before_inference(format):
     originals = [data_url(format=format)]
-    prepared = prepare_tagging_images("p", originals, DEFAULTS)
+    prepared = prepare_tagging_images("p", originals, DEFAULTS, max_bytes=1024 * 1024)
     assert originals[0].startswith(f"data:image/{'jpeg' if format == 'JPEG' else format.lower()};base64,")
     with Image.open(BytesIO(base64.b64decode(prepared[0].partition(",")[2]))) as result:
         assert result.format == "PNG" and result.mode == "RGB" and result.size == (8, 4)
@@ -157,7 +157,7 @@ def test_exif_orientation_and_alpha_are_applied_before_queueing():
     exif = Image.Exif()
     exif[274] = 6
     url = data_url(Image.new("RGBA", (3, 6), (255, 0, 0, 0)), exif=exif)
-    prepared = prepare_tagging_images("p", [url], DEFAULTS)
+    prepared = prepare_tagging_images("p", [url], DEFAULTS, max_bytes=1024 * 1024)
     with Image.open(BytesIO(base64.b64decode(prepared[0].partition(",")[2]))) as result:
         assert result.size == (6, 3)
         assert result.getpixel((1, 1)) == (255, 255, 255)
@@ -178,29 +178,28 @@ def test_invalid_images_fail_before_admission(api, monkeypatch, url):
 def test_animated_images_are_rejected(format):
     url = data_url(format=format, save_all=True, append_images=[Image.new("RGB", (8, 4), "blue")], duration=100, loop=0)
     with pytest.raises(ModelError, match="static image"):
-        prepare_tagging_images("p", [url], DEFAULTS)
+        prepare_tagging_images("p", [url], DEFAULTS, max_bytes=1024 * 1024)
 
 
 def test_image_and_private_body_limits_cover_before_and_after_conversion(monkeypatch):
     from ai_workbench.core.models import images
-    assert images.MAX_TAGGING_PIXELS == 64_000_000 and images.MAX_TAGGING_BYTES == 32 * 1024 * 1024
+    assert images.MAX_TAGGING_PIXELS == 64_000_000
     monkeypatch.setattr(images, "MAX_TAGGING_PIXELS", 64)
-    prepare_tagging_images("p", [data_url()], DEFAULTS)
+    prepare_tagging_images("p", [data_url()], DEFAULTS, max_bytes=1024 * 1024)
     for size in ((9, 8), (9, 1)):
         with pytest.raises(ModelError) as too_many_pixels:
-            prepare_tagging_images("p", [data_url(Image.new("RGB", size))], DEFAULTS)
+            prepare_tagging_images("p", [data_url(Image.new("RGB", size))], DEFAULTS, max_bytes=1024 * 1024)
         assert too_many_pixels.value.status == 413
     monkeypatch.setattr(images, "MAX_TAGGING_PIXELS", 64_000_000)
-    monkeypatch.setattr(images, "MAX_TAGGING_BYTES", 4096)
     noise = Image.frombytes("RGB", (96, 96), random.Random(7).randbytes(96 * 96 * 3))
     small = data_url(noise, format="JPEG", quality=1)
     assert len(small) < 4096
     with pytest.raises(ModelError) as expansion:
-        prepare_tagging_images("p", [small, data_url()], DEFAULTS)
+        prepare_tagging_images("p", [small, data_url()], DEFAULTS, max_bytes=4096)
     assert expansion.value.status == 413
     monkeypatch.setattr(images, "_normalized_image", MagicMock(side_effect=AssertionError("Oversized input decoded")))
     with pytest.raises(ModelError) as before_decode:
-        prepare_tagging_images("p", ["x" * 4096], DEFAULTS)
+        prepare_tagging_images("p", ["x" * 4096], DEFAULTS, max_bytes=4096)
     assert before_decode.value.status == 413
 
 
@@ -304,14 +303,13 @@ def test_external_body_limit_and_loopback_requirement(api, tmp_path):
 
 @pytest.mark.parametrize("chunked", [False, True])
 def test_public_body_cap_includes_json_whitespace(api, monkeypatch, chunked):
-    from ai_workbench.api.routes import openai_compatible
     client, _ = api
-    monkeypatch.setattr(openai_compatible, "MAX_TAGGING_BYTES", 512)
+    client.patch("/api/models/settings", json={"max_normalized_request_mb": 1}).raise_for_status()
     manager = client.app.state.runtime_state.model_manager
     monkeypatch.setattr(manager, "vision", AsyncMock(side_effect=AssertionError("Oversized body reached inference")))
     payload = json.dumps({"model": "tagger", "images": [data_url()]}).encode()
-    assert len(payload) < 512
-    pieces = [payload, b" " * 512]
+    assert len(payload) < 1024 * 1024
+    pieces = [payload, b" " * (1024 * 1024)]
     response = client.post("/v1/images/tags", headers={**HEADERS, "Content-Type": "application/json"},
         content=iter(pieces) if chunked else b"".join(pieces))
     assert response.status_code == 413 and response.json()["error"]["code"] == "REQUEST_TOO_LARGE"

@@ -46,7 +46,7 @@ Titles use only the auxiliary model and remain unchanged when it is missing or f
 Inventory references are directories relative to data/models, such as `llms/example`. GGUF needs one main model or complete numbered shard group and at most one `mmproj*.gguf` in that directory; multiple candidates require separate directories.
 A detected GGUF projector enables Vision when selecting a new directory; disabling Vision skips its loading. Main/projector files and TTS/WD14 architecture are read-only information. Transformers Vision remains selectable.
 Chat accepts static PNG/JPEG/WebP through file selection, paste and drag/drop; selected historical images support follow-ups.
-Local `/v1` images require inline data URLs and detail=auto, with a 32 MiB complete-request limit.
+Local `/v1` images require inline data URLs and detail=auto. The configurable complete-request budget defaults to 128 MiB; bundled GGUF also has a native 100 MiB ceiling.
 Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
 
 The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation) owns engine/dependency details. Capable engines default to CUDA, Kokoro/WD14 to CPU; GGUF supports automatic/manual GPU layers and requires confirmed positive offload.
@@ -142,7 +142,7 @@ Invoke-RestMethod "$apiBase/images/tags" -Method Post -Headers $headers -Content
 ```
 
 Supply 1..16 static PNG/JPEG/WebP data URLs; no URLs, paths or attachments. Omitted/null thresholds inherit the profile; finite values in [0,1], including zero, override it. Incoming and normalized
-private JSON are limited to 32 MiB plus max_request_mb; decoded/square-padded images are limited to 64 million pixels. Each indexed data item contains original general/character tags and scores in
+private JSON obey max_normalized_request_mb (default 128 MiB), plus max_request_mb for HTTP (default 32 MiB); decoded/square-padded images are limited to 64 million pixels. Each indexed data item contains original general/character tags and scores in
 descending order; empty lists are valid and failures reject the whole batch. Usage is reserved internally and omitted publicly. [Models](docs/contracts/models.md#wd14-image-tagging) owns the full
 contract. Windows x64 CPU is supported; wd-swinv2-tagger-v3 is verified. Other family checkpoints need acceptance; video/frames are excluded.
 
@@ -160,7 +160,7 @@ Invoke-RestMethod "$apiBase/images/embeddings" -Method Post -Headers $headers -C
 # For images, use input_type='image' with input="data:image/png;base64,$image" from the example above.
 ```
 
-Inputs are one string or 1..16 strings of a single modality. Images use static inline PNG/JPEG/WebP, 64 million actual pixels and 32 MiB request limits. Responses include native dimensions, unit
+Inputs are one string or 1..16 strings of a single modality. Images use static inline PNG/JPEG/WebP, 64 million actual pixels and the configurable normalized request budget (default 128 MiB). Responses include native dimensions, unit
 vectors, model_revision and vector_space_id; encoding_format=base64 returns little-endian float32. Both towers share identity; SHA-256 identifies consumed files without preset hash/size comparisons.
 Files stay unchanged until whole-profile release. NaFlex has CUDA API acceptance; FixRes has automated tests only. [Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns queue/error
 and acceptance limits. Image indexing, remote providers and usage/timing collection remain deferred.

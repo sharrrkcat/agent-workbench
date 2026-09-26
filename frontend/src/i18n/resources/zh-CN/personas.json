@@ -103,7 +103,7 @@
   "uploadFailed": "上传失败。",
   "dropFiles": "将文件拖到此处添加",
   "imageInputHint": "PNG、JPEG、WebP · 支持粘贴或拖入图片",
-  "localImageLimit": "本地请求上限 32 MiB，包含图片和历史上下文",
+  "localImageLimit": "已配置的标准化请求上限为 {{limit}} MiB，包含图片和历史上下文；运行时上限可能更低",
   "imagesUnsupported": "所选模型不支持图片。请选择支持图像的模型或移除图片。",
   "imagesContextDisabled": "请在会话设置中开启“包含附件”后发送图片。",
   "imageErrors": {

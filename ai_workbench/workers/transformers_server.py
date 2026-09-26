@@ -11,14 +11,14 @@ import sys
 from uuid import uuid4
 
 if __package__:
-    from .common import WorkerError, fields, integer, local_model, publish_ready
+    from .common import MAX_NORMALIZED_REQUEST_MB, WorkerError, fields, integer, local_model, publish_ready
     from .timing import TRACE_ENV, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
-    from common import WorkerError, fields, integer, local_model, publish_ready
+    from common import MAX_NORMALIZED_REQUEST_MB, WorkerError, fields, integer, local_model, publish_ready
     from timing import TRACE_ENV, stage, tracing, worker_trace
 
-MAX_BODY = 32 * 1024 * 1024
+MAX_BODY = MAX_NORMALIZED_REQUEST_MB * 1024 * 1024
 PROTOCOL_VERSION = 1
 
 

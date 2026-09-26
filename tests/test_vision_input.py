@@ -62,7 +62,7 @@ def manager(root):
 @pytest.mark.parametrize("format_,mime", [("PNG", "image/png"), ("JPEG", "image/jpeg"), ("WEBP", "image/webp")])
 def test_local_input_normalizes_static_formats_without_modifying_the_request(format_, mime):
     original = request(part(image_bytes(format_), mime))
-    prepared = prepare_local_images(profile(), original)
+    prepared = prepare_local_images(profile(), original, max_bytes=1024 * 1024)
     assert original.messages[0].content[0].image_url.url.startswith(f"data:{mime};base64,")
     image = Image.open(BytesIO(base64.b64decode(prepared.messages[0].content[0].image_url.url.split(",")[1])))
     assert image.format == "PNG" and image.mode == "RGB" and image.size == (16, 12)
@@ -75,7 +75,7 @@ def test_image_orientation_and_transparency():
     exif = Image.Exif()
     exif[274] = 6
     image.save(output, format="PNG", exif=exif)
-    prepared = prepare_local_images(profile(), request(part(output.getvalue())))
+    prepared = prepare_local_images(profile(), request(part(output.getvalue())), max_bytes=1024 * 1024)
     normalized = Image.open(BytesIO(base64.b64decode(prepared.messages[0].content[0].image_url.url.split(",")[1])))
     assert normalized.size == (12, 8) and normalized.getpixel((0, 0)) == (255, 255, 255)
 
@@ -83,7 +83,7 @@ def test_image_orientation_and_transparency():
 @pytest.mark.parametrize("data,mime", [(b"corrupt", "image/png"), (image_bytes(), "image/jpeg"), (b"<svg/>", "image/svg+xml")])
 def test_invalid_images_fail_explicitly(data, mime):
     with pytest.raises(ModelError) as error:
-        prepare_local_images(profile(), request(part(data, mime)))
+        prepare_local_images(profile(), request(part(data, mime)), max_bytes=1024 * 1024)
     assert error.value.code == "INVALID_IMAGE"
 
 
@@ -93,16 +93,14 @@ def test_animated_images_are_rejected(format_, mime):
     Image.new("RGB", (16, 16), "red").save(output, format=format_, save_all=True,
         append_images=[Image.new("RGB", (16, 16), "blue")], duration=100, loop=0)
     with pytest.raises(ModelError) as error:
-        prepare_local_images(profile(), request(part(output.getvalue(), mime)))
+        prepare_local_images(profile(), request(part(output.getvalue(), mime)), max_bytes=1024 * 1024)
     assert error.value.code == "INVALID_IMAGE"
 
 
-def test_full_local_request_limit_includes_json_defaults_and_image_expansion(monkeypatch):
-    from ai_workbench.core.models import images
-    monkeypatch.setattr(images, "MAX_LOCAL_CHAT_BYTES", 4096)
+def test_full_local_request_limit_includes_json_defaults_and_image_expansion():
     huge = request({"type": "text", "text": "界" * 2000})
     with pytest.raises(ModelError) as error:
-        prepare_local_images(profile(), huge)
+        prepare_local_images(profile(), huge, max_bytes=4096)
     assert error.value.status == 413
     # A compact lossy input expands beyond the wire budget as RGB PNG.
     output = BytesIO()
@@ -110,11 +108,11 @@ def test_full_local_request_limit_includes_json_defaults_and_image_expansion(mon
     compact = request(part(output.getvalue(), "image/jpeg"))
     assert len(compact.model_dump_json()) < 4096
     with pytest.raises(ModelError) as error:
-        prepare_local_images(profile(), compact)
+        prepare_local_images(profile(), compact, max_bytes=4096)
     assert error.value.code == "REQUEST_TOO_LARGE"
     defaults = profile().model_copy(update={"parameters": {"stop": ["x" * 5000]}})
     with pytest.raises(ModelError):
-        prepare_local_images(defaults, request({"type": "text", "text": "small"}))
+        prepare_local_images(defaults, request({"type": "text", "text": "small"}), max_bytes=4096)
 
 
 @pytest.mark.parametrize("reference", ["../mmproj.gguf", "D:/mmproj.gguf", "llms/../mmproj.gguf", "llms/projector.bin", ""])

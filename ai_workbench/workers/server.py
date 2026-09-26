@@ -12,17 +12,18 @@ import sys
 import threading
 
 if __package__:
-    from .common import publish_ready
+    from .common import MAX_NORMALIZED_REQUEST_MB, publish_ready
     from .protocol import WorkerError, fields, load_request, speech_request, tags_request
     from .timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 else:
     sys.path.insert(0, str(Path(__file__).parent))
-    from common import publish_ready
+    from common import MAX_NORMALIZED_REQUEST_MB, publish_ready
     from protocol import WorkerError, fields, load_request, speech_request, tags_request
     from timing import TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing, worker_trace
 
 PROTOCOL_VERSION = 1
-MAX_BODY = 32 * 1024 * 1024
+# ModelManager enforces the configured budget before admission; workers accept its full range.
+MAX_BODY = MAX_NORMALIZED_REQUEST_MB * 1024 * 1024
 
 
 class Worker:

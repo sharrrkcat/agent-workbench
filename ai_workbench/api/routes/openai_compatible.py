@@ -24,8 +24,7 @@ from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingRespons
     TranscriptionUpload, TranscriptionTextResponse, TranscriptionVerboseResponse, ImageProcessUpload)
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_body, read_request
-from ai_workbench.core.models.images import MAX_TAGGING_BYTES
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, ImageProcessRequest, MAX_RERANK_BYTES, ModelKind, RerankRequest, SpeechRequest, TranscriptionRequest, VisionRequest
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, ImageProcessRequest, ModelKind, RerankRequest, SpeechRequest, TranscriptionRequest, VisionRequest
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
@@ -49,7 +48,7 @@ async def list_models(request: Request, kind: ModelKind | None = None, state: Ru
 async def rerank(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
-    payload = await read_request(request, settings, RerankRequest, max_bytes=MAX_RERANK_BYTES)
+    payload = await read_request(request, settings, RerankRequest, max_bytes=settings.max_normalized_request_mb * 1024 * 1024)
     profile = state.model_manager.external_profile(payload.model, "reranker")
     result = await inference_until_disconnect(request,
         state.model_manager.rerank(profile.id, payload.query, payload.documents))
@@ -107,7 +106,7 @@ async def process_image(request: Request, state: RuntimeState = Depends(get_stat
 async def image_tags(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
-    payload = await read_request(request, settings, VisionRequest, max_bytes=MAX_TAGGING_BYTES)
+    payload = await read_request(request, settings, VisionRequest, max_bytes=settings.max_normalized_request_mb * 1024 * 1024)
     profile = state.model_manager.external_profile(payload.model, "vision")
     result = await inference_until_disconnect(request, state.model_manager.vision(profile.id, payload))
     return {"object": "list", "model": profile.alias, "data": result.outputs}
@@ -119,7 +118,7 @@ async def image_tags(request: Request, state: RuntimeState = Depends(get_state))
 async def image_embeddings(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
     guard(request, settings)
-    payload = await read_request(request, settings, ImageEmbeddingRequest, max_bytes=MAX_TAGGING_BYTES)
+    payload = await read_request(request, settings, ImageEmbeddingRequest, max_bytes=settings.max_normalized_request_mb * 1024 * 1024)
     profile = state.model_manager.external_profile(payload.model, "image_embedding")
     result = await inference_until_disconnect(request, state.model_manager.image_embed(profile.id, payload))
     return {"object": "list", "model": profile.alias, "input_type": payload.input_type,

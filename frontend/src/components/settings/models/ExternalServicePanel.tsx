@@ -1,16 +1,56 @@
 import { Switch } from '@/components/ui/switch';
-import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';
+import { Field, FieldLabel, FieldGroup, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from '@/components/ui/input-group';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Copy, KeyRound, Save } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
 
 import type { ModelFeedbackProps } from './types';
+
+function RequestLimitField({ label, description, value, max, busy, onSave }: {
+  label: string;
+  description: string;
+  value: number;
+  max: number;
+  busy: boolean;
+  onSave: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const number = Number(draft);
+  const invalid = draft === '' || !Number.isInteger(number) || number < 1 || number > max;
+  return (
+    <Field disabled={busy} data-invalid={invalid || undefined}>
+      <FieldLabel>{label}</FieldLabel>
+      <Input
+        type="number"
+        required
+        min={1}
+        max={max}
+        step={1}
+        disabled={busy}
+        aria-invalid={invalid}
+        value={draft}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={(event) => {
+          if (!busy && !invalid && event.currentTarget.validity.valid && number !== value) onSave(number);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            if (event.currentTarget.reportValidity()) event.currentTarget.blur();
+          }
+        }}
+      />
+      <FieldDescription>{description}</FieldDescription>
+    </Field>
+  );
+}
 
 export function ExternalServicePanel({ run, busy }: Pick<ModelFeedbackProps, 'run' | 'busy'>) {
   const { t } = useTranslation('llm');
@@ -99,20 +139,24 @@ export function ExternalServicePanel({ run, busy }: Pick<ModelFeedbackProps, 'ru
           </InputGroupAddon>
         </InputGroup>
       </Field>
-      <Field>
-        <FieldLabel>{t('bodyLimit')}</FieldLabel>
-        <Input
-          type="number"
-          min={1}
-          max={100}
-          step={1}
-          value={Number.isNaN(settings.max_request_mb) ? '' : (settings.max_request_mb ?? '')}
-          onChange={(event) => {
-            const raw = event.currentTarget.value;
-            if (raw !== '') void run(() => modelsApi.updateModelSettings({ max_request_mb: Number(raw) }));
-          }}
-        />
-      </Field>
+      <RequestLimitField
+        label={t('bodyLimit')}
+        description={t('bodyLimitHelp')}
+        value={settings.max_request_mb}
+        max={100}
+        busy={busy}
+        onSave={(max_request_mb) => void run(() => modelsApi.updateModelSettings({ max_request_mb }))}
+      />
+      <RequestLimitField
+        label={t('normalizedBodyLimit')}
+        description={t('normalizedBodyLimitHelp')}
+        value={settings.max_normalized_request_mb}
+        max={1024}
+        busy={busy}
+        onSave={(max_normalized_request_mb) =>
+          void run(() => modelsApi.updateModelSettings({ max_normalized_request_mb }))
+        }
+      />
     </FieldGroup>
   );
 }

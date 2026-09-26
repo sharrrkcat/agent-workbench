@@ -157,6 +157,7 @@ export type ModelSettings = {
   external_enabled: boolean;
   has_external_api_key: boolean;
   max_request_mb: number;
+  max_normalized_request_mb: number;
 };
 
 export type ModelStatus = {

@@ -171,6 +171,67 @@ for (const locale of ['en', 'zh-CN']) {
         expect(errors).toEqual([]);
       });
 
+      test('HTTP and normalized request limits validate, autosave and persist', async ({ page, request }, info) => {
+        const path = '/api/models/settings';
+        const original = await (await request.get(path)).json();
+        expect((await request.patch(path, { data: {
+          max_request_mb: 32, max_normalized_request_mb: 128, external_enabled: false,
+        } })).ok()).toBeTruthy();
+        try {
+          await page.goto('/settings?tab=models&view=service');
+          const http = page.getByRole('spinbutton', { name: llm.bodyLimit, exact: true });
+          const normalized = page.getByRole('spinbutton', { name: llm.normalizedBodyLimit, exact: true });
+          await expect(http).toHaveValue('32');
+          await expect(normalized).toHaveValue('128');
+          await expect(normalized).toBeEnabled();
+          await expect(page.getByRole('switch', { name: llm.externalEnabled, exact: true })).not.toBeChecked();
+          await expect(page.getByText(llm.normalizedBodyLimitHelp, { exact: true })).toBeVisible();
+          const writes: Record<string, number>[] = [];
+          page.on('request', (sent) => {
+            if (sent.url().endsWith(path) && sent.method() === 'PATCH') writes.push(sent.postDataJSON());
+          });
+          const fields = [
+            { input: http, field: 'max_request_mb', max: 100 },
+            { input: normalized, field: 'max_normalized_request_mb', max: 1024 },
+          ];
+          for (const { input, max } of fields) {
+            for (const value of ['', '0', '1.5', String(max + 1)]) {
+              await input.fill(value);
+              await input.press('Tab');
+              await expect(input).toHaveAttribute('aria-invalid', 'true');
+              expect(await input.evaluate((node: HTMLInputElement) => node.validity.valid)).toBe(false);
+            }
+          }
+          expect(writes).toEqual([]);
+          for (const { input, field, max } of fields) {
+            for (const value of [1, max]) {
+              const saved = page.waitForResponse((response) =>
+                response.url().endsWith(path) && response.request().method() === 'PATCH',
+              );
+              await input.fill(String(value));
+              await input.press(field === 'max_request_mb' ? 'Tab' : 'Enter');
+              expect((await saved).ok()).toBeTruthy();
+              await expect(input).toBeEnabled();
+              await expect(input).toHaveAttribute('aria-invalid', 'false');
+              expect(writes.at(-1)).toEqual({ [field]: value });
+              expect((await (await request.get(path)).json())[field]).toBe(value);
+            }
+          }
+          expect(writes).toHaveLength(4);
+          await page.reload();
+          await expect(http).toHaveValue('100');
+          await expect(normalized).toHaveValue('1024');
+          await noPageOverflow(page);
+          await page.screenshot({ path: info.outputPath('request-limits.png'), animations: 'disabled' });
+        } finally {
+          expect((await request.patch(path, { data: {
+            max_request_mb: original.max_request_mb,
+            max_normalized_request_mb: original.max_normalized_request_mb,
+            external_enabled: original.external_enabled,
+          } })).ok()).toBeTruthy();
+        }
+      });
+
       test('global drafts survive subpages and guarded routes keep selection and drawer state', async ({
         page,
       }) => {

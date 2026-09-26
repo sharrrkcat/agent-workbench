@@ -1,4 +1,4 @@
-import { fillCombobox } from './controls';
+import { backToChat, fillCombobox } from './controls';
 import fs from 'node:fs';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
@@ -75,6 +75,44 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.status-done')).toHaveCount(2);
         expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
         await page.screenshot({ path: info.outputPath('history.png') });
+      });
+
+      test('local image hint follows the saved normalized request setting', async ({ page, request }) => {
+        const settingsPath = '/api/models/settings';
+        const original = await (await request.get(settingsPath)).json();
+        const session = await configure(request);
+        const created = await request.post('/api/models/profiles', { data: {
+          name: 'Request limit hint', alias: `limit-hint-${locale.toLowerCase()}-${width}`, kind: 'llm',
+          model_ref: 'llms/fixture', source: { type: 'local' }, capabilities: { vision: true },
+        } });
+        expect(created.ok()).toBeTruthy();
+        const model = await created.json();
+        try {
+          expect((await request.patch(`/api/sessions/${session.session_id}`, { data: { model_profile_id: model.id } })).ok()).toBeTruthy();
+          expect((await request.patch(settingsPath, { data: { max_normalized_request_mb: 128 } })).ok()).toBeTruthy();
+          await page.goto('/');
+          const picker = page.locator('.composer input[type=file]');
+          await picker.setInputFiles(file('limit.png'));
+          await expect(page.locator('.composer-hint')).toHaveText(labels.localImageLimit.replace('{{limit}}', '128'));
+          await page.goto('/settings?tab=models&view=service');
+          const normalized = page.getByRole('spinbutton', { name: llm.normalizedBodyLimit, exact: true });
+          await expect(normalized).toHaveValue('128');
+          const saved = page.waitForResponse((response) =>
+            response.url().endsWith(settingsPath) && response.request().method() === 'PATCH',
+          );
+          await normalized.fill('256');
+          await normalized.press('Enter');
+          expect((await saved).ok()).toBeTruthy();
+          await expect(normalized).toBeEnabled();
+          await backToChat(page);
+          await picker.setInputFiles(file('updated-limit.png'));
+          await expect(page.locator('.composer-hint')).toHaveText(labels.localImageLimit.replace('{{limit}}', '256'));
+          expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+        } finally {
+          await request.patch(settingsPath, { data: { max_normalized_request_mb: original.max_normalized_request_mb } });
+          await request.delete(`/api/sessions/${session.session_id}`);
+          await request.delete(`/api/models/profiles/${model.id}`);
+        }
       });
 
       test('directories detect projectors, retain Vision choices and allow ambiguous drafts', async ({ page, request }, info) => {

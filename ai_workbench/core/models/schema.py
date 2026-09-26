@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, RootModel, TypeA
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
+from ai_workbench.workers.common import MAX_NORMALIZED_REQUEST_MB
 from ai_workbench.workers.model_catalog import DirectoryInformation
 
 ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts", "asr", "processor"]
@@ -17,7 +18,6 @@ EmbeddingPurpose = Literal["query", "document"]
 EmbeddingSimilarity = Literal["cosine", "dot"]
 Tower = Literal["image", "text"]
 ModelDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$", strict=True)]
-MAX_RERANK_BYTES = 32 * 1024 * 1024
 
 
 class StrictModel(BaseModel):
@@ -333,7 +333,9 @@ class ModelSettings(StrictModel):
     utility_model_profile_id: str | None = None
     external_enabled: bool = False
     external_api_key: str = Field(default="", description="PATCH omission retains the key; an empty string clears it.", json_schema_extra={"writeOnly": True})
-    max_request_mb: int = Field(default=10, ge=1, le=100)
+    max_request_mb: int = Field(default=32, ge=1, le=100, description="Maximum incoming HTTP body size in MiB.")
+    max_normalized_request_mb: int = Field(default=128, ge=1, le=MAX_NORMALIZED_REQUEST_MB, strict=True,
+        description="Maximum original and normalized local chat, image tagging, SigLIP and rerank JSON size in MiB. Applies to in-app and external API calls; runtime-specific limits may be lower.")
 
 
 class ImageURL(StrictModel):

@@ -213,17 +213,17 @@ def test_embedding_images_share_normalization_but_use_actual_area(monkeypatch):
     from ai_workbench.core.models import images as module
     monkeypatch.setattr(module, "MAX_TAGGING_PIXELS", 16)
     transparent = data_url(Image.new("RGBA", (8, 2), (0, 0, 0, 0)))
-    normalized = prepare_embedding_images([transparent])[0]
+    normalized = prepare_embedding_images([transparent], max_bytes=1024 * 1024)[0]
     with Image.open(BytesIO(base64.b64decode(normalized.partition(",")[2]))) as result:
         assert result.mode == "RGB" and result.size == (8, 2) and result.getpixel((0, 0)) == (255, 255, 255)
     with pytest.raises(ModelError) as error:
-        prepare_tagging_images("fixture", [transparent], {"general": 0.3, "character": 0.8})
+        prepare_tagging_images("fixture", [transparent], {"general": 0.3, "character": 0.8}, max_bytes=1024 * 1024)
     assert error.value.code == "REQUEST_TOO_LARGE"
     with pytest.raises(ModelError):
-        prepare_embedding_images([data_url(Image.new("RGB", (9, 2)))])
+        prepare_embedding_images([data_url(Image.new("RGB", (9, 2)))], max_bytes=1024 * 1024)
     image = Image.new("RGB", (2, 3), "red")
     exif = Image.Exif(); exif[274] = 6
-    normalized = prepare_embedding_images([data_url(image, format="JPEG", exif=exif)])[0]
+    normalized = prepare_embedding_images([data_url(image, format="JPEG", exif=exif)], max_bytes=1024 * 1024)[0]
     with Image.open(BytesIO(base64.b64decode(normalized.partition(",")[2]))) as result:
         assert result.size == (3, 2)
 

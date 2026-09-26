@@ -164,7 +164,7 @@ Native prompts, templates, tokenization, truncation, scoring and activation run 
 No model file hashes, fingerprints or manifests are created. Same-path replacement requires unload/reload, without rebuilding embedding indexes.
 POST `/v1/rerank` accepts model alias, nonblank query, 1..2048 nonblank string documents, nullable positive top_n and return_documents=false.
 All inputs are scored before top_n; omitted/null returns all. Response: {model, results:[{index,relevance_score,document?:{text}}]}, descending with original-index ties and original optional text.
-Scores retain native semantics, without a universal probability guarantee or fabricated usage. Incoming/private bodies are limited to 32 MiB; public requests also obey max_request_mb.
+Scores retain native semantics, without a universal probability guarantee or fabricated usage. Incoming/private bodies obey the shared [request budgets](#external-inference-api).
 Public failures are explicit; Knowledge retains RRF fallback. mxbai-rerank-base-v2 has CUDA/native/RAG and short CPU acceptance; other checkpoints/architectures require acceptance/implementation. [README](../../README.md#verification) owns commands and tolerances.
 
 ## DLSS NR image processing
@@ -186,7 +186,7 @@ data/models/vision require only model.onnx and selected_tags.csv. Inventory/stat
 dimensions/tag counts. Normal worker loading reads CSV order/categories and actual ONNX input/output names and spatial dimensions; errors fail loading/inference. ModelManager.vision accepts a strict
 VisionRequest and validates the entire batch off-loop before queueing/loading. POST /v1/images/tags accepts model alias, images (1..16 inline base64 static PNG/JPEG/WebP data URLs) and optional
 thresholds. Remote URLs, paths, attachments and animations are unsupported. Omitted/null thresholds or members inherit the profile; explicit values must be finite numbers in [0,1], including zero.
-Overrides leave saved defaults unchanged. Incoming HTTP and original/normalized private JSON bodies are limited to 32 MiB, in addition to max_request_mb; decoded and square-padded image areas are at
+Overrides leave saved defaults unchanged. Incoming HTTP and original/normalized private JSON obey the shared [request budgets](#external-inference-api); decoded and square-padded image areas are at
 most 64 million pixels. Decode/EXIF orientation/white alpha compositing produce RGB PNG. The worker centers each image on a white square, resizes bicubically to the model dimensions and uses NHWC BGR
 float32 0..255. One CPU ONNX Session executes batch one sequentially within the request's lease. CSV/output mapping must match exactly; ratings are excluded, all general/character scores meeting
 thresholds are returned, sorted descending with CSV tie order. Responses are {object:list, model, data:[{object:image.tags, index, tags:[{name,category,score}]}]}; indices match input order. Names
@@ -226,8 +226,8 @@ the parent process. Internal SiglipResult includes vectors, native dimensions, r
 queue/load-switch/preprocess/inference/total timing and usage are reserved without collection or persistence.
 
 `POST /v1/images/embeddings` accepts model, required input_type=image|text, input (one string or 1..16 strings), encoding_format=float|base64. Static PNG/JPEG/WebP data URLs use EXIF/white/RGB
-normalization and 64 million actual pixels; WD14 retains square-area limits. Paths/remote URLs/animations are rejected. Original and normalized private JSON have a 32 MiB cap; public requests also
-obey max_request_mb. Token arrays, mixed objects and dimensions/normalization overrides fail. Response: {object:list, model, input_type, dimensions, model_revision, vector_space_id,
+normalization and 64 million actual pixels; WD14 retains square-area limits. Paths/remote URLs/animations are rejected. Original/normalized private JSON and public requests obey the shared
+[request budgets](#external-inference-api). Token arrays, mixed objects and dimensions/normalization overrides fail. Response: {object:list, model, input_type, dimensions, model_revision, vector_space_id,
 data:[{object:embedding,index,embedding}]}. Base64 is little-endian float32; ordering is preserved and batches succeed or fail whole, without SSE, partial results or public usage/timing. No image
 indexes, internal consumer UI or remote image-embedding providers are implemented. NaFlex siglip2-so400m-patch16-naflex has CUDA/native-reference and short API acceptance. FixRes has automated tests
 only; CPU has no real-inference compatibility claim. Extended CUDA switching, dual residency, cancellation/failure recovery, identity and release are verified on that NaFlex checkpoint. The
@@ -272,16 +272,19 @@ The service defaults disabled and requires loopback clients plus one key via `Au
 | DELETE `/v1/audio/voice-references/{voice_id}` | Delete an unused reference |
 
 Discovery reports owned_by=cogita. Public aliases must be enabled, visible and match endpoint kind/capabilities; stateless calls create no session/message/run/attachment/Knowledge rows.
-Content-Length/received bytes obey max_request_mb; strict schemas reject unsupported fields without echoing values. Responses include X-Request-Id; logs record outcome/time without keys, prompts,
+Content-Length/received bytes obey max_request_mb (default 32 MiB, range 1..100); strict schemas reject unsupported fields without echoing values. Responses include X-Request-Id; logs record outcome/time without keys, prompts,
 content or raw provider errors. Voice discovery accepts optional model/source=preset|temporary and returns id, model, source, language (null for Qwen) and expires_at (null for presets). Only enabled
 public TTS profiles, valid preset files and the current key's unexpired references appear.
+
+Local chat, WD14 tagging, SigLIP image/text embedding and reranking share max_normalized_request_mb (default 128 MiB, range 1..1024). ModelManager snapshots it per preparation and checks complete UTF-8 JSON, including defaults/history, before normalization and after each image expansion, before queue admission. Oversized requests return 413 REQUEST_TOO_LARGE; tagging/SigLIP/rerank HTTP prechecks use the smaller of the HTTP and normalized budgets.
+Both in-app and public calls use this setting, including when the external service is disabled. Python worker transports support the full 1024 MiB range without reload on settings changes. Bundled llama-server b10809 retains its native 100 MiB ceiling, so raising the setting cannot permit larger GGUF requests. Audio, decoded-pixel and attachment limits are independent.
 
 Chat accepts system/developer/user/assistant/tool roles, text, user image_url parts, function tools, tool_choice, parallel_tool_calls, response_format and generation parameters. Only n=1 is accepted.
 Formats are text/json_object/json_schema with matching capabilities. Tool results must match preceding calls; unknown fields, unsupported formats and incomplete histories fail. `/v1` forwards tools;
 [Harness](harness-tools.md) executes them. Provider image URLs/details pass through. Local images require inline data URLs and detail=auto; other values return UNSUPPORTED_CAPABILITY. Local input
 supports static PNG/JPEG/WebP. ModelManager uses Pillow off-loop to decode, apply EXIF orientation, fill transparency white and convert to RGB PNG; original attachments stay unchanged. Invalid images
-return INVALID_IMAGE. The complete local JSON body, including defaults and converted image data, is limited to 32 MiB before admission; REQUEST_TOO_LARGE is explicit. External requests also obey
-max_request_mb. Qwen3.5-0.8B GGUF/Transformers CPU/CUDA acceptance covers image content, multiple-image order, historical follow-up, streaming and cancellation; other checkpoints are unverified.
+return INVALID_IMAGE. Complete local requests follow the shared normalized budget above. Qwen3.5-0.8B GGUF/Transformers CPU/CUDA acceptance covers image content, multiple-image order,
+historical follow-up, streaming and cancellation; other checkpoints are unverified.
 
 Non-streaming tool-only content=null; [runs/streaming](runs-streaming.md#external-sse) owns SSE framing, error timing and disconnect cleanup.
 

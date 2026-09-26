@@ -19,7 +19,7 @@ from ai_workbench.core.models.resolution import configure_profile, require_direc
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingPurpose, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
-    ImageEmbeddingRequest, MAX_RERANK_BYTES, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
+    ImageEmbeddingRequest, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
     ASRParameters, TranscriptionRequest, TranscriptionResult, ImageProcessRequest, ImageOutput,
 )
 from ai_workbench.workers.common import WorkerError
@@ -560,7 +560,8 @@ class ModelManager:
     async def _prepare_chat(self, profile, request):
         self.validate_chat(profile, request)
         if isinstance(profile.source, LocalSource):
-            return await asyncio.to_thread(prepare_local_images, profile, request)
+            limit = self.settings.get().max_normalized_request_mb * 1024 * 1024
+            return await asyncio.to_thread(prepare_local_images, profile, request, limit)
         return request
 
     async def chat(self, profile_id: str, request: ChatRequest):
@@ -627,11 +628,12 @@ class ModelManager:
 
     async def rerank(self, profile_id: str, query: str, documents: list[str]):
         profile = self.profile(profile_id, "reranker")
+        limit = self.settings.get().max_normalized_request_mb * 1024 * 1024
         size = await asyncio.to_thread(lambda: len(json.dumps(
             {"profile_id": profile.id, "query": query, "documents": documents},
             ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")))
-        if size > MAX_RERANK_BYTES:
-            raise ModelError("REQUEST_TOO_LARGE", "The private rerank request exceeds 32 MiB.", 413)
+        if size > limit:
+            raise ModelError("REQUEST_TOO_LARGE", f"The private rerank request exceeds the configured {limit / 1024 ** 2:g} MiB normalized limit.", 413)
         async with self._lease(profile) as adapter:
             return await adapter.rerank(profile, query, documents)
 
@@ -639,7 +641,8 @@ class ModelManager:
         profile = self.profile(profile_id, "image_embedding")
         self.require_local(profile)
         inputs = [request.input] if isinstance(request.input, str) else request.input
-        prepared = await asyncio.to_thread(prepare_image_embedding_inputs, request.input_type, inputs)
+        limit = self.settings.get().max_normalized_request_mb * 1024 * 1024
+        prepared = await asyncio.to_thread(prepare_image_embedding_inputs, request.input_type, inputs, limit)
         async with self._lease(profile, tower=request.input_type) as adapter:
             return await adapter.image_embed(profile, request.input_type, prepared)
 
@@ -649,7 +652,8 @@ class ModelManager:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select the local runtime for this model.", 503)
         thresholds = {**profile.parameters["thresholds"],
                       **(request.thresholds.model_dump(exclude_none=True) if request.thresholds else {})}
-        images = await asyncio.to_thread(prepare_tagging_images, profile.id, request.images, thresholds)
+        limit = self.settings.get().max_normalized_request_mb * 1024 * 1024
+        images = await asyncio.to_thread(prepare_tagging_images, profile.id, request.images, thresholds, limit)
         async with self._lease(profile) as adapter:
             return await adapter.vision(profile, images, thresholds)
 

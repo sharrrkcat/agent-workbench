@@ -51,6 +51,7 @@ export function ChatInput() {
   const selectSource = useCogitaStore((state) => state.setSourceMessageId);
   const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
   const profiles = useModelsStore((state) => state.profiles);
+  const normalizedRequestLimit = useModelsStore((state) => state.settings?.max_normalized_request_mb);
   const activeRun = useCogitaStore((state) =>
     [...state.runs]
       .reverse()
@@ -291,8 +292,8 @@ export function ChatInput() {
         <MarkerContent>
           {dragging
             ? t('dropFiles')
-            : hasImages && profile?.source?.type === 'local'
-              ? t('localImageLimit')
+            : hasImages && profile?.source?.type === 'local' && normalizedRequestLimit !== undefined
+              ? t('localImageLimit', { limit: normalizedRequestLimit })
               : t('imageInputHint')}
         </MarkerContent>
       </Marker>

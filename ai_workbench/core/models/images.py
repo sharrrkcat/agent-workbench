@@ -19,8 +19,6 @@ from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.schema import ChatRequest, ImagePart
 
 
-MAX_LOCAL_CHAT_BYTES = 32 * 1024 * 1024
-MAX_TAGGING_BYTES = 32 * 1024 * 1024
 MAX_TAGGING_PIXELS = 64_000_000
 IMAGE_FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
 
@@ -104,32 +102,32 @@ def validate_local_image_options(request: ChatRequest) -> None:
             raise ModelError("UNSUPPORTED_CAPABILITY", "Local image input supports only detail=auto.", 422)
 
 
-def _check_request_size(profile, request):
+def _check_request_size(profile, request, max_bytes: int):
     # Measure the same merged JSON body sent by OpenAIAdapter to either local server.
     payload = OpenAIAdapter._payload(profile.model_copy(update={"model_ref": "managed"}), request)
     size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
-    if size > MAX_LOCAL_CHAT_BYTES:
-        raise ModelError("REQUEST_TOO_LARGE", "Local chat requests are limited to 32 MiB. Reduce images or history.", 413)
+    if size > max_bytes:
+        raise ModelError("REQUEST_TOO_LARGE", f"Local chat requests exceed the configured {max_bytes / 1024 ** 2:g} MiB normalized limit. Reduce images or history.", 413)
 
 
-def prepare_local_images(profile, request: ChatRequest) -> ChatRequest:
-    _check_request_size(profile, request)
+def prepare_local_images(profile, request: ChatRequest, max_bytes: int) -> ChatRequest:
+    _check_request_size(profile, request, max_bytes)
     prepared = request.model_copy(deep=True)
     for part in request_images(prepared):
         part.image_url.url = _normalized_image(part.image_url.url)
         # Check each expansion before decoding another compressed input.
-        _check_request_size(profile, prepared)
+        _check_request_size(profile, prepared, max_bytes)
     return prepared
 
 
-def prepare_tagging_images(profile_id: str, images: list[str], thresholds: dict[str, float]) -> list[str]:
+def prepare_tagging_images(profile_id: str, images: list[str], thresholds: dict[str, float], max_bytes: int) -> list[str]:
     prepared = list(images)
 
     def check_size():
         body = {"profile_id": profile_id, "images": prepared, "thresholds": thresholds}
         size = len(json.dumps(body, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
-        if size > MAX_TAGGING_BYTES:
-            raise ModelError("REQUEST_TOO_LARGE", "Image tagging requests are limited to 32 MiB.", 413)
+        if size > max_bytes:
+            raise ModelError("REQUEST_TOO_LARGE", f"Image tagging requests exceed the configured {max_bytes / 1024 ** 2:g} MiB normalized limit.", 413)
 
     check_size()
     for index, url in enumerate(prepared):
@@ -138,21 +136,21 @@ def prepare_tagging_images(profile_id: str, images: list[str], thresholds: dict[
     return prepared
 
 
-def prepare_embedding_images(images: list[str]) -> list[str]:
+def prepare_embedding_images(images: list[str], max_bytes: int) -> list[str]:
     prepared = list(images)
     for index in range(len(prepared) + 1):
-        if len(json.dumps({"inputs": prepared}, ensure_ascii=False).encode("utf-8")) > MAX_TAGGING_BYTES:
-            raise ModelError("REQUEST_TOO_LARGE", "Image embedding requests are limited to 32 MiB.", 413)
+        if len(json.dumps({"inputs": prepared}, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) > max_bytes:
+            raise ModelError("REQUEST_TOO_LARGE", f"Image embedding requests exceed the configured {max_bytes / 1024 ** 2:g} MiB normalized limit.", 413)
         if index < len(prepared):
             prepared[index] = _normalized_image(prepared[index], max_pixels=MAX_TAGGING_PIXELS)
     return prepared
 
 
-def prepare_image_embedding_inputs(tower: str, inputs: list[str]) -> list[str]:
+def prepare_image_embedding_inputs(tower: str, inputs: list[str], max_bytes: int) -> list[str]:
     if tower == "image":
-        return prepare_embedding_images(inputs)
-    if len(json.dumps({"inputs": inputs}, ensure_ascii=False).encode("utf-8")) > MAX_TAGGING_BYTES:
-        raise ModelError("REQUEST_TOO_LARGE", "Image embedding requests are limited to 32 MiB.", 413)
+        return prepare_embedding_images(inputs, max_bytes)
+    if len(json.dumps({"inputs": inputs}, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) > max_bytes:
+        raise ModelError("REQUEST_TOO_LARGE", f"Image embedding requests exceed the configured {max_bytes / 1024 ** 2:g} MiB normalized limit.", 413)
     return inputs
 
 

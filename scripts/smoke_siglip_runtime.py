@@ -113,7 +113,8 @@ async def native_smoke(root, model_ref):
         use = await SiglipModelUse.prepare(root, model_ref)
         report["identity_seconds"] = time.monotonic() - start
         print(json.dumps({"stage": "identity", "seconds": report["identity_seconds"]}), flush=True)
-        inputs = {tower: await asyncio.to_thread(prepare_image_embedding_inputs, tower, values)
+        limit = state.model_settings.get().max_normalized_request_mb * 1024 * 1024
+        inputs = {tower: await asyncio.to_thread(prepare_image_embedding_inputs, tower, values, limit)
                   for tower, values in fixture_inputs().items()}
         input_file = output / "inputs.json"
         input_file.write_text(json.dumps(inputs), encoding="utf-8")

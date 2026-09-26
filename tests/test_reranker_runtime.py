@@ -118,7 +118,7 @@ def test_public_ranking_aliases_top_n_documents_and_statelessness(tmp_path, memo
     asyncio.run(scenario())
 
 
-def test_invalid_requests_and_visibility_fail_before_loading(tmp_path, monkeypatch):
+def test_invalid_requests_and_visibility_fail_before_loading(tmp_path):
     async def scenario():
         async with runtime(tmp_path) as (_, manager, model, embedding, caller):
             payload = {"model": model.alias, "query": "search", "documents": ["a", "b"]}
@@ -133,11 +133,11 @@ def test_invalid_requests_and_visibility_fail_before_loading(tmp_path, monkeypat
             assert (await caller.get("/v1/models", params={"kind": "reranker"})).json()["data"] == []
             assert (await caller.post("/v1/rerank", json=payload)).status_code == 404
             await caller.patch(f"/api/models/profiles/{model.id}", json={"external_enabled": True})
-            monkeypatch.setattr("ai_workbench.api.routes.openai_compatible.MAX_RERANK_BYTES", 10)
-            assert (await caller.post("/v1/rerank", json=payload)).status_code == 413
-            monkeypatch.setattr("ai_workbench.core.models.manager.MAX_RERANK_BYTES", 10)
+            manager.settings.patch({"max_normalized_request_mb": 1})
+            large_document = "x" * (1024 * 1024)
+            assert (await caller.post("/v1/rerank", json={**payload, "documents": [large_document]})).status_code == 413
             with pytest.raises(ModelError) as failure:
-                await manager.rerank(model.id, "search", ["a", "b"])
+                await manager.rerank(model.id, "search", [large_document])
             assert failure.value.code == "REQUEST_TOO_LARGE"
             assert manager._slots == {}
     asyncio.run(scenario())

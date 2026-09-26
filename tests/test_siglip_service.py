@@ -209,7 +209,7 @@ def test_public_and_internal_requests_share_queue_and_cancel_only_target(tmp_pat
     asyncio.run(scenario())
 
 
-def test_public_vectors_visibility_limits_and_invalid_input_preserve_residency(tmp_path, monkeypatch):
+def test_public_vectors_visibility_limits_and_invalid_input_preserve_residency(tmp_path):
     async def scenario():
         async with managed_runtime(tmp_path) as (_, manager, model, caller, kokoro):
             path = f"/api/models/profiles/{model.id}"
@@ -242,15 +242,13 @@ def test_public_vectors_visibility_limits_and_invalid_input_preserve_residency(t
                 manager.profiles.update(model.id, values)
                 assert (await caller.post("/v1/images/embeddings", json=body)).status_code == 404
                 manager.profiles.update(model.id, {key: True for key in values})
-            from ai_workbench.api.routes import openai_compatible
-            monkeypatch.setattr(openai_compatible, "MAX_TAGGING_BYTES", 100)
-            assert (await caller.post("/v1/images/embeddings", content=json.dumps(body) + " " * 101)).status_code == 413
+            manager.settings.patch({"max_normalized_request_mb": 1})
+            assert (await caller.post("/v1/images/embeddings", content=json.dumps(body) + " " * (1024 * 1024))).status_code == 413
             async def chunks():
                 yield json.dumps(body).encode()
-                yield b" " * 101
+                yield b" " * (1024 * 1024)
             assert (await caller.post("/v1/images/embeddings", content=chunks())).status_code == 413
-            monkeypatch.setattr(openai_compatible, "MAX_TAGGING_BYTES", 32 * 1024 * 1024)
-            manager.settings.patch({"max_request_mb": 1})
+            manager.settings.patch({"max_request_mb": 1, "max_normalized_request_mb": 128})
             assert (await caller.post("/v1/images/embeddings", json=request(inputs="x" * 1024 * 1024).model_dump())).status_code == 413
             assert process.returncode is None
             assert (await caller.get("/api/sessions")).json() == []

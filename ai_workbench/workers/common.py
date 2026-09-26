@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path, PurePosixPath
 
+MAX_NORMALIZED_REQUEST_MB = 1024
+
 _network_blocked = False
 
 

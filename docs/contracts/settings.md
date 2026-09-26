@@ -140,7 +140,12 @@ documented in [data layout](../DATA_LAYOUT.md#database-revisions).
 ## Model settings
 
 GET/PATCH `/api/models/settings` owns default_model_profile_id, utility_model_profile_id,
-external_enabled, external_api_key and max_request_mb in appmetadatarecord.model_settings.
+external_enabled, external_api_key, max_request_mb and max_normalized_request_mb in appmetadatarecord.model_settings.
+HTTP bodies default to 32 MiB (1..100); the strict integer normalized limit defaults to 128 MiB (1..1024). Omitted PATCH fields retain values; null/invalid normalized limits return 422.
+Defaults apply to absent settings; explicitly saved HTTP limits remain authoritative. No database schema change or settings conversion is required.
+Models → External API shows both limits in MiB; valid edits autosave on blur or Enter, while blank, fractional and out-of-range drafts are not submitted.
+The normalized limit also applies to in-app local chat, WD14, SigLIP and reranking while the external service is disabled. Chat image hints display the configured value; help distinguishes runtime limits.
+Changes apply to subsequent request preparation without restarting workers. [Models](models.md#external-inference-api) owns byte accounting and the lower native GGUF ceiling.
 The default initializes new sessions; changing it preserves existing selections. Header/session
 settings select concrete LLMs without a Global default option. [Models](models.md) owns profile
 parameters; [chat/context](chat-context.md#auxiliary-tasks-and-titles) owns titles.
