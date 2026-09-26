@@ -5,7 +5,7 @@ from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.model_catalog import inspect_directory
 
 ROOTS = {"llm": "llms", "embedding": "embeddings", "reranker": "rerankers",
-         "image_embedding": "image_embeddings", "vision": "vision", "tts": "tts", "asr": "asr"}
+         "image_embedding": "image_embeddings", "vision": "vision", "tts": "tts", "asr": "asr", "processor": "processors"}
 
 
 def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
@@ -23,7 +23,10 @@ def inventory(repo_root: Path, kind: str | None = None) -> list[dict]:
             if not resolved.is_relative_to(base.resolve()) or not path.is_file():
                 continue
             target = None
-            if model_kind == "vision":
+            if model_kind == "processor":
+                if path.name == "nvngx_dlssnr.dll":
+                    target = path.parent
+            elif model_kind == "vision":
                 if path.name == "model.onnx" and (path.parent / "selected_tags.csv").is_file():
                     try:
                         inspect_directory(root, model_kind, path.parent.relative_to(root).as_posix()).require_complete()

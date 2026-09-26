@@ -1,7 +1,10 @@
 import type { DirectoryInspection, ModelInput, ModelKind, ProviderInput, LocalEngine, LocalModelSource, ModelSource } from '../../../types/models';
 
-export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr'];
-export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'tts', 'asr'].includes(kind);
+export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor'];
+export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'tts', 'asr', 'processor'].includes(kind);
+
+export const processorDefaults = { task: 'image_processing', style: 'natural', preset: 3,
+  intensity: 1, tone: 1, structure: 1, skin: -1, auto_mask: false, channel_order: 'auto' };
 
 export const localSource = (): LocalModelSource => ({
   type: 'local', execution_options: {}, lifecycle: { unload: 'manual', idle_seconds: 300 },
@@ -13,6 +16,7 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   kind,
   model_ref: '',
   source: kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
+    : kind === 'processor' ? { ...localSource(), execution_options: { device: 'd3d12', gpu_index: 0 } }
     : kind === 'asr' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4 } }
     : kind === 'tts' || kind === 'vision' ? localSource() : null,
   enabled: true,
@@ -22,7 +26,8 @@ export const newModel = (kind: ModelKind): ModelInput => ({
     : kind === 'vision' ? { task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
     : kind === 'image_embedding' ? { unload_other_tower_on_call: true }
     : kind === 'embedding' ? { query_prompt_name: null, document_prompt_name: null }
-    : kind === 'asr' ? { language: 'auto', prompt: '', temperature: 0, response_format: 'json' } : {},
+    : kind === 'asr' ? { language: 'auto', prompt: '', temperature: 0, response_format: 'json' }
+    : kind === 'processor' ? { ...processorDefaults } : {},
 });
 
 export const ttsGenerationDefaults = {
@@ -37,12 +42,14 @@ export function localEngine(value: ModelInput, detected: LocalEngine | null = nu
   if (value.kind === 'embedding') return 'sentence-transformers';
   if (value.kind === 'reranker') return 'cross-encoder';
   if (value.kind === 'asr') return 'whisper';
+  if (value.kind === 'processor') return 'dlss5nr';
   return detected;
 }
 
 export function executionDefaults(engine: LocalEngine | null): LocalModelSource['execution_options'] {
   return engine === 'llama-server'
     ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto' }
+    : engine === 'dlss5nr' ? { device: 'd3d12', gpu_index: 0 }
     : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
     : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
     : engine ? { device: 'cuda', intraop_threads: 4 } : {};

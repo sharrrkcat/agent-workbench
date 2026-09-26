@@ -12,7 +12,7 @@ from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 from ai_workbench.workers.model_catalog import DirectoryInformation
 
-ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts", "asr"]
+ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts", "asr", "processor"]
 EmbeddingPurpose = Literal["query", "document"]
 EmbeddingSimilarity = Literal["cosine", "dot"]
 Tower = Literal["image", "text"]
@@ -196,6 +196,40 @@ class VisionParameters(StrictModel):
     thresholds: VisionThresholds = Field(default_factory=VisionThresholds)
 
 
+DLSSStyle = Literal["natural", "cinematic", "default", "3", "4", "5", "6"]
+ChannelOrder = Literal["auto", "RGBA", "BGRA"]
+
+
+class ProcessorParameters(StrictModel):
+    task: Literal["image_processing"] = "image_processing"
+    style: DLSSStyle = "natural"
+    preset: int = Field(default=3, ge=0, le=3, strict=True)
+    intensity: float = Field(default=1.0, ge=0, le=2, strict=True)
+    tone: float = Field(default=1.0, ge=0, le=2, strict=True)
+    structure: float = Field(default=1.0, ge=0, le=2, strict=True)
+    skin: float = Field(default=-1.0, ge=-1, le=2, strict=True)
+    auto_mask: bool = Field(default=False, strict=True)
+    channel_order: ChannelOrder = "auto"
+
+
+class ImageProcessRequest(StrictModel):
+    """Omitted controls inherit the processor profile; overrides never change it."""
+    style: DLSSStyle | None = None
+    preset: int | None = Field(default=None, ge=0, le=3, strict=True)
+    intensity: float | None = Field(default=None, ge=0, le=2, strict=True)
+    tone: float | None = Field(default=None, ge=0, le=2, strict=True)
+    structure: float | None = Field(default=None, ge=0, le=2, strict=True)
+    skin: float | None = Field(default=None, ge=-1, le=2, strict=True)
+    auto_mask: bool | None = Field(default=None, strict=True)
+    channel_order: ChannelOrder | None = None
+
+
+class ImageOutput(StrictModel):
+    data: bytes
+    width: int = Field(gt=0, le=16384)
+    height: int = Field(gt=0, le=16384)
+
+
 class SpeechOutputParameters(StrictModel):
     speed: float = Field(default=1.0, ge=0.25, le=4.0, strict=True, description="Speech rate multiplier; 1 is the original speed.")
     response_format: Literal["mp3", "wav"] = Field(default="mp3", description="Complete 24 kHz mono audio file format.")
@@ -233,7 +267,7 @@ class TTSParameters(RootModel):
 
 PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "reranker": RerankParameters,
               "image_embedding": ImageEmbeddingParameters, "vision": VisionParameters, "tts": TTSParameters,
-              "asr": ASRParameters}
+              "asr": ASRParameters, "processor": ProcessorParameters}
 
 
 class ModelInput(StrictModel):
@@ -251,7 +285,7 @@ class ModelInput(StrictModel):
     @model_validator(mode="before")
     @classmethod
     def local_only_source(cls, values):
-        if isinstance(values, dict) and values.get("kind") in {"image_embedding", "vision", "tts", "asr"}:
+        if isinstance(values, dict) and values.get("kind") in {"image_embedding", "vision", "tts", "asr", "processor"}:
             if "source" not in values:
                 return {**values, "source": {"type": "local"}}
             source = values["source"]

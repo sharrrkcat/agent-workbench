@@ -20,7 +20,7 @@ const state = { storage: { scanned_at: cacheJob.created_at, complete: true, tota
   storageLoading: false, storageError: '', reloadStorage: async () => {}, jobs: [cacheJob] };
 Object.assign(state, { localRuntimeSettings: { enabled: true, download: {} },
   catalog: { version: '1.0.0', platform: 'windows', architecture: 'x86_64', supported: true },
-  installation: { version: '0.9.0', state: 'installed' } });
+  installation: { version: '0.9.0', state: 'installed' }, components: [] });
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: () => state }),

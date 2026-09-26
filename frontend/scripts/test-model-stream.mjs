@@ -76,6 +76,7 @@ await statusReload;
 assert.equal(modelsStore.getState().statuses.new.active, 2);
 
 mockApi.runtimeCatalog = async () => ({ version: '1.0.0', engines: [] });
+mockApi.runtimeComponents = async () => [];
 mockApi.runtimeInstallation = async () => ({ state: 'not_installed' });
 const jobsRead = deferred();
 mockApi.runtimeJobs = () => jobsRead.promise;

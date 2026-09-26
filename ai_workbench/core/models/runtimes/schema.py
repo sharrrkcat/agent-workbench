@@ -33,7 +33,8 @@ def model_path(root: Path, ref: str) -> Path:
     return path
 
 
-LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper", "siglip2", "sentence-transformers", "cross-encoder"]
+LocalEngine = Literal["llama-server", "transformers", "kokoro", "wd14", "chatterbox", "qwen3tts", "whisper", "siglip2", "sentence-transformers", "cross-encoder", "dlss5nr"]
+ComponentId = Literal["dlss5nr"]
 
 
 class LlamaOptions(Strict):
@@ -81,6 +82,11 @@ class RerankerOptions(PythonOptions):
     max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
 
 
+class DLSSOptions(Strict):
+    device: Literal["d3d12"] = "d3d12"
+    gpu_index: int = Field(default=0, ge=0, le=15, strict=True)
+
+
 def local_engine(profile) -> LocalEngine | None:
     if profile.source is None or profile.source.type != "local":
         return None
@@ -94,6 +100,8 @@ def local_engine(profile) -> LocalEngine | None:
         return "cross-encoder"
     if profile.kind == "asr":
         return "whisper"
+    if profile.kind == "processor":
+        return "dlss5nr"
     return None
 
 
@@ -102,7 +110,7 @@ def engine_options(engine: LocalEngine, values: dict):
         return llama_options(values.get("device", "cuda"))
     return {"kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions,
         "siglip2": SiglipOptions, "sentence-transformers": EmbeddingOptions,
-        "cross-encoder": RerankerOptions}.get(engine, PythonOptions)
+        "cross-encoder": RerankerOptions, "dlss5nr": DLSSOptions}.get(engine, PythonOptions)
 
 
 def is_transformers(profile) -> bool:
@@ -234,6 +242,52 @@ class Installation(Strict):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class ComponentInstallation(Installation):
+    component_id: ComponentId = "dlss5nr"
+    default_profile_id: str | None = None
+
+
+class ComponentStatus(Strict):
+    component_id: ComponentId
+    version: str
+    state: InstallState
+    job_id: str | None = None
+    error_code: str | None = None
+
+
+class ComponentEntries(Strict):
+    worker: str
+    engine: str
+    bridge: str
+    caller: str
+
+    @field_validator("worker", "engine", "bridge", "caller")
+    @classmethod
+    def safe_entry(cls, value):
+        return relative_ref(value)
+
+
+class ComponentManifest(Strict):
+    component_id: ComponentId
+    version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
+    platform: Literal["windows"] = "windows"
+    architecture: Literal["x86_64"] = "x86_64"
+    protocol_version: Literal[1] = 1
+    python_version: str
+    entries: ComponentEntries
+
+
+class ComponentRelease(Strict):
+    manifest: ComponentManifest
+    archive: str
+    archive_sha256: SHA256
+
+    @field_validator("archive")
+    @classmethod
+    def safe_archive(cls, value):
+        return relative_ref(value)
+
+
 class StorageUsage(Strict):
     complete: bool = True
     file_count: int | None = Field(default=0, ge=0)
@@ -276,6 +330,7 @@ class CacheCleanupResult(Strict):
 class RuntimeJob(Strict):
     id: str = Field(default_factory=lambda: str(uuid4()))
     version: str | None = None
+    component_id: ComponentId | None = None
     operation: Literal["install", "repair", "uninstall", "cache_prune", "cache_clean"]
     result: CacheCleanupResult | None = None
     state: JobState = "queued"
@@ -295,7 +350,7 @@ class RuntimeJob(Strict):
         if self.operation in {"install", "repair", "uninstall"}:
             if self.version is None or self.result is not None:
                 raise ValueError("Installation jobs require a local release and no cache result")
-        elif self.version is not None:
+        elif self.version is not None or self.component_id is not None:
             raise ValueError("Cache jobs have no installation identity")
         return self
 
@@ -309,3 +364,4 @@ class RuntimeStatus(Strict):
     device_name: str | None = None
     gpu_layers_loaded: int | None = Field(default=None, ge=0)
     gpu_layers_total: int | None = Field(default=None, ge=0)
+    component: ComponentStatus | None = None

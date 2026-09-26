@@ -1,7 +1,6 @@
 # Cogita
 
-Local chat and an OpenAI-compatible model service. One ModelManager serves chat, titles, Knowledge and external inference. The Python package remains `ai_workbench`.
-Prompt Personas and an optional bounded tool harness support ordinary/group conversations. Local models run in managed llama-server/Python workers outside the API process; external connections use the OpenAI-compatible protocol.
+Local chat and an OpenAI-compatible model service. One ModelManager serves chat, titles, Knowledge and external inference. The Python package remains `ai_workbench`. Prompt Personas and an optional bounded tool harness support ordinary/group conversations. Local models run in managed llama-server/Python workers outside the API process; external connections use the OpenAI-compatible protocol.
 
 The project is in testing, without users or user data. It does not provide an autonomous coding agent, extension/plugin discovery, model downloads or image generation. The external API stays single-key and localhost-only.
 
@@ -30,7 +29,7 @@ In **Settings > Models**, use the Model profiles, Providers, Local Runtime and E
 1. **Local Runtime:** install the shared Windows x64 release once. Place model directories manually under data/models and select a directory in the model profile. Directory information determines its engine and architecture; release policy defaults to manual.
 2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
-Profiles have seven kinds, internal UUIDs, public aliases, capabilities and parameters. LLM/text embedding allow local/provider/unbound sources; rerankers allow local/unbound. TTS, WD14, image embedding and ASR require Local Runtime. Safe incomplete or ambiguous directories remain saveable drafts but cannot load.
+Profiles have eight kinds, internal UUIDs, public aliases, capabilities and parameters. LLM/text embedding allow local/provider/unbound sources; rerankers allow local/unbound. TTS, WD14, image embedding, ASR and processor require Local Runtime. Safe incomplete or ambiguous directories remain saveable drafts but cannot load.
 Choose default chat and optional auxiliary models. New sessions select the default or first enabled LLM; changing defaults preserves sessions.
 Titles use only the auxiliary model and remain unchanged when it is missing or fails.
 
@@ -62,21 +61,16 @@ New Workspace and New Timeline create immutable Project types in the sidebar tre
 Chat supports Cogita Persona background and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval. Timeline supports Project settings, roleplay Persona selection and Worldbook bindings; its internal conversations/context are deferred.
 Embedding changes require reindexing; unavailable optional reranking intentionally preserves RRF order.
 
-Harness defaults off; enable it and choose tools in session settings to permit native model calls. Workspace tools are capped by their Project, including pending approvals.
-New ordinary sessions select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search,
-fetch_url, knowledge_search, base64_encode and base64_decode. File/network calls require approval every time;
-waiting survives restart, blocks other input and resumes through approval, rejection or cancellation.
+Harness defaults off; enable it and choose tools in session settings to permit native model calls. Workspace tools are capped by their Project, including pending approvals. New ordinary sessions
+select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search, fetch_url, knowledge_search, base64_encode and base64_decode. File/network calls require approval
+every time; waiting survives restart, blocks other input and resumes through approval, rejection or cancellation.
 
-Direct calls use **Settings > Tools** or a registered slash tool. Enabled `/base64_encode hello` returns `aGVsbG8=`
-without a model summary/title. Multi-parameter tools need JSON, such as `/read_file {"path":"data/knowledge/note.txt"}`.
-Unknown `/...`, `@...` and `:...` prefixes are ordinary text; results render as data.
-[Harness/tools](docs/contracts/harness-tools.md) owns limits and APIs.
+Direct calls use **Settings > Tools** or a registered slash tool. Enabled `/base64_encode hello` returns `aGVsbG8=` without a model summary/title. Multi-parameter tools need JSON, such as `/read_file
+{"path":"data/knowledge/note.txt"}`. Unknown `/...`, `@...` and `:...` prefixes are ordinary text; results render as data. [Harness/tools](docs/contracts/harness-tools.md) owns limits and APIs.
 
-Each run has one reply, collapsed processing history and final answer. Expand its time row for reasoning/commands,
-then commands for arguments/results. **Show full processing history** opens active processing by default;
-completed processing stays collapsed and approvals visible. Cancellation/failure preserves incomplete output.
-Delete/retry affects the whole reply; retry replaces later conversation. [Chat](docs/contracts/chat-context.md#messages-and-attachments)
-owns reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecycle) owns processing visibility/time.
+Each run has one reply, collapsed processing history and final answer. Expand its time row for reasoning/commands, then commands for arguments/results. **Show full processing history** opens active
+processing by default; completed processing stays collapsed and approvals visible. Cancellation/failure preserves incomplete output. Delete/retry affects the whole reply; retry replaces later
+conversation. [Chat](docs/contracts/chat-context.md#messages-and-attachments) owns reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecycle) owns processing visibility/time.
 
 ## External API
 
@@ -108,20 +102,17 @@ curl -N http://127.0.0.1:8765/v1/chat/completions \
   -d '{"model":"chat-model","messages":[{"role":"user","content":"Hello"}],"stream":true,"stream_options":{"include_usage":true}}'
 ```
 
-Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and supported response_format capabilities.
-Embeddings accept strings/string arrays, float/base64, dimensions and purpose=query|document (default document).
-Unsupported fields/capabilities and unavailable models produce explicit errors without substitution.
-[Models](docs/contracts/models.md#external-inference-api) owns request rules;
-[runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior.
-Other reranker architectures and image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
+Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and supported response_format capabilities. Embeddings accept strings/string arrays, float/base64, dimensions and
+purpose=query|document (default document). Unsupported fields/capabilities and unavailable models produce explicit errors without substitution.
+[Models](docs/contracts/models.md#external-inference-api) owns request rules; [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior. Other reranker architectures and image
+generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
 
 ### Offline text embeddings
 
-Place a complete Sentence Transformers directory under data/models/embeddings, including modules.json and module configurations/weights.
-Create a Text embedding profile, select its directory and review automatic processing information. Use **Local Runtime > Repair** if the installation lacks Sentence Transformers 6.1.0.
-Defaults are CUDA/checkpoint dtype, four threads, batch one and manual release; CPU uses float32. Declared query/document prompt templates are selectable under advanced settings.
-Harrier-oss-v1-0.6b resolves 1024 dimensions, last-token pooling, L2 normalization and 32768 tokens; queries use web_search_query and documents no prompt.
-Missing/unsupported semantics permit saving but prevent loading. Local dimensions must match native output. Model files are never hashed.
+Place a complete Sentence Transformers directory under data/models/embeddings, including modules.json and module configurations/weights. Create a Text embedding profile, select its directory and
+review automatic processing information. Use **Local Runtime > Repair** if the installation lacks Sentence Transformers 6.1.0. Defaults are CUDA/checkpoint dtype, four threads, batch one and manual
+release; CPU uses float32. Declared query/document prompt templates are selectable under advanced settings. Harrier-oss-v1-0.6b resolves 1024 dimensions, last-token pooling, L2 normalization and 32768
+tokens; queries use web_search_query and documents no prompt. Missing/unsupported semantics permit saving but prevent loading. Local dimensions must match native output. Model files are never hashed.
 Select this profile in Knowledge or use `/v1/embeddings`; set purpose=query for retrieval queries. Model replacement requires unload/reload and reindexing.
 [Models](docs/contracts/models.md#local-text-embeddings) owns semantics and Harrier-only real-model acceptance; other checkpoints need representative acceptance.
 
@@ -139,10 +130,9 @@ Results contain original `index`, native `relevance_score` and optional `documen
 
 ### Offline WD14 image tagging
 
-Place a WD14-family model.onnx and selected_tags.csv under data/models/vision/<directory>.
-Create a Vision profile with Local Runtime and that relative reference; CPU/four threads and manual release are defaults.
-Only file existence/path containment is checked; config.json, model hashes, revisions and fixed dimensions/tag counts are not required.
-Enable external visibility and use the Cogita extension `POST /v1/images/tags`; discovery supports `GET /v1/models?kind=vision`.
+Place a WD14-family model.onnx and selected_tags.csv under data/models/vision/<directory>. Create a Vision profile with Local Runtime and that relative reference; CPU/four threads and manual release
+are defaults. Only file existence/path containment is checked; config.json, model hashes, revisions and fixed dimensions/tag counts are not required. Enable external visibility and use the Cogita
+extension `POST /v1/images/tags`; discovery supports `GET /v1/models?kind=vision`.
 
 ```powershell
 $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path './image.png')))
@@ -151,22 +141,18 @@ $tagBody = @{ model = 'wd14-local'; images = @("data:image/png;base64,$image")
 Invoke-RestMethod "$apiBase/images/tags" -Method Post -Headers $headers -ContentType 'application/json' -Body $tagBody
 ```
 
-Supply 1..16 static PNG/JPEG/WebP data URLs; no URLs, paths or attachments. Omitted/null thresholds inherit the profile;
-finite values in [0,1], including zero, override it. Incoming and normalized private JSON are limited to 32 MiB
-plus max_request_mb; decoded/square-padded images are limited to 64 million pixels. Each indexed data item contains
-original general/character tags and scores in descending order; empty lists are valid and failures reject the whole batch.
-Usage is reserved internally and omitted publicly. [Models](docs/contracts/models.md#wd14-image-tagging) owns the full contract.
-Windows x64 CPU is supported; wd-swinv2-tagger-v3 is verified. Other family checkpoints need acceptance; video/frames are excluded.
+Supply 1..16 static PNG/JPEG/WebP data URLs; no URLs, paths or attachments. Omitted/null thresholds inherit the profile; finite values in [0,1], including zero, override it. Incoming and normalized
+private JSON are limited to 32 MiB plus max_request_mb; decoded/square-padded images are limited to 64 million pixels. Each indexed data item contains original general/character tags and scores in
+descending order; empty lists are valid and failures reject the whole batch. Usage is reserved internally and omitted publicly. [Models](docs/contracts/models.md#wd14-image-tagging) owns the full
+contract. Windows x64 CPU is supported; wd-swinv2-tagger-v3 is verified. Other family checkpoints need acceptance; video/frames are excluded.
 
 ### Offline SigLIP image and text embeddings
 
-Place a standard local SigLIP-family Transformers directory under data/models/image_embeddings, with config.json,
-preprocessor_config.json, tokenizer.json/tokenizer_config.json and complete single-file or indexed-shard safetensors weights.
-Create an Image embedding profile with Local Runtime; selecting its directory automatically displays declared structure/dimensions and processing settings.
-Unknown information stays pending until load; inspection errors do not block drafts. No manual architecture or dimension setting is required.
-CUDA/FP16, four threads, batch size one and manual release are defaults; CPU/FP32 is available but has no real-inference acceptance.
-The unload-other-tower switch defaults on: image calls stop the text tower and text calls stop the image tower before loading.
-Turning it off allows both to remain resident; calls still run serially. Menus provide tower load/log actions and whole-profile unload.
+Place a standard local SigLIP-family Transformers directory under data/models/image_embeddings, with config.json, preprocessor_config.json, tokenizer.json/tokenizer_config.json and complete
+single-file or indexed-shard safetensors weights. Create an Image embedding profile with Local Runtime; selecting its directory automatically displays declared structure/dimensions and processing
+settings. Unknown information stays pending until load; inspection errors do not block drafts. No manual architecture or dimension setting is required. CUDA/FP16, four threads, batch size one and
+manual release are defaults; CPU/FP32 is available but has no real-inference acceptance. The unload-other-tower switch defaults on: image calls stop the text tower and text calls stop the image tower
+before loading. Turning it off allows both to remain resident; calls still run serially. Menus provide tower load/log actions and whole-profile unload.
 
 ```powershell
 $siglipBody = @{ model = 'siglip-local'; input_type = 'text'; input = @('A red car', 'A blue sky') } | ConvertTo-Json
@@ -174,11 +160,10 @@ Invoke-RestMethod "$apiBase/images/embeddings" -Method Post -Headers $headers -C
 # For images, use input_type='image' with input="data:image/png;base64,$image" from the example above.
 ```
 
-Inputs are one string or 1..16 strings of a single modality. Images use static inline PNG/JPEG/WebP, 64 million actual pixels and 32 MiB request limits.
-Responses include native dimensions, unit vectors, model_revision and vector_space_id; encoding_format=base64 returns little-endian float32.
-Both towers share identity; SHA-256 identifies consumed files without preset hash/size comparisons. Files stay unchanged until whole-profile release.
-NaFlex has CUDA API acceptance; FixRes has automated tests only. [Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns queue/error and acceptance limits.
-Image indexing, remote providers and usage/timing collection remain deferred.
+Inputs are one string or 1..16 strings of a single modality. Images use static inline PNG/JPEG/WebP, 64 million actual pixels and 32 MiB request limits. Responses include native dimensions, unit
+vectors, model_revision and vector_space_id; encoding_format=base64 returns little-endian float32. Both towers share identity; SHA-256 identifies consumed files without preset hash/size comparisons.
+Files stay unchanged until whole-profile release. NaFlex has CUDA API acceptance; FixRes has automated tests only. [Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns queue/error
+and acceptance limits. Image indexing, remote providers and usage/timing collection remain deferred.
 
 ### Offline speech recognition
 
@@ -247,11 +232,28 @@ Invoke-WebRequest "$apiBase/audio/speech" -Method Post -Headers $headers `
 
 Language omission/auto selects automatically; ten languages exclude Hindi. Token limits can stop speech early. Qwen has no presets; temporary voices have language=null. Both Audio architectures support optional seed=0..4294967295: 0 is valid; omitted/null request seeds inherit the profile, whose blank/null default leaves randomness unfixed. Fixed seeds control randomness without guaranteeing identical audio. The editor/OpenAPI describe all controls.
 
+### DLSS NR image processing
+
+In Models → Local Runtime, install the bundled DLSS NR component after the base runtime. It creates processors/dlss5-nr and an unloaded DLSS 5 NR profile; place nvngx_dlssnr.dll in that directory manually, then enable the profile's external visibility. Installation is offline; resources are retained on uninstall. [Models](docs/contracts/models.md#dlss-nr-image-processing) owns controls and limits.
+
+```powershell
+Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
+  -Form @{ model = 'dlss5-nr'; image = Get-Item './input.png'; style = 'natural'; preset = '3'; intensity = '1.0'; auto_mask = 'false' } -OutFile processed.png
+```
+
+### DLSS NR image processing
+
+In Models → Local Runtime, install the bundled DLSS NR component after the base runtime. It creates processors/dlss5-nr and an unloaded DLSS 5 NR profile; place nvngx_dlssnr.dll in that directory manually, then enable the profile's external visibility. Installation is offline; resources are retained on uninstall. [Models](docs/contracts/models.md#dlss-nr-image-processing) owns controls and limits.
+
+```powershell
+Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
+  -Form @{ model = 'dlss5-nr'; image = Get-Item './input.png'; style = 'natural'; preset = '3'; intensity = '1.0'; auto_mask = 'false' } -OutFile processed.png
+```
+
 ## HTTP contract
 
-OpenAPI 3.1 describes `/api` and `/v1` at [/openapi.json](http://127.0.0.1:8765/openapi.json), with interactive [/docs](http://127.0.0.1:8765/docs)
-and [/redoc](http://127.0.0.1:8765/redoc). [Models](docs/contracts/models.md#external-inference-api) owns response validation and sanitization;
-[runs/streaming](docs/contracts/runs-streaming.md) owns WebSockets.
+OpenAPI 3.1 describes `/api` and `/v1` at [/openapi.json](http://127.0.0.1:8765/openapi.json), with interactive [/docs](http://127.0.0.1:8765/docs) and [/redoc](http://127.0.0.1:8765/redoc).
+[Models](docs/contracts/models.md#external-inference-api) owns response validation and sanitization; [runs/streaming](docs/contracts/runs-streaming.md) owns WebSockets.
 
 ```powershell
 uv run python scripts/openapi.py check
@@ -268,10 +270,9 @@ The [settings contract](docs/contracts/settings.md) owns APIs, fields and key PA
 
 Pet position, dragging and task-state foundations remain for a future UI; existing Pet files are retained without loading or serving them.
 
-Alembic alone manages SQLite: empty databases upgrade to head; nonempty unversioned databases and destructive downgrades are rejected.
-Revisions may reset disposable records but never delete model files, attachments, runtimes or other data directories.
-[Data layout](docs/DATA_LAYOUT.md#database-revisions) owns revision/reset effects. The database defaults to data/cogita.db;
-COGITA_DATABASE_URL overrides it. See [data layout](docs/DATA_LAYOUT.md) and [.env.example](.env.example) for paths and maintenance.
+Alembic alone manages SQLite: empty databases upgrade to head; nonempty unversioned databases and destructive downgrades are rejected. Revisions may reset disposable records but never delete model
+files, attachments, runtimes or other data directories. [Data layout](docs/DATA_LAYOUT.md#database-revisions) owns revision/reset effects. The database defaults to data/cogita.db; COGITA_DATABASE_URL
+overrides it. See [data layout](docs/DATA_LAYOUT.md) and [.env.example](.env.example) for paths and maintenance.
 
 ## Verification
 
@@ -287,6 +288,9 @@ npm run build
 Pop-Location
 git diff --check
 ```
+
+Build the bundled component with `uv run python scripts/build_dlss_component.py` (MSVC/Windows SDK; optional --vs-root). The archive/worker/notices ship in source checkouts and portable packages; installation needs no compilation or network.
+DLSS D3D12: `uv run python -m scripts.smoke_dlss_runtime`. Add `--component-lifecycle` when component artifacts/install behavior change, and `--image ./input.png` for a representative image alongside UHD. Reuse the verified base, supply NR manually and stop Cogita first. Reports/samples: build/dlss-smoke. Acceptance leaves the component installed and default profile unloaded. Bilingual desktop/touch: `npm run test:browser -- dlss.spec.ts` in frontend.
 
 Backend tests use temporary roots, mock providers and loopback HTTP/SSE/WS; frontend tests cover domain payloads, settings, translation, streams/events and workflows. Installation/real-model/browser acceptance remains separate.
 
@@ -332,13 +336,11 @@ Reranker CUDA/native/Knowledge: `uv run python -m scripts.smoke_reranker_runtime
 Short-text CPU: `uv run python -m scripts.smoke_reranker_runtime --model-ref rerankers/mxbai-rerank-base-v2 --device cpu`.
 Both reuse installation without model hashes. CUDA compares native scores at matching batch sizes with maximum absolute error <=0.005 and preserves ordering for score gaps >0.01; reports go to build/reranker-smoke.
 
-Routine Windows Audio acceptance uses supplied Chatterbox and Qwen3-TTS models:
-`uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
-Use mono PCM16 24 kHz speech, stop Cogita first, and provide enough RAM/VRAM. CUDA is the default.
-The CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, seed PCM comparisons, references and cancellation/isolation. `--engine chatterbox|qwen3tts` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected.
-Use `--device cpu` only for affected changes under the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU.
-Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`.
-Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
+Routine Windows Audio acceptance uses supplied Chatterbox and Qwen3-TTS models: `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
+Use mono PCM16 24 kHz speech, stop Cogita first, and provide enough RAM/VRAM. CUDA is the default. The CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, seed PCM comparisons,
+references and cancellation/isolation. `--engine chatterbox|qwen3tts` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected. Use `--device cpu` only for affected changes under
+the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU. Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`. Run
+`data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
 
 Whisper CUDA: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --tail-text "unique words after thirty seconds" --mp3 ./short.mp3`. Repeat for asr/whisper-large-v3-turbo. Supply English PCM16 WAV longer than 60 seconds with an identifiable phrase after 30 seconds; English MP3 is optional.
 Focused base CPU: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --device cpu`. CPU checks the first six seconds. Both reuse installation; reports go to build/asr-smoke. CUDA covers the 30-second boundary, all response formats, tail/segment completeness, repeated inference, cancellation/reload and cleanup.

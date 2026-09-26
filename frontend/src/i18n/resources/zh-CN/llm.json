@@ -49,7 +49,8 @@
     "image_embedding": "图像嵌入",
     "vision": "视觉",
     "tts": "语音合成",
-    "asr": "语音识别"
+    "asr": "语音识别",
+    "processor": "处理器"
   },
   "states": {
     "unknown": "未检查",
@@ -266,7 +267,8 @@
     "batch_size": "提示词批次大小",
     "gpu_layers": "GPU 层数",
     "intraop_threads": "CPU 线程数",
-    "max_batch_size": "Worker 批次上限"
+    "max_batch_size": "Worker 批次上限",
+    "gpu_index": "NVIDIA GPU 索引"
   },
   "runtimeStates": {
     "not_installed": "未安装",
@@ -299,7 +301,10 @@
     "completed": "已完成",
     "already_installed": "已经安装",
     "native_cpu": "安装 llama CPU",
-    "native_cuda": "安装 llama CUDA"
+    "native_cuda": "安装 llama CUDA",
+    "checking_component_archive": "检查组件安装包",
+    "extracting_component": "解压组件",
+    "checking_component": "离线检查组件"
   },
   "audioDeviceHint": "选择 CPU 或 NVIDIA CUDA；选择 CUDA 时必须有可用设备。",
   "chatterboxEnglish": "Chatterbox（仅英语）",
@@ -322,7 +327,8 @@
     "siglip2": "SigLIP2",
     "sentence-transformers": "Sentence Transformers",
     "cross-encoder": "Cross-Encoder（Sentence Transformers）",
-    "whisper": "Whisper"
+    "whisper": "Whisper",
+    "dlss5nr": "DLSS NR"
   },
   "providers": "服务提供商",
   "addProvider": "添加服务提供商",
@@ -483,6 +489,33 @@
       "ambiguous_model": "目录中应只有一个模型或一组完整分片，请将不同架构和量化版本放入各自的目录。",
       "ambiguous_projector": "目录中最多只能有一个 mmproj GGUF 文件。",
       "incomplete_shards": "必须包含所有编号对应的 GGUF 分片。"
+    }
+  },
+  "dlssComponent": "DLSS NR 组件",
+  "updateComponent": "更新组件",
+  "bundledVersion": "随应用提供的版本",
+  "dlssComponentHint": "组件随应用提供，离线安装并共享基础 Python 环境。安装后创建默认配置和 processors/dlss5-nr 目录；请手动放入 nvngx_dlssnr.dll。卸载组件保留模型资源和配置。",
+  "processor": {
+    "task": "图片处理",
+    "directoryHint": "目录中需包含手动提供的 nvngx_dlssnr.dll；先在 Local Runtime 安装 DLSS NR 组件。",
+    "defaultsHint": "单张图片处理，保留方向校正后的尺寸和透明度。API 可覆盖这些默认值；最多 8,388,608 像素，单边不超过 16,384。",
+    "style": "风格",
+    "preset": "预设",
+    "intensity": "强度",
+    "tone": "色调",
+    "structure": "结构",
+    "skin": "皮肤",
+    "auto_mask": "自动遮罩",
+    "channel_order": "输出通道顺序",
+    "auto": "自动",
+    "styles": {
+      "natural": "自然",
+      "cinematic": "电影",
+      "default": "默认",
+      "3": "3",
+      "4": "4",
+      "5": "5",
+      "6": "6"
     }
   }
 }

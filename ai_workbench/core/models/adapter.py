@@ -5,7 +5,7 @@ from typing import Protocol
 
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult, ModelProfile,
-    ModelStatus, RerankResult, SiglipResult, Tower, VisionResult, AudioOutput, ASRParameters, TranscriptionResult,
+    ModelStatus, RerankResult, SiglipResult, Tower, VisionResult, AudioOutput, ASRParameters, TranscriptionResult, ImageOutput,
 )
 
 
@@ -26,6 +26,7 @@ class ProviderAdapter(InferenceAdapter, Protocol):
 
 
 class LocalAdapter(InferenceAdapter, Protocol):
+    async def process_image(self, profile: ModelProfile, image: ImageOutput, options: dict) -> ImageOutput: ...
     async def health(self, profile: ModelProfile) -> ModelStatus: ...
     async def load(self, profile: ModelProfile, *, explicit: bool = False) -> ModelStatus: ...
     async def unload(self, profile: ModelProfile) -> ModelStatus: ...

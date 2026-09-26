@@ -12,6 +12,7 @@ Paths below are under ai_workbench:
 - core/chat_runner.py, core/context.py and core/harness/ handle chat/tool execution.
 - core/models/ owns adapters, queues, lifecycle and status; core/models/runtimes/ owns
   catalog, supervision, storage accounting and cache maintenance.
+- runtime_components/dlss5nr owns the standalone image processor and native bridge; core/models/processing.py validates images/resources. runtimes/components.py bootstraps its profile; scripts/build_dlss_component.py builds the bundled archive.
 - workers/server.py dispatches the shared ONNX control service; workers/wd14_engine.py owns tagging,
   while core/models/images.py validates/normalizes inline images before admission.
 - core/models/inspection.py exposes directory information; resolution.py applies detected engine schemas,
@@ -38,6 +39,7 @@ test_provider_runtime.py covers strict sources, provider ownership, maintenance 
 configuration reset, installation/job preservation and the shared lock/wheel audit.
 test_provider_inference.py covers optional discovery and request status. scripts/build_runtime_wheels.py
 reproduces upstream patches; scripts/check_qwen_rope.py checks checkpoint buffer restoration.
+test_dlss_processor.py/test_dlss_runtime.py cover component lifecycle/bootstrap, processor schemas, uploads, alpha/orientation and worker cancellation/reload. scripts/smoke_dlss_runtime.py covers real D3D12 acceptance and optional component lifecycle.
 Kokoro API, engine boundaries and installation use test_tts.py and test_tts_runtime.py.
 test_wd14.py and test_wd14_runtime.py cover tagging schemas, preprocessing, migration, input limits,
 public API, queue cancellation, crash recovery and profile/Kokoro isolation.

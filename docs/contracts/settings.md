@@ -145,73 +145,65 @@ The default initializes new sessions; changing it preserves existing selections.
 settings select concrete LLMs without a Global default option. [Models](models.md) owns profile
 parameters; [chat/context](chat-context.md#auxiliary-tasks-and-titles) owns titles.
 
-Models has four sidebar pages. Default chat/auxiliary model selectors appear only
-on Model profiles. Providers manages external connections; Local Runtime shows installation,
-storage, download settings and task history, with a log dialog. Forms and the kind filter
-retain drafts across subpages. LLM/text embedding offer Unbound, Local Runtime and configured providers; rerankers offer Unbound/Local Runtime. TTS, vision, image embedding and ASR fix Model source to Local Runtime; disabled providers are marked.
-Blank-form defaults are local for every kind except unbound LLMs; adding a local inventory entry always binds Local Runtime and retains its directory reference. Detected Kokoro/WD14 use CPU; other engines use CUDA. Unresolved LLM/TTS/WD14 directories expose no guessed engine options.
-Local models expose inventory, execution options and release policy. Vision shows detected WD14/backbone information, read-only Tags, general/character thresholds (0.35/0.85),
-CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and
-fractions round-trip, while blank fields prevent submission. The removed vision batch-size field is rejected by the API.
-WD14 directory suggestions require model.onnx and selected_tags.csv; arbitrary safe manual relative references remain editable.
-GGUF references select directories; the information panel shows the main model and optional projector without file selectors. A newly selected directory with one projector enables Vision; users may disable it. Reopening/reinspecting preserves saved choices, and no projector disables Vision. Ambiguity is shown as a blocking load diagnostic while saving remains available. Transformers vision remains selectable;
-the worker verifies actual image capability during execution.
-Provider models expose model-ID entry and optional discovery; failed discovery leaves manual entry,
-saving and inference available. Late results from a previous source cannot replace current suggestions.
-Changing local/provider source or provider id clears model_ref and replaces source options and source-specific embedding parameters. Unbinding
-preserves model_ref for eligible kinds; binding an unbound draft retains its reference for validation. Reselecting is a no-op.
-Local rows show health/load/unload/residency/logs; provider rows show recent-request state and occupancy,
-without lifecycle controls or a trial-inference action. Local engine selection follows directory inspection.
-TTS directories automatically identify Kokoro, Chatterbox or Qwen3-TTS Base; architecture is read-only. New drafts contain speed=1/MP3 defaults. Chatterbox/Qwen expose an optional seed: blank saves null (unfixed), and 0 is a valid fixed seed. Speech requests may override it;
-omitted/null request seeds inherit the profile. Fixed seeds control randomness without guaranteeing identical audio. Seed edits use the existing profile save/lifecycle flow. Switching architecture preserves speed/format
-and clears incompatible generation and execution settings, resetting seed to null for Audio or removing it for Kokoro. Same-engine directory changes preserve customized settings. Directory changes clear old information and ignore late responses; unnamed new local drafts receive directory-name suggestions. Saved Kokoro editors show preset
-availability by language; Audio editors explain reference-based API usage and Qwen's optional transcripts. Voices are request selections, not profile records. Ownership/expiry belong to
-[Models](models.md#audio-tts-and-temporary-references).
+Models has four sidebar pages. Default chat/auxiliary model selectors appear only on Model profiles. Providers manages external connections; Local Runtime shows installation, storage, download
+settings and task history, with a log dialog. Forms and the kind filter retain drafts across subpages. LLM/text embedding offer Unbound, Local Runtime and configured providers; rerankers offer
+Unbound/Local Runtime. TTS, vision, image embedding, ASR and processor fix Model source to Local Runtime; disabled providers are marked. Blank-form defaults are local for every kind except unbound
+LLMs; adding a local inventory entry always binds Local Runtime and retains its directory reference. Detected Kokoro/WD14 use CPU, DLSS NR uses D3D12, and other engines use CUDA. Unresolved
+LLM/TTS/WD14 directories expose no guessed engine options. Local models expose inventory, execution options and release policy. Vision shows detected WD14/backbone information, read-only Tags,
+general/character thresholds (0.35/0.85), CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and fractions round-trip, while blank fields
+prevent submission. The removed vision batch-size field is rejected by the API. WD14 directory suggestions require model.onnx and selected_tags.csv; arbitrary safe manual relative references remain
+editable. GGUF references select directories; the information panel shows the main model and optional projector without file selectors. A newly selected directory with one projector enables Vision;
+users may disable it. Reopening/reinspecting preserves saved choices, and no projector disables Vision. Ambiguity is shown as a blocking load diagnostic while saving remains available. Transformers
+vision remains selectable; the worker verifies actual image capability during execution. Provider models expose model-ID entry and optional discovery; failed discovery leaves manual entry, saving and
+inference available. Late results from a previous source cannot replace current suggestions. Changing local/provider source or provider id clears model_ref and replaces source options and
+source-specific embedding parameters. Unbinding preserves model_ref for eligible kinds; binding an unbound draft retains its reference for validation. Reselecting is a no-op. Local rows show
+health/load/unload/residency/logs; provider rows show recent-request state and occupancy, without lifecycle controls or a trial-inference action. Local engine selection follows directory inspection.
+TTS directories automatically identify Kokoro, Chatterbox or Qwen3-TTS Base; architecture is read-only. New drafts contain speed=1/MP3 defaults. Chatterbox/Qwen expose an optional seed: blank saves
+null (unfixed), and 0 is a valid fixed seed. Speech requests may override it; omitted/null request seeds inherit the profile. Fixed seeds control randomness without guaranteeing identical audio. Seed
+edits use the existing profile save/lifecycle flow. Switching architecture preserves speed/format and clears incompatible generation and execution settings, resetting seed to null for Audio or
+removing it for Kokoro. Same-engine directory changes preserve customized settings. Directory changes clear old information and ignore late responses; unnamed new local drafts receive directory-name
+suggestions. Saved Kokoro editors show preset availability by language; Audio editors explain reference-based API usage and Qwen's optional transcripts. Voices are request selections, not profile
+records. Ownership/expiry belong to [Models](models.md#audio-tts-and-temporary-references).
 
-Image embedding uses Local Runtime. Choosing/editing a directory reads inspect information without loading;
-structure, image/text dimensions, native text position limit and processor settings are read-only, with missing values marked
-Determined when loading. Tokenizer placeholder lengths are not presented as the position limit. Diagnostics/errors do not block saving.
-Changing the reference clears old information immediately and ignores late responses, preserving names and runtime policies;
-new empty names receive a directory-name suggestion on selection or leaving the reference input.
-The strict unload_other_tower_on_call switch defaults on. Off permits both towers to reside while requests remain serial.
-Device, threads, worker batch limit (1..16) and release policy remain editable; architecture/dimensions/normalization are not parameters.
-Rows expose separate tower badges and cached vector identity. Load and log menus select Image/Text; Unload releases the whole profile.
-Health, busy locks and hidden subpage menus use the shared lifecycle. [Models](models.md#siglip-image-and-text-embeddings) owns execution and acceptance limits.
+Image embedding uses Local Runtime. Choosing/editing a directory reads inspect information without loading; structure, image/text dimensions, native text position limit and processor settings are
+read-only, with missing values marked Determined when loading. Tokenizer placeholder lengths are not presented as the position limit. Diagnostics/errors do not block saving. Changing the reference
+clears old information immediately and ignores late responses, preserving names and runtime policies; new empty names receive a directory-name suggestion on selection or leaving the reference input.
+The strict unload_other_tower_on_call switch defaults on. Off permits both towers to reside while requests remain serial. Device, threads, worker batch limit (1..16) and release policy remain
+editable; architecture/dimensions/normalization are not parameters. Rows expose separate tower badges and cached vector identity. Load and log menus select Image/Text; Unload releases the whole
+profile. Health, busy locks and hidden subpage menus use the shared lifecycle. [Models](models.md#siglip-image-and-text-embeddings) owns execution and acceptance limits.
 
-Text embedding supports Local Runtime/providers/unbound drafts. Directory selection inspects metadata without loading;
-pipeline, pooling, prompt inclusion, normalization, similarity, dimensions and effective token limit are read-only.
-Resolved query/document templates are visible; collapsed advanced controls select declared prompt names or automatic resolution.
-Directory changes clear stale information and prompt selections; source changes reset incompatible parameters/options.
-Diagnostics block loading, not saving. Runtime controls retain CPU/CUDA, four threads, batch 1..16 and manual release defaults.
-[Models](models.md#local-text-embeddings) owns native semantics and Harrier-only acceptance limits.
-Rerankers offer Local Runtime/unbound drafts and automatically inspect architecture, scoring/activation, pipeline and effective token limit.
-Directory changes clear old information and ignore late responses; unnamed new drafts receive directory-name suggestions. Diagnostics block loading, not saving.
-Parameters are empty: architecture, templates and scoring tokens are not editable. CPU/CUDA, four threads, batch 1..16 (default 1), manual release
-and external visibility use existing controls. [Models](models.md#local-reranking) owns native processing and acceptance limits.
+Text embedding supports Local Runtime/providers/unbound drafts. Directory selection inspects metadata without loading; pipeline, pooling, prompt inclusion, normalization, similarity, dimensions and
+effective token limit are read-only. Resolved query/document templates are visible; collapsed advanced controls select declared prompt names or automatic resolution. Directory changes clear stale
+information and prompt selections; source changes reset incompatible parameters/options. Diagnostics block loading, not saving. Runtime controls retain CPU/CUDA, four threads, batch 1..16 and manual
+release defaults. [Models](models.md#local-text-embeddings) owns native semantics and Harrier-only acceptance limits. Rerankers offer Local Runtime/unbound drafts and automatically inspect
+architecture, scoring/activation, pipeline and effective token limit. Directory changes clear old information and ignore late responses; unnamed new drafts receive directory-name suggestions.
+Diagnostics block loading, not saving. Parameters are empty: architecture, templates and scoring tokens are not editable. CPU/CUDA, four threads, batch 1..16 (default 1), manual release and external
+visibility use existing controls. [Models](models.md#local-reranking) owns native processing and acceptance limits.
 
-ASR uses Local Runtime, with CUDA, four threads, manual release and external visibility off by default.
-Directory selection inspects architecture, processor, sample rate, features, native window, languages and timestamp support as read-only information. Changing directories clears stale results and preserves edited names/defaults; unnamed new drafts receive directory-name suggestions. Invalid directories remain saveable.
-Language (auto or supported code), prompt, temperature (0..1) and response format are editable defaults for internal/public requests. Explicit auto/empty prompt resets them; request overrides never change the profile.
-Both locales explain that json/text omit timestamps and verbose_json returns segment timestamps, while every format transcribes complete recordings. There is no architecture selector, duplicated preprocessing configuration or transcription page. [Models](models.md#local-speech-recognition) owns execution and limitations.
+ASR uses Local Runtime, with CUDA, four threads, manual release and external visibility off by default. Directory selection inspects architecture, processor, sample rate, features, native window,
+languages and timestamp support as read-only information. Changing directories clears stale results and preserves edited names/defaults; unnamed new drafts receive directory-name suggestions. Invalid
+directories remain saveable. Language (auto or supported code), prompt, temperature (0..1) and response format are editable defaults for internal/public requests. Explicit auto/empty prompt resets
+them; request overrides never change the profile. Both locales explain that json/text omit timestamps and verbose_json returns segment timestamps, while every format transcribes complete recordings.
+There is no architecture selector, duplicated preprocessing configuration or transcription page. [Models](models.md#local-speech-recognition) owns execution and limitations.
 
-Provider/settings reads omit secret keys and expose presence flags. PATCH omission retains keys; empty strings clear them.
-External enablement requires a nonempty key; storage is unencrypted. Busy connection edits, referenced deletion and invalid combinations fail.
+Processor fixes its source to Local Runtime and shows read-only DLSS NR/image processing, resource diagnostics, style/preset/intensity/tone/structure/skin/auto-mask/channel-order defaults, GPU index,
+release policy and external visibility. Incomplete directories remain saveable. There is no processing page. [Models](models.md#dlss-nr-image-processing) owns ranges and execution. Local Runtime has
+separate Local installation and DLSS NR component rows. Each displays its own status/version and latest job, filtered by component_id; cache jobs stay separate. The component has install/update,
+repair, uninstall, progress, cancellation and logs. Installing/repairing requires a healthy base. Component completion refreshes profiles so the generated default appears immediately. Both locales
+explain manual NR resources and resource/profile retention.
 
-LocalRuntimeSettings has no profile id or editable name. GET/PATCH `/api/models/local-runtime/settings`
-owns enabled=true and nested download defaults. It is independent of provider CRUD and runtime job identity.
-Providers can be added, edited and deleted when unreferenced; local maintenance does not block provider inference.
-Installation details show the recorded installed version. Reads check dependency identity, metadata and entries;
-source changes reuse the environment. Invalid/old metadata or changed dependencies show Repair required.
-Checks recover on refresh when files/dependencies are restored; failed/interrupted jobs require explicit repair.
-Install never rebuilds an unavailable installation; manual Repair also rebuilds healthy ones. Finalizing precedes promotion.
-The local settings download object owns http_proxy, pypi_index_url,
-pytorch_index_url and github_release_proxy_url, patched at `/api/models/local-runtime/settings`.
-Index/release proxy URLs require HTTPS; HTTP is allowed for the explicit proxy. Credentials are rejected; these settings serve runtime artifacts/dependencies only.
-Storage is fetched on entry/refresh/maintenance completion, without a timer. Incomplete scans show unknown values;
-cache recovery uses an exclusive logical-size estimate. Clear cache confirms the estimate/future-download consequence; maintenance shares the runtime task lock.
-Cache history/results have their own labels and no synthetic runtime identity.
-CUDA profiles use an Automatic/Manual GPU-layer control, preserving a draft's
-manual value while switching modes. Defaults and execution belong to Models.
+Provider/settings reads omit secret keys and expose presence flags. PATCH omission retains keys; empty strings clear them. External enablement requires a nonempty key; storage is unencrypted. Busy
+connection edits, referenced deletion and invalid combinations fail.
+
+LocalRuntimeSettings has no profile id or editable name. GET/PATCH `/api/models/local-runtime/settings` owns enabled=true and nested download defaults. It is independent of provider CRUD and runtime
+job identity. Providers can be added, edited and deleted when unreferenced; local maintenance does not block provider inference. Installation details show the recorded installed version. Reads check
+dependency identity, metadata and entries; source changes reuse the environment. Invalid/old metadata or changed dependencies show Repair required. Checks recover on refresh when files/dependencies
+are restored; failed/interrupted jobs require explicit repair. Install never rebuilds an unavailable installation; manual Repair also rebuilds healthy ones. Finalizing precedes promotion. The local
+settings download object owns http_proxy, pypi_index_url, pytorch_index_url and github_release_proxy_url, patched at `/api/models/local-runtime/settings`. Index/release proxy URLs require HTTPS; HTTP
+is allowed for the explicit proxy. Credentials are rejected; these settings serve runtime artifacts/dependencies only. Storage is fetched on entry/refresh/maintenance completion, without a timer.
+Incomplete scans show unknown values; cache recovery uses an exclusive logical-size estimate. Clear cache confirms the estimate/future-download consequence; maintenance shares the runtime task lock.
+Cache history/results have their own labels and no synthetic runtime identity. CUDA profiles use an Automatic/Manual GPU-layer control, preserving a draft's manual value while switching modes.
+Defaults and execution belong to Models.
 
 ## Other domains
 

@@ -86,7 +86,7 @@ export function ProfileEditor({
   const savedReference = profiles.find((profile) => profile.id === modelID)?.model_ref;
   useEffect(() => {
     if (!opened || selectedSource !== 'local' || !modelRef.trim()
-      || modelKind !== 'llm' && modelKind !== 'tts' && modelKind !== 'vision') return;
+      || modelKind !== 'llm' && modelKind !== 'tts' && modelKind !== 'vision' && modelKind !== 'processor') return;
     let cancelled = false;
     void modelsApi.inspectLocalDirectory(modelKind, modelRef).then((information) => {
       if (cancelled) return;
@@ -248,7 +248,7 @@ export function ProfileEditor({
                       }}
                       items={[
                         ...(!localOnly(model.value.kind) ? [{ value: '', label: t('unbound') }] : []),
-                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr'].includes(model.value.kind)
+                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr', 'processor'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
                         ...(['llm', 'embedding'].includes(model.value.kind) && providers.length
@@ -269,7 +269,7 @@ export function ProfileEditor({
                       </SelectTrigger>
                       <SelectContent>
                         {!localOnly(model.value.kind) ? <SelectGroup><SelectItem value="">{t('unbound')}</SelectItem></SelectGroup> : null}
-                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr'].includes(model.value.kind) ? (
+                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr', 'processor'].includes(model.value.kind) ? (
                           <SelectGroup>
                             <SelectLabel>{t('localSourceGroup')}</SelectLabel>
                             <SelectItem value="local">{t('localRuntime')}</SelectItem>
@@ -320,6 +320,7 @@ export function ProfileEditor({
                         </ComboboxList>
                       </ComboboxContent>
                     </Combobox>
+                    {model.value.kind === 'processor' ? <FieldDescription>{t('processor.directoryHint')}</FieldDescription> : null}
                     {model.value.kind === 'vision' ? (
                       <FieldDescription>{t('visionDirectoryHint')}</FieldDescription>
                     ) : null}
@@ -373,7 +374,7 @@ export function ProfileEditor({
                 {model.value.kind === 'asr' && local && model.value.model_ref.trim() ? (
                   <ASRInspectionPanel key={model.value.model_ref} modelRef={model.value.model_ref} />
                 ) : null}
-                {local && modelRef.trim() && ['llm', 'tts', 'vision'].includes(model.value.kind) ? (
+                {local && modelRef.trim() && ['llm', 'tts', 'vision', 'processor'].includes(model.value.kind) ? (
                   <DirectoryInspectionPanel information={information} error={directory?.error} />
                 ) : null}
                 {model.value.kind === 'embedding' && local && model.value.model_ref.trim() ? (
@@ -393,7 +394,7 @@ export function ProfileEditor({
                         <FieldLabel>{t('runtimeDevice')}</FieldLabel>
                         <Select
                           value={String(local.execution_options.device)}
-                          disabled={onnx}
+                          disabled={onnx || engine === 'dlss5nr'}
                           onValueChange={(selected) =>
                             patchLocal({
                               execution_options: {
@@ -405,7 +406,7 @@ export function ProfileEditor({
                               },
                             })
                           }
-                          items={[
+                          items={engine === 'dlss5nr' ? [{ value: 'd3d12', label: 'NVIDIA D3D12' }] : [
                             ...(onnx ? [] : [{ value: 'cuda', label: <>NVIDIA CUDA</> }]),
                             { value: 'cpu', label: <>CPU</> },
                           ]}
@@ -413,10 +414,12 @@ export function ProfileEditor({
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
-                            {onnx ? null : <SelectItem value="cuda">NVIDIA CUDA</SelectItem>}
-                            <SelectItem value="cpu">CPU</SelectItem>
-                          </SelectContent>
+                          <SelectContent><SelectGroup>
+                            {engine === 'dlss5nr' ? <SelectItem value="d3d12">NVIDIA D3D12</SelectItem> : <>
+                              {onnx ? null : <SelectItem value="cuda">NVIDIA CUDA</SelectItem>}
+                              <SelectItem value="cpu">CPU</SelectItem>
+                            </>}
+                          </SelectGroup></SelectContent>
                         </Select>
                       </Field>
                       {(engine === 'llama-server'
@@ -426,7 +429,7 @@ export function ProfileEditor({
                             ['batch_size', 512, 1, 4096],
                           ]
                         : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? [['intraop_threads', 4, 1, 256], ['max_batch_size', 1, 1, 16]]
-                        : [['intraop_threads', 4, 1, 256]]
+                        : engine === 'dlss5nr' ? [['gpu_index', 0, 0, 15]] : [['intraop_threads', 4, 1, 256]]
                       ).map(([key, initial, min, max]) => (
                         <Field key={String(key)}>
                           <FieldLabel>{t('runtimeParams.' + key)}</FieldLabel>

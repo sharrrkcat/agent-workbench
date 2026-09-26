@@ -1,5 +1,6 @@
-export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts' | 'asr';
-export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers' | 'cross-encoder' | 'whisper';
+export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts' | 'asr' | 'processor';
+export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers' | 'cross-encoder' | 'whisper' | 'dlss5nr';
+export type ComponentId = 'dlss5nr';
 export type SiglipTower = 'image' | 'text';
 export type SiglipTowerInfo = {
   tower: SiglipTower; device: 'cpu' | 'cuda'; device_name: string;
@@ -51,7 +52,10 @@ export type VisionInspection = {
   kind: 'vision'; model_ref: string; engine: 'wd14' | null;
   architecture: 'wd14' | null; backbone: string | null; diagnostics: DirectoryDiagnostic[];
 };
-export type DirectoryInspection = LLMInspection | TTSInspection | VisionInspection;
+export type ProcessorInspection = {
+  kind: 'processor'; model_ref: string; engine: 'dlss5nr'; task: 'image_processing'; diagnostics: DirectoryDiagnostic[];
+};
+export type DirectoryInspection = LLMInspection | TTSInspection | VisionInspection | ProcessorInspection;
 
 export type LocalEmbeddingParameters = {
   query_prompt_name: string | null;
@@ -172,6 +176,8 @@ export type ModelStatus = {
     device_name: string | null;
     gpu_layers_loaded: number | null;
     gpu_layers_total: number | null;
+    component: { component_id: ComponentId; version: string; state: RuntimeInstallState;
+      job_id: string | null; error_code: string | null } | null;
   } | null;
 };
 
@@ -203,6 +209,7 @@ export type RuntimeInstallation = {
 export type RuntimeJob = {
   id: string;
   version: string | null;
+  component_id: ComponentId | null;
   operation: 'install' | 'repair' | 'uninstall' | 'cache_prune' | 'cache_clean';
   result: { before: StorageUsage | null; after: StorageUsage | null } | null;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
@@ -215,6 +222,10 @@ export type RuntimeJob = {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+};
+
+export type RuntimeComponent = RuntimeInstallation & {
+  component_id: ComponentId; bundled_version: string; default_profile_id: string | null;
 };
 
 export type StorageUsage = {

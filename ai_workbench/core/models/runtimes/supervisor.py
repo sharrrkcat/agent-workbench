@@ -19,8 +19,9 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, WORKER_ROOT, catalog, requirements_digest, worker_entrypoint
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import (
-    CacheCleanupResult, Installation, InstallationManifest, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
+    CacheCleanupResult, ComponentInstallation, ComponentManifest, Installation, InstallationManifest, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
 )
+from ai_workbench.core.models.runtimes.components import BUNDLED_ROOT, bootstrap_processor, bundled_release, require_component
 from ai_workbench.core.models.runtimes.storage import is_link, scan_storage
 from ai_workbench.core.time import utc_now
 
@@ -143,6 +144,8 @@ class RuntimeSupervisor:
         self.release = release if release is not None else catalog()
         self.worker_root = WORKER_ROOT
         self._installation_snapshot: Installation | None = None
+        self.component_release = bundled_release()
+        self._component_snapshot = None
         self.transport = transport
         self.task: asyncio.Task | None = None
         self.active_job: str | None = None
@@ -156,6 +159,43 @@ class RuntimeSupervisor:
                 if staging.exists():
                     remove_owned(self.base, staging)
         self.installation()
+        self.component()
+
+    def component_directory(self, version=None):
+        version = version or self.component().version
+        root = contained(self.base, self.base / "local" / "components" / "dlss5nr")
+        return contained(root, root / version)
+
+    def component(self, *, check=True):
+        if not check:
+            return self._component_snapshot.model_copy(deep=True)
+        release = self.component_release.manifest
+        records = self.store.components()
+        value = records[0] if records else ComponentInstallation(version=release.version)
+        if not self.release.supported:
+            value.state, value.error_code = "unsupported", "RUNTIME_COMPONENT_INCOMPATIBLE"
+        elif value.state == "installed":
+            try:
+                target = self.component_directory(value.version)
+                contents = installed_file(target, "installation.json").read_bytes()
+                manifest = ComponentManifest.model_validate_json(contents, strict=True)
+                if hashlib.sha256(contents).hexdigest() != value.manifest_sha256:
+                    raise ValueError("Component metadata changed")
+                if manifest.version != value.version or manifest.python_version != self.release.python_version:
+                    value.state, value.error_code = "unsupported", "RUNTIME_COMPONENT_INCOMPATIBLE"
+                elif not all(installed_file(target, entry).is_file() for entry in manifest.entries.model_dump().values()):
+                    raise ValueError("Component entry point missing")
+            except (OSError, ValueError, ModelError):
+                value.state, value.error_code = "broken", "RUNTIME_COMPONENT_BROKEN"
+        self._component_snapshot = value.model_copy(deep=True)
+        return value
+
+    def component_entries(self):
+        value = self.component()
+        require_component(value)
+        target = self.component_directory(value.version)
+        manifest = ComponentManifest.model_validate_json((target / "installation.json").read_bytes())
+        return {key: installed_file(target, name) for key, name in manifest.entries.model_dump().items()}
 
     def directory(self, version=None):
         if version is None:
@@ -165,6 +205,8 @@ class RuntimeSupervisor:
         return contained(local, local / version)
 
     def worker_entrypoint(self, engine):
+        if engine == "dlss5nr":
+            return self.component_entries()["worker"]
         path = self.worker_root / worker_entrypoint(engine)
         if not path.is_file():
             raise ModelError("MODEL_UNAVAILABLE", "The application worker entry point is missing.", 503)
@@ -222,12 +264,21 @@ class RuntimeSupervisor:
         """Check fixed installation metadata and entry points before starting a process."""
         value, paths = self._inspect_installation()
         self._require_available(value)
+        if engine == "dlss5nr":
+            require_component(self.component())
         return paths[device if engine == "llama-server" else "python"]
 
     def _emit_installation(self, value):
-        self._installation_snapshot = value.model_copy(deep=True)
+        component = isinstance(value, ComponentInstallation)
+        if component:
+            self._component_snapshot = value.model_copy(deep=True)
+        else:
+            self._installation_snapshot = value.model_copy(deep=True)
         if self.events:
-            self.events.emit("runtime_status", session_id="", payload={"installation": value.model_dump(mode="json")})
+            payload = value.model_dump(mode="json", exclude={"manifest_sha256"})
+            if component:
+                payload["bundled_version"] = self.component_release.manifest.version
+            self.events.emit("runtime_status", session_id="", payload={"component" if component else "installation": payload})
         if self.manager:
             self.manager.runtime_changed()
 
@@ -343,7 +394,7 @@ class RuntimeSupervisor:
                 self.active_job = None
             self._prune_logs(cache=True)
 
-    async def submit(self, operation):
+    async def submit(self, operation, component_id=None):
         if self.closed:
             raise ModelError("MODEL_UNAVAILABLE", "Runtime supervisor is shutting down.", 503)
         if self.active_job is not None:
@@ -353,16 +404,27 @@ class RuntimeSupervisor:
             raise ModelError("RUNTIME_UNSUPPORTED", "The local runtime is not supported on this platform.", 422)
         if self.manager:
             self.manager.require_local_idle()
-        value = self.installation()
+        if component_id:
+            if operation != "uninstall":
+                self.assert_available()
+            value = self.component()
+            entry = self.component_release.manifest
+        else:
+            value = self.installation()
         if operation == "install" and value.state != "not_installed":
-            self._require_available(value)
-        version = value.version if operation == "uninstall" or operation == "install" and value.state == "installed" else entry.version
-        job = RuntimeJob(version=version, operation=operation)
+            (require_component if component_id else self._require_available)(value)
+        already_installed = operation == "install" and value.state == "installed" and (not component_id or value.version == entry.version)
+        version = value.version if operation == "uninstall" or already_installed else entry.version
+        job = RuntimeJob(version=version, operation=operation, component_id=component_id)
         job.log_path = f"{job.id}.log"
         self.active_job = job.id
         self.blocked = True
         try:
-            if operation == "install" and value.state == "installed":
+            if already_installed:
+                if component_id:
+                    bootstrap_processor(self.root, self.manager.profiles, value)
+                    self.store.save_component(value)
+                    self._emit_installation(value)
                 job.state, job.stage, job.finished_at = "completed", "already_installed", utc_now()
                 self._save_job(job)
                 self.active_job = None
@@ -371,7 +433,7 @@ class RuntimeSupervisor:
             if self.manager:
                 await self.manager.invalidate_local()
             value.state, value.job_id, value.error_code = "installing", job.id, None
-            self.store.save_installation(value)
+            (self.store.save_component if component_id else self.store.save_installation)(value)
             self._save_job(job)
             self._emit_installation(value)
             self.task = asyncio.create_task(self._execute(job, entry))
@@ -398,37 +460,50 @@ class RuntimeSupervisor:
     async def _execute(self, job, entry):
         staging = self.base / ".staging" / job.id
         log = None
-        value = self.installation()
+        value = self.component() if job.component_id else self.installation()
         try:
             log = RuntimeLog(self.logs / job.log_path, self.root)
             job.state = "running"
             self._save_job(job)
-            target = self.directory(job.version)
+            target = self.component_directory(job.version) if job.component_id else self.directory(job.version)
             if job.operation == "uninstall":
                 if target.exists():
                     await file_work(lambda _: remove_owned(self.base, target))
                 value.state, value.manifest_sha256 = "not_installed", None
+                if not job.component_id:
+                    for component in self.store.components():
+                        directory = self.component_directory(component.version)
+                        if directory.exists():
+                            await file_work(lambda _: remove_owned(self.base, directory))
+                        component.state, component.manifest_sha256 = "not_installed", None
+                        self.store.save_component(component)
+                        self._emit_installation(component)
             else:
                 staging.mkdir(parents=True)
                 payload = staging / "payload"
-                await self._install_python(entry, payload, job, log)
-                executables = {"python": entry.python_executable}
-                for device, native in (("cpu", entry.native_cpu), ("cuda", entry.native_cuda)):
-                    executables[device] = await self._install_native(native, payload, staging, device, job, log)
+                if job.component_id:
+                    manifest = await self._install_component(payload, job, log)
+                else:
+                    await self._install_python(entry, payload, job, log)
+                    executables = {"python": entry.python_executable}
+                    for device, native in (("cpu", entry.native_cpu), ("cuda", entry.native_cuda)):
+                        executables[device] = await self._install_native(native, payload, staging, device, job, log)
+                    manifest = InstallationManifest(dependencies=entry.dependency_identity(), executables=executables)
+                    self._entry_paths(payload, manifest)
                 self._stage(job, "finalizing", log)
-                manifest = InstallationManifest(dependencies=entry.dependency_identity(), executables=executables)
-                self._entry_paths(payload, manifest)
                 marker = payload / "installation.json"
                 marker.write_text(manifest.model_dump_json(), encoding="utf-8")
                 value.manifest_sha256 = sha256(marker)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                previous = self.directory(value.version)
+                previous = self.component_directory(value.version) if job.component_id else self.directory(value.version)
                 if previous != target and previous.exists():
                     await file_work(lambda _: remove_owned(self.base, previous))
                 if target.exists():
                     await file_work(lambda _: remove_owned(self.base, target))
                 payload.replace(target)
                 value.version, value.state = entry.version, "installed"
+                if job.component_id:
+                    bootstrap_processor(self.root, self.manager.profiles, value)
             job.state, job.stage = "completed", "completed"
             value.error_code = None
             log.write("Runtime task completed.")
@@ -456,13 +531,34 @@ class RuntimeSupervisor:
             job.finished_at = utc_now()
             value.updated_at = utc_now()
             try:
-                self.store.save_installation(value)
+                (self.store.save_component if job.component_id else self.store.save_installation)(value)
                 self._save_job(job)
                 self._emit_installation(value)
             finally:
                 self.active_job = None
                 self.blocked = False
             self._prune_logs(cache=job.version is None)
+
+    async def _install_component(self, payload, job, log):
+        release = self.component_release
+        if release.manifest.python_version != self.release.python_version:
+            raise ModelError("RUNTIME_COMPONENT_INCOMPATIBLE", "The bundled component requires a different base Python version.", 503)
+        self._stage(job, "checking_component_archive", log)
+        archive = installed_file(BUNDLED_ROOT, release.archive)
+        if await file_digest(archive) != release.archive_sha256:
+            raise ModelError("RUNTIME_CHECKSUM_MISMATCH", "Bundled component checksum mismatch.", 503)
+        self._stage(job, "extracting_component", log)
+        await file_work(lambda _: extract_archive(archive, payload, "zip"))
+        manifest = ComponentManifest.model_validate_json((payload / "installation.json").read_bytes())
+        if manifest != release.manifest:
+            raise ModelError("RUNTIME_COMPONENT_INCOMPATIBLE", "Bundled component metadata mismatch.", 503)
+        entries = {key: installed_file(payload, name) for key, name in manifest.entries.model_dump().items()}
+        if not all(path.is_file() for path in entries.values()):
+            raise ModelError("RUNTIME_COMPONENT_BROKEN", "Component entry point missing.", 503)
+        self._stage(job, "checking_component", log)
+        env = {key: value for key, value in os.environ.items() if not key.upper().startswith(("PYTHON", "VIRTUAL_ENV"))}
+        await self._command([self.executable("component-check"), "-I", "-B", entries["worker"], "--self-check", entries["bridge"], entries["caller"]], env, payload, log)
+        return manifest
 
     async def _install_native(self, native, payload, staging, device, job, log):
         artifacts = [native.artifact, *native.dependencies]

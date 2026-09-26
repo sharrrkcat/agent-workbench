@@ -20,6 +20,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
     localRuntimeSettings: local,
     catalog,
     installation,
+    components,
     jobs,
     reload,
     runtimeLoading,
@@ -34,10 +35,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
   const [settings, setSettings] = useState<RuntimeDownloadSettings | null>(null);
   const [log, setLog] = useState<{ job: RuntimeJob; text: string } | null>(null);
   const active = jobs.find((job) => job.state === 'queued' || job.state === 'running');
-  const job = jobs.find((item) => item.version !== null);
-  const running = job?.state === 'queued' || job?.state === 'running';
-  const state = installation?.state || (catalog?.supported ? 'not_installed' : 'unsupported');
-  const jobLabel = (item: RuntimeJob) => t('runtimeOperations.' + item.operation);
+  const jobLabel = (item: RuntimeJob) => [item.component_id ? t('dlssComponent') : item.version !== null ? t('localInstallation') : t('storage.title'), t('runtimeOperations.' + item.operation)].join(' · ');
   useEffect(() => {
     setSettings(local?.download ?? null);
   }, [
@@ -99,126 +97,54 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
         />
         <FieldLabel>{t('enableLocalRuntime')}</FieldLabel>
       </Field>
-      {catalog ? (
-        <div className="runtime-row">
-          <div className="model-identity">
-            <strong>{t('localInstallation')}</strong>
-            <small>
-              {state === 'not_installed' ? catalog.version : (installation?.version ?? catalog.version)} /{' '}
-              {catalog.platform} / {catalog.architecture}
-            </small>
+      {catalog ? [
+        { id: undefined, title: t('localInstallation'), value: installation, bundled: catalog.version },
+        ...components.map((component) => ({ id: component.component_id, title: t('dlssComponent'),
+          value: component, bundled: component.bundled_version })),
+      ].map((target) => {
+        const state = target.value?.state || (catalog.supported ? 'not_installed' : 'unsupported');
+        const job = jobs.find((item) => item.version !== null && (item.component_id ?? undefined) === target.id);
+        const running = job?.state === 'queued' || job?.state === 'running';
+        const baseReady = !target.id || installation?.state === 'installed';
+        const update = !!target.id && state === 'installed' && target.value?.version !== target.bundled;
+        const installLabel = t(update ? 'updateComponent' : 'installRuntime');
+        const actions = [
+          { label: running ? t('cancelTask') : installLabel, Icon: running ? Square : Download,
+            disabled: running ? job.cancel_requested : !!active || !catalog.supported || !baseReady || state !== 'not_installed' && !update,
+            action: async () => setJob(running ? await modelsApi.cancelRuntimeJob(job.id) : await modelsApi.runtimeAction('install', target.id)) },
+          { label: t('repairRuntime'), Icon: Wrench,
+            disabled: !!active || !catalog.supported || !baseReady || state === 'not_installed',
+            action: async () => setJob(await modelsApi.runtimeAction('repair', target.id)) },
+          { label: t('uninstallRuntime'), Icon: Trash2,
+            disabled: !!active || !catalog.supported || state === 'not_installed',
+            action: async () => setJob(await modelsApi.runtimeAction('uninstall', target.id)) },
+          { label: t('runtimeLog'), Icon: FileText, disabled: !job,
+            action: async () => { if (job) await showLog(job); } },
+        ];
+        return <div key={target.id ?? 'base'}>
+          <div className="runtime-row" role="group" aria-label={target.title}>
+            <div className="model-identity">
+              <strong>{target.title}</strong>
+              <small>{state === 'not_installed' ? target.bundled : target.value?.version} / {catalog.platform} / {catalog.architecture}</small>
+              {update ? <small>{t('bundledVersion')}: {target.bundled}</small> : null}
+            </div>
+            <div className="runtime-progress">
+              <span>{t('runtimeStates.' + state)}</span>
+              {job ? <small>{t('jobStates.' + job.state)}: {t('runtimeStages.' + job.stage)}</small> : null}
+              {running ? <progress aria-label={t('runtimeProgress')}
+                value={job.progress_total ? job.progress_current : undefined} max={job.progress_total || undefined} /> : null}
+              {target.value?.error_code || job?.error_code ? <code className="error-text">{target.value?.error_code || job?.error_code}</code> : null}
+            </div>
+            <div className="model-actions">{actions.map(({ label, Icon, disabled, action }) => <Tooltip key={label}>
+              <TooltipTrigger render={<Button type="button" aria-label={label} disabled={busy || disabled}
+                onClick={() => void run(action)} variant="ghost" size="icon" />}>
+                <Icon data-icon="inline-start" />
+              </TooltipTrigger><TooltipContent>{label}</TooltipContent>
+            </Tooltip>)}</div>
           </div>
-          <div className="runtime-progress">
-            <span>{t('runtimeStates.' + state)}</span>
-            {job ? (
-              <small>
-                {t('jobStates.' + job.state)}: {t('runtimeStages.' + job.stage)}
-              </small>
-            ) : null}
-            {running ? (
-              <progress
-                aria-label={t('runtimeProgress')}
-                value={job.progress_total ? job.progress_current : undefined}
-                max={job.progress_total || undefined}
-              />
-            ) : null}
-            {installation?.error_code || job?.error_code ? (
-              <code className="error-text">{installation?.error_code || job?.error_code}</code>
-            ) : null}
-          </div>
-          <div className="model-actions">
-            {running ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      aria-label={t('cancelTask')}
-                      disabled={busy || job.cancel_requested}
-                      onClick={() => void run(async () => setJob(await modelsApi.cancelRuntimeJob(job.id)))}
-                      variant="ghost"
-                      size="icon"
-                    />
-                  }
-                >
-                  <Square data-icon="inline-start" />
-                </TooltipTrigger>
-                <TooltipContent>{t('cancelTask')}</TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      aria-label={t('installRuntime')}
-                      disabled={busy || !!active || !catalog.supported || state !== 'not_installed'}
-                      onClick={() => void run(async () => setJob(await modelsApi.runtimeAction('install')))}
-                      variant="ghost"
-                      size="icon"
-                    />
-                  }
-                >
-                  <Download data-icon="inline-start" />
-                </TooltipTrigger>
-                <TooltipContent>{t('installRuntime')}</TooltipContent>
-              </Tooltip>
-            )}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    aria-label={t('repairRuntime')}
-                    disabled={busy || !!active || !catalog.supported || state === 'not_installed'}
-                    onClick={() => void run(async () => setJob(await modelsApi.runtimeAction('repair')))}
-                    variant="ghost"
-                    size="icon"
-                  />
-                }
-              >
-                <Wrench data-icon="inline-start" />
-              </TooltipTrigger>
-              <TooltipContent>{t('repairRuntime')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    aria-label={t('uninstallRuntime')}
-                    disabled={busy || !!active || !catalog.supported || state === 'not_installed'}
-                    onClick={() => void run(async () => setJob(await modelsApi.runtimeAction('uninstall')))}
-                    variant="ghost"
-                    size="icon"
-                  />
-                }
-              >
-                <Trash2 data-icon="inline-start" />
-              </TooltipTrigger>
-              <TooltipContent>{t('uninstallRuntime')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    aria-label={t('runtimeLog')}
-                    disabled={busy || !job}
-                    onClick={() => job && void run(() => showLog(job))}
-                    variant="ghost"
-                    size="icon"
-                  />
-                }
-              >
-                <FileText data-icon="inline-start" />
-              </TooltipTrigger>
-              <TooltipContent>{t('runtimeLog')}</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      ) : null}
-      <p>{t('runtimeReuseHint')}</p>
+          <p className="text-sm text-muted-foreground">{t(target.id ? 'dlssComponentHint' : 'runtimeReuseHint')}</p>
+        </div>;
+      }) : null}
       <RuntimeStoragePanel
         activeView={activeView}
         busy={busy}

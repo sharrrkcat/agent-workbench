@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { modelsApi } from '../api/models';
-import type { ModelProfile, ProviderProfile, ModelSettings, ModelStatus, RuntimeCatalog, RuntimeInstallation, RuntimeJob, RuntimeStorage, LocalRuntimeSettings } from '../types/models';
+import type { ModelProfile, ProviderProfile, ModelSettings, ModelStatus, RuntimeCatalog, RuntimeComponent, RuntimeInstallation, RuntimeJob, RuntimeStorage, LocalRuntimeSettings } from '../types/models';
 import type { RuntimeEvent } from '../types/runs';
 
 type ModelsState = {
@@ -9,7 +9,7 @@ type ModelsState = {
   reload: () => Promise<void>;
   setStatus: (id: string, status: ModelStatus) => void;
   localRuntimeSettings: LocalRuntimeSettings | null;
-  catalog: RuntimeCatalog | null; installation: RuntimeInstallation | null; jobs: RuntimeJob[];
+  catalog: RuntimeCatalog | null; installation: RuntimeInstallation | null; components: RuntimeComponent[]; jobs: RuntimeJob[];
   runtimeLoading: boolean; runtimeError: string;
   reloadRuntimes: () => Promise<void>;
   storage: RuntimeStorage | null; storageLoading: boolean; storageError: string;
@@ -31,10 +31,11 @@ export const useModelsStore = create<ModelsState>((set, get) => {
   const statusVersions = new Map<string, number>();
   let runtimeVersion = 0;
   let installationVersion = 0;
+  let componentVersion = 0;
   let storageVersion = 0;
   return {
   profiles: [], providers: [], settings: null, statuses: {}, loading: false, error: '',
-  localRuntimeSettings: null, catalog: null, installation: null, jobs: [], runtimeLoading: false, runtimeError: '',
+  localRuntimeSettings: null, catalog: null, installation: null, components: [], jobs: [], runtimeLoading: false, runtimeError: '',
   storage: null, storageLoading: false, storageError: '',
   reloadStorage: async () => {
     const version = ++storageVersion;
@@ -52,11 +53,13 @@ export const useModelsStore = create<ModelsState>((set, get) => {
   reloadRuntimes: async () => {
     const version = ++runtimeVersion;
     const initialInstallationVersion = installationVersion;
+    const initialComponentVersion = componentVersion;
     set({ runtimeLoading: true, runtimeError: '' });
     try {
-      const [catalog, installation, jobs, localRuntimeSettings] = await Promise.all([modelsApi.runtimeCatalog(), modelsApi.runtimeInstallation(), modelsApi.runtimeJobs(), modelsApi.localRuntimeSettings()]);
+      const [catalog, installation, jobs, localRuntimeSettings, components] = await Promise.all([modelsApi.runtimeCatalog(), modelsApi.runtimeInstallation(), modelsApi.runtimeJobs(), modelsApi.localRuntimeSettings(), modelsApi.runtimeComponents()]);
       if (version !== runtimeVersion) return;
       set((state) => ({ catalog, localRuntimeSettings, installation: initialInstallationVersion === installationVersion ? installation : state.installation,
+        components: initialComponentVersion === componentVersion ? components : state.components,
         jobs: mergeRuntimeJobs(state.jobs, jobs) }));
     } catch (error) {
       if (version === runtimeVersion) set({ runtimeError: error instanceof Error ? error.message : String(error) });
@@ -72,6 +75,12 @@ export const useModelsStore = create<ModelsState>((set, get) => {
       const installation = payload.installation as RuntimeInstallation;
       installationVersion++;
       set({ installation });
+    }
+    if (event.type === 'runtime_status' && payload.component) {
+      const component = payload.component as RuntimeComponent;
+      componentVersion++;
+      set({ components: [component] });
+      if (component.state === 'installed') void get().reload().catch(() => undefined);
     }
   },
   reload: async () => {

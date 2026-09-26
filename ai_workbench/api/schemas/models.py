@@ -5,10 +5,10 @@ from pydantic import Field, RootModel
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.core.models.schema import (
     ASRParameters, EmbeddingParameters, LocalEmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
-    ModelKind, ModelSettings, ProviderInput, ProviderProfile, ProviderSource, Lifecycle, ExternalConnection, RerankParameters, VisionParameters, TTSParameters,
+    ModelKind, ModelSettings, ProviderInput, ProviderProfile, ProviderSource, Lifecycle, ExternalConnection, RerankParameters, VisionParameters, TTSParameters, ProcessorParameters,
 )
 from ai_workbench.core.models.runtimes.schema import (
-    DownloadSettings, Installation, LlamaCPUOptions, LlamaCUDAOptions,
+    DownloadSettings, Installation, ComponentInstallation, DLSSOptions, LlamaCPUOptions, LlamaCUDAOptions,
     PythonOptions, OnnxCPUOptions, SiglipOptions, EmbeddingOptions, RerankerOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
 )
 
@@ -18,8 +18,8 @@ class EmptyExecutionOptions(ApiModel):
 
 
 LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | PythonOptions
-ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions | RerankerOptions
-Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters | ASRParameters
+ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions | RerankerOptions | DLSSOptions
+Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters | ASRParameters | ProcessorParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "source"})
 
 
@@ -55,6 +55,10 @@ class LocalRerankerSource(LocalModelSource):
 
 class LocalASRSource(LocalModelSource):
     execution_options: EmptyExecutionOptions | PythonOptions = Field(default_factory=EmptyExecutionOptions)
+
+
+class LocalProcessorSource(LocalModelSource):
+    execution_options: DLSSOptions = Field(default_factory=DLSSOptions)
 
 
 ModelSource = ProviderSource | LocalModelSource
@@ -102,7 +106,13 @@ class ASRModel(ModelFields):
     source: LocalASRSource = Field(default_factory=lambda: LocalASRSource(type="local"))
 
 
-class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel | ASRModel,
+class ProcessorModel(ModelFields):
+    kind: Literal["processor"]
+    parameters: ProcessorParameters = Field(default_factory=ProcessorParameters)
+    source: LocalProcessorSource = Field(default_factory=lambda: LocalProcessorSource(type="local"))
+
+
+class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel | ASRModel | ProcessorModel,
                                     Field(discriminator="kind")]]):
     """Only LLM, text embedding and reranker profiles permit unbound sources.
 
@@ -144,7 +154,11 @@ class ASRProfile(ASRModel, ProfileIdentity):
     pass
 
 
-ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile | TTSProfile | ASRProfile,
+class ProcessorProfile(ProcessorModel, ProfileIdentity):
+    pass
+
+
+ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile | TTSProfile | ASRProfile | ProcessorProfile,
                                  Field(discriminator="kind")]
 ModelPatch = patch_model("ModelPatch", ModelInput, fields={
     "parameters": (Parameters, Field(default_factory=lambda: None, description="Replaces parameters; must match the saved model kind.")),
@@ -164,10 +178,12 @@ ProviderResponse = public_model("ProviderResponse", ProviderProfile, fields={"co
 ModelSettingsResponse = public_model("ModelSettingsResponse", ModelSettings, omit={"external_api_key"},
                                    fields={"has_external_api_key": (bool, ...)})
 InstallationResponse = public_model("InstallationResponse", Installation, omit={"manifest_sha256"})
+ComponentInstallationResponse = public_model("ComponentInstallationResponse", ComponentInstallation,
+    omit={"manifest_sha256"}, fields={"bundled_version": (str, ...)})
 RuntimeJobResponse = public_model("RuntimeJobResponse", RuntimeJob, omit={"log_path"})
 class EngineCatalogResponse(ApiModel):
     engine: LocalEngine
-    kind: Literal["llm", "tts", "vision", "image_embedding", "embedding", "reranker", "asr"]
+    kind: ModelKind
     options_schema: JsonObject = Field(description="JSON Schema for this code-owned local engine's execution options.")
 
 

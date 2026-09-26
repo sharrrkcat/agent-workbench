@@ -156,7 +156,10 @@ def test_removed_routes_and_single_release_catalog(tmp_path):
             ('get', '/runtime/settings'), ('get', '/runtimes'), ('get', '/runtimes/catalog')]:
             assert client.request(method, '/api/models' + path).status_code == 404
         release = client.get('/api/models/local-runtime/catalog').json()
-        assert {item['engine'] for item in release['engines']} == {'llama-server', 'transformers', 'kokoro', 'wd14', 'chatterbox', 'qwen3tts', 'siglip2', 'sentence-transformers', 'cross-encoder', 'whisper'}
+        assert {item['engine'] for item in release['engines']} == {'llama-server', 'transformers', 'kokoro', 'wd14', 'chatterbox', 'qwen3tts', 'siglip2', 'sentence-transformers', 'cross-encoder', 'whisper', 'dlss5nr'}
+        processor = next(item for item in release['engines'] if item['engine'] == 'dlss5nr')
+        assert processor['kind'] == 'processor'
+        assert processor['options_schema']['properties']['device']['const'] == 'd3d12'
         assert 'backend_profile_id' not in client.get('/api/models/local-runtime').json()
         for kind in ('asr', 'tts'):
             assert client.post('/api/models/profiles', json={'name': 'Private', 'alias': 'private',

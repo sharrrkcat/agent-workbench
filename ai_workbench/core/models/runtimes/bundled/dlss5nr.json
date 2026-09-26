@@ -1,0 +1,18 @@
+{
+  "manifest": {
+    "component_id": "dlss5nr",
+    "version": "0.1.1",
+    "platform": "windows",
+    "architecture": "x86_64",
+    "protocol_version": 1,
+    "python_version": "3.12.11",
+    "entries": {
+      "worker": "worker/server.py",
+      "engine": "worker/engine.py",
+      "bridge": "native/dlss5nr_bridge.dll",
+      "caller": "native/caller/nvngx.dll_comfy.dll"
+    }
+  },
+  "archive": "dlss5nr-0.1.1-windows-x86_64.zip",
+  "archive_sha256": "02ac69cb46fe29212b32c88aa749fa9f139ff537559e4f00052543948484958c"
+}

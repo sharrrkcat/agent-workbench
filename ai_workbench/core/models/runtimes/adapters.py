@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from contextlib import aclosing
 import json
 import os
@@ -14,10 +15,11 @@ import httpx
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.resolution import configure_profile, require_directory, resolve_profile
 from ai_workbench.core.models.images import request_images
+from ai_workbench.core.models.processing import MAX_PROCESS_BYTES, processor_resource, validate_process_output
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog, prune_process_logs
-from ai_workbench.core.models.runtimes.schema import RuntimeStatus, is_transformers, local_engine, model_path
+from ai_workbench.core.models.runtimes.schema import ComponentStatus, RuntimeStatus, is_transformers, local_engine, model_path
 from ai_workbench.core.models.runtimes.supervisor import remove_owned
 from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelStatus, ExternalConnection, RerankResult, TranscriptionResult, VisionResult
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
@@ -104,10 +106,12 @@ class ManagedAdapter:
 
     def runtime_status(self):
         value = self.supervisor.installation(check=False)
+        component = self.supervisor.component(check=False) if self.engine == "dlss5nr" else None
         return RuntimeStatus(engine=self.engine, version=value.version,
             install_state=value.state, process_state=self.state, job_id=value.job_id,
             device_name=self.device_name, gpu_layers_loaded=self.gpu_layers_loaded,
-            gpu_layers_total=self.gpu_layers_total).model_dump()
+            gpu_layers_total=self.gpu_layers_total,
+            component=ComponentStatus.model_validate(component.model_dump(include=set(ComponentStatus.model_fields))) if component else None).model_dump()
 
     def snapshot(self, profile):
         loaded = bool(self.loaded) if self.single_model else profile.id in self.loaded
@@ -117,6 +121,8 @@ class ManagedAdapter:
 
     def _model_path(self, profile):
         try:
+            if self.engine == "dlss5nr":
+                return processor_resource(self.supervisor.root, profile.model_ref)
             require_directory(profile)
             reference = profile._directory.main_model_ref if self.engine == "llama-server" else profile.model_ref
             path = model_path(self.supervisor.root, reference)
@@ -188,7 +194,7 @@ class ManagedAdapter:
                         with stage("worker_load_rpc"):
                             metadata = await self._rpc("POST", "/load", {"profile_id": profile.id, "kind": profile.kind,
                                 "model_ref": profile.model_ref, "parameters": profile.parameters, "options": profile.source.execution_options})
-                            if self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers", "cross-encoder"}:
+                            if self.engine in {"chatterbox", "qwen3tts", "whisper", "sentence-transformers", "cross-encoder", "dlss5nr"}:
                                 if not isinstance(metadata.get("device_name"), str):
                                     raise ModelError("RUNTIME_BROKEN", "The worker did not report its execution device.", 503)
                                 self.device_name = metadata["device_name"]
@@ -220,6 +226,10 @@ class ManagedAdapter:
             env.update(COGITA_WORKER_TOKEN=self.token, COGITA_WORKER_READY=str(ready),
                        COGITA_MODELS_ROOT=str(self.supervisor.root / "data" / "models"))
             env[TRACE_ENV] = trace.transport_value()
+            if self.engine == "dlss5nr":
+                entries = self.supervisor.component_entries()
+                env.update(COGITA_DLSS_BRIDGE=str(entries["bridge"]), COGITA_DLSS_CALLER=str(entries["caller"]),
+                           COGITA_DLSS_WORK=str(self.run_dir))
             if self.engine in {"chatterbox", "qwen3tts"}:
                 env.update(COGITA_AUDIO_REFERENCES_ROOT=str(self.supervisor.manager.voice_references.base))
             if self.engine == "whisper":
@@ -321,19 +331,19 @@ class ManagedAdapter:
             self.loaded.clear()
             self.changed()
 
-    async def _rpc(self, method, operation, body=None, *, audio_format=None, timeout=httpx.USE_CLIENT_DEFAULT):
+    async def _rpc(self, method, operation, body=None, *, audio_format=None, image_input=None, timeout=httpx.USE_CLIENT_DEFAULT):
         if self.failed or not self.client:
             raise ModelError("MODEL_UNAVAILABLE", "The managed worker is not running.", 503)
         client = self.client
         async def send():
             trace = current_trace()
             headers = {TRACE_HEADER: trace.transport_value()} if trace and operation in {"/load", "/reference"} else None
-            if audio_format:
+            if audio_format or image_input is not None:
                 async with client.stream(method, operation, json=body) as stream:
                     chunks = bytearray()
                     async for chunk in stream.aiter_bytes():
-                        if len(chunks) + len(chunk) > MAX_AUDIO_BYTES:
-                            raise ValueError("Audio response exceeds limit")
+                        if len(chunks) + len(chunk) > (MAX_PROCESS_BYTES if image_input is not None else MAX_AUDIO_BYTES):
+                            raise ValueError("Worker response exceeds limit")
                         chunks.extend(chunk)
                     return httpx.Response(stream.status_code, headers=stream.headers, content=bytes(chunks))
             return await client.request(method, operation, json=body, headers=headers, timeout=timeout)
@@ -343,6 +353,10 @@ class ManagedAdapter:
         pending = asyncio.create_task(send())
         try:
             response = await asyncio.shield(pending)
+            if image_input is not None and response.is_success:
+                if response.headers.get("content-type") != "image/png":
+                    raise ValueError("Unexpected image MIME type")
+                return await asyncio.to_thread(validate_process_output, response.content, image_input)
             if audio_format and response.is_success:
                 if response.headers.get("content-type") != FORMATS[audio_format]:
                     raise ValueError("Unexpected audio MIME type")
@@ -356,7 +370,7 @@ class ManagedAdapter:
                 if not isinstance(error, dict) or not isinstance(error.get("code", "MODEL_UNAVAILABLE"), str):
                     raise ValueError("Invalid worker error")
                 code = error.get("code", "MODEL_UNAVAILABLE")
-                allowed = {"INVALID_REQUEST", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE", "VOICE_UNAVAILABLE", "AUDIO_TOO_LARGE", "AUDIO_TOO_LONG", "INVALID_AUDIO", "RUNTIME_BROKEN", "RUNTIME_DEVICE_UNAVAILABLE"}
+                allowed = {"INVALID_REQUEST", "INVALID_IMAGE", "MODEL_BUSY", "MODEL_NOT_FOUND", "MODEL_UNAVAILABLE", "MODEL_KIND_MISMATCH", "UNSUPPORTED_CAPABILITY", "EMBEDDING_DIMENSION_MISMATCH", "REQUEST_TOO_LARGE", "VOICE_UNAVAILABLE", "AUDIO_TOO_LARGE", "AUDIO_TOO_LONG", "INVALID_AUDIO", "RUNTIME_BROKEN", "RUNTIME_DEVICE_UNAVAILABLE"}
                 raise ModelError(code if code in allowed else "MODEL_UNAVAILABLE", "The managed worker could not complete this operation.", response.status_code)
             if operation == "/tags":
                 result = VisionResult.model_validate(value)
@@ -394,7 +408,7 @@ class ManagedAdapter:
             self.failed, self.state = True, "failed"
             self.changed()
             raise ModelError("MODEL_TIMEOUT", "The managed worker timed out and was stopped.", 504) from exc
-        except (httpx.HTTPError, ValueError) as exc:
+        except (httpx.HTTPError, ValueError, OSError) as exc:
             with stage("failure_cleanup"):
                 await self._stop()
             self.failed, self.state = True, "failed"
@@ -443,6 +457,22 @@ class ManagedAdapter:
 
     async def close(self):
         await self._stop()
+
+
+class ProcessorWorkerAdapter(ManagedAdapter):
+    async def unload(self, profile):
+        # One profile owns this process. Ending it releases D3D12/NGX resources;
+        # the native NGX teardown RPC can hang after successful image processing.
+        async with self.lock:
+            await self._stop()
+            self.failed = False
+            return self.snapshot(profile)
+
+    async def process_image(self, profile, image, options):
+        body = {"profile_id": profile.id, "image": base64.b64encode(image.data).decode("ascii"), "options": options}
+        if len(json.dumps(body).encode()) > MAX_PROCESS_BYTES:
+            raise ModelError("REQUEST_TOO_LARGE", "Normalized image exceeds the private transport limit.", 413)
+        return await self._rpc("POST", "/process", body, image_input=image)
 
 
 class LlamaServerAdapter(ManagedAdapter):

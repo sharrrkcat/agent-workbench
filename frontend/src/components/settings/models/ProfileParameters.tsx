@@ -15,6 +15,7 @@ import type { LocalEngine, ModelInput, VisionParameters } from '../../../types/m
 
 import { ttsGenerationDefaults } from './profileDefaults';
 import { ASRParameters } from './ASRParameters';
+import { ProcessorParameters } from './ProcessorParameters';
 
 export function ProfileParameters({
   value,
@@ -26,6 +27,7 @@ export function ProfileParameters({
   onChange: (parameters: ModelInput['parameters']) => void;
 }) {
   const { t } = useTranslation('llm');
+  if (value.kind === 'processor') return <ProcessorParameters parameters={value.parameters} onChange={onChange} />;
   if (value.kind === 'asr') return <ASRParameters parameters={value.parameters} onChange={onChange} />;
   if (value.kind === 'reranker' || value.kind === 'embedding' && value.source?.type === 'local') return null;
   const patchParam = (key: string, next: unknown) => onChange({ ...value.parameters, [key]: next });

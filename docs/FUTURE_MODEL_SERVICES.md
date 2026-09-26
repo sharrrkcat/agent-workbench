@@ -30,10 +30,9 @@ Multiclass label selection, custom model code and remote reranking providers are
 Future architectures must retain automatic directory configuration and independent workers without checkpoint/backbone allowlists,
 model hashing, a second profile store or an extension registry. Public failures remain explicit; Knowledge's RRF fallback is intentional.
 
-## Image service
+## Image generation
 
-Current vision and image_embedding kinds consume images; they do not generate
-them. A future image service requires a separate decision about generation
+Current vision, image_embedding and processor kinds consume images. DLSS NR static processing is implemented under [Models](contracts/models.md#dlss-nr-image-processing); image generation remains unimplemented. A future image service requires a separate decision about generation
 operations, profile capabilities and supported managed backend, followed by
 strict schemas and a ModelManager adapter. Heavy execution stays outside the
 API process. Reuse runtime supervision and external service guards where they

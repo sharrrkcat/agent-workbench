@@ -238,7 +238,7 @@ test('direct links refresh, invalid views default, history preserves model draft
   await navigateSettings(page, 'Models', 'Local Runtime');
   await page.reload();
   await expect(page).toHaveURL('/settings?tab=models&view=localRuntime');
-  await expect(page.getByRole('button', { name: 'Install local runtime', exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Local installation', exact: true }).getByRole('button', { name: 'Install local runtime', exact: true })).toBeVisible();
   await navigateSettings(page, 'Models', 'Providers');
   await page.getByRole('button', { name: 'Add provider', exact: true }).click();
   await dialog.getByLabel('Name', { exact: true }).fill('History provider draft');

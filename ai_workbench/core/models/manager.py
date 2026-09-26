@@ -20,7 +20,7 @@ from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingPurpose, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
     ImageEmbeddingRequest, MAX_RERANK_BYTES, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
-    ASRParameters, TranscriptionRequest, TranscriptionResult,
+    ASRParameters, TranscriptionRequest, TranscriptionResult, ImageProcessRequest, ImageOutput,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
@@ -133,7 +133,7 @@ class ModelManager:
         if engine is None:
             return key + (getattr(profile, "id", "draft"),)
         options = {**engine_options(engine, profile.source.execution_options)().model_dump(), **profile.source.execution_options}
-        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2", "sentence-transformers", "cross-encoder"}:
+        if engine in {"chatterbox", "qwen3tts", "whisper", "wd14", "siglip2", "sentence-transformers", "cross-encoder", "dlss5nr"}:
             return key + (getattr(profile, "id", "draft"), profile.model_ref,
                           json.dumps(options, sort_keys=True, separators=(",", ":")))
         if engine in {"llama-server", "transformers"}:
@@ -184,6 +184,10 @@ class ModelManager:
                     install_state=installation.state, job_id=installation.job_id, process_state="stopped")
                 if engine == "siglip2":
                     status.towers = SiglipTowers()
+            if engine == "dlss5nr":
+                from ai_workbench.core.models.runtimes.schema import ComponentStatus
+                component = self.runtime_supervisor.component(check=False)
+                status.runtime.component = ComponentStatus.model_validate(component.model_dump(include=set(ComponentStatus.model_fields)))
             if installation.state != "installed":
                 status.state = "unavailable"
                 status.error_code = {"not_installed": "RUNTIME_NOT_INSTALLED", "installing": "RUNTIME_INSTALLING", "unsupported": "RUNTIME_UNSUPPORTED"}.get(installation.state, "RUNTIME_BROKEN")
@@ -191,7 +195,12 @@ class ModelManager:
                 try:
                     path = model_path(self.runtime_supervisor.root, profile.model_ref)
                     require_directory(profile)
-                    if engine == "llama-server":
+                    if engine == "dlss5nr":
+                        from ai_workbench.core.models.runtimes.components import require_component
+                        from ai_workbench.core.models.processing import processor_resource
+                        require_component(component)
+                        processor_resource(self.runtime_supervisor.root, profile.model_ref)
+                    elif engine == "llama-server":
                         if not all(model_path(self.runtime_supervisor.root, ref).is_file() for ref in profile._directory.model_files):
                             raise ValueError()
                         projector = profile._directory.mmproj_ref if profile.capabilities.vision else None
@@ -260,6 +269,9 @@ class ModelManager:
                 raise ModelError("RUNTIME_INSTALLING", "Local runtime maintenance is in progress.", 409)
             if require_runtime:
                 supervisor.assert_available(check=False)
+                if local_engine(profile) == "dlss5nr":
+                    from ai_workbench.core.models.runtimes.components import require_component
+                    require_component(supervisor.component(check=False))
             limits = ManagedQueue(queue_timeout_seconds=120) if local_engine(profile) == "siglip2" else ManagedQueue()
             return limits, self._managed_slot(profile)
         try:
@@ -279,10 +291,10 @@ class ModelManager:
             raise ModelError("RUNTIME_UNSUPPORTED", "No local engine was identified for this model directory.", 503)
         key = self.execution_key(profile)
         if key not in self._slots:
-            from ai_workbench.core.models.runtimes.adapters import ASRWorkerAdapter, AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, PythonWorkerAdapter, RerankerWorkerAdapter, TransformersServerAdapter
+            from ai_workbench.core.models.runtimes.adapters import ASRWorkerAdapter, AudioWorkerAdapter, EmbeddingWorkerAdapter, LlamaServerAdapter, ProcessorWorkerAdapter, PythonWorkerAdapter, RerankerWorkerAdapter, TransformersServerAdapter
             from ai_workbench.core.models.siglip_adapter import SiglipAdapter
             engine = local_engine(profile)
-            cls = SiglipAdapter if engine == "siglip2" else EmbeddingWorkerAdapter if engine == "sentence-transformers" else RerankerWorkerAdapter if engine == "cross-encoder" else ASRWorkerAdapter if engine == "whisper" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
+            cls = ProcessorWorkerAdapter if engine == "dlss5nr" else SiglipAdapter if engine == "siglip2" else EmbeddingWorkerAdapter if engine == "sentence-transformers" else RerankerWorkerAdapter if engine == "cross-encoder" else ASRWorkerAdapter if engine == "whisper" else AudioWorkerAdapter if engine in {"chatterbox", "qwen3tts"} else TransformersServerAdapter if engine == "transformers" else LlamaServerAdapter if engine == "llama-server" else PythonWorkerAdapter
             adapter: LocalAdapter = cls(self.runtime_supervisor, profile, lambda: self._managed_changed(key))
             self._slots[key] = InferenceSlot(adapter, asyncio.Semaphore(1))
         return self._slots[key]
@@ -640,6 +652,15 @@ class ModelManager:
         images = await asyncio.to_thread(prepare_tagging_images, profile.id, request.images, thresholds)
         async with self._lease(profile) as adapter:
             return await adapter.vision(profile, images, thresholds)
+
+    async def process_image(self, profile_id: str, data: bytes, request: ImageProcessRequest) -> ImageOutput:
+        from ai_workbench.core.models.processing import prepare_process_image
+        profile = self.profile(profile_id, "processor")
+        image = await asyncio.to_thread(prepare_process_image, data)
+        options = {**profile.parameters, **request.model_dump(exclude_none=True)}
+        options.pop("task")
+        async with self._lease(profile) as adapter:
+            return await adapter.process_image(profile, image, options)
 
     async def transcribe(self, profile_id: str, data: bytes, audio_format: str,
                          request: TranscriptionRequest) -> TranscriptionResult:

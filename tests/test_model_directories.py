@@ -294,7 +294,9 @@ def test_migration_removes_obsolete_profiles_and_preserves_files(tmp_path):
     with Session(engine) as db:
         db.execute(text("INSERT INTO personas VALUES ('persona','Persona',NULL,'',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"))
         db.add(RuntimeInstallationRecord(version="1.0.0", state="installed", job_id="kept-job", manifest_sha256="a" * 64))
-        db.add(RuntimeJobRecord(id="kept-job", version="1.0.0", operation="install", state="completed", stage="completed"))
+        db.execute(text("""INSERT INTO runtime_jobs
+            (id,version,operation,state,stage,progress_current,cancel_requested,log_path,revision,created_at,updated_at)
+            VALUES ('kept-job','1.0.0','install','completed','completed',0,0,'',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"""))
         db.commit()
         db.execute(text("""INSERT INTO sessionrecord (session_id,title,context_mode,current_persona_id,model_profile_id,waiting_run_id,
                 context_policy_json,generation_json,harness_enabled,tools_allowed_json,title_generation_state,title_generation_metadata_json,created_at,updated_at)

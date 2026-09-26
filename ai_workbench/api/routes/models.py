@@ -12,7 +12,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.resolution import resolve_profile
 from ai_workbench.core.models.runtimes.schema import local_engine
 from ai_workbench.core.models.inventory import inventory
-from ai_workbench.core.models.inspection import ModelInspection, inspect_asr, inspect_local_directory, inspect_reranker, inspect_siglip, inspect_text_embedding
+from ai_workbench.core.models.inspection import ModelInspection, inspect_asr, inspect_local_directory, inspect_processor, inspect_reranker, inspect_siglip, inspect_text_embedding
 from ai_workbench.core.models.schema import ModelInput, ModelKind, ModelLoadRequest, ModelProfile, ModelSettings, ModelStatus, ProviderInput, ProviderProfile, Tower
 from ai_workbench.api.schemas.inference import VoiceAvailability
 
@@ -203,7 +203,7 @@ async def model_inventory(kind: ModelKind | None = None, state: RuntimeState = D
 
 @router.get("/inspect", response_model=ModelInspection, responses=error_responses(404, 422),
             summary="Read local model configuration without loading weights")
-async def inspect_model(kind: Literal["image_embedding", "embedding", "reranker", "asr", "llm", "tts", "vision"], model_ref: str,
+async def inspect_model(kind: ModelKind, model_ref: str,
                         query_prompt_name: str | None = None, document_prompt_name: str | None = None,
                         state: RuntimeState = Depends(get_state)):
     import asyncio
@@ -216,6 +216,8 @@ async def inspect_model(kind: Literal["image_embedding", "embedding", "reranker"
         return await asyncio.to_thread(inspect_reranker, state.repo_root, model_ref)
     if kind == "asr":
         return await asyncio.to_thread(inspect_asr, state.repo_root, model_ref)
+    if kind == "processor":
+        return await asyncio.to_thread(inspect_processor, state.repo_root, model_ref)
     if kind in {"llm", "tts", "vision"}:
         return await asyncio.to_thread(inspect_local_directory, state.repo_root, kind, model_ref)
     return await asyncio.to_thread(inspect_siglip, state.repo_root, model_ref)

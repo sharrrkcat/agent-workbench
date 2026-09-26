@@ -186,8 +186,30 @@ class VisionInspection(StrictModel):
     diagnostics: list[DirectoryDiagnostic]
 
 
+class ProcessorInspection(StrictModel):
+    kind: Literal["processor"] = "processor"
+    model_ref: str
+    engine: Literal["dlss5nr"] = "dlss5nr"
+    task: Literal["image_processing"] = "image_processing"
+    diagnostics: list[DirectoryDiagnostic]
+
+
 ModelInspection = Annotated[SiglipInspection | TextEmbeddingInspection | RerankerInspection | ASRInspection
-                           | LLMInspection | TTSInspection | VisionInspection, Field(discriminator="kind")]
+                           | LLMInspection | TTSInspection | VisionInspection | ProcessorInspection, Field(discriminator="kind")]
+
+
+def inspect_processor(repo_root: Path, model_ref: str) -> ProcessorInspection:
+    from ai_workbench.core.models.processing import processor_resource
+    try:
+        processor_resource(repo_root, model_ref)
+    except ValueError as exc:
+        raise ModelError("INVALID_REQUEST", "Use a safe relative path under data/models.", 422) from exc
+    except ModelError as exc:
+        if exc.code != "MODEL_NOT_FOUND":
+            raise
+        return ProcessorInspection(model_ref=model_ref, diagnostics=[DirectoryDiagnostic(
+            file="nvngx_dlssnr.dll", code="missing_file", message=exc.message, blocking=True)])
+    return ProcessorInspection(model_ref=model_ref, diagnostics=[])
 
 
 def inspect_local_directory(repo_root: Path, kind: str, model_ref: str):

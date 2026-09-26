@@ -7,7 +7,7 @@ export function DirectoryInspectionPanel({ information, error }: { information?:
   const { t } = useTranslation('llm');
   const fields: [string, string | null][] = information ? [
     ['engine', information.engine ? t('engines.' + information.engine) : null],
-    ['architecture', information.architecture],
+    ...(information.kind === 'processor' ? [] : [['architecture', information.architecture] as [string, string | null]]),
   ] : [];
   if (information?.kind === 'vision') fields.push(['backbone', information.backbone]);
   if (information?.kind === 'llm' && information.engine === 'llama-server') {

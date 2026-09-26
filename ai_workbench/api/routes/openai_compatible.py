@@ -21,11 +21,11 @@ from ai_workbench.api.openapi import SSE_RESPONSE, request_body
 from ai_workbench.api.schemas.common import error_responses
 from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingResponse, ImageEmbeddingResponse, ImageTagsResponse, ModelList, RerankResponse, VoiceList,
     VoiceReferenceDeleted, VoiceReferenceResponse, VoiceReferenceUpload,
-    TranscriptionUpload, TranscriptionTextResponse, TranscriptionVerboseResponse)
+    TranscriptionUpload, TranscriptionTextResponse, TranscriptionVerboseResponse, ImageProcessUpload)
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_body, read_request
 from ai_workbench.core.models.images import MAX_TAGGING_BYTES
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, MAX_RERANK_BYTES, ModelKind, RerankRequest, SpeechRequest, TranscriptionRequest, VisionRequest
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, ImageProcessRequest, MAX_RERANK_BYTES, ModelKind, RerankRequest, SpeechRequest, TranscriptionRequest, VisionRequest
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
@@ -56,6 +56,49 @@ async def rerank(request: Request, state: RuntimeState = Depends(get_state)):
     order = sorted(range(len(result.scores)), key=lambda index: -result.scores[index])[:payload.top_n]
     return {"model": profile.alias, "results": [{"index": index, "relevance_score": result.scores[index],
         **({"document": {"text": payload.documents[index]}} if payload.return_documents else {})} for index in order]}
+
+
+@router.post("/images/process", response_class=Response,
+             openapi_extra=request_body(ImageProcessUpload, "multipart/form-data"),
+             summary="Process a static image with local DLSS NR (Cogita extension)",
+             responses={**error_responses(400, 401, 403, 404, 409, 413, 422, 429, 499, 503, 504),
+                        200: {"description": "PNG preserving oriented dimensions and alpha.",
+                              "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}}}})
+async def process_image(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    raw = await read_body(request, settings)
+    async def stream():
+        yield raw
+    try:
+        form = await MultiPartParser(request.headers, stream(), max_files=1, max_fields=9,
+            max_part_size=settings.max_request_mb * 1024 * 1024).parse()
+    except (MultiPartException, ValueError) as exc:
+        raise ModelError("INVALID_REQUEST", "Upload model, one image and supported processing controls.", 422) from exc
+    try:
+        if (len(form.multi_items()) != len(form) or not {"model", "image"} <= set(form)
+                or set(form) - ImageProcessUpload.model_fields.keys() or not isinstance(form["image"], UploadFile)):
+            raise ModelError("INVALID_REQUEST", "Upload model, exactly one image and supported processing controls.", 422)
+        values = dict(form)
+        values["image"] = await form["image"].read()
+        try:
+            for key in ("intensity", "tone", "structure", "skin"):
+                if key in values:
+                    values[key] = float(values[key])
+            if "preset" in values:
+                values["preset"] = int(values["preset"])
+            if "auto_mask" in values:
+                values["auto_mask"] = {"true": True, "false": False}[values["auto_mask"]]
+            payload = ImageProcessUpload.model_validate(values)
+        except (ValidationError, ValueError, TypeError, KeyError) as exc:
+            raise ModelError("INVALID_REQUEST", "Invalid image processing controls; auto_mask accepts true or false.", 422) from exc
+        profile = state.model_manager.external_profile(payload.model, "processor")
+        options = ImageProcessRequest.model_validate(payload.model_dump(exclude={"model", "image"}, exclude_unset=True))
+        result = await inference_until_disconnect(request,
+            state.model_manager.process_image(profile.id, payload.image, options))
+        return Response(result.data, media_type="image/png", headers={"Cache-Control": "no-store"})
+    finally:
+        await form.close()
 
 
 @router.post("/images/tags", response_model=ImageTagsResponse, openapi_extra=request_body(VisionRequest),

@@ -49,7 +49,8 @@
     "image_embedding": "Image embedding",
     "vision": "Vision",
     "tts": "Text to speech",
-    "asr": "Speech to text"
+    "asr": "Speech to text",
+    "processor": "Processor"
   },
   "states": {
     "unknown": "Unchecked",
@@ -266,7 +267,8 @@
     "batch_size": "Prompt batch size",
     "gpu_layers": "GPU layers",
     "intraop_threads": "CPU threads",
-    "max_batch_size": "Worker batch limit"
+    "max_batch_size": "Worker batch limit",
+    "gpu_index": "NVIDIA GPU index"
   },
   "runtimeStates": {
     "not_installed": "Not installed",
@@ -299,7 +301,10 @@
     "completed": "Completed",
     "already_installed": "Already installed",
     "native_cpu": "Installing llama CPU",
-    "native_cuda": "Installing llama CUDA"
+    "native_cuda": "Installing llama CUDA",
+    "checking_component_archive": "Checking bundled archive",
+    "extracting_component": "Extracting component",
+    "checking_component": "Checking component offline"
   },
   "audioDeviceHint": "Select CPU or NVIDIA CUDA. CUDA must be available when selected.",
   "chatterboxEnglish": "Chatterbox (English)",
@@ -322,7 +327,8 @@
     "siglip2": "SigLIP2",
     "sentence-transformers": "Sentence Transformers",
     "cross-encoder": "Cross-Encoder (Sentence Transformers)",
-    "whisper": "Whisper"
+    "whisper": "Whisper",
+    "dlss5nr": "DLSS NR"
   },
   "providers": "Providers",
   "addProvider": "Add provider",
@@ -483,6 +489,33 @@
       "ambiguous_model": "Keep one model or complete shard group in this directory. Separate architectures and quantization variants.",
       "ambiguous_projector": "Keep at most one mmproj GGUF file in this directory.",
       "incomplete_shards": "All numbered GGUF shards must be present."
+    }
+  },
+  "dlssComponent": "DLSS NR component",
+  "updateComponent": "Update component",
+  "bundledVersion": "Bundled version",
+  "dlssComponentHint": "Bundled with the application; installs offline and shares the base Python environment. Installation creates a default profile and processors/dlss5-nr directory. Supply nvngx_dlssnr.dll manually. Component uninstall preserves resources and profiles.",
+  "processor": {
+    "task": "Image processing",
+    "directoryHint": "The directory must contain your manually supplied nvngx_dlssnr.dll. Install the DLSS NR component in Local Runtime first.",
+    "defaultsHint": "Processes one image, preserving oriented dimensions and alpha. API requests can override these defaults. Maximum 8,388,608 pixels and 16,384 per axis.",
+    "style": "Style",
+    "preset": "Preset",
+    "intensity": "Intensity",
+    "tone": "Tone",
+    "structure": "Structure",
+    "skin": "Skin",
+    "auto_mask": "Automatic mask",
+    "channel_order": "Output channel order",
+    "auto": "Auto",
+    "styles": {
+      "natural": "Natural",
+      "cinematic": "Cinematic",
+      "default": "Default",
+      "3": "3",
+      "4": "4",
+      "5": "5",
+      "6": "6"
     }
   }
 }

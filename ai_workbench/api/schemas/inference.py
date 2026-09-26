@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
-from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ModelDigest, ReferenceTranscript, Tower, Usage, TranscriptionRequest, TranscriptionSegment
+from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ModelDigest, ReferenceTranscript, Tower, Usage, TranscriptionRequest, TranscriptionSegment, ImageProcessRequest
 
 
 class PublicModel(ApiModel):
@@ -70,6 +70,12 @@ class TranscriptionUpload(TranscriptionRequest, ApiModel):
     timestamp_granularities: list[Literal["segment"]] | None = Field(default=None,
         alias="timestamp_granularities[]", min_length=1, max_length=1,
         description="Only segment is supported; requires the effective verbose_json response format.")
+
+
+class ImageProcessUpload(ImageProcessRequest, ApiModel):
+    model: str = Field(min_length=1, description="An enabled, externally visible processor alias.")
+    image: bytes = Field(description="One static PNG/JPEG/WebP; at most 8,388,608 pixels and 16,384 pixels per axis. Oriented dimensions and alpha are preserved.",
+        json_schema_extra={"format": "binary"})
 
 
 class TranscriptionTextResponse(ApiModel):

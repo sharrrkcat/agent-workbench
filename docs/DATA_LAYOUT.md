@@ -25,7 +25,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0022_projects`; there are 25 current business tables.
+Alembic head is `0023_dlss_processor`; there are 26 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -136,6 +136,8 @@ uninstall removes the recorded data/runtimes/local/<version>, containing the sha
 env/ and separate native/cpu and native/cuda programs. Workers ship in ai_workbench/workers;
 the installed interpreter executes those application sources. Pinned Python
 archives under python/archives and dependency/native caches under .cache remain.
+DLSS installs separately in data/runtimes/local/components/dlss5nr/<version>/, with its own small installation.json and database record; base repair preserves it. Full Local Runtime uninstall removes both base/component installations. The application archive under ai_workbench/core/models/runtimes/bundled remains available for reinstall.
+Component installation creates data/models/processors/dlss5-nr/ without changing existing files. nvngx_dlssnr.dll is manually supplied there. Component uninstall preserves this directory and all profiles. Private image RPC uses memory; NGX work files use data/runtimes/.processes/<id>/ and disappear when the process is released. No image attachment records are created.
 Task/process logs are bounded and retained under data/logs/runtimes.
 Native artifact reuse uses .cache/cogita-artifacts; other cache files remain until explicit maintenance.
 installation.json contains only dependency identity and executable paths; the database's
@@ -199,3 +201,5 @@ It recreates disposable sessions with immutable kind/project_id and configuratio
 runs, steps, events and private continuations without converting old conversations.
 Personas and their bindings, global resources/settings, model/provider/runtime records and
 all file directories survive. Repeating upgrade preserves new Projects and conversations.
+
+Revision `0023_dlss_processor` extends local model constraints with processor, adds runtime_components and nullable runtime_jobs.component_id. Base installation identities/jobs, existing profiles and all files remain unchanged. Directory/default-profile creation happens only on explicit component installation, never during migration or startup. Repeated upgrades preserve subsequent edits.

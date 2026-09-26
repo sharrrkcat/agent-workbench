@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, Query
 
 from ai_workbench.api.deps import get_state
 from ai_workbench.api.schemas.common import TextResponse, error_responses
-from ai_workbench.api.schemas.models import InstallationResponse, RuntimeCatalogResponse, RuntimeJobResponse, LocalRuntimeSettingsPatch
+from ai_workbench.api.schemas.models import ComponentInstallationResponse, InstallationResponse, RuntimeCatalogResponse, RuntimeJobResponse, LocalRuntimeSettingsPatch
 from ai_workbench.api.openapi import request_body
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.schema import (
-    CacheCleanupRequest, LocalRuntimeSettings, LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, SiglipOptions, EmbeddingOptions, RerankerOptions, RuntimeStorage,
+    CacheCleanupRequest, DLSSOptions, LocalRuntimeSettings, LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, SiglipOptions, EmbeddingOptions, RerankerOptions, RuntimeStorage,
 )
 from pydantic import TypeAdapter
 
@@ -41,15 +41,43 @@ def catalog(state=Depends(get_state)):
     schemas = {"llama-server": LlamaCPUOptions | LlamaCUDAOptions, "transformers": PythonOptions,
                "kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions, "chatterbox": PythonOptions, "qwen3tts": PythonOptions,
                "siglip2": SiglipOptions, "sentence-transformers": EmbeddingOptions, "cross-encoder": RerankerOptions,
-               "whisper": PythonOptions}
+               "whisper": PythonOptions, "dlss5nr": DLSSOptions}
     return {**release.model_dump(include={"version", "platform", "architecture", "supported", "reason"}),
-            "engines": [{"engine": engine, "kind": "llm" if engine in {"llama-server", "transformers"} else "vision" if engine == "wd14" else "image_embedding" if engine == "siglip2" else "embedding" if engine == "sentence-transformers" else "reranker" if engine == "cross-encoder" else "asr" if engine == "whisper" else "tts",
+            "engines": [{"engine": engine, "kind": "processor" if engine == "dlss5nr" else "llm" if engine in {"llama-server", "transformers"} else "vision" if engine == "wd14" else "image_embedding" if engine == "siglip2" else "embedding" if engine == "sentence-transformers" else "reranker" if engine == "cross-encoder" else "asr" if engine == "whisper" else "tts",
                          "options_schema": TypeAdapter(schema).json_schema()} for engine, schema in schemas.items()]}
 
 
 @router.get("", response_model=InstallationResponse, response_model_exclude_unset=True)
 def installation(state=Depends(get_state)):
     return state.runtime_supervisor.installation().model_dump(mode="json", exclude={"manifest_sha256"})
+
+
+@router.get("/components", response_model=list[ComponentInstallationResponse])
+def components(state=Depends(get_state)):
+    supervisor = state.runtime_supervisor
+    return [{**supervisor.component().model_dump(mode="json", exclude={"manifest_sha256"}),
+             "bundled_version": supervisor.component_release.manifest.version}]
+
+
+@router.post("/components/dlss5nr/install", status_code=202, response_model=RuntimeJobResponse,
+             responses=error_responses(409, 422, 503))
+async def install_component(state=Depends(get_state)):
+    supervisor = state.runtime_supervisor
+    return supervisor.public_job(await supervisor.submit("install", "dlss5nr"))
+
+
+@router.post("/components/dlss5nr/repair", status_code=202, response_model=RuntimeJobResponse,
+             responses=error_responses(409, 422, 503))
+async def repair_component(state=Depends(get_state)):
+    supervisor = state.runtime_supervisor
+    return supervisor.public_job(await supervisor.submit("repair", "dlss5nr"))
+
+
+@router.post("/components/dlss5nr/uninstall", status_code=202, response_model=RuntimeJobResponse,
+             responses=error_responses(409, 422, 503))
+async def uninstall_component(state=Depends(get_state)):
+    supervisor = state.runtime_supervisor
+    return supervisor.public_job(await supervisor.submit("uninstall", "dlss5nr"))
 
 
 @router.get("/storage", response_model=RuntimeStorage)

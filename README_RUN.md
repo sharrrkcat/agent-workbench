@@ -23,14 +23,14 @@ For a source checkout, install dependencies and build the frontend using the
 Follow [model setup](README.md#configure-models) for providers and local runtime settings,
 the shared local installation and manual model placement. The
 [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation)
-owns Windows x64 engine and CPU/CUDA support. Local installation requires neither
+owns Windows x64 engines and CPU/CUDA/D3D12 support. Local installation requires neither
 model files nor a GPU; model execution checks its selected device and resources.
 
 ## Portable packages and data
 
 Build from a source checkout with `uv run python scripts/build_portable.py --zip`.
 The folder `build/cogita-portable/` and optional `build/cogita-portable.zip` contain
-application code, Alembic revisions, built frontend assets and the maintained documentation.
+application code, Alembic revisions, built frontend assets, the bundled DLSS NR component archive and maintained documentation.
 They exclude `.env`, databases, model weights, installed runtimes, attachments,
 API keys and dependency/cache directories. Python dependencies are installed by
 uv on first launch.

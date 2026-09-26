@@ -14,6 +14,8 @@ import type {
   RuntimeCatalog,
   ProviderPatch,
   RuntimeInstallation,
+  RuntimeComponent,
+  ComponentId,
   RuntimeJob,
   RuntimeStorage,
   SiglipInspection,
@@ -37,6 +39,7 @@ export const modelsApi = {
     request<LocalRuntimeSettings>('/api/models/local-runtime/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
   runtimeCatalog: () => request<RuntimeCatalog>('/api/models/local-runtime/catalog'),
   runtimeInstallation: () => request<RuntimeInstallation>('/api/models/local-runtime'),
+  runtimeComponents: () => request<RuntimeComponent[]>('/api/models/local-runtime/components'),
   runtimeJobs: () => request<RuntimeJob[]>('/api/models/local-runtime/jobs'),
   runtimeStorage: () => request<RuntimeStorage>('/api/models/local-runtime/storage'),
   cleanupRuntimeCache: (mode: 'prune' | 'clean') => request<RuntimeJob>('/api/models/local-runtime/cache/cleanup', {
@@ -46,8 +49,8 @@ export const modelsApi = {
   runtimeJobLog: (id: string) => request<{ text: string }>(`/api/models/local-runtime/jobs/${encodeURIComponent(id)}/log`),
   cancelRuntimeJob: (id: string) =>
     request<RuntimeJob>(`/api/models/local-runtime/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
-  runtimeAction: (action: 'install' | 'repair' | 'uninstall') =>
-    request<RuntimeJob>(`/api/models/local-runtime/${action}`, { method: 'POST' }),
+  runtimeAction: (action: 'install' | 'repair' | 'uninstall', component?: ComponentId) =>
+    request<RuntimeJob>(`/api/models/local-runtime/${component ? `components/${component}/` : ''}${action}`, { method: 'POST' }),
   getModelSettings: () => request<ModelSettings>('/api/models/settings'),
   updateModelSettings: (patch: Partial<Omit<ModelSettings, 'has_external_api_key'>> & { external_api_key?: string }) =>
     request<ModelSettings>('/api/models/settings', { method: 'PATCH', body: JSON.stringify(patch) }),

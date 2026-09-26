@@ -21,6 +21,7 @@ for (const script of [
   'test-text-embeddings',
   'test-rerankers',
   'test-asr',
+  'test-dlss',
   'test-transformers',
   'test-harness',
   'test-chat-presentation',

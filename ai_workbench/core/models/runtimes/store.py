@@ -4,9 +4,9 @@ import json
 
 from sqlmodel import Session, select
 
-from ai_workbench.core.models.runtimes.schema import Installation, RuntimeJob, TERMINAL
+from ai_workbench.core.models.runtimes.schema import ComponentInstallation, Installation, RuntimeJob, TERMINAL
 from ai_workbench.core.time import utc_now
-from ai_workbench.db.models import RuntimeInstallationRecord, RuntimeJobRecord
+from ai_workbench.db.models import RuntimeComponentRecord, RuntimeInstallationRecord, RuntimeJobRecord
 
 
 class RuntimeStore:
@@ -14,6 +14,7 @@ class RuntimeStore:
         self.engine = engine
         self._installations: dict[str, Installation] = {}
         self._jobs: dict[str, RuntimeJob] = {}
+        self._components: dict[str, ComponentInstallation] = {}
 
     def installations(self) -> list[Installation]:
         if self.engine is None:
@@ -41,6 +42,25 @@ class RuntimeStore:
             with Session(self.engine) as db:
                 values = [self._read_job(row) for row in db.exec(select(RuntimeJobRecord))]
         return sorted(values, key=lambda job: (job.created_at, job.id), reverse=True)
+
+    def components(self) -> list[ComponentInstallation]:
+        if self.engine is None:
+            return [value.model_copy(deep=True) for value in self._components.values()]
+        with Session(self.engine) as db:
+            return [ComponentInstallation.model_validate(row.model_dump()) for row in db.exec(select(RuntimeComponentRecord))]
+
+    def save_component(self, value: ComponentInstallation):
+        value.updated_at = utc_now()
+        if self.engine is None:
+            self._components[value.component_id] = value.model_copy(deep=True)
+        else:
+            with Session(self.engine) as db:
+                row = db.get(RuntimeComponentRecord, value.component_id) or RuntimeComponentRecord(**value.model_dump())
+                for key, item in value.model_dump().items():
+                    setattr(row, key, item)
+                db.add(row)
+                db.commit()
+        return value
 
     def job(self, job_id: str) -> RuntimeJob:
         if self.engine is None:
@@ -94,3 +114,7 @@ class RuntimeStore:
                 value.state = "interrupted"
                 value.error_code = "RUNTIME_INTERRUPTED"
                 self.save_installation(value)
+        for value in self.components():
+            if value.state == "installing":
+                value.state, value.error_code = "interrupted", "RUNTIME_INTERRUPTED"
+                self.save_component(value)
