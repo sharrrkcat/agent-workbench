@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-MAX_PIXELS = 8_388_608
+MAX_PIXELS = 16_777_216
 STYLES = {"natural": 0, "cinematic": 1, "default": 2, **{str(i): i for i in range(3, 7)}}
 
 

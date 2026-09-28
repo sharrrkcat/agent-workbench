@@ -7,7 +7,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.schema import model_path
 from ai_workbench.core.models.schema import ImageOutput
 
-MAX_PROCESS_PIXELS = 8_388_608
+MAX_PROCESS_PIXELS = 16_777_216
 MAX_PROCESS_BYTES = 64 * 1024 * 1024
 
 
@@ -27,7 +27,7 @@ def prepare_process_image(data: bytes) -> ImageOutput:
             if source.format not in {"PNG", "JPEG", "WEBP"} or getattr(source, "is_animated", False):
                 raise ModelError("INVALID_IMAGE", "Upload one static PNG, JPEG or WebP image.", 422)
             if max(source.size) > 16384 or source.width * source.height > MAX_PROCESS_PIXELS:
-                raise ModelError("REQUEST_TOO_LARGE", "Images must fit 8,388,608 pixels and 16,384 pixels per axis.", 413)
+                raise ModelError("REQUEST_TOO_LARGE", "Images must fit 16,777,216 pixels and 16,384 pixels per axis.", 413)
             oriented = ImageOps.exif_transpose(source)
             rgba = oriented.convert("RGBA")
             output = io.BytesIO()

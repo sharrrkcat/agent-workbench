@@ -501,7 +501,7 @@
   "processor": {
     "task": "图片处理",
     "directoryHint": "目录中需包含手动提供的 nvngx_dlssnr.dll；先在 Local Runtime 安装 DLSS NR 组件。",
-    "defaultsHint": "单张图片处理，保留方向校正后的尺寸和透明度。API 可覆盖这些默认值；最多 8,388,608 像素，单边不超过 16,384。",
+    "defaultsHint": "单张图片处理，保留方向校正后的尺寸和透明度。API 可覆盖这些默认值；最多 16,777,216 像素，单边不超过 16,384。",
     "style": "风格",
     "preset": "预设",
     "intensity": "强度",

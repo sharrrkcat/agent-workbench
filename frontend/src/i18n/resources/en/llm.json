@@ -501,7 +501,7 @@
   "processor": {
     "task": "Image processing",
     "directoryHint": "The directory must contain your manually supplied nvngx_dlssnr.dll. Install the DLSS NR component in Local Runtime first.",
-    "defaultsHint": "Processes one image, preserving oriented dimensions and alpha. API requests can override these defaults. Maximum 8,388,608 pixels and 16,384 per axis.",
+    "defaultsHint": "Processes one image, preserving oriented dimensions and alpha. API requests can override these defaults. Maximum 16,777,216 pixels and 16,384 per axis.",
     "style": "Style",
     "preset": "Preset",
     "intensity": "Intensity",

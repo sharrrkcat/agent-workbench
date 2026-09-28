@@ -230,7 +230,7 @@ def test_bad_animated_and_oversized_images_are_rejected_without_resizing():
         with pytest.raises(ModelError) as error:
             prepare_process_image(data)
         assert error.value.code == "INVALID_IMAGE"
-    for size in [(16385, 1), (4096, 2049)]:
+    for size in [(16385, 1), (4096, 4097)]:
         with pytest.raises(ModelError) as error:
             prepare_process_image(image_bytes(size))
         assert error.value.code == "REQUEST_TOO_LARGE"

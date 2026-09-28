@@ -74,7 +74,7 @@ class TranscriptionUpload(TranscriptionRequest, ApiModel):
 
 class ImageProcessUpload(ImageProcessRequest, ApiModel):
     model: str = Field(min_length=1, description="An enabled, externally visible processor alias.")
-    image: bytes = Field(description="One static PNG/JPEG/WebP; at most 8,388,608 pixels and 16,384 pixels per axis. Oriented dimensions and alpha are preserved.",
+    image: bytes = Field(description="One static PNG/JPEG/WebP; at most 16,777,216 pixels and 16,384 pixels per axis. Oriented dimensions and alpha are preserved.",
         json_schema_extra={"format": "binary"})
 
 

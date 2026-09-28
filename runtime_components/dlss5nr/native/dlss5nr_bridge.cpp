@@ -619,7 +619,7 @@ __declspec(dllexport) int __cdecl dlss5nr_process(
     g_last_error.clear();
     if (!g_initialized) { SetError("DLSS5 NR bridge is not initialized"); CopyError(err, err_cap); return 0; }
     if (!rgb_in || !rgb_out || width <= 0 || height <= 0) { SetError("Invalid image buffer/dimensions"); CopyError(err, err_cap); return 0; }
-    if (width > 16384 || height > 16384 || static_cast<uint64_t>(width) * height > 8388608) { SetError("Image dimensions are unreasonably large"); CopyError(err, err_cap); return 0; }
+    if (width > 16384 || height > 16384 || static_cast<uint64_t>(width) * height > 16777216) { SetError("Image dimensions are unreasonably large"); CopyError(err, err_cap); return 0; }
 
     if (reset != 1 || temporal != 0) { SetError("Only independent still images are supported"); CopyError(err, err_cap); return 0; }
 
