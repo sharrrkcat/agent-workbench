@@ -3,12 +3,14 @@ import type { StateCreator, StoreApi } from 'zustand';
 import type { GeneralSettings } from '../../types/settings';
 import type { Message } from '../../types/messages';
 import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
-import type { Session, SessionPatch } from '../../types/chat';
+import type { ChatDraft, Session, SessionPatch } from '../../types/chat';
 import type { ToolRunResponse } from '../../types/tools';
 
 export type CogitaState = {
   sessions: Session[];
   currentSession: Session | null;
+  chatDraft: ChatDraft | null;
+  pendingKnowledge: { sessionId: string; ids: string[] } | null;
   currentProjectId: string | null;
   lastOrdinarySessionId: string | null;
   initialized: boolean;
@@ -34,7 +36,8 @@ export type CogitaState = {
   refreshCurrent: () => Promise<void>;
   reloadSessions: (projectId?: string | null) => Promise<void>;
   selectSession: (id: string, projectId?: string | null) => Promise<void>;
-  createSession: (projectId?: string | null) => Promise<Session | undefined>;
+  startDraft: (projectId?: string | null) => Promise<void>;
+  saveDraft: (patch: SessionPatch, knowledgeIds?: string[]) => void;
   activateLocation: (projectId: string | null, sessionId?: string | null) => Promise<void>;
   forgetProject: (projectId: string) => void;
   deleteSession: (id: string) => Promise<void>;

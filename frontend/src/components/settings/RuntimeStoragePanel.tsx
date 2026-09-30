@@ -4,7 +4,7 @@ import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader,
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { LoadingStatus } from '@/components/ui/loading-status';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -96,7 +96,7 @@ export function RuntimeStoragePanel({ busy, active, activeView, onCleanup, onCan
           <EmptyHeader><EmptyTitle>{t(storageError ? 'storage.unavailable' : 'storage.notScanned')}</EmptyTitle>
             <EmptyDescription>{t(storageError ? 'storage.retryScan' : 'storage.scanHint')}</EmptyDescription>
           </EmptyHeader>
-        </Empty> : <div className="runtime-storage-summary" aria-hidden="true"><Skeleton className="h-14" /><Skeleton className="h-14" /><Skeleton className="h-14" /></div>}
+        </Empty> : <LoadingStatus />}
         <div className="runtime-cache-actions">
           <Button type="button" disabled={busy || !!active} onClick={() => void cleanup('prune')} variant="outline">
             <BrushCleaning data-icon="inline-start" />{t('cachePrune')}

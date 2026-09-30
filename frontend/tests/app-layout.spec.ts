@@ -120,7 +120,9 @@ for (const locale of ['en', 'zh-CN']) {
           await row.hover();
           await expect(menu).toHaveCSS('opacity', '1');
           await page.mouse.move(viewport.width - 1, 1);
-          await menu.focus();
+          await row.locator('.session-select').focus();
+          await page.keyboard.press('Tab');
+          await expect(menu).toBeFocused();
           await expect(menu).toHaveCSS('opacity', '1');
         }
         await menu.click();

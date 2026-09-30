@@ -9,6 +9,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
+  SidebarGroupAction,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
@@ -92,7 +93,14 @@ export function SessionSidebar({ onOpenSettings, onNavigate, onSelectSession, on
           <ProjectsTree onNavigate={onNavigate} onSelectSession={onSelectSession} onCreateSession={onCreateSession}
             onSessionDeleted={onSessionDeleted} onProjectDeleted={onProjectDeleted} />
           <SidebarGroup>
-            <SidebarGroupLabel>{t('sessions')}</SidebarGroupLabel>
+            <div className="group/session-heading relative flex items-center">
+              <SidebarGroupLabel>{t('sessions')}</SidebarGroupLabel>
+              <SidebarGroupAction type="button" aria-label={t('newSession')} title={t('newSession')}
+                className="top-1 right-0.5 size-6 opacity-0 group-hover/session-heading:opacity-100 group-has-[:focus-visible]/session-heading:opacity-100 pointer-coarse:relative pointer-coarse:top-0 pointer-coarse:right-0 pointer-coarse:ml-auto pointer-coarse:size-11 pointer-coarse:opacity-100"
+                onClick={async () => { if (await onCreateSession()) setOpenMobile(false); }}>
+                <MessageSquarePlus />
+              </SidebarGroupAction>
+            </div>
             <SidebarMenu>
               {sessions.map((session) => {
                 const title = session.title.trim() || t('newSession');

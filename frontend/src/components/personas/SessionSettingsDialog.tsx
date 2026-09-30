@@ -15,7 +15,7 @@ import { toolsApi } from '../../api/tools';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
-import type { OrdinarySession, Session, SessionPatch } from '../../types/chat';
+import type { ChatDraft, OrdinaryChatDraft, OrdinarySession, Session, SessionPatch } from '../../types/chat';
 import type { HarnessTool } from '../../types/tools';
 import type { KnowledgeBase } from '../../types/knowledge';
 import { Feedback, ResourceLoading, errorText } from '../settings/resources/ResourceUI';
@@ -26,7 +26,7 @@ import { WorkspaceSessionSettingsDialog } from '../projects/WorkspaceSessionSett
 type Tab = 'configuration' | 'knowledge';
 
 export function SessionSettingsDialog(props: {
-  session: Session;
+  session: Session | ChatDraft;
   onClose: () => void;
   onManagePersonas: () => void;
 }) {
@@ -36,7 +36,7 @@ export function SessionSettingsDialog(props: {
 }
 
 function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
-  session: OrdinarySession; onClose: () => void; onManagePersonas: () => void;
+  session: OrdinarySession | OrdinaryChatDraft; onClose: () => void; onManagePersonas: () => void;
 }) {
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('personas');
@@ -44,7 +44,8 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
   const allPersonas = usePersonasStore((s) => s.personas);
   const personas = allPersonas.filter((p) => p.collection === 'agent');
   const profiles = useModelsStore((s) => s.profiles);
-  const [draft, setDraft] = useState<OrdinarySession>(() => structuredClone(session));
+  const sessionId = 'session_id' in session ? session.session_id : null;
+  const [draft, setDraft] = useState(() => structuredClone(session));
   const [tab, setTab] = useState<Tab>('configuration');
   const [knowledge, setKnowledge] = useState<string[]>([]);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
@@ -58,26 +59,27 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
     setError('');
     void Promise.all([
       usePersonasStore.getState().reload(),
-      knowledgeApi.listSessionKnowledgeBases(session.session_id),
+      sessionId ? knowledgeApi.listSessionKnowledgeBases(sessionId) : Promise.resolve({ knowledge_base_ids: (session as OrdinaryChatDraft).knowledge_base_ids }),
       knowledgeApi.listKnowledgeBases(),
       toolsApi.listTools(),
       useModelsStore.getState().reload(),
     ]).then(([, kb, availableBases, catalog]) => {
       if (live) {
-        setKnowledge(kb.knowledge_base_ids);
+        const pending = useCogitaStore.getState().pendingKnowledge;
+        setKnowledge(pending?.sessionId === sessionId ? pending.ids : kb.knowledge_base_ids);
         setBases(availableBases);
         setTools(catalog);
         setLoading(false);
       }
     }).catch((reason) => { if (live) setError(errorText(reason)); });
     return () => { live = false; };
-  }, [session.session_id, reload]);
-  const patch = (values: Partial<OrdinarySession>) => setDraft((current) => ({ ...current, ...values }));
+  }, [sessionId, reload]);
+  const patch = (values: Partial<OrdinaryChatDraft>) => setDraft((current) => ({ ...current, ...values }));
   async function save() {
     setBusy(true);
     setError('');
     const values: SessionPatch = {
-      title: draft.title.trim() || undefined,
+      ...(draft.title !== session.title ? { title: draft.title.trim() || (sessionId ? undefined : '') } : {}),
       persona_id: draft.persona_id,
       model_profile_id: draft.model_profile_id,
       context_policy: draft.context_policy,
@@ -86,9 +88,12 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
       tools_allowed: draft.tools_allowed,
     };
     try {
-      await chatApi.updateSession(session.session_id, values);
-      await knowledgeApi.updateSessionKnowledgeBases(session.session_id, knowledge);
-      await useCogitaStore.getState().reloadSessions();
+      if (sessionId) {
+        await chatApi.updateSession(sessionId, values);
+        await knowledgeApi.updateSessionKnowledgeBases(sessionId, knowledge);
+        useCogitaStore.setState((state) => state.pendingKnowledge?.sessionId === sessionId ? { pendingKnowledge: null } : {});
+        await useCogitaStore.getState().reloadSessions();
+      } else useCogitaStore.getState().saveDraft(values, knowledge);
       onClose();
     } catch (reason) {
       setError(errorText(reason));

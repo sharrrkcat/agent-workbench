@@ -1,5 +1,5 @@
 import { Switch } from '@/components/ui/switch';
-import { FieldGroup, Field, FieldLabel, FieldSet, FieldLegend } from '@/components/ui/field';
+import { FieldGroup, Field, FieldContent, FieldLabel, FieldDescription, FieldSet, FieldLegend } from '@/components/ui/field';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -84,7 +84,10 @@ export function GeneralSettingsForm({
                 checked={settings.auto_generate_session_titles}
                 onCheckedChange={(value) => patch('auto_generate_session_titles', value)}
               />
-              <FieldLabel>{t('generalFields.titlesEnabled')}</FieldLabel>
+              <FieldContent>
+                <FieldLabel>{t('generalFields.titlesEnabled')}</FieldLabel>
+                <FieldDescription>{t('generalFields.titlesDescription')}</FieldDescription>
+              </FieldContent>
             </Field>
             <Field>
               <FieldLabel>{t('generalFields.titleLimit')}</FieldLabel>

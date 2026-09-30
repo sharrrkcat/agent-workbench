@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Boxes, ChevronRight, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Boxes, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem,
   SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, useSidebar } from '@/components/ui/sidebar';
@@ -44,7 +43,7 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
   const allSessions = useCogitaStore((state) => state.sessions);
   const reloadSessions = useCogitaStore((state) => state.reloadSessions);
   const [expanded, setExpanded] = useState(currentProjectId === project.id);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -79,15 +78,18 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
   const Icon = project.kind === 'workspace' ? Compass : Boxes;
   return <SidebarMenuItem data-project-id={project.id}>
     <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <div className="relative flex items-center">
-        {project.kind === 'workspace' ? <CollapsibleTrigger render={<Button type="button" variant="ghost" size="icon"
-          className="shrink-0" aria-label={t('toggleProject', { name: project.name })} />}>
-          <ChevronRight className={cn('transition-transform', expanded && 'rotate-90')} />
-        </CollapsibleTrigger> : null}
-        <SidebarMenuButton type="button" className="project-select" isActive={active && !current}
-          aria-current={active && !current ? 'page' : undefined} title={project.name} onClick={() => void openSettings()} disabled={deleting === project.id}>
+      <div className="group/project-heading relative flex items-center">
+        <CollapsibleTrigger render={<SidebarMenuButton type="button"
+          className={cn('project-select', project.kind === 'workspace' &&
+            'group-has-data-[sidebar=menu-action]/menu-item:pr-14 pointer-coarse:group-has-data-[sidebar=menu-action]/menu-item:pr-22')}
+          isActive={active} title={project.name} disabled={deleting === project.id} />}>
           <Icon data-icon="inline-start" /><span>{project.name}</span>
-        </SidebarMenuButton>
+        </CollapsibleTrigger>
+        {project.kind === 'workspace' ? <SidebarMenuAction type="button" aria-label={t('newProjectSession', { name: project.name })}
+          title={t('newSession')} className="right-7 opacity-0 group-hover/project-heading:opacity-100 group-has-[:focus-visible]/project-heading:opacity-100 pointer-coarse:right-11 pointer-coarse:opacity-100"
+          onClick={async () => { if (await onCreateSession(project.id)) { setExpanded(true); setOpenMobile(false); } }}>
+          <MessageSquarePlus />
+        </SidebarMenuAction> : null}
         <DropdownMenu>
           <DropdownMenuTrigger render={<SidebarMenuAction type="button" aria-label={t('projectActions', { name: project.name })} />}><MoreHorizontal /></DropdownMenuTrigger>
           <DropdownMenuContent align="end"><DropdownMenuGroup>
@@ -97,21 +99,18 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
         </DropdownMenu>
       </div>
       {project.kind === 'workspace' ? <CollapsibleContent>
-        <SidebarMenuSub>
-          <SidebarMenuSubItem>
-            <SidebarMenuSubButton render={<button type="button" />} className="w-full" onClick={async () => { if (await onCreateSession(project.id)) setOpenMobile(false); }}>
-              <MessageSquarePlus data-icon="inline-start" /><span>{t('newSession')}</span>
-            </SidebarMenuSubButton>
-          </SidebarMenuSubItem>
+        <SidebarMenuSub className="mr-0 translate-x-0 pr-0">
           {sessions.map((session) => {
             const title = session.title.trim() || t('newSession');
             const selected = current?.session_id === session.session_id;
-            return <SidebarMenuSubItem key={session.session_id} className={cn('session-item group/menu-item', selected && 'selected')}>
+            return <SidebarMenuSubItem key={session.session_id} className={cn('session-item', selected && 'selected')}>
               <SidebarMenuSubButton render={<button type="button" disabled={deleting === session.session_id} />}
-                className="session-select w-full pr-8" isActive={selected} aria-current={selected ? 'page' : undefined} title={title}
+                className="session-select w-full translate-x-0 pr-8 pointer-coarse:min-h-11 pointer-coarse:pr-11" isActive={selected} aria-current={selected ? 'page' : undefined} title={title}
                 onClick={async () => { if (await onSelectSession(session.session_id, project.id)) setOpenMobile(false); }}><span>{title}</span></SidebarMenuSubButton>
               <DropdownMenu>
-                <DropdownMenuTrigger render={<SidebarMenuAction type="button" className="session-menu" showOnHover aria-label={t('sessionActions', { title })} />}><MoreHorizontal /></DropdownMenuTrigger>
+                <DropdownMenuTrigger render={<SidebarMenuAction type="button"
+                  className="session-menu top-0.5 opacity-0 group-hover/menu-sub-item:opacity-100 group-has-[:focus-visible]/menu-sub-item:opacity-100 aria-expanded:opacity-100 pointer-coarse:opacity-100"
+                  aria-label={t('sessionActions', { title })} />}><MoreHorizontal /></DropdownMenuTrigger>
                 <DropdownMenuContent align="end"><DropdownMenuGroup>
                   <DropdownMenuItem variant="destructive" disabled={!!deleting} onClick={() => void deleteSession(session.session_id)}>
                     <Trash2 data-icon="inline-start" />{t('deleteSession')}
@@ -120,10 +119,10 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
               </DropdownMenu>
             </SidebarMenuSubItem>;
           })}
-          {loading || error ? <SidebarMenuSubItem><ResourceLoading error={error} retry={() => setReload((n) => n + 1)} /></SidebarMenuSubItem> : null}
+          {(loading && !sessions.length) || error ? <SidebarMenuSubItem><ResourceLoading error={error} retry={() => setReload((n) => n + 1)} /></SidebarMenuSubItem> : null}
           {!loading && !error && !sessions.length ? <SidebarMenuSubItem><p className="model-empty px-2">{t('noProjectSessions')}</p></SidebarMenuSubItem> : null}
         </SidebarMenuSub>
-      </CollapsibleContent> : null}
+      </CollapsibleContent> : <CollapsibleContent><p className="model-empty px-2 py-2">{t('timelineCreationOnly')}</p></CollapsibleContent>}
     </Collapsible>
     {confirmation}
   </SidebarMenuItem>;

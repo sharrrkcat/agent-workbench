@@ -18,8 +18,9 @@ Agent/Action/Capability/Command and YAML architecture must not return.
 - All inference uses `core/models`. External connections speak only the
   OpenAI-compatible protocol. Managed llama-server and Python workers run
   outside the API process.
-- Model release defaults to manual. Titles use only the selected auxiliary
-  model; absence or failure leaves the title unchanged.
+- Model release defaults to manual. First input supplies a short session title.
+  Optional title generation uses only the selected auxiliary model; absence or
+  failure preserves the input title, and manual titles are never overwritten.
 - Reranker remains a model kind and a RAG operation. Keeping RRF order when
   reranking is unavailable is intentional retrieval behavior.
 - No model downloads, image generation, or restored extension registries.

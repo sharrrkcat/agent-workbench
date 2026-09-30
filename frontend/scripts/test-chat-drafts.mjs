@@ -1,0 +1,130 @@
+import assert from 'node:assert/strict';
+import { apiMocks, createModuleLoader } from './module-loader.mjs';
+import { mockDraftCatalogs } from './draft-fixtures.mjs';
+
+const api = {};
+const load = createModuleLoader(apiMocks(api));
+const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
+const { draftConfiguration, defaultModelId } = (await load('../src/store/cogita/drafts.ts')).exports;
+const { newChatUrl, readProjectRoute, isDraftRoute } = (await load('../src/components/projects/navigation.ts')).exports;
+const policy = { mode: 'session', include_attachments: 'explicit', max_messages: null, max_chars: null };
+const project = { id: 'workspace', kind: 'workspace', agent_persona_id: 'agent', context_policy: policy };
+const saved = (id, projectId = null) => ({ session_id: id, kind: projectId ? 'workspace' : 'ordinary', project_id: projectId,
+  title: '', effective: {}, updated_at: '2026-09-30T00:00:00Z' });
+const result = (session) => ({ success: true, session, messages: [], run: { run_id: 'run', session_id: session.session_id,
+  status: 'DONE', created_at: session.updated_at, updated_at: session.updated_at } });
+function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
+let calls;
+function reset() {
+  store.setState(store.getInitialState(), true);
+  mockDraftCatalogs(api);
+  calls = [];
+  api.get = async () => project;
+  api.listSessions = async () => [];
+  api.getGeneralSettings = async () => ({});
+  api.getSession = async (id) => saved(id);
+  api.listMessages = async () => [];
+  api.listRuns = async () => [];
+  api.createSession = async (...args) => { calls.push(['create', ...args]); return saved('created', typeof args[0] === 'string' ? args[0] : null); };
+  api.updateSessionKnowledgeBases = async (...args) => { calls.push(['bindings', ...args]); };
+  api.sendMessage = async (...args) => { calls.push(['send', ...args]); return result(saved(args[0])); };
+}
+
+reset();
+await store.getState().initialize();
+assert.equal(store.getState().currentSession, null);
+assert.equal(store.getState().chatDraft.kind, 'ordinary');
+assert.deepEqual(calls, []);
+store.getState().setComposerDraftText('keep this');
+const epoch = store.getState().sessionEpoch;
+for (let i = 0; i < 100; i++) await store.getState().startDraft();
+assert.equal(store.getState().sessionEpoch, epoch);
+assert.equal(store.getState().composerDraftText, 'keep this');
+store.getState().saveDraft({ persona_id: 'chosen', title: 'Manual', generation: { temperature: 0 }, tools_allowed: [] }, ['kb']);
+assert.deepEqual(calls, []);
+assert.equal(await store.getState().sendMessage('   '), undefined);
+assert.deepEqual(calls, []);
+const attachment = { type: 'image', name: 'image.png', id: 'attachment' };
+await store.getState().sendMessage('question', [attachment]);
+assert.deepEqual(calls.map((c) => c[0]), ['create', 'bindings', 'send']);
+assert.equal(calls[0][1].persona_id, 'chosen');
+assert.equal(calls[0][1].title, 'Manual');
+assert.deepEqual(calls[0][1].generation, { temperature: 0 });
+assert.deepEqual(calls[0][1].tools_allowed, []);
+assert.equal('knowledge_base_ids' in calls[0][1], false);
+assert.deepEqual(calls[1], ['bindings', 'created', ['kb']]);
+assert.deepEqual(calls[2].slice(1, 4), ['created', 'question', [attachment]]);
+assert.equal(store.getState().sessionEpoch, epoch, 'Promotion must not reset the composer or attachment hook');
+assert.equal(store.getState().chatDraft, null);
+
+reset();
+await store.getState().startDraft('workspace');
+store.getState().saveDraft({ overrides: { temperature: 0, tools_allowed: [], harness_enabled: false } }, ['kb']);
+await store.getState().sendMessage('', [attachment]);
+assert.deepEqual(calls[0], ['create', 'workspace', { title: '', overrides: { temperature: 0, tools_allowed: [], harness_enabled: false } }]);
+
+reset();
+await store.getState().startDraft();
+const creation = deferred();
+api.createSession = async () => { calls.push(['create']); return creation.promise; };
+const sending = store.getState().sendMessage('first');
+assert.equal(store.getState().sending, true);
+assert.equal(await store.getState().sendMessage('second'), undefined);
+creation.resolve(saved('one'));
+await sending;
+assert.deepEqual(calls.map((c) => c[0]), ['create', 'send']);
+assert.equal(store.getState().sending, false);
+
+reset();
+await store.getState().startDraft();
+api.createSession = async () => { throw new Error('Creation failed'); };
+store.getState().setComposerDraftText('retry me');
+await store.getState().sendMessage('retry me');
+assert.equal(store.getState().currentSession, null);
+assert.equal(store.getState().chatDraft.kind, 'ordinary');
+assert.equal(store.getState().composerDraftText, 'retry me');
+assert.match(store.getState().error, /Creation failed/);
+
+reset();
+await store.getState().startDraft();
+store.getState().saveDraft({}, ['kb']);
+api.updateSessionKnowledgeBases = async () => { throw new Error('Bindings failed'); };
+await store.getState().sendMessage('retry');
+assert.equal(store.getState().currentSession.session_id, 'created');
+assert.deepEqual(store.getState().pendingKnowledge, { sessionId: 'created', ids: ['kb'] });
+api.updateSessionKnowledgeBases = async (...args) => { calls.push(['bindings', ...args]); };
+api.sendMessage = async () => { throw new Error('Send failed'); };
+await store.getState().sendMessage('retry');
+assert.equal(store.getState().pendingKnowledge, null);
+assert.match(store.getState().error, /Send failed/);
+api.sendMessage = async () => result(saved('created'));
+await store.getState().sendMessage('retry');
+assert.equal(calls.filter((c) => c[0] === 'create').length, 1);
+
+reset();
+await store.getState().startDraft();
+store.getState().saveDraft({}, ['original-kb']);
+const late = deferred();
+api.createSession = () => late.promise;
+const oldSend = store.getState().sendMessage('original', [attachment]);
+await store.getState().selectSession('other');
+store.getState().setComposerDraftText('new page');
+store.getState().setSourceMessageId('other-source');
+late.resolve(saved('late'));
+await oldSend;
+assert.equal(store.getState().currentSession.session_id, 'other');
+assert.equal(store.getState().composerDraftText, 'new page');
+assert.deepEqual(calls[0], ['bindings', 'late', ['original-kb']]);
+assert.deepEqual(calls[1].slice(1, 4), ['late', 'original', [attachment]]);
+assert.equal(calls[1].at(-1), null, 'Do not borrow the new page context');
+assert.ok(store.getState().sessions.some((s) => s.session_id === 'late'));
+
+assert.equal(newChatUrl(), '/new');
+assert.equal(newChatUrl('a/b'), '/projects/a%2Fb/new');
+assert.deepEqual(readProjectRoute({ pathname: '/projects/a%2Fb/new', search: '' }), { projectId: 'a/b', sessionId: null });
+assert.equal(isDraftRoute({ pathname: '/new' }), true);
+assert.equal(isDraftRoute({ pathname: '/projects/a' }), false);
+assert.equal(defaultModelId([{ id: 'off', kind: 'llm', enabled: false }, { id: 'yes', kind: 'llm', enabled: true }], 'off'), 'yes');
+assert.equal(defaultModelId([], null), null);
+assert.equal(draftConfiguration({ kind: 'workspace', overrides: {} }, [], [{ id: 'global', kind: 'llm', enabled: true }], null, project).model_profile_id, 'global');
+console.log('Chat drafts: deferred creation, complete configuration, duplicate submission, failures, routes and navigation isolation: ok');

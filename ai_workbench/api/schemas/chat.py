@@ -45,7 +45,7 @@ ResolvedConfiguration = public_model("ResolvedConfiguration", ResolvedChatConfig
 _session_fields = {
     "user_persona": (PersonaIdentity, ...),
     "effective": (ResolvedConfiguration, ...),
-    "title_generation_metadata": (JsonObject, Field(description="Auxiliary-title status diagnostics, without prompts or model content.")),
+    "title_generation_metadata": (JsonObject, Field(description="Session-title source, input identity and status diagnostics, without prompts or model content.")),
 }
 OrdinarySessionResponse = public_model("OrdinarySessionResponse", OrdinarySession, fields=_session_fields)
 WorkspaceSessionResponse = public_model("WorkspaceSessionResponse", WorkspaceSession, fields=_session_fields)

@@ -10,6 +10,7 @@ for (const script of [
   'test-resource-management',
   'test-session-settings',
   'test-session-actions',
+  'test-chat-drafts',
   'test-projects',
   'test-confirm-dialog',
   'test-pet-foundation',

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { apiMocks, createModuleLoader } from './module-loader.mjs';
+import { mockDraftCatalogs } from './draft-fixtures.mjs';
 
 const api = {};
 const load = createModuleLoader(apiMocks(api));
@@ -22,6 +23,7 @@ function deferred() {
 }
 
 function reset(sessions = [first, second, third]) {
+  mockDraftCatalogs(api);
   store.setState(store.getInitialState(), true);
   store.setState({
     sessions,
@@ -62,8 +64,9 @@ assert.equal(store.getState().sessionEpoch, 8);
 
 reset([first]);
 await store.getState().deleteSession('first');
-assert.deepEqual(store.getState().sessions, [replacement]);
-assert.equal(store.getState().currentSession, replacement);
+assert.deepEqual(store.getState().sessions, []);
+assert.equal(store.getState().currentSession, null);
+assert.equal(store.getState().chatDraft.kind, 'ordinary');
 
 reset();
 const delayedDelete = deferred();
@@ -79,23 +82,23 @@ assert.equal(store.getState().sessionEpoch, selected.sessionEpoch);
 assert.deepEqual(store.getState().sessions, [second, third]);
 
 reset([first]);
-const delayedCreate = deferred(),
+const delayedCatalog = deferred(),
   creating = deferred();
-api.createSession = () => {
+api.listTools = () => {
   creating.resolve();
-  return delayedCreate.promise;
+  return delayedCatalog.promise;
 };
 const deletingLast = store.getState().deleteSession('first');
 await creating.promise;
-store.setState({ sessions: [first, third] });
+store.setState({ sessions: [third] });
 await store.getState().selectSession('third');
 const changed = store.getState();
-delayedCreate.resolve(replacement);
+delayedCatalog.resolve([]);
 await deletingLast;
 assert.equal(store.getState().currentSession, third);
 assert.equal(store.getState().messages, changed.messages);
 assert.equal(store.getState().sessionEpoch, changed.sessionEpoch);
-assert.deepEqual(store.getState().sessions, [third, replacement]);
+assert.deepEqual(store.getState().sessions, [third]);
 
 reset();
 const oldList = deferred();
@@ -122,5 +125,5 @@ assert.equal(store.getState().messages, beforeFailure.messages);
 assert.equal(store.getState().sessionEpoch, beforeFailure.sessionEpoch);
 assert.match(store.getState().error, /Deletion failed/);
 console.log(
-  'Session deletion preserves other chats, handles replacement and ignores stale selection/list responses: ok',
+  'Session deletion preserves other chats, opens a draft and ignores stale selection/list responses: ok',
 );

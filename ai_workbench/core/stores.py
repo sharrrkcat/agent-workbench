@@ -25,7 +25,7 @@ class SessionStore:
 
     def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
         session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
-            title_generation_state="pending" if not title.strip() or title.strip() == "New session" else "manual", **values))
+            title_generation_state="pending" if not title.strip() else "manual", **values))
         self._sessions[session.session_id] = session
         return session
 

@@ -64,7 +64,7 @@ class CogitaRuntime:
         direct = self._parse_direct_tool(text)
         if direct is not None:
             name, arguments = direct
-            return await self.call_tool(session, name, arguments)
+            return await self.call_tool(session, name, arguments, input_text=text)
         return await self.chat_runner.run(
             session_id=session.session_id,
             text=text,
@@ -105,7 +105,7 @@ class CogitaRuntime:
             raise ChatError("RUN_WAITING_FOR_APPROVAL", "Resolve the pending tool approval before sending another message.", 409)
         self.chat_runner.chat_service.assert_idle(session.session_id)
 
-    async def call_tool(self, session: Any, name: str, arguments: dict[str, Any]) -> RunResult:
+    async def call_tool(self, session: Any, name: str, arguments: dict[str, Any], *, input_text: str | None = None) -> RunResult:
         self._assert_available(session)
         config = self.chat_runner.chat_service.resolve(session)
         registry = self.chat_runner.harness_loop.registry
@@ -123,6 +123,8 @@ class CogitaRuntime:
             metadata={"tool_name": name, "direct": True, "harness": True, "configuration": config.public_summary()},
             config_snapshot=config.model_dump(mode="json"),
         )
+        if input_text is not None:
+            self.chat_runner.set_input_title(session.session_id, input_text, [], run.run_id, auxiliary=False)
         return await self.chat_runner.harness_loop.direct(
             session=session, config=config, run=run, tool_name=name, arguments=arguments)
 

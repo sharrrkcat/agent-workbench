@@ -50,9 +50,13 @@ covers keyboard/labels, 44px targets, nested overlays and focus, retained drafts
 validation, busy locks, async navigation/history, attachments, IME and approvals.
 app-layout.spec.ts covers sidebar scrolling/menus, deletion, drawer focus, Markdown,
 composer growth, disclosure position and breakpoint/short viewport behavior.
+navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
+independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
 chat-presentation.spec.ts and vision-input.spec.ts retain streaming and image workflows.
 settings-layout.spec.ts covers all 21 grouped pages, collapsed menus, direct links, history, resource
 leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, shared navigation and responsive scroll regions.
+chat-drafts.spec.ts covers unsaved settings, shared creation entries, attachment promotion/retry,
+empty startup and last-session deletion; test-chat-drafts.mjs covers first-send state and races.
 personas.spec.ts covers shared Persona CRUD, protected identities, binding restrictions
 and live Cogita Persona display across history and session switches. projects.spec.ts covers Project creation, type restrictions,
 inherited resources, sparse overrides, guarded history and scoped deletion; test-projects.mjs covers selection/deletion races.

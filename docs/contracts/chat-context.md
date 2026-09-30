@@ -44,6 +44,15 @@ state when appropriate. No model discovery, health check or inference is perform
 to initialize a session.
 Ordinary resolved configuration reports model_source=session.
 
+New chat navigation opens an in-memory ordinary/Workspace draft, without a session
+record or session WebSocket. Drafts support the full configuration dialog and
+Knowledge additions; saving changes only local state. Reopening the same draft
+preserves it; switching conversations/Projects or refreshing discards it. First
+send creates the session, applies additions, then submits captured input and attachments.
+Repeated submissions are locked. Creation failure retains the draft; later binding/
+send failure retains the created id and input for retry. Existing creation APIs
+remain explicit immediate creation operations; no database migration is needed.
+
 Ordinary context, generation, Harness and tool selection belong to the session. Context defaults to
 session history with explicit attachments. Session generation defaults to {} and accepts only
 optional temperature (0..2); a non-null value overrides the model. {} or temperature:null
@@ -104,7 +113,7 @@ execution returns SESSION_BUSY. The explicit approval API resumes the same run.
 
 Deleting a different session from the sidebar preserves the current conversation,
 draft and selected context. Deleting the current session selects its first remaining
-sibling. The last ordinary session is replaced; the last Workspace session leaves its Project settings/empty tree. Delayed deletion/replacement
+sibling. The last ordinary session opens an unsaved draft; the last Workspace session leaves its Project settings/empty tree. Delayed deletion/draft loading
 responses preserve subsequent session selections; delayed creation/selection cannot replace later navigation. Failed deletion leaves the
 displayed state intact and reports the error.
 
@@ -260,13 +269,19 @@ schema. Fenced/embedded JSON, unexpected calls and invalid output raise
 UTILITY_OUTPUT_INVALID. These tasks create no messages/runs and share the
 provider queue, lifecycle and status observations.
 
-Titles are enabled by default, with session_title_prompt and a 1200-character
-input limit. ChatRunner persists/publishes the completed response and run,
-releases the main model lease, then requests a title using max_tokens=64 and
-temperature=0. Only an empty/default title is eligible. Missing auxiliary
-selection, failed/empty output or concurrent manual renaming leaves the title
-unchanged and does not affect chat success. The bounded current user text is
-the only input: no history, attachments, Persona context, Worldbook or Knowledge.
+First accepted input names an untitled session from its first 15 Unicode characters,
+after trimming/collapsing whitespace, with an ellipsis only when truncated. Attachment-only
+input uses the first filename. Explicit tool input receives only this basic title;
+failed chat runs retain it. Explicitly supplied or manually edited titles are protected.
+auto_generate_session_titles defaults on and controls auxiliary improvement only;
+turning it off retains basic naming. The first chat input remains the sole title source.
+ChatRunner publishes the completed response/run and releases the main model lease,
+then requests an improved title with max_tokens=64, temperature=0, session_title_prompt
+and a 1200-character input limit. Missing auxiliary selection, failed/empty output,
+or concurrent manual renaming preserves the title without affecting chat success.
+Later inputs do not request new titles. Auxiliary input excludes history, attachments,
+Persona context, Worldbook and Knowledge. Existing title state/metadata identify the
+input excerpt and originating input id or successful auxiliary generation.
 
 ## HTTP schemas
 

@@ -50,7 +50,8 @@
   },
   "generalFields": {
     "showFullProcessing": "显示完整处理过程",
-    "titlesEnabled": "生成会话标题",
+    "titlesEnabled": "使用辅助模型优化会话标题",
+    "titlesDescription": "新会话默认使用消息的前 15 个字作为标题。辅助模型可以将其替换为生成的标题；辅助模型不可用时保留原有标题。",
     "titleLimit": "标题输入长度上限",
     "save": "保存常规设置"
   },

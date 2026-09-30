@@ -11,12 +11,13 @@ import {
   useMessageScroller,
 } from '@/components/ui/message-scroller';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Skeleton } from '@/components/ui/skeleton';
+import { LoadingStatus } from '@/components/ui/loading-status';
 import { cn } from '@/lib/utils';
 import { MessageBubble } from './MessageBubble';
 import { RunReply } from './messages/RunReply';
 import { buildConversation } from './messages/turns';
 import { useCogitaStore } from '../store/useCogitaStore';
+import { useChatConfiguration } from '../hooks/useChatConfiguration';
 
 export function ChatView() {
   return (
@@ -31,6 +32,8 @@ function Conversation() {
   const messages = useCogitaStore((state) => state.messages);
   const runs = useCogitaStore((state) => state.runs);
   const currentSession = useCogitaStore((state) => state.currentSession);
+  const chatDraft = useCogitaStore((state) => state.chatDraft);
+  const configuration = useChatConfiguration();
   const steps = useCogitaStore((state) => state.stepsByRunId);
   const showFullProcessing = useCogitaStore((state) => state.settings?.show_full_processing === true);
   const sending = useCogitaStore((state) => state.sending);
@@ -45,12 +48,12 @@ function Conversation() {
     if (sending) scrollToEnd({ behavior: 'instant' });
   }, [sending, scrollToEnd]);
 
-  if (!currentSession) {
+  if (!currentSession && !chatDraft) {
+    if (loading) return <LoadingStatus />;
     return (
-      <Empty className="chat-empty min-h-0" role={loading ? 'status' : undefined}>
+      <Empty className="chat-empty min-h-0">
         <EmptyHeader>
-          {loading ? <Skeleton className="size-10 rounded-full" /> : null}
-          <EmptyTitle>{loading ? t('loading') : t('chat:loadFailed')}</EmptyTitle>
+          <EmptyTitle>{t('chat:loadFailed')}</EmptyTitle>
         </EmptyHeader>
       </Empty>
     );
@@ -80,7 +83,7 @@ function Conversation() {
                   <EmptyMedia variant="icon">
                     <MessageSquare />
                   </EmptyMedia>
-                  <EmptyTitle>{currentSession.effective.persona_name}</EmptyTitle>
+                  <EmptyTitle>{configuration?.persona_name}</EmptyTitle>
                   <EmptyDescription>{t('startChat')}</EmptyDescription>
                 </EmptyHeader>
               </Empty>

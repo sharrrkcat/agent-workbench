@@ -89,7 +89,7 @@ async def resolve_approval(run_id: str, payload: ApprovalDecision, state: Runtim
         result = await state.chat_runner.harness_loop.resume_approval(session=session, run=run, decision=payload.decision)
         if result.success and state.runs.get_run(run_id).status == RunStatus.DONE and run.kind == "chat":
             user = state.messages.get_message(run.metadata["input_message_id"])
-            await state.chat_runner.maybe_title(session.session_id, text_from_parts(user.parts))
+            await state.chat_runner.maybe_title(session.session_id, text_from_parts(user.parts), user.message_id)
         return _tool_result_payload(state, session.session_id, result.run_id)
     except ToolExecutionError as exc:
         raise_error(409, exc.code, exc.message, exc.details)

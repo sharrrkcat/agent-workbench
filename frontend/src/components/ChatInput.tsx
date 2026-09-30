@@ -36,6 +36,7 @@ import { useModelsStore } from '../store/useModelsStore';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
 import { ImagePreview, type PreviewImage } from './messages/ImagePreview';
 import { contextMessageLabel, isContextMessage } from './messages/messageContent';
+import { useChatConfiguration } from '../hooks/useChatConfiguration';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
@@ -46,6 +47,9 @@ export function ChatInput() {
   const sending = useCogitaStore((state) => state.sending);
   const mutatingHistory = useCogitaStore((state) => state.mutatingHistory);
   const session = useCogitaStore((state) => state.currentSession);
+  const chatDraft = useCogitaStore((state) => state.chatDraft);
+  const configuration = useChatConfiguration();
+  const ready = !!(session || chatDraft);
   const messages = useCogitaStore((state) => state.messages);
   const sourceMessageId = useCogitaStore((state) => state.sourceMessageId);
   const selectSource = useCogitaStore((state) => state.setSourceMessageId);
@@ -61,19 +65,19 @@ export function ChatInput() {
   const [preview, setPreview] = useState<PreviewImage | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const contextRequired = session?.effective.context_policy.mode === 'selected_message';
+  const contextRequired = configuration?.context_policy?.mode === 'selected_message';
   const eligible = messages.filter(isContextMessage);
   const hasSource = !!sourceMessageId && eligible.some((m) => m.message_id === sourceMessageId);
-  const profile = profiles.find((item) => item.id === session?.effective.model_profile_id);
+  const profile = profiles.find((item) => item.id === configuration?.model_profile_id);
   const hasImages = attachments.some((item) => item.type === 'image');
   const imageIssue =
-    hasImages && session?.effective.context_policy.include_attachments !== 'explicit'
+    hasImages && configuration?.context_policy?.include_attachments !== 'explicit'
       ? t('imagesContextDisabled')
       : hasImages && profile && !profile.capabilities.vision
         ? t('imagesUnsupported')
         : '';
   const cannotSend =
-    !session ||
+    !ready ||
     sending ||
     mutatingHistory ||
     uploading ||
@@ -92,7 +96,7 @@ export function ChatInput() {
   }
 
   function addFiles(files: File[]) {
-    if (files.length && session && !sending && !mutatingHistory) void upload(files);
+    if (files.length && ready && !sending && !mutatingHistory) void upload(files);
   }
 
   return (
@@ -223,8 +227,8 @@ export function ChatInput() {
           className="max-h-48 min-h-12 px-3"
           value={draft}
           rows={1}
-          placeholder={t('messagePlaceholder', { name: session?.effective.persona_name || t('assistant') })}
-          aria-label={t('messagePlaceholder', { name: session?.effective.persona_name || t('assistant') })}
+          placeholder={t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') })}
+          aria-label={t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') })}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
@@ -246,7 +250,7 @@ export function ChatInput() {
               render={
                 <InputGroupButton
                   aria-label={t('attach')}
-                  disabled={!session || sending || mutatingHistory}
+                  disabled={!ready || sending || mutatingHistory}
                   onClick={() => fileRef.current?.click()}
                   size="icon-sm"
                 />

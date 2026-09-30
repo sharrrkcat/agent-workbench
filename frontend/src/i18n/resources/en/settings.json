@@ -50,7 +50,8 @@
   },
   "generalFields": {
     "showFullProcessing": "Show full processing history",
-    "titlesEnabled": "Generate session titles",
+    "titlesEnabled": "Improve session titles with the auxiliary model",
+    "titlesDescription": "New conversations use the first 15 characters of your message as their title. The auxiliary model can replace it with a generated title; if unavailable, the original title is kept.",
     "titleLimit": "Title input limit",
     "save": "Save general settings"
   },

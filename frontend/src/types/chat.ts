@@ -104,3 +104,9 @@ export type WorkspaceSession = SessionBase & {
 };
 
 export type Session = OrdinarySession | WorkspaceSession;
+
+type DraftBase = { title: string; user_persona: PersonaIdentity; knowledge_base_ids: string[] };
+export type OrdinaryChatDraft = DraftBase & Pick<OrdinarySession,
+  'kind' | 'project_id' | 'model_profile_id' | 'persona_id' | 'context_policy' | 'generation' | 'harness_enabled' | 'tools_allowed'>;
+export type WorkspaceChatDraft = DraftBase & Pick<WorkspaceSession, 'kind' | 'project_id' | 'overrides'>;
+export type ChatDraft = OrdinaryChatDraft | WorkspaceChatDraft;

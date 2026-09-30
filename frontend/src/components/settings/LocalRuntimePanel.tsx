@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
+import { LoadingStatus } from '@/components/ui/loading-status';
 import { ChevronDown, Download, FileText, MoreHorizontal, RefreshCw, Save, Square, Trash2, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -136,7 +136,7 @@ export function LocalRuntimePanel({ activeView }: { activeView: boolean }) {
         ].map((target) => <RuntimePackageCard key={target.id ?? 'base'} {...target} catalog={catalog}
           job={jobs.find((item) => item.version !== null && (item.component_id ?? undefined) === target.id)}
           active={active} baseReady={!target.id || installation?.state === 'installed'} busy={busy} activeView={activeView} run={run} showLog={showLog} />)
-          : runtimeLoading ? <><Skeleton className="h-48" /><Skeleton className="h-48" /></> : null}
+          : runtimeLoading ? <LoadingStatus /> : null}
       </div>
       <RuntimeStoragePanel activeView={activeView} busy={busy} active={active}
         onCleanup={(mode) => run(async () => { const job = await modelsApi.cleanupRuntimeCache(mode); setJob(job); return job; })}

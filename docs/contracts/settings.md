@@ -11,8 +11,7 @@ domain modules, with a single HTTP/error implementation. User-visible labels,
 states and feedback have matching English/Chinese resources. User content,
 prompts, ids, API fields and error codes retain their original values.
 
-Both locales display Cogita. Language uses only the browser key `cogita.locale`,
-defaulting to English when absent or invalid; earlier keys are not imported.
+Both locales display Cogita. Language uses browser key `cogita.locale`, defaulting to English when absent or invalid.
 
 ## Frontend styling foundation
 
@@ -72,11 +71,17 @@ Drawers are titled Sessions or Settings. Accepted navigation/creation closes the
 rejected navigation keeps it open.
 
 The sidebar fixes its brand, New session/New Workspace/New Timeline actions and Settings footer.
-The scrolling tree contains Projects and ordinary sessions; Workspace nodes expand to internal
-sessions and a scoped New session action. Rows truncate titles and expose settings/delete menus.
+The scrolling tree contains Projects and ordinary sessions. Sessions has a header creation icon;
+Project names toggle expansion. Workspace rows place creation before settings/delete actions,
+without a separate arrow or internal creation row.
+Creation icons respond to their header-row hover or keyboard-visible focus; session actions respond only to their own row or open menu.
+Mouse focus does not retain hover feedback. Touch actions stay visible with 44px targets.
+Project sessions retain left indentation and share the Project's right action column; selections keep their own highlight.
+Opening a Workspace draft expands its row. Timeline expands an unavailable-chat notice.
 Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace session.
+`/new` and `/projects/{id}/new` open drafts, replaced with conversation locations on first send.
 Routes survive refresh/history, reject mismatched membership and retain unsaved-navigation guards.
-Timeline opens settings only. Global Settings returns to the previous home route.
+Timeline conversation creation remains unavailable. Global Settings returns to the previous home route.
 Creation, inheritance and deletion follow [chat/context](chat-context.md#personas-and-sessions).
 
 The fixed chat header contains the sidebar toggle, title, concrete model selector
@@ -108,11 +113,13 @@ and closed pages leave keyboard navigation. Active pages use aria-current.
 Missing/unknown views select user for Personas, dashboard for Models or list for resources. Page changes push browser history;
 reselecting the effective current page adds no entry. Back to chat restores the previous ordinary/Project route.
 Refresh restores the domain/subpage; resource selection and detail Tabs are local.
-The fixed page header shares Home's primary-row height and toggle position and shows
-only the current location. Content scrolls
-independently, with a 64rem maximum width and ordinary forms limited to 48rem.
-FieldSet/FieldGroup and separators organize forms; resource rows wrap on narrow
-screens. Code, logs and tables contain their own overflow.
+The fixed location header shares Home's primary-row height and toggle position. Content scrolls independently
+within 64rem; ordinary forms use 48rem. FieldSet/FieldGroup and separators organize forms, resource rows wrap,
+and code, logs and tables contain their own overflow.
+
+Home, Project, settings and Runtime loading show background-free text after 200ms, without skeletons.
+Completion/unmount cancels the delay; new conversations restart it. Errors/retry appear immediately.
+Project refreshes retain listed sessions without placeholders; empty text waits for completion.
 
 ## General
 
@@ -123,20 +130,16 @@ fields shown in that form. Other attachment limits/title prompts remain availabl
 the API. The form groups conversation display and titles with one explicit save action.
 Core Memory fields and group transcript instructions are removed and rejected by PATCH.
 
-show_full_processing is a strict boolean, default false, labeled Show full
-processing history in General. It controls initial expansion of active reply
-processing only; recording and final answers are identical in both modes. The
-saved value immediately updates Cogita state. Terminal replies always start
-collapsed, even with this preference enabled. PATCH null/non-booleans return 422.
+show_full_processing is a strict boolean, default false, labeled Show full processing history in General.
+It controls initial active-reply expansion and immediately updates Cogita state when saved; recording and final
+answers are unchanged. Terminal replies start collapsed. PATCH null/non-booleans return 422.
 
-appearance_font_* and resource_status_* are removed; reads omit them and PATCH
-rejects them. Font asset routes and startup font scanning are removed.
+appearance_font_* and resource_status_* are omitted from reads and rejected by PATCH; font routes/scanning are removed.
 `GET /api/runtime/resources` remains a cached diagnostic API, independent of
 display preferences. Existing font files remain untouched.
 
-Application settings use only the current schema, with no old JSON filtering
-or conversion. Disposable settings resets and protected data boundaries are
-documented in [data layout](../DATA_LAYOUT.md#database-revisions).
+Application settings use only the current schema, without old JSON filtering or conversion.
+[Data layout](../DATA_LAYOUT.md#database-revisions) owns disposable settings resets and protected data boundaries.
 
 ## Model settings
 

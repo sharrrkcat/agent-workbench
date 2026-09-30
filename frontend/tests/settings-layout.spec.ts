@@ -98,6 +98,7 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page).toHaveURL(`/settings?tab=${section}${view ? `&view=${view}` : ''}`);
           await expect(page.locator('.settings-heading h1')).toContainText(menuLabel);
           await expect(page.locator('.settings-heading h1')).toContainText(label);
+          await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0);
           await noPageOverflow(page);
           if (viewport.width === 390)
             await expect(page.locator('[data-sidebar="trigger"]')).toHaveAttribute('aria-expanded', 'false');

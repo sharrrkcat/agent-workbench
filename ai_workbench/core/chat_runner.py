@@ -94,6 +94,7 @@ class ChatRunner:
                       "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed)},
             config_snapshot=config.model_dump(mode="json"),
         )
+        self.set_input_title(session_id, raw_text, attachments, user.message_id)
 
         self.runs.update_status(run.run_id, RunStatus.RUNNING, current_step="context")
         self.events.emit(
@@ -146,7 +147,7 @@ class ChatRunner:
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
                                                      active_seconds=time.monotonic() - context_started)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
-                    await self.maybe_title(session_id, raw_text)
+                    await self.maybe_title(session_id, raw_text, user.message_id)
                 return result
 
             model_step = self.runs.create_step(
@@ -220,7 +221,7 @@ class ChatRunner:
                 run_id=run.run_id,
                 payload={"run": final_run.model_dump(mode="json")},
             )
-            await self.maybe_title(session_id, raw_text)
+            await self.maybe_title(session_id, raw_text, user.message_id)
             return RunResult(success=True, run_id=run.run_id, data=draft.text)
         except (ModelError, ChatError, LLMContextError) as exc:
             if draft is not None:
@@ -287,23 +288,47 @@ class ChatRunner:
             metadata["knowledge"] = knowledge.metadata
         return messages, metadata
 
-    async def maybe_title(self, session_id: str, text: str) -> None:
+    def set_input_title(self, session_id: str, text: str, attachments: list[dict[str, Any]],
+                        input_id: str, *, auxiliary: bool = True) -> None:
+        session = self.sessions.get_session(session_id)
+        if session.title_generation_state != "pending" or session.title_generation_metadata or (
+            session.title.strip() and session.title not in {"New session", "新会话"}
+        ):
+            return
+        source = text if text.strip() else (attachments[0].get("name", "") if attachments else "")
+        excerpt = " ".join(str(source).split())
+        title = excerpt[:15] + ("…" if len(excerpt) > 15 else "")
         settings = self.app_settings.get() if self.app_settings is not None else None
-        if not settings or not settings.auto_generate_session_titles or self.utility_llm is None:
+        eligible = auxiliary and bool(text.strip()) and settings and settings.auto_generate_session_titles
+        updated = self.sessions.update_session(session_id, {
+            "title": title,
+            "title_generation_state": "pending" if eligible else "skipped",
+            "title_generation_metadata": {"source": "input_excerpt", "input_id": input_id},
+        })
+        self.events.emit("session_updated", session_id=session_id, payload={"session": self.chat_service.session_response(updated)})
+
+    async def maybe_title(self, session_id: str, text: str, input_id: str) -> None:
+        session = self.sessions.get_session(session_id)
+        if session.title_generation_state != "pending" or session.title_generation_metadata.get("input_id") != input_id:
             return
+        settings = self.app_settings.get() if self.app_settings is not None else None
+        title = None
         try:
-            session = self.sessions.get_session(session_id)
-            if session.title and session.title not in {"New session", "新会话"}:
-                return
-            title = await self.utility_llm.generate_title(text)
-            if title:
-                current = self.sessions.get_session(session_id)
-                if current.title != session.title or current.title_generation_state == "manual":
-                    return
-                updated = self.sessions.set_generated_title(session_id, title, {"source": "utility"})
-                self.events.emit("session_updated", session_id=session_id, payload={"session": self.chat_service.session_response(updated)})
+            if settings and settings.auto_generate_session_titles and self.utility_llm is not None:
+                title = await self.utility_llm.generate_title(text)
         except Exception:
+            # Auxiliary generation failure is non-blocking; keep the input title.
+            title = None
+        try:
+            current = self.sessions.get_session(session_id)
+        except KeyError:
+            # A completed conversation may be deleted while the auxiliary model runs.
             return
+        if current.title != session.title or current.title_generation_state == "manual":
+            return
+        updated = self.sessions.set_generated_title(session_id, title, {"source": "utility"}) if title else (
+            self.sessions.set_title_generation_state(session_id, "failed", session.title_generation_metadata))
+        self.events.emit("session_updated", session_id=session_id, payload={"session": self.chat_service.session_response(updated)})
 
     def _fail_step(self, step_id: str | None, code: str, message: str) -> None:
         if not step_id:

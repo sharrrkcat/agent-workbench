@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { apiMocks, createModuleLoader } from './module-loader.mjs';
+import { mockDraftCatalogs } from './draft-fixtures.mjs';
 
 const api = {};
 const load = createModuleLoader(apiMocks(api));
@@ -12,6 +13,7 @@ const first = child('first', 'a'), second = child('second', 'b');
 const project = (id, kind = 'workspace') => ({ id, kind, name: id, updated_at: '2026-09-25T00:00:00Z' });
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
 function reset() {
+  mockDraftCatalogs(api);
   store.setState(store.getInitialState(), true);
   projects.setState(projects.getInitialState(), true);
   store.setState({ initialized: true, sessions: [normal, first, second], currentSession: first, currentProjectId: 'a',
@@ -68,18 +70,18 @@ assert.equal(store.getState().currentSession, null);
 assert.deepEqual(store.getState().sessions, [normal, second]);
 await store.getState().selectSession('ordinary', null);
 await store.getState().deleteSession('ordinary');
-assert.equal(creations, 1, 'Workspace sessions must not replace the last ordinary session');
-assert.equal(store.getState().currentSession.kind, 'ordinary');
+assert.equal(creations, 0, 'Deleting the last ordinary session must not create a replacement');
+assert.equal(store.getState().chatDraft.kind, 'ordinary');
 
 reset();
 const created = deferred();
-api.createSession = () => created.promise;
-const creating = store.getState().createSession('a');
+api.get = () => created.promise;
+const creating = store.getState().startDraft('a');
 await store.getState().selectSession('second', 'b');
-created.resolve(child('new', 'a'));
+created.resolve(project('a'));
 await creating;
 assert.equal(store.getState().currentSession.session_id, 'second');
-assert.ok(store.getState().sessions.some((session) => session.session_id === 'new'));
+assert.equal(store.getState().chatDraft, null);
 
 reset();
 const lateSession = deferred();
@@ -96,14 +98,14 @@ assert.equal(store.getState().sessions.filter((session) => session.session_id ==
 reset();
 store.setState({ currentSession: null });
 const lateCreation = deferred();
-api.createSession = () => lateCreation.promise;
-const creatingVisible = store.getState().createSession('a');
+api.get = () => lateCreation.promise;
+const creatingVisible = store.getState().startDraft('a');
 api.listSessions = async () => [first, fetched];
 await store.getState().reloadSessions('a');
-lateCreation.resolve(fetched);
+lateCreation.resolve(project('a'));
 await creatingVisible;
 assert.equal(store.getState().sessions.filter((session) => session.session_id === 'uncached').length, 1,
-  'A list that already contains a newly created session must not produce a duplicate');
+  'Loading a draft must preserve the session list');
 
 reset();
 const oldProjects = deferred();

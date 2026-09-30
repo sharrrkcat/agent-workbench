@@ -40,7 +40,8 @@ model-loop tool errors may be followed by a model answer.
 
 Run reads/cancellation are `/api/runs/{id}`, `/{id}/events`, `/{id}/cancel` and
 `/api/sessions/{id}/runs`. Tool responses and explicit approvals are defined by
-the harness contract. Direct tool runs never create model summaries or titles.
+the harness contract. Direct tool runs never create model summaries or auxiliary titles;
+explicit chat tool input receives the basic input title described in the chat contract.
 
 The chat view presents each run inside its reply, without a separate footer
 RunPanel or context/model/save step list. Elapsed seconds use started_at (or
@@ -112,6 +113,10 @@ Run/step timestamps retain microsecond ordering; old events cannot restore a
 resolved approval or regress terminal status. REST direct-call/approval results
 use the same reconciliation and session isolation. Concurrent approval submission
 is blocked by run id. Session switches reject previous-session results.
+Draft promotion retains the composer epoch, uploaded attachments and submission lock.
+It starts the session WebSocket and replaces the draft route without resetting input.
+First-send creation/binding/message requests retain their original configuration and
+target; delayed responses may update the list but cannot select over later navigation.
 
 Whole-reply/user history operations atomically remove messages, runs, steps and
 events. REST pruning responses and history_pruned share a frontend reducer.

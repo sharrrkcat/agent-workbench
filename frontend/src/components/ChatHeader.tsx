@@ -9,14 +9,19 @@ import { useCogitaStore } from '../store/useCogitaStore';
 import type { SettingsRoute } from './settings/navigation';
 import { SessionSettingsDialog } from './personas/SessionSettingsDialog';
 import { ModelSelect } from './personas/ConfigurationFields';
+import { useChatConfiguration } from '../hooks/useChatConfiguration';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: SettingsRoute) => void }) {
   const { t } = useTranslation('personas');
   const [editing, setEditing] = useState(false);
   const session = useCogitaStore((state) => state.currentSession);
+  const draft = useCogitaStore((state) => state.chatDraft);
+  const sending = useCogitaStore((state) => state.sending);
+  const target = session ?? draft;
+  const configuration = useChatConfiguration();
   const updateSession = useCogitaStore((state) => state.updateSession);
   const profiles = useModelsStore((state) => state.profiles);
-  const title = session?.title?.trim() || t('newSession');
+  const title = target?.title?.trim() || t('newSession');
   return (
     <header className="topbar">
       <Tooltip>
@@ -30,9 +35,9 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
         <ModelSelect
           className="chat-model-select w-full min-w-0"
           profiles={profiles}
-          value={session?.effective.model_profile_id ?? null}
-          disabled={!session}
-          onChange={(model_profile_id) => void updateSession(session?.kind === 'workspace'
+          value={configuration?.model_profile_id ?? null}
+          disabled={!target || sending}
+          onChange={(model_profile_id) => void updateSession(target?.kind === 'workspace'
             ? { overrides: { model_profile_id } } : { model_profile_id })}
         />
       </div>
@@ -42,7 +47,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
             <Button
               type="button"
               aria-label={t('sessionSettings')}
-              disabled={!session}
+              disabled={!target || sending}
               onClick={() => setEditing(true)}
               variant="ghost"
               size="icon"
@@ -54,10 +59,10 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
         </TooltipTrigger>
         <TooltipContent>{t('sessionSettings')}</TooltipContent>
       </Tooltip>
-      {editing && session ? (
+      {editing && target ? (
         <SessionSettingsDialog
-          key={session.session_id}
-          session={session}
+          key={session?.session_id ?? 'draft'}
+          session={target}
           onClose={() => setEditing(false)}
           onManagePersonas={() => {
             setEditing(false);

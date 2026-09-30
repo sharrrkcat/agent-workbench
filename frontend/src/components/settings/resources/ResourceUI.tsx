@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
-import { Skeleton } from '@/components/ui/skeleton';
+import { LoadingStatus } from '@/components/ui/loading-status';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
@@ -125,14 +125,7 @@ export function ResourceEmpty({ children }: { children: ReactNode }) {
 
 export function ResourceLoading({ error, retry }: { error?: string; retry?: () => void }) {
   const { t } = useTranslation('settings');
-  if (!error)
-    return (
-      <div className="resource-loading flex flex-col gap-3" role="status">
-        <span className="sr-only">{t('common:loading')}</span>
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-20 w-full" />
-      </div>
-    );
+  if (!error) return <LoadingStatus />;
   return (
     <Alert className="resource-loading" variant="destructive">
       <AlertDescription>

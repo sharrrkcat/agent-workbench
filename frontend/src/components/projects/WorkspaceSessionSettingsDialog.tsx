@@ -15,7 +15,7 @@ import { useCogitaStore } from '../../store/useCogitaStore';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
-import type { WorkspaceOverrides, WorkspaceSession } from '../../types/chat';
+import type { WorkspaceChatDraft, WorkspaceOverrides, WorkspaceSession } from '../../types/chat';
 import type { WorkspaceProject } from '../../types/projects';
 import type { KnowledgeBase } from '../../types/knowledge';
 import type { HarnessTool } from '../../types/tools';
@@ -41,11 +41,12 @@ function Inheritance({ label, inherited, onReset, children }: {
 }
 
 export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePersonas }: {
-  session: WorkspaceSession; onClose: () => void; onManagePersonas: () => void;
+  session: WorkspaceSession | WorkspaceChatDraft; onClose: () => void; onManagePersonas: () => void;
 }) {
   const { t } = useTranslation('personas');
   const { confirm, confirmation } = useConfirmDialog();
   const formId = useId();
+  const sessionId = 'session_id' in session ? session.session_id : null;
   const personas = usePersonasStore((state) => state.personas);
   const profiles = useModelsStore((state) => state.profiles);
   const globalModelId = useModelsStore((state) => state.settings?.default_model_profile_id);
@@ -74,16 +75,18 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
     setError('');
     void Promise.all([
       useProjectsStore.getState().load(session.project_id), usePersonasStore.getState().reload(),
-      knowledgeApi.listSessionKnowledgeBases(session.session_id), knowledgeApi.listKnowledgeBases(),
+      sessionId ? knowledgeApi.listSessionKnowledgeBases(sessionId) : Promise.resolve({ knowledge_base_ids: (session as WorkspaceChatDraft).knowledge_base_ids }), knowledgeApi.listKnowledgeBases(),
       toolsApi.listTools(), useModelsStore.getState().reload(),
     ]).then(([project, , bindings, bases, tools]) => {
       if (!live) return;
       if (project.kind !== 'workspace') throw new Error(t('timelineCreationOnly'));
-      setProject(project); setKnowledge(bindings.knowledge_base_ids); setOriginalKnowledge(bindings.knowledge_base_ids);
+      const pending = useCogitaStore.getState().pendingKnowledge;
+      setProject(project); setKnowledge(pending?.sessionId === sessionId ? pending.ids : bindings.knowledge_base_ids);
+      setOriginalKnowledge(bindings.knowledge_base_ids);
       setBases(bases); setTools(tools);
     }).catch((reason) => { if (live) setError(errorText(reason)); });
     return () => { live = false; };
-  }, [session.project_id, session.session_id, reload]);
+  }, [session.project_id, sessionId, reload]);
   const knowledgeChanged = JSON.stringify(knowledge) !== JSON.stringify(originalKnowledge);
   const dirty = title !== session.title || Object.keys(changes).length > 0 || knowledgeChanged;
   const canLeave = async () => !busy && (!dirty || await confirm(t('discardChanges')));
@@ -94,9 +97,12 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
     try {
       const patch = { ...(title !== session.title ? { title: title.trim() } : {}),
         ...(Object.keys(changes).length ? { overrides: changes } : {}) };
-      if (Object.keys(patch).length) await chatApi.updateSession(session.session_id, patch);
-      if (knowledgeChanged) await knowledgeApi.updateSessionKnowledgeBases(session.session_id, knowledge);
-      await useCogitaStore.getState().reloadSessions(session.project_id);
+      if (sessionId) {
+        if (Object.keys(patch).length) await chatApi.updateSession(sessionId, patch);
+        if (knowledgeChanged) await knowledgeApi.updateSessionKnowledgeBases(sessionId, knowledge);
+        useCogitaStore.setState((state) => state.pendingKnowledge?.sessionId === sessionId ? { pendingKnowledge: null } : {});
+        await useCogitaStore.getState().reloadSessions(session.project_id);
+      } else useCogitaStore.getState().saveDraft(patch, knowledge);
       onClose();
     } catch (reason) { setError(errorText(reason)); }
     finally { setBusy(false); }

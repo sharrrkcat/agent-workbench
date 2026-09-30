@@ -90,4 +90,4 @@ def test_titles_only_use_explicit_auxiliary_after_main_lease_releases(tmp_path):
         session = client.post("/api/sessions", json={}).json()
         client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "another"})
         assert len(upstream.calls) == 3
-        assert client.get(f"/api/sessions/{session['session_id']}").json()["title"] == ""
+        assert client.get(f"/api/sessions/{session['session_id']}").json()["title"] == "another"
