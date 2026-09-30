@@ -62,7 +62,7 @@ Startup/reads/repeat install/entry resolution check metadata schema/digest/depen
 undetected. Availability reads preserve jobs; restored files/dependencies recover on refresh/restart. Failed/interrupted jobs and old manifests require explicit repair, without conversion/reset. Paths
 use the recorded version. Finalizing validates/promotes entries; healthy install returns already_installed, while repair always rebuilds.
 
-Bundled uv installs Python 3.12.11 with one hash lock: Torch/Torchaudio 2.11.0+cu128, Torchvision 0.26.0+cu128, Transformers 5.16.1, Sentence Transformers 6.1.0, NumPy 1.26.4, ONNX Runtime 1.23.2 and
+The [README](../../README.md#runtime-dependency-maintenance) owns direct inputs, transitive constraints and lock regeneration; only the hash lock affects installation identity. Bundled uv installs Python 3.12.11 with one hash lock: Torch/Torchaudio 2.11.0+cu128, Torchvision 0.26.0+cu128, Transformers 5.16.1, Sentence Transformers 6.1.0, NumPy 1.26.4, ONNX Runtime 1.23.2 and
 Misaki/spaCy/Thinc. Only docopt, jieba, unidic-lite and antlr4-python3-runtime build from locked sources; native packages require wheels. scripts/build_runtime_wheels.py reproduces Chatterbox,
 Qwen, Misaki and s3tokenizer patches; their +workbench.* versions, hashes, WORKBENCH_PATCH.json and patch payloads are fixed artifact identity, independent of branding. Gradio/demo entry points,
 pre-commit, s3tokenizer ONNX conversion/download entry points and Qwen 25Hz tokenizer code are excluded; ONNX Runtime and Chatterbox multilingual dependencies remain. After dependency checks, a pinned offline

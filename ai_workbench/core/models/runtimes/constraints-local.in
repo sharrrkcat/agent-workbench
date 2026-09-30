@@ -1,0 +1,11 @@
+# Transitive compatibility constraints; these do not install packages by themselves.
+
+# Chatterbox must use the bundled offline-only tokenizer, not the upstream wheel.
+s3tokenizer==0.3.0+workbench.1
+
+# Keep librosa's JIT on the accepted NumPy 1.26 / Python 3.12 combination.
+# Numba declares llvmlite >=0.43.0dev0,<0.44; the lock selects its exact version.
+numba==0.60.0
+
+# spaCy 3.7 and the offline English pipeline use the NumPy 1.x Thinc ABI.
+thinc==8.2.5

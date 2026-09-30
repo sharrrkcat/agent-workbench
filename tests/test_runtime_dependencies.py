@@ -249,3 +249,27 @@ def test_missing_application_worker_fails_load_without_breaking_runtime(tmp_path
             await manager.close()
             await service.close()
     asyncio.run(scenario())
+
+
+def test_runtime_inputs_and_constraints_agree_with_hash_lock():
+    import re
+    from packaging.requirements import Requirement
+    from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT
+
+    lock = (CATALOG_ROOT / "requirements-local-windows.lock").read_text()
+    versions = dict(re.findall(r"^([\w-]+)==([^\s]+)", lock, re.M))
+    roots, constraints = {}, {}
+    for filename, target in (("requirements-local.in", roots), ("constraints-local.in", constraints)):
+        for line in (CATALOG_ROOT / filename).read_text().splitlines():
+            line = line.partition("#")[0].strip()
+            if not line or line.startswith("-c "):
+                continue
+            requirement = Requirement(line)
+            assert requirement.name not in target
+            target[requirement.name] = requirement
+            assert versions[requirement.name] in requirement.specifier
+    assert not roots.keys() & constraints.keys()
+    assert roots["transformers"].extras == {"serving"}
+    assert not roots["misaki"].extras
+    assert "s3tokenizer" in constraints
+    assert not {"wheel", "pypinyin-dict"} & versions.keys()

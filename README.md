@@ -17,10 +17,7 @@ Pop-Location
 uv run python scripts/run_app.py --no-open
 ```
 
-Open <http://127.0.0.1:8765>; use `--port 8766` if occupied. Windows `start.bat` and Linux/macOS `bash start.sh` open the built app.
-For development, start the API with `--port 8000`, then run `npm run dev` in frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy.
-
-See the [run guide](README_RUN.md) for launchers and portable packaging.
+Open <http://127.0.0.1:8765>; use `--port 8766` if occupied. Windows `start.bat` and Linux/macOS `bash start.sh` open the built app. For development, start the API with `--port 8000`, then run `npm run dev` in frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy. See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 ## Configure models
 
@@ -30,8 +27,7 @@ In **Settings > Models**, use the Model profiles, Providers, Local Runtime and E
 2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
 Profiles have eight kinds, internal UUIDs, public aliases, capabilities and parameters. LLM/text embedding allow local/provider/unbound sources; rerankers allow local/unbound. TTS, WD14, image embedding, ASR and processor require Local Runtime. Safe incomplete or ambiguous directories remain saveable drafts but cannot load.
-Choose default chat and optional auxiliary models. New sessions select the default or first enabled LLM; changing defaults preserves sessions.
-Titles use only the auxiliary model and remain unchanged when it is missing or fails.
+Choose default chat and optional auxiliary models. New sessions select the default or first enabled LLM; changing defaults preserves sessions. Titles use only the auxiliary model and remain unchanged when it is missing or fails.
 
 | Kind | Local inventory root | Local execution |
 | --- | --- | --- |
@@ -274,6 +270,16 @@ Alembic alone manages SQLite: empty databases upgrade to head; nonempty unversio
 files, attachments, runtimes or other data directories. [Data layout](docs/DATA_LAYOUT.md#database-revisions) owns revision/reset effects. The database defaults to data/cogita.db; COGITA_DATABASE_URL
 overrides it. See [data layout](docs/DATA_LAYOUT.md) and [.env.example](.env.example) for paths and maintenance.
 
+## Runtime dependency maintenance
+
+`requirements-local.in` declares direct workers/engines and selected offline language resources; its `-c constraints-local.in` holds justified transitive compatibility pins. The Windows lock owns all resolved versions and hashes. From the repository root, regenerate it using the existing lock as version preferences (do not add `--upgrade`):
+
+```powershell
+uv pip compile ai_workbench/core/models/runtimes/requirements-local.in -o ai_workbench/core/models/runtimes/requirements-local-windows.lock --python-version 3.12.11 --python-platform x86_64-pc-windows-msvc --generate-hashes --no-header --find-links ai_workbench/core/models/runtimes/wheels --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match --only-binary :all: --no-binary docopt,jieba,unidic-lite,antlr4-python3-runtime --no-config
+```
+
+Review package/hash changes and dependency-source annotations, then repeat the command to verify stability. Installation consumes only the hash lock; changed pins/hashes require Repair and affected-engine acceptance. Input/comment-only edits preserve installation identity. Source-build tools use isolated build environments; they are not runtime roots. Misaki language dependencies are selected explicitly because its broad extras include unused pipelines/resources.
+
 ## Verification
 
 ```powershell
@@ -295,8 +301,7 @@ DLSS D3D12: `uv run python -m scripts.smoke_dlss_runtime`. Add `--component-life
 Backend tests use temporary roots, mock providers and loopback HTTP/SSE/WS; frontend tests cover domain payloads, settings, translation, streams/events and workflows. Installation/real-model/browser acceptance remains separate.
 
 After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts, grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
-For a focused layout check, use `npm run test:browser -- app-layout.spec.ts settings-layout.spec.ts`.
-Install Chromium once with `npx playwright install chromium`. Tests use an isolated fixture server on port 18767 (override COGITA_BROWSER_PORT); screenshots/traces go to frontend/test-results.
+Use `-- app-layout.spec.ts settings-layout.spec.ts` for focused layout checks. Install Chromium with `npx playwright install chromium`; the isolated server uses port 18767 (COGITA_BROWSER_PORT overrides it), with artifacts in frontend/test-results.
 
 Local-runtime smokes reuse installation and fail if repair is needed. Scripts offering --install-only install/confirm a release without inference; other scripts never install.
 For offline runtime preparation, stop Cogita and wait for its workers to exit. Apply the pinned Transformers patch and one incremental bytecode pass using the installed interpreter, without installation or Repair:
@@ -313,13 +318,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Runtime bytecode preparation failed.' }
 Restore the previous Cogita launch after successful verification. `-B` suppresses incidental import-cache writes; explicit compileall still writes its caches. No cache clearing or forced recompilation is needed.
 Kokoro uses manually placed files and writes all-voice offline/SDK samples under build/tts-smoke:
 
-```powershell
-uv run python -m scripts.smoke_tts_runtime --install-only
-uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime
-```
+Install/confirm with `uv run python -m scripts.smoke_tts_runtime --install-only`, then run `uv run --with openai --with miniaudio python -m scripts.smoke_tts_runtime`.
 
-Installation uses bundled uv; run it before the temporary SDK environment. `--voice af_heart` selects one voice.
-The smoke isolates caches, decodes both formats and checks worker termination on disconnect, reload and another SDK request.
+Install with bundled uv before the temporary SDK environment. `--voice af_heart` selects one voice; the smoke checks isolated caches, both formats, disconnect termination and reload.
 WD14 CPU: `uv run python -m scripts.smoke_wd14_runtime --model-ref vision/wd-swinv2-tagger-v3`.
 SigLIP routine CUDA: `uv run python -m scripts.smoke_siglip_runtime --model-ref image_embeddings/<directory>`.
 Both require supplied directories and reuse installation. WD14 checks tagging API/lifecycle; the default SigLIP smoke checks image→text→image, reuse and unload.
@@ -328,9 +329,7 @@ SigLIP `--full-lifecycle` includes 20 switches and 10 dual-resident pairs and re
 [Models](docs/contracts/models.md#siglip-image-and-text-embeddings) owns acceptance limits. Bilingual desktop/touch settings: `npm run test:browser -- siglip.spec.ts wd14.spec.ts text-embeddings.spec.ts rerankers.spec.ts asr.spec.ts model-sources.spec.ts` in frontend.
 
 Text embedding CUDA: `uv run python -m scripts.smoke_text_embedding_runtime --model-ref embeddings/harrier-oss-v1-0.6b --native-reference --expected-dimensions 1024`.
-Run the same command with `--device cpu` and without `--native-reference` for short-text CPU inference/release. An explicit model reference is required; installation is reused.
-CUDA runs native/application processes sequentially, comparing query/document float/base64 vectors, mixed lengths, retrieval and unload/reload.
-BF16 acceptance requires cosine >=0.9998 and maximum absolute error <=0.005; reports go to build/text-embedding-smoke. No model hashes are calculated.
+Add `--device cpu` and omit `--native-reference` for short-text CPU inference/release. CUDA sequentially compares native/application query/document float/base64 vectors, mixed lengths, retrieval and reload (BF16 cosine >=0.9998, maximum error <=0.005). Both reuse installation without model hashing; reports: build/text-embedding-smoke.
 
 Reranker CUDA/native/Knowledge: `uv run python -m scripts.smoke_reranker_runtime --model-ref rerankers/mxbai-rerank-base-v2 --embedding-model-ref embeddings/harrier-oss-v1-0.6b`.
 Short-text CPU: `uv run python -m scripts.smoke_reranker_runtime --model-ref rerankers/mxbai-rerank-base-v2 --device cpu`.
