@@ -339,8 +339,8 @@ Both reuse installation without model hashes. CUDA compares native scores at mat
 Routine Windows Audio acceptance uses supplied Chatterbox and Qwen3-TTS models: `uv run python -m scripts.smoke_audio_runtime --reference ./reference.wav --reference-text "Words in the recording"`.
 Use mono PCM16 24 kHz speech, stop Cogita first, and provide enough RAM/VRAM. CUDA is the default. The CUDA cases cover offline loading, MP3/WAV, Qwen cloning modes/languages, seed PCM comparisons,
 references and cancellation/isolation. `--engine chatterbox|qwen3tts` narrows engines; reports/samples go to build/audio-smoke; Linux is rejected. Use `--device cpu` only for affected changes under
-the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU. Rebuild patched wheels with `uv run python scripts/build_runtime_wheels.py`. Run
-`data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
+the [acceptance policy](AGENTS.md#runtime-verification-and-acceptance); Kokoro remains CPU. Rebuild the four patched wheels (Chatterbox, Qwen, Misaki, s3tokenizer) with `uv run python scripts/build_runtime_wheels.py`.
+The runtime excludes Gradio/pre-commit, s3tokenizer ONNX conversion and Qwen 25Hz/sox; Chatterbox multilingual dependencies remain. Updated dependency locks require Repair. Run `data/runtimes/local/1.0.0/env/python.exe -I -B scripts/check_qwen_rope.py` for Qwen checkpoint/RoPE regression.
 
 Whisper CUDA: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --tail-text "unique words after thirty seconds" --mp3 ./short.mp3`. Repeat for asr/whisper-large-v3-turbo. Supply English PCM16 WAV longer than 60 seconds with an identifiable phrase after 30 seconds; English MP3 is optional.
 Focused base CPU: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --device cpu`. CPU checks the first six seconds. Both reuse installation; reports go to build/asr-smoke. CUDA covers the 30-second boundary, all response formats, tail/segment completeness, repeated inference, cancellation/reload and cleanup.

@@ -358,7 +358,7 @@ def test_database_revision_resets_bindings_without_converting_or_removing_files(
     engine.dispose()
 
 
-def test_full_dependency_lock_and_all_three_wheels_are_auditable(tmp_path):
+def test_full_dependency_lock_and_all_four_wheels_are_auditable(tmp_path):
     from scripts.build_runtime_wheels import SPECS
     release = catalog('windows', 'x86_64')
     packages, current = {}, None
@@ -375,6 +375,9 @@ def test_full_dependency_lock_and_all_three_wheels_are_auditable(tmp_path):
         'transformers': '5.16.1', 'numpy': '1.26.4', 'onnxruntime': '1.23.2', 'spacy': '3.7.5', 'thinc': '8.2.5',
         'tokenizers': '0.23.2', 'jaconv': '0.5.0', 'lameenc': '1.8.1'}
     assert {name: packages[name][0] for name in expected} == expected
+    assert {'spacy-pkuseg', 'pykakasi', 'onnxruntime', 'protobuf', 'jaconv'} <= packages.keys()
+    assert not {'gradio', 'gradio-client', 'pre-commit', 'onnx', 'ml-dtypes', 'sox', 'pandas', 'virtualenv'} & packages.keys()
+    assert len(SPECS) == 4
     assert all(hashes and all(len(value) == 64 for value in hashes) for _, hashes in packages.values())
     for name, spec in SPECS.items():
         version = spec['patched_version']
@@ -387,6 +390,11 @@ def test_full_dependency_lock_and_all_three_wheels_are_auditable(tmp_path):
             assert set(spec['requirements'].values()) <= set(metadata.get_all('Requires-Dist'))
             patch = json.loads(archive.read(info + '/WORKBENCH_PATCH.json'))
             assert patch['upstream_sha256'] == spec['sha256'] and patch['source_changes'] == spec.get('source_changes', [])
+            assert patch.get('removed_files', {}) == spec.get('removed_files', {})
+            assert patch.get('removed_requirements', []) == spec.get('removed_requirements', [])
+            assert not set(spec.get('removed_requirements', [])) & set(metadata.get_all('Requires-Dist'))
+            for removed in spec.get('removed_files', {}):
+                assert removed.replace(f"{name}-{spec['version']}.dist-info", info) not in archive.namelist()
             for file, digest, size in csv.reader(StringIO(archive.read(info + '/RECORD').decode())):
                 if digest:
                     data = archive.read(file)

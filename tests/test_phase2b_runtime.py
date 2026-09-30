@@ -517,7 +517,7 @@ def test_python_installer_uses_pinned_artifact_and_offline_checks_without_models
         install = next(args for args, _ in calls if "sync" in args)
         assert "--require-hashes" in install and "--no-deps" not in install
         assert "--build-constraints" in install and "--find-links" in install
-        assert set(install[install.index("--no-binary") + 1].split(",")) == {"docopt", "jieba", "unidic-lite", "antlr4-python3-runtime", "sox"}
+        assert set(install[install.index("--no-binary") + 1].split(",")) == {"docopt", "jieba", "unidic-lite", "antlr4-python3-runtime"}
         assert any(args[1:3] == ["pip", "check"] for args, _ in calls)
         commands = [args for args, _ in calls]
         python = str(tmp_path / "payload/env/python.exe")

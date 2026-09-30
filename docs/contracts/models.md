@@ -63,8 +63,9 @@ undetected. Availability reads preserve jobs; restored files/dependencies recove
 use the recorded version. Finalizing validates/promotes entries; healthy install returns already_installed, while repair always rebuilds.
 
 Bundled uv installs Python 3.12.11 with one hash lock: Torch/Torchaudio 2.11.0+cu128, Torchvision 0.26.0+cu128, Transformers 5.16.1, Sentence Transformers 6.1.0, NumPy 1.26.4, ONNX Runtime 1.23.2 and
-Misaki/spaCy/Thinc. Only docopt, jieba, unidic-lite, antlr4-python3-runtime and sox build from locked sources; native packages require wheels. scripts/build_runtime_wheels.py reproduces Chatterbox,
-Qwen and Misaki patches; their +workbench.* versions, hashes, WORKBENCH_PATCH.json and patch payloads are fixed artifact identity, independent of branding. After dependency checks, a pinned offline
+Misaki/spaCy/Thinc. Only docopt, jieba, unidic-lite and antlr4-python3-runtime build from locked sources; native packages require wheels. scripts/build_runtime_wheels.py reproduces Chatterbox,
+Qwen, Misaki and s3tokenizer patches; their +workbench.* versions, hashes, WORKBENCH_PATCH.json and patch payloads are fixed artifact identity, independent of branding. Gradio/demo entry points,
+pre-commit, s3tokenizer ONNX conversion/download entry points and Qwen 25Hz tokenizer code are excluded; ONNX Runtime and Chatterbox multilingual dependencies remain. After dependency checks, a pinned offline
 source patch defers auto_factory's GenerationMixin import, replacing its file to preserve hard-linked caches; package pins and installation identity stay unchanged. Python incrementally compiles
 Lib/site-packages before six isolated offline engine imports and native checks, without weights/GPU. Dependency changes require Repair; source-only preparation follows the
 [README](../../README.md#verification). User PATH/registry stay untouched; [Settings](settings.md) owns downloads.

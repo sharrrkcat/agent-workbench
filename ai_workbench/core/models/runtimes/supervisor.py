@@ -673,7 +673,7 @@ class RuntimeSupervisor:
             f"import platform; assert platform.python_version() == {entry.python_version!r}"], env, self.root, log)
         self._stage(job, "installing_packages", log)
         await self._command([uv, "pip", "sync", "--no-config", "--python", target / entry.python_executable,
-            "--require-hashes", "--only-binary", ":all:", "--no-binary", "docopt,jieba,unidic-lite,antlr4-python3-runtime,sox",
+            "--require-hashes", "--only-binary", ":all:", "--no-binary", "docopt,jieba,unidic-lite,antlr4-python3-runtime",
             "--build-constraints", lock, "--find-links", CATALOG_ROOT / "wheels",
             "--index-url", settings.pypi_index_url or "https://pypi.org/simple",
             "--extra-index-url", settings.pytorch_index_url or entry.pytorch_index_url,

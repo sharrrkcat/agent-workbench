@@ -107,8 +107,8 @@ SPECS = {
 }
 
 
-SPECS["chatterbox_tts"]["patched_version"] = "0.1.7+workbench.2"
-SPECS["qwen_tts"]["patched_version"] = "0.1.1+workbench.1"
+SPECS["chatterbox_tts"]["patched_version"] = "0.1.7+workbench.3"
+SPECS["qwen_tts"]["patched_version"] = "0.1.1+workbench.2"
 SPECS["misaki"] = {
     "version": "0.9.4", "patched_version": "0.9.4+workbench.1",
     "url": "https://files.pythonhosted.org/packages/82/ec/0ee4110ddb54278b8f21c40a140370ae8f687036c4edf578316602697c56/misaki-0.9.4-py3-none-any.whl",
@@ -126,6 +126,12 @@ SPECS["misaki"] = {
         "count": 1,
     }],
 }
+
+
+for name, cleanup in json.loads(Path(__file__).with_name("runtime_wheel_cleanup.json").read_text(encoding="utf-8")).items():
+    spec = SPECS.setdefault(name, {})
+    spec.setdefault("source_changes", []).extend(cleanup.pop("source_changes", []))
+    spec.update(cleanup)
 
 
 def build(name, spec):
@@ -149,19 +155,29 @@ def build(name, spec):
         if content.count(change["old"]) != change["count"]:
             raise ValueError(f"Unexpected source for patch: {change['path']}")
         files[change["path"]] = content.replace(change["old"], change["new"]).encode()
+    removed_files = spec.get("removed_files", {})
+    for path, digest in removed_files.items():
+        path = path.replace(original_info, info)
+        if hashlib.sha256(files[path]).hexdigest() != digest:
+            raise ValueError(f"Unexpected source for removal: {path}")
+        del files[path]
     metadata = BytesParser(policy=policy.compat32).parsebytes(files[info + "/METADATA"])
     requirements = metadata.get_all("Requires-Dist", [])
-    if not set(spec["requirements"]) <= set(requirements):
+    removed_requirements = spec.get("removed_requirements", [])
+    if not (set(spec["requirements"]) | set(removed_requirements)) <= set(requirements):
         raise ValueError(f"Unexpected upstream requirements: {name}")
     metadata.replace_header("Version", version)
     metadata.replace_header("Requires-Python", "==3.12.*")
     del metadata["Requires-Dist"]
     for requirement in requirements:
-        metadata["Requires-Dist"] = spec["requirements"].get(requirement, requirement)
+        if requirement not in removed_requirements:
+            metadata["Requires-Dist"] = spec["requirements"].get(requirement, requirement)
     files[info + "/METADATA"] = metadata.as_bytes(policy=policy.compat32.clone(max_line_length=0, linesep="\n"))
     files[info + "/WORKBENCH_PATCH.json"] = (json.dumps({
         "upstream_url": spec["url"], "upstream_sha256": spec["sha256"], "version": version,
         "changes": spec["requirements"], "source_changes": changes,
+        **({"removed_files": removed_files, "removed_requirements": removed_requirements}
+           if removed_files or removed_requirements else {}),
     }, sort_keys=True, indent=2) + "\n").encode()
     record = StringIO(newline="")
     writer = csv.writer(record, lineterminator="\n")
