@@ -136,7 +136,6 @@ class DownloadSettings(Strict):
 
 
 class LocalRuntimeSettings(Strict):
-    enabled: bool = True
     download: DownloadSettings = Field(default_factory=DownloadSettings)
 
 

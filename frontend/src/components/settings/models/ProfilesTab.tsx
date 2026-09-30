@@ -1,14 +1,8 @@
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ResourceEmpty } from '../resources/ResourceUI';
 import { useSettingsView } from '../SettingsView';
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -18,26 +12,26 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
-import type { ModelKind, ModelInventoryItem, SiglipTower } from '../../../types/models';
+import type { ModelKind, SiglipTower } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
-import { kinds, localSource, newModel } from './profileDefaults';
+import { newModel } from './profileDefaults';
 import { ProfileEditor, type ProfileDraft } from './ProfileEditor';
 import { SiglipStatus, TowerActionMenu } from './SiglipControls';
 
 export function ProfilesTab({
+  kind,
   run,
   busy,
   feedback,
   setError,
   onOpenLocalRuntime,
-}: ModelFeedbackProps & { onOpenLocalRuntime: () => void }) {
+}: ModelFeedbackProps & { kind: ModelKind; onOpenLocalRuntime: () => void }) {
   const { t } = useTranslation('llm');
   const activeView = useSettingsView();
-  const { profiles, statuses, setStatus, loading } = useModelsStore();
-  const [kind, setKind] = useState<ModelKind>('llm');
+  const { profiles, providers, statuses, setStatus, loading, reload } = useModelsStore();
   const [model, setModel] = useState<ProfileDraft | null>(null);
-  const [inventory, setInventory] = useState<ModelInventoryItem[]>([]);
+  const disabled = busy || loading;
   const [processLog, setProcessLog] = useState<{ title: string; text: string } | null>(null);
   const openLog = (id: string, tower?: SiglipTower) => run(async () => {
     const { text } = await modelsApi.getModelLog(id, tower);
@@ -53,88 +47,64 @@ export function ProfilesTab({
     }, false);
   return (
     <>
-      <>
-        <div className="model-toolbar">
-          <Select
-            key={String(activeView)}
-            value={kind}
-            onValueChange={(selected) => setKind((selected ?? '') as ModelKind)}
-            items={kinds.map((k) => ({ value: k, label: t('kinds.' + k) }))}
-          >
-            <SelectTrigger className="w-full sm:w-56" aria-label={t('kind')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {kinds.map((k) => (
-                  <SelectItem key={k} value={k}>
-                    {t('kinds.' + k)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <div className="model-actions">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t('inventory')}
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => setInventory(await modelsApi.listModelInventory(kind)), false)
-                    }
-                  />
-                }
-              >
-                <RefreshCw data-icon="inline-start" />
-              </TooltipTrigger>
-              <TooltipContent>{t('inventory')}</TooltipContent>
-            </Tooltip>
-            <Button
-              disabled={busy}
-              onClick={() => {
-                setError('');
-                setModel({ value: newModel(kind) });
-              }}
-              type="button"
-              variant="outline"
+      <div className="model-toolbar">
+        <div className="model-actions">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('refresh')}
+                  disabled={disabled}
+                  onClick={() => void run(reload, false)}
+                />
+              }
             >
-              <Plus data-icon="inline-start" />
-              {t('addModel')}
-            </Button>
-          </div>
+              <RefreshCw data-icon="inline-start" />
+            </TooltipTrigger>
+            <TooltipContent>{t('refresh')}</TooltipContent>
+          </Tooltip>
+          <Button
+            disabled={disabled}
+            onClick={() => {
+              setError('');
+              setModel({ value: newModel(kind) });
+            }}
+            type="button"
+            variant="outline"
+          >
+            <Plus data-icon="inline-start" />
+            {t('addModel')}
+          </Button>
         </div>
-        <div className="model-list">
-          {profiles
-            .filter((p) => p.kind === kind)
-            .map((p) => {
-              const status = statuses[p.id];
-              return (
-                <div className="model-row" key={p.id}>
+      </div>
+      <div className="model-list gap-4">
+        {profiles
+          .filter((p) => p.kind === kind)
+          .map((p) => {
+            const status = statuses[p.id];
+            const providerID = p.source?.type === 'provider' ? p.source.provider_profile_id : null;
+            const sourceName = p.source?.type === 'local' ? t('localRuntime')
+              : providers.find((provider) => provider.id === providerID)?.name ?? t('unconfigured');
+            return (
+              <Card className="model-profile-card min-w-0" role="group" aria-label={p.name} key={p.id}>
+                <CardHeader className="flex min-w-0 flex-wrap items-center gap-4">
+                  <Switch checked={p.enabled} aria-label={t('modelEnabled', { name: p.name })}
+                    disabled={disabled}
+                    onCheckedChange={(enabled) => void run(() => modelsApi.patchModelProfile(p.id, { enabled }))} />
                   <div className="model-identity">
-                    <strong>{p.name}</strong>
-                    <code>{p.alias}</code>
-                    <small>{p.model_ref}</small>
-                    {p.source?.type === 'provider' ? <small>{t('recentRequestState')}</small> : null}
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
+                      <CardTitle>{p.name}</CardTitle>
+                      <Badge variant="outline" className="h-auto min-h-5 max-w-full whitespace-normal [overflow-wrap:anywhere]">{sourceName}</Badge>
+                    </div>
+                    <CardDescription><code>{p.alias}</code></CardDescription>
                   </div>
-                  <div className="model-state">
-                    <Badge variant="secondary">
-                      {p.enabled ? t('states.' + (status?.state || 'unknown')) : t('disabled')}
-                    </Badge>
-                    {p.source?.type === 'local' ? (
-                      <small>
-                        {t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}
-                      </small>
-                    ) : null}
-                    <small>
-                      {t('active')}: {status?.active || 0} / {t('queued')}: {status?.queued || 0}
-                    </small>
-                  </div>
-                  <div className="model-actions">
+                  <Badge variant="secondary">
+                    {p.enabled ? t('states.' + (status?.state || 'unknown')) : t('disabled')}
+                  </Badge>
+                  <CardAction className="model-actions self-center max-lg:basis-full max-lg:justify-end">
                     {p.source?.type === 'local' ? (
                       <>
                         <Tooltip>
@@ -145,7 +115,7 @@ export function ProfilesTab({
                                 variant="ghost"
                                 size="icon"
                                 aria-label={t('health')}
-                                disabled={busy || !p.enabled || !p.source}
+                                disabled={disabled || !p.enabled || !p.source}
                                 onClick={() => void statusAction(p.id, 'health')}
                               />
                             }
@@ -155,7 +125,7 @@ export function ProfilesTab({
                           <TooltipContent>{t('health')}</TooltipContent>
                         </Tooltip>
                         {p.kind === 'image_embedding' ? (
-                          <TowerActionMenu action="load" disabled={busy || !p.enabled}
+                          <TowerActionMenu action="load" disabled={disabled || !p.enabled}
                             onSelect={(tower) => void statusAction(p.id, 'load', tower)} />
                         ) : <Tooltip>
                           <TooltipTrigger
@@ -165,7 +135,7 @@ export function ProfilesTab({
                                 variant="ghost"
                                 size="icon"
                                 aria-label={t('load')}
-                                disabled={busy || !p.enabled || !p.source}
+                                disabled={disabled || !p.enabled || !p.source}
                                 onClick={() => void statusAction(p.id, 'load')}
                               />
                             }
@@ -183,7 +153,7 @@ export function ProfilesTab({
                                 size="icon"
                                 aria-label={status?.unload_supported ? t('unload') : t('unloadUnsupported')}
                                 disabled={
-                                  busy ||
+                                  disabled ||
                                   !status?.unload_supported ||
                                   !!status.active ||
                                   !!status.queued ||
@@ -200,7 +170,7 @@ export function ProfilesTab({
                           </TooltipContent>
                         </Tooltip>
                         {p.kind === 'image_embedding' ? (
-                          <TowerActionMenu action="log" disabled={busy}
+                          <TowerActionMenu action="log" disabled={disabled}
                             onSelect={(tower) => void openLog(p.id, tower)} />
                         ) : <Tooltip>
                           <TooltipTrigger
@@ -210,7 +180,7 @@ export function ProfilesTab({
                                 variant="ghost"
                                 size="icon"
                                 aria-label={t('processLog')}
-                                disabled={busy}
+                                disabled={disabled}
                                 onClick={() => void openLog(p.id)}
                               />
                             }
@@ -229,7 +199,7 @@ export function ProfilesTab({
                             variant="ghost"
                             size="icon"
                             aria-label={t('edit')}
-                            disabled={busy}
+                            disabled={disabled}
                             onClick={() => {
                               const { id, created_at: _c, updated_at: _u, ...value } = p;
                               setError('');
@@ -250,7 +220,7 @@ export function ProfilesTab({
                             variant="ghost"
                             size="icon"
                             aria-label={t('duplicate')}
-                            disabled={busy}
+                            disabled={disabled}
                             onClick={() => {
                               const { id: _id, created_at: _c, updated_at: _u, ...value } = p;
                               setError('');
@@ -273,7 +243,7 @@ export function ProfilesTab({
                             variant="ghost"
                             size="icon"
                             aria-label={t('delete')}
-                            disabled={busy}
+                            disabled={disabled}
                             onClick={() => void run(() => modelsApi.deleteModelProfile(p.id))}
                           />
                         }
@@ -282,16 +252,20 @@ export function ProfilesTab({
                       </TooltipTrigger>
                       <TooltipContent>{t('delete')}</TooltipContent>
                     </Tooltip>
-                  </div>
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+                  {p.source?.type === 'provider' ? <small>{t('recentRequestState')}</small> : null}
+                  {p.source?.type === 'local' ? <small>
+                    {t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}
+                  </small> : null}
+                  <small>{t('active')}: {status?.active || 0} / {t('queued')}: {status?.queued || 0}</small>
                   {status?.error_code && !status.runtime ? (
                     <code className="error-text">{status.error_code}</code>
                   ) : null}
-                  {status?.runtime ? (
+                  {status?.runtime && (status.runtime.device_name || status.runtime.gpu_layers_loaded != null
+                    || status.error_code || status.runtime.install_state !== 'installed') ? (
                     <div className="model-runtime-state">
-                      <span>
-                        {t('engines.' + status.runtime.engine)} / {status.runtime.version}:{' '}
-                        {t('runtimeStates.' + status.runtime.install_state)}
-                      </span>
                       {status.runtime.device_name ? <span>{status.runtime.device_name}</span> : null}
                       {status.runtime.gpu_layers_loaded != null ? (
                         <span>
@@ -315,48 +289,14 @@ export function ProfilesTab({
                     </div>
                   ) : null}
                   {status?.towers ? <SiglipStatus towers={status.towers} /> : null}
-                </div>
-              );
-            })}
-          {!loading && !profiles.some((p) => p.kind === kind) ? (
-            <ResourceEmpty>{t('emptyModels')}</ResourceEmpty>
-          ) : null}
-        </div>
-        {inventory.filter((i) => i.kind === kind).length ? (
-          <>
-            <h3>{t('inventory')}</h3>
-            {inventory
-              .filter((i) => i.kind === kind)
-              .map((item) => (
-                <div className="model-row" key={item.model_ref}>
-                  <code>{item.model_ref}</code>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={t('addModel')}
-                          onClick={() => {
-                            const value = newModel(kind);
-                            setModel({
-                              value: { ...value, name: item.name, model_ref: item.model_ref,
-                                source: value.source ?? localSource() },
-                            });
-                          }}
-                        />
-                      }
-                    >
-                      <Plus data-icon="inline-start" />
-                    </TooltipTrigger>
-                    <TooltipContent>{t('addModel')}</TooltipContent>
-                  </Tooltip>
-                </div>
-              ))}
-          </>
+                </CardContent>
+              </Card>
+            );
+          })}
+        {!loading && !profiles.some((p) => p.kind === kind) ? (
+          <ResourceEmpty>{t('emptyModels')}</ResourceEmpty>
         ) : null}
-      </>
+      </div>
       <Dialog
         open={activeView && processLog !== null}
         onOpenChange={(open) => {

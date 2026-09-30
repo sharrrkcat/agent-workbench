@@ -38,7 +38,7 @@ const textOnly = updateModel(llama, { capabilities: { ...llama.capabilities, vis
 assert.equal(applyDirectoryInspection(textOnly, info, false, false).capabilities.vision, false);
 assert.equal(applyDirectoryInspection(textOnly, info, true, true).capabilities.vision, true);
 assert.equal(applyDirectoryInspection(llama, { ...info, mmproj_ref: null }, false, false).capabilities.vision, false);
-assert.deepEqual(['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr'].filter(localOnly), ['image_embedding', 'vision', 'tts', 'asr']);
+assert.deepEqual(['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr'].filter(localOnly), ['reranker', 'image_embedding', 'vision', 'tts', 'asr']);
 const external = selectModelSource(llama, { type: 'provider', provider_profile_id: 'external' });
 assert.equal(localEngine(external), null);
 assert.deepEqual(external.source, { type: 'provider', provider_profile_id: 'external' });

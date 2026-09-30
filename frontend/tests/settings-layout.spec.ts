@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { answerConfirmation, backToChat, chooseOption, navigateSettings, openSidebar } from './controls';
+import { navigateModelSettings, answerConfirmation, backToChat, chooseOption, navigateSettings, openSidebar } from './controls';
 
 const words = (locale: string, namespace: string) =>
   JSON.parse(
@@ -33,7 +33,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
-      test('all grouped pages have bounded content and stable navigation', async ({ page }, info) => {
+      test('all grouped pages have bounded content and stable navigation', async ({ page, request }, info) => {
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await page.goto('/');
@@ -57,7 +57,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(sidebar.locator('[data-slot="sidebar-header"]')).toHaveText(settings.title);
         expect(await sidebar.locator('.sidebar-brand').boundingBox()).toEqual(homeBrand);
         const historyLength = await page.evaluate(() => history.length);
-        for (const section of ['models', 'knowledge', 'worldbook']) {
+        for (const section of ['models', 'providersRuntime', 'knowledge', 'worldbook']) {
           const menu = sidebar.getByRole('list', { name: settings[section], exact: true });
           const toggle = menu.getByRole('button', { name: settings[section], exact: true });
           await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -70,12 +70,13 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page).toHaveURL('/settings?tab=general');
         expect(await page.evaluate(() => history.length)).toBe(historyLength);
         await page.screenshot({ path: info.outputPath('collapsed-sidebar.png'), animations: 'disabled' });
+        const modelProfiles = await (await request.get('/api/models/profiles')).json();
         const pages = [
           ['general', ''],
-          ['models', 'profiles'],
+          ['models', 'dashboard'],
+          ...['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor'].map((kind) => ['models', kind]),
           ['models', 'providers'],
           ['models', 'localRuntime'],
-          ['models', 'service'],
           ['personas', 'user'],
           ['personas', 'agent'],
           ['personas', 'roleplay_user'],
@@ -90,17 +91,24 @@ for (const locale of ['en', 'zh-CN']) {
           const label = !view
             ? settings[section]
             : section === 'models'
-              ? llm[view]
+              ? llm.kinds[view] || llm[view]
               : section === 'personas' ? personas.collections[view] : settings.resources[view];
-          await navigateSettings(page, settings[section], label, section === 'personas' ? settings.sidebarGroups[['user', 'agent'].includes(view) ? 'daily' : 'roleplay'] : undefined);
+          const menuLabel = section === 'models' && ['providers', 'localRuntime'].includes(view) ? settings.providersRuntime : settings[section];
+          await navigateSettings(page, menuLabel, label, section === 'personas' ? settings.sidebarGroups[['user', 'agent'].includes(view) ? 'daily' : 'roleplay'] : undefined);
           await expect(page).toHaveURL(`/settings?tab=${section}${view ? `&view=${view}` : ''}`);
-          await expect(page.locator('.settings-heading h1')).toContainText(settings[section]);
+          await expect(page.locator('.settings-heading h1')).toContainText(menuLabel);
+          await expect(page.locator('.settings-heading h1')).toContainText(label);
           await noPageOverflow(page);
           if (viewport.width === 390)
             await expect(page.locator('[data-sidebar="trigger"]')).toHaveAttribute('aria-expanded', 'false');
           if (section === 'models') {
             await expect(page.locator('.settings-content [role="tablist"]')).toHaveCount(0);
-            if (view === 'profiles')
+            if (llm.kinds[view]) {
+              await expect(page.locator('.model-list:visible .model-identity code')).toHaveText(
+                modelProfiles.filter((profile: { kind: string }) => profile.kind === view).map((profile: { alias: string }) => profile.alias),
+              );
+            }
+            if (view === 'dashboard')
               await expect(page.getByLabel(llm.defaultModel, { exact: true })).toBeVisible();
             else await expect(page.getByLabel(llm.defaultModel, { exact: true })).toBeHidden();
           }
@@ -127,10 +135,11 @@ for (const locale of ['en', 'zh-CN']) {
           settings.sidebarGroups.daily,
           settings.sidebarGroups.roleplay,
         ]);
-        await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(7);
-        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(14);
+        await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(8);
+        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(21);
         for (const [section, count] of [
-          ['models', 4],
+          ['models', 9],
+          ['providersRuntime', 2],
           ['knowledge', 2],
           ['worldbook', 2],
         ] as const) {
@@ -171,6 +180,75 @@ for (const locale of ['en', 'zh-CN']) {
         expect(errors).toEqual([]);
       });
 
+      test('model and provider drafts remain independent across sidebar pages and history', async ({ page }) => {
+        await page.goto('/settings?tab=models');
+        const dialog = page.getByRole('dialog');
+        for (const kind of ['llm', 'embedding'] as const) {
+          await navigateModelSettings(page, kind);
+          await expect(page.locator('.model-toolbar:visible').getByRole('combobox')).toHaveCount(0);
+          await page.getByRole('button', { name: llm.addModel, exact: true }).click();
+          await expect(dialog.getByLabel(llm.kind, { exact: true })).toBeDisabled();
+          await expect(dialog.getByLabel(llm.kind, { exact: true })).toContainText(llm.kinds[kind]);
+          await dialog.getByLabel(llm.name, { exact: true }).fill(`${kind} draft`);
+          await page.goBack();
+          await expect(page.locator('.settings-heading h1')).toContainText(llm.dashboard);
+          await expect(dialog).toHaveCount(0);
+        }
+        await navigateModelSettings(page, 'providers');
+        await page.getByRole('button', { name: llm.addProvider, exact: true }).click();
+        await dialog.getByLabel(llm.name, { exact: true }).fill('Provider draft');
+        await page.goBack();
+        await expect(dialog).toHaveCount(0);
+        for (const kind of ['llm', 'embedding', 'providers'] as const) {
+          await navigateModelSettings(page, kind);
+          await expect(dialog.getByLabel(llm.name, { exact: true })).toHaveValue(
+            kind === 'providers' ? 'Provider draft' : `${kind} draft`,
+          );
+          await dialog.getByRole('button', { name: llm.close, exact: true }).click();
+        }
+      });
+
+      test('Dashboard saves default models and external API settings together', async ({ page, request }) => {
+        const path = '/api/models/settings';
+        const original = await (await request.get(path)).json();
+        const profiles = await (await request.get('/api/models/profiles')).json();
+        const profile = profiles.find((value: { kind: string; enabled: boolean }) => value.kind === 'llm' && value.enabled);
+        expect(profile).toBeTruthy();
+        try {
+          await page.goto('/settings?tab=models&view=dashboard');
+          for (const [label, field] of [[llm.defaultModel, 'default_model_profile_id'], [llm.utilityModel, 'utility_model_profile_id']]) {
+            const input = page.getByLabel(label, { exact: true });
+            await chooseOption(input, llm.unconfigured);
+            await expect(input).toBeEnabled();
+            await chooseOption(input, profile.name);
+            await expect.poll(async () => (await (await request.get(path)).json())[field]).toBe(profile.id);
+            await expect(input).toBeEnabled();
+          }
+          const apiKey = page.getByLabel(llm.apiKey, { exact: true });
+          await page.getByRole('button', { name: llm.generateKey, exact: true }).click();
+          expect(await apiKey.inputValue()).toHaveLength(72);
+          await page.getByRole('button', { name: llm.save, exact: true }).click();
+          await expect(apiKey).toHaveValue('');
+          await expect(apiKey).toHaveAttribute('placeholder', llm.keySet);
+          const enabled = page.getByRole('switch', { name: llm.externalEnabled, exact: true });
+          await enabled.click();
+          await expect.poll(async () => (await (await request.get(path)).json()).external_enabled).toBe(!original.external_enabled);
+          await expect(enabled).toBeChecked({ checked: !original.external_enabled });
+          await expect(enabled).toBeEnabled();
+          await navigateModelSettings(page, 'llm');
+          await expect(apiKey).toBeHidden();
+          await page.goBack();
+          await expect(page.getByLabel(llm.utilityModel, { exact: true })).toContainText(profile.name);
+          await expect(apiKey).toBeVisible();
+        } finally {
+          await request.patch(path, { data: {
+            default_model_profile_id: original.default_model_profile_id,
+            utility_model_profile_id: original.utility_model_profile_id,
+            external_enabled: original.external_enabled,
+          } });
+        }
+      });
+
       test('HTTP and normalized request limits validate, autosave and persist', async ({ page, request }, info) => {
         const path = '/api/models/settings';
         const original = await (await request.get(path)).json();
@@ -178,7 +256,7 @@ for (const locale of ['en', 'zh-CN']) {
           max_request_mb: 32, max_normalized_request_mb: 128, external_enabled: false,
         } })).ok()).toBeTruthy();
         try {
-          await page.goto('/settings?tab=models&view=service');
+          await page.goto('/settings?tab=models&view=dashboard');
           const http = page.getByRole('spinbutton', { name: llm.bodyLimit, exact: true });
           const normalized = page.getByRole('spinbutton', { name: llm.normalizedBodyLimit, exact: true });
           await expect(http).toHaveValue('32');
@@ -296,11 +374,11 @@ test('direct links refresh, invalid views default, history preserves model draft
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Name', { exact: true }).fill('Retained provider draft');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await navigateSettings(page, 'Models', 'Local Runtime');
+  await navigateSettings(page, 'Providers & Runtime', 'Local Runtime');
   await page.reload();
   await expect(page).toHaveURL('/settings?tab=models&view=localRuntime');
-  await expect(page.getByRole('group', { name: 'Local installation', exact: true }).getByRole('button', { name: 'Install local runtime', exact: true })).toBeVisible();
-  await navigateSettings(page, 'Models', 'Providers');
+  await expect(page.getByRole('group', { name: 'Core Runtime', exact: true }).getByRole('button', { name: 'Install', exact: true })).toBeVisible();
+  await navigateSettings(page, 'Providers & Runtime', 'Model Providers');
   await page.getByRole('button', { name: 'Add provider', exact: true }).click();
   await dialog.getByLabel('Name', { exact: true }).fill('History provider draft');
   await page.goBack();
@@ -311,7 +389,7 @@ test('direct links refresh, invalid views default, history preserves model draft
   await page.goto('/settings?tab=models&view=unknown');
   await expect(page.getByLabel('Default chat model', { exact: true })).toBeVisible();
   const length = await page.evaluate(() => history.length);
-  await navigateSettings(page, 'Models', 'Model profiles');
+  await navigateModelSettings(page, 'dashboard');
   await expect(page).toHaveURL('/settings?tab=models&view=unknown');
   expect(await page.evaluate(() => history.length)).toBe(length);
   await page.goto('/settings?tab=unknown&view=settings');
@@ -344,16 +422,7 @@ test('subpage history closes transient popups while retaining selected values', 
   const knowledge = words('en', 'knowledge');
   await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=models&view=providers');
-  await navigateSettings(page, 'Models', llm.profiles);
-  const kind = page.locator('.model-toolbar').getByLabel(llm.kind, { exact: true });
-  await chooseOption(kind, llm.kinds.embedding);
-  await kind.click();
-  await expect(page.getByRole('listbox')).toBeVisible();
-  await page.goBack();
-  await expect(page).toHaveURL('/settings?tab=models&view=providers');
-  await expect(page.getByRole('listbox')).toHaveCount(0);
-  await page.goForward();
-  await expect(kind).toContainText(llm.kinds.embedding);
+  await navigateModelSettings(page, 'dashboard');
   const auxiliary = page.getByLabel(llm.utilityModel, { exact: true });
   const selection = await auxiliary.textContent();
   await auxiliary.click();
@@ -364,14 +433,12 @@ test('subpage history closes transient popups while retaining selected values', 
   await expect(auxiliary).toHaveText(selection!);
 
   const jobs = await (await request.get('/api/models/local-runtime/jobs')).json();
-  await navigateSettings(page, 'Models', llm.localRuntime);
-  await page
-    .locator('.runtime-cache-actions')
-    .getByRole('button', { name: 'Clear cache', exact: true })
-    .click();
+  await navigateModelSettings(page, 'localRuntime');
+  await page.getByRole('button', { name: 'Cache actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Clear cache', exact: true }).click();
   await expect(page.getByRole('alertdialog')).toBeVisible();
   await page.goBack();
-  await expect(page).toHaveURL('/settings?tab=models&view=profiles');
+  await expect(page).toHaveURL('/settings?tab=models&view=dashboard');
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   expect(await (await request.get('/api/models/local-runtime/jobs')).json()).toEqual(jobs);
 

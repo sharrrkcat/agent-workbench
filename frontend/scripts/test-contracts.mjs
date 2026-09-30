@@ -9,7 +9,7 @@ const resources = Object.fromEntries(
   ['en', 'zh-CN'].map((locale) => [
     locale,
     Object.fromEntries(
-      ['common', 'settings', 'knowledge', 'worldbook', 'personas', 'runs', 'renderers'].map((namespace) => [
+      ['common', 'settings', 'knowledge', 'worldbook', 'personas', 'runs', 'renderers', 'llm'].map((namespace) => [
         namespace,
         JSON.parse(
           fs.readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'),
@@ -23,21 +23,37 @@ await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { esca
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { settingsSections, settingsGroups, readSettingsRoute, settingsRouteUrl } = (
+const { settingsSections, settingsGroups, readSettingsRoute, settingsRouteUrl, settingsPageLabel, settingsMenuLabel } = (
   await load('../src/components/settings/navigation.ts')
 ).exports;
 assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools']);
 const settingsPages = settingsGroups.flatMap((group) => group.menus.flatMap((menu) => menu.pages));
-assert.equal(settingsPages.length, 14);
+assert.equal(settingsPages.length, 21);
 for (const route of settingsPages)
   assert.deepEqual(readSettingsRoute(new URL(settingsRouteUrl(route), 'http://localhost').search), route);
 for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities', '?tab=pet'])
   assert.deepEqual(readSettingsRoute(tab), { section: 'general' });
 assert.deepEqual(readSettingsRoute('?tab=personas'), { section: 'personas', view: 'user' });
 assert.deepEqual(readSettingsRoute('?tab=personas&view=unknown'), { section: 'personas', view: 'user' });
-assert.equal(new Set(settingsGroups.flatMap((g) => g.menus.map((m) => m.id))).size, 7);
-assert.deepEqual(readSettingsRoute('?tab=models'), { section: 'models', view: 'profiles' });
-assert.deepEqual(readSettingsRoute('?tab=models&view=settings'), { section: 'models', view: 'profiles' });
+assert.equal(new Set(settingsGroups.flatMap((g) => g.menus.map((m) => m.id))).size, 8);
+assert.deepEqual(readSettingsRoute('?tab=models'), { section: 'models', view: 'dashboard' });
+for (const view of ['settings', 'profiles', 'service', 'unknown'])
+  assert.deepEqual(readSettingsRoute('?tab=models&view=' + view), { section: 'models', view: 'dashboard' });
+const executionMenus = settingsGroups.find((group) => group.id === 'execution').menus;
+assert.deepEqual(executionMenus.map((menu) => menu.id), ['models', 'providersRuntime', 'tools']);
+assert.deepEqual(executionMenus[0].pages.map((page) => page.view),
+  ['dashboard', 'llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor']);
+assert.deepEqual(executionMenus[1].pages.map((page) => page.view), ['providers', 'localRuntime']);
+for (const locale of ['en', 'zh-CN']) {
+  const t = i18n.getFixedT(locale, 'settings');
+  for (const page of settingsPages) {
+    assert.notEqual(t(settingsPageLabel(page)), settingsPageLabel(page));
+    assert.notEqual(t(settingsMenuLabel(page)), settingsMenuLabel(page));
+  }
+}
+assert.equal(settingsMenuLabel({ section: 'models', view: 'providers' }), 'providersRuntime');
+assert.equal(settingsMenuLabel({ section: 'models', view: 'localRuntime' }), 'providersRuntime');
+assert.equal(settingsMenuLabel({ section: 'models', view: 'llm' }), 'models');
 assert.deepEqual(readSettingsRoute('?tab=knowledge&view=providers'), { section: 'knowledge', view: 'list' });
 assert.deepEqual(readSettingsRoute('?tab=worldbook&view=settings'), { section: 'worldbook', view: 'settings' });
 assert.deepEqual(readSettingsRoute('?tab=general&view=providers'), { section: 'general' });

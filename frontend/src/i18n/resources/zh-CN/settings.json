@@ -64,5 +64,6 @@
     "execution": "模型与执行",
     "daily": "日常对话与 Workspace",
     "roleplay": "角色扮演与 Timeline"
-  }
+  },
+  "providersRuntime": "提供商与运行环境"
 }

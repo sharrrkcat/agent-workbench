@@ -8,7 +8,7 @@ import { ModelsPanel } from './settings/ModelsPanel';
 import { PersonasPanel } from './settings/PersonasPanel';
 import { ToolsPanel } from './settings/ToolsPanel';
 import { WorldbookPanel } from './settings/WorldbookPanel';
-import { readSettingsRoute, settingsPageLabel, type SettingsNavigate } from './settings/navigation';
+import { readSettingsRoute, settingsMenuLabel, settingsPageLabel, type SettingsNavigate } from './settings/navigation';
 import { SettingsLeaveContext, type LeaveGuard } from './settings/resources/ResourceUI';
 
 export function SettingsPage({
@@ -47,7 +47,7 @@ export function SettingsPage({
           <SidebarTrigger />
           <div className="settings-heading">
             <h1>
-              {t(route.section)}
+              {t(settingsMenuLabel(route))}
               {route.view ? (
                 <>
                   {' '}

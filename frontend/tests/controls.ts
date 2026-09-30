@@ -1,4 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import type { ModelView } from '../src/components/settings/navigation';
 
 export async function openSidebar(page: Page) {
   const trigger = page.locator('[data-sidebar="trigger"]');
@@ -13,6 +15,15 @@ export async function navigateSettings(page: Page, section: string, name = secti
   const toggle = menu.locator('[data-settings-menu]');
   if ((await toggle.count()) && (await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
   await menu.getByRole('button', { name, exact: true }).click();
+}
+
+export async function navigateModelSettings(page: Page, view: ModelView) {
+  const locale = await page.evaluate(() => localStorage.getItem('cogita.locale') || 'en');
+  const read = (namespace: string) => JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'));
+  const settings = read('settings'), llm = read('llm');
+  const infrastructure = view === 'providers' || view === 'localRuntime';
+  await navigateSettings(page, infrastructure ? settings.providersRuntime : settings.models,
+    view === 'dashboard' || infrastructure ? llm[view] : llm.kinds[view]);
 }
 
 export async function backToChat(page: Page) {

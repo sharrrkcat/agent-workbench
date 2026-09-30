@@ -13,7 +13,7 @@ await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } })
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { kinds, newModel, applyDirectoryInspection, localEngine, localSource, selectModelSource } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
+const { newModel, applyDirectoryInspection, localEngine, localSource, selectModelSource } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
 const { DirectoryInspectionPanel } = (await load('../src/components/settings/models/DirectoryInspection.tsx')).exports;
 const { SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
@@ -22,7 +22,8 @@ function descendants(node) {
   if (!React.isValidElement(node)) return [];
   return [node, ...descendants(node.props.children)];
 }
-assert.ok(kinds.includes('tts'));
+const { modelKinds } = (await load('../src/types/models.ts')).exports;
+assert.ok(modelKinds.includes('tts'));
 const information = (engine) => ({ kind: 'tts', model_ref: `tts/${engine}`, engine, architecture: engine, diagnostics: [] });
 const draft = newModel('tts');
 assert.equal(localEngine(draft), null);

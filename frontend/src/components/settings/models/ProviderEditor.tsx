@@ -1,7 +1,6 @@
 import { useSettingsView } from '../SettingsView';
 import { Input } from '@/components/ui/input';
 import { FieldGroup, Field, FieldLabel, FieldSet } from '@/components/ui/field';
-import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Save } from 'lucide-react';
@@ -14,7 +13,7 @@ import type { ProviderInput, ExternalConnection } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
 
-export type ProviderDraft = { id?: string; value: ProviderInput };
+export type ProviderDraft = { id?: string; value: Omit<ProviderInput, 'enabled'> };
 export function ProviderEditor({
   provider,
   setProvider,
@@ -28,7 +27,7 @@ export function ProviderEditor({
   const { t } = useTranslation('llm');
   const activeView = useSettingsView();
   const providers = useModelsStore((state) => state.providers);
-  const patchProvider = (patch: Partial<ProviderInput>) =>
+  const patchProvider = (patch: Partial<ProviderDraft['value']>) =>
     setProvider((draft) => (draft ? { ...draft, value: { ...draft.value, ...patch } } : null));
   const patchConnection = (patch: Partial<ExternalConnection>) =>
     setProvider((draft) =>
@@ -57,7 +56,7 @@ export function ProviderEditor({
               e.preventDefault();
               void run(async () => {
                 if (provider.id) await modelsApi.patchProviderProfile(provider.id, provider.value);
-                else await modelsApi.createProviderProfile(provider.value);
+                else await modelsApi.createProviderProfile({ ...provider.value, enabled: true });
                 setProvider(null);
               });
             }}
@@ -118,13 +117,6 @@ export function ProviderEditor({
                     ),
                   )}
                 </FieldGroup>
-                <Field orientation="horizontal">
-                  <Switch
-                    checked={provider.value.enabled}
-                    onCheckedChange={(enabled) => patchProvider({ enabled })}
-                  />
-                  <FieldLabel>{t('enabled')}</FieldLabel>
-                </Field>
               </FieldSet>
             </div>
             <DialogFooter>

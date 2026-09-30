@@ -10,7 +10,7 @@ import {
   SlidersHorizontal,
   Wrench,
   Boxes,
-  Network,
+  LayoutDashboard,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -36,8 +36,12 @@ import {
 } from './settings/navigation';
 
 function pageIcon(route: SettingsRoute) {
-  if (route.section === 'models')
-    return { profiles: Boxes, providers: Plug, localRuntime: Server, service: Network }[route.view];
+  if (route.section === 'models') {
+    if (route.view === 'dashboard') return LayoutDashboard;
+    if (route.view === 'providers') return Plug;
+    if (route.view === 'localRuntime') return Server;
+    return Boxes;
+  }
   if (route.section === 'knowledge' || route.section === 'worldbook')
     return route.view === 'settings'
       ? SlidersHorizontal
@@ -98,7 +102,7 @@ export function SettingsSidebar({
                     <SidebarMenu
                       key={menu.id}
                       className="settings-domain-menu"
-                      aria-label={menu.section === 'personas' ? `${t(menu.section)} / ${t('sidebarGroups.' + group.id)}` : t(menu.section)}
+                      aria-label={menu.section === 'personas' ? `${t(menu.label)} / ${t('sidebarGroups.' + group.id)}` : t(menu.label)}
                     >
                       {menu.pages.length === 1 ? (
                         pageItem(menu.pages[0])
@@ -114,7 +118,7 @@ export function SettingsSidebar({
                               }
                             >
                               <Icon data-icon="inline-start" />
-                              <span>{t(menu.section)}</span>
+                              <span>{t(menu.label)}</span>
                               <ChevronRight
                                 data-icon="inline-end"
                                 className="ml-auto transition-transform group-aria-expanded/menu-button:rotate-90"

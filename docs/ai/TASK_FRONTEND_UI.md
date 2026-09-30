@@ -51,13 +51,14 @@ validation, busy locks, async navigation/history, attachments, IME and approvals
 app-layout.spec.ts covers sidebar scrolling/menus, deletion, drawer focus, Markdown,
 composer growth, disclosure position and breakpoint/short viewport behavior.
 chat-presentation.spec.ts and vision-input.spec.ts retain streaming and image workflows.
-settings-layout.spec.ts covers all 14 grouped pages, collapsed menus, direct links, history, resource
-leave guards, retained drafts/hidden dialogs, shared navigation and responsive scroll regions.
+settings-layout.spec.ts covers all 21 grouped pages, collapsed menus, direct links, history, resource
+leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, shared navigation and responsive scroll regions.
 personas.spec.ts covers shared Persona CRUD, protected identities, binding restrictions
 and live Cogita Persona display across history and session switches. projects.spec.ts covers Project creation, type restrictions,
 inherited resources, sparse overrides, guarded history and scoped deletion; test-projects.mjs covers selection/deletion races.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
+model-profiles.spec.ts covers all eight card layouts, enable saves/failures, source-required drafts and local suggestion states in both locales/viewports.
 test-wd14.mjs and wd14.spec.ts cover WD14 source/CPU defaults, inventory/manual references,
 threshold validation/round trips and lifecycle controls in both locales and desktop/touch viewports.
 test-siglip.mjs and siglip.spec.ts cover directory information, stale responses, preserved drafts, the unload-other-tower switch,

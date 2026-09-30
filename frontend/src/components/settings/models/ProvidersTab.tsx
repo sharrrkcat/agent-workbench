@@ -1,8 +1,9 @@
-import { Badge } from '@/components/ui/badge';
+import { Card, CardHeader, CardTitle, CardDescription, CardAction } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { ResourceEmpty } from '../resources/ResourceUI';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
@@ -14,81 +15,105 @@ import { ProviderEditor, type ProviderDraft } from './ProviderEditor';
 
 export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackProps) {
   const { t } = useTranslation('llm');
-  const { providers } = useModelsStore();
+  const { providers, loading, reload } = useModelsStore();
   const [provider, setProvider] = useState<ProviderDraft | null>(null);
+  const disabled = busy || loading;
   return (
     <>
       <div className="model-toolbar">
         <h3>{t('providers')}</h3>
-        <Button
-          disabled={busy}
-          onClick={() => {
-            setError('');
-            setProvider({ value: newProvider() });
-          }}
-          type="button"
-          variant="outline"
-        >
-          <Plus data-icon="inline-start" />
-          {t('addProvider')}
-        </Button>
-      </div>
-      <p>{t('providerSummary')}</p>
-      {providers.map((item) => (
-        <div className="model-row" key={item.id}>
-          <div className="model-identity">
-            <strong>{item.name}</strong>
-            <small>{item.connection.base_url}</small>
-            <Badge variant={item.enabled ? 'secondary' : 'outline'}>
-              {item.enabled ? t('enabled') : t('disabled')}
-            </Badge>
-          </div>
-          <div className="model-actions">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t('edit')}
-                    disabled={busy}
-                    onClick={() => {
-                      const { has_api_key: _key, ...connection } = item.connection;
-                      setError('');
-                      setProvider({
-                        id: item.id,
-                        value: { name: item.name, enabled: item.enabled, connection },
-                      });
-                    }}
-                  />
-                }
-              >
-                <Pencil data-icon="inline-start" />
-              </TooltipTrigger>
-              <TooltipContent>{t('edit')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t('delete')}
-                    disabled={busy}
-                    onClick={() => void run(() => modelsApi.deleteProviderProfile(item.id))}
-                  />
-                }
-              >
-                <Trash2 data-icon="inline-start" />
-              </TooltipTrigger>
-              <TooltipContent>{t('delete')}</TooltipContent>
-            </Tooltip>
-          </div>
+        <div className="model-actions">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('refresh')}
+                  disabled={disabled}
+                  onClick={() => void run(reload, false)}
+                />
+              }
+            >
+              <RefreshCw data-icon="inline-start" />
+            </TooltipTrigger>
+            <TooltipContent>{t('refresh')}</TooltipContent>
+          </Tooltip>
+          <Button
+            disabled={disabled}
+            onClick={() => {
+              setError('');
+              setProvider({ value: newProvider() });
+            }}
+            type="button"
+            variant="outline"
+          >
+            <Plus data-icon="inline-start" />
+            {t('addProvider')}
+          </Button>
         </div>
-      ))}
-      {!providers.length ? <ResourceEmpty>{t('emptyProviders')}</ResourceEmpty> : null}
+      </div>
+      {providers.length ? (
+        <div className="grid min-w-0 grid-cols-1 gap-4">
+          {providers.map((item) => (
+            <Card className="provider-card min-w-0" role="group" aria-label={item.name} key={item.id}>
+              <CardHeader className="flex min-h-11 flex-wrap items-center gap-4">
+                <Switch
+                  checked={item.enabled}
+                  aria-label={t('providerEnabled', { name: item.name })}
+                  disabled={disabled}
+                  onCheckedChange={(enabled) => void run(() => modelsApi.patchProviderProfile(item.id, { enabled }))}
+                />
+                <div className="flex min-w-0 flex-1 flex-col gap-1 [overflow-wrap:anywhere]">
+                  <CardTitle>{item.name}</CardTitle>
+                  <CardDescription>{item.connection.base_url}</CardDescription>
+                </div>
+                <CardAction className="flex items-center gap-2 self-center max-md:basis-full max-md:justify-end">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('edit')}
+                          disabled={disabled}
+                          onClick={() => {
+                            const { has_api_key: _key, ...connection } = item.connection;
+                            setError('');
+                            setProvider({ id: item.id, value: { name: item.name, connection } });
+                          }}
+                        />
+                      }
+                    >
+                      <Pencil data-icon="inline-start" />
+                    </TooltipTrigger>
+                    <TooltipContent>{t('edit')}</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('delete')}
+                          disabled={disabled}
+                          onClick={() => void run(() => modelsApi.deleteProviderProfile(item.id))}
+                        />
+                      }
+                    >
+                      <Trash2 data-icon="inline-start" />
+                    </TooltipTrigger>
+                    <TooltipContent>{t('delete')}</TooltipContent>
+                  </Tooltip>
+                </CardAction>
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
+      ) : <ResourceEmpty>{t('emptyProviders')}</ResourceEmpty>}
       <ProviderEditor
         provider={provider}
         setProvider={setProvider}

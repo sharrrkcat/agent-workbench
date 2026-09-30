@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { answerConfirmation, chooseOption, navigateSettings, openSidebar } from './controls';
+import { navigateModelSettings, answerConfirmation, navigateSettings, openSidebar } from './controls';
 
 const words = (locale: string, namespace: string) =>
   JSON.parse(
@@ -18,6 +18,11 @@ async function bounded(popup: Locator, viewport: { width: number; height: number
   expect(rect!.y).toBeGreaterThanOrEqual(0);
   expect(rect!.x + rect!.width).toBeLessThanOrEqual(viewport.width + 1);
   expect(rect!.y + rect!.height).toBeLessThanOrEqual(viewport.height + 1);
+  const labelStyles = await popup.locator('[data-slot="field-label"]:visible').evaluateAll((labels) => labels.map((label) => {
+    const style = getComputedStyle(label);
+    return { text: label.textContent, size: style.fontSize, weight: style.fontWeight };
+  }));
+  expect(labelStyles.filter((label) => label.size !== '12px' || label.weight !== '500')).toEqual([]);
 }
 
 async function touchTargets(scope: Locator) {
@@ -77,20 +82,24 @@ for (const locale of ['en', 'zh-CN']) {
         await openSidebar(page);
         const group = page.locator('.settings-sidebar nav').getByRole('list', { name: settings.models, exact: true });
         const toggle = group.getByRole('button', { name: settings.models, exact: true });
-        const profiles = group.getByRole('button', { name: llm.profiles, exact: true });
-        const providers = group.getByRole('button', { name: llm.providers, exact: true });
+        const dashboard = group.getByRole('button', { name: llm.dashboard, exact: true });
+        const llmPage = group.getByRole('button', { name: llm.kinds.llm, exact: true });
         await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-        await expect(profiles).toBeHidden();
+        await expect(dashboard).toBeHidden();
         await toggle.focus();
         await toggle.press('Space');
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await toggle.press('Tab');
-        await expect(profiles).toBeFocused();
-        await profiles.press('Tab');
-        await expect(providers).toBeFocused();
-        await expect(profiles).toHaveAttribute('aria-current', 'page');
+        await expect(dashboard).toBeFocused();
+        await dashboard.press('Tab');
+        await expect(llmPage).toBeFocused();
+        await expect(dashboard).toHaveAttribute('aria-current', 'page');
         await expect(page.locator('.settings-sidebar [data-active]')).toHaveCount(1);
         await expect(toggle).not.toHaveAttribute('data-active');
+        const infrastructure = page.locator('.settings-sidebar nav').getByRole('list', { name: settings.providersRuntime, exact: true });
+        const infrastructureToggle = infrastructure.getByRole('button', { name: settings.providersRuntime, exact: true });
+        await infrastructureToggle.click();
+        const providers = infrastructure.getByRole('button', { name: llm.providers, exact: true });
         await providers.press('Space');
         await expect(page).toHaveURL('/settings?tab=models&view=providers');
         await expect(page.getByRole('button', { name: llm.addModel, exact: true })).toHaveCount(0);
@@ -103,6 +112,7 @@ for (const locale of ['en', 'zh-CN']) {
         const rect = await dialog.boundingBox();
         expect(rect!.width).toBeLessThanOrEqual(viewport.width === 390 ? 358 : 384);
         const name = dialog.getByLabel(llm.name, { exact: true });
+        await expect(name).toHaveCSS('font-size', viewport.width === 390 ? '16px' : '12px');
         await dialog.getByText(llm.name, { exact: true }).click();
         await expect(name).toBeFocused();
         await name.fill('Draft provider');
@@ -116,31 +126,27 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(addProvider).toBeFocused();
 
         await openSidebar(page);
-        if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
-        const runtime = group.getByRole('button', { name: llm.localRuntime, exact: true });
+        if ((await infrastructureToggle.getAttribute('aria-expanded')) === 'false') await infrastructureToggle.click();
+        const runtime = infrastructure.getByRole('button', { name: llm.localRuntime, exact: true });
         await providers.focus();
         await providers.press('Tab');
         await expect(runtime).toBeFocused();
         await runtime.press('Enter');
         await expect(page).toHaveURL('/settings?tab=models&view=localRuntime');
-        const enabled = page.getByRole('switch', { name: llm.enableLocalRuntime, exact: true });
-        const label = page.locator('[data-slot="field-label"]').filter({ hasText: llm.enableLocalRuntime });
-        const before = await enabled.isChecked();
-        await label.click();
-        await expect(enabled).toBeChecked({ checked: !before });
-        await label.click();
+        await expect(page.locator('.runtime-panel').getByRole('switch')).toHaveCount(0);
+        const scan = page.getByRole('button', { name: llm.storage.scan, exact: true });
+        await expect(scan).toBeEnabled();
         if (viewport.width === 390) {
-          expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-          expect((await enabled.boundingBox())!.height).toBeLessThan(44);
+          expect((await scan.boundingBox())!.height).toBeGreaterThanOrEqual(44);
         }
         await page.locator('.runtime-download-settings > [data-slot="collapsible-trigger"]').click();
         const proxy = page.getByLabel(llm.download.http_proxy, { exact: true });
         await proxy.fill('http://127.0.0.1:8899');
-        await navigateSettings(page, settings.models, llm.providers);
+        await navigateModelSettings(page, 'providers');
         await expect(proxy).toBeHidden();
-        await navigateSettings(page, settings.models, llm.localRuntime);
+        await navigateModelSettings(page, 'localRuntime');
         await expect(proxy).toHaveValue('http://127.0.0.1:8899');
-        await navigateSettings(page, settings.models, llm.profiles);
+        await navigateModelSettings(page, 'llm');
         const add = page.getByRole('button', { name: llm.addModel, exact: true });
         await add.click();
         await bounded(dialog, viewport);
@@ -474,7 +480,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
 }) => {
   await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   await page.goto('/settings?tab=models');
-  await navigateSettings(page, 'Models', 'Providers');
+  await navigateSettings(page, 'Providers & Runtime', 'Model Providers');
   await page.getByRole('button', { name: 'Add provider', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const name = dialog.getByLabel('Name', { exact: true });
@@ -494,7 +500,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await sent;
   await expect(name).toBeDisabled();
-  await expect(dialog.getByRole('switch', { name: 'Enabled', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('switch')).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.keyboard.press('Escape');
   await expect(dialog).toBeVisible();

@@ -1,7 +1,6 @@
 import type { DirectoryInspection, ModelInput, ModelKind, ProviderInput, LocalEngine, LocalModelSource, ModelSource } from '../../../types/models';
 
-export const kinds: ModelKind[] = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor'];
-export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'tts', 'asr', 'processor'].includes(kind);
+export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'tts', 'asr', 'processor', 'reranker'].includes(kind);
 
 export const processorDefaults = { task: 'image_processing', style: 'natural', preset: 3,
   intensity: 1, tone: 1, structure: 1, skin: -1, auto_mask: false, channel_order: 'auto' };
@@ -18,7 +17,7 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   source: kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
     : kind === 'processor' ? { ...localSource(), execution_options: { device: 'd3d12', gpu_index: 0 } }
     : kind === 'asr' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4 } }
-    : kind === 'tts' || kind === 'vision' ? localSource() : null,
+    : localSource(),
   enabled: true,
   external_enabled: false,
   capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
@@ -112,8 +111,8 @@ export function selectModelSource(value: ModelInput, source: ModelSource | null)
   return updateModel(value, { source, parameters, model_ref: value.source ? '' : value.model_ref });
 }
 
-export const newProvider = (): ProviderInput => ({
-  name: '', enabled: true,
+export const newProvider = (): Omit<ProviderInput, 'enabled'> => ({
+  name: '',
   connection: {
     base_url: 'http://127.0.0.1:1234/v1', timeout_seconds: 60,
     concurrency: 1, queue_size: 32, queue_timeout_seconds: 30,

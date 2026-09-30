@@ -4,7 +4,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createModuleLoader } from '../scripts/module-loader.mjs';
 
-const { Button } = (await createModuleLoader()('@/components/ui/button')).exports;
+const load = createModuleLoader();
+const { Button } = (await load('@/components/ui/button')).exports;
+const { Field, FieldSet, FieldLabel, FieldTitle, FieldLegend, FieldDescription, FieldError } = (await load('@/components/ui/field')).exports;
+const { Input } = (await load('@/components/ui/input')).exports;
+const { Feedback } = (await load('@/components/settings/resources/ResourceUI')).exports;
 const template = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8')
   .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
 
@@ -21,6 +25,20 @@ function fixtureDocument(locale: string) {
         React.createElement(Button, {
           id: 'override', className: 'h-8 px-2.5 bg-secondary text-secondary-foreground',
         }, common.back),
+      ),
+      React.createElement('section', { id: 'form-typography', style: { fontSize: 20, fontWeight: 700, marginTop: 16 } },
+        React.createElement(FieldSet, null,
+          React.createElement(FieldLegend, null, locale === 'en' ? 'Form settings' : '表单设置'),
+          React.createElement(Field, null,
+            React.createElement(FieldLabel, null, locale === 'en' ? 'Name' : '名称'),
+            React.createElement(Input, { defaultValue: locale === 'en' ? 'Sample' : '示例' }),
+            React.createElement(FieldDescription, null, locale === 'en' ? 'Field description' : '字段说明'),
+            React.createElement(FieldError, null, locale === 'en' ? 'Validation message' : '校验提示'),
+          ),
+          React.createElement(FieldTitle, null, locale === 'en' ? 'Field title' : '字段标题'),
+          React.createElement(Feedback, { error: '', notice: locale === 'en' ? 'Settings saved' : '设置已保存' }),
+          React.createElement(Feedback, { error: locale === 'en' ? 'Save failed' : '保存失败' }),
+        ),
       ),
     ),
   );
@@ -63,6 +81,19 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('#override')).toHaveCSS('padding-left', '10px');
         await expect(page.locator('#override')).toHaveCSS('background-color', 'oklch(0.269 0 0)');
         await expect(page.locator('#override')).toHaveCSS('color', 'oklch(0.985 0 0)');
+
+        const form = page.locator('#form-typography');
+        await expect(form).toHaveCSS('font-size', '20px');
+        await expect(form).toHaveCSS('font-weight', '700');
+        for (const label of await form.locator('[data-slot="field-label"]').all()) {
+          await expect(label).toHaveCSS('font-size', '12px');
+          await expect(label).toHaveCSS('font-weight', '500');
+        }
+        for (const message of await form.locator('[data-slot="field-description"], [data-slot="field-error"], [data-slot="alert-description"]').all()) {
+          await expect(message).toHaveCSS('font-size', '12px');
+          await expect(message).toHaveCSS('font-weight', '400');
+        }
+        await expect(form.locator('[data-slot="field-legend"]')).toHaveCSS('font-size', '14px');
 
         await page.keyboard.press('Tab');
         await expect(button).toBeFocused();

@@ -25,7 +25,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0023_dlss_processor`; there are 26 current business tables.
+Alembic head is `0024_runtime_always_enabled`; there are 26 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -204,3 +204,5 @@ Personas and their bindings, global resources/settings, model/provider/runtime r
 all file directories survive. Repeating upgrade preserves new Projects and conversations.
 
 Revision `0023_dlss_processor` extends local model constraints with processor, adds runtime_components and nullable runtime_jobs.component_id. Base installation identities/jobs, existing profiles and all files remain unchanged. Directory/default-profile creation happens only on explicit component installation, never during migration or startup. Repeated upgrades preserve subsequent edits.
+
+Revision `0024_runtime_always_enabled` removes only the obsolete enabled key from local_runtime_settings. Download settings, installation/component records, jobs and all files remain intact. Local Runtime has no enablement setting; repeated upgrades preserve later download edits.

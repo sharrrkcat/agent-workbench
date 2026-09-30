@@ -28,11 +28,11 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
+import { modelKinds } from '../../../types/models';
 import type { DirectoryInspection, LocalEmbeddingParameters, LocalEngine, LocalModelSource, ModelInput } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
 import {
-  kinds,
   applyDirectoryInspection,
   localEngine,
   localOnly,
@@ -76,7 +76,8 @@ export function ProfileEditor({
   const transformers = engine === 'transformers';
   const onnx = engine === 'kokoro' || engine === 'wd14';
   const audio = engine === 'chatterbox' || engine === 'qwen3tts';
-  const [remoteModels, setRemoteModels] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [discoveryError, setDiscoveryError] = useState('');
   const selectedSource = model ? sourceValue(model.value.source) : '';
   const modelKind = model?.value.kind;
@@ -114,8 +115,10 @@ export function ProfileEditor({
   }, [opened, selectedSource, modelKind, modelRef, modelID, savedReference, setModel]);
   useEffect(() => {
     let cancelled = false;
-    setRemoteModels([]);
+    setSuggestions([]);
     setDiscoveryError('');
+    setSuggestionsLoading(false);
+    if (!opened || !activeView) return;
     const request =
       selectedSource === 'local'
         ? modelsApi.listModelInventory(modelKind).then((items) => items.map((item) => item.model_ref))
@@ -124,18 +127,28 @@ export function ProfileEditor({
               .listProviderModels(selectedSource.slice('provider:'.length))
               .then((value) => value.models)
           : null;
-    if (request)
+    if (request) {
+      setSuggestionsLoading(true);
       void request
         .then((models) => {
-          if (!cancelled) setRemoteModels(models);
+          if (!cancelled) setSuggestions(models);
         })
         .catch((error) => {
           if (!cancelled) setDiscoveryError(String(error.message));
+        })
+        .finally(() => {
+          if (!cancelled) setSuggestionsLoading(false);
         });
+    }
     return () => {
       cancelled = true;
     };
-  }, [selectedSource, modelKind]);
+  }, [opened, activeView, selectedSource, modelKind]);
+  const suggestionsMessage = !selectedSource ? t('selectModelSource')
+    : suggestionsLoading ? t('referenceSuggestions.loading')
+    : discoveryError ? t(selectedSource === 'local' ? 'referenceSuggestions.localUnavailable' : 'discoveryUnavailable')
+    : suggestions.length ? t('referenceSuggestions.noMatch')
+    : t(selectedSource === 'local' ? 'referenceSuggestions.noDirectories' : 'referenceSuggestions.noModels');
   const patchModel = (patch: Partial<ModelInput>) =>
     setModel((draft) => (draft ? { ...draft, value: updateModel(draft.value, patch, engine),
       ...(patch.capabilities && patch.capabilities.vision !== draft.value.capabilities.vision
@@ -204,26 +217,30 @@ export function ProfileEditor({
                     <Select
                       value={model.value.kind}
                       disabled={true}
-                      items={kinds.map((k) => ({ value: k, label: t('kinds.' + k) }))}
+                      items={modelKinds.map((k) => ({ value: k, label: t('kinds.' + k) }))}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {kinds.map((k) => (
+                        <SelectGroup>
+                        {modelKinds.map((k) => (
                           <SelectItem value={k} key={k}>
                             {t('kinds.' + k)}
                           </SelectItem>
                         ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field>
                     <FieldLabel>{t('source')}</FieldLabel>
                     <Select
-                      value={selectedSource}
-                      disabled={localOnly(model.value.kind)}
+                      value={selectedSource || null}
+                      required
+                      disabled={localOnly(model.value.kind) && !!local}
                       onValueChange={(nextSource) => {
+                        if (!nextSource) return;
                         const selected = nextSource ?? '';
                         setModel((draft) =>
                           draft
@@ -247,7 +264,6 @@ export function ProfileEditor({
                         );
                       }}
                       items={[
-                        ...(!localOnly(model.value.kind) ? [{ value: '', label: t('unbound') }] : []),
                         ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr', 'processor'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
@@ -265,10 +281,9 @@ export function ProfileEditor({
                       ]}
                     >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder={t('selectModelSource')} />
                       </SelectTrigger>
                       <SelectContent>
-                        {!localOnly(model.value.kind) ? <SelectGroup><SelectItem value="">{t('unbound')}</SelectItem></SelectGroup> : null}
                         {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr', 'processor'].includes(model.value.kind) ? (
                           <SelectGroup>
                             <SelectLabel>{t('localSourceGroup')}</SelectLabel>
@@ -292,7 +307,7 @@ export function ProfileEditor({
                   <Field>
                     <FieldLabel>{t('modelRef')}</FieldLabel>
                     <Combobox
-                      items={remoteModels}
+                      items={suggestions}
                       required
                       disabled={busy}
                       value={model.value.model_ref || null}
@@ -310,7 +325,7 @@ export function ProfileEditor({
                             !draft.id && draft.value.source?.type === 'local'),
                         } : null)} />
                       <ComboboxContent>
-                        <ComboboxEmpty>{t('common:noSuggestions')}</ComboboxEmpty>
+                        <ComboboxEmpty>{suggestionsMessage}</ComboboxEmpty>
                         <ComboboxList>
                           {(choice: string) => (
                             <ComboboxItem key={choice} value={choice}>
@@ -362,7 +377,7 @@ export function ProfileEditor({
                 ) : null}
                 {discoveryError ? (
                   <p role="status" className="model-empty">
-                    {t('discoveryUnavailable')} {discoveryError}
+                    {t(local ? 'referenceSuggestions.localUnavailable' : 'discoveryUnavailable')} {discoveryError}
                   </p>
                 ) : null}
                 {model.value.kind === 'image_embedding' && local && model.value.model_ref.trim() ? (
@@ -587,7 +602,7 @@ export function ProfileEditor({
               </FieldSet>
             </div>
             <DialogFooter>
-              <Button disabled={busy} type="submit" variant="default">
+              <Button disabled={busy || !model.value.source} type="submit" variant="default">
                 <Save data-icon="inline-start" />
                 {t('save')}
               </Button>

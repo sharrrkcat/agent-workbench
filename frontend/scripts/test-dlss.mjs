@@ -41,7 +41,7 @@ for (const action of ['install', 'repair', 'uninstall']) {
 const api = { listModelProfiles: async () => [{ id: 'created' }], listProviderProfiles: async () => [],
   getModelSettings: async () => ({}), getModelStatus: async () => ({ state: 'unloaded' }),
   runtimeCatalog: async () => ({}), runtimeInstallation: async () => ({ state: 'installed' }),
-  runtimeJobs: async () => [], localRuntimeSettings: async () => ({ enabled: true }),
+  runtimeJobs: async () => [], localRuntimeSettings: async () => ({ download: {} }),
 };
 const storeLoad = createModuleLoader(apiMocks(api));
 const { useModelsStore } = (await storeLoad('../src/store/useModelsStore.ts')).exports;

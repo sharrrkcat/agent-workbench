@@ -39,8 +39,7 @@ for (const locale of ['en', 'zh-CN']) {
           await route.fulfill({ json: result });
         });
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
-        await page.goto('/settings?tab=models');
-        await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds.embedding);
+        await page.goto('/settings?tab=models&view=embedding');
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         const source = dialog.getByLabel(labels.source, { exact: true });
@@ -77,7 +76,7 @@ for (const locale of ['en', 'zh-CN']) {
         const saved = (await (await request.get('/api/models/profiles')).json()).find((item: { alias: string }) => item.alias === alias);
         expect(saved.source.execution_options).toEqual({ device: 'cpu', intraop_threads: 4, max_batch_size: 4 });
         expect(saved.parameters).toEqual({ query_prompt_name: null, document_prompt_name: null });
-        const row = page.locator('.model-list .model-row').filter({ hasText: alias });
+        const row = page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias });
         await row.getByRole('button', { name: labels.edit, exact: true }).click();
         await chooseOption(source, provider.name);
         await expect(input).toHaveValue('');

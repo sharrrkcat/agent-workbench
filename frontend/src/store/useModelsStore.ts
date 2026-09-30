@@ -44,7 +44,7 @@ export const useModelsStore = create<ModelsState>((set, get) => {
       const storage = await modelsApi.runtimeStorage();
       if (version === storageVersion) set({ storage });
     } catch (error) {
-      if (version === storageVersion) set({ storage: null, storageError: error instanceof Error ? error.message : String(error) });
+      if (version === storageVersion) set({ storageError: error instanceof Error ? error.message : String(error) });
       throw error;
     } finally {
       if (version === storageVersion) set({ storageLoading: false });

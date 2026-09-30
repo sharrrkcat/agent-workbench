@@ -28,10 +28,7 @@ async def update_settings(payload: dict, state=Depends(get_state)):
     values = LocalRuntimeSettings.model_validate(merged)
     if state.runtime_supervisor.active_job:
         raise ModelError("RUNTIME_INSTALLING", "Wait for runtime maintenance before changing local settings.", 409)
-    if values.enabled != current.enabled:
-        await state.model_manager.invalidate_local()
     result = state.local_runtime_settings.patch(values.model_dump())
-    state.model_manager.runtime_changed()
     return result
 
 

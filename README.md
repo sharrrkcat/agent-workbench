@@ -21,13 +21,13 @@ Open <http://127.0.0.1:8765>; use `--port 8766` if occupied. Windows `start.bat`
 
 ## Configure models
 
-In **Settings > Models**, use the Model profiles, Providers, Local Runtime and External API sidebar pages:
+In **Settings**, the **Models** menu contains Dashboard and one page per model kind. **Providers & Runtime** contains Model Providers and Local Runtime:
 
 1. **Local Runtime:** install the shared Windows x64 release once. Place model directories manually under data/models and select a directory in the model profile. Directory information determines its engine and architecture; release policy defaults to manual.
-2. **Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
+2. **Model Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
 Profiles have eight kinds, internal UUIDs, public aliases, capabilities and parameters. LLM/text embedding allow local/provider/unbound sources; rerankers allow local/unbound. TTS, WD14, image embedding, ASR and processor require Local Runtime. Safe incomplete or ambiguous directories remain saveable drafts but cannot load.
-Choose default chat and optional auxiliary models. New sessions select the default or first enabled LLM; changing defaults preserves sessions. Titles use only the auxiliary model and remain unchanged when it is missing or fails.
+Choose default chat and optional auxiliary models in **Models > Dashboard**. New sessions select the default or first enabled LLM; changing defaults preserves sessions. Titles use only the auxiliary model and remain unchanged when it is missing or fails.
 
 | Kind | Local inventory root | Local execution |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ conversation. [Chat](docs/contracts/chat-context.md#messages-and-attachments) ow
 
 ## External API
 
-In **Models > External API**, configure a key, enable the service and mark model profiles externally visible; requests use public aliases.
+In **Models > Dashboard > External API**, configure a key, enable the service and mark model profiles externally visible; requests use public aliases.
 The service defaults disabled and loopback-only, shares ModelManager without chat/Knowledge writes, and forwards tool definitions/calls without executing tools.
 
 The examples below are PowerShell. Set the key and aliases to your configuration:

@@ -1,4 +1,5 @@
-import { chooseOption, fillCombobox, navigateSettings } from './controls';
+import type { ModelKind } from '../src/types/models';
+import { navigateModelSettings, chooseOption, fillCombobox } from './controls';
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
 
@@ -16,29 +17,26 @@ for (const locale of ['en', 'zh-CN']) {
         await page.route(`**/api/models/providers/${provider.id}/models`, (route) => route.fulfill({
           status: 502, json: { error: { code: 'PROVIDER_ERROR', message: 'Discovery fixture failure' } },
         }));
-        await page.goto('/settings?tab=models');
+        await page.goto('/settings?tab=models&view=llm');
         await expect(page.locator('.settings-content [role="tablist"]')).toHaveCount(0);
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         const source = dialog.getByLabel(labels.source, { exact: true });
         const reference = dialog.getByLabel(labels.modelRef, { exact: true });
         const alias = `runtime-fixture-source-${locale.toLowerCase()}-${width}`;
-        await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.unbound);
-        await fillCombobox(reference, 'manual-model-id');
+        await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
         await chooseOption(source, provider.name);
-        await expect(reference).toHaveValue('manual-model-id');
+        await expect(reference).toHaveValue('');
+        await fillCombobox(reference, 'manual-model-id');
         await expect(dialog).toContainText(labels.discoveryUnavailable);
         await expect(dialog.getByLabel(labels.release, { exact: true })).toHaveCount(0);
         await expect(dialog.getByLabel(labels.runtimeDevice, { exact: true })).toHaveCount(0);
-        await chooseOption(source, labels.unbound);
-        await expect(reference).toHaveValue('manual-model-id');
-        await chooseOption(source, provider.name);
         await dialog.getByLabel(labels.name, { exact: true }).fill(`Manual model ${locale} ${width}`);
         await dialog.getByLabel(labels.alias, { exact: true }).fill(alias);
         await page.screenshot({ path: info.outputPath('optional-discovery.png') });
         await dialog.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(dialog).toHaveCount(0);
-        const row = page.locator('.model-list .model-row').filter({ hasText: alias });
+        const row = page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias });
         await expect(row).toContainText(labels.recentRequestState);
         await expect(row.getByRole('button', { name: labels.load, exact: true })).toHaveCount(0);
         await expect(row.getByRole('button', { name: labels.health, exact: true })).toHaveCount(0);
@@ -54,13 +52,13 @@ for (const locale of ['en', 'zh-CN']) {
         await fillCombobox(reference, 'llms/fixture');
         await expect(dialog.getByLabel(labels.runtimeDevice, { exact: true })).toBeVisible();
         await dialog.getByRole('button', { name: labels.close, exact: true }).click();
-        await navigateSettings(page, labels.title, labels.localRuntime);
+        await navigateModelSettings(page, 'localRuntime');
         await page.locator('.runtime-download-settings > [data-slot="collapsible-trigger"]').click();
         const proxy = page.getByLabel(labels.download.http_proxy, { exact: true });
         await proxy.fill('http://127.0.0.1:8899');
-        await navigateSettings(page, labels.title, labels.providers);
+        await navigateModelSettings(page, 'providers');
         await expect(page.getByRole('button', { name: labels.addProvider, exact: true })).toBeVisible();
-        await navigateSettings(page, labels.title, labels.localRuntime);
+        await navigateModelSettings(page, 'localRuntime');
         await expect(proxy).toHaveValue('http://127.0.0.1:8899');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
         expect(overflow).toBe(false);
@@ -83,7 +81,7 @@ for (const locale of ['en', 'zh-CN']) {
     });
     await page.route(`**/api/models/providers/${providers[1].id}/models`, (route) => route.fulfill({ json: { models: ['current-suggestion'] } }));
     await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
-    await page.goto('/settings?tab=models');
+    await page.goto('/settings?tab=models&view=llm');
     await page.getByRole('button', { name: labels.addModel, exact: true }).click();
     const dialog = page.getByRole('dialog');
     const source = dialog.getByLabel(labels.source, { exact: true });
@@ -109,18 +107,16 @@ for (const locale of ['en', 'zh-CN']) {
     await expect(page.getByRole('option')).toHaveText(['current-suggestion']);
     await page.keyboard.press('Escape');
     await dialog.getByRole('button', { name: labels.close, exact: true }).click();
-    const kind = page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true });
     for (const selected of ['embedding', 'tts', 'reranker', 'image_embedding', 'vision', 'asr']) {
-      await chooseOption(kind, labels.kinds[selected]);
+      await navigateModelSettings(page, selected as ModelKind);
       await page.getByRole('button', { name: labels.addModel, exact: true }).click();
       await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
-      if (['tts', 'image_embedding', 'vision', 'asr'].includes(selected)) {
+      if (['tts', 'image_embedding', 'vision', 'asr', 'reranker'].includes(selected)) {
         await expect(source).toBeDisabled();
       } else {
         await source.click();
         await expect(page.getByRole('listbox')).toBeVisible();
         await expect(page.getByRole('option', { name: labels.localRuntime, exact: true })).toHaveCount(1);
-        await expect(page.getByRole('option', { name: labels.unbound, exact: true })).toHaveCount(1);
         const providerGroup = page.getByRole('group', { name: labels.providers, exact: true });
         await expect(providerGroup).toHaveCount(selected === 'embedding' ? 1 : 0);
         if (selected === 'embedding') await expect.poll(() => providerGroup.getByRole('option').count()).toBeGreaterThan(0);

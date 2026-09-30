@@ -9,11 +9,13 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { Field, FieldLabel, FieldSet, FieldLegend, FieldGroup } from '@/components/ui/field';
+import { Separator } from '@/components/ui/separator';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../api/models';
 import { useModelsStore } from '../../store/useModelsStore';
+import { modelKinds } from '../../types/models';
 
 import { ProfilesTab } from './models/ProfilesTab';
 import { ProvidersTab } from './models/ProvidersTab';
@@ -22,7 +24,7 @@ import { ExternalServicePanel } from './models/ExternalServicePanel';
 import { useModelFeedback } from './models/useModelFeedback';
 import { SettingsView } from './SettingsView';
 import { settingsRouteUrl, type ModelView, type SettingsNavigate } from './navigation';
-import { useSettingsLeaveGuard } from './resources/ResourceUI';
+import { Feedback, useSettingsLeaveGuard } from './resources/ResourceUI';
 
 export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate: SettingsNavigate }) {
   const { t } = useTranslation('llm');
@@ -36,19 +38,12 @@ export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate:
     void reloadRuntimes().catch(() => undefined);
   }, [reloadRuntimes]);
   const chatProfiles = profiles.filter((profile) => profile.kind === 'llm' && profile.enabled);
-  const feedback = (
-    <div
-      role="status"
-      className={error || loadError ? 'error-text model-feedback' : 'success-text model-feedback'}
-    >
-      {error || loadError || notice}
-    </div>
-  );
+  const feedback = <Feedback error={error || loadError} notice={notice} />;
   const editorProps = { busy, run, feedback, setError };
   return (
     <section className="settings-panel models-panel" aria-busy={busy || loading}>
-      <div className="model-heading">
-        <p className="text-muted-foreground">{t('viewHelp.' + view)}</p>
+      {view === 'dashboard' ? <div className="model-heading">
+        <p className="text-muted-foreground">{t('viewHelp.dashboard')}</p>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -66,16 +61,16 @@ export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate:
           </TooltipTrigger>
           <TooltipContent>{t('refresh')}</TooltipContent>
         </Tooltip>
-      </div>
+      </div> : null}
       {feedback}
-      <SettingsView active={view === 'profiles'}>
-        <FieldSet className="model-defaults">
+      <SettingsView active={view === 'dashboard'}>
+        <FieldSet className="w-full max-w-3xl">
           <FieldLegend>{t('defaultModels')}</FieldLegend>
           <FieldGroup className="grid gap-4 md:grid-cols-2">
             <Field>
               <FieldLabel>{t('defaultModel')}</FieldLabel>
               <Select
-                key={String(view === 'profiles')}
+                key={String(view === 'dashboard')}
                 value={settings?.default_model_profile_id || ''}
                 disabled={busy || !settings}
                 onValueChange={(selected) =>
@@ -106,7 +101,7 @@ export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate:
             <Field>
               <FieldLabel>{t('utilityModel')}</FieldLabel>
               <Select
-                key={String(view === 'profiles')}
+                key={String(view === 'dashboard')}
                 value={settings?.utility_model_profile_id || ''}
                 disabled={busy || !settings}
                 onValueChange={(selected) =>
@@ -136,21 +131,28 @@ export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate:
             </Field>
           </FieldGroup>
         </FieldSet>
-        <ProfilesTab
-          {...editorProps}
-          onOpenLocalRuntime={() =>
-            void onNavigate(settingsRouteUrl({ section: 'models', view: 'localRuntime' }))
-          }
-        />
+        <Separator className="max-w-3xl" />
+        <FieldSet className="w-full max-w-3xl">
+          <FieldLegend>{t('service')}</FieldLegend>
+          <ExternalServicePanel run={run} busy={busy} />
+        </FieldSet>
       </SettingsView>
+      {modelKinds.map((kind) => (
+        <SettingsView key={kind} active={view === kind}>
+          <ProfilesTab
+            {...editorProps}
+            kind={kind}
+            onOpenLocalRuntime={() =>
+              void onNavigate(settingsRouteUrl({ section: 'models', view: 'localRuntime' }))
+            }
+          />
+        </SettingsView>
+      ))}
       <SettingsView active={view === 'providers'}>
         <ProvidersTab {...editorProps} />
       </SettingsView>
       <SettingsView active={view === 'localRuntime'}>
         <LocalRuntimePanel activeView={view === 'localRuntime'} />
-      </SettingsView>
-      <SettingsView active={view === 'service'}>
-        <ExternalServicePanel run={run} busy={busy} />
       </SettingsView>
     </section>
   );

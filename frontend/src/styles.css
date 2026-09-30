@@ -493,7 +493,7 @@
   .settings-form, .model-service { width: 100%; max-width: 48rem; }
   .settings-view[hidden] { display: none; }
 
-  .settings-panel, .settings-view, .runtime-panel, .runtime-storage,
+  .settings-panel, .settings-view, .runtime-panel,
   .model-service, .knowledge-sources, .worldbook-entries,
   .tool-call-form, .tool-output, .tool-search-settings, .resource-test,
   .worldbook-match-results, .knowledge-source-content {
@@ -523,7 +523,6 @@
   .model-heading > p { flex: 1; min-width: 0; }
   .resource-heading { justify-content: flex-start; }
   .resource-heading > h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .model-defaults { padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
 
   .model-form, .resource-fieldset { gap: 1.25rem; }
   .model-form-footer, .resource-form-footer, .settings-form-actions {
@@ -544,7 +543,7 @@
   }
 
   .model-list, .resource-list, .persona-list, .worldbook-entry-card-list { display: flex; flex-direction: column; min-width: 0; }
-  .model-row, .resource-row, .persona-row, .runtime-row {
+  .resource-row, .persona-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -563,10 +562,9 @@
   }
 
   .persona-identity { flex-basis: 8rem; }
-  .model-state, .runtime-progress { display: flex; flex-direction: column; min-width: 0; gap: 0.35rem; }
-  .model-row > .model-actions, .resource-row > .resource-actions { margin-left: auto; }
+  .runtime-progress { display: flex; flex-direction: column; min-width: 0; gap: 0.35rem; }
+  .resource-row > .resource-actions { margin-left: auto; }
   .model-runtime-state { display: flex; flex-basis: 100%; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
-  .model-feedback:empty { display: none; }
 
   .settings-dialog-form { display: flex; flex-direction: column; min-height: 0; gap: 1rem; overflow: hidden; }
   .settings-dialog-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.125rem 0.375rem 0.5rem 0.125rem; }
@@ -575,18 +573,34 @@
   .runtime-download-settings > [data-slot="collapsible-content"] { padding-top: 1rem; }
   .resource-advanced > [data-slot="collapsible-content"]:not([hidden]) { display: flex; flex-direction: column; gap: 1.25rem; }
 
-  .runtime-storage-summary, .runtime-cache-result, .resource-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .runtime-packages { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .runtime-package, .runtime-storage { min-width: 0; }
+  .runtime-package [data-slot="card-description"] { grid-column: 1 / -1; }
+  .runtime-package [data-slot="card-footer"] { flex-wrap: wrap; }
+  .runtime-secondary { display: flex; flex-direction: column; gap: 0.5rem; }
+  .runtime-secondary > [data-slot="collapsible"] > [data-slot="collapsible-content"] { padding: 1rem 0.5rem; }
+  .runtime-history { display: flex; flex-direction: column; gap: 1rem; }
+  .runtime-history-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+  .runtime-storage-summary { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .runtime-storage-summary dd { font-size: 1.25rem; }
+  .runtime-cache-result, .resource-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
   .runtime-storage-summary > div, .runtime-cache-result > div, .resource-metrics > div { display: flex; flex-direction: column; gap: 0.25rem; }
   .runtime-storage-summary dt, .runtime-cache-result dt, .resource-metrics dt { color: var(--muted-foreground); }
   .runtime-storage-summary dd, .runtime-cache-result dd, .resource-metrics dd { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .runtime-cache-task { display: flex; flex-direction: column; gap: 1rem; }
+  .runtime-cache-task { display: flex; flex-direction: column; gap: 0.5rem; }
+  .runtime-cache-task-heading > div { flex-wrap: wrap; }
   .runtime-panel progress { width: 100%; max-width: 20rem; }
   .runtime-gpu-field { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
   .runtime-gpu-mode { max-width: 100%; flex-wrap: wrap; }
   .runtime-storage-details, .knowledge-table-scroll { min-width: 0; max-width: 100%; }
   .runtime-storage-table td, .runtime-storage-table th { white-space: normal; }
+  .runtime-storage-table th:first-child { min-width: 12rem; }
+  .runtime-storage-table th > code { display: block; color: var(--muted-foreground); font-weight: 400; }
   .runtime-storage-table td:first-child { overflow-wrap: anywhere; }
   .runtime-storage-warnings { margin-block: 1rem; padding-left: 1.25rem; list-style: disc; }
+  @media (min-width: 768px) {
+    .runtime-storage-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
 
   .runtime-log, .knowledge-source-preview, .knowledge-chunk pre, .settings-content .part-json {
     max-width: 100%;
@@ -636,7 +650,6 @@
   @media (max-width: 767px) {
     .settings-content { padding: 1.25rem 1rem 2rem; }
     .settings-form-actions > button { flex: 1; }
-    .model-row > .model-actions { flex-basis: 100%; margin-left: 0; }
     .worldbook-entry-card-header { grid-template-columns: auto auto auto minmax(0, 1fr); gap: 0.25rem; padding: 0.5rem; }
     .worldbook-entry-card-actions { grid-column: 1 / -1; justify-content: flex-end; }
     .worldbook-entry-form-row { grid-template-columns: minmax(0, 1fr); }

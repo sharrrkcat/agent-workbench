@@ -5,10 +5,8 @@
   "defaultModel": "Default chat model",
   "utilityModel": "Auxiliary model",
   "unconfigured": "Not configured",
-  "profiles": "Model profiles",
   "service": "External API",
   "kind": "Model kind",
-  "inventory": "Local model directories",
   "addModel": "Add model",
   "editModel": "Edit model",
   "name": "Name",
@@ -46,13 +44,13 @@
   "save": "Save",
   "close": "Close",
   "kinds": {
-    "llm": "Chat",
-    "embedding": "Text embedding",
+    "llm": "LLM",
+    "embedding": "Text Embedding",
     "reranker": "Reranker",
-    "image_embedding": "Image embedding",
+    "image_embedding": "Image Embedding",
     "vision": "Vision",
-    "tts": "Text to speech",
-    "asr": "Speech to text",
+    "tts": "Text to Speech",
+    "asr": "Speech to Text",
     "processor": "Processor"
   },
   "states": {
@@ -202,14 +200,14 @@
     "character": "Character tag threshold"
   },
   "runtimeProgress": "Installation progress",
-  "installRuntime": "Install local runtime",
-  "uninstallRuntime": "Uninstall local runtime",
+  "installRuntime": "Install",
+  "uninstallRuntime": "Uninstall",
   "runtimeLog": "Task log",
   "processLog": "Process log",
   "runtimeHistory": "Task history",
   "emptyLog": "No log entries",
   "cancelTask": "Cancel task",
-  "cachePrune": "Prune cache",
+  "cachePrune": "Prune unused cache",
   "cacheClean": "Clear cache",
   "cacheCleanConfirm": "Clear runtime cache?",
   "cacheCleanConsequence": "Future installations may need to download dependencies again. Installed environments are retained.",
@@ -220,19 +218,19 @@
   "runtimeOperations": {
     "install": "Install",
     "uninstall": "Uninstall",
-    "cache_prune": "Prune cache",
+    "cache_prune": "Prune unused cache",
     "cache_clean": "Clear cache",
     "repair": "Repair"
   },
   "storage": {
-    "title": "Runtime storage",
+    "title": "Storage & cache",
     "scanning": "Scanning storage...",
     "unavailable": "Storage statistics unavailable",
     "unknown": "Unknown",
-    "incomplete": "Some storage statistics are incomplete. Unavailable values are marked Unknown.",
-    "totalUnique": "Total file size, deduplicated",
-    "cacheSize": "Cache file size",
-    "reclaimable": "Estimated reclaimable cache",
+    "incomplete": "Some sizes are unavailable and shown as Unknown.",
+    "totalUnique": "Total files (deduplicated)",
+    "cacheSize": "Cache size",
+    "reclaimable": "Estimated reclaimable",
     "estimateHint": "Exclusive logical file size. Actual disk recovery depends on filesystem allocation, compression and copy-on-write sharing.",
     "details": "Storage details",
     "directory": "Directory",
@@ -255,9 +253,16 @@
       "STORAGE_CHANGED": "Changed during the scan",
       "STORAGE_ID_UNAVAILABLE": "File identity unavailable",
       "STORAGE_LINK_ROOT": "Redirected storage directory"
-    }
+    },
+    "scan": "Scan storage",
+    "manualScan": "Storage statistics update on demand.",
+    "notScanned": "Not scanned yet",
+    "scanHint": "Scan to see runtime and cache sizes.",
+    "retryScan": "Scan again to retry.",
+    "lastScan": "Last scan: {{time}}",
+    "stale": "Rescan needed"
   },
-  "downloadSettings": "Runtime download settings",
+  "downloadSettings": "Download settings",
   "download": {
     "http_proxy": "HTTP proxy",
     "pypi_index_url": "PyPI index URL",
@@ -315,9 +320,7 @@
   "chatterboxReferenceHint": "English speech requires a temporary voice ID or reference audio through the speech API. Temporary voices expire after 30 minutes; admitted requests extend their remaining lifetime to at least 15 minutes.",
   "qwen3TTSBase": "Qwen3-TTS (12Hz Base)",
   "qwenReferenceHint": "Multilingual Base cloning uses a temporary voice ID or reference audio through the speech API. Include the reference transcript for full conditioning, or omit it for audio-only cloning. Language defaults to automatic. The token limit can stop speech before the text ends. Disabling main-token sampling does not guarantee identical audio.",
-  "localInstallation": "Local installation",
-  "repairRuntime": "Repair installation",
-  "runtimeReuseHint": "App updates reuse the installed runtime when dependencies are unchanged. Manual repair rebuilds the runtime.",
+  "repairRuntime": "Repair",
   "executionOptions": "Execution options",
   "engine": "Engine",
   "engines": {
@@ -333,16 +336,14 @@
     "whisper": "Whisper",
     "dlss5nr": "DLSS NR"
   },
-  "providers": "Providers",
+  "providers": "Model Providers",
   "addProvider": "Add provider",
   "editProvider": "Edit provider",
+  "providerEnabled": "Enable provider {{name}}",
   "localRuntime": "Local Runtime",
-  "enableLocalRuntime": "Enable local runtime",
   "manageLocalRuntime": "Manage local runtime",
   "source": "Model source",
-  "unbound": "Unbound",
   "localSourceGroup": "On this computer",
-  "providerSummary": "Connections to online OpenAI-compatible services. Select a provider when configuring a model.",
   "emptyProviders": "No providers configured",
   "providerModelHint": "Enter the provider model ID, or choose a discovered model. Discovery is optional.",
   "discoveryUnavailable": "Model discovery is unavailable. You can still enter a model ID and save.",
@@ -461,10 +462,7 @@
     }
   },
   "viewHelp": {
-    "profiles": "Choose your default models and manage local or connected model profiles.",
-    "providers": "Manage connections to OpenAI-compatible model providers.",
-    "localRuntime": "Manage the local installation, storage and runtime tasks.",
-    "service": "Configure the localhost OpenAI-compatible model API."
+    "dashboard": "Choose default models and configure the localhost OpenAI-compatible API."
   },
   "directory": {
     "information": "Model directory information",
@@ -494,10 +492,9 @@
       "incomplete_shards": "All numbered GGUF shards must be present."
     }
   },
-  "dlssComponent": "DLSS NR component",
-  "updateComponent": "Update component",
+  "dlssComponent": "DLSS NR",
+  "updateComponent": "Update",
   "bundledVersion": "Bundled version",
-  "dlssComponentHint": "Bundled with the application; installs offline and shares the base Python environment. Installation creates a default profile and processors/dlss5-nr directory. Supply nvngx_dlssnr.dll manually. Component uninstall preserves resources and profiles.",
   "processor": {
     "task": "Image processing",
     "directoryHint": "The directory must contain your manually supplied nvngx_dlssnr.dll. Install the DLSS NR component in Local Runtime first.",
@@ -512,13 +509,35 @@
     "channel_order": "Output channel order",
     "auto": "Auto",
     "styles": {
-      "natural": "Natural",
-      "cinematic": "Cinematic",
-      "default": "Default",
       "3": "3",
       "4": "4",
       "5": "5",
-      "6": "6"
+      "6": "6",
+      "natural": "Natural",
+      "cinematic": "Cinematic",
+      "default": "Default"
     }
+  },
+  "coreRuntime": "Core Runtime",
+  "runtimePackages": "Runtime packages",
+  "refreshRuntimeStatus": "Refresh status",
+  "coreRuntimeSummary": "Shared dependencies for local model inference.",
+  "dlssComponentSummary": "Optional image denoising. Supply NR resources manually.",
+  "coreRuntimeRequired": "Install or repair Core Runtime first.",
+  "runtimeActions": "More actions",
+  "runtimeDetails": "Details",
+  "runtimeSettingsSaved": "Settings saved",
+  "runtimeHistoryEmpty": "No tasks yet.",
+  "dismissRuntimeResult": "Dismiss result",
+  "cacheActions": "Cache actions",
+  "dashboard": "Dashboard",
+  "modelEnabled": "Enable {{name}}",
+  "selectModelSource": "Select a model source",
+  "referenceSuggestions": {
+    "loading": "Loading suggestions…",
+    "noDirectories": "No local model directories found. You can enter a relative directory manually.",
+    "noModels": "No models returned. You can enter a model ID manually.",
+    "noMatch": "No matching suggestions. You can use the entered reference.",
+    "localUnavailable": "Local directories could not be loaded. You can enter a relative directory manually."
   }
 }

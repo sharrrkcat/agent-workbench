@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { cn } from '@/lib/utils';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -99,11 +100,11 @@ export function useResourceTask() {
   return { busy, error, notice, setError, setNotice, run };
 }
 
-export function Feedback({ error, notice }: { error: string; notice?: string }) {
+export function Feedback({ error, notice, className }: { error: string; notice?: string; className?: string }) {
   if (!error && !notice) return null;
   return (
     <Alert
-      className="resource-feedback"
+      className={cn('resource-feedback', className)}
       variant={error ? 'destructive' : 'default'}
       role={error ? 'alert' : 'status'}
     >

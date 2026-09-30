@@ -18,7 +18,7 @@ import { useCogitaStore } from '../../store/useCogitaStore';
 import type { OrdinarySession, Session, SessionPatch } from '../../types/chat';
 import type { HarnessTool } from '../../types/tools';
 import type { KnowledgeBase } from '../../types/knowledge';
-import { ResourceLoading, errorText } from '../settings/resources/ResourceUI';
+import { Feedback, ResourceLoading, errorText } from '../settings/resources/ResourceUI';
 import { ContextFields, GenerationFields, ModelField, ToolsField } from './ConfigurationFields';
 import { SessionBindings } from './SessionBindings';
 import { WorkspaceSessionSettingsDialog } from '../projects/WorkspaceSessionSettingsDialog';
@@ -100,7 +100,7 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader><DialogTitle>{t('sessionSettings')}</DialogTitle></DialogHeader>
-        {error ? <p role="alert" className="model-feedback error-text">{error}</p> : null}
+        <Feedback error={error} />
         {loading ? (
           <>
             <ResourceLoading error={error} />

@@ -1,4 +1,4 @@
-import { ResourceEmpty } from '../resources/ResourceUI';
+import { Feedback, ResourceEmpty } from '../resources/ResourceUI';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState } from 'react';
@@ -193,9 +193,7 @@ export function WorldbookEntries({
           {t('newEntry')}
         </Button>
       </div>
-      <div role="status" className="resource-notice">
-        {notice}
-      </div>
+      <Feedback error="" notice={notice} />
       <div className="worldbook-entry-card-list">
         {ids.map((id) => {
           const entry = entries.find((item) => item.id === id);

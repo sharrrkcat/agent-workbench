@@ -12,8 +12,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect((await request.post('/__test__/runtimes', { data: {} })).ok()).toBeTruthy();
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
-        await page.goto('/settings?tab=models');
-        await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds['tts']);
+        await page.goto('/settings?tab=models&view=tts');
         for (const selected of ['chatterbox', 'qwen3tts']) {
           await page.getByRole('button', { name: labels.addModel, exact: true }).click();
           const dialog = page.getByRole('dialog');
@@ -40,7 +39,7 @@ for (const locale of ['en', 'zh-CN']) {
           const profiles = await (await request.get('/api/models/profiles')).json();
           const saved = profiles.find((profile: { alias: string }) => profile.alias === alias);
           expect(saved.parameters.seed).toBe(0);
-          const row = page.locator('.model-list .model-row').filter({ hasText: alias });
+          const row = page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias });
           await row.getByRole('button', { name: labels.edit, exact: true }).click();
           await expect(seed).toHaveValue('0');
           await expect(dialog.getByLabel(labels.source, { exact: true })).toBeDisabled();
@@ -67,8 +66,7 @@ for (const locale of ['en', 'zh-CN']) {
 
       test('directory changes preserve common settings and ignore late inspection', async ({ page, request }) => {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
-        await page.goto('/settings?tab=models');
-        await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds.tts);
+        await page.goto('/settings?tab=models&view=tts');
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         const reference = dialog.getByLabel(labels.modelRef, { exact: true });

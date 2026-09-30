@@ -94,7 +94,7 @@ for (const locale of ['en', 'zh-CN']) {
           const picker = page.locator('.composer input[type=file]');
           await picker.setInputFiles(file('limit.png'));
           await expect(page.locator('.composer-hint')).toHaveText(labels.localImageLimit.replace('{{limit}}', '128'));
-          await page.goto('/settings?tab=models&view=service');
+          await page.goto('/settings?tab=models&view=dashboard');
           const normalized = page.getByRole('spinbutton', { name: llm.normalizedBodyLimit, exact: true });
           await expect(normalized).toHaveValue('128');
           const saved = page.waitForResponse((response) =>
@@ -116,14 +116,13 @@ for (const locale of ['en', 'zh-CN']) {
       });
 
       test('directories detect projectors, retain Vision choices and allow ambiguous drafts', async ({ page, request }, info) => {
-        await page.goto('/settings?tab=models');
-        await page.getByRole('button', { name: llm.inventory, exact: true }).click();
-        const inventoryRow = page.locator('.model-row').filter({ has: page.getByText('llms/fixture', { exact: true }) });
-        await expect(inventoryRow).toHaveCount(1);
-        await inventoryRow.getByRole('button', { name: llm.addModel, exact: true }).click();
+        await page.goto('/settings?tab=models&view=llm');
+        await page.getByRole('button', { name: llm.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         await expect(dialog.getByLabel(llm.source, { exact: true }).locator('[data-slot="select-value"]')).toHaveText(llm.localRuntime);
         const reference = dialog.getByLabel(llm.modelRef, { exact: true });
+        await reference.press('ArrowDown');
+        await page.getByRole('option', { name: 'llms/fixture', exact: true }).click();
         const vision = dialog.getByRole('switch', { name: llm.cap.vision, exact: true });
         const details = dialog.getByRole('group', { name: llm.directory.information, exact: true });
         await expect(reference).toHaveValue('llms/fixture');
@@ -140,7 +139,7 @@ for (const locale of ['en', 'zh-CN']) {
         const saved = (await (await request.get('/api/models/profiles')).json()).find((profile: { alias: string }) => profile.alias === alias);
         expect(saved.model_ref).toBe('llms/fixture');
         expect(saved.source.execution_options).not.toHaveProperty('mmproj_ref');
-        await page.locator('.model-row').filter({ hasText: alias }).getByRole('button', { name: llm.edit, exact: true }).click();
+        await page.locator('.model-profile-card').filter({ hasText: alias }).getByRole('button', { name: llm.edit, exact: true }).click();
         await expect(details).toContainText('llms/fixture/mmproj-fixture.gguf');
         await expect(vision).not.toBeChecked();
         await fillCombobox(reference, 'llms/other');
@@ -153,7 +152,7 @@ for (const locale of ['en', 'zh-CN']) {
         await dialog.getByRole('button', { name: llm.save, exact: true }).click();
         await expect(dialog).toHaveCount(0);
         expect((await (await request.get(`/api/models/profiles/${saved.id}`)).json()).model_ref).toBe('llms/ambiguous');
-        await page.locator('.model-row').filter({ hasText: alias }).getByRole('button', { name: llm.edit, exact: true }).click();
+        await page.locator('.model-profile-card').filter({ hasText: alias }).getByRole('button', { name: llm.edit, exact: true }).click();
         await fillCombobox(reference, 'llms/transformers');
         await expect(vision).toBeEnabled();
         await expect(details).toContainText(llm.engines.transformers);

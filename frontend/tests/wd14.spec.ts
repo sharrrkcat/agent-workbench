@@ -13,8 +13,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
-        await page.goto('/settings?tab=models');
-        await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds.vision);
+        await page.goto('/settings?tab=models&view=vision');
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         const source = dialog.getByLabel(labels.source, { exact: true });
@@ -78,7 +77,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect(saved.source.execution_options).toEqual({ device: 'cpu', intraop_threads: 4, max_batch_size: 1 });
         expect(saved.source.lifecycle).toEqual({ unload: 'idle', idle_seconds: 90 });
         expect(saved.external_enabled).toBe(true);
-        const row = page.locator('.model-list .model-row').filter({ hasText: alias });
+        const row = page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias });
         await row.getByRole('button', { name: labels.edit, exact: true }).click();
         await expect(general).toHaveValue('0');
         await expect(character).toHaveValue('0.875');
@@ -114,7 +113,9 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(row.getByRole('button', { name: labels.edit, exact: true })).toBeDisabled();
         finishLoad();
         await expect(row).toContainText(labels.states.ready);
-        await expect(row).toContainText(labels.engines.wd14);
+        await expect(row.getByText(labels.localRuntime, { exact: true })).toBeVisible();
+        await expect(row.getByText('CPU', { exact: true })).toBeVisible();
+        await expect(row).not.toContainText(labels.engines.wd14);
         await row.getByRole('button', { name: labels.processLog, exact: true }).click();
         await expect(dialog).toContainText('WD14 CPU worker ready');
         await dialog.getByRole('button', { name: labels.close, exact: true }).click();

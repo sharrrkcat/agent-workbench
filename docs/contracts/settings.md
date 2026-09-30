@@ -28,12 +28,12 @@ Fonts do not use external CDNs or the removed backend font settings.
 
 Shared controls are generated with shadcn CLI 4.21.0 and maintained in
 `frontend/src/components/ui/`. Callers compose Button, Field, Input, Textarea,
-Select, Combobox, Checkbox, Switch, Tabs, Collapsible, ToggleGroup, Dialog,
+Select, Combobox, Checkbox, Switch, Tabs, Card, Collapsible, ToggleGroup, Dialog,
 AlertDialog, Tooltip, Badge and Table directly. Domain components retain model filtering and
 resource binding rules. Vite, TypeScript and the test module loader resolve
 `@/` to `frontend/src/`; `cn` combines component styles.
 
-Desktop controls retain Mira density. Coarse-pointer buttons, options and form
+Field labels/titles use explicit 12px medium text; descriptions, field errors and shared save/error Feedback use 12px regular text. Section legends stay 14px; touch inputs retain 16px text. Desktop controls retain Mira density. Coarse-pointer buttons, options and form
 actions have at least 44px targets; Checkbox/Switch keep compact marks with
 expanded targets and associated labels. Field labels/descriptions are connected
 to controls. Forms retain native required/range validation and existing blank,
@@ -91,20 +91,21 @@ MessageScroller uses pinned @shadcn/react 0.3.1; transcript behavior belongs to
 
 Settings fixes its title in the shared sidebar brand position and a Back to chat footer; the middle navigation
 scrolls independently. SidebarGroup reflects responsibility: Application preferences
-contains General; Models and execution contains Models/Tools; Daily Chat & Workspace
+contains General; Models and execution contains Models, Providers & Runtime and Tools; Daily Chat & Workspace
 contains Personas (Cogita Persona, Agent Personas) and Knowledge; Roleplay & Timeline
 contains Personas (User Personas, Character Personas) and Worldbook. The two Personas
 menus have distinct ids and accessible group context. Each menu uses SidebarMenu;
 parents only toggle their nested pages and have no selected state. Menus start collapsed
 and closed pages leave keyboard navigation. Active pages use aria-current.
-| Domain | Pages / `view` values |
+| Menu | Pages / `view` values |
 | --- | --- |
 | General, Tools | Single page; no `view` |
 | Personas | Cogita Persona `user`, Agent Personas `agent`, User Personas `roleplay_user`, Character Personas `character` |
-| Models | Model profiles `profiles`, Providers `providers`, Local Runtime `localRuntime`, External API `service` |
+| Models | Dashboard `dashboard`; LLM `llm`, Text Embedding `embedding`, Reranker `reranker`, Image Embedding `image_embedding`, Vision `vision`, Text to Speech `tts`, Speech to Text `asr`, Processor `processor` |
+| Providers & Runtime | Model Providers `providers`, Local Runtime `localRuntime` (both remain under `tab=models`) |
 | Knowledge, Worldbook | Resources `list`, Global settings `settings` |
 
-Missing/unknown views select user for Personas, profiles for Models or list for resources. Page changes push browser history;
+Missing/unknown views select user for Personas, dashboard for Models or list for resources. Page changes push browser history;
 reselecting the effective current page adds no entry. Back to chat restores the previous ordinary/Project route.
 Refresh restores the domain/subpage; resource selection and detail Tabs are local.
 The fixed page header shares Home's primary-row height and toggle position and shows
@@ -143,26 +144,23 @@ GET/PATCH `/api/models/settings` owns default_model_profile_id, utility_model_pr
 external_enabled, external_api_key, max_request_mb and max_normalized_request_mb in appmetadatarecord.model_settings.
 HTTP bodies default to 32 MiB (1..100); the strict integer normalized limit defaults to 128 MiB (1..1024). Omitted PATCH fields retain values; null/invalid normalized limits return 422.
 Defaults apply to absent settings; explicitly saved HTTP limits remain authoritative. No database schema change or settings conversion is required.
-Models → External API shows both limits in MiB; valid edits autosave on blur or Enter, while blank, fractional and out-of-range drafts are not submitted.
+Models → Dashboard → External API shows both limits in MiB; valid edits autosave on blur or Enter, while blank, fractional and out-of-range drafts are not submitted.
 The normalized limit also applies to in-app local chat, WD14, SigLIP and reranking while the external service is disabled. Chat image hints display the configured value; help distinguishes runtime limits.
 Changes apply to subsequent request preparation without restarting workers. [Models](models.md#external-inference-api) owns byte accounting and the lower native GGUF ceiling.
 The default initializes new sessions; changing it preserves existing selections. Header/session
 settings select concrete LLMs without a Global default option. [Models](models.md) owns profile
 parameters; [chat/context](chat-context.md#auxiliary-tasks-and-titles) owns titles.
 
-Models has four sidebar pages. Default chat/auxiliary model selectors appear only on Model profiles. Providers manages external connections; Local Runtime shows installation, storage, download
-settings and task history, with a log dialog. Forms and the kind filter retain drafts across subpages. LLM/text embedding offer Unbound, Local Runtime and configured providers; rerankers offer
-Unbound/Local Runtime. TTS, vision, image embedding, ASR and processor fix Model source to Local Runtime; disabled providers are marked. Blank-form defaults are local for every kind except unbound
-LLMs; adding a local inventory entry always binds Local Runtime and retains its directory reference. Detected Kokoro/WD14 use CPU, DLSS NR uses D3D12, and other engines use CUDA. Unresolved
-LLM/TTS/WD14 directories expose no guessed engine options. Local models expose inventory, execution options and release policy. Vision shows detected WD14/backbone information, read-only Tags,
+Models contains Dashboard followed by all eight model kinds. Dashboard stacks Default models above External API; only enabled LLMs appear in the default chat/auxiliary selectors. Each kind page owns its filtered card list and independent editor draft; adding or copying stays in that kind, which is read-only in the editor. There is no list kind selector.
+Providers & Runtime contains Model Providers for external connections and Local Runtime for runtime cards, Storage & cache, collapsed download settings and task history with a log dialog. Both menus share model state and the busy navigation guard. Forms retain drafts across their subpages, with inactive overlays hidden. Removed profiles/service views follow the normal Dashboard default, without redirects. LLM/text embedding offer Local Runtime and configured providers; other kinds use Local Runtime only. Disabled providers are marked. New forms default to Local Runtime. Existing unbound profiles show Unconfigured; editing/copying requires selecting a source before saving, without changing the nullable backend contract. Detected Kokoro/WD14 use CPU, DLSS NR uses D3D12, and other engines use CUDA. Unresolved
+LLM/TTS/WD14 directories expose no guessed engine options. Local editors expose directory suggestions, execution options and release policy. Vision shows detected WD14/backbone information, read-only Tags,
 general/character thresholds (0.35/0.85), CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and fractions round-trip, while blank fields
 prevent submission. The removed vision batch-size field is rejected by the API. WD14 directory suggestions require model.onnx and selected_tags.csv; arbitrary safe manual relative references remain
 editable. GGUF references select directories; the information panel shows the main model and optional projector without file selectors. A newly selected directory with one projector enables Vision;
 users may disable it. Reopening/reinspecting preserves saved choices, and no projector disables Vision. Ambiguity is shown as a blocking load diagnostic while saving remains available. Transformers
 vision remains selectable; the worker verifies actual image capability during execution. Provider models expose model-ID entry and optional discovery; failed discovery leaves manual entry, saving and
-inference available. Late results from a previous source cannot replace current suggestions. Changing local/provider source or provider id clears model_ref and replaces source options and
-source-specific embedding parameters. Unbinding preserves model_ref for eligible kinds; binding an unbound draft retains its reference for validation. Reselecting is a no-op. Local rows show
-health/load/unload/residency/logs; provider rows show recent-request state and occupancy, without lifecycle controls or a trial-inference action. Local engine selection follows directory inspection.
+inference available. Opening an active editor or changing sources loads suggestions for its kind/source; reopening refreshes them. Local suggestions include directories already used by profiles. Loading, empty directories/models, no matches and failures have distinct feedback; manual references remain valid. Late results from a previous source cannot replace current suggestions. Changing local/provider source or provider id clears model_ref and replaces source options and
+source-specific embedding parameters. Binding an existing unbound draft retains its reference for validation. Reselecting is a no-op. Single-column cards show an unlabeled, accessible enable switch, name/source badge and alias; references and engine/version/installation summaries are omitted. Local cards retain health/load/unload/residency/logs, device/GPU details, tower states and diagnostics; providers show recent-request state and occupancy. Switches PATCH only enabled, stay locked during saving and retain their state on failure. Card details/actions wrap on narrow screens. One toolbar holds status refresh and Add model; there is no inventory list or scan button. Local engine selection follows directory inspection.
 TTS directories automatically identify Kokoro, Chatterbox or Qwen3-TTS Base; architecture is read-only. New drafts contain speed=1/MP3 defaults. Chatterbox/Qwen expose an optional seed: blank saves
 null (unfixed), and 0 is a valid fixed seed. Speech requests may override it; omitted/null request seeds inherit the profile. Fixed seeds control randomness without guaranteeing identical audio. Seed
 edits use the existing profile save/lifecycle flow. Switching architecture preserves speed/format and clears incompatible generation and execution settings, resetting seed to null for Audio or
@@ -177,10 +175,10 @@ The strict unload_other_tower_on_call switch defaults on. Off permits both tower
 editable; architecture/dimensions/normalization are not parameters. Rows expose separate tower badges and cached vector identity. Load and log menus select Image/Text; Unload releases the whole
 profile. Health, busy locks and hidden subpage menus use the shared lifecycle. [Models](models.md#siglip-image-and-text-embeddings) owns execution and acceptance limits.
 
-Text embedding supports Local Runtime/providers/unbound drafts. Directory selection inspects metadata without loading; pipeline, pooling, prompt inclusion, normalization, similarity, dimensions and
+Text embedding offers Local Runtime/providers. Directory selection inspects metadata without loading; pipeline, pooling, prompt inclusion, normalization, similarity, dimensions and
 effective token limit are read-only. Resolved query/document templates are visible; collapsed advanced controls select declared prompt names or automatic resolution. Directory changes clear stale
 information and prompt selections; source changes reset incompatible parameters/options. Diagnostics block loading, not saving. Runtime controls retain CPU/CUDA, four threads, batch 1..16 and manual
-release defaults. [Models](models.md#local-text-embeddings) owns native semantics and Harrier-only acceptance limits. Rerankers offer Local Runtime/unbound drafts and automatically inspect
+release defaults. [Models](models.md#local-text-embeddings) owns native semantics and Harrier-only acceptance limits. Rerankers use Local Runtime and automatically inspect
 architecture, scoring/activation, pipeline and effective token limit. Directory changes clear old information and ignore late responses; unnamed new drafts receive directory-name suggestions.
 Diagnostics block loading, not saving. Parameters are empty: architecture, templates and scoring tokens are not editable. CPU/CUDA, four threads, batch 1..16 (default 1), manual release and external
 visibility use existing controls. [Models](models.md#local-reranking) owns native processing and acceptance limits.
@@ -193,21 +191,25 @@ There is no architecture selector, duplicated preprocessing configuration or tra
 
 Processor fixes its source to Local Runtime and shows read-only DLSS NR/image processing, resource diagnostics, style/preset/intensity/tone/structure/skin/auto-mask/channel-order defaults, GPU index,
 release policy and external visibility. Incomplete directories remain saveable. There is no processing page. [Models](models.md#dlss-nr-image-processing) owns ranges and execution. Local Runtime has
-separate Local installation and DLSS NR component rows. Each displays its own status/version and latest job, filtered by component_id; cache jobs stay separate. The component has install/update,
-repair, uninstall, progress, cancellation and logs. Installing/repairing requires a healthy base. Component completion refreshes profiles so the generated default appears immediately. Both locales
-explain manual NR resources and resource/profile retention.
+full-width Core Runtime and DLSS NR cards, one per row at every viewport. Version, platform and architecture appear as three separate badges beside each title, wrapping on narrow screens; status and running jobs stay separate.
+Completed jobs remain in history. Install/update, repair-required and cancel are contextual primary actions; other maintenance/log actions use a menu. Cards have no Details disclosure; the DLSS summary names
+the manual NR resource requirement. Installing/repairing components requires a healthy base. Component completion refreshes profiles so the generated default appears immediately.
 
-Provider/settings reads omit secret keys and expose presence flags. PATCH omission retains keys; empty strings clear them. External enablement requires a nonempty key; storage is unencrypted. Busy
-connection edits, referenced deletion and invalid combinations fail.
+Model Providers uses one full-width card per row: an unlabeled left switch, name/URL, and edit/delete actions that wrap right on narrow screens. Switches have localized accessible names and save only enabled through PATCH; busy actions lock and errors retain the last confirmed state. Refresh/Add share one toolbar without introductory copy or status badges.
+Provider editors own only name/connection; creation enables by default and editing omits enabled. Provider/settings reads omit secret keys and expose presence flags. PATCH omission retains keys; empty strings clear them. External enablement requires a nonempty key; storage is unencrypted. Busy connection edits, referenced deletion and invalid combinations fail.
 
-LocalRuntimeSettings has no profile id or editable name. GET/PATCH `/api/models/local-runtime/settings` owns enabled=true and nested download defaults. It is independent of provider CRUD and runtime
+LocalRuntimeSettings has no profile id, enablement switch or editable name. GET/PATCH `/api/models/local-runtime/settings` owns only nested download defaults. Local Runtime is always enabled without
+automatic installation/loading. Download edits do not invalidate local models or refresh runtime/profile reads. Settings remain independent of provider CRUD and runtime
 job identity. Providers can be added, edited and deleted when unreferenced; local maintenance does not block provider inference. Installation details show the recorded installed version. Reads check
 dependency identity, metadata and entries; source changes reuse the environment. Invalid/old metadata or changed dependencies show Repair required. Checks recover on refresh when files/dependencies
 are restored; failed/interrupted jobs require explicit repair. Install never rebuilds an unavailable installation; manual Repair also rebuilds healthy ones. Finalizing precedes promotion. The local
 settings download object owns http_proxy, pypi_index_url, pytorch_index_url and github_release_proxy_url, patched at `/api/models/local-runtime/settings`. Index/release proxy URLs require HTTPS; HTTP
-is allowed for the explicit proxy. Credentials are rejected; these settings serve runtime artifacts/dependencies only. Storage is fetched on entry/refresh/maintenance completion, without a timer.
-Incomplete scans show unknown values; cache recovery uses an exclusive logical-size estimate. Clear cache confirms the estimate/future-download consequence; maintenance shares the runtime task lock.
-Cache history/results have their own labels and no synthetic runtime identity. CUDA profiles use an Automatic/Manual GPU-layer control, preserving a draft's manual value while switching modes.
+is allowed for the explicit proxy. Credentials are rejected; these settings serve runtime artifacts/dependencies only. Refresh status reads runtime metadata; only Scan storage fetches page storage
+statistics. Entry, navigation, reconnects, disclosure and maintenance completion never scan automatically. Before scanning the card shows an empty state; snapshots survive subpage navigation in memory,
+show their scan time and become stale after maintenance. Failed rescans retain the last snapshot with an error. Incomplete scans show unknown sizes, never zero. Cache recovery uses an exclusive logical-size
+estimate. Prune is a secondary action; Clear cache lives in the cache menu and confirms consequences even without a scan. Maintenance shares the task lock and retains its internal before/after accounting.
+The page adopts active cache jobs and jobs started there; terminal feedback is dismissible and clears on leaving/reload, while history/details retain results and logs. Log reads do not refresh other state.
+CUDA profiles use an Automatic/Manual GPU-layer control, preserving a draft's manual value while switching modes.
 Defaults and execution belong to Models.
 
 ## Other domains

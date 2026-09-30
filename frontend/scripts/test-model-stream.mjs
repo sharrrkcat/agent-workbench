@@ -50,7 +50,7 @@ const modelsModule = await loadStore('../src/store/useModelsStore.ts');
 const modelsStore = modelsModule.exports.useModelsStore;
 const idle = { state: 'ready', residency: 'unknown', unload_supported: false, active: 0, queued: 0 };
 mockApi.listProviderProfiles = async () => [];
-mockApi.localRuntimeSettings = async () => ({ enabled: true, download: {} });
+mockApi.localRuntimeSettings = async () => ({ download: {} });
 mockApi.getModelSettings = async () => ({ default_model_profile_id: null });
 mockApi.getModelStatus = async () => idle;
 const oldProfiles = deferred();

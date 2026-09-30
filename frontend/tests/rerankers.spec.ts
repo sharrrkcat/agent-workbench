@@ -37,8 +37,7 @@ for (const locale of ['en', 'zh-CN']) {
           await route.fulfill({ json: result });
         });
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
-        await page.goto('/settings?tab=models');
-        await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds.reranker);
+        await page.goto('/settings?tab=models&view=reranker');
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         const source = dialog.getByLabel(labels.source, { exact: true });
@@ -83,11 +82,9 @@ for (const locale of ['en', 'zh-CN']) {
         expect(saved.source.execution_options).toEqual({ device: 'cpu', intraop_threads: 4, max_batch_size: 4 });
         expect(saved.source.lifecycle.unload).toBe('manual');
         expect(saved.parameters).toEqual({});
-        await page.locator('.model-list .model-row').filter({ hasText: alias }).getByRole('button', { name: labels.edit, exact: true }).click();
-        await chooseOption(source, labels.unbound);
+        await page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias }).getByRole('button', { name: labels.edit, exact: true }).click();
+        await expect(source).toBeDisabled();
         await expect(input).toHaveValue('rerankers/incomplete');
-        await expect(dialog.getByText(labels.reranker.information, { exact: true })).toHaveCount(0);
-        await chooseOption(source, labels.localRuntime);
         await fillCombobox(input, reference);
         await expect(dialog).toContainText('example-backbone');
         await expect(name).toHaveValue('Named reranker');

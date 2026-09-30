@@ -233,9 +233,7 @@ class ModelManager:
                 status.error_code = exc.code
         if source is None:
             status.state, status.error_code = "unavailable", "MODEL_NOT_CONFIGURED"
-        elif not profile.enabled or (isinstance(source, ProviderSource) and (provider is None or not provider.enabled)) or (
-            isinstance(source, LocalSource) and self.runtime_supervisor and not self.runtime_supervisor.settings.get().enabled
-        ):
+        elif not profile.enabled or (isinstance(source, ProviderSource) and (provider is None or not provider.enabled)):
             status.state = "unavailable"
             status.error_code = "MODEL_UNAVAILABLE"
         slot = self._slots.get(self.execution_key(profile))
@@ -263,8 +261,6 @@ class ModelManager:
             raise ModelError("MODEL_BUSY", "Model source configuration is changing.", 409)
         if execution_key[0] == "local":
             supervisor = self.runtime_supervisor
-            if not supervisor.settings.get().enabled:
-                raise ModelError("MODEL_UNAVAILABLE", "The local runtime is disabled.", 503)
             if supervisor.blocked:
                 raise ModelError("RUNTIME_INSTALLING", "Local runtime maintenance is in progress.", 409)
             if require_runtime:

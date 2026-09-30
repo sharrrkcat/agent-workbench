@@ -9,8 +9,7 @@ for (const locale of ['en', 'zh-CN']) {
     expect((await request.post('/__test__/runtimes', { data: {} })).ok()).toBeTruthy();
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/settings?tab=models');
-    await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds['tts']);
+    await page.goto('/settings?tab=models&view=tts');
     await page.getByRole('button', { name: labels.addModel, exact: true }).click();
     const dialog = page.getByRole('dialog');
     const reference = dialog.getByLabel(labels.modelRef, { exact: true });
@@ -47,7 +46,7 @@ for (const locale of ['en', 'zh-CN']) {
       temperature: 0.9, top_p: 1, top_k: 0, repetition_penalty: 1.05, max_new_tokens: 512 });
     expect(saved.source.type).toBe('local');
     expect(saved.source.execution_options.device).toBe('cuda');
-    const row = page.locator('.model-list .model-row').filter({ hasText: alias });
+    const row = page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias });
     await row.getByRole('button', { name: labels.edit, exact: true }).click();
     await expect(dialog.getByRole('group', { name: labels.directory.information, exact: true })).toContainText('qwen3tts');
     await expect(dialog.getByLabel(labels.source, { exact: true })).toBeDisabled();

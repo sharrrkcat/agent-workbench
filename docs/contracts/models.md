@@ -4,7 +4,7 @@ ChatRunner, Utility LLM, Knowledge and `/v1` share `core/models/ModelManager` wi
 
 ## Profiles and sources
 
-`model_profiles` has immutable llm/embedding/reranker/image_embedding/vision/tts/asr/processor kinds, internal UUIDs and unique lowercase public aliases; CRUD: `/api/models/profiles?kind=...`. `provider_profiles` owns name, enablement, timestamps and OpenAI-compatible URL/key, timeouts and queue limits; CRUD: `/api/models/providers`, optional discovery: `/{id}/models`. GET/PATCH `/api/models/local-runtime/settings` owns enabled/download in appmetadatarecord.local_runtime_settings; enabled defaults true, identity/name are fixed.
+`model_profiles` has immutable llm/embedding/reranker/image_embedding/vision/tts/asr/processor kinds, internal UUIDs and unique lowercase public aliases; CRUD: `/api/models/profiles?kind=...`. `provider_profiles` owns name, enablement, timestamps and OpenAI-compatible URL/key, timeouts and queue limits; CRUD: `/api/models/providers`, optional discovery: `/{id}/models`. GET/PATCH `/api/models/local-runtime/settings` owns download settings in appmetadatarecord.local_runtime_settings. Local Runtime is always enabled; the removed enabled field returns 422. Installation and model loading remain explicit/lifecycle-driven.
 
 Model source is a strict nullable union:
 - null: an LLM/text-embedding/reranker unbound draft; execution returns MODEL_NOT_CONFIGURED before admission/transport.

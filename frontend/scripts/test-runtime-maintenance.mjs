@@ -18,7 +18,7 @@ const cacheJob = { id: 'cache', version: null, operation: 'cache_clean',
 const state = { storage: { scanned_at: cacheJob.created_at, complete: true, totals: usage,
   groups: [{ ...usage, id: '.cache', category: 'cache', relative_path: '.cache' }], warnings: [] },
   storageLoading: false, storageError: '', reloadStorage: async () => {}, jobs: [cacheJob] };
-Object.assign(state, { localRuntimeSettings: { enabled: true, download: {} },
+Object.assign(state, { localRuntimeSettings: { download: {} },
   catalog: { version: '1.0.0', platform: 'windows', architecture: 'x86_64', supported: true },
   installation: { version: '0.9.0', state: 'installed' }, components: [] });
 const load = createModuleLoader({
@@ -35,16 +35,18 @@ for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');
   const backend = renderToStaticMarkup(React.createElement(LocalRuntimePanel, { activeView: true }));
-  assert.ok(backend.includes('0.9.0 / windows / x86_64') && !backend.includes('1.0.0 / windows'));
-  assert.ok(backend.includes(t('runtimeReuseHint')));
-  const repair = backend.match(/<button\b[^>]*>/g).find((tag) => tag.includes(`aria-label="${t('repairRuntime')}"`));
-  assert.ok(repair && !/\s(?:disabled=""|aria-disabled="true")/.test(repair));
+  assert.match(backend, />0\.9\.0<\/span>/);
+  assert.match(backend, />windows<\/span>/);
+  assert.match(backend, />x86_64<\/span>/);
+  assert.ok(backend.includes(t('coreRuntime')) && backend.includes(t('coreRuntimeSummary')));
+  assert.doesNotMatch(backend, /role="switch"|Completed: Completed/);
   const panel = renderToStaticMarkup(React.createElement(RuntimeStoragePanel, {
-    busy: false, activeView: true, active: undefined, onCleanup: async () => {}, onCancel: () => {},
+    busy: false, activeView: true, active: undefined, onCleanup: async () => {}, onCancel: () => {}, onShowLog: () => {},
   }));
-  for (const key of ['storage.title', 'storage.reclaimable', 'cachePrune', 'cacheClean', 'jobStates.completed']) {
-    assert.ok(panel.includes(t(key)), key);
+  for (const key of ['storage.title', 'storage.reclaimable', 'cachePrune', 'storage.scan']) {
+    assert.ok(panel.includes(t(key).replaceAll('&', '&amp;')), key);
   }
+  assert.doesNotMatch(panel, /runtime-cache-task/);
   assert.match(panel, /24 B/);
   assert.doesNotMatch(panel, /null \/ null|undefined|NaN/);
   const empty = renderToStaticMarkup(React.createElement(CacheJobResult, { job: {
@@ -78,7 +80,8 @@ assert.equal(useModelsStore.getState().jobs[0].result.after.logical_bytes, 0);
 assert.equal(useModelsStore.getState().jobs[0].state, 'completed');
 mockApi.runtimeStorage = async () => { throw new Error('scan failed'); };
 await assert.rejects(useModelsStore.getState().reloadStorage(), /scan failed/);
-assert.equal(useModelsStore.getState().storage, null);
+assert.equal(useModelsStore.getState().storage.scanned_at, 'new');
+assert.equal(useModelsStore.getState().storageError, 'scan failed');
 assert.equal(useModelsStore.getState().storageLoading, false);
 
 const requests = [];

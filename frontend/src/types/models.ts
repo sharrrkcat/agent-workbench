@@ -1,4 +1,5 @@
-export type ModelKind = 'llm' | 'embedding' | 'reranker' | 'image_embedding' | 'vision' | 'tts' | 'asr' | 'processor';
+export const modelKinds = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor'] as const;
+export type ModelKind = (typeof modelKinds)[number];
 export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers' | 'cross-encoder' | 'whisper' | 'dlss5nr';
 export type ComponentId = 'dlss5nr';
 export type SiglipTower = 'image' | 'text';
@@ -261,8 +262,8 @@ export type RuntimeDownloadSettings = {
   github_release_proxy_url: string | null;
 };
 
-export type LocalRuntimeSettings = { enabled: boolean; download: RuntimeDownloadSettings };
-export type LocalRuntimeSettingsPatch = { enabled?: boolean; download?: Partial<RuntimeDownloadSettings> };
+export type LocalRuntimeSettings = { download: RuntimeDownloadSettings };
+export type LocalRuntimeSettingsPatch = { download?: Partial<RuntimeDownloadSettings> };
 
 export type ModelInventoryItem = {
   kind: ModelKind;

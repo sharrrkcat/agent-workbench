@@ -64,5 +64,6 @@
     "execution": "Models and execution",
     "daily": "Daily Chat & Workspace",
     "roleplay": "Roleplay & Timeline"
-  }
+  },
+  "providersRuntime": "Providers & Runtime"
 }

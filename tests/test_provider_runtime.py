@@ -44,8 +44,8 @@ def test_providers_and_local_settings_have_separate_ownership(tmp_path, memory):
         assert client.get('/api/models/providers').json() == []
         local_path = '/api/models/local-runtime/settings'
         local = client.get(local_path).json()
-        assert set(local) == {'enabled', 'download'} and local['enabled']
-        for values in ({'id': 'local'}, {'name': 'Local'}, {'connection': {}}, {'type': 'local'}):
+        assert set(local) == {'download'}
+        for values in ({'id': 'local'}, {'name': 'Local'}, {'connection': {}}, {'type': 'local'}, {'enabled': True}, {'enabled': False}):
             assert client.patch(local_path, json=values).status_code == 422
         assert client.patch(local_path, json={'download': {'http_proxy': 'http://127.0.0.1:8080'}}).status_code == 200
         assert client.patch(local_path, json={'download': {'pypi_index_url': 'https://pypi.org/simple'}}).json()['download']['http_proxy'].endswith(':8080')
@@ -62,10 +62,15 @@ def test_providers_and_local_settings_have_separate_ownership(tmp_path, memory):
             assert client.patch(path, json=values).status_code == 422
         assert client.delete(path).status_code == 409
         assert client.get(path + '/models').json()['models'] == ['embed', 'fake', 'other']
-        assert client.patch(local_path, json={'enabled': False}).json()['enabled'] is False
         profile = client.post('/api/models/profiles', json={'name': 'Local', 'alias': 'managed', 'kind': 'llm',
             'model_ref': 'llms/weights', 'source': {'type': 'local'}}).json()
-        assert client.post(f"/api/models/profiles/{profile['id']}/load").json()['error']['code'] == 'MODEL_UNAVAILABLE'
+        assert client.post(f"/api/models/profiles/{profile['id']}/load").json()['error']['code'] == 'RUNTIME_NOT_INSTALLED'
+        manager = app.state.runtime_state.model_manager
+        manager.invalidate_local = AsyncMock()
+        manager.runtime_changed = AsyncMock()
+        assert client.patch(local_path, json={'download': {'http_proxy': 'http://127.0.0.1:8081'}}).status_code == 200
+        manager.invalidate_local.assert_not_called()
+        manager.runtime_changed.assert_not_called()
 
 
 @pytest.mark.parametrize('field,value', [('backend_profile_id', 'local'), ('execution_options', {}), ('lifecycle', {}),
@@ -331,7 +336,7 @@ def test_database_revision_resets_bindings_without_converting_or_removing_files(
     migrations.upgrade(engine, migrations.PROVIDER_RUNTIME_REVISION)
     assert ModelProfileStore(engine).list() == []
     assert ProviderProfileStore(engine).list() == []
-    assert LocalRuntimeSettingsStore(engine).get().enabled
+    assert LocalRuntimeSettingsStore(engine).get().download.http_proxy is None
     assert ModelSettingsStore(engine).get().external_api_key == 'retained'
     assert ModelSettingsStore(engine).get().max_request_mb == 7
     assert ModelSettingsStore(engine).get().default_model_profile_id is None
@@ -400,3 +405,33 @@ def test_full_dependency_lock_and_all_four_wheels_are_auditable(tmp_path):
                     data = archive.read(file)
                     assert len(data) == int(size)
                     assert digest == 'sha256=' + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip('=')
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_runtime_enablement_removal_preserves_downloads_and_installation(tmp_path, enabled):
+    engine = get_engine(f"sqlite:///{tmp_path / 'runtime-settings.db'}")
+    migrations.upgrade(engine, migrations.DLSS_PROCESSOR_REVISION)
+    download = {'http_proxy': 'http://127.0.0.1:8899', 'pypi_index_url': 'https://example.test/simple'}
+    with Session(engine) as db:
+        db.add(AppMetadataRecord(key='local_runtime_settings', value=json.dumps({'enabled': enabled, 'download': download})))
+        db.add(AppMetadataRecord(key='unrelated', value='{"keep":true}'))
+        db.add(RuntimeInstallationRecord(id='local', version='1.0.0', state='installed'))
+        db.commit()
+        installation = dict(db.exec(text('SELECT * FROM runtime_installations')).mappings().one())
+    protected = tmp_path / 'data/runtimes/local/1.0.0/keep'
+    protected.parent.mkdir(parents=True)
+    protected.write_bytes(b'installed environment')
+    before = protected.stat().st_mtime_ns
+    migrations.upgrade(engine)
+    migrations.upgrade(engine)
+    assert migrations.current_revision(engine) == migrations.RUNTIME_ALWAYS_ENABLED_REVISION
+    settings = LocalRuntimeSettingsStore(engine).get()
+    assert settings.download.http_proxy == download['http_proxy']
+    assert settings.download.pypi_index_url == download['pypi_index_url']
+    with Session(engine) as db:
+        assert json.loads(db.get(AppMetadataRecord, 'local_runtime_settings').value) == {'download': download}
+        assert db.get(AppMetadataRecord, 'unrelated').value == '{"keep":true}'
+        assert dict(db.exec(text('SELECT * FROM runtime_installations')).mappings().one()) == installation
+    assert protected.read_bytes() == b'installed environment'
+    assert protected.stat().st_mtime_ns == before
+    engine.dispose()

@@ -34,8 +34,7 @@ for (const locale of ['en', 'zh-CN']) {
           await route.fulfill({ json: result });
         });
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
-        await page.goto('/settings?tab=models');
-        await chooseOption(page.locator('.model-toolbar').getByLabel(labels.kind, { exact: true }), labels.kinds.asr);
+        await page.goto('/settings?tab=models&view=asr');
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
         const source = dialog.getByLabel(labels.source, { exact: true });
@@ -78,7 +77,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect(saved.parameters).toEqual({ language: 'zh', prompt: '示例 context', temperature: 0.3, response_format: 'verbose_json' });
         expect(saved.source.execution_options).toEqual({ device: 'cuda', intraop_threads: 4 });
         expect(saved.source.lifecycle.unload).toBe('manual');
-        await page.locator('.model-list .model-row').filter({ hasText: alias }).getByRole('button', { name: labels.edit, exact: true }).click();
+        await page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias }).getByRole('button', { name: labels.edit, exact: true }).click();
         await expect(source).toBeDisabled();
         await expect(input).toHaveValue('asr/incomplete');
         await expect(dialog.getByText(labels.asr.information, { exact: true })).toBeVisible();

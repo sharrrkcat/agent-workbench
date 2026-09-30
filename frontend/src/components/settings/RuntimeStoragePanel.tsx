@@ -1,11 +1,15 @@
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-
-import { BrushCleaning, Square, Trash2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { BrushCleaning, ChevronDown, FileText, MoreHorizontal, ScanLine, Square, Trash2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModelsStore } from '../../store/useModelsStore';
 import type { RuntimeJob } from '../../types/models';
@@ -22,196 +26,136 @@ export function CacheJobResult({ job }: { job: RuntimeJob }) {
   if (!job.result) return null;
   return (
     <dl className="runtime-cache-result">
-      {(['before', 'after'] as const).map((moment) => (
-        <div key={moment}>
-          <dt>{t('storage.' + moment)}</dt>
-          <dd>{runtimeBytes(job.result?.[moment]?.logical_bytes, t('storage.unknown'))}</dd>
-          <dt>{t('storage.exclusive')}</dt>
-          <dd>{runtimeBytes(job.result?.[moment]?.exclusive_bytes, t('storage.unknown'))}</dd>
-        </div>
-      ))}
+      {(['before', 'after'] as const).map((moment) => <div key={moment}>
+        <dt>{t('storage.' + moment)}</dt>
+        <dd>{runtimeBytes(job.result?.[moment]?.logical_bytes, t('storage.unknown'))}</dd>
+        <dt>{t('storage.exclusive')}</dt>
+        <dd>{runtimeBytes(job.result?.[moment]?.exclusive_bytes, t('storage.unknown'))}</dd>
+      </div>)}
     </dl>
   );
 }
 
-export function RuntimeStoragePanel({
-  busy,
-  active,
-  activeView,
-  onCleanup,
-  onCancel,
-}: {
-  busy: boolean;
-  activeView: boolean;
-  active: RuntimeJob | undefined;
-  onCleanup: (mode: 'prune' | 'clean') => Promise<void>;
+export function RuntimeStoragePanel({ busy, active, activeView, onCleanup, onCancel, onShowLog }: {
+  busy: boolean; activeView: boolean; active: RuntimeJob | undefined;
+  onCleanup: (mode: 'prune' | 'clean') => Promise<RuntimeJob | void>;
   onCancel: (job: RuntimeJob) => void;
+  onShowLog: (job: RuntimeJob) => void;
 }) {
   const { t } = useTranslation('llm');
   const { storage, storageLoading, storageError, reloadStorage, jobs } = useModelsStore();
   const { confirm, confirmation } = useConfirmDialog(activeView);
-  const terminal = jobs.find((job) => job.state !== 'queued' && job.state !== 'running');
-  const terminalKey = terminal ? `${terminal.id}:${terminal.revision}` : '';
+  const [trackedId, setTrackedId] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const visit = useRef(0);
+  const visible = useRef(activeView);
+  visible.current = activeView;
+  const activeCache = active?.version === null ? active : undefined;
   useEffect(() => {
-    if (activeView) void reloadStorage().catch(() => undefined);
-  }, [activeView, reloadStorage, terminalKey]);
+    if (!activeView) {
+      visit.current++;
+      setTrackedId(null);
+      setMenuOpen(false);
+    }
+  }, [activeView]);
+  useEffect(() => {
+    if (activeView && activeCache) setTrackedId(activeCache.id);
+  }, [activeView, activeCache?.id]);
+  const task = activeView ? activeCache || jobs.find((job) => job.id === trackedId) : undefined;
+  const running = task?.state === 'queued' || task?.state === 'running';
+  const stale = !!storage && jobs.some((job) => job.finished_at && Date.parse(job.finished_at) > Date.parse(storage.scanned_at));
   const cache = storage?.groups.find((group) => group.category === 'cache');
-  const latestCache = jobs.find((job) => job.operation === 'cache_prune' || job.operation === 'cache_clean');
   const bytes = (value: number | null | undefined) => runtimeBytes(value, t('storage.unknown'));
+  async function cleanup(mode: 'prune' | 'clean') {
+    const currentVisit = visit.current;
+    const job = await onCleanup(mode);
+    if (job && visible.current && currentVisit === visit.current) setTrackedId(job.id);
+  }
   return (
-    <section className="runtime-storage" aria-label={t('storage.title')} aria-busy={storageLoading}>
-      <div className="runtime-storage-heading">
-        <h3>{t('storage.title')}</h3>
-        <small>
-          {storageLoading
-            ? t('storage.scanning')
-            : storage
-              ? new Date(storage.scanned_at).toLocaleString()
-              : t('storage.unavailable')}
-        </small>
-      </div>
-      {storageError ? (
-        <p className="error-text" role="alert">
-          {storageError}
-        </p>
-      ) : null}
-      {storage && !storage.complete ? (
-        <p className="runtime-storage-warning" role="status">
-          {t('storage.incomplete')}
-        </p>
-      ) : null}
-      <dl className="runtime-storage-summary">
-        <div>
-          <dt>{t('storage.totalUnique')}</dt>
-          <dd>{bytes(storage?.totals.unique_bytes)}</dd>
+    <Card className="runtime-storage" role="region" aria-label={t('storage.title')} aria-busy={storageLoading}>
+      <CardHeader>
+        <CardTitle>{t('storage.title')}</CardTitle>
+        <CardDescription>
+          {storageLoading ? t('storage.scanning') : storage ? t('storage.lastScan', { time: new Date(storage.scanned_at).toLocaleString() }) : t('storage.manualScan')}
+        </CardDescription>
+        <CardAction>
+          <Button type="button" variant="outline" disabled={busy || !!active || storageLoading} onClick={() => void reloadStorage().catch(() => undefined)}>
+            <ScanLine data-icon="inline-start" />{t('storage.scan')}
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {storageError ? <Alert variant="destructive"><AlertDescription>{storageError}</AlertDescription></Alert> : null}
+        {storage && !storage.complete ? <Alert className="runtime-storage-warning"><AlertDescription>{t('storage.incomplete')}</AlertDescription></Alert> : null}
+        {stale ? <Badge className="self-start" variant="outline">{t('storage.stale')}</Badge> : null}
+        {storage ? <dl className="runtime-storage-summary">
+          <div><dt>{t('storage.totalUnique')}</dt><dd>{bytes(storage.totals.unique_bytes)}</dd></div>
+          <div><dt>{t('storage.cacheSize')}</dt><dd>{bytes(cache?.logical_bytes)}</dd></div>
+          <div><dt title={t('storage.estimateHint')}>{t('storage.reclaimable')}</dt><dd>{bytes(cache?.exclusive_bytes)}</dd></div>
+        </dl> : !storageLoading ? <Empty className="runtime-storage-empty">
+          <EmptyHeader><EmptyTitle>{t(storageError ? 'storage.unavailable' : 'storage.notScanned')}</EmptyTitle>
+            <EmptyDescription>{t(storageError ? 'storage.retryScan' : 'storage.scanHint')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty> : <div className="runtime-storage-summary" aria-hidden="true"><Skeleton className="h-14" /><Skeleton className="h-14" /><Skeleton className="h-14" /></div>}
+        <div className="runtime-cache-actions">
+          <Button type="button" disabled={busy || !!active} onClick={() => void cleanup('prune')} variant="outline">
+            <BrushCleaning data-icon="inline-start" />{t('cachePrune')}
+          </Button>
+          <DropdownMenu open={activeView && menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon" aria-label={t('cacheActions')} />}><MoreHorizontal /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end"><DropdownMenuGroup>
+              <DropdownMenuItem variant="destructive" disabled={busy || !!active} onClick={async () => {
+                const estimate = storage ? `${t('storage.reclaimable')}: ${bytes(cache?.exclusive_bytes)}${stale ? ` (${t('storage.stale')})` : ''}` : t('storage.notScanned');
+                if (await confirm(`${estimate}\n\n${t('cacheCleanConsequence')}`, {
+                  destructive: true, title: t('cacheCleanConfirm'), confirmLabel: t('cacheClean'),
+                })) void cleanup('clean');
+              }}><Trash2 />{t('cacheClean')}</DropdownMenuItem>
+            </DropdownMenuGroup></DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <div>
-          <dt>{t('storage.cacheSize')}</dt>
-          <dd>{bytes(cache?.logical_bytes)}</dd>
-        </div>
-        <div>
-          <dt title={t('storage.estimateHint')}>{t('storage.reclaimable')}</dt>
-          <dd>{bytes(cache?.exclusive_bytes)}</dd>
-        </div>
-      </dl>
-      <div className="runtime-cache-actions">
-        <Button
-          type="button"
-          disabled={busy || !!active}
-          onClick={() => void onCleanup('prune')}
-          variant="outline"
-        >
-          <BrushCleaning data-icon="inline-start" />
-          {t('cachePrune')}
-        </Button>
-        <Button
-          type="button"
-          disabled={busy || !!active}
-          onClick={async () => {
-            if (
-              await confirm(
-                `${t('storage.reclaimable')}: ${bytes(cache?.exclusive_bytes)}\n\n${t('cacheCleanConsequence')}`,
-                {
-                  destructive: true,
-                  title: t('cacheCleanConfirm'),
-                  confirmLabel: t('cacheClean'),
-                },
-              )
-            )
-              void onCleanup('clean');
-          }}
-          variant="destructive"
-        >
-          <Trash2 data-icon="inline-start" />
-          {t('cacheClean')}
-        </Button>
-      </div>
-      {latestCache ? (
-        <div className="runtime-cache-task" role="status">
+        {task ? <Alert className="runtime-cache-task" role="status" variant={task.state === 'failed' ? 'destructive' : 'default'}>
           <div className="runtime-cache-task-heading">
-            <span>
-              {t('runtimeOperations.' + latestCache.operation)}: {t('jobStates.' + latestCache.state)}
-            </span>
-            {active?.id === latestCache.id ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      aria-label={t('cancelTask')}
-                      disabled={busy || latestCache.cancel_requested}
-                      onClick={() => onCancel(latestCache)}
-                      variant="ghost"
-                      size="icon"
-                    />
-                  }
-                >
-                  <Square data-icon="inline-start" />
-                </TooltipTrigger>
-                <TooltipContent>{t('cancelTask')}</TooltipContent>
-              </Tooltip>
-            ) : null}
+            <span>{t('runtimeOperations.' + task.operation)} · {t('jobStates.' + task.state)}</span>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => onShowLog(task)}>
+                <FileText data-icon="inline-start" />{t('runtimeDetails')}
+              </Button>
+              {running ? <Button type="button" disabled={busy || task.cancel_requested} onClick={() => onCancel(task)} variant="outline" size="sm">
+                <Square data-icon="inline-start" />{t('cancelTask')}
+              </Button> : <Button type="button" aria-label={t('dismissRuntimeResult')} onClick={() => setTrackedId(null)} variant="ghost" size="icon">
+                <X />
+              </Button>}
+            </div>
           </div>
-          {active?.id === latestCache.id ? <span>{t('runtimeStages.' + latestCache.stage)}</span> : null}
-          {latestCache.error_code ? <code className="error-text">{latestCache.error_code}</code> : null}
-          <CacheJobResult job={latestCache} />
-        </div>
-      ) : null}
-      <Collapsible className="runtime-storage-details">
-        <CollapsibleTrigger render={<Button type="button" variant="ghost" className="justify-start" />}>
-          {t('storage.details')}
-        </CollapsibleTrigger>
-        <CollapsibleContent keepMounted>
-          {storage ? (
+          {running ? <span>{t('runtimeStages.' + task.stage)}</span> : null}
+          {task.state === 'failed' && task.error_code ? <span className="error-text">{task.error_code}</span> : null}
+        </Alert> : null}
+      </CardContent>
+      {storage ? <CardFooter className="block">
+        <Collapsible className="runtime-storage-details">
+          <CollapsibleTrigger render={<Button type="button" variant="ghost" className="w-full justify-between" />}>
+            {t('storage.details')}<ChevronDown data-icon="inline-end" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
             <Table className="runtime-storage-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('storage.directory')}</TableHead>
-                  {['files', 'logical', 'unique', 'shared', 'exclusive'].map((key) => (
-                    <TableHead key={key}>{t('storage.' + key)}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {storage.groups.map((group) => (
-                  <TableRow key={group.id}>
-                    <TableHead scope="row">
-                      <span>
-                        {group.category === 'runtime'
-                          ? t('localRuntime')
-                          : t('storage.categories.' + group.category)}
-                      </span>
-                      <code>{group.category === 'other' ? '' : group.relative_path}</code>
-                    </TableHead>
-                    <TableCell data-label={t('storage.files')}>
-                      {group.file_count == null ? t('storage.unknown') : group.file_count.toLocaleString()}
-                    </TableCell>
-                    {(['logical_bytes', 'unique_bytes', 'shared_bytes', 'exclusive_bytes'] as const).map(
-                      (key) => (
-                        <TableCell key={key} data-label={t('storage.' + key.split('_')[0])}>
-                          {bytes(group[key])}
-                        </TableCell>
-                      ),
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
+              <TableHeader><TableRow>
+                <TableHead>{t('storage.directory')}</TableHead>
+                {['files', 'logical', 'unique', 'shared', 'exclusive'].map((key) => <TableHead key={key}>{t('storage.' + key)}</TableHead>)}
+              </TableRow></TableHeader>
+              <TableBody>{storage.groups.map((group) => <TableRow key={group.id}>
+                <TableHead scope="row"><span>{group.category === 'runtime' ? t('coreRuntime') : t('storage.categories.' + group.category)}</span>
+                  <code>{group.category === 'other' ? '' : group.relative_path}</code></TableHead>
+                <TableCell>{group.file_count == null ? t('storage.unknown') : group.file_count.toLocaleString()}</TableCell>
+                {(['logical_bytes', 'unique_bytes', 'shared_bytes', 'exclusive_bytes'] as const).map((key) => <TableCell key={key}>{bytes(group[key])}</TableCell>)}
+              </TableRow>)}</TableBody>
             </Table>
-          ) : (
-            <p>{storageLoading ? t('storage.scanning') : t('storage.unavailable')}</p>
-          )}
-          {storage?.warnings.length ? (
-            <ul className="runtime-storage-warnings">
-              {storage.warnings.map((warning, index) => (
-                <li key={index}>
-                  <code>{warning.relative_path}</code>: {t('storage.warnings.' + warning.code)}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </CollapsibleContent>
-      </Collapsible>
+            {storage.warnings.length ? <ul className="runtime-storage-warnings">
+              {storage.warnings.map((warning, index) => <li key={index}><code>{warning.relative_path}</code>: {t('storage.warnings.' + warning.code)}</li>)}
+            </ul> : null}
+          </CollapsibleContent>
+        </Collapsible>
+      </CardFooter> : null}
       {confirmation}
-    </section>
+    </Card>
   );
 }

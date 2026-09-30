@@ -7,8 +7,7 @@ for (const locale of ['en', 'zh-CN']) {
       test.use({ viewport, hasTouch: viewport.width === 390 });
       test('configure ONNX TTS, reopen voices and retain format', async ({ page, request }, info) => {
         await page.addInitScript((locale) => localStorage.setItem('cogita.locale', locale), locale);
-        await page.goto('/settings?tab=models');
-        await chooseOption(page.locator('.model-toolbar').getByRole('combobox'), locale === 'en' ? 'Text to speech' : '语音合成');
+        await page.goto('/settings?tab=models&view=tts');
         await page.getByRole('button', { name: locale === 'en' ? 'Add model' : '添加模型', exact: true }).click();
         const dialog = page.getByRole('dialog');
         await expect(dialog.getByLabel(locale === 'en' ? 'Model source' : '模型来源', { exact: true }).locator('[data-slot="select-value"]')).toHaveText(locale === 'en' ? 'Local Runtime' : '本地运行环境');
@@ -23,7 +22,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(dialog).toHaveCount(0);
         const profile = (await (await request.get('/api/models/profiles?kind=tts')).json()).find((p: { alias: string }) => p.alias === alias);
         expect(profile.parameters).toEqual({ speed: 0.85, response_format: 'wav' });
-        await page.locator('.model-list .model-row').filter({ has: page.getByText(alias, { exact: true }) }).getByRole('button', { name: locale === 'en' ? 'Edit' : '编辑', exact: true }).click();
+        await page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ has: page.getByText(alias, { exact: true }) }).getByRole('button', { name: locale === 'en' ? 'Edit' : '编辑', exact: true }).click();
         await expect(dialog.locator('.tts-voices-list code')).toHaveCount(54);
         await expect(dialog.locator('.tts-voices-list')).toContainText('zf_xiaobei');
         await expect(dialog.getByLabel(locale === 'en' ? 'Audio format' : '音频格式', { exact: true }).locator('[data-slot="select-value"]')).toHaveText('WAV');
