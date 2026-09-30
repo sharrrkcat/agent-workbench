@@ -17,6 +17,7 @@ import httpx
 
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.catalog import CATALOG_ROOT, WORKER_ROOT, catalog, requirements_digest, worker_entrypoint
+from ai_workbench.core.models.runtimes.cuda import CUDA_DLL_NAMES, TORCH_LIBRARY_PATH, llama_environment
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import (
     CacheCleanupResult, ComponentInstallation, ComponentManifest, Installation, InstallationManifest, RuntimeArtifact, RuntimeJob, StorageUsage, TERMINAL,
@@ -67,6 +68,14 @@ def installed_file(target: Path, name: str) -> Path:
     if resolved.is_relative_to(target.resolve()):
         return path
     raise ModelError("RUNTIME_BROKEN", "Installed file escapes its runtime directory.", 503)
+
+
+def cuda_library_directory(target: Path, python: Path) -> Path:
+    directory = python.parent / TORCH_LIBRARY_PATH
+    for name in CUDA_DLL_NAMES:
+        if not contained(target, directory / name).is_file():
+            raise ModelError("RUNTIME_BROKEN", "Shared Torch CUDA runtime DLLs are missing. Repair the local runtime.", 503)
+    return directory
 
 
 async def file_work(work):
@@ -218,6 +227,7 @@ class RuntimeSupervisor:
         paths = {key: installed_file(target, name) for key, name in manifest.executables.model_dump().items()}
         if not all(path.is_file() for path in paths.values()):
             raise ValueError("An installed entry point is missing")
+        cuda_library_directory(target, paths["python"])
         return paths
 
     def _inspect_installation(self, check=True):
@@ -267,6 +277,9 @@ class RuntimeSupervisor:
         if engine == "dlss5nr":
             require_component(self.component())
         return paths[device if engine == "llama-server" else "python"]
+
+    def cuda_directory(self):
+        return self.executable("python").parent / TORCH_LIBRARY_PATH
 
     def _emit_installation(self, value):
         component = isinstance(value, ComponentInstallation)
@@ -487,7 +500,7 @@ class RuntimeSupervisor:
                     await self._install_python(entry, payload, job, log)
                     executables = {"python": entry.python_executable}
                     for device, native in (("cpu", entry.native_cpu), ("cuda", entry.native_cuda)):
-                        executables[device] = await self._install_native(native, payload, staging, device, job, log)
+                        executables[device] = await self._install_native(native, payload, staging, device, payload / entry.python_executable, job, log)
                     manifest = InstallationManifest(dependencies=entry.dependency_identity(), executables=executables)
                     self._entry_paths(payload, manifest)
                 self._stage(job, "finalizing", log)
@@ -560,57 +573,27 @@ class RuntimeSupervisor:
         await self._command([self.executable("component-check"), "-I", "-B", entries["worker"], "--self-check", entries["bridge"], entries["caller"]], env, payload, log)
         return manifest
 
-    async def _install_native(self, native, payload, staging, device, job, log):
-        artifacts = [native.artifact, *native.dependencies]
+    async def _install_native(self, native, payload, staging, device, python, job, log):
+        artifact = native.artifact
         target_root = payload / "native" / device
-        total = sum(artifact.size_bytes for artifact in artifacts) if all(artifact.size_bytes is not None for artifact in artifacts) else None
-        offset = 0
-        archives = []
         self._stage(job, "native_" + device, log)
-        for index, artifact in enumerate(artifacts):
-            archive = contained(self.base, self.base / ".cache" / "cogita-artifacts" / artifact.sha256)
-            if not archive.is_file() or await file_digest(archive) != artifact.sha256:
-                staged_archive = staging / f"{device}-{index}"
-                await self._download(artifact, staged_archive, job, offset=offset,
-                                     total_bytes=total, final=index == len(artifacts) - 1)
-                archive.parent.mkdir(parents=True, exist_ok=True)
-                staged_archive.replace(archive)
-            else:
-                log.write("Using a checksum-verified native archive from cache.")
-                job.progress_current, job.progress_total = offset + archive.stat().st_size, total
-                self._save_job(job)
-            archives.append(archive)
-            offset = job.progress_current
-        await file_work(lambda _: extract_archive(archives[0], target_root, native.artifact.archive_format))
+        archive = contained(self.base, self.base / ".cache" / "cogita-artifacts" / artifact.sha256)
+        if not archive.is_file() or await file_digest(archive) != artifact.sha256:
+            staged_archive = staging / device
+            await self._download(artifact, staged_archive, job)
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            staged_archive.replace(archive)
+        else:
+            log.write("Using a checksum-verified native archive from cache.")
+            job.progress_current, job.progress_total = archive.stat().st_size, artifact.size_bytes
+            self._save_job(job)
+        await file_work(lambda _: extract_archive(archive, target_root, artifact.archive_format))
         candidates = list(target_root.rglob(native.executable))
         if len(candidates) != 1 or not candidates[0].is_file():
             raise ModelError("RUNTIME_BROKEN", "Native runtime entry program was not found.", 503)
-        for index, artifact in enumerate(native.dependencies, 1):
-            extra = staging / f"{device}-dependency-{index}"
-            await file_work(lambda _: extract_archive(archives[index], extra, artifact.archive_format))
-            dll_count = 0
-            for source in sorted(extra.rglob("*")):
-                if is_link(source.lstat()):
-                    raise ModelError("RUNTIME_BROKEN", "Additional runtime files must not be links.", 503)
-                if not source.is_file():
-                    continue
-                if source.suffix.lower() == ".dll":
-                    destination = candidates[0].parent / source.name
-                    dll_count += 1
-                else:
-                    destination = target_root / "dependencies" / str(index) / source.relative_to(extra)
-                contained(target_root, destination)
-                if destination.exists():
-                    if not destination.is_file() or destination.is_symlink() or await file_digest(destination) != await file_digest(source):
-                        raise ModelError("RUNTIME_BROKEN", "Runtime artifacts contain conflicting files.", 503)
-                else:
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    source.replace(destination)
-            if not dll_count:
-                raise ModelError("RUNTIME_BROKEN", "Additional CUDA runtime DLLs are missing.", 503)
-        from ai_workbench.core.models.runtimes.cuda import llama_environment
+        cuda_directory = cuda_library_directory(payload, python) if device == "cuda" else None
         self._stage(job, "checking_program", log)
-        await self._command([candidates[0], "--version"], llama_environment(candidates[0].parent), candidates[0].parent, log)
+        await self._command([candidates[0], "--version"], llama_environment(candidates[0].parent, cuda_directory), candidates[0].parent, log)
         return candidates[0].relative_to(payload).as_posix()
 
     def _stage(self, job, stage, log):
@@ -618,13 +601,13 @@ class RuntimeSupervisor:
         log.write(stage)
         self._save_job(job)
 
-    async def _download(self, entry, target, job, *, offset=0, total_bytes=None, final=True):
+    async def _download(self, entry, target, job):
         settings = self.settings.get().download
         url = entry.url
         if settings.github_release_proxy_url:
             url = settings.github_release_proxy_url + "/" + url
         job.stage = "downloading"
-        job.progress_current, job.progress_total = offset, total_bytes
+        job.progress_current, job.progress_total = 0, entry.size_bytes
         self._save_job(job)
         digest = hashlib.sha256()
         last_event = time.monotonic()
@@ -640,8 +623,8 @@ class RuntimeSupervisor:
                         continue
                     response.raise_for_status()
                     length = response.headers.get("content-length")
-                    if total_bytes is None and final:
-                        job.progress_total = offset + int(length) if length and length.isdigit() else None
+                    if job.progress_total is None:
+                        job.progress_total = int(length) if length and length.isdigit() else None
                     with target.open("wb") as output:
                         async for data in response.aiter_bytes():
                             output.write(data)

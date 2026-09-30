@@ -158,29 +158,19 @@ class RuntimeArtifact(Strict):
 SHA256 = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 
 
-class NativeDependencies(Strict):
-    artifact_sha256: SHA256
-    dependencies_sha256: list[SHA256]
-
-
 class RuntimeDependencies(Strict):
     platform: str
     architecture: str
     python_version: str
     python_sha256: SHA256
     requirements_sha256: SHA256
-    native_cpu: NativeDependencies
-    native_cuda: NativeDependencies
+    native_cpu: SHA256
+    native_cuda: SHA256
 
 
 class NativeRuntime(Strict):
     artifact: RuntimeArtifact
-    dependencies: list[RuntimeArtifact] = Field(default_factory=list)
     executable: str = "llama-server.exe"
-
-    def dependency_identity(self) -> NativeDependencies:
-        return NativeDependencies(artifact_sha256=self.artifact.sha256,
-            dependencies_sha256=sorted({artifact.sha256 for artifact in self.dependencies}))
 
 
 class LocalRelease(Strict):
@@ -209,7 +199,7 @@ class LocalRelease(Strict):
         return RuntimeDependencies(platform=self.platform, architecture=self.architecture,
             python_version=self.python_version, python_sha256=self.python_artifact.sha256,
             requirements_sha256=self.requirements_sha256,
-            native_cpu=self.native_cpu.dependency_identity(), native_cuda=self.native_cuda.dependency_identity())
+            native_cpu=self.native_cpu.artifact.sha256, native_cuda=self.native_cuda.artifact.sha256)
 
 
 class InstallationExecutables(Strict):

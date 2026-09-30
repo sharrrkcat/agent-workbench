@@ -23,6 +23,7 @@ from ai_workbench.core.events import EventBus
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.catalog import catalog
+from ai_workbench.core.models.runtimes.cuda import CUDA_DLL_NAMES, TORCH_LIBRARY_PATH
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 from ai_workbench.core.models.runtimes.schema import NativeRuntime, RuntimeArtifact, DownloadSettings, Installation, RuntimeJob
 from ai_workbench.core.models.runtimes.store import RuntimeStore
@@ -49,6 +50,13 @@ def archive_bytes(files=None):
     return output.getvalue()
 
 
+def cuda_library_fixture(python):
+    directory = python.parent / TORCH_LIBRARY_PATH
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in CUDA_DLL_NAMES:
+        (directory / name).write_bytes(b"CUDA 12.8 fixture")
+
+
 def supervisor(tmp_path, *, data=None, store=None):
     data = data if data is not None else archive_bytes()
     native = NativeRuntime(artifact=RuntimeArtifact(url="https://runtime.test/native.zip",
@@ -60,6 +68,7 @@ def supervisor(tmp_path, *, data=None, store=None):
     async def install(entry, target, job, log):
         (target / "env").mkdir(parents=True)
         (target / "env/python.exe").write_bytes(b"test interpreter")
+        cuda_library_fixture(target / entry.python_executable)
     async def command(args, env, cwd, log):
         assert args[1:] == ["--version"] and Path(args[0]).is_file()
     service._install_python = install
@@ -71,7 +80,7 @@ def test_catalog_is_one_pinned_windows_release():
     release = catalog("windows", "amd64")
     assert release.supported and release.python_version == "3.12.11"
     assert release.python_artifact.sha256 and release.requirements_sha256
-    assert release.native_cpu.artifact.sha256 and release.native_cuda.dependencies[0].sha256
+    assert release.native_cpu.artifact.sha256 and release.native_cuda.artifact.sha256
     for system, machine in (("linux", "x86_64"), ("windows", "arm64"), ("darwin", "arm64")):
         assert not catalog(system, machine).supported
 
@@ -312,6 +321,7 @@ async def installed_worker(tmp_path):
     (service.worker_root / "tts_engine.py").write_text(FAKE_ENGINE, encoding="utf-8")
     async def install(entry, target, job, log):
         await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target / "env")
+        cuda_library_fixture(target / entry.python_executable)
     service._install_python = install
     await service.submit('install')
     await service.task

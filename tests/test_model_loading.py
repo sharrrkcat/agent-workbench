@@ -19,7 +19,7 @@ from ai_workbench.core.models.runtimes.schema import Installation
 from ai_workbench.core.models.schema import ModelProfile, SpeechRequest
 from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from tests.test_load_timing import events
-from tests.test_phase2b_runtime import installed_worker, supervisor
+from tests.test_phase2b_runtime import cuda_library_fixture, installed_worker, supervisor
 from tests.test_runtime_maintenance import link_directory
 from tests.test_tts import wav_bytes
 
@@ -128,6 +128,7 @@ def test_missing_runtime_and_model_failures_are_visible_before_spawn(tmp_path, m
         target = service.directory()
         target.mkdir(parents=True)
         (target / "llama-server.exe").write_bytes(b"fixture")
+        cuda_library_fixture(target / "llama-server.exe")
         save_manifest(service, {"dependencies": entry.dependency_identity().model_dump(),
             "executables": dict.fromkeys(["cpu", "cuda", "python"], "llama-server.exe")})
         forbid_install_scans(monkeypatch, service)

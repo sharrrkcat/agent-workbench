@@ -243,7 +243,7 @@ class ManagedAdapter:
             port = None
         else:
             if cuda:
-                env = llama_environment(executable.parent)
+                env = llama_environment(executable.parent, self.supervisor.cuda_directory())
                 with stage("cuda_probe"):
                     device_id, self.device_name = await probe_cuda_device(executable, env, log)
             with socket.socket() as reservation:

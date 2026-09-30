@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -109,6 +110,24 @@ def test_cuda_requires_a_model_unless_installation_is_explicit():
     assert error.value.code == 2
     assert smoke_cuda_runtime.parse_args(["--install-only"]).install_only
     assert smoke_cuda_runtime.parse_args(["--model-ref", "llms/local.gguf"]).model_ref == "llms/local.gguf"
+
+
+@pytest.mark.parametrize("source", ["torch", "outside", "missing"])
+def test_cuda_acceptance_requires_actual_shared_library_modules(tmp_path, monkeypatch, source):
+    directory = tmp_path / "torch/lib"
+    paths = [directory / name for name in smoke_cuda_runtime.CUDA_DLL_NAMES]
+    if source == "outside":
+        paths[0] = tmp_path / paths[0].name
+    elif source == "missing":
+        paths.pop()
+    child = SimpleNamespace(memory_maps=lambda: [SimpleNamespace(path=str(path)) for path in paths])
+    parent = SimpleNamespace(memory_maps=lambda: [], children=lambda **_: [child])
+    monkeypatch.setattr(smoke_cuda_runtime.psutil, "Process", lambda _: parent)
+    if source == "torch":
+        assert {Path(path).parent for path in smoke_cuda_runtime.loaded_cuda_libraries(123, directory).values()} == {directory}
+    else:
+        with pytest.raises(AssertionError, match="CUDA librar|CUDA libraries"):
+            smoke_cuda_runtime.loaded_cuda_libraries(123, directory)
 
 
 @pytest.mark.parametrize("script", SCRIPTS)

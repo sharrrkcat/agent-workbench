@@ -44,7 +44,7 @@ async def checked_json(client, method, path, **kwargs):
 async def validate_device(state, client, model_ref, device, engine_name, vision=False):
     manager = state.model_manager
     options = {"device": device}
-    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, capabilities={'streaming': True, 'tools': not vision, 'vision': vision}, parameters={'temperature': 0, 'max_tokens': 128}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
+    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, capabilities={'streaming': True, 'tools': not vision, 'vision': vision}, parameters={'temperature': 0, 'max_tokens': 256 if vision else 192}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
     manager.settings.patch({"utility_model_profile_id": profile.id})
     loaded = await manager.load(profile.id)
     profile = manager.profile(profile.id)
@@ -88,7 +88,7 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     assert manager.status(profile.id).residency == "loaded"
 
     session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
-        "generation": {"temperature": 0, "max_tokens": 32}, "tools_allowed": []})
+        "generation": {"temperature": 0}, "tools_allowed": []})
     chat = await checked_json(client, "POST", f"/api/sessions/{session['session_id']}/messages",
                               json={"content": "Greet me briefly."})
     assert chat["success"] and chat["run"]["status"] == "DONE" and chat["data"]
@@ -96,7 +96,7 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     assert title
 
     harness_session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
-        "harness_enabled": True, "tools_allowed": ["base64_encode"], "generation": {"temperature": 0, "max_tokens": 192}})
+        "harness_enabled": True, "tools_allowed": ["base64_encode"], "generation": {"temperature": 0}})
     harness = await checked_json(client, "POST", f"/api/sessions/{harness_session['session_id']}/messages", json={
         "content": "Call the base64_encode tool with value hello. After receiving its result, return only the encoded value. Use the tool; do not calculate it yourself."})
     tool_results = [part for message in harness["messages"] for part in message["parts"] if part["type"] == "tool_result"]
@@ -209,7 +209,7 @@ async def validate_vision(state, client, profile, engine_name):
     check_colors(answers["stream"], ["red", "blue"])
 
     session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
-        "generation": {"temperature": 0, "max_tokens": 256}, "tools_allowed": []})
+        "generation": {"temperature": 0}, "tools_allowed": []})
     attachment = await checked_json(client, "POST", "/api/attachments", files={"file": ("input.png", red, "image/png")})
     path = f"/api/sessions/{session['session_id']}/messages"
     first = await checked_json(client, "POST", path, json={"content": "Remember this image for my next question. Reply only READY.", "attachments": [attachment]})

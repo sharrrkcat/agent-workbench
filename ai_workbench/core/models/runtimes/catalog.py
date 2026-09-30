@@ -23,10 +23,6 @@ LLAMA_CUDA = RuntimeArtifact(
     url=f"https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_VERSION}/llama-b10809-bin-win-cuda-12.4-x64.zip",
     sha256="c77bfcd9ed8d91e8721a2d6a290b907fddd4fa5412a47b21c6fa1709116b85f9",
     archive_format="zip", size_bytes=253938543)
-LLAMA_CUDA_DLLS = RuntimeArtifact(
-    url=f"https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_VERSION}/cudart-llama-bin-win-cuda-12.4-x64.zip",
-    sha256="8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
-    archive_format="zip", size_bytes=391443627)
 
 
 def requirements_digest(path: Path) -> str:
@@ -82,5 +78,5 @@ def catalog(os_name: str | None = None, machine: str | None = None) -> LocalRele
         requirements=lock.name if supported else None, requirements_sha256=requirements_digest(lock) if supported else None,
         python_artifact=PYTHON_ARTIFACT if supported else None,
         native_cpu=NativeRuntime(artifact=LLAMA_CPU) if supported else None,
-        native_cuda=NativeRuntime(artifact=LLAMA_CUDA, dependencies=[LLAMA_CUDA_DLLS]) if supported else None,
+        native_cuda=NativeRuntime(artifact=LLAMA_CUDA) if supported else None,
     )

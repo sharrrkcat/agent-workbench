@@ -142,6 +142,7 @@ Task/process logs are bounded and retained under data/logs/runtimes.
 Native artifact reuse uses .cache/cogita-artifacts; other cache files remain until explicit maintenance.
 installation.json contains only dependency identity and executable paths; the database's
 manifest_sha256 binds this small metadata file. It contains no environment file inventory.
+Native identity records the CPU/CUDA main archive SHA-256 values directly. CUDA llama-server shares the three CUDA 12.8 DLLs under the recorded Python entry's Lib/site-packages/torch/lib; native/cuda contains no copies or links to them.
 Old release/file-inventory metadata is rejected and retained until explicit repair
 rebuilds the current release. No metadata conversion, database reset or model-profile reset occurs.
 Release labels do not relocate installed files; successful repair replaces the recorded installation.

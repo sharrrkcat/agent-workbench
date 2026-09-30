@@ -1,38 +1,34 @@
 import asyncio
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import httpx
 import pytest
 from pydantic import ValidationError
 
-from ai_workbench.core.events import EventBus
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.catalog import catalog
-from ai_workbench.core.models.runtimes.cuda import cuda_arguments, llama_environment
+from ai_workbench.core.models.runtimes.cuda import CUDA_DLL_NAMES, TORCH_LIBRARY_PATH, cuda_arguments, llama_environment
 from ai_workbench.core.models.runtimes.schema import NativeRuntime, LlamaCUDAOptions, RuntimeArtifact
-from ai_workbench.core.models.runtimes.store import RuntimeStore
-from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from tests.test_phase2b_runtime import archive_bytes, supervisor
+from tests.test_runtime_maintenance import link_directory
 
 
-def cuda_supervisor(root, *, main=None, extra=None):
+def cuda_supervisor(root, *, main=None):
     cpu = archive_bytes({"bin/llama-server.exe": b"cpu fixture"})
     main = main if main is not None else archive_bytes({"bin/llama-server.exe": b"fixture"})
-    extra = extra if extra is not None else archive_bytes({"nested/cublas64_12.dll": b"cuda", "LICENSE": b"license"})
-    dependency = RuntimeArtifact(url="https://runtime.test/cudart.zip", sha256=hashlib.sha256(extra).hexdigest(),
-                                 archive_format="zip", size_bytes=len(extra))
     native = NativeRuntime(artifact=RuntimeArtifact(url="https://runtime.test/cuda.zip",
-        sha256=hashlib.sha256(main).hexdigest(), archive_format="zip", size_bytes=len(main)), dependencies=[dependency])
+        sha256=hashlib.sha256(main).hexdigest(), archive_format="zip", size_bytes=len(main)))
     requests = []
 
     def transport(request):
         requests.append(str(request.url))
-        return httpx.Response(200, content=cpu if request.url.path == "/cpu.zip" else extra if request.url.path == "/cudart.zip" else main)
+        return httpx.Response(200, content=cpu if request.url.path == "/cpu.zip" else main)
 
     service = supervisor(root, data=cpu)
     service.release.native_cpu.artifact.url = "https://runtime.test/cpu.zip"
@@ -43,19 +39,21 @@ def cuda_supervisor(root, *, main=None, extra=None):
         assert args[1:] == ["--version"]
         assert Path(args[0]).is_file()
         if "cuda" in Path(args[0]).parts:
-            assert (Path(args[0]).parent / "cublas64_12.dll").is_file()
+            directory = Path(env["PATH"].split(os.pathsep)[1])
+            assert directory == Path(args[0]).parents[3] / "env" / TORCH_LIBRARY_PATH
+            assert all((directory / name).is_file() and not (cwd / name).exists() for name in CUDA_DLL_NAMES)
         assert env["PATH"].startswith(str(cwd))
 
     service._command = command
-    return service, requests, len(main) + len(extra)
+    return service, requests, len(main)
 
 
-def test_cuda_catalog_is_pinned_to_windows_x64_and_two_artifacts():
+def test_cuda_catalog_is_pinned_to_windows_x64_main_artifact():
     release = catalog("windows", "amd64")
     native = release.native_cuda
-    assert release.supported and "b10809" in native.artifact.url and len(native.dependencies) == 1
+    assert release.supported and "b10809" in native.artifact.url and "cuda-12.4" in native.artifact.url
     assert native.artifact.sha256 == "c77bfcd9ed8d91e8721a2d6a290b907fddd4fa5412a47b21c6fa1709116b85f9"
-    assert native.dependencies[0].sha256 == "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
+    assert "dependencies" not in native.model_dump()
     assert LlamaCUDAOptions().gpu_layers == "auto"
     for system, machine in (("linux", "x86_64"), ("windows", "arm64"), ("darwin", "arm64")):
         assert not catalog(system, machine).supported
@@ -78,23 +76,25 @@ def test_cuda_defaults_and_manual_arguments_preserve_context_and_device(tmp_path
     monkeypatch.setenv("LLAMA_ARG_N_GPU_LAYERS", "0")
     monkeypatch.setenv("PYTHONPATH", "outside")
     monkeypatch.setenv("HTTP_PROXY", "http://unused")
-    import os
     original_path = os.environ["PATH"]
-    env = llama_environment(tmp_path)
-    assert env["PATH"].startswith(str(tmp_path)) and os.environ["PATH"] == original_path
+    directory = tmp_path / "shared CUDA libraries"
+    env = llama_environment(tmp_path, directory)
+    assert env["PATH"] == os.pathsep.join([str(tmp_path), str(directory), original_path])
+    assert llama_environment(tmp_path)["PATH"] == str(tmp_path) + os.pathsep + original_path
+    assert os.environ["PATH"] == original_path
     assert not {"LLAMA_ARG_N_GPU_LAYERS", "PYTHONPATH", "HTTP_PROXY"} & env.keys()
 
 
-def test_cuda_dual_artifact_install_progress_manifest_and_uninstall(tmp_path):
+def test_cuda_shared_libraries_install_progress_repair_and_uninstall(tmp_path):
     async def scenario():
         service, requests, total = cuda_supervisor(tmp_path)
-        preserved = tmp_path / "data/runtimes/llama-server/fixture/cpu/keep"
+        preserved = tmp_path / "data/models/llms/keep/model.gguf"
         preserved.parent.mkdir(parents=True)
         preserved.write_bytes(b"cpu")
         job = await service.submit('install')
         await service.task
         assert service.store.job(job.id).state == "completed"
-        assert requests == ["https://runtime.test/cpu.zip", "https://runtime.test/cuda.zip", "https://runtime.test/cudart.zip"]
+        assert requests == ["https://runtime.test/cpu.zip", "https://runtime.test/cuda.zip"]
         progress = [event.payload["job"] for event in service.events.list_events()
                     if event.type == "runtime_job_updated" and event.payload["job"]["stage"] == "downloading" and event.payload["job"]["progress_total"] == total]
         assert all(value["progress_total"] == total for value in progress)
@@ -102,28 +102,43 @@ def test_cuda_dual_artifact_install_progress_manifest_and_uninstall(tmp_path):
         assert progress[-1]["progress_current"] == total
         service.assert_available()
         executable = service.executable("llama-server", "cuda")
-        assert (executable.parent / "cublas64_12.dll").read_bytes() == b"cuda"
+        assert all(not (executable.parent / name).exists() for name in CUDA_DLL_NAMES)
+        directory = service.cuda_directory()
         manifest = json.loads((service.directory() / "installation.json").read_text())
-        assert manifest["dependencies"]["native_cuda"]["dependencies_sha256"] == [service.release.native_cuda.dependencies[0].sha256]
+        assert manifest["dependencies"]["native_cuda"] == service.release.native_cuda.artifact.sha256
         assert set(manifest) == {"dependencies", "executables"}
-        assert (service.directory() / "native/cuda/dependencies/1/LICENSE").is_file()
-        (executable.parent / "cublas64_12.dll").write_bytes(b"changed")
+        (directory / "cublas64_12.dll").write_bytes(b"changed")
         service.assert_available()
+        await service.submit('repair')
+        await service.task
+        assert service.installation().state == "installed" and len(requests) == 2
+        assert (directory / "cublas64_12.dll").read_bytes() == b"CUDA 12.8 fixture"
         await service.submit('uninstall')
         await service.task
         assert not executable.exists() and preserved.read_bytes() == b"cpu"
+        assert (service.base / ".cache/cogita-artifacts" / service.release.native_cuda.artifact.sha256).is_file()
         await service.close()
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("failure", ["checksum", "collision", "missing_dll"])
-def test_cuda_additional_artifact_failure_never_promotes(tmp_path, failure):
+@pytest.mark.parametrize("failure", ["checksum", "missing_dll", "escaping_dll_directory"])
+def test_cuda_artifact_or_shared_library_failure_never_promotes(tmp_path, failure):
     async def scenario():
-        main = archive_bytes({"bin/llama-server.exe": b"fixture", "bin/cublas64_12.dll": b"conflict"}) if failure == "collision" else None
-        extra = archive_bytes({"LICENSE": b"license"}) if failure == "missing_dll" else None
-        service, _, _ = cuda_supervisor(tmp_path, main=main, extra=extra)
+        service, _, _ = cuda_supervisor(tmp_path)
         if failure == "checksum":
-            service.release.native_cuda.dependencies[0].sha256 = "0" * 64
+            service.release.native_cuda.artifact.sha256 = "0" * 64
+        else:
+            install = service._install_python
+            async def incomplete(entry, target, job, log):
+                await install(entry, target, job, log)
+                directory = (target / entry.python_executable).parent / TORCH_LIBRARY_PATH
+                if failure == "missing_dll":
+                    (directory / CUDA_DLL_NAMES[0]).unlink()
+                else:
+                    outside = tmp_path / "outside"
+                    directory.rename(outside)
+                    link_directory(directory, outside)
+            service._install_python = incomplete
         job = await service.submit('install')
         await service.task
         value = service.store.job(job.id)
@@ -131,15 +146,45 @@ def test_cuda_additional_artifact_failure_never_promotes(tmp_path, failure):
         assert value.error_code == ("RUNTIME_CHECKSUM_MISMATCH" if failure == "checksum" else "RUNTIME_BROKEN")
         assert not service.directory().exists()
         assert not list((service.base / ".staging").iterdir())
+        if failure == "escaping_dll_directory":
+            assert (tmp_path / "outside" / CUDA_DLL_NAMES[0]).is_file()
         await service.close()
     asyncio.run(scenario())
 
 
-def test_cuda_cancel_during_dependency_download_cleans_staging(tmp_path):
+@pytest.mark.parametrize("damage", [*CUDA_DLL_NAMES, "escaping_directory"])
+def test_shared_cuda_library_damage_blocks_entry_and_restoring_recovers(tmp_path, damage):
+    async def scenario():
+        service, _, _ = cuda_supervisor(tmp_path)
+        await service.submit('install')
+        await service.task
+        directory = service.cuda_directory()
+        original = service.store.installations()
+        if damage == "escaping_directory":
+            outside = tmp_path / "outside"
+            directory.rename(outside)
+            link_directory(directory, outside)
+        else:
+            (directory / damage).unlink()
+        assert service.installation().state == "broken"
+        with pytest.raises(ModelError) as error:
+            service.executable("llama-server", "cuda")
+        assert error.value.code == "RUNTIME_BROKEN"
+        assert service.store.installations() == original
+        if damage == "escaping_directory":
+            directory.rmdir() if os.name == "nt" else directory.unlink()
+            outside.rename(directory)
+        else:
+            (directory / damage).write_bytes(b"restored")
+        assert service.installation().state == "installed"
+        await service.close()
+    asyncio.run(scenario())
+
+
+def test_cuda_cancel_during_main_download_cleans_staging(tmp_path):
     async def scenario():
         service, _, _ = cuda_supervisor(tmp_path)
         cpu = archive_bytes({"bin/llama-server.exe": b"cpu fixture"})
-        first = archive_bytes({"bin/llama-server.exe": b"fixture"})
         started, closed = asyncio.Event(), asyncio.Event()
 
         class Stream(httpx.AsyncByteStream):
@@ -152,7 +197,7 @@ def test_cuda_cancel_during_dependency_download_cleans_staging(tmp_path):
                 closed.set()
 
         service.transport = httpx.MockTransport(lambda request: httpx.Response(200, stream=Stream())
-            if request.url.path == "/cudart.zip" else httpx.Response(200, content=cpu if request.url.path == "/cpu.zip" else first))
+            if request.url.path == "/cuda.zip" else httpx.Response(200, content=cpu))
         job = await service.submit('install')
         await asyncio.wait_for(started.wait(), 5)
         result = await service.cancel(job.id)
@@ -196,6 +241,7 @@ def test_cuda_startup_requires_device_and_positive_offload_and_releases_processe
                 self.exited.set()
 
         async def start(args, *, env, cwd, log):
+            assert env["PATH"].split(os.pathsep)[:2] == [str(cwd), str(service.cuda_directory())]
             probe = "--list-devices" in args
             process = Process(probe, args)
             processes.append(process)

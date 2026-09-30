@@ -6,13 +6,31 @@ import asyncio
 import json
 from pathlib import Path
 
+import psutil
+
 from ai_workbench.core.models.manager import ModelManager
+from ai_workbench.core.models.runtimes.cuda import CUDA_DLL_NAMES
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.runtimes.supervisor import RuntimeSupervisor
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
+
+
+def loaded_cuda_libraries(pid: int, directory: Path):
+    required = {name.casefold(): name for name in CUDA_DLL_NAMES}
+    parent = psutil.Process(pid)
+    loaded = {}
+    for process in [parent, *parent.children(recursive=True)]:
+        for module in process.memory_maps():
+            path = Path(module.path)
+            name = required.get(path.name.casefold())
+            if name:
+                assert path.resolve() == (directory / name).resolve(), f"CUDA library loaded outside Torch: {path}"
+                loaded[name] = str(path)
+    assert set(loaded) == set(CUDA_DLL_NAMES), f"Missing loaded CUDA libraries: {set(CUDA_DLL_NAMES) - set(loaded)}"
+    return loaded
 
 
 async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
@@ -49,6 +67,11 @@ async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
         reply = await manager.chat(profile.id, request)
         assert reply.message.content
         print(json.dumps({"nonstream": reply.model_dump(mode="json")}), flush=True)
+        adapter = manager._slots[manager.execution_key(manager.profile(profile.id))].adapter
+        libraries = loaded_cuda_libraries(adapter.process.process.pid, supervisor.cuda_directory())
+        native_directory = supervisor.executable("llama-server", "cuda").parent
+        assert all(not (native_directory / name).exists() for name in CUDA_DLL_NAMES)
+        print(json.dumps({"cuda_libraries": libraries}), flush=True)
         chunks = [chunk async for chunk in manager.chat_stream(profile.id, request.model_copy(update={"stream": True}))]
         assert any(chunk.delta.content for chunk in chunks) and any(chunk.finish_reason for chunk in chunks)
         print(json.dumps({"stream_chunks": len(chunks), "finish": chunks[-1].finish_reason}), flush=True)

@@ -52,17 +52,17 @@ def test_catalog_never_reads_worker_sources(monkeypatch):
     assert catalog("windows", "x86_64").supported
 
 
-def test_native_dependency_order_and_download_metadata_are_not_identity():
+def test_native_identity_uses_archive_hash_without_download_metadata():
     release = catalog("windows", "x86_64")
-    native = release.native_cuda.model_copy(deep=True)
-    native.dependencies.append(native.dependencies[0].model_copy(update={"sha256": "a" * 64}))
-    expected = native.dependency_identity()
-    native.dependencies.reverse()
-    native.artifact.url = "https://example.test/mirror.zip"
-    native.dependencies[0].size_bytes = 123
-    assert native.dependency_identity() == expected
-    native.dependencies[0].sha256 = "b" * 64
-    assert native.dependency_identity() != expected
+    changed = release.model_copy(deep=True)
+    expected = release.dependency_identity()
+    assert expected.native_cuda == release.native_cuda.artifact.sha256
+    assert expected.native_cpu == release.native_cpu.artifact.sha256
+    changed.native_cuda.artifact.url = "https://example.test/mirror.zip"
+    changed.native_cuda.artifact.size_bytes = 123
+    assert changed.dependency_identity() == expected
+    changed.native_cuda.artifact.sha256 = "b" * 64
+    assert changed.dependency_identity() != expected
 
 
 def test_release_metadata_changes_reuse_installed_entries_without_rebuilding(tmp_path):
@@ -86,6 +86,7 @@ def test_release_metadata_changes_reuse_installed_entries_without_rebuilding(tmp
         assert restarted.installation().state == "installed"
         assert restarted.directory() == target
         assert restarted.executable("kokoro") == target / "env/python.exe"
+        assert restarted.cuda_directory() == target / "env/Lib/site-packages/torch/lib"
         assert restarted.executable("llama-server") == target / "native/cpu/bin/llama-server.exe"
         job = await restarted.submit("install")
         assert job.stage == "already_installed" and job.version == original[0].version

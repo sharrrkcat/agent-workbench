@@ -121,7 +121,7 @@ def test_install_restart_and_repeat_install_access_only_fixed_files(tmp_path, mo
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("damage", ["old_files", "old_release", "digest", "json", "dependencies", "python", "cpu", "cuda", "marker"])
+@pytest.mark.parametrize("damage", ["old_files", "old_release", "old_native", "digest", "json", "dependencies", "python", "cpu", "cuda", "marker"])
 def test_invalid_installation_is_broken_on_restart_and_requires_explicit_repair(tmp_path, damage):
     async def scenario():
         service = supervisor(tmp_path)
@@ -139,6 +139,9 @@ def test_invalid_installation_is_broken_on_restart_and_requires_explicit_repair(
             save_metadata(service, data)
         elif damage == "dependencies":
             data["dependencies"]["requirements_sha256"] = "0" * 64
+            save_metadata(service, data)
+        elif damage == "old_native":
+            data["dependencies"]["native_cuda"] = {"artifact_sha256": data["dependencies"]["native_cuda"], "dependencies_sha256": ["a" * 64]}
             save_metadata(service, data)
         elif damage in {"digest", "json"}:
             marker.write_bytes(b"{" if damage == "json" else marker.read_bytes() + b" ")

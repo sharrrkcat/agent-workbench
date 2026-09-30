@@ -10,13 +10,18 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog
 
 
-def llama_environment(directory: Path):
+CUDA_DLL_NAMES = ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll")
+TORCH_LIBRARY_PATH = Path("Lib/site-packages/torch/lib")
+
+
+def llama_environment(directory: Path, cuda_directory: Path | None = None):
     env = {key: value for key, value in os.environ.items()
            if not key.upper().startswith(("PYTHON", "VIRTUAL_ENV", "LLAMA_ARG_"))
            and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}}
     env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1",
                TOKENIZERS_PARALLELISM="false")
-    env["PATH"] = str(directory) + os.pathsep + env.get("PATH", "")
+    directories = [str(directory), str(cuda_directory)] if cuda_directory is not None else [str(directory)]
+    env["PATH"] = os.pathsep.join([*directories, env.get("PATH", "")])
     return env
 
 

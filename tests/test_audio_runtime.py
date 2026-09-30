@@ -189,6 +189,8 @@ async def installed_audio(tmp_path):
 
     async def install(entry, target, job, log):
         await asyncio.to_thread(venv.EnvBuilder(with_pip=False, symlinks=False).create, target / "env")
+        from tests.test_phase2b_runtime import cuda_library_fixture
+        cuda_library_fixture(target / entry.python_executable)
 
     service._install_python = install
     await service.submit('install')

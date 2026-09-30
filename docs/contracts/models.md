@@ -57,8 +57,8 @@ GET `/api/models/local-runtime` returns installation; POST `/install`, `/repair`
 idle requests, block local admission and stop workers; cache cleanup preserves loaded models. File work runs off-loop; providers and model queues remain independent.
 
 Downloads stage under data/runtimes/.staging/{job_id}, then promote to local/<version> with env/, native/cpu/ and native/cuda/. installation.json records Python/CPU/CUDA entries and
-manifest_sha256-bound identity: platform/architecture, Python, package pins/hashes and native hashes. Formatting/order, comments, workers, release labels and download metadata do not affect identity.
-Startup/reads/repeat install/entry resolution check metadata schema/digest/dependencies and entry containment/existence, without environment scans or engine/GPU probes; other dependency edits remain
+manifest_sha256-bound identity: platform/architecture, Python, package pins/hashes and CPU/CUDA main archive hashes. Formatting/order, comments, workers, release labels and download metadata do not affect identity.
+Startup/reads/repeat install/entry resolution check metadata schema/digest/dependencies, entries and the three shared CUDA DLLs for containment/existence, without environment scans or engine/GPU probes; other dependency edits remain
 undetected. Availability reads preserve jobs; restored files/dependencies recover on refresh/restart. Failed/interrupted jobs and old manifests require explicit repair, without conversion/reset. Paths
 use the recorded version. Finalizing validates/promotes entries; healthy install returns already_installed, while repair always rebuilds.
 
@@ -69,8 +69,9 @@ source patch defers auto_factory's GenerationMixin import, replacing its file to
 Lib/site-packages before six isolated offline engine imports and native checks, without weights/GPU. Dependency changes require Repair; source-only preparation follows the
 [README](../../README.md#verification). User PATH/registry stay untouched; [Settings](settings.md) owns downloads.
 
-Both llama.cpp b10809 CPU/CUDA programs are included; CUDA main/cudart ZIPs share byte progress and archive hash checks before extraction/cache reuse. Llama CUDA 12.4 DLLs stay beside its executable,
-separate from Torch CUDA 12.8; different-content collisions fail. Native --version checks precede promotion; dependency paths affect only children.
+Both llama.cpp b10809 CPU/CUDA programs use hash-checked main ZIPs, including cache reuse. The official CUDA 12.4 build shares Torch's CUDA 12.8 cudart64_12.dll, cublas64_12.dll and cublasLt64_12.dll
+from the recorded interpreter's Lib/site-packages/torch/lib; no separate CUDA DLL archive or native-directory copies are installed. CUDA child PATH starts with the executable directory, then Torch's library directory.
+Installation --version, device detection and inference use that path; missing/escaping shared DLLs return RUNTIME_BROKEN. Native --version checks precede promotion; parent PATH is unchanged. Older native dependency metadata requires Repair.
 
 Jobs expose state, stage, bytes, error, revision and bounded logs. Cancellation stops subprocesses and awaits file work before clearing staging; restart interrupts unfinished jobs/clears staging.
 Failed/cancelled logs persist; retries create jobs. Uninstall stops workers/removes the recorded installation, retaining caches/models. Under `/api/models/local-runtime`, GET `/jobs`, `/jobs/{id}`,
