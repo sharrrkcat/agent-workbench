@@ -56,6 +56,8 @@ class PresentationOpenAI(ToolOpenAI):
         history = data["messages"]
         user_index = max(i for i, item in enumerate(history) if item["role"] == "user")
         command = history[user_index]["content"]
+        if isinstance(command, list):
+            command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
         if command == "scroll-output":

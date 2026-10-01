@@ -221,6 +221,8 @@ for (const locale of ['en', 'zh-CN']) {
             columns.join(' | ') +
             ' |',
           'Last paragraph.',
+          '```\n  plain code\n```',
+          '```js\n  const pending = true;',
         ].join('\n\n');
         answer.parts = [{ id: 'layout-answer', type: 'text', format: 'markdown', text: markdown }];
         await page.route('**/api/sessions/' + session.session_id + '/messages', (route) =>
@@ -232,8 +234,17 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(body).toHaveCSS('font-size', '16px');
         await expect(body.locator('ul').first()).toHaveCSS('list-style-type', 'disc');
         await expect(body.locator('ol')).toHaveCSS('list-style-type', 'decimal');
-        const code = body.locator('pre');
+        const code = body.locator('pre').first();
         expect(await code.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+        await expect(body.locator('.markdown-code')).toHaveCount(3);
+        for (const surface of await body.locator('.markdown-code > [data-slot="bubble-content"]').all()) {
+          await expect(surface).toHaveCSS('border-radius', '24px');
+        }
+        await expect(body.locator('pre').nth(1)).toHaveText('  plain code\n');
+        await expect(body.locator('pre').nth(2).locator('code')).toHaveClass('language-js');
+        await expect(body.locator('p code')).toHaveText('value');
+        await expect(body.locator('p code')).not.toHaveCSS('border-radius', '24px');
+        await expect(code).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
         const table = body.locator('.markdown-table');
         expect(await table.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
         expect((await page.locator('.conversation-content').boundingBox())!.width).toBeLessThanOrEqual(768);
@@ -250,6 +261,31 @@ for (const locale of ['en', 'zh-CN']) {
         await input.clear();
         await expect.poll(async () => (await input.boundingBox())!.height).toBe(initial);
         await page.screenshot({ path: info.outputPath('chat-layout.png') });
+      });
+
+      test('message action hints stay below their buttons', async ({ page, request }) => {
+        await fixture(request);
+        await page.goto('/');
+        const buttons = page.locator('.message-actions button[data-slot="tooltip-trigger"], .message-actions [data-slot="tooltip-trigger"]');
+        await expect(buttons.first()).toBeAttached();
+        for (const button of await buttons.all()) {
+          await button.scrollIntoViewIfNeeded();
+          if (viewport.width > 390) {
+            await button.locator('xpath=ancestor::article').hover();
+            await button.hover();
+            await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveAttribute('data-side', 'bottom');
+            await page.mouse.move(0, 0);
+          }
+          await button.focus();
+          const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
+          await expect(tooltip).toHaveAttribute('data-side', 'bottom');
+          await expect.poll(async () => (await tooltip.boundingBox())!.y - ((await button.boundingBox())!.y + (await button.boundingBox())!.height)).toBeGreaterThanOrEqual(0);
+          await button.blur();
+        }
+        const button = buttons.last();
+        await button.evaluate((node) => { Object.assign((node as HTMLElement).style, { position: 'fixed', bottom: '2px', left: '100px' }); });
+        await button.focus();
+        await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveAttribute('data-side', 'bottom');
       });
 
       test('disclosures preserve their position and session selection opens the latest content', async ({

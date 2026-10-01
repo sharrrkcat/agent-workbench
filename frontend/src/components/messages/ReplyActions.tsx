@@ -52,7 +52,7 @@ export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: 
           >
             {copied ? <Check /> : <Copy size={14} />}
           </TooltipTrigger>
-          <TooltipContent>{t(copied ? 'copied' : 'copyAnswer')}</TooltipContent>
+          <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t(copied ? 'copied' : 'copyAnswer')}</TooltipContent>
         </Tooltip>
       ) : null}
       {ended && reply.run.kind === 'chat' ? (
@@ -71,7 +71,7 @@ export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: 
           >
             <RefreshCw size={14} />
           </TooltipTrigger>
-          <TooltipContent>{t('retryReply')}</TooltipContent>
+          <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('retryReply')}</TooltipContent>
         </Tooltip>
       ) : null}
       {usage}
@@ -94,7 +94,7 @@ export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: 
         >
           <Trash2 size={14} />
         </TooltipTrigger>
-        <TooltipContent>{t('deleteReply')}</TooltipContent>
+        <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('deleteReply')}</TooltipContent>
       </Tooltip> : null}
       {summary}
       {confirmation}

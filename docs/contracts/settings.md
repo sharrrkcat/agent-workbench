@@ -33,7 +33,7 @@ resource binding rules. Vite, TypeScript and the test module loader resolve
 `@/` to `frontend/src/`; `cn` combines component styles.
 
 Field labels/titles use explicit 12px medium text; descriptions, field errors and shared save/error Feedback use 12px regular text. Section legends stay 14px; touch inputs retain 16px text. Desktop controls retain Mira density. Coarse-pointer buttons, options and form
-actions have at least 44px targets; Checkbox/Switch keep compact marks with
+actions have at least 44px targets, except the compact [chat tick rail](chat-context.md#messages-and-attachments); Checkbox/Switch keep compact marks with
 expanded targets and associated labels. Field labels/descriptions are connected
 to controls. Forms retain native required/range validation and existing blank,
 null and zero semantics. Hidden file inputs remain behind visible Buttons.
@@ -88,7 +88,7 @@ The fixed chat header contains the sidebar toggle, title, concrete model selecto
 the selector occupies a second row on narrow screens. Agent Persona selection lives in the session dialog.
 The message column is at most 48rem wide, with an independent scroller and aligned fixed composer/status area.
 Assistant bodies align with both composer edges; user messages align with its right edge. Avatars sit outside
-the body column. Below 54rem of chat width, avatars and names share a row above each body, left-aligned
+the body column. Below 61rem of chat width, avatars and names share a row above each body, left-aligned
 for assistants and right-aligned for users, without narrowing the body or composer.
 The composer uses InputGroup and a horizontally scrolling AttachmentGroup; its textarea grows to 12rem, less in short viewports.
 Service states and error dismissal have matching English/Chinese labels.

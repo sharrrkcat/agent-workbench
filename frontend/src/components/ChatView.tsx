@@ -19,6 +19,8 @@ import { buildConversation } from './messages/turns';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { ResourceLoading } from './settings/resources/ResourceUI';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
+import { UserMessageNavigation } from './messages/UserMessageNavigation';
+import { useNewUserMessages } from './messages/useNewUserMessages';
 
 export function ChatView() {
   return (
@@ -42,6 +44,7 @@ function Conversation() {
   const sessionLoad = useCogitaStore((state) => state.sessionLoad);
   const retrySession = useCogitaStore((state) => state.retrySession);
   const { scrollToEnd, scrollToMessage } = useMessageScroller();
+  const animatedIds = useNewUserMessages();
   const items = useMemo(
     () => (currentSession ? buildConversation(currentSession.session_id, messages, runs, steps) : []),
     [currentSession?.session_id, messages, runs, steps],
@@ -100,9 +103,10 @@ function Conversation() {
             </MessageScrollerItem>
           ) : null}
           {items.map((item) => (
-            <MessageScrollerItem key={item.id} messageId={item.id}>
+            <MessageScrollerItem key={item.id} messageId={item.id}
+              scrollAnchor={item.kind === 'message' && item.message.role === 'user'}>
               {item.kind === 'message' ? (
-                <MessageBubble message={item.message} />
+                <MessageBubble message={item.message} animate={animatedIds.has(item.id)} />
               ) : (
                 <RunReply reply={item.reply} showFullProcessing={showFullProcessing} />
               )}
@@ -110,6 +114,8 @@ function Conversation() {
           ))}
         </MessageScrollerContent>
       </MessageScrollerViewport>
+      <UserMessageNavigation messages={items.flatMap((item) =>
+        item.kind === 'message' && item.message.role === 'user' ? [item.message] : [])} />
       <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')} />
     </MessageScroller>
   );

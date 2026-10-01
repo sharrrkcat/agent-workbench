@@ -28,12 +28,14 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { cn } from '@/lib/utils';
-import { FileText, Paperclip, Send, Square, X } from 'lucide-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { FileText, Paperclip, Plus, ArrowUp, Square, X } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
+import { useComposerLayout } from '../hooks/useComposerLayout';
 import { ImagePreview, type PreviewImage } from './messages/ImagePreview';
 import { contextMessageLabel, isContextMessage } from './messages/messageContent';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
@@ -41,6 +43,7 @@ import { useChatConfiguration } from '../hooks/useChatConfiguration';
 export function ChatInput() {
   const { t } = useTranslation('personas');
   const draft = useCogitaStore((state) => state.composerDraftText);
+  const { composerRef, textareaRef, measureRef, expanded, textHeight } = useComposerLayout(draft);
   const setDraft = useCogitaStore((state) => state.setComposerDraftText);
   const send = useCogitaStore((state) => state.sendMessage);
   const cancelRun = useCogitaStore((state) => state.cancelRun);
@@ -218,7 +221,17 @@ export function ChatInput() {
           </Select>
         </Field>
       ) : null}
-      <InputGroup className="composer">
+      <InputGroup
+        ref={composerRef}
+        data-expanded={expanded}
+        className="composer block rounded-[20px] has-[textarea]:rounded-[20px] has-data-[align=block-end]:rounded-[20px] transition-[height] duration-180 ease-out motion-reduce:transition-none"
+        style={{
+          '--composer-text-height': `min(${textHeight}px, 12rem, 30dvh)`,
+          height: expanded
+            ? 'calc(var(--composer-text-height) + var(--composer-toolbar-height) + 2px)'
+            : 'calc(var(--composer-compact-height) + 2px)',
+        } as CSSProperties}
+      >
         <input
           ref={fileRef}
           type="file"
@@ -231,7 +244,14 @@ export function ChatInput() {
           }}
         />
         <InputGroupTextarea
-          className="max-h-48 min-h-12 px-3"
+          ref={textareaRef}
+          className="min-h-0 [field-sizing:fixed] transition-[height,padding] duration-180 ease-out motion-reduce:transition-none"
+          style={{
+            height: expanded ? 'var(--composer-text-height)' : 'var(--composer-compact-height)',
+            paddingInline: expanded ? '12px' : 'var(--composer-inline-inset)',
+            paddingBlock: expanded ? '10px' : 'calc((var(--composer-compact-height) - 1lh) / 2)',
+            overflowY: expanded ? 'auto' : 'hidden',
+          }}
           disabled={!session && !chatDraft}
           value={draft}
           rows={1}
@@ -252,22 +272,30 @@ export function ChatInput() {
             }
           }}
         />
-        <InputGroupAddon align="block-end" className="gap-2">
-          <Tooltip>
-            <TooltipTrigger
+        <InputGroupAddon align="block-end" className="composer-toolbar absolute inset-x-0 bottom-0 gap-2 pt-1 pointer-events-none [&_button]:pointer-events-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger
               render={
                 <InputGroupButton
                   aria-label={t('attach')}
                   disabled={!ready || sending || mutatingHistory}
-                  onClick={() => fileRef.current?.click()}
+                  variant="outline"
                   size="icon-sm"
+                  className="rounded-full"
                 />
               }
             >
-              <Paperclip />
-            </TooltipTrigger>
-            <TooltipContent>{t('attach')}</TooltipContent>
-          </Tooltip>
+              <Plus />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="top" className="w-44">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={() => fileRef.current?.click()}>
+                  <Paperclip />
+                  {t('chat:addPhotosFiles')}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {activeRun ? (
             <Tooltip>
               <TooltipTrigger
@@ -278,7 +306,7 @@ export function ChatInput() {
                     onClick={() => void cancelRun(activeRun.run_id)}
                     variant="destructive"
                     size="icon-sm"
-                    className="ml-auto"
+                    className="ml-auto rounded-full"
                   />
                 }
               >
@@ -293,13 +321,14 @@ export function ChatInput() {
               onClick={() => void submit()}
               variant="default"
               size="icon-sm"
-              className="ml-auto"
+              className="ml-auto rounded-full"
             >
-              <Send />
+              <ArrowUp />
             </InputGroupButton>
           )}
         </InputGroupAddon>
       </InputGroup>
+      <div ref={measureRef} className="composer-measure" aria-hidden="true" />
       {dragging || (hasImages && profile?.source?.type === 'local' && normalizedRequestLimit !== undefined) ? <Marker className="composer-hint">
         <MarkerContent>
           {dragging

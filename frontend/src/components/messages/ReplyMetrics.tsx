@@ -48,7 +48,7 @@ export function ReplyMetrics({ reply }: { reply: Reply }) {
             }>
               <ChartNoAxesColumn data-icon="inline-start" />
             </TooltipTrigger>
-            <TooltipContent>{t('metrics.details')}</TooltipContent>
+            <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('metrics.details')}</TooltipContent>
           </Tooltip>
         } />
       </div>

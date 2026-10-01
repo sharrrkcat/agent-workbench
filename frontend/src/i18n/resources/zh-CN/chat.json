@@ -5,5 +5,9 @@
   "messages": "消息",
   "scrollToEnd": "最新消息",
   "scrollToStart": "最早消息",
-  "loadFailed": "无法打开对话"
+  "loadFailed": "无法打开对话",
+  "addPhotosFiles": "添加照片与文件",
+  "userMessageNavigation": "用户消息导航",
+  "userMessageNumber": "第 {{number}} 条消息",
+  "jumpToUserMessage": "跳转到第 {{number}} 条消息：{{summary}}"
 }

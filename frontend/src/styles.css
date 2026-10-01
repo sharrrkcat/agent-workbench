@@ -179,14 +179,51 @@
     padding-inline: calc(var(--chat-column-padding) - (min(48rem, 100cqw) - min(48rem, 100%)) / 2);
   }
 
+  .workspace { container: chat-shell / inline-size; }
   .chat-scroll-container { container: conversation / inline-size; }
+  .user-message-navigation {
+    position: absolute;
+    left: 0.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100% - 3rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .user-message-tick { flex-shrink: 0; }
+  .user-message-tick > span { width: 0.75rem; height: 2px; border-radius: 999px; background: var(--muted-foreground); }
+  .user-message-tick[data-adjacent] > span { width: 1.125rem; }
+  .user-message-tick[aria-current=step] > span { width: 1.5rem; background: var(--foreground); }
+  @container conversation (width < 768px) {
+    .user-message-navigation { display: none; }
+  }
+  @container conversation (width >= 768px) {
+    .chat-view { padding-inline: 3.5rem; }
+    .conversation-content {
+      padding-inline: calc(var(--chat-column-padding) - (min(48rem, calc(100cqw - 7rem)) - min(48rem, 100%)) / 2);
+    }
+  }
+  @container chat-shell (width >= 768px) {
+    .chat-bottom { width: calc(100% - 7rem); }
+  }
+  @keyframes user-message-blur-fade {
+    from { opacity: 0; filter: blur(6px); transform: translateY(6px); }
+    to { opacity: 1; filter: blur(0); transform: translateY(0); }
+  }
+  .user-message-enter { animation: user-message-blur-fade 300ms ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .user-message-enter { animation: none; }
+  }
   .message-meta { min-height: 2rem; }
   .message-row { margin-inline: -2.75rem; padding-inline: 2.75rem; }
   .message-row.user .message-meta { justify-content: flex-end; }
   .message-row .message-avatar { position: absolute; inset-inline-start: 0; top: 0; }
   .message-row.user .message-avatar { inset-inline-start: auto; inset-inline-end: 0; }
 
-  @container conversation (width < 54rem) {
+  @container conversation (width < 61rem) {
     .message-row { margin-inline: 0; padding-inline: 0; }
     .message-row .message-avatar { position: static; align-self: center; }
     .message-row.user .message-avatar { order: 1; }
@@ -246,7 +283,7 @@
     max-width: 100%;
   }
 
-  .part-markdown :where(p, ul, ol, blockquote, pre, .markdown-table) {
+  .part-markdown :where(p, ul, ol, blockquote, .markdown-code, .markdown-table) {
     margin-block: 0.85em;
   }
 
@@ -454,6 +491,14 @@
     .process-disclosure:focus-visible .disclosure-arrow { opacity: 1; }
   }
 
+  .markdown-code pre {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
   .processing-reasoning {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -564,7 +609,25 @@
     gap: 0.5rem;
   }
 
-  .composer textarea { max-height: min(12rem, 30dvh); }
+  .composer {
+    --composer-inline-inset: 48px;
+    --composer-compact-height: 44px;
+    --composer-toolbar-height: 40px;
+  }
+  .composer-measure {
+    position: fixed;
+    top: 0;
+    left: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  @media (pointer: coarse) {
+    .composer {
+      --composer-inline-inset: 64px;
+      --composer-compact-height: 60px;
+      --composer-toolbar-height: 56px;
+    }
+  }
   .is-dragging .composer { outline: 2px solid var(--ring); outline-offset: 2px; }
   .composer-context { gap: 0.25rem; }
   .composer-hint { padding-inline: 0.125rem; }

@@ -5,5 +5,9 @@
   "messages": "Messages",
   "scrollToEnd": "Latest messages",
   "scrollToStart": "First messages",
-  "loadFailed": "Unable to open the conversation"
+  "loadFailed": "Unable to open the conversation",
+  "addPhotosFiles": "Add Photos & Files",
+  "userMessageNavigation": "User messages",
+  "userMessageNumber": "Message {{number}}",
+  "jumpToUserMessage": "Go to message {{number}}: {{summary}}"
 }

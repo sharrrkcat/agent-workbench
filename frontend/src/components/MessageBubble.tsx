@@ -1,5 +1,6 @@
 import { Textarea } from '@/components/ui/textarea';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
+import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { useCogitaStore } from '../store/useCogitaStore';
@@ -11,7 +12,7 @@ import { MessageImages } from './messages/MessageImages';
 import { MessageParts } from './messages/MessageParts';
 import { MessageActions } from './messages/MessageActions';
 
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({ message, animate = false }: { message: Message; animate?: boolean }) {
   const { t } = useTranslation('personas');
   const userPersona = useCogitaStore((s) => s.currentSession?.user_persona);
   const [editing, setEditing] = useState(false);
@@ -26,9 +27,10 @@ export function MessageBubble({ message }: { message: Message }) {
 
   async function saveEdit() {
     setBusy(true);
+    setEditing(false);
     try {
-      await useCogitaStore.getState().editMessage(message.message_id, value);
-      setEditing(false);
+      const saved = await useCogitaStore.getState().editMessage(message.message_id, value);
+      if (!saved) setEditing(true);
     } finally {
       setBusy(false);
     }
@@ -47,9 +49,9 @@ export function MessageBubble({ message }: { message: Message }) {
       <Bubble
         variant={isUser ? 'secondary' : 'ghost'}
         align={isUser ? 'end' : 'start'}
-        className={editing ? 'w-full max-w-full' : undefined}
+        className={cn(editing && 'w-full max-w-full', isUser && animate && 'user-message-enter')}
       >
-        <BubbleContent className={editing ? 'w-full' : undefined}>
+        <BubbleContent className={cn(editing && 'w-full', isUser && 'rounded-[24px]')}>
           <div className="message">
             {editing ? (
               <Textarea
@@ -58,7 +60,7 @@ export function MessageBubble({ message }: { message: Message }) {
                 rows={Math.max(3, value.split('\n').length)}
               ></Textarea>
             ) : (
-              <MessageParts parts={message.parts} />
+              <MessageParts parts={busy ? [{ id: 'pending-edit', type: 'text', format: 'plain', text: value }] : message.parts} />
             )}
             {messageImages(message).length ? <MessageImages attachments={messageImages(message)} /> : null}
             {streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
@@ -70,7 +72,7 @@ export function MessageBubble({ message }: { message: Message }) {
           message={message}
           editing={editing}
           busy={busy}
-          onEdit={() => setEditing(true)}
+          onEdit={() => { setValue(messageText(message)); setEditing(true); }}
           onSave={saveEdit}
           onCancel={() => setEditing(false)}
         />

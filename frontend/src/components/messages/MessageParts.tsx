@@ -1,5 +1,6 @@
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { useTranslation } from 'react-i18next';
@@ -30,6 +31,13 @@ function Part({ part }: { part: MessagePart }) {
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
+            pre: ({ children }) => (
+              <Bubble variant="secondary" className="markdown-code w-full max-w-full">
+                <BubbleContent className="w-full rounded-[24px]">
+                  <pre>{children}</pre>
+                </BubbleContent>
+              </Bubble>
+            ),
             table: ({ children }) => (
               <div className="markdown-table">
                 <table>{children}</table>

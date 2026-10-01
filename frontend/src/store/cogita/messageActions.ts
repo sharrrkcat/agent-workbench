@@ -82,16 +82,18 @@ export const createMessageActions: CogitaActions<
   },
 
   editMessage: async (messageId, content, rerun = true) => {
-    if (get().mutatingHistory) return;
+    if (get().mutatingHistory) return false;
     const epoch = get().sessionEpoch;
     set({ mutatingHistory: true, error: null });
     try {
       const response = await chatApi.editMessage(messageId, content, rerun);
-      if (get().sessionEpoch !== epoch) return;
+      if (get().sessionEpoch !== epoch) return false;
       set((state) => runtimeResponseState(state, response));
       await get().refreshCurrent();
+      return true;
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+      return false;
     } finally {
       if (get().sessionEpoch === epoch) set({ mutatingHistory: false });
     }

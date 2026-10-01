@@ -251,14 +251,14 @@ Speaker snapshots are presentation data. Metadata may hold counts, source refs
 and warnings, never full part bodies, prompts or secrets. Stream merging belongs
 to [runs/streaming](runs-streaming.md).
 
-User messages use right-aligned secondary bubbles; assistant replies use open
-body layout. Assistant replies retain historical identity and avatars; user rows use the current
-Cogita Persona identity. User headers place time before the name; assistant headers place it after the name.
+User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies retain historical identity and avatars; user rows use the current Cogita Persona identity. User headers place time before the name; assistant headers place it after the name.
 Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps, user action buttons and reply usage text appear on message hover or keyboard focus,
 fade in and out over 180ms (instantly with reduced motion), and retain layout space. Touch layouts keep them visible; editing keeps save/cancel visible and an open usage modal keeps its owner visible. Message bodies use 16px text with Markdown headings, lists, quotes, code, tables and media.
-Wide code, tables and tool results scroll inside their own bounds; tool results are limited to 320px height on desktop and 240px below 768px.
+Markdown block code uses gray secondary Bubble surfaces with 24px corners and preserves preformatted text; inline code retains its compact styling. Message action tooltips open below their buttons without flipping above, including usage details. Wide code, tables and tool results scroll inside their own bounds; tool results are limited to 320px height on desktop and 240px below 768px.
 
-The composer omits the static image hint and service footer/health request; contextual drag/limit/error feedback remains.
+Saving a user edit immediately restores the bubble with the submitted text while regeneration runs; request failure restores the editor and draft with the existing error feedback. Newly sent user bubbles animate once with a 300ms blur fade and 6px upward motion; historical loading, session switches and edits do not replay it. Reduced motion disables the animation.
+User messages are MessageScroller anchors. A vertically centered left tick rail tracks the current turn, previews summaries on hover/focus and navigates to user messages; it scrolls internally and is hidden below 768px message-area width or with fewer than two user messages. Ticks have 8px center spacing, 2px thickness and a shared left edge; ordinary, immediately neighboring and active ticks are 12px, 18px and 24px wide. Only the active tick changes color. History reading pauses streaming follow; the latest-message button resumes it.
+The InputGroup composer has 20px corners and circular buttons: an outlined plus opens the Photos & Files upload menu, an up arrow sends, and active runs expose stop. Empty or single-line drafts place buttons and text on one row; explicit newlines or wrapping expand the text above the toolbar. Deleting back to one line or clearing collapses it. Wrapping is measured at the compact text width, excluding the placeholder, and recalculated for content, width and font changes. The same textarea and toolbar stay mounted; height and text layout transition over 180ms ease-out, instantly with reduced motion. Expanded text starts at 56px and grows to min(12rem, 30dvh), then scrolls internally. Attachments and context remain outside the input and do not force expansion. Existing draft, upload and keyboard behavior remains; contextual drag/limit/error feedback remains, without a static image hint or service footer/health request.
 
 ## Auxiliary tasks and titles
 

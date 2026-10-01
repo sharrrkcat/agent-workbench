@@ -51,7 +51,7 @@ export function MessageActions({
           >
             <Pencil size={14} />
           </TooltipTrigger>
-          <TooltipContent>{t('editMessage')}</TooltipContent>
+          <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('editMessage')}</TooltipContent>
         </Tooltip>
       ) : null}
       {isUser && editing ? (
@@ -83,7 +83,7 @@ export function MessageActions({
         >
           <Trash2 size={14} />
         </TooltipTrigger>
-        <TooltipContent>{t('deleteMessage')}</TooltipContent>
+        <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('deleteMessage')}</TooltipContent>
       </Tooltip>
       {confirmation}
     </div>
@@ -115,7 +115,7 @@ export function MessageContextAction({ message }: { message: Message }) {
       >
         <MessageSquareQuote size={14} />
       </TooltipTrigger>
-      <TooltipContent>{t('selectContext')}</TooltipContent>
+      <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('selectContext')}</TooltipContent>
     </Tooltip>
   );
 }
