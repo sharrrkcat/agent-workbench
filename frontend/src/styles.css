@@ -414,15 +414,13 @@
     font-size: 0.75rem;
   }
 
-  .part-gallery,
-  .message-images {
+  .part-gallery {
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
 
-  .message-images { margin-top: 0.5rem; }
   .part-gallery > img { width: min(12rem, 100%); }
 
   .message-actions,

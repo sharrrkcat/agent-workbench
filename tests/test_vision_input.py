@@ -267,7 +267,7 @@ def test_images_survive_approval_history_retry_edit_and_cleanup(tmp_path, monkey
         assert "base64" not in json.dumps(ok(client.get(f"/api/runs/{run_id}/events")))
         retried = ok(client.post(f"/api/runs/{run_id}/retry"))
         assert retried["success"] and expected in json.dumps(upstream.calls[-1])
-        edited = ok(client.post(f"/api/messages/{user['message_id']}/edit", json={"content": "edited"}))
+        edited = ok(client.post(f"/api/messages/{user['message_id']}/edit", json={"content": "edited", "attachment_ids": [attachment["id"]]}))
         assert edited["success"] and expected in json.dumps(upstream.calls[-1])
         assert "edited" in json.dumps(upstream.calls[-1])
         ok(client.post(path, json={"content": "follow up"}))

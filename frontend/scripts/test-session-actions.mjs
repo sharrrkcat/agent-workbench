@@ -147,7 +147,7 @@ await store.getState().refreshCurrent();
 assert.equal(reads, 1, 'Repeated selection and background refresh cannot duplicate a pending load');
 assert.equal(store.getState().sessionEpoch, epoch);
 api.sendMessage = async () => { throw new Error('Must not send while loading'); };
-assert.equal(await store.getState().sendMessage('blocked'), undefined);
+assert.equal(await store.getState().sendMessage('blocked'), false);
 history.resolve([]);
 await selecting;
 assert.equal(store.getState().sessionLoad.status, 'ready');

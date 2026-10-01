@@ -7,16 +7,27 @@ import { knowledgeApi } from '../../api/knowledge';
 
 export const createMessageActions: CogitaActions<
   'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText' | 'setSourceMessageId'
-> = (set, get) => ({
+> = (set, get, store) => ({
   sendMessage: async (content, attachments = []) => {
-    if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return undefined;
+    if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return false;
     let session = get().currentSession;
     const draft = get().chatDraft;
     const epoch = get().sessionEpoch;
-    if ((!session && !draft) || get().sending || get().mutatingHistory || (!content.trim() && attachments.length === 0)) return undefined;
+    if ((!session && !draft) || get().sending || get().mutatingHistory || (!content.trim() && attachments.length === 0)) return false;
     const sourceMessageId = get().sourceMessageId;
     const knowledgeIds = draft?.knowledge_base_ids ?? get().pendingKnowledge?.ids;
-    set({ sending: true, error: null });
+    const clientMessageId = crypto.randomUUID();
+    let accepted = false;
+    let submitted = false;
+    const accept = () => {
+      accepted = true;
+      set({ awaitingAcceptance: false });
+    };
+    const unsubscribe = store.subscribe((state) => {
+      if (!accepted && state.sessionEpoch === epoch && state.messages.some((message) =>
+        message.role === 'user' && message.metadata?.client_message_id === clientMessageId)) accept();
+    });
+    set({ sending: true, awaitingAcceptance: true, composerDraftText: '', error: null });
     try {
       if (!session && draft) {
         if (draft.kind === 'workspace') {
@@ -34,35 +45,35 @@ export const createMessageActions: CogitaActions<
             pendingKnowledge: knowledgeIds?.length ? { sessionId: created.session_id, ids: knowledgeIds } : null } : {}),
         }));
       }
-      if (!session) return undefined;
+      if (!session) return false;
       if (knowledgeIds?.length) {
         await knowledgeApi.updateSessionKnowledgeBases(session.session_id, knowledgeIds);
         if (get().sessionEpoch === epoch) set({ pendingKnowledge: null });
       }
+      submitted = true;
       const response = await chatApi.sendMessage(
         session.session_id,
         content,
         attachments,
-        crypto.randomUUID(),
+        clientMessageId,
         sourceMessageId,
       );
-      if (get().sessionEpoch !== epoch) return undefined;
+      if (get().sessionEpoch !== epoch) return false;
       set((state) => runtimeResponseState(state, response));
+      if (response.run) accept();
       if (!response.success && response.error && !response.run && get().currentSession?.session_id === session.session_id)
         set({ error: `${response.error_code || 'CHAT_FAILED'}: ${response.error}` });
-      return response.run
-        ? {
-            type: response.run.status === 'WAITING_FOR_USER' ? 'approval_requested' : 'run_completed',
-            session_id: session.session_id,
-            run_id: response.run.run_id,
-          }
-        : undefined;
+      return accepted;
     } catch (error) {
+      // A dropped POST response can follow persistence. Reconcile before restoring the input.
+      if (!accepted && submitted && get().sessionEpoch === epoch) await get().refreshCurrent();
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+      return accepted;
     } finally {
-      if (get().sessionEpoch === epoch) set({ sending: false });
+      unsubscribe();
+      if (get().sessionEpoch === epoch) set({ sending: false, awaitingAcceptance: false,
+        ...(!accepted ? { composerDraftText: content } : {}) });
     }
-    return undefined;
   },
 
   deleteMessage: async (messageId) => {
@@ -81,12 +92,12 @@ export const createMessageActions: CogitaActions<
     }
   },
 
-  editMessage: async (messageId, content, rerun = true) => {
+  editMessage: async (messageId, content, attachmentIds, rerun = true) => {
     if (get().mutatingHistory) return false;
     const epoch = get().sessionEpoch;
     set({ mutatingHistory: true, error: null });
     try {
-      const response = await chatApi.editMessage(messageId, content, rerun);
+      const response = await chatApi.editMessage(messageId, content, attachmentIds, rerun);
       if (get().sessionEpoch !== epoch) return false;
       set((state) => runtimeResponseState(state, response));
       await get().refreshCurrent();

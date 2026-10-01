@@ -30,6 +30,7 @@ export const useCogitaStore = create<CogitaState>((set, get, store) => ({
   composerDraftText: '',
   loading: false,
   sending: false,
+  awaitingAcceptance: false,
   resolvingApprovals: [],
   error: null,
   ...createSessionActions(set, get, store),

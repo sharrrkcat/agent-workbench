@@ -144,20 +144,28 @@ await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { esca
 let viewState = { ...store.getState(), currentSession: session, runs: [run], messages: [calls], stepsByRunId: {}, resolvingApprovals: [] };
 const personaState = { personas: [{ id: 'p', name: 'Current agent', avatar_attachment_id: null }], loaded: true, loading: false, error: null };
 const views = createModuleLoader({
-  'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
+  'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace), i18n }) }),
   [sourceUrl('store/useCogitaStore.ts')]: mockModule({ useCogitaStore: (selector) => selector(viewState) }),
   [sourceUrl('store/usePersonasStore.ts')]: mockModule({ usePersonasStore: () => personaState }),
 });
 const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).exports;
 const { MessageScrollerProvider } = (await views('../src/components/ui/message-scroller.tsx')).exports;
 const { MessageBubble } = (await views('../src/components/MessageBubble.tsx')).exports;
+const { ChatAttachments, attachmentSize } = (await views('../src/components/messages/ChatAttachments.tsx')).exports;
 const { isContextMessage, contextMessageLabel } = (await views('../src/components/messages/messageContent.ts')).exports;
 const imageOnly = { ...user, parts: [], metadata: { attachments: [
-  { id: 'image', type: 'image', name: 'photo.png', uri: 'local://attachments/aaaa.png' },
+  { id: 'image', type: 'image', name: 'photo.png', size: 1126, uri: 'local://attachments/aaaa.png' },
 ] } };
 assert.ok(isContextMessage(imageOnly));
 assert.equal(isContextMessage({ ...imageOnly, metadata: { ...imageOnly.metadata, incomplete: true } }), false);
 assert.equal(contextMessageLabel(imageOnly), 'photo.png');
+assert.equal(attachmentSize(0, 'en'), '0 B');
+assert.equal(attachmentSize(820 * 1024, 'en'), '820 KB');
+assert.equal(attachmentSize(1153434, 'zh-CN'), '1.1 MB');
+const textFile = { id: 'file', type: 'file', name: 'notes.txt', size: 12, mime_type: 'text/plain' };
+const fileOnly = { ...user, parts: [], metadata: { attachments: [textFile] } };
+assert.ok(isContextMessage(fileOnly));
+assert.equal(contextMessageLabel(fileOnly), 'notes.txt');
 const render = (reply, showFullProcessing) => renderToStaticMarkup(
   React.createElement(MessageScrollerProvider, { autoScroll: true }, React.createElement(RunReply, { reply, showFullProcessing })));
 const approvalStep = { step_id: 'approval', kind: 'approval', status: 'running', run_id: 'r', metadata: { tool_call_id: 'a', risk: 'file' } };
@@ -205,13 +213,30 @@ for (const locale of ['en', 'zh-CN']) {
   assert.match(imageHtml, /attachments\/aaaa.png/);
   assert.equal((imageHtml.match(/<img /g) || []).length, 1);
   assert.doesNotMatch(imageHtml, /base64/);
+  assert.doesNotMatch(imageHtml, /data-slot="bubble"|data-slot="attachment-title"|data-slot="attachment-description"/);
+  const fileHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: fileOnly }));
+  assert.match(fileHtml, /notes.txt/);
+  assert.match(fileHtml, /TXT · 12 B/);
+  assert.doesNotMatch(fileHtml, /data-slot="bubble"/);
+  const mixedHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: { ...user,
+    metadata: { attachments: [...imageOnly.metadata.attachments, textFile] } } }));
+  assert.ok(mixedHtml.indexOf('message-attachments') < mixedHtml.indexOf('data-slot="bubble"'));
+  assert.ok(mixedHtml.lastIndexOf('message-attachments') > mixedHtml.indexOf('data-slot="bubble-content"'));
+  assert.ok(mixedHtml.indexOf('notes.txt') < mixedHtml.indexOf('data-slot="bubble"'));
+  assert.ok(mixedHtml.indexOf('alt="photo.png"') > mixedHtml.indexOf('data-slot="bubble-content"'));
+  const composerHtml = renderToStaticMarkup(React.createElement(ChatAttachments, { composer: true,
+    items: [...imageOnly.metadata.attachments, textFile], onRemove: () => {} }));
+  assert.match(composerHtml, /data-orientation="vertical"/);
+  assert.match(composerHtml, /data-orientation="horizontal"/);
+  assert.match(composerHtml, /PNG · 1.1 KB/);
+  assert.equal((composerHtml.match(/data-slot="attachment-action"/g) || []).length, 2);
   const warned = { ...imageOnly, metadata: { ...imageOnly.metadata,
     request_warnings: { run_id: 'r', codes: ['images_ignored', 'tools_ignored'] } } };
   const warningHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: warned }));
   assert.equal((warningHtml.match(/class="message-request-warning"/g) || []).length, 2);
   for (const code of warned.metadata.request_warnings.codes)
     assert.ok(warningHtml.includes(i18n.t(`chat:requestWarnings.${code}`)));
-  assert.ok(warningHtml.indexOf('message-request-warning') > warningHtml.indexOf('data-slot="bubble-content"'));
+  assert.ok(warningHtml.indexOf('message-request-warning') > warningHtml.indexOf('message-attachments'));
   assert.equal(contextMessageLabel(warned), contextMessageLabel(imageOnly));
   const oversized = { ...failedEmpty, error_code: 'REQUEST_TOO_LARGE', error: 'Local chat request is too large.' };
   assert.ok(render(buildReply(oversized, [], []), false).includes(i18n.t('personas:imageErrors.tooLarge')));

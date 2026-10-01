@@ -86,10 +86,19 @@ class ConversationHistory:
         change = self._apply(run.session_id, run_ids, message_ids)
         return run, source, change
 
-    def edit_user(self, message_id: str, content: str) -> tuple[MessageSchema, HistoryPruned]:
+    def edit_user(self, message_id: str, content: str, attachment_ids: list[str]) -> tuple[MessageSchema, HistoryPruned]:
         message = self._user(message_id)
         self.chat_service.assert_idle(message.session_id)
-        updated = MessageSchema.model_validate({**message.model_dump(), "parts": [make_text_part(content, format="plain")],
+        original = message.metadata.get("attachments", [])
+        retained_ids = set(attachment_ids)
+        if len(retained_ids) != len(attachment_ids) or not retained_ids.issubset({item["id"] for item in original}):
+            raise ChatError("INVALID_ATTACHMENTS", "Keep only unique attachment ids from this message.", 400)
+        attachments = [item for item in original if item["id"] in retained_ids]
+        if not content.strip() and not attachments:
+            raise ChatError("EMPTY_MESSAGE", "Message content or an attachment is required.", 400)
+        updated = MessageSchema.model_validate({**message.model_dump(),
+                                               "parts": [make_text_part(content, format="plain")] if content.strip() else [],
+                                               "metadata": {**message.metadata, "attachments": attachments},
                                                "created_at": utc_now()})
         ordered = self.messages.list_messages(message.session_id)
         index = next(i for i, item in enumerate(ordered) if item.message_id == message_id)
@@ -97,6 +106,10 @@ class ConversationHistory:
         run_ids = {run.run_id for run in self.runs.list_runs(message.session_id)
                    if run.created_at >= message.created_at or run.metadata.get("input_message_id") == message_id}
         change = self._apply(message.session_id, run_ids, message_ids, updated)
+        for attachment in original:
+            if attachment["id"] not in retained_ids:
+                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas,
+                                                 knowledge_store=self.chat_service.knowledge)
         self.events.emit("message_updated", session_id=message.session_id, message_id=message_id,
                          payload={"message": updated.model_dump(mode="json")})
         return updated, change

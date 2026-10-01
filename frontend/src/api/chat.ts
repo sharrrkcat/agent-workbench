@@ -42,10 +42,10 @@ export const chatApi = {
     request<HistoryPruned>(`/api/messages/${encodeURIComponent(messageId)}`, {
       method: 'DELETE',
     }),
-  editMessage: (messageId: string, content: string, rerun = true) =>
+  editMessage: (messageId: string, content: string, attachmentIds: string[], rerun = true) =>
     request<RuntimeResponse>(`/api/messages/${encodeURIComponent(messageId)}/edit`, {
       method: 'POST',
-      body: JSON.stringify({ content, rerun }),
+      body: JSON.stringify({ content, attachment_ids: attachmentIds, rerun }),
     }),
   dismissNotification: (sessionId: string, notificationId: string) =>
     request<{ ok: boolean }>(

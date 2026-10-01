@@ -77,6 +77,9 @@ content. The fixed shell and responsive layout belong to
 
 ## WebSocket events
 
+The composer snapshots and clears text/attachments on valid submit, locking text until acceptance is observed. A persisted user message's client_message_id confirms acceptance through events or history refresh; the execution response's run also confirms acceptance. Text can then be drafted while sending remains locked until the request and active run settle.
+Creation, binding or unaccepted send failure restores the snapshot in the same session epoch. A failed POST is reconciled once with current history before restoration. Accepted generation failure/cancellation never restores input or overwrites a newer draft. Session changes discard pending UI snapshots and release local previews; uploaded bytes keep their existing storage lifecycle.
+
 Session clients connect to `/api/ws/{session_id}`, request `next_event`, and
 receive events with session_id and optional run_id/message_id plus payload.
 Global model/runtime events use `/api/models/events`, including without a selected chat session.

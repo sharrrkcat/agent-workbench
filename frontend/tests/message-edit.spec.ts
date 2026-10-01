@@ -13,7 +13,6 @@ for (const locale of ['en', 'zh-CN']) {
         const messages = await response.json();
         if (initialHistory) {
           messages.find((message: { role: string }) => message.role === 'user').created_at = new Date(Date.now() - 3600000).toISOString();
-          initialHistory = false;
         }
         await route.fulfill({ json: messages });
       });
@@ -33,6 +32,7 @@ for (const locale of ['en', 'zh-CN']) {
         await gate;
         await route.fulfill({ response });
       });
+      initialHistory = false;
       await save.click();
       try {
         await expect(user.locator('textarea')).toHaveCount(0);

@@ -49,8 +49,8 @@ record or session WebSocket. Drafts support the full configuration dialog and
 Knowledge additions; saving changes only local state. Reopening the same draft
 preserves it; switching conversations/Projects or refreshing discards it. First
 send creates the session, applies additions, then submits captured input and attachments.
-Repeated submissions are locked. Creation failure retains the draft; later binding/
-send failure retains the created id and input for retry. Existing creation APIs
+Submission clears the composer immediately; [Runs/streaming](runs-streaming.md) owns acceptance and restoration.
+Creation failure restores the draft; later binding/send failure retains the created id for retry. Existing creation APIs
 remain explicit immediate creation operations; no database migration is needed.
 
 Ordinary context, generation, Harness and tool selection belong to the session. Context defaults to
@@ -136,10 +136,9 @@ conversation messages/runs. Tool runs cannot be retried as model answers.
 DELETE /api/runs/{id} deletes only that reply's messages, steps, events and
 private state, preserving its user input. User deletion also removes its
 associated replies; user edit removes later conversation and associated runs, retains the message id, and persists created_at as the latest submission time in both the response and message_updated event.
-History mutations require an idle session. SQLite pruning and user text edits
-commit in one transaction. Responses and history_pruned events return
-deleted_message_ids/deleted_run_ids. Message-level retry is removed; individual
-assistant/tool deletion is rejected. Referenced attachment cleanup follows commit.
+History mutations require an idle session. Edits require content and attachment_ids (the unique subset of original attachments to retain, in original order); [] removes all attachments. Empty text with no retained attachments returns EMPTY_MESSAGE; invalid ids return INVALID_ATTACHMENTS. Editing cannot add attachments.
+SQLite pruning, text, attachment metadata and timestamps commit in one transaction. Responses and history_pruned events return
+deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
 
 ContextBuilder projects ordinary user/assistant history with none/current_message/
 recent_messages/session/selected_message policies, message/character bounds and explicit
@@ -212,10 +211,11 @@ Missing selected images return ATTACHMENT_NOT_FOUND; corrupt local images and re
 
 Text-file context obeys the enable switch and per-file/per-message bounds.
 Other attachments contribute bounded descriptive markers. include_attachments=none excludes all image inputs.
-File selection, clipboard images and file dropping share an upload flow with per-file status, previews and removal.
-Partial failure keeps successful uploads. Session changes clear pending attachments and ignore late results.
-Message thumbnails and zoom previews resolve stored references after refresh. Request warnings, attachment-policy
-and size errors have English/Chinese guidance. Text editing/retry retains image references; pruning cleans unreferenced files.
+File selection, clipboard images and file dropping share per-file status, previews and removal; partial failure keeps successful uploads. Session changes clear pending attachments and ignore late results.
+Composer images use 120px vertical Attachment cards with names, types and sizes; other files use horizontal cards, bottom-aligned with image cards. Sizes use uploaded File.size then persisted size, in 1024-based B/KB/MB/GB with at most one decimal. Image removal uses a circular top-right button.
+User metadata.attachments render as right-aligned scrolling groups: files above the text bubble and images below it, preserving order within each group. Images use 160px preview cards without visible names/sizes; file cards retain both. Attachment-only messages have no empty bubble; image/file-only messages can be selected as context.
+Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Removed references are cleaned after commit only if unreferenced by messages, Personas or Knowledge.
+Thumbnails and zoom previews resolve stored references after refresh. Request warnings, attachment-policy and size errors have English/Chinese guidance; retries retain the message's saved attachments.
 
 Tool calls require assistant role, a unique call id within the run, a name and
 finite JSON object arguments. Results require tool role, matching call id,
@@ -246,7 +246,7 @@ Assistant replies expose aggregated LLM usage after the action buttons and per-c
 
 The frontend renders parts without executing or routing text. Markdown remains
 content; edit/retry uses original text. MessageActions owns controls and
-selected-context references; MessageParts owns presentation and attachment URLs.
+selected-context references; MessageParts owns part presentation and ChatAttachments owns uploaded attachment cards/URLs.
 Metadata may hold counts, source refs and warnings, never full part bodies, prompts or secrets. Stream merging belongs
 to [runs/streaming](runs-streaming.md).
 

@@ -33,6 +33,7 @@ class EditMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content: str
+    attachment_ids: list[str]
     rerun: bool = True
 
 
@@ -99,7 +100,7 @@ async def edit_message(
     state.chat_service.assert_idle(session.session_id)
     if payload.rerun:
         state.chat_service.resolve(session)
-    updated, change = state.history.edit_user(message_id, payload.content)
+    updated, change = state.history.edit_user(message_id, payload.content, payload.attachment_ids)
     if not payload.rerun:
         return {"success": True, "data": updated.model_dump(mode="json"), "error": None, "run": None,
                 "session": state.chat_service.session_response(state.sessions.get_session(session.session_id)),

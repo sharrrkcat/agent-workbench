@@ -11,6 +11,7 @@ export function MessageActions({
   message,
   editing,
   busy,
+  canSave,
   onEdit,
   onSave,
   onCancel,
@@ -18,6 +19,7 @@ export function MessageActions({
   message: Message;
   editing: boolean;
   busy: boolean;
+  canSave: boolean;
   onEdit: () => void;
   onSave: () => Promise<void>;
   onCancel: () => void;
@@ -56,7 +58,7 @@ export function MessageActions({
       ) : null}
       {isUser && editing ? (
         <>
-          <Button type="button" onClick={() => void onSave()} disabled={busy || active} variant="ghost">
+          <Button type="button" onClick={() => void onSave()} disabled={busy || active || !canSave} variant="ghost">
             {t('save')}
           </Button>
           <Button type="button" onClick={onCancel} variant="ghost">

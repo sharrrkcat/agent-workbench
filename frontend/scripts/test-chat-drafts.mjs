@@ -13,7 +13,7 @@ const saved = (id, projectId = null) => ({ session_id: id, kind: projectId ? 'wo
   title: '', effective: {}, updated_at: '2026-09-30T00:00:00Z' });
 const result = (session) => ({ success: true, session, messages: [], run: { run_id: 'run', session_id: session.session_id,
   status: 'DONE', created_at: session.updated_at, updated_at: session.updated_at } });
-function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
+function deferred() { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
 let calls;
 function reset() {
   store.setState(store.getInitialState(), true);
@@ -24,6 +24,7 @@ function reset() {
   api.getGeneralSettings = async () => ({});
   api.getSession = async (id) => saved(id);
   api.listMessages = async () => [];
+  api.listRuns = async () => [];
   api.listRuns = async () => [];
   api.createSession = async (...args) => { calls.push(['create', ...args]); return saved('created', typeof args[0] === 'string' ? args[0] : null); };
   api.updateSessionKnowledgeBases = async (...args) => { calls.push(['bindings', ...args]); };
@@ -42,7 +43,7 @@ assert.equal(store.getState().sessionEpoch, epoch);
 assert.equal(store.getState().composerDraftText, 'keep this');
 store.getState().saveDraft({ persona_id: 'chosen', title: 'Manual', generation: { temperature: 0 }, tools_allowed: [] }, ['kb']);
 assert.deepEqual(calls, []);
-assert.equal(await store.getState().sendMessage('   '), undefined);
+assert.equal(await store.getState().sendMessage('   '), false);
 assert.deepEqual(calls, []);
 const attachment = { type: 'image', name: 'image.png', id: 'attachment' };
 await store.getState().sendMessage('question', [attachment]);
@@ -69,7 +70,9 @@ const creation = deferred();
 api.createSession = async () => { calls.push(['create']); return creation.promise; };
 const sending = store.getState().sendMessage('first');
 assert.equal(store.getState().sending, true);
-assert.equal(await store.getState().sendMessage('second'), undefined);
+assert.equal(store.getState().composerDraftText, '');
+assert.equal(store.getState().awaitingAcceptance, true);
+assert.equal(await store.getState().sendMessage('second'), false);
 creation.resolve(saved('one'));
 await sending;
 assert.deepEqual(calls.map((c) => c[0]), ['create', 'send']);
@@ -83,6 +86,7 @@ await store.getState().sendMessage('retry me');
 assert.equal(store.getState().currentSession, null);
 assert.equal(store.getState().chatDraft.kind, 'ordinary');
 assert.equal(store.getState().composerDraftText, 'retry me');
+assert.equal(store.getState().awaitingAcceptance, false);
 assert.match(store.getState().error, /Creation failed/);
 
 reset();
@@ -118,6 +122,44 @@ assert.deepEqual(calls[0], ['bindings', 'late', ['original-kb']]);
 assert.deepEqual(calls[1].slice(1, 4), ['late', 'original', [attachment]]);
 assert.equal(calls[1].at(-1), null, 'Do not borrow the new page context');
 assert.ok(store.getState().sessions.some((s) => s.session_id === 'late'));
+
+for (const finish of ['success', 'failed-run', 'cancelled-run', 'lost-response']) {
+  reset();
+  const activeSession = saved('active');
+  store.setState({ currentSession: activeSession, sessions: [activeSession], composerDraftText: 'captured' });
+  const pending = deferred();
+  let clientId;
+  api.sendMessage = async (_session, _content, _attachments, id) => { clientId = id; return pending.promise; };
+  const sending = store.getState().sendMessage('captured', [attachment]);
+  assert.equal(store.getState().composerDraftText, '');
+  assert.equal(store.getState().awaitingAcceptance, true);
+  const persisted = { message_id: 'user', session_id: 'active', role: 'user', created_at: activeSession.updated_at,
+    parts: [{ id: 'text', type: 'text', text: 'captured' }], metadata: { client_message_id: clientId, attachments: [attachment] } };
+  store.getState().applyRuntimeEvent({ type: 'message_updated', session_id: 'active', message_id: persisted.message_id, payload: { message: persisted } });
+  assert.equal(store.getState().awaitingAcceptance, false);
+  store.getState().setComposerDraftText('next draft');
+  if (finish === 'lost-response') pending.reject(new Error('Response connection lost'));
+  else {
+    const response = result(activeSession);
+    if (finish !== 'success') { response.success = false; response.run.status = finish === 'failed-run' ? 'FAILED' : 'CANCELLED'; }
+    pending.resolve(response);
+  }
+  assert.equal(await sending, true, finish);
+  assert.equal(store.getState().composerDraftText, 'next draft', finish);
+  assert.equal(store.getState().sending, false);
+}
+
+reset();
+const recoveredSession = saved('recovered');
+store.setState({ currentSession: recoveredSession, sessions: [recoveredSession] });
+api.getSession = async () => recoveredSession;
+api.sendMessage = async (_session, _content, _attachments, id) => {
+  api.listMessages = async () => [{ message_id: 'saved', session_id: 'recovered', role: 'user',
+    created_at: recoveredSession.updated_at, parts: [], metadata: { client_message_id: id } }];
+  throw new Error('Lost response before WebSocket notification');
+};
+assert.equal(await store.getState().sendMessage('saved input'), true);
+assert.equal(store.getState().composerDraftText, '');
 
 assert.equal(newChatUrl(), '/new');
 assert.equal(newChatUrl('a/b'), '/projects/a%2Fb/new');

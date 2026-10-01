@@ -18,7 +18,7 @@ function conversation(state: CogitaState, session: Session | null, projectId: st
     sessionLoad: null,
     lastOrdinarySessionId: session?.kind === 'ordinary' ? session.session_id : state.lastOrdinarySessionId,
     messages: [], runs: [], stepsByRunId: {}, error: null, sourceMessageId: null, composerDraftText: '',
-    sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, mutatingHistory: false,
+    sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, awaitingAcceptance: false, mutatingHistory: false,
   };
 }
 

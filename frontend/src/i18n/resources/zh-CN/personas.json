@@ -127,6 +127,7 @@
   "selectedContext": "已选上下文",
   "chooseContext": "选择一条消息",
   "editMessage": "编辑消息",
+  "messageText": "消息正文",
   "retry": "重试",
   "deleteMessage": "删除消息",
   "deleteMessageConfirm": "删除此消息及其关联回复？",

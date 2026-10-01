@@ -31,6 +31,7 @@ export type CogitaState = {
   composerDraftText: string;
   loading: boolean;
   sending: boolean;
+  awaitingAcceptance: boolean;
   resolvingApprovals: string[];
   error: string | null;
   initialize: (selectOrdinary?: boolean) => Promise<void>;
@@ -44,11 +45,11 @@ export type CogitaState = {
   forgetProject: (projectId: string) => void;
   deleteSession: (id: string) => Promise<void>;
   updateSession: (patch: SessionPatch) => Promise<boolean>;
-  sendMessage: (content: string, attachments?: Record<string, unknown>[]) => Promise<RuntimeEvent | undefined>;
+  sendMessage: (content: string, attachments?: Record<string, unknown>[]) => Promise<boolean>;
   deleteMessage: (messageId: string) => Promise<void>;
   deleteRun: (runId: string) => Promise<void>;
   retryRun: (runId: string) => Promise<void>;
-  editMessage: (messageId: string, content: string, rerun?: boolean) => Promise<boolean>;
+  editMessage: (messageId: string, content: string, attachmentIds: string[], rerun?: boolean) => Promise<boolean>;
   cancelRun: (runId: string) => Promise<void>;
   resolveApproval: (runId: string, decision: 'approve' | 'reject') => Promise<void>;
   callTool: (name: string, args: Record<string, unknown>) => Promise<ToolRunResponse | undefined>;

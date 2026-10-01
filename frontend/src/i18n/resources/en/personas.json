@@ -127,6 +127,7 @@
   "selectedContext": "Selected context",
   "chooseContext": "Select a message",
   "editMessage": "Edit message",
+  "messageText": "Message text",
   "retry": "Retry",
   "deleteMessage": "Delete message",
   "deleteMessageConfirm": "Delete this message and its replies?",

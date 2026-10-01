@@ -113,6 +113,8 @@ export type Message = {
   run_id?: string | null;
   parent_message_id?: string | null;
   metadata?: Record<string, unknown> & {
+    attachments?: Attachment[];
+    client_message_id?: string | null;
     request_warnings?: { run_id: string; codes: Array<'images_ignored' | 'images_require_text' | 'tools_ignored'> };
   };
   created_at: string;
@@ -124,7 +126,7 @@ export type Attachment = {
   name: string;
   filename?: string;
   mime_type?: string;
-  size_bytes?: number;
+  size: number;
   uri?: string;
   url?: string;
   context_text?: string;

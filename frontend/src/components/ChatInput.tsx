@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectTrigger,
@@ -15,20 +14,10 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from '@/components/ui/input-group';
-import {
-  Attachment,
-  AttachmentGroup,
-  AttachmentMedia,
-  AttachmentContent,
-  AttachmentTitle,
-  AttachmentDescription,
-  AttachmentActions,
-  AttachmentAction,
-} from '@/components/ui/attachment';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { cn } from '@/lib/utils';
-import { FileText, Paperclip, Plus, ArrowUp, Square, X } from 'lucide-react';
+import { Paperclip, Plus, ArrowUp, Square } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -36,7 +25,7 @@ import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
 import { useComposerLayout } from '../hooks/useComposerLayout';
-import { ImagePreview, type PreviewImage } from './messages/ImagePreview';
+import { ChatAttachments } from './messages/ChatAttachments';
 import { contextMessageLabel, isContextMessage } from './messages/messageContent';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
 import { usePersonaIdentity } from '../hooks/usePersonaIdentity';
@@ -51,6 +40,7 @@ export function ChatInput() {
   const send = useCogitaStore((state) => state.sendMessage);
   const cancelRun = useCogitaStore((state) => state.cancelRun);
   const sending = useCogitaStore((state) => state.sending);
+  const awaitingAcceptance = useCogitaStore((state) => state.awaitingAcceptance);
   const mutatingHistory = useCogitaStore((state) => state.mutatingHistory);
   const session = useCogitaStore((state) => state.currentSession);
   const chatDraft = useCogitaStore((state) => state.chatDraft);
@@ -68,17 +58,23 @@ export function ChatInput() {
       .reverse()
       .find((r) => ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(r.status)),
   );
-  const { items, attachments, uploading, upload, remove, clear } = useComposerAttachments(sessionEpoch);
-  const [preview, setPreview] = useState<PreviewImage | null>(null);
+  const { items, attachments, uploading, upload, remove, take, restore, discard } = useComposerAttachments(sessionEpoch);
+  const submittedItems = useRef<ReturnType<typeof take> | null>(null);
   const [dragging, setDragging] = useState(false);
   const [configurationBusy, setConfigurationBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   useLayoutEffect(() => {
-    setPreview(null);
+    submittedItems.current = null;
     setDragging(false);
     setConfigurationBusy(false);
     if (fileRef.current) fileRef.current.value = '';
   }, [sessionEpoch]);
+  useLayoutEffect(() => {
+    if (sending && !awaitingAcceptance && submittedItems.current) {
+      discard(submittedItems.current);
+      submittedItems.current = null;
+    }
+  }, [sending, awaitingAcceptance]);
   const contextRequired = configuration?.context_policy?.mode === 'selected_message';
   const eligible = messages.filter(isContextMessage);
   const hasSource = !!sourceMessageId && eligible.some((m) => m.message_id === sourceMessageId);
@@ -100,11 +96,13 @@ export function ChatInput() {
 
   async function submit() {
     if (cannotSend || activeRun) return;
+    const batch = take();
+    submittedItems.current = batch;
     const result = await send(draft, attachments);
-    if (result && useCogitaStore.getState().sessionEpoch === sessionEpoch) {
-      if (useCogitaStore.getState().composerDraftText === draft) setDraft('');
-      setPreview(null);
-      clear();
+    if (useCogitaStore.getState().sessionEpoch === sessionEpoch && submittedItems.current === batch) {
+      if (result) discard(batch);
+      else restore(batch);
+      submittedItems.current = null;
     }
   }
 
@@ -130,57 +128,7 @@ export function ChatInput() {
         addFiles(Array.from(event.dataTransfer.files));
       }}
     >
-      {items.length ? (
-        <AttachmentGroup className="attachment-strip">
-          {items.map((item) => (
-            <Attachment
-              key={item.id}
-              state={item.status === 'ready' ? 'done' : item.status}
-              className={cn('attachment-chip w-64 flex-nowrap', 'upload-' + item.status)}
-            >
-              <AttachmentMedia variant={item.preview ? 'image' : 'icon'} className="size-12">
-                {item.preview ? (
-                  <Button
-                    type="button"
-                    aria-label={t('previewImage', { name: item.name })}
-                    onClick={() => setPreview({ src: item.preview!, name: item.name })}
-                    variant="ghost"
-                    size="icon"
-                    className="attachment-thumbnail size-full overflow-hidden p-0"
-                  >
-                    <img src={item.preview} alt={item.name} className="size-full object-cover" />
-                  </Button>
-                ) : (
-                  <FileText />
-                )}
-              </AttachmentMedia>
-              <AttachmentContent>
-                <AttachmentTitle title={item.name}>{item.name}</AttachmentTitle>
-                {item.status === 'uploading' ? (
-                  <AttachmentDescription role="status">{t('uploading')}</AttachmentDescription>
-                ) : null}
-                {item.status === 'error' ? (
-                  <AttachmentDescription role="alert" title={item.error}>
-                    {t('uploadFailed')} {item.error}
-                  </AttachmentDescription>
-                ) : null}
-              </AttachmentContent>
-              <AttachmentActions>
-                <AttachmentAction
-                  type="button"
-                  onClick={() => {
-                    setPreview(null);
-                    remove(item.id);
-                  }}
-                  aria-label={t('removeAttachment', { name: item.name })}
-                >
-                  <X />
-                </AttachmentAction>
-              </AttachmentActions>
-            </Attachment>
-          ))}
-        </AttachmentGroup>
-      ) : null}
+      <ChatAttachments key={sessionEpoch} items={items} composer onRemove={remove} />
       {imageIssue ? (
         <Alert className="composer-warning" variant="destructive">
           <AlertDescription>{imageIssue}</AlertDescription>
@@ -257,7 +205,7 @@ export function ChatInput() {
             paddingBlock: expanded ? '10px' : 'calc((var(--composer-compact-height) - 1lh) / 2)',
             overflowY: expanded ? 'auto' : 'hidden',
           }}
-          disabled={!session && !chatDraft}
+          disabled={(!session && !chatDraft) || awaitingAcceptance}
           value={draft}
           rows={1}
           placeholder={t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') })}
@@ -345,10 +293,6 @@ export function ChatInput() {
             : t('localImageLimit', { limit: normalizedRequestLimit })}
         </MarkerContent>
       </Marker> : null}
-      <ImagePreview
-        image={items.some((item) => item.preview === preview?.src) ? preview : null}
-        onClose={() => setPreview(null)}
-      />
     </div>
   );
 }

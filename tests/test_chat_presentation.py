@@ -177,7 +177,7 @@ def test_retry_and_edit_prune_old_tools_and_later_runs(presentation_client, monk
     from ai_workbench.core.time import utc_now, isoformat_utc
     edited_at = utc_now()
     monkeypatch.setattr("ai_workbench.core.conversation_history.utc_now", lambda: edited_at)
-    edited = ok(client.post(f"/api/messages/{history[0]['message_id']}/edit", json={"content": "edited", "rerun": False}))
+    edited = ok(client.post(f"/api/messages/{history[0]['message_id']}/edit", json={"content": "edited", "attachment_ids": [], "rerun": False}))
     assert edited["deleted_run_ids"] == [replacement["run"]["run_id"]]
     assert ok(client.get(f"/api/sessions/{session['session_id']}/runs")) == []
     assert ok(client.get(f"/api/sessions/{session['session_id']}/messages"))[0]["parts"][0]["text"] == "edited"

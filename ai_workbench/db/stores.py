@@ -160,6 +160,7 @@ class SqlHistoryStore:
                 if row is None or row.session_id != session_id:
                     raise ValueError("Edited message belongs to another session or no longer exists")
                 row.parts_json = _dump(updated.parts)
+                row.metadata_json = _dump(updated.metadata)
                 row.created_at = updated.created_at
                 db.add(row)
             session.updated_at = utc_now()
