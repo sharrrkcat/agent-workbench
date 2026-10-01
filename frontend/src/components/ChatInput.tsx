@@ -29,7 +29,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { cn } from '@/lib/utils';
 import { FileText, Paperclip, Send, Square, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
@@ -49,7 +49,8 @@ export function ChatInput() {
   const session = useCogitaStore((state) => state.currentSession);
   const chatDraft = useCogitaStore((state) => state.chatDraft);
   const configuration = useChatConfiguration();
-  const ready = !!(session || chatDraft);
+  const sessionLoad = useCogitaStore((state) => state.sessionLoad);
+  const ready = !!(session || chatDraft) && (!sessionLoad || sessionLoad.status === 'ready');
   const messages = useCogitaStore((state) => state.messages);
   const sourceMessageId = useCogitaStore((state) => state.sourceMessageId);
   const selectSource = useCogitaStore((state) => state.setSourceMessageId);
@@ -65,6 +66,11 @@ export function ChatInput() {
   const [preview, setPreview] = useState<PreviewImage | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  useLayoutEffect(() => {
+    setPreview(null);
+    setDragging(false);
+    if (fileRef.current) fileRef.current.value = '';
+  }, [sessionEpoch]);
   const contextRequired = configuration?.context_policy?.mode === 'selected_message';
   const eligible = messages.filter(isContextMessage);
   const hasSource = !!sourceMessageId && eligible.some((m) => m.message_id === sourceMessageId);
@@ -216,6 +222,7 @@ export function ChatInput() {
         <input
           ref={fileRef}
           type="file"
+          disabled={!ready}
           multiple
           hidden
           onChange={(event) => {
@@ -225,6 +232,7 @@ export function ChatInput() {
         />
         <InputGroupTextarea
           className="max-h-48 min-h-12 px-3"
+          disabled={!session && !chatDraft}
           value={draft}
           rows={1}
           placeholder={t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') })}

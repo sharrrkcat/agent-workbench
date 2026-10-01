@@ -127,3 +127,92 @@ assert.match(store.getState().error, /Deletion failed/);
 console.log(
   'Session deletion preserves other chats, opens a draft and ignores stale selection/list responses: ok',
 );
+
+reset();
+let reads = 0;
+const history = deferred();
+api.listMessages = () => { reads++; return history.promise; };
+await store.getState().selectSession('first');
+assert.equal(reads, 0, 'Clicking the current session preserves its draft and history');
+assert.equal(store.getState().composerDraftText, 'Retained draft');
+const selecting = store.getState().selectSession('second');
+const epoch = store.getState().sessionEpoch;
+assert.equal(store.getState().currentSession, second);
+assert.equal(store.getState().sessionLoad.status, 'loading');
+assert.deepEqual(store.getState().messages, []);
+assert.equal(store.getState().composerDraftText, '');
+await store.getState().selectSession('second');
+await store.getState().activateLocation(null);
+await store.getState().refreshCurrent();
+assert.equal(reads, 1, 'Repeated selection and background refresh cannot duplicate a pending load');
+assert.equal(store.getState().sessionEpoch, epoch);
+api.sendMessage = async () => { throw new Error('Must not send while loading'); };
+assert.equal(await store.getState().sendMessage('blocked'), undefined);
+history.resolve([]);
+await selecting;
+assert.equal(store.getState().sessionLoad.status, 'ready');
+store.setState({ composerDraftText: 'Keep this' });
+await store.getState().selectSession('second');
+assert.equal(reads, 1);
+assert.equal(store.getState().composerDraftText, 'Keep this');
+
+reset();
+api.listRuns = async () => { throw new Error('History unavailable'); };
+await store.getState().selectSession('second');
+assert.equal(store.getState().currentSession, second);
+assert.equal(store.getState().sessionLoad.status, 'error');
+assert.match(store.getState().sessionLoad.error, /History unavailable/);
+const failedEpoch = store.getState().sessionEpoch;
+await store.getState().selectSession('second');
+assert.equal(store.getState().sessionLoad.status, 'error', 'Only explicit retry restarts a failed load');
+api.listRuns = async () => [];
+await store.getState().retrySession();
+assert.equal(store.getState().sessionLoad.status, 'ready');
+assert.equal(store.getState().sessionEpoch, failedEpoch, 'Retry does not reset the conversation identity');
+api.listMessages = async () => { throw new Error('Background refresh failed'); };
+await store.getState().refreshCurrent();
+assert.equal(store.getState().sessionLoad.status, 'ready', 'Background errors do not replace the conversation');
+assert.match(store.getState().error, /Background refresh failed/);
+
+for (const destination of ['third', 'first']) {
+  reset();
+  const oldHistory = deferred();
+  api.listMessages = (id) => id === 'second' ? oldHistory.promise : Promise.resolve([]);
+  const oldSelection = store.getState().selectSession('second');
+  await store.getState().selectSession(destination);
+  const currentEpoch = store.getState().sessionEpoch;
+  oldHistory.resolve([{ message_id: 'late', session_id: 'second' }]);
+  await oldSelection;
+  store.getState().applyRuntimeEvent({ type: 'message_updated', session_id: 'second',
+    payload: { message: { message_id: 'late-event', session_id: 'second' } } });
+  assert.equal(store.getState().currentSession.session_id, destination);
+  assert.equal(store.getState().sessionEpoch, currentEpoch);
+  assert.deepEqual(store.getState().messages, []);
+}
+
+reset();
+const earlierVisit = deferred();
+let visits = 0;
+api.listMessages = (id) => id === 'second' && ++visits === 1 ? earlierVisit.promise : Promise.resolve([]);
+const earlierSelection = store.getState().selectSession('second');
+await store.getState().selectSession('third');
+await store.getState().selectSession('second');
+earlierVisit.resolve([{ message_id: 'earlier-visit', session_id: 'second' }]);
+await earlierSelection;
+assert.deepEqual(store.getState().messages, [], 'Returning to the same id rejects the earlier visit');
+console.log('Session loading, deduplication, retry, background refresh and navigation races: ok');
+
+reset();
+const lateDetails = deferred();
+api.getSession = () => lateDetails.promise;
+api.listMessages = async () => { throw new Error('Messages failed before details'); };
+await store.getState().selectSession('uncached');
+assert.equal(store.getState().sessionLoad.status, 'error');
+assert.equal(store.getState().currentSession, null);
+api.getSession = async () => ({ ...replacement, session_id: 'uncached', title: 'Retried details' });
+api.listMessages = async () => [];
+await store.getState().retrySession();
+lateDetails.resolve({ ...replacement, session_id: 'uncached', title: 'Stale details' });
+await Promise.resolve();
+assert.equal(store.getState().currentSession.title, 'Retried details');
+assert.equal(store.getState().sessionLoad.status, 'ready');

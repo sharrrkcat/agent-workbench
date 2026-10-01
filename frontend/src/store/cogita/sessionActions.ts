@@ -15,6 +15,7 @@ import { defaultModelId } from './drafts';
 function conversation(state: CogitaState, session: Session | null, projectId: string | null): Partial<CogitaState> {
   return {
     currentSession: session, currentProjectId: projectId, chatDraft: null, pendingKnowledge: null,
+    sessionLoad: null,
     lastOrdinarySessionId: session?.kind === 'ordinary' ? session.session_id : state.lastOrdinarySessionId,
     messages: [], runs: [], stepsByRunId: {}, error: null, sourceMessageId: null, composerDraftText: '',
     sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, mutatingHistory: false,
@@ -26,6 +27,7 @@ export const createSessionActions: CogitaActions<
   | 'refreshCurrent'
   | 'reloadSessions'
   | 'selectSession'
+  | 'retrySession'
   | 'startDraft'
   | 'saveDraft'
   | 'deleteSession'
@@ -35,6 +37,39 @@ export const createSessionActions: CogitaActions<
   | 'setError'
 > = (set, get) => {
   let initializationVersion = 0;
+  async function loadSession(id: string, scope: string | null, epoch: number) {
+    let active = true;
+    try {
+      if (scope && useProjectsStore.getState().projects.find((project) => project.id === scope)?.kind === 'timeline')
+        throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
+      const sessionRequest = chatApi.getSession(id).then((session) => {
+        if (session.project_id !== scope) throw new Error('SESSION_PROJECT_MISMATCH: Session does not belong to this Project.');
+        if (active && get().sessionEpoch === epoch) set({ currentSession: session });
+        return session;
+      });
+      const [session, messages, runs] = await Promise.all([
+        sessionRequest, chatApi.listMessages(id), runsApi.listRuns(id),
+        scope ? Promise.resolve(useProjectsStore.getState().projects.find((project) => project.id === scope)
+          ?? useProjectsStore.getState().load(scope)).then((project) => {
+          if (project.kind !== 'workspace') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
+        }) : Promise.resolve(),
+      ]);
+      if (get().sessionEpoch !== epoch) return;
+      set((state) => ({
+        currentSession: session, messages, runs, stepsByRunId: mergeSteps({}, runs.flatMap((run) => run.steps || [])),
+        sessionLoad: { sessionId: id, projectId: scope, status: 'ready', error: null },
+        lastOrdinarySessionId: session.kind === 'ordinary' ? id : state.lastOrdinarySessionId,
+        sessions: state.sessions.some((item) => item.session_id === id)
+          ? state.sessions.map((item) => item.session_id === id ? session : item) : [...state.sessions, session],
+        messageVersion: state.messageVersion + 1, runVersion: state.runVersion + 1, sessionVersion: state.sessionVersion + 1,
+      }));
+    } catch (error) {
+      if (get().sessionEpoch === epoch)
+        set({ sessionLoad: { sessionId: id, projectId: scope, status: 'error', error: errorText(error) } });
+    } finally {
+      active = false;
+    }
+  }
   return ({
   initialize: async (selectOrdinary = true) => {
     const request = ++initializationVersion;
@@ -48,12 +83,11 @@ export const createSessionActions: CogitaActions<
       if (request !== initializationVersion) return;
       const sessions = listed;
       const selected = selectOrdinary ? sessions[0] : null;
-      set((state) => ({ sessions: [...state.sessions.filter((session) => session.kind === 'workspace'), ...sessions],
-        ...(state.sessionEpoch === epoch ? { currentSession: selected, lastOrdinarySessionId: selected?.session_id ?? null } : {}) }));
+      set((state) => ({ sessions: [...state.sessions.filter((session) => session.kind === 'workspace'), ...sessions] }));
       if (get().settingsVersion === settingsVersion) get().setSettings(settings);
       if (get().sessionEpoch === epoch) {
         if (selectOrdinary && !selected) await get().startDraft();
-        else await get().refreshCurrent();
+        else if (selected) await get().selectSession(selected.session_id, null);
       }
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
@@ -63,6 +97,7 @@ export const createSessionActions: CogitaActions<
   },
 
   refreshCurrent: async () => {
+    if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return;
     const session = get().currentSession;
     if (!session) return;
     const version = get().messageVersion;
@@ -117,21 +152,19 @@ export const createSessionActions: CogitaActions<
   selectSession: async (id, projectId) => {
     const cached = get().sessions.find((item) => item.session_id === id);
     const scope = projectId === undefined ? cached?.project_id ?? null : projectId;
-    set((state) => conversation(state, cached?.project_id === scope ? cached : null, scope));
-    const epoch = get().sessionEpoch;
-    try {
-      const session = cached ?? await chatApi.getSession(id);
-      if (get().sessionEpoch !== epoch) return;
-      if (session.project_id !== scope) throw new Error('SESSION_PROJECT_MISMATCH: Session does not belong to this Project.');
-      set((state) => ({ currentSession: session,
-        lastOrdinarySessionId: session.kind === 'ordinary' ? session.session_id : state.lastOrdinarySessionId,
-        sessions: state.sessions.some((item) => item.session_id === session.session_id)
-          ? state.sessions.map((item) => item.session_id === session.session_id ? session : item)
-          : [...state.sessions, session] }));
-      await get().refreshCurrent();
-    } catch (error) {
-      if (get().sessionEpoch === epoch) set({ currentSession: null, error: errorText(error) });
-    }
+    const active = get().sessionLoad;
+    if (active?.sessionId === id && active.projectId === scope) return;
+    if (!active && !get().chatDraft && get().currentSession?.session_id === id && get().currentProjectId === scope) return;
+    set((state) => ({ ...conversation(state, cached?.project_id === scope ? cached : null, scope),
+      sessionLoad: { sessionId: id, projectId: scope, status: 'loading', error: null } }));
+    await loadSession(id, scope, get().sessionEpoch);
+  },
+
+  retrySession: async () => {
+    const target = get().sessionLoad;
+    if (target?.status !== 'error') return;
+    set({ sessionLoad: { ...target, status: 'loading', error: null } });
+    await loadSession(target.sessionId, target.projectId, get().sessionEpoch);
   },
 
   startDraft: async (projectId = null) => {
@@ -178,7 +211,7 @@ export const createSessionActions: CogitaActions<
         sessions: state.sessions.filter((item) => item.session_id !== id),
         sessionVersion: state.sessionVersion + 1,
       }));
-      if (get().currentSession?.session_id === id && get().sessionEpoch === epoch) {
+      if ((get().sessionLoad?.sessionId ?? get().currentSession?.session_id) === id && get().sessionEpoch === epoch) {
         const next = get().sessions.find((item) => item.project_id === projectId);
         if (next) await get().selectSession(next.session_id, projectId);
         else if (projectId === null) await get().startDraft();
@@ -190,6 +223,7 @@ export const createSessionActions: CogitaActions<
   },
 
   updateSession: async (patch) => {
+    if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return;
     const session = get().currentSession;
     if (!session) { get().saveDraft(patch); return; }
     const epoch = get().sessionEpoch;
@@ -208,24 +242,20 @@ export const createSessionActions: CogitaActions<
 
   activateLocation: async (projectId, sessionId = null) => {
     if (projectId === null) {
-      if (get().currentProjectId === null && (get().currentSession || get().chatDraft)) return;
+      if (get().currentProjectId === null && (get().currentSession || get().chatDraft || get().sessionLoad)) return;
       const ordinary = get().sessions.filter((session) => session.kind === 'ordinary');
       const selected = ordinary.find((session) => session.session_id === get().lastOrdinarySessionId) ?? ordinary[0];
       if (selected) await get().selectSession(selected.session_id, null);
       else await get().startDraft();
       return;
     }
-    if (!get().chatDraft && get().currentProjectId === projectId && (get().currentSession?.session_id ?? null) === sessionId &&
+    if (sessionId) { await get().selectSession(sessionId, projectId); return; }
+    if (!get().sessionLoad && !get().chatDraft && get().currentProjectId === projectId && (get().currentSession?.session_id ?? null) === sessionId &&
         useProjectsStore.getState().projects.some((project) => project.id === projectId)) return;
     set((state) => conversation(state, null, projectId));
     const epoch = get().sessionEpoch;
     try {
-      const project = await useProjectsStore.getState().load(projectId);
-      if (get().sessionEpoch !== epoch) return;
-      if (sessionId) {
-        if (project.kind !== 'workspace') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
-        await get().selectSession(sessionId, projectId);
-      }
+      await useProjectsStore.getState().load(projectId);
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
     }

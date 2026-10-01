@@ -40,6 +40,7 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
   const { setOpenMobile } = useSidebar();
   const currentProjectId = useCogitaStore((state) => state.currentProjectId);
   const current = useCogitaStore((state) => state.currentSession);
+  const targetId = useCogitaStore((state) => state.sessionLoad?.sessionId);
   const allSessions = useCogitaStore((state) => state.sessions);
   const reloadSessions = useCogitaStore((state) => state.reloadSessions);
   const [expanded, setExpanded] = useState(currentProjectId === project.id);
@@ -102,7 +103,7 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
         <SidebarMenuSub className="mr-0 translate-x-0 pr-0">
           {sessions.map((session) => {
             const title = session.title.trim() || t('newSession');
-            const selected = current?.session_id === session.session_id;
+            const selected = (targetId ?? current?.session_id) === session.session_id;
             return <SidebarMenuSubItem key={session.session_id} className={cn('session-item', selected && 'selected')}>
               <SidebarMenuSubButton render={<button type="button" disabled={deleting === session.session_id} />}
                 className="session-select w-full translate-x-0 pr-8 pointer-coarse:min-h-11 pointer-coarse:pr-11" isActive={selected} aria-current={selected ? 'page' : undefined} title={title}

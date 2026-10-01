@@ -9,6 +9,7 @@ export const createMessageActions: CogitaActions<
   'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText' | 'setSourceMessageId'
 > = (set, get) => ({
   sendMessage: async (content, attachments = []) => {
+    if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return undefined;
     let session = get().currentSession;
     const draft = get().chatDraft;
     const epoch = get().sessionEpoch;

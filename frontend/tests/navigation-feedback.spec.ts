@@ -176,19 +176,31 @@ for (const locale of ['en', 'zh-CN']) {
           const project = page.locator(`[data-project-id="${id}"]`);
           await project.locator('.project-select').click();
           await expect(project.locator('.session-item')).toHaveCount(3);
+          const header = await page.locator('.topbar').elementHandle();
+          const composer = await page.locator('.composer textarea').elementHandle();
           await pauseClock(page);
           const first = await holdResponse(page, `**/api/sessions/${sessions[0].session_id}/messages`);
           pending.push(first);
           await project.getByRole('button', { name: sessions[0].title, exact: true }).click();
           await first.requested;
+          await expect(page).toHaveURL(new RegExp(`session=${sessions[0].session_id}`));
+          await expect(page.locator('.chat-title')).toHaveText(sessions[0].title);
+          expect(await header!.evaluate((node) => node === document.querySelector('.topbar'))).toBe(true);
+          expect(await composer!.evaluate((node) => node === document.querySelector('.composer textarea'))).toBe(true);
+          await expect(page.locator('.chat-empty')).toHaveCount(0);
+          await expect(page.getByRole('button', { name: labels.send, exact: true })).toBeDisabled();
+          await expect(page.getByRole('button', { name: labels.attach, exact: true })).toBeDisabled();
+          await expect(page.getByRole('button', { name: labels.sessionSettings, exact: true })).toBeDisabled();
           await page.clock.runFor(199);
           await expect(page.locator('.workspace').locator(status)).toHaveCount(0);
           await page.clock.runFor(1);
           await expect(page.locator('.workspace').locator(status)).toHaveText(common.loading);
+          await openSidebar(page);
           const second = await holdResponse(page, `**/api/sessions/${sessions[1].session_id}/messages`);
           pending.push(second);
           await project.getByRole('button', { name: sessions[1].title, exact: true }).click();
           await second.requested;
+          await expect(page.locator('.chat-title')).toHaveText(sessions[1].title);
           await expect(page.locator('.workspace').locator(status)).toHaveCount(0);
           await page.clock.runFor(199);
           await expect(page.locator('.workspace').locator(status)).toHaveCount(0);
@@ -199,6 +211,8 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page.locator('.chat-title')).toHaveText(sessions[1].title);
           await expect(page.locator('.workspace').locator(status)).toHaveCount(0);
           await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0);
+          expect(await header!.evaluate((node) => node === document.querySelector('.topbar'))).toBe(true);
+          expect(await composer!.evaluate((node) => node === document.querySelector('.composer textarea'))).toBe(true);
           await page.clock.resume();
           await openSidebar(page);
           await expect(project.locator('.project-select')).toHaveAttribute('data-active', '');
@@ -211,6 +225,84 @@ for (const locale of ['en', 'zh-CN']) {
         } finally {
           for (const held of pending) await held.release();
           await request.delete(`/api/projects/${id}`);
+        }
+      });
+
+      test('ordinary selection keeps the shell, preserves repeated-click input and retries locally', async ({ page, request }) => {
+        const response = await request.post('/api/sessions', { data: { title: 'Retry target' } });
+        expect(response.ok()).toBe(true);
+        const target = await response.json();
+        const pending: Array<{ release: () => Promise<void> }> = [];
+        try {
+          await page.goto('/');
+          await expect(page.getByRole('button', { name: labels.sessionSettings, exact: true })).toBeEnabled();
+          await openSidebar(page);
+          const rows = page.locator('.session-sidebar [data-sidebar="menu"] > .session-item .session-select');
+          await rows.filter({ hasNotText: 'Retry target' }).first().click();
+          await expect(page.getByRole('button', { name: labels.sessionSettings, exact: true })).toBeEnabled();
+          const header = await page.locator('.topbar').elementHandle();
+          const composer = await page.locator('.composer textarea').elementHandle();
+          const failed = await holdResponse(page, `**/api/sessions/${target.session_id}/messages`, true);
+          pending.push(failed);
+          await openSidebar(page);
+          await rows.filter({ hasText: 'Retry target' }).click();
+          await failed.requested;
+          await expect(page.locator('.chat-title')).toHaveText('Retry target');
+          await expect(page.locator('.chat-empty')).toHaveCount(0);
+          await failed.release();
+          await expect(page.locator('.chat-view').getByRole('alert')).toContainText('Retry loading');
+          await expect(page.getByRole('button', { name: labels.attach, exact: true })).toBeDisabled();
+          const retry = await holdResponse(page, `**/api/sessions/${target.session_id}/messages`);
+          pending.push(retry);
+          await page.locator('.chat-view').getByRole('button', { name: settings.resources.refresh, exact: true }).click();
+          await retry.requested;
+          await expect(page.locator('.chat-view').getByRole('alert')).toHaveCount(0);
+          await retry.release();
+          await expect(page.getByRole('button', { name: labels.sessionSettings, exact: true })).toBeEnabled();
+          await page.locator('.composer textarea').fill('Keep input');
+          await openSidebar(page);
+          await rows.filter({ hasText: 'Retry target' }).click();
+          await expect(page.locator('.composer textarea')).toHaveValue('Keep input');
+          expect(await header!.evaluate((node) => node === document.querySelector('.topbar'))).toBe(true);
+          expect(await composer!.evaluate((node) => node === document.querySelector('.composer textarea'))).toBe(true);
+        } finally {
+          for (const held of pending) await held.release();
+          await request.delete(`/api/sessions/${target.session_id}`);
+        }
+      });
+
+      test('direct links and cross-Project history preserve the conversation shell', async ({ page, request }) => {
+        const firstId = await workspace(request), secondId = await workspace(request);
+        const first = (await (await request.get(`/api/projects/${firstId}/sessions`)).json())[0];
+        const second = (await (await request.get(`/api/projects/${secondId}/sessions`)).json())[1];
+        const details = await holdResponse(page, `**/api/sessions/${first.session_id}`);
+        try {
+          await page.goto(`/projects/${firstId}?session=${first.session_id}`);
+          await details.requested;
+          await expect(page.locator('.chat-title')).toHaveText(common.loading);
+          const header = await page.locator('.topbar').elementHandle();
+          const composer = await page.locator('.composer textarea').elementHandle();
+          await expect(page.locator('.composer textarea')).toBeDisabled();
+          await details.release();
+          await expect(page.locator('.chat-title')).toHaveText(first.title);
+          await expect(page.getByRole('button', { name: labels.sessionSettings, exact: true })).toBeEnabled();
+          await openSidebar(page);
+          const project = page.locator(`[data-project-id="${secondId}"]`);
+          await project.locator('.project-select').click();
+          await project.getByRole('button', { name: second.title, exact: true }).click();
+          await expect(page).toHaveURL(new RegExp(`/projects/${secondId}\\?session=${second.session_id}`));
+          await expect(page.locator('.chat-title')).toHaveText(second.title);
+          await page.goBack();
+          await expect(page.locator('.chat-title')).toHaveText(first.title);
+          await page.goForward();
+          await expect(page.locator('.chat-title')).toHaveText(second.title);
+          await expect(page.getByRole('button', { name: labels.sessionSettings, exact: true })).toBeEnabled();
+          expect(await header!.evaluate((node) => node === document.querySelector('.topbar'))).toBe(true);
+          expect(await composer!.evaluate((node) => node === document.querySelector('.composer textarea'))).toBe(true);
+        } finally {
+          await details.release();
+          await request.delete(`/api/projects/${firstId}`);
+          await request.delete(`/api/projects/${secondId}`);
         }
       });
 

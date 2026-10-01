@@ -92,6 +92,7 @@ for (const locale of ['en', 'zh-CN']) {
           expect((await request.patch(settingsPath, { data: { max_normalized_request_mb: 128 } })).ok()).toBeTruthy();
           await page.goto('/');
           const picker = page.locator('.composer input[type=file]');
+          await expect(picker).toBeEnabled();
           await picker.setInputFiles(file('limit.png'));
           await expect(page.locator('.composer-hint')).toHaveText(labels.localImageLimit.replace('{{limit}}', '128'));
           await page.goto('/settings?tab=models&view=dashboard');
@@ -105,6 +106,7 @@ for (const locale of ['en', 'zh-CN']) {
           expect((await saved).ok()).toBeTruthy();
           await expect(normalized).toBeEnabled();
           await backToChat(page);
+          await expect(picker).toBeEnabled();
           await picker.setInputFiles(file('updated-limit.png'));
           await expect(page.locator('.composer-hint')).toHaveText(labels.localImageLimit.replace('{{limit}}', '256'));
           expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);

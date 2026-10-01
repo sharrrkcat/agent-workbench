@@ -117,9 +117,9 @@ The fixed location header shares Home's primary-row height and toggle position. 
 within 64rem; ordinary forms use 48rem. FieldSet/FieldGroup and separators organize forms, resource rows wrap,
 and code, logs and tables contain their own overflow.
 
-Home, Project, settings and Runtime loading show background-free text after 200ms, without skeletons.
-Completion/unmount cancels the delay; new conversations restart it. Errors/retry appear immediately.
-Project refreshes retain listed sessions without placeholders; empty text waits for completion.
+Home, Project, settings and Runtime show background-free loading text after 200ms, without skeletons; completion/unmount cancels it, new conversations restart it, and errors/retry appear immediately.
+Session navigation immediately updates selection and route/title, keeping the header/composer mounted; only history loads before showing messages or confirmed empty content. Uncached targets use a neutral loading title until details arrive.
+Failed loads keep the shell and show local retry; sending, attachments and configuration stay disabled until ready. Repeated target selection preserves input and does not reload or restart feedback. Project refreshes retain listed sessions; empty text waits for completion.
 
 ## General
 

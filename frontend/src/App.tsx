@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createWebSocketUrl } from './api/url';
 import { ChatHeader } from './components/ChatHeader';
 import { ChatInput } from './components/ChatInput';
@@ -7,7 +7,7 @@ import { ErrorBanner } from './components/ErrorBanner';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
 import { StatusBar } from './components/StatusBar';
-import { SidebarInset, SidebarProvider, SidebarTrigger } from './components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
 import { useCogitaStore } from './store/useCogitaStore';
 import { useModelEvents } from './hooks/useModelEvents';
 import type { LeaveGuard } from './components/settings/resources/ResourceUI';
@@ -31,6 +31,7 @@ export default function App() {
   useModelEvents();
   const initialize = useCogitaStore((state) => state.initialize);
   const currentSession = useCogitaStore((state) => state.currentSession);
+  const sessionLoad = useCogitaStore((state) => state.sessionLoad);
   const chatDraft = useCogitaStore((state) => state.chatDraft);
   const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
   const initialized = useCogitaStore((state) => state.initialized);
@@ -85,7 +86,7 @@ export default function App() {
     void initialize(!readProjectRoute(committed.current).projectId && !isDraftRoute(committed.current));
     void useProjectsStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
   }, [initialize]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!initialized || location.pathname === '/settings') return;
     const route = readProjectRoute(location);
     if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(route.projectId);
@@ -108,9 +109,9 @@ export default function App() {
     const origin = committed.current;
     const url = projectId ? projectUrl(projectId, id) : '/';
     if (guarded(committed.current) && !(await leaveSettings.current(new URL(url, window.location.href)))) return false;
-    await useCogitaStore.getState().selectSession(id, projectId);
-    if (committed.current !== origin || useCogitaStore.getState().currentSession?.session_id !== id) return false;
+    if (committed.current !== origin) return false;
     commitUrl(url);
+    void useCogitaStore.getState().selectSession(id, projectId);
     return true;
   }, [commitUrl]);
   const createSession = useCallback(async (projectId: string | null = null) => {
@@ -138,7 +139,7 @@ export default function App() {
     }
   }, [commitUrl]);
   useEffect(() => {
-    if (!currentSession) return;
+    if (!currentSession || (sessionLoad && sessionLoad.status !== 'ready')) return;
     let closed = false;
     let socket: WebSocket;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -153,7 +154,7 @@ export default function App() {
         next();
       });
       socket.addEventListener('message', (event) => {
-        if (closed) return;
+        if (closed || useCogitaStore.getState().sessionEpoch !== sessionEpoch) return;
         try {
           const value = JSON.parse(event.data) as { type?: string };
           if (value.type && value.type !== 'pong') {
@@ -174,7 +175,7 @@ export default function App() {
       clearTimeout(reconnect);
       socket.close();
     };
-  }, [currentSession?.session_id, applyRuntimeEvent, refreshCurrent]);
+  }, [currentSession?.session_id, sessionLoad?.status, sessionEpoch, applyRuntimeEvent, refreshCurrent]);
   useEffect(() => {
     window.history.replaceState({ cogitaIndex: committed.current.index }, '', committed.current.url);
     let transition: {
@@ -258,17 +259,15 @@ export default function App() {
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
             {projectRoute.projectId && !projectRoute.sessionId && !isDraftRoute(location) ?
               <ProjectPage projectId={projectRoute.projectId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} onCreateSession={createSession} /> :
-              conversationReady || draftReady ? <>
+              <>
                 <ChatHeader onOpenSettings={(route) => void navigate(settingsRouteUrl(route))} />
                 <ErrorBanner />
-                <ChatView key={sessionEpoch} />
-                <div className="chat-bottom"><ChatInput key={sessionEpoch} /><StatusBar /></div>
-              </> : <>
-                <header className="topbar"><SidebarTrigger /></header>
-                <ResourceLoading key={sessionEpoch} error={error || undefined} retry={() => {
+                {conversationReady || draftReady || sessionLoad ? <ChatView key={sessionEpoch} /> :
+                <div className="min-h-0 flex-1"><ResourceLoading key={sessionEpoch} error={error || undefined} retry={() => {
                   if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(projectRoute.projectId);
                   else void activateLocation(projectRoute.projectId, projectRoute.sessionId);
-                }} />
+                }} /></div>}
+                <div className="chat-bottom"><ChatInput /><StatusBar /></div>
               </>}
           </SidebarInset>
         </>

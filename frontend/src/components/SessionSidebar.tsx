@@ -43,6 +43,7 @@ export function SessionSidebar({ onOpenSettings, onNavigate, onSelectSession, on
   const allSessions = useCogitaStore((state) => state.sessions);
   const sessions = allSessions.filter((session) => session.kind === 'ordinary');
   const current = useCogitaStore((state) => state.currentSession);
+  const targetId = useCogitaStore((state) => state.sessionLoad?.sessionId);
   const remove = useCogitaStore((state) => state.deleteSession);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [creating, setCreating] = useState<ProjectKind | null>(null);
@@ -104,7 +105,7 @@ export function SessionSidebar({ onOpenSettings, onNavigate, onSelectSession, on
             <SidebarMenu>
               {sessions.map((session) => {
                 const title = session.title.trim() || t('newSession');
-                const selected = session.session_id === current?.session_id;
+                const selected = session.session_id === (targetId ?? current?.session_id);
                 return (
                   <SidebarMenuItem
                     key={session.session_id}

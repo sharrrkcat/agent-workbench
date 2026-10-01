@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,11 +17,16 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
   const session = useCogitaStore((state) => state.currentSession);
   const draft = useCogitaStore((state) => state.chatDraft);
   const sending = useCogitaStore((state) => state.sending);
+  const sessionLoad = useCogitaStore((state) => state.sessionLoad);
+  const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
+  useLayoutEffect(() => setEditing(false), [sessionEpoch]);
+  const unavailable = !!sessionLoad && sessionLoad.status !== 'ready';
   const target = session ?? draft;
   const configuration = useChatConfiguration();
   const updateSession = useCogitaStore((state) => state.updateSession);
   const profiles = useModelsStore((state) => state.profiles);
-  const title = target?.title?.trim() || t('newSession');
+  const title = target ? target.title.trim() || t('newSession')
+    : sessionLoad ? t(sessionLoad.status === 'error' ? 'chat:loadFailed' : 'common:loading') : t('newSession');
   return (
     <header className="topbar">
       <Tooltip>
@@ -36,7 +41,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
           className="chat-model-select w-full min-w-0"
           profiles={profiles}
           value={configuration?.model_profile_id ?? null}
-          disabled={!target || sending}
+          disabled={!target || sending || unavailable}
           onChange={(model_profile_id) => void updateSession(target?.kind === 'workspace'
             ? { overrides: { model_profile_id } } : { model_profile_id })}
         />
@@ -47,7 +52,7 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
             <Button
               type="button"
               aria-label={t('sessionSettings')}
-              disabled={!target || sending}
+              disabled={!target || sending || unavailable}
               onClick={() => setEditing(true)}
               variant="ghost"
               size="icon"

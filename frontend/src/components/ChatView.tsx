@@ -17,6 +17,7 @@ import { MessageBubble } from './MessageBubble';
 import { RunReply } from './messages/RunReply';
 import { buildConversation } from './messages/turns';
 import { useCogitaStore } from '../store/useCogitaStore';
+import { ResourceLoading } from './settings/resources/ResourceUI';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
 
 export function ChatView() {
@@ -38,6 +39,8 @@ function Conversation() {
   const showFullProcessing = useCogitaStore((state) => state.settings?.show_full_processing === true);
   const sending = useCogitaStore((state) => state.sending);
   const loading = useCogitaStore((state) => state.loading);
+  const sessionLoad = useCogitaStore((state) => state.sessionLoad);
+  const retrySession = useCogitaStore((state) => state.retrySession);
   const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const items = useMemo(
     () => (currentSession ? buildConversation(currentSession.session_id, messages, runs, steps) : []),
@@ -47,6 +50,12 @@ function Conversation() {
   useEffect(() => {
     if (sending) scrollToEnd({ behavior: 'instant' });
   }, [sending, scrollToEnd]);
+
+  if (sessionLoad && sessionLoad.status !== 'ready') {
+    return <div className="chat-view min-h-0 flex-1" aria-busy={sessionLoad.status === 'loading'}>
+      <ResourceLoading error={sessionLoad.error || undefined} retry={() => void retrySession()} />
+    </div>;
+  }
 
   if (!currentSession && !chatDraft) {
     if (loading) return <LoadingStatus />;

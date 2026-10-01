@@ -45,10 +45,10 @@ assert.equal(store.getState().currentSession.session_id, 'ordinary');
 reset();
 await store.getState().activateLocation('b', 'first');
 assert.equal(store.getState().currentSession, null, 'A foreign session cannot be displayed in another Project');
-assert.match(store.getState().error, /SESSION_PROJECT_MISMATCH/);
+assert.match(store.getState().sessionLoad.error, /SESSION_PROJECT_MISMATCH/);
 await store.getState().activateLocation('timeline', 'first');
 assert.equal(store.getState().currentSession, null);
-assert.match(store.getState().error, /PROJECT_CHAT_UNAVAILABLE/);
+assert.match(store.getState().sessionLoad.error, /PROJECT_CHAT_UNAVAILABLE/);
 
 reset();
 const late = deferred();
@@ -94,6 +94,16 @@ lateSession.resolve(fetched);
 await selecting;
 assert.equal(store.getState().sessions.filter((session) => session.session_id === 'uncached').length, 1,
   'A Project list arriving during session selection must not duplicate the session');
+
+reset();
+const pendingDetails = deferred();
+api.getSession = () => pendingDetails.promise;
+const pendingSelection = store.getState().selectSession('uncached', 'a');
+await store.getState().activateLocation('a');
+pendingDetails.resolve(fetched);
+await pendingSelection;
+assert.equal(store.getState().currentSession, null, 'Project settings invalidate an uncached pending session');
+assert.equal(store.getState().sessionLoad, null);
 
 reset();
 store.setState({ currentSession: null });

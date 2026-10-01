@@ -8,6 +8,7 @@ import { handleRuntimeEvent } from './cogita/runtimeEvents';
 export const useCogitaStore = create<CogitaState>((set, get, store) => ({
   sessions: [],
   currentSession: null,
+  sessionLoad: null,
   chatDraft: null,
   pendingKnowledge: null,
   currentProjectId: null,

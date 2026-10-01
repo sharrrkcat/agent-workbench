@@ -9,6 +9,7 @@ import type { ToolRunResponse } from '../../types/tools';
 export type CogitaState = {
   sessions: Session[];
   currentSession: Session | null;
+  sessionLoad: { sessionId: string; projectId: string | null; status: 'loading' | 'ready' | 'error'; error: string | null } | null;
   chatDraft: ChatDraft | null;
   pendingKnowledge: { sessionId: string; ids: string[] } | null;
   currentProjectId: string | null;
@@ -36,6 +37,7 @@ export type CogitaState = {
   refreshCurrent: () => Promise<void>;
   reloadSessions: (projectId?: string | null) => Promise<void>;
   selectSession: (id: string, projectId?: string | null) => Promise<void>;
+  retrySession: () => Promise<void>;
   startDraft: (projectId?: string | null) => Promise<void>;
   saveDraft: (patch: SessionPatch, knowledgeIds?: string[]) => void;
   activateLocation: (projectId: string | null, sessionId?: string | null) => Promise<void>;
