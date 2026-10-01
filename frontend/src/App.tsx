@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createWebSocketUrl } from './api/url';
+import { usePersonasStore } from './store/usePersonasStore';
 import { ChatHeader } from './components/ChatHeader';
 import { ChatInput } from './components/ChatInput';
 import { ChatView } from './components/ChatView';
@@ -150,6 +151,7 @@ export default function App() {
       };
       socket.addEventListener('open', () => {
         void refreshCurrent();
+        void usePersonasStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
         next();
       });
       socket.addEventListener('message', (event) => {

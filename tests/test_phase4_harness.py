@@ -149,7 +149,7 @@ def test_approval_retains_queue_snapshot_and_original_input(harness_client):
     rejected = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "reject"}))
     assert rejected["run"]["status"] == "DONE" and rejected["session"]["waiting_run_id"] is None
     assert results(rejected)[-1]["status"] == "rejected"
-    assert rejected["messages"][-1]["speaker_name"] == "Original persona"
+    assert rejected["messages"][-1]["speaker_name"] is None
     assert upstream.calls[-1]["temperature"] == 0.25
     assert "PRIVATE_TOOL_PROMPT" in json.dumps(upstream.calls[-1]) and "CHANGED_PROMPT" not in json.dumps(upstream.calls[-1])
     assert [m["role"] for m in upstream.calls[-1]["messages"][-4:]] == ["assistant", "tool", "tool", "tool"]

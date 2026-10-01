@@ -59,7 +59,7 @@ def infer_speaker_identity(
     if role == "user":
         inferred = ("user", USER_PERSONA_ID, None, "user_message")
     elif role == "assistant":
-        inferred = ("assistant", None, "Assistant", "assistant_reply")
+        inferred = ("assistant", None, None, "assistant_reply")
     elif role == "tool":
         inferred = ("tool", str(metadata.get("tool") or "tool"), str(metadata.get("tool_name") or metadata.get("tool") or "Tool"), "tool_result")
     elif role == "system":

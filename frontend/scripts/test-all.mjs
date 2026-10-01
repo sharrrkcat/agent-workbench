@@ -26,6 +26,7 @@ for (const script of [
   'test-transformers',
   'test-harness',
   'test-chat-presentation',
+  'test-persona-identity',
   'test-llm-metrics',
   'test-url-helpers',
 ]) {

@@ -12,6 +12,7 @@ from ai_workbench.core.personas import PersonaStore
 from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.models.store import ModelProfileStore
 from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
+from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.settings import AppSettings
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
@@ -114,6 +115,56 @@ def test_session_temperature_only_overrides_the_model_when_set(client_pair):
         assert {key: upstream.calls[-1][key] for key in ("temperature", "top_p", "max_tokens", "seed")} == {
             "temperature": expected, "top_p": 0.8, "max_tokens": 77, "seed": 5,
         }
+
+
+def test_agent_identity_events_include_historical_ordinary_and_workspace_sessions(client_pair):
+    client, _ = client_pair
+    configure_model(client)
+    agent = ok(client.post("/api/personas", json={"collection": "agent", "name": "Before"}))
+    path = f"/api/personas/{agent['id']}"
+    ordinary = ok(client.post("/api/sessions", json={"persona_id": agent["id"]}))
+    project = ok(client.post("/api/projects", json={
+        "kind": "workspace", "name": "History", "agent_persona_id": COGITA_PERSONA_ID,
+        "cogita_persona_id": USER_PERSONA_ID, "context_policy": {"mode": "session"},
+        "harness_enabled": False, "tools_allowed": [],
+    }))
+    workspace = ok(client.post(f"/api/projects/{project['id']}/sessions", json={"overrides": {"persona_id": agent["id"]}}))
+    unrelated = ok(client.post("/api/sessions", json={}))
+    state = client.app.state.runtime_state
+    histories = {}
+    for session in (ordinary, workspace):
+        session_path = f"/api/sessions/{session['session_id']}"
+        result = ok(client.post(session_path + "/messages", json={"content": "Keep the original speaker"}))
+        assert result["messages"][-1]["speaker_id"] == agent["id"]
+        assert result["messages"][-1]["speaker_name"] is None
+        assert "speaker_avatar_attachment_id" not in result["messages"][-1]["metadata"]
+        patch = {"persona_id": COGITA_PERSONA_ID} if session["kind"] == "ordinary" else {"overrides": {"persona_id": None}}
+        ok(client.patch(session_path, json=patch))
+        histories[session_path] = ok(client.get(session_path + "/messages"))
+    # A run without an assistant message and a standalone assistant message also own identity.
+    run_only = ok(client.post("/api/sessions", json={}))
+    run = state.runs.create_run(kind="tool", session_id=run_only["session_id"], persona_id=agent["id"])
+    state.runs.update_status(run.run_id, RunStatus.DONE)
+    message_only = ok(client.post("/api/sessions", json={}))
+    state.messages.add_message(message_only["session_id"], "assistant", "Standalone", speaker_id=agent["id"])
+    affected = {item["session_id"] for item in (ordinary, workspace, run_only, message_only)}
+    with client.websocket_connect(f"/api/ws/{ordinary['session_id']}") as socket:
+        socket.send_json({"type": "ping"})
+        assert socket.receive_json()["type"] == "pong"
+        updated = ok(client.patch(path, json={"name": "After"}))
+        socket.send_json({"type": "next_event"})
+        event = socket.receive_json()
+        assert event["type"] == "persona_updated" and event["payload"]["persona"] == updated
+        ok(client.delete(path))
+        socket.send_json({"type": "next_event"})
+        event = socket.receive_json()
+        assert event["type"] == "persona_deleted" and event["payload"] == {"persona_id": agent["id"]}
+    for kind in ("persona_updated", "persona_deleted"):
+        delivered = {event.session_id for event in state.events.list_events() if event.type == kind}
+        assert delivered == affected
+        assert unrelated["session_id"] not in delivered
+    for session_path, history in histories.items():
+        assert ok(client.get(session_path + "/messages")) == history
 
 
 def test_user_identity_is_live_and_does_not_retain_old_avatar_snapshots(client_pair):

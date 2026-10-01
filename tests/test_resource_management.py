@@ -113,7 +113,7 @@ def test_full_attachment_indexing_obeys_knowledge_limits(resources):
     assert client.patch("/api/knowledge/settings", json={"default_chunk_overlap": 10000}).status_code == 422
 
 
-def test_orphan_cleanup_preserves_message_persona_and_running_snapshot_references(resources):
+def test_orphan_cleanup_preserves_current_references_not_avatar_snapshots(resources):
     client, _ = resources
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a9sAAAAASUVORK5CYII=")
     ids = [ok(client.post("/api/attachments", files={"file": ("avatar.png", png, "image/png")}))["uri"].rsplit("/", 1)[-1] for _ in range(4)]
@@ -124,10 +124,10 @@ def test_orphan_cleanup_preserves_message_persona_and_running_snapshot_reference
     run = state.runs.create_run(kind="chat", persona_id=session["persona_id"], session_id=session["session_id"], config_snapshot={"avatar_attachment_id": ids[2]})
     state.runs.update_status(run.run_id, RunStatus.RUNNING)
     orphans = ok(client.post("/api/data/attachments/scan-orphans"))["orphans"]
-    assert [item["id"] for item in orphans] == [ids[3]]
-    assert ok(client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}))["deleted_count"] == 1
-    for attachment_id in ids[:3]:
+    assert {item["id"] for item in orphans} == set(ids[2:])
+    assert ok(client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}))["deleted_count"] == 2
+    for attachment_id in ids[:2]:
         assert client.get(f"/api/attachments/{attachment_id}").content == png
         assert client.delete(f"/api/attachments/{attachment_id}").status_code == 409
     state.runs.update_status(run.run_id, RunStatus.DONE)
-    assert ok(client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}))["deleted_count"] == 1
+    assert ok(client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}))["deleted_count"] == 0

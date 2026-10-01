@@ -597,7 +597,7 @@ def language_for_filename(name: str | None) -> str:
     }.get(suffix, "text")
 
 
-def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, run_store: Any = None, knowledge_store: Any = None) -> bool:
+def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, knowledge_store: Any = None) -> bool:
     if not isinstance(attachment, dict) or not isinstance(attachment.get("uri"), str):
         return False
     try:
@@ -606,7 +606,7 @@ def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store:
         return False
     try:
         referenced = referenced_attachment_filenames(message_store, session_id=session_id, persona_store=persona_store,
-                                                    run_store=run_store, knowledge_store=knowledge_store)
+                                                    knowledge_store=knowledge_store)
     except Exception:
         return False
     if path.name in referenced:
@@ -836,7 +836,7 @@ def _validate_attachment_size(size: int, attachment_type: str, settings: Any = N
 
 
 def referenced_attachment_filenames(message_store: Any, *, session_id: str | None = None,
-                                   persona_store: Any = None, run_store: Any = None, knowledge_store: Any = None) -> set[str]:
+                                   persona_store: Any = None, knowledge_store: Any = None) -> set[str]:
     messages = message_store.list_all_messages() if hasattr(message_store, "list_all_messages") else message_store.list_messages(session_id)
     referenced: set[str] = set()
 
@@ -857,7 +857,6 @@ def referenced_attachment_filenames(message_store: Any, *, session_id: str | Non
                 parts(part.get("items") or [])
 
     for message in messages:
-        add((message.metadata or {}).get("speaker_avatar_attachment_id"))
         parts(getattr(message, "parts", []))
         attachments = (message.metadata or {}).get("attachments")
         if not isinstance(attachments, list):
@@ -870,10 +869,6 @@ def referenced_attachment_filenames(message_store: Any, *, session_id: str | Non
     if persona_store is not None:
         for persona in persona_store.list():
             add(persona.avatar_attachment_id)
-    if run_store is not None:
-        for run in run_store.list_all_runs():
-            if run.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"}:
-                add(run_store.get_config_snapshot(run.run_id).get("avatar_attachment_id"))
     if knowledge_store is not None:
         referenced.update(knowledge_store.referenced_attachment_ids())
     return referenced

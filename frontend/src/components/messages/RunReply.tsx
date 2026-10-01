@@ -17,6 +17,7 @@ import { ToolGroup } from './ToolGroup';
 import { ReasoningPreview } from './ReasoningPreview';
 import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
+import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
 
 export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFullProcessing: boolean }) {
   const { t } = useTranslation(['runs', 'personas']);
@@ -27,12 +28,7 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
     setExpanded(!ended && showFullProcessing);
   }, [ended, showFullProcessing]);
   const seconds = useRunSeconds(run);
-  const first = reply.messages.find((message) => message.role === 'assistant');
-  const configuration = run.metadata?.configuration as
-    | { persona_name?: string; avatar_attachment_id?: string | null }
-    | undefined;
-  const name = first?.speaker_name || configuration?.persona_name || t('personas:assistant');
-  const avatar = first?.metadata?.speaker_avatar_attachment_id ?? configuration?.avatar_attachment_id;
+  const identity = usePersonaIdentity()(run.persona_id);
   const processId = `processing-${run.run_id}`;
   const error = run.error_message || run.error || '';
   const errorKey = imageErrorKey(run.error_code, error);
@@ -49,8 +45,8 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
   return (
     <MessageFrame
       role="assistant"
-      name={name}
-      avatarId={typeof avatar === 'string' ? avatar : null}
+      name={identity.name}
+      avatarId={identity.avatar_attachment_id}
       createdAt={run.created_at}
       runId={run.run_id}
     >

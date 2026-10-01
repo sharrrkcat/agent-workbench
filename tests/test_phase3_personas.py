@@ -136,7 +136,7 @@ def test_model_generation_and_context_precedence(chat_client):
     assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["read_file"]
     assert response["session"]["effective"]["harness_enabled"] is True
     assert response["session"]["effective"]["model_source"] == "session"
-    assert response["messages"][-1]["speaker_name"] == "Role"
+    assert response["messages"][-1]["speaker_name"] is None
     assert "PRIVATE_PERSONA_PROMPT" not in json.dumps(response)
     state = client.app.state.runtime_state
     assert state.runs.get_config_snapshot(response["run"]["run_id"])["system_prompt"] == "PRIVATE_PERSONA_PROMPT"
@@ -175,9 +175,9 @@ def test_agent_selection_live_edits_retry_and_selected_context(chat_client):
     assert {"role": "assistant", "content": "reply"} in upstream.calls[-1]["messages"]
     ok(client.patch(f"/api/personas/{first['id']}", json={"name": "Renamed", "system_prompt": "NEW_PROMPT"}))
     history = ok(client.get(path + "/messages"))
-    assert history[1]["speaker_name"] == "First"
+    assert history[1]["speaker_name"] is None
     retried = ok(client.post(f"/api/runs/{original['run_id']}/retry"))
-    assert len(retried["messages"]) == 1 and retried["messages"][0]["speaker_name"] == "Renamed"
+    assert len(retried["messages"]) == 1 and retried["messages"][0]["speaker_name"] is None
     assert retried["run"]["persona_id"] == first["id"]
     assert len(ok(client.get(path + "/messages"))) == 2
     assert retried["session"]["persona_id"] == second["id"]
@@ -219,7 +219,7 @@ def test_persona_bindings_survive_empty_session_additions_and_search_preview(cha
     assert ok(client.get(path))["effective"]["knowledge_base_ids"] == [base["id"]]
 
 
-def test_avatar_reference_shared_with_messages_and_personas(chat_client):
+def test_avatar_reference_belongs_to_current_personas_not_history(chat_client):
     client, _ = chat_client
     configure_model(client)
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a9sAAAAASUVORK5CYII=")
@@ -231,13 +231,13 @@ def test_avatar_reference_shared_with_messages_and_personas(chat_client):
     assert client.delete(attachment_path).status_code == 409
     session = session_for(client, first["id"])
     message = send(client, session)["messages"][-1]
-    assert message["metadata"]["speaker_avatar_attachment_id"] == attachment_id
+    assert "speaker_avatar_attachment_id" not in message["metadata"]
     ok(client.patch(f"/api/personas/{first['id']}", json={"avatar_attachment_id": None}))
-    ok(client.delete(f"/api/personas/{second['id']}"))
     assert client.get(attachment_path).content == png
     assert client.delete(attachment_path).status_code == 409
-    ok(client.delete(f"/api/runs/{message['run_id']}"))
+    ok(client.delete(f"/api/personas/{second['id']}"))
     assert client.get(attachment_path).status_code == 404
+    assert ok(client.get(f"/api/sessions/{session['session_id']}/messages"))[-1]["speaker_id"] == first["id"]
 
 
 def test_sql_restart_preserves_persona_bindings_history_and_snapshot(tmp_path):
@@ -260,7 +260,7 @@ def test_sql_restart_preserves_persona_bindings_history_and_snapshot(tmp_path):
         assert loaded["persona_id"] == role["id"]
         assert client.app.state.runtime_state.runs.get_config_snapshot(run["run_id"])["system_prompt"] == "PRIVATE_PERSONA_PROMPT"
         history = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))
-        assert history[-1]["speaker_name"] == "Persistent"
+        assert history[-1]["speaker_name"] is None
 
 
 def test_disabled_or_wrong_kind_session_model_never_substitutes(chat_client):
@@ -301,7 +301,7 @@ def test_explicit_approval_retains_saved_persona_configuration(chat_client):
     result = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
     assert result["run"]["status"] == "DONE" and result["run"]["run_id"] == run_id
     assert result["session"]["waiting_run_id"] is None
-    assert result["messages"][-1]["speaker_name"] == "Waiting persona"
+    assert result["messages"][-1]["speaker_name"] is None
     assert upstream.calls[-1]["temperature"] == 0.25
     assert "LATER_PROMPT" not in json.dumps(upstream.calls[-1])
     assert "USER_BEFORE" in json.dumps(upstream.calls[-1]) and "USER_AFTER" not in json.dumps(upstream.calls[-1])
@@ -362,7 +362,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
                 run = app.state.runtime_state.runs.list_runs(session["session_id"])[0]
                 events = app.state.runtime_state.run_events.list_events(run.run_id)
                 started = next(e for e in events if e.type == "message_started")
-                assert started.payload["message"]["speaker_name"] == "Before"
+                assert started.payload["message"]["speaker_name"] is None
                 assert (await client.delete(path)).status_code == 409
                 assert (await client.patch(f"/api/models/profiles/{model['id']}", json={"parameters": {"temperature": 0.8}})).status_code == 409
                 ok(await client.patch(f"/api/personas/{before['id']}", json={"name": "After", "system_prompt": "AFTER_PROMPT"}))
@@ -374,7 +374,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
                 if not request.done():
                     request.cancel()
                     await asyncio.gather(request, return_exceptions=True)
-            assert response["messages"][-1]["speaker_name"] == "Before"
+            assert response["messages"][-1]["speaker_name"] is None
             assert response["messages"][-1]["speaker_id"] == before["id"]
             assert response["session"]["persona_id"] == COGITA_PERSONA_ID
             assert upstream.calls[-1]["temperature"] == 0.2
@@ -382,7 +382,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
             assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["read_file"]
             ok(await client.patch(path, json={"persona_id": before["id"], "generation": {}}))
             later = ok(await client.post(path + "/messages", json={"content": "second"}))
-            assert later["messages"][-1]["speaker_name"] == "After"
+            assert later["messages"][-1]["speaker_name"] is None
             assert upstream.calls[-1]["temperature"] == 0.2
 
             entered.clear()

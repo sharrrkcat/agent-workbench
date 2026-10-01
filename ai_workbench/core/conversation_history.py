@@ -8,6 +8,7 @@ from ai_workbench.core.attachments import delete_attachment_if_unreferenced
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.message_parts import make_text_part
 from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.time import utc_now
 
 
 class HistoryPruned(BaseModel):
@@ -88,7 +89,8 @@ class ConversationHistory:
     def edit_user(self, message_id: str, content: str) -> tuple[MessageSchema, HistoryPruned]:
         message = self._user(message_id)
         self.chat_service.assert_idle(message.session_id)
-        updated = MessageSchema.model_validate({**message.model_dump(), "parts": [make_text_part(content, format="plain")]})
+        updated = MessageSchema.model_validate({**message.model_dump(), "parts": [make_text_part(content, format="plain")],
+                                               "created_at": utc_now()})
         ordered = self.messages.list_messages(message.session_id)
         index = next(i for i, item in enumerate(ordered) if item.message_id == message_id)
         message_ids = {item.message_id for item in ordered[index + 1:]}
@@ -117,9 +119,5 @@ class ConversationHistory:
         for message in deleted:
             attachments = message.metadata.get("attachments")
             for attachment in attachments if isinstance(attachments, list) else []:
-                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, run_store=self.runs, knowledge_store=self.chat_service.knowledge)
-            avatar_id = message.metadata.get("speaker_avatar_attachment_id")
-            if avatar_id:
-                delete_attachment_if_unreferenced({"id": avatar_id, "uri": "local://attachments/" + avatar_id},
-                                                 self.messages, persona_store=self.personas, run_store=self.runs, knowledge_store=self.chat_service.knowledge)
+                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, knowledge_store=self.chat_service.knowledge)
         return change

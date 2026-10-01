@@ -39,9 +39,11 @@ import { useComposerLayout } from '../hooks/useComposerLayout';
 import { ImagePreview, type PreviewImage } from './messages/ImagePreview';
 import { contextMessageLabel, isContextMessage } from './messages/messageContent';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
+import { usePersonaIdentity } from '../hooks/usePersonaIdentity';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
+  const personaIdentity = usePersonaIdentity();
   const draft = useCogitaStore((state) => state.composerDraftText);
   const { composerRef, textareaRef, measureRef, expanded, textHeight } = useComposerLayout(draft);
   const setDraft = useCogitaStore((state) => state.setComposerDraftText);
@@ -199,7 +201,7 @@ export function ChatInput() {
                 value: m.message_id,
                 label: (
                   <>
-                    {m.role === 'user' ? session?.user_persona.name : m.speaker_name || m.role}: {contextMessageLabel(m)}
+                    {m.role === 'user' ? session?.user_persona.name : m.role === 'assistant' ? personaIdentity(m.speaker_id).name : m.speaker_name || m.role}: {contextMessageLabel(m)}
                   </>
                 ),
               })),
@@ -213,7 +215,7 @@ export function ChatInput() {
                 <SelectItem value="">{t('chooseContext')}</SelectItem>
                 {eligible.map((m) => (
                   <SelectItem key={m.message_id} value={m.message_id}>
-                    {m.role === 'user' ? session?.user_persona.name : m.speaker_name || m.role}: {contextMessageLabel(m)}
+                    {m.role === 'user' ? session?.user_persona.name : m.role === 'assistant' ? personaIdentity(m.speaker_id).name : m.speaker_name || m.role}: {contextMessageLabel(m)}
                   </SelectItem>
                 ))}
               </SelectGroup>

@@ -1,6 +1,7 @@
 {
   "title": "Personas",
   "add": "Add persona",
+  "deletedPersona": "Deleted persona",
   "edit": "Edit persona",
   "editNamed": "Edit {{name}}",
   "deleteNamed": "Delete {{name}}",

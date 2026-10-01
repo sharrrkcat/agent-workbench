@@ -9,8 +9,7 @@ syntax, allowlists, bounded loops and approvals.
 
 Personas are strict editable database records with id, immutable collection, name,
 optional avatar_attachment_id, system_prompt and timestamps. They are identities,
-never executable agents, scripts, manifests or extension registrations. All four
-collections share CRUD and ordered bindings. Avatars reference existing local image
+never executable agents, scripts, manifests or extension registrations. All four collections share CRUD and ordered bindings. Avatars reference existing local image
 filenames; bytes remain in the attachment store.
 
 | Collection | Settings page | Resources | Execution |
@@ -25,10 +24,12 @@ roleplay defaults. Both may be edited but not deleted; protection follows stable
 ids and is exposed as read-only is_protected. POST requires a creatable collection;
 PATCH cannot change collection. The Cogita singleton cannot be created through CRUD;
 its category name does not replace its editable name/avatar. Persona deletion fails while referenced by a Project, session or unfinished run.
-Historical assistant messages retain identity/avatar snapshots. SessionResponse.user_persona
-contains the current singleton identity; all user-message and selected-context labels use
-its latest name/avatar without rewriting history. User messages reference the singleton id
-and do not snapshot its avatar. Updating the singleton notifies all sessions.
+Assistant replies and selected-context labels resolve the latest Agent name/avatar by
+run.persona_id or message.speaker_id; changing session selection preserves original authorship.
+Deleted Personas display a localized deleted-persona label and default avatar. Assistant
+messages store identity ids without name/avatar snapshots. SessionResponse.user_persona
+provides the current singleton identity for user rows/labels. Neither edit rewrites history;
+run prompts/configuration stay fixed. Identity events also reach historical referencing sessions.
 
 Ordinary sessions have one persona_id, initially Cogita; selection accepts only agent records.
 There are no members, speaker lists, conversation modes or group transcripts.
@@ -135,7 +136,7 @@ keeps the input user message and deletes the selected run plus all later
 conversation messages/runs. Tool runs cannot be retried as model answers.
 DELETE /api/runs/{id} deletes only that reply's messages, steps, events and
 private state, preserving its user input. User deletion also removes its
-associated replies; user edit removes later conversation and associated runs.
+associated replies; user edit removes later conversation and associated runs, retains the message id, and persists created_at as the latest submission time in both the response and message_updated event.
 History mutations require an idle session. SQLite pruning and user text edits
 commit in one transaction. Responses and history_pruned events return
 deleted_message_ids/deleted_run_ids. Message-level retry is removed; individual
@@ -200,7 +201,7 @@ Large binary data belongs in the attachment store and is referenced by id/URL.
 Uploads and serving use the configured attachment directory; General owns
 size/count and text-context byte limits. Persisted parts retain ids, MIME,
 name, size and compact metadata, never image data URLs. Orphan cleanup is an
-explicit separate operation and considers Persona avatar references.
+explicit separate operation and considers current Persona avatars, not message/run avatar snapshots.
 
 User images persist only as metadata.attachments references; message parts do not duplicate them.
 ContextBuilder selects history by policy, message count and character budget before reading images.
@@ -234,7 +235,7 @@ context. The live tool transcript retains upstream content and structured
 reasoning where the provider needs it for continuation. Incomplete messages
 are not eligible historical context or selected-context sources.
 
-The frontend renders one reply per run with one historical Persona identity,
+The frontend renders one reply per run with its original Persona's current identity,
 processing timeline, final answer and action bar. Only the current model round's
 ordinary text appears as a provisional answer; tool-producing rounds move into
 processing. Adjacent tools share a collapsed command group, with individually
@@ -247,11 +248,10 @@ Assistant replies expose aggregated LLM usage after the action buttons and per-c
 The frontend renders parts without executing or routing text. Markdown remains
 content; edit/retry uses original text. MessageActions owns controls and
 selected-context references; MessageParts owns presentation and attachment URLs.
-Speaker snapshots are presentation data. Metadata may hold counts, source refs
-and warnings, never full part bodies, prompts or secrets. Stream merging belongs
+Metadata may hold counts, source refs and warnings, never full part bodies, prompts or secrets. Stream merging belongs
 to [runs/streaming](runs-streaming.md).
 
-User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies retain historical identity and avatars; user rows use the current Cogita Persona identity. User headers place time before the name; assistant headers place it after the name.
+User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Agent identity; user rows use current Cogita Persona identity. User headers place time before the name; assistant headers place it after the name.
 Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps, user action buttons and reply usage text appear on message hover or keyboard focus,
 fade in and out over 180ms (instantly with reduced motion), and retain layout space. Touch layouts keep them visible; editing keeps save/cancel visible and an open usage modal keeps its owner visible. Message bodies use 16px text with Markdown headings, lists, quotes, code, tables and media.
 Markdown block code uses gray secondary Bubble surfaces with 24px corners and preserves preformatted text; inline code retains its compact styling. Message action tooltips open below their buttons without flipping above, including usage details. Wide code, tables and tool results scroll inside their own bounds; tool results are limited to 320px height on desktop and 240px below 768px.

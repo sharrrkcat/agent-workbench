@@ -161,7 +161,7 @@ def test_delete_reply_and_user_prune_all_owned_records(presentation_client):
     assert [m["message_id"] for m in ok(client.get(f"/api/sessions/{session['session_id']}/messages"))] == [first["messages"][0]["message_id"]]
 
 
-def test_retry_and_edit_prune_old_tools_and_later_runs(presentation_client):
+def test_retry_and_edit_prune_old_tools_and_later_runs(presentation_client, monkeypatch):
     client, upstream = presentation_client
     session = configure(client)
     upstream.turns = [completion(tool_call(), content="old process"), completion(content="old answer")]
@@ -174,10 +174,18 @@ def test_retry_and_edit_prune_old_tools_and_later_runs(presentation_client):
     assert client.post(f"/api/messages/{first['messages'][-1]['message_id']}/retry").status_code == 404
     history = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))
     assert [m["role"] for m in history] == ["user", "assistant"]
+    from ai_workbench.core.time import utc_now, isoformat_utc
+    edited_at = utc_now()
+    monkeypatch.setattr("ai_workbench.core.conversation_history.utc_now", lambda: edited_at)
     edited = ok(client.post(f"/api/messages/{history[0]['message_id']}/edit", json={"content": "edited", "rerun": False}))
     assert edited["deleted_run_ids"] == [replacement["run"]["run_id"]]
     assert ok(client.get(f"/api/sessions/{session['session_id']}/runs")) == []
     assert ok(client.get(f"/api/sessions/{session['session_id']}/messages"))[0]["parts"][0]["text"] == "edited"
+    assert edited["messages"][0]["created_at"] == isoformat_utc(edited_at)
+    assert edited["messages"][0]["created_at"] != history[0]["created_at"]
+    stored = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))[0]
+    assert stored["created_at"] == edited["messages"][0]["created_at"]
+    assert stored["message_id"] == history[0]["message_id"]
 
 
 def test_sql_history_prune_rolls_back_on_write_failure(presentation_client):

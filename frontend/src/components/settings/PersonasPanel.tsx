@@ -97,6 +97,7 @@ export function PersonasPanel({ collection }: { collection: PersonaCollection })
       if (editor.id) saved = await chatApi.patchPersona(editor.id, editor.value);
       else if (collection !== 'user') saved = await chatApi.createPersona({ ...editor.value, collection });
       else return;
+      usePersonasStore.getState().upsert(saved);
       const next = { ...editor, id: saved.id, value: personaInput(saved) };
       setEditor(next);
       if (saved.avatar_attachment_id) temporaryAvatars.current.delete(saved.avatar_attachment_id);
@@ -158,7 +159,11 @@ export function PersonasPanel({ collection }: { collection: PersonaCollection })
                   <Button type="button" variant="ghost" size="icon" aria-label={t('deleteNamed', { name: persona.name })}
                     disabled={busy} onClick={async () => {
                       if (await confirm(t('deleteConfirm', { name: persona.name }), { destructive: true }))
-                        void task.run('delete', async () => { await chatApi.deletePersona(persona.id); await usePersonasStore.getState().reload(); });
+                        void task.run('delete', async () => {
+                          await chatApi.deletePersona(persona.id);
+                          usePersonasStore.getState().remove(persona.id);
+                          await usePersonasStore.getState().reload();
+                        });
                     }} />
                 }><Trash2 data-icon="inline-start" /></TooltipTrigger><TooltipContent>{t('deleteNamed', { name: persona.name })}</TooltipContent></Tooltip> : null}
               </div>

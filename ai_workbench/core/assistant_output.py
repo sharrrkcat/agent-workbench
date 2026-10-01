@@ -108,9 +108,9 @@ class AssistantDraft:
         self.parser = ThinkParser(self._append_part)
         self.message = MessageSchema(
             message_id=message_id, session_id=session_id, run_id=run_id, role="assistant",
-            speaker_type="assistant", speaker_id=config.persona_id, speaker_name=config.persona_name,
+            speaker_type="assistant", speaker_id=config.persona_id,
             parent_message_id=parent_message_id,
-            metadata={"speaker_avatar_attachment_id": config.avatar_attachment_id, "streamed": streamed},
+            metadata={"streamed": streamed},
         )
         draft = self.message.model_copy(update={"metadata": {**self.message.metadata, "streaming": True}})
         self._emit("message_started", {"message": draft.model_dump(mode="json"), "seq": 0})

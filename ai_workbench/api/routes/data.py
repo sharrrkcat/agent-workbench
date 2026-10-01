@@ -19,12 +19,12 @@ class CleanupOrphansRequest(BaseModel):
 
 @router.get("/storage-stats", response_model=StorageStats, response_model_exclude_unset=True)
 def get_storage_stats(state: RuntimeState = Depends(get_state)) -> dict:
-    return storage_stats(state.messages, database_url=state.database_url, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
+    return storage_stats(state.messages, database_url=state.database_url, persona_store=state.personas, knowledge_store=state.knowledge)
 
 
 @router.post("/attachments/scan-orphans", response_model=OrphanScan, response_model_exclude_unset=True)
 def scan_attachment_orphans(state: RuntimeState = Depends(get_state)) -> dict:
-    scan = scan_orphan_attachments(state.messages, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
+    scan = scan_orphan_attachments(state.messages, persona_store=state.personas, knowledge_store=state.knowledge)
     return {
         "orphan_count": scan["orphan_count"],
         "orphan_size_bytes": scan["orphan_size_bytes"],
@@ -37,4 +37,4 @@ def scan_attachment_orphans(state: RuntimeState = Depends(get_state)) -> dict:
 def cleanup_attachment_orphans(payload: CleanupOrphansRequest, state: RuntimeState = Depends(get_state)) -> dict:
     if payload.confirm is not True:
         raise_error(400, "CONFIRMATION_REQUIRED", "Clean orphan attachments requires confirm=true.")
-    return cleanup_orphan_attachments(state.messages, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
+    return cleanup_orphan_attachments(state.messages, persona_store=state.personas, knowledge_store=state.knowledge)

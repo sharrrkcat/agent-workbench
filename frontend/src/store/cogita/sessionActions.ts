@@ -49,6 +49,9 @@ export const createSessionActions: CogitaActions<
       });
       const [session, messages, runs] = await Promise.all([
         sessionRequest, chatApi.listMessages(id), runsApi.listRuns(id),
+        usePersonasStore.getState().reload().catch((error) => {
+          if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+        }),
         scope ? Promise.resolve(useProjectsStore.getState().projects.find((project) => project.id === scope)
           ?? useProjectsStore.getState().load(scope)).then((project) => {
           if (project.kind !== 'workspace') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');

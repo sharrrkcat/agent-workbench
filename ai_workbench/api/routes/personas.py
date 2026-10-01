@@ -52,6 +52,7 @@ async def update_persona(persona_id: str, payload: dict, state: RuntimeState = D
     if current.avatar_attachment_id != updated.avatar_attachment_id:
         _cleanup_avatar(state, current.avatar_attachment_id)
     _notify_sessions(state, persona_id)
+    _notify_identity(state, persona_id, "persona_updated", {"persona": updated.public_response()})
     return updated.public_response()
 
 
@@ -60,6 +61,7 @@ async def update_persona(persona_id: str, payload: dict, state: RuntimeState = D
 async def delete_persona(persona_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     current = state.chat_service.delete_persona(persona_id)
     _cleanup_avatar(state, current.avatar_attachment_id)
+    _notify_identity(state, persona_id, "persona_deleted", {"persona_id": persona_id})
     return {"deleted": True, "persona_id": persona_id}
 
 
@@ -100,7 +102,7 @@ async def set_worldbook_bindings(persona_id: str, payload: WorldbookBindingsPatc
 def _cleanup_avatar(state, attachment_id):
     if attachment_id:
         delete_attachment_if_unreferenced({"id": attachment_id, "uri": "local://attachments/" + attachment_id},
-            state.messages, persona_store=state.personas, run_store=state.runs, knowledge_store=state.knowledge)
+            state.messages, persona_store=state.personas, knowledge_store=state.knowledge)
 
 
 def _notify_sessions(state, persona_id):
@@ -108,3 +110,13 @@ def _notify_sessions(state, persona_id):
         if persona_id == USER_PERSONA_ID or state.chat_service.selected_agent_id(session) == persona_id:
             state.events.emit("session_updated", session_id=session.session_id,
                 payload={"session": state.chat_service.session_response(session)})
+
+
+def _notify_identity(state: RuntimeState, persona_id: str, event_type: str, payload: dict) -> None:
+    session_ids = {run.session_id for run in state.runs.list_all_runs() if run.persona_id == persona_id}
+    session_ids.update(message.session_id for message in state.messages.list_all_messages()
+                       if message.speaker_id == persona_id)
+    for session in state.sessions.list_sessions():
+        if (persona_id == USER_PERSONA_ID or session.session_id in session_ids
+                or state.chat_service.selected_agent_id(session) == persona_id):
+            state.events.emit(event_type, session_id=session.session_id, payload=payload)

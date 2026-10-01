@@ -11,6 +11,7 @@ import { MessageImages } from './messages/MessageImages';
 
 import { MessageParts } from './messages/MessageParts';
 import { MessageActions } from './messages/MessageActions';
+import { usePersonaIdentity } from '../hooks/usePersonaIdentity';
 
 export function MessageBubble({ message, animate = false }: { message: Message; animate?: boolean }) {
   const { t } = useTranslation('personas');
@@ -18,10 +19,7 @@ export function MessageBubble({ message, animate = false }: { message: Message; 
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(messageText(message));
   const [busy, setBusy] = useState(false);
-  const avatarId =
-    typeof message.metadata?.speaker_avatar_attachment_id === 'string'
-      ? message.metadata.speaker_avatar_attachment_id
-      : null;
+  const identity = usePersonaIdentity()(message.speaker_id);
   const isUser = message.role === 'user';
   const streaming = message.metadata?.streaming === true;
 
@@ -40,9 +38,9 @@ export function MessageBubble({ message, animate = false }: { message: Message; 
     <MessageFrame
       role={message.role}
       name={
-        isUser ? userPersona?.name || '' : message.speaker_name || t(message.role === 'assistant' ? 'assistant' : 'system')
+        isUser ? userPersona?.name || '' : message.role === 'assistant' ? identity.name : message.speaker_name || t('system')
       }
-      avatarId={isUser ? userPersona?.avatar_attachment_id : avatarId}
+      avatarId={isUser ? userPersona?.avatar_attachment_id : message.role === 'assistant' ? identity.avatar_attachment_id : null}
       createdAt={message.created_at}
       messageId={message.message_id}
     >

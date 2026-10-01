@@ -1,6 +1,7 @@
 {
   "title": "角色",
   "add": "新增角色",
+  "deletedPersona": "已删除角色",
   "edit": "编辑角色",
   "editNamed": "编辑 {{name}}",
   "deleteNamed": "删除 {{name}}",

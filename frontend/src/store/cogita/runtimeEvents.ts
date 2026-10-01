@@ -4,9 +4,18 @@ import { mergeRuns, mergeSteps, older, terminal, pruneHistoryState } from './mer
 import { applyMessageEvent } from '../messageStream';
 
 import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
-import type { Session } from '../../types/chat';
+import type { Persona, Session } from '../../types/chat';
+import { usePersonasStore } from '../usePersonasStore';
 
 export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: RuntimeEvent): void {
+  if (event.type === 'persona_updated' && event.payload?.persona) {
+    usePersonasStore.getState().upsert(event.payload.persona as Persona);
+    return;
+  }
+  if (event.type === 'persona_deleted' && typeof event.payload?.persona_id === 'string') {
+    usePersonasStore.getState().remove(event.payload.persona_id);
+    return;
+  }
   if (event.type === 'session_updated' && event.payload?.session) {
     const session = event.payload.session as Session;
     set((state) => ({

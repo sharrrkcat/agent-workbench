@@ -142,9 +142,11 @@ const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale,
 const i18n = i18next.createInstance();
 await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { escapeValue: false } });
 let viewState = { ...store.getState(), currentSession: session, runs: [run], messages: [calls], stepsByRunId: {}, resolvingApprovals: [] };
+const personaState = { personas: [{ id: 'p', name: 'Current agent', avatar_attachment_id: null }], loaded: true, loading: false, error: null };
 const views = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useCogitaStore.ts')]: mockModule({ useCogitaStore: (selector) => selector(viewState) }),
+  [sourceUrl('store/usePersonasStore.ts')]: mockModule({ usePersonasStore: () => personaState }),
 });
 const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).exports;
 const { MessageScrollerProvider } = (await views('../src/components/ui/message-scroller.tsx')).exports;
@@ -163,6 +165,8 @@ for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const active = buildReply(run, [calls, output, answer], []);
   const hidden = render(active, false);
+  assert.match(hidden, /Current agent/);
+  assert.doesNotMatch(hidden, /Original speaker/);
   assert.doesNotMatch(hidden, /first reasoning|base64_encode|processing-timeline/);
   assert.match(hidden, /final answer/);
   const shown = render(active, true);
@@ -175,6 +179,7 @@ for (const locale of ['en', 'zh-CN']) {
   assert.match(completed, /final answer/);
   assert.equal((completed.match(/reply-actions/g) || []).length, 1);
   const waiting = render(buildReply({ ...run, status: 'WAITING_FOR_USER' }, [calls], [approvalStep]), false);
+  assert.match(waiting, /Current agent/);
   assert.match(waiting, /aGk=/);
   assert.match(waiting, /base64_encode/);
   assert.doesNotMatch(waiting, /first reasoning/);
@@ -182,6 +187,14 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(waiting.includes(i18n.t('runs:reject')));
   assert.doesNotMatch(waiting, /role="switch"/, 'Approval is one button without a nested switch');
   assert.match(render(buildReply(failedEmpty, [], []), false), /MODEL_NOT_CONFIGURED/);
+  assert.match(render(buildReply(failedEmpty, [], []), false), /Current agent/);
+  personaState.personas[0].name = 'Changed agent';
+  assert.match(render(reply, false), /Changed agent/);
+  assert.match(renderToStaticMarkup(React.createElement(MessageBubble, { message: answer })), /Changed agent/);
+  personaState.personas = [];
+  assert.ok(render(reply, false).includes(i18n.t('personas:deletedPersona')));
+  assert.ok(renderToStaticMarkup(React.createElement(MessageBubble, { message: answer })).includes(i18n.t('personas:deletedPersona')));
+  personaState.personas = [{ id: 'p', name: 'Current agent', avatar_attachment_id: null }];
   viewState = { ...viewState, currentSession: { ...session, user_persona: { id: 'user', name: 'Current user', avatar_attachment_id: null } } };
   const imageHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: imageOnly }));
   assert.match(imageHtml, /Current user/);

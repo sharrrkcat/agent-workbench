@@ -83,6 +83,7 @@ Global model/runtime events use `/api/models/events`, including without a select
 | Event | Meaning |
 | --- | --- |
 | session_updated | Session configuration/title or refreshed inherited Project/Persona/model settings |
+| persona_updated/persona_deleted | Current persona in payload.persona, or removed payload.persona_id; includes historical referencing sessions |
 | message_updated | Persisted user message or metadata |
 | message_started | Assistant draft with stable ids |
 | message_delta | part_id, part_type=text/reasoning, delta and seq=1,2,... |
@@ -108,6 +109,10 @@ emits an installation-state update. Local Runtime details refresh
 storage when a newer terminal maintenance job arrives, without periodic polling.
 
 ## Client reconciliation
+
+Chat loading and socket connection/reconnection refresh the Persona list. Identity events
+update the shared Persona store; changes received during list reads win over stale responses.
+Loading/failure preserves known identities and never implies deletion; errors use the existing banner.
 
 messageStream tracks one sequence per message across text and reasoning parts,
 ignores duplicates/late/gapped deltas, and replaces drafts with completed parts.
