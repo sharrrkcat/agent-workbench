@@ -6,7 +6,7 @@ import asyncio
 import time
 from typing import Any
 from uuid import uuid4
-from contextlib import aclosing
+from contextlib import AsyncExitStack, aclosing
 
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
@@ -14,7 +14,7 @@ from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessA
 from ai_workbench.core.context import ContextBuilder, LLMContextError
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.images import resolve_context_images
+from ai_workbench.core.models.images import has_context_images, resolve_context_images, without_context_images
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
@@ -109,6 +109,9 @@ class ChatRunner:
             self.active_runs.register(run.run_id, current_task)
         active_step_id: str | None = None
         draft: AssistantDraft | None = None
+        checks = AsyncExitStack()
+        first_metrics = LLMCallMetrics()
+        self._input_warnings(user, run.run_id, [])
         context_started = time.monotonic()
         try:
             context_step = self.runs.create_step(
@@ -133,6 +136,37 @@ class ChatRunner:
                     raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
             else:
                 context, context_meta = await build_context
+            if not config.model_profile_id:
+                raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
+            profile = self.model_manager.profile(config.model_profile_id, "llm")
+            use_harness = bool(config.harness_enabled and self.chat_service.tools_for_run(config) and self.harness_loop)
+            has_images = has_context_images(context)
+            first_metrics.start()
+            preflight = checks.enter_async_context(self.model_manager.check_chat_inputs(
+                profile, tools=use_harness, vision=has_images, metrics=first_metrics))
+            if use_harness:
+                try:
+                    support = await asyncio.wait_for(preflight, timeout=ACTIVE_BUDGET_SECONDS - (time.monotonic() - context_started))
+                except asyncio.TimeoutError as exc:
+                    raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
+            else:
+                support = await preflight
+            warnings = []
+            image_only = False
+            if has_images and not profile.request_options.skip_vision_capability_check and support.vision.state == "unsupported":
+                current = context[-1]["content"]
+                current_text = current if isinstance(current, str) else "\n".join(
+                    part["text"] for part in current if part["type"] == "text")
+                image_only = not current_text.strip()
+                context = without_context_images(context)
+                warnings.append("images_require_text" if image_only else "images_ignored")
+            if use_harness and not profile.request_options.skip_tool_capability_check and support.tools.state == "unsupported":
+                use_harness = False
+                warnings.append("tools_ignored")
+            self._input_warnings(user, run.run_id, warnings)
+            self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "harness": use_harness})
+            if image_only:
+                raise ModelError("UNSUPPORTED_CAPABILITY", "This model cannot read images. Add text or select another model.", 422)
             self.runs.update_step(
                 context_step.step_id,
                 status=RunStepStatus.COMPLETED,
@@ -143,10 +177,10 @@ class ChatRunner:
             if self._cancelled(run.run_id):
                 return self._cancel_result(run.run_id, session_id)
 
-            if config.harness_enabled and config.tools_allowed and self.harness_loop is not None:
+            if use_harness:
                 result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context,
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
-                                                     active_seconds=time.monotonic() - context_started)
+                                                     active_seconds=time.monotonic() - context_started, first_metrics=first_metrics)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     await self.maybe_title(session_id, raw_text, user.message_id)
                 return result
@@ -165,15 +199,15 @@ class ChatRunner:
                           "source_type": profile.source.type if profile.source else None,
                           "provider_profile_id": profile.source.provider_profile_id if profile.source and profile.source.type == "provider" else None, "model_ref": profile.model_ref}
             self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "model_resolution": resolution})
-            streamed = profile.capabilities.streaming
-            messages = await resolve_context_images(context, vision=profile.capabilities.vision,
+            streamed = profile.request_options.streaming
+            messages = await resolve_context_images(context,
                 max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024)
             request = ChatRequest(model=profile.alias, messages=messages, stream=streamed, **config.generation.model_dump(exclude_none=True))
             self.model_manager.validate_chat(profile, request)
             draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session_id,
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,
                                    parent_message_id=user.message_id, streamed=streamed)
-            metrics = LLMCallMetrics()
+            metrics = first_metrics
             try:
                 if streamed:
                     async with aclosing(self.model_manager.chat_stream(profile.id, request, metrics=metrics)) as stream:
@@ -251,8 +285,21 @@ class ChatRunner:
             self._fail_step(active_step_id, "LLM_GENERATION_FAILED", message)
             return self._fail(run.run_id, session_id, "LLM_GENERATION_FAILED", message)
         finally:
-            if self.active_runs is not None:
-                self.active_runs.unregister(run.run_id)
+            try:
+                await checks.aclose()
+            finally:
+                if self.active_runs is not None:
+                    self.active_runs.unregister(run.run_id)
+
+    def _input_warnings(self, user, run_id: str, codes: list[str]) -> None:
+        if not codes and "request_warnings" not in user.metadata:
+            return
+        user.metadata = {key: value for key, value in user.metadata.items() if key != "request_warnings"}
+        if codes:
+            user.metadata["request_warnings"] = {"run_id": run_id, "codes": codes}
+        self.messages.update_message(user)
+        self.events.emit("message_updated", session_id=user.session_id, run_id=run_id, message_id=user.message_id,
+                         payload={"message": user.model_dump(mode="json")})
 
     async def _build_context(
         self,

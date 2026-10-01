@@ -48,7 +48,7 @@ def request(*parts, **options):
 
 def profile(engine="llama-server", **options):
     value = ModelProfile(name="Local", alias="local", kind="llm", model_ref="llms/a",
-        capabilities={"vision": True, "streaming": True}, source={"type": "local", "execution_options":
+        request_options={"streaming": True}, source={"type": "local", "execution_options":
             {"device": "cpu", **options}})
     # Image preprocessing tests start after the directory-resolution boundary.
     value._directory = DirectoryInformation(kind='llm', model_ref='llms/a', engine=engine,
@@ -125,14 +125,14 @@ def test_gguf_projector_cannot_be_supplied_as_an_execution_option(reference):
 def test_projector_presence_identity_and_inventory(tmp_path):
     with pytest.raises(ValidationError):
         profile(mmproj_ref=None)
-    assert profile("transformers").capabilities.vision
+    assert not profile("transformers").request_options.skip_vision_capability_check
     directory = write_local_model(tmp_path, 'llms/a', 'llama-server')
     (directory / 'mmproj-F16.gguf').write_bytes(b'fixture')
     service = manager(tmp_path)
     original = profile()
     assert service.execution_key(original) == service.execution_key(profile())
-    text_only = ModelProfile(**{**original.model_dump(), 'capabilities': {'vision': False}})
-    assert service.execution_key(original) != service.execution_key(text_only)
+    text_only = ModelProfile(**{**original.model_dump(), 'request_options': {'skip_vision_capability_check': True}})
+    assert service.execution_key(original) == service.execution_key(text_only)
     assert service.execution_key(original) != service.execution_key(profile(device="cuda"))
     (directory / 'mmproj-Q8.gguf').write_bytes(b'fixture')
     items = inventory(tmp_path, "llm")
@@ -196,26 +196,23 @@ def test_budgeting_and_attachment_switch_happen_before_reading_images(tmp_path, 
     monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path))
     saved = save_attachment_from_upload("picture.png", "image/png", image_bytes())
     store = MessageStore()
-    first = store.add_message("s", "user", "", metadata={"attachments": [saved]})
+    first = store.add_message("s", "user", "describe picture", metadata={"attachments": [saved]})
     builder = ContextBuilder(store)
     selected = builder.build("s", "again", ContextPolicy(mode="selected_message", max_chars=200), source_message_id=first.message_id)
-    resolved = asyncio.run(resolve_context_images(selected.messages, vision=True, max_image_bytes=10000))
+    resolved = asyncio.run(resolve_context_images(selected.messages, max_image_bytes=10000))
     assert resolved[0]["content"][-1]["image_url"]["url"].startswith("data:image/png;base64,")
     path = resolve_attachment_uri(saved["uri"])
     path.unlink()
     # Neither a character-pruned image nor excluded attachments should be opened.
     for policy in (ContextPolicy(mode="session", max_chars=5), ContextPolicy(mode="session", include_attachments="none")):
         messages = builder.build("s", "again", policy).messages
-        assert asyncio.run(resolve_context_images(messages, vision=False, max_image_bytes=10000)) == messages
+        assert asyncio.run(resolve_context_images(messages, max_image_bytes=10000)) == messages
     with pytest.raises(ModelError) as error:
-        asyncio.run(resolve_context_images(selected.messages, vision=True, max_image_bytes=10000))
+        asyncio.run(resolve_context_images(selected.messages, max_image_bytes=10000))
     assert error.value.code == "ATTACHMENT_NOT_FOUND"
-    with pytest.raises(ModelError) as error:
-        asyncio.run(resolve_context_images(selected.messages, vision=False, max_image_bytes=10000))
-    assert error.value.code == "UNSUPPORTED_CAPABILITY"
     invalid = [{"role": "user", "content": [{"type": "attachment_image", "attachment_id": "../../secret.png"}]}]
     with pytest.raises(ModelError) as error:
-        asyncio.run(resolve_context_images(invalid, vision=True, max_image_bytes=10000))
+        asyncio.run(resolve_context_images(invalid, max_image_bytes=10000))
     assert error.value.code == "INVALID_IMAGE"
 
 
@@ -248,7 +245,7 @@ def test_images_survive_approval_history_retry_edit_and_cleanup(tmp_path, monkey
     note.write_text("fixture", encoding="utf-8")
     app = create_app(root=tmp_path, use_memory=memory, database_url=f"sqlite:///{tmp_path / 'test.db'}", adapter_factory=upstream.factory)
     with TestClient(app) as client:
-        configure_model(client, capabilities={"vision": True, "tools": True, "streaming": True})
+        configure_model(client, request_options={"streaming": True})
         ok(client.patch("/api/settings/general", json={"auto_generate_session_titles": False}))
         attachment = ok(client.post("/api/attachments", files={"file": ("picture.png", image_bytes(), "image/png")}))
         session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["read_file"]}))
@@ -284,7 +281,7 @@ def test_provider_retains_remote_images_and_detail_options(tmp_path):
     upstream = ToolOpenAI()
     app = create_app(root=tmp_path, use_memory=True, adapter_factory=upstream.factory)
     with TestClient(app, client=("127.0.0.1", 50000)) as client:
-        configure_model(client, capabilities={"vision": True})
+        configure_model(client, request_options={"streaming": False})
         ok(client.patch("/api/models/settings", json={"external_enabled": True, "external_api_key": "test-key"}))
         image = {"type": "image_url", "image_url": {"url": "https://example.test/image.webp", "detail": "high"}}
         response = client.post("/v1/chat/completions", headers={"Authorization": "Bearer test-key"}, json=request(image).model_dump(exclude_none=True))

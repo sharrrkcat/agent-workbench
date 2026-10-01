@@ -63,7 +63,7 @@ def check_statistics(body, *, streaming, engine_name):
 async def validate_device(state, client, model_ref, device, engine_name, vision=False):
     manager = state.model_manager
     options = {"device": device}
-    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, capabilities={'streaming': True, 'tools': not vision, 'vision': vision}, parameters={'temperature': 0, 'max_tokens': 256 if vision else 192}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
+    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, request_options={"streaming": True}, parameters={'temperature': 0, 'max_tokens': 256 if vision else 192}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
     manager.settings.patch({"utility_model_profile_id": profile.id})
     loaded = await manager.load(profile.id)
     profile = manager.profile(profile.id)

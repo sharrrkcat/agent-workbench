@@ -32,7 +32,7 @@ def main() -> None:
         app = create_app(root=root, use_memory=True, adapter_factory=upstream.factory,
                          frontend_dist=repository / "frontend/dist")
         client = TestClient(app)
-        configure_model(client, alias="chat-model", capabilities={"streaming": True, "tools": True})
+        configure_model(client, alias="chat-model", request_options={"streaming": True})
         configure_model(client, kind="embedding", alias="embedding-model", parameters={"dimensions": 2})
         client.patch("/api/models/settings", json={"external_api_key": "browser-test-key", "external_enabled": True}).raise_for_status()
         client.patch("/api/settings/general", json={"auto_generate_session_titles": False}).raise_for_status()

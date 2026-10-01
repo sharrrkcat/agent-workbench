@@ -58,7 +58,7 @@ async def smoke(root: Path, model_ref: str | None, install_only: bool = False):
                 raise RuntimeError("Local runtime installation failed")
             return
         supervisor.assert_available()
-        profile = manager.profiles.create(ModelProfile(name='CUDA smoke', alias='cuda-smoke', kind='llm', model_ref=model_ref, capabilities={'streaming': True}, source={'type': 'local', 'execution_options': {'gpu_layers': 'auto', 'context_size': 4096}}))
+        profile = manager.profiles.create(ModelProfile(name='CUDA smoke', alias='cuda-smoke', kind='llm', model_ref=model_ref, request_options={"streaming": True}, source={'type': 'local', 'execution_options': {'gpu_layers': 'auto', 'context_size': 4096}}))
         loaded = await manager.load(profile.id)
         assert loaded.state == "ready" and loaded.runtime.gpu_layers_loaded > 0
         print(json.dumps({"loaded": loaded.model_dump(mode="json")}), flush=True)

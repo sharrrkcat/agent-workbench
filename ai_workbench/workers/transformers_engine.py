@@ -174,8 +174,8 @@ class TransformersEngine:
                              "dtype": str(resident.model.dtype), "vision": vision,
                              "tool_calls": bool(template and template.get("fields", {}).get("tool_calls"))}
 
-    async def chat(self, body, request_id):
-        if (body.get("tools") or any(message.get("tool_calls") or message["role"] == "tool" for message in body["messages"])) and not self.metadata["tool_calls"]:
+    async def chat(self, body, request_id, *, skip_tool_check=False):
+        if not skip_tool_check and (body.get("tools") or any(message.get("tool_calls") or message["role"] == "tool" for message in body["messages"])) and not self.metadata["tool_calls"]:
             raise WorkerError("UNSUPPORTED_CAPABILITY")
         stops = body.get("stop") or []
         handler = self.handler_type(self.manager, self.generation, [stops] if isinstance(stops, str) else stops)

@@ -459,8 +459,8 @@ def test_managed_llama_aliases_share_state_and_forward_openai_model_id(tmp_path,
         monkeypatch.setattr(LlamaServerAdapter, "_start", start)
         profiles = ModelProfileStore()
         manager = ModelManager(profiles, ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=service)
-        first = profiles.create(ModelProfile(name='first', alias='first', kind='llm', model_ref='llms/fixture', capabilities={'streaming': True}, parameters={'temperature': 0.4}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
-        alias = profiles.create(ModelProfile(name='alias', alias='alias', kind='llm', model_ref=first.model_ref, capabilities={'streaming': True}, source={'type': 'local', 'execution_options': first.source.execution_options}))
+        first = profiles.create(ModelProfile(name='first', alias='first', kind='llm', model_ref='llms/fixture', request_options={"streaming": True}, parameters={'temperature': 0.4}, source={'type': 'local', 'execution_options': {'device': 'cpu'}}))
+        alias = profiles.create(ModelProfile(name='alias', alias='alias', kind='llm', model_ref=first.model_ref, request_options={"streaming": True}, source={'type': 'local', 'execution_options': first.source.execution_options}))
         bad = alias.model_copy(update={"source": alias.source.model_copy(update={"execution_options": {**alias.source.execution_options, "threads": 8}})})
         with pytest.raises(ModelError, match="identical execution options"):
             manager.validate_binding(bad)

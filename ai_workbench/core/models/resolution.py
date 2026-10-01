@@ -31,8 +31,6 @@ def configure_profile(profile):
         if profile.kind == "tts":
             profile.parameters = TTS_SCHEMAS[engine].model_validate(profile.parameters).model_dump()
         if engine == "transformers":
-            if profile.capabilities.json_object or profile.capabilities.json_schema:
-                raise ValueError("Transformers does not support structured JSON output")
             if any(profile.parameters.get(key, 0) != 0 for key in ("presence_penalty", "frequency_penalty")):
                 raise ValueError("Transformers does not support nonzero presence or frequency penalties")
     except (ValidationError, ValueError) as exc:
@@ -49,5 +47,3 @@ def require_directory(profile):
     except WorkerError as exc:
         message = next(item["message"] for item in info.diagnostics if item["blocking"])
         raise ModelError(exc.code, message, exc.status) from exc
-    if info.engine == "llama-server" and profile.capabilities.vision and info.mmproj_ref is None:
-        raise ModelError("UNSUPPORTED_CAPABILITY", "Vision requires one mmproj GGUF in the selected directory.", 422)

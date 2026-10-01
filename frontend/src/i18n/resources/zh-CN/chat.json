@@ -9,5 +9,10 @@
   "addPhotosFiles": "添加照片与文件",
   "userMessageNavigation": "用户消息导航",
   "userMessageNumber": "第 {{number}} 条消息",
-  "jumpToUserMessage": "跳转到第 {{number}} 条消息：{{summary}}"
+  "jumpToUserMessage": "跳转到第 {{number}} 条消息：{{summary}}",
+  "requestWarnings": {
+    "images_ignored": "该模型不支持图片，本次请求中的图片已忽略。",
+    "images_require_text": "该模型不支持图片，请补充文字或切换模型。",
+    "tools_ignored": "该模型不支持工具调用，本次已按普通聊天处理。"
+  }
 }

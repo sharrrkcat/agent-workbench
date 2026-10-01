@@ -31,7 +31,7 @@ class _Store(Generic[T]):
             options, lifecycle = data.pop("execution_options_json"), data.pop("lifecycle_json")
             data["source"] = ({"type": "local", "execution_options": json.loads(options), "lifecycle": json.loads(lifecycle)}
                 if source_type == "local" else {"type": source_type, "provider_profile_id": provider_id} if source_type else None)
-        for key in ("capabilities", "parameters", "connection"):
+        for key in ("request_options", "parameters", "connection"):
             if key + "_json" in data:
                 raw = data.pop(key + "_json")
                 data[key] = json.loads(raw) if raw is not None else None
@@ -46,7 +46,7 @@ class _Store(Generic[T]):
                 provider_profile_id=source["provider_profile_id"] if source and not local else None,
                 execution_options_json=json.dumps(source["execution_options"]) if local else None,
                 lifecycle_json=json.dumps(source["lifecycle"]) if local else None)
-        for key in ("capabilities", "parameters", "connection"):
+        for key in ("request_options", "parameters", "connection"):
             if key in data:
                 value = data.pop(key)
                 data[key + "_json"] = json.dumps(value) if value is not None else None

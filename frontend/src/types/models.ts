@@ -98,12 +98,10 @@ export type PresetVoice = {
   id: string; model: string; source: 'preset'; language: string; expires_at: null; available: boolean;
 };
 
-export type ModelCapabilities = {
+export type ChatRequestOptions = {
   streaming: boolean;
-  tools: boolean;
-  vision: boolean;
-  json_object: boolean;
-  json_schema: boolean;
+  skip_tool_capability_check: boolean;
+  skip_vision_capability_check: boolean;
 };
 
 export type LocalModelSource = {
@@ -121,7 +119,7 @@ export type ModelInput = {
   model_ref: string;
   enabled: boolean;
   external_enabled: boolean;
-  capabilities: ModelCapabilities;
+  request_options: ChatRequestOptions | null;
   parameters: Record<string, unknown>;
 };
 

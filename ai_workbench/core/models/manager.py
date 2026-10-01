@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.chat_support import local_chat_support, require_chat_support
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.images import prepare_image_embedding_inputs, prepare_local_images, prepare_tagging_images, validate_local_image_options
@@ -145,7 +146,7 @@ class ModelManager:
         if engine == "transformers":
             key += (json.dumps(options, sort_keys=True, separators=(",", ":")),)
         if engine == "llama-server":
-            projector = profile._directory.mmproj_ref if profile.capabilities.vision else None
+            projector = profile._directory.mmproj_ref
             key += (os.path.normcase(str(model_path(self.runtime_supervisor.root, projector))) if projector else None,)
         return key
 
@@ -204,7 +205,7 @@ class ModelManager:
                     elif engine == "llama-server":
                         if not all(model_path(self.runtime_supervisor.root, ref).is_file() for ref in profile._directory.model_files):
                             raise ValueError()
-                        projector = profile._directory.mmproj_ref if profile.capabilities.vision else None
+                        projector = profile._directory.mmproj_ref
                         if projector and not model_path(self.runtime_supervisor.root, projector).is_file():
                             raise ValueError()
                     elif engine in {"chatterbox", "qwen3tts"}:
@@ -415,7 +416,7 @@ class ModelManager:
                         elif local and not siglip and release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
                             await self._release_policy(profile, slot.adapter)
             except ModelError as exc:
-                if (local and not siglip and exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}) or (
+                if (local and not siglip and exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "UNSUPPORTED_CAPABILITY", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}) or (
                     not local and executing and exc.code in {"MODEL_TIMEOUT", "MODEL_UNAVAILABLE", "PROVIDER_ERROR", "PROVIDER_PROTOCOL_ERROR", "MODEL_REFUSAL", "EMBEDDING_DIMENSION_MISMATCH"}
                 ):
                     self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
@@ -537,18 +538,45 @@ class ModelManager:
         async with self._execution_lease(("provider", provider_id)) as slot:
             return await slot.adapter.models()
 
+    @asynccontextmanager
+    async def check_chat_inputs(self, profile, *, tools: bool, vision: bool, metrics=None):
+        """Use ordinary autoload once when a requested feature needs resident metadata."""
+        options = profile.request_options
+        needs_worker = is_transformers(profile) and (
+            tools and not options.skip_tool_capability_check or vision and not options.skip_vision_capability_check)
+        if not needs_worker:
+            yield local_chat_support(profile)
+            return
+        async with self._lease(profile, release=False, metrics=metrics) as adapter:
+            support = local_chat_support(profile, adapter)
+        try:
+            yield support
+        finally:
+            # A rejected image-only input still observes the configured release policy.
+            # Do not reload a process already released by inference or cancellation.
+            if not self._closed and self._statuses.get(self._key(profile), ModelStatus()).residency == "loaded":
+                async with self._lease(profile, autoload=False, require_runtime=False):
+                    pass
+
     async def prepare_chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None) -> AsyncIterator[ChatChunk]:
         """Resolve source admission and local startup before SSE headers."""
         collect_usage = metrics is not None
         metrics = metrics or LLMCallMetrics()
-        metrics.start()
+        if metrics.started_at is None:
+            metrics.start()
         try:
             profile = self.profile(profile_id, "llm")
-            if isinstance(profile.source, LocalSource):
+            if isinstance(profile.source, LocalSource) and metrics.load_ms is None:
                 metrics.load_ms = 0.0
             request = await self._prepare_chat(profile, self._usage_request(request, collect_usage))
             if isinstance(profile.source, LocalSource):
                 await self.load(profile_id, metrics=metrics)
+                try:
+                    self.validate_chat(profile, request)
+                except ModelError:
+                    async with self._lease(profile, autoload=False, require_runtime=False):
+                        pass
+                    raise
             elif profile.source is None:
                 raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
             else:
@@ -565,16 +593,16 @@ class ModelManager:
             or request.tool_choice not in (None, "auto") or request.parallel_tool_calls is not None
         ):
             raise ModelError("UNSUPPORTED_CAPABILITY", "Transformers does not support penalties or explicit tool-call controls.", 422)
-        caps = profile.capabilities
-        required = {"streaming": request.stream,
-                    "tools": bool(request.tools or any(m.tool_calls or m.role == "tool" for m in request.messages)),
-                    "vision": any(isinstance(m.content, list) and any(isinstance(p, ImagePart) for p in m.content) for m in request.messages)}
-        if request.response_format and request.response_format.type != "text":
-            required[request.response_format.type] = True
-        for capability, needed in required.items():
-            if needed and not getattr(caps, capability):
-                raise ModelError("UNSUPPORTED_CAPABILITY", f"Model profile does not support {capability}.", 422)
+        if request.stream and not profile.request_options.streaming:
+            raise ModelError("UNSUPPORTED_CAPABILITY", "Streaming is disabled for this model profile.", 422)
+        if is_transformers(profile) and request.response_format and request.response_format.type != "text":
+            raise ModelError("UNSUPPORTED_CAPABILITY", "Transformers does not support structured JSON output.", 422)
         if isinstance(profile.source, LocalSource):
+            slot = self._slots.get(self.execution_key(profile))
+            adapter = slot.adapter if slot and self._statuses.get(self._key(profile), ModelStatus()).state == "ready" else None
+            require_chat_support(profile, local_chat_support(profile, adapter),
+                tools=bool(request.tools or any(m.tool_calls or m.role == "tool" for m in request.messages)),
+                vision=any(isinstance(m.content, list) and any(isinstance(p, ImagePart) for p in m.content) for m in request.messages))
             validate_local_image_options(request)
 
     async def _prepare_chat(self, profile, request):
@@ -592,16 +620,18 @@ class ModelManager:
 
     async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None):
         metrics = metrics or LLMCallMetrics()
-        metrics.start()
+        if metrics.started_at is None:
+            metrics.start()
         try:
             profile = self.profile(profile_id, "llm")
             if request.stream:
                 raise ModelError("INVALID_REQUEST", "Use chat_stream for a streaming request.")
-            if isinstance(profile.source, LocalSource):
+            if isinstance(profile.source, LocalSource) and metrics.load_ms is None:
                 metrics.load_ms = 0.0
             request = await self._prepare_chat(profile, request)
             async with self._lease(profile, metrics=metrics) as adapter:
                 try:
+                    self.validate_chat(profile, request)
                     result = await adapter.chat(profile, request)
                     metrics.observe_result(result)
                     return result
@@ -613,12 +643,13 @@ class ModelManager:
     async def chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None) -> AsyncIterator[ChatChunk]:
         collect_usage = metrics is not None
         metrics = metrics or LLMCallMetrics()
-        metrics.start()
+        if metrics.started_at is None:
+            metrics.start()
         try:
             profile = self.profile(profile_id, "llm")
             if not request.stream:
                 raise ModelError("INVALID_REQUEST", "chat_stream requires stream=true.")
-            if isinstance(profile.source, LocalSource):
+            if isinstance(profile.source, LocalSource) and metrics.load_ms is None:
                 metrics.load_ms = 0.0
             request = await self._prepare_chat(profile, self._usage_request(request, collect_usage))
             async with aclosing(self._chat_stream(profile, request, metrics)) as stream:
@@ -631,6 +662,7 @@ class ModelManager:
         try:
             async with self._lease(profile, metrics=metrics) as adapter:
                 try:
+                    self.validate_chat(profile, request)
                     async with aclosing(adapter.chat_stream(profile, request)) as stream:
                         async for chunk in stream:
                             metrics.observe(chunk)

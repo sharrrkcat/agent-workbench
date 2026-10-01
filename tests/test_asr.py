@@ -23,6 +23,7 @@ from ai_workbench.workers import asr_engine
 from ai_workbench.workers.asr_catalog import input_path, load_configuration
 from ai_workbench.workers.asr_server import ASRWorker
 from ai_workbench.workers.common import WorkerError
+from tests.migration_fixtures import insert_pre_request_options_model, model_row
 from tests.asr_fixtures import OPTIONS, PARAMETERS, REF, model_tree, profile, write_json
 
 
@@ -228,7 +229,7 @@ def test_migration_extends_constraints_preserving_profiles_and_data(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     migrations.upgrade(engine, migrations.RERANKER_REVISION)
     store = ModelProfileStore(engine)
-    saved = store.create(profile(kind="llm", source=None, parameters={}))
+    saved = insert_pre_request_options_model(engine, profile(kind="llm", source=None, parameters={}))
     with engine.begin() as connection:
         before = list(connection.execute(text("SELECT * FROM model_profiles")).mappings())
     sentinels = [tmp_path / (folder + "/sentinel") for folder in ("data/models", "data/attachments", "data/runtimes")]
@@ -238,8 +239,8 @@ def test_migration_extends_constraints_preserving_profiles_and_data(tmp_path):
     migrations.upgrade(engine, migrations.ASR_REVISION)
     with engine.begin() as connection:
         assert list(connection.execute(text("SELECT * FROM model_profiles")).mappings()) == before
-    assert store.get(saved.id).source is None and migrations.current_revision(engine) == migrations.ASR_REVISION
-    created = store.create(profile(alias="new-asr"))
+    assert model_row(engine, saved.id)["source_type"] is None and migrations.current_revision(engine) == migrations.ASR_REVISION
+    created = insert_pre_request_options_model(engine, profile(alias="new-asr"))
     with pytest.raises(IntegrityError), engine.begin() as connection:
         connection.execute(text("UPDATE model_profiles SET kind='invalid' WHERE id=:id"), {"id": created.id})
     with pytest.raises(IntegrityError), engine.begin() as connection:

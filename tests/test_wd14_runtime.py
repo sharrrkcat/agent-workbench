@@ -20,6 +20,7 @@ from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileSto
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import AppMetadataRecord, RuntimeInstallationRecord
+from tests.migration_fixtures import insert_pre_request_options_model, model_row
 from tests.test_phase2b_runtime import FAKE_ENGINE, installed_worker
 from tests.test_wd14 import DEFAULTS, data_url, model_tree, profile
 
@@ -213,8 +214,8 @@ def test_revision_deletes_only_old_vision_drafts_and_preserves_other_rows_and_fi
         migrations.upgrade(engine, migrations.PROVIDER_RUNTIME_REVISION)
         providers, profiles = ProviderProfileStore(engine), ModelProfileStore(engine)
         provider = providers.create(ProviderProfile(name="Provider", connection={"base_url": "https://provider.test/v1"}))
-        profiles.create(ModelProfile(name="LLM", alias="llm", kind="llm", model_ref="remote", source={"type": "provider", "provider_profile_id": provider.id}))
-        profiles.create(ModelProfile(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", source={"type": "local"}))
+        insert_pre_request_options_model(engine, ModelProfile(name="LLM", alias="llm", kind="llm", model_ref="remote", source={"type": "provider", "provider_profile_id": provider.id}))
+        insert_pre_request_options_model(engine, ModelProfile(name="Kokoro", alias="kokoro", kind="tts", model_ref="tts/kokoro", source={"type": "local"}))
         with engine.begin() as db:
             db.execute(text("""INSERT INTO model_profiles
                 (id,alias,name,kind,model_ref,capabilities_json,parameters_json,enabled,external_enabled,created_at,updated_at)
@@ -242,12 +243,14 @@ def test_revision_deletes_only_old_vision_drafts_and_preserves_other_rows_and_fi
         migrations.upgrade(engine, migrations.WD14_REVISION)
         migrations.upgrade(engine, migrations.WD14_REVISION)
         assert migrations.current_revision(engine) == migrations.WD14_REVISION
-        assert rows() == before and not profiles.list("vision")
+        assert rows() == before
+        with engine.connect() as db:
+            assert db.execute(text("SELECT COUNT(*) FROM model_profiles WHERE kind='vision'")).scalar_one() == 0
         assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files} == contents
-        created = profiles.create(profile())
-        saved = profiles.get(created.id).model_dump()
+        created = insert_pre_request_options_model(engine, profile())
+        saved = model_row(engine, created.id)
         migrations.upgrade(engine, migrations.WD14_REVISION)
-        assert profiles.get(created.id).model_dump() == saved
+        assert model_row(engine, created.id) == saved
         with engine.begin() as db, pytest.raises(IntegrityError):
             db.execute(text("UPDATE model_profiles SET source_type='provider', provider_profile_id=:provider, execution_options_json=NULL, lifecycle_json=NULL WHERE id=:id"),
                        {"provider": provider.id, "id": created.id})

@@ -101,9 +101,10 @@ def message_text(message: Any, *, include_attachments: bool = True) -> str:
     if include_attachments and isinstance(attachments,list):
         for item in attachments:
             if not isinstance(item,dict): continue
+            if item.get("type") == "image": continue
             context_text=item.get("context_text") or item.get("text")
             if context_text: rendered.append(f"[Attachment: {item.get('name') or item.get('id') or 'file'}]\n{context_text}")
-            elif item.get("type") in {"image","file"}: rendered.append(f"[{item.get('type')} attachment: {item.get('name') or item.get('id') or ''}]")
+            elif item.get("type") == "file": rendered.append(f"[file attachment: {item.get('name') or item.get('id') or ''}]")
     return "\n\n".join(part for part in rendered if part)
 
 
@@ -111,12 +112,13 @@ def _project(message: Any, *, include_attachments: bool = True) -> ContextMessag
     role=getattr(message,"role","")
     if role not in {"system","user","assistant","tool"}: return None
     text=message_text(message, include_attachments=include_attachments)
-    if not text and role!="system": return None
+    images = _image_refs(message) if include_attachments else []
+    if not text and not images and role!="system": return None
     # A selected/truncated history may omit a call's partner. Historical tool
     # parts are quoted user data; only the live harness transcript uses native
     # assistant/tool protocol pairs. This also supports ordinary chat models.
     return {"role":"user" if role == "tool" else role,
-            "content": _content(text, _image_refs(message) if include_attachments else [])}
+            "content": _content(text, images)}
 
 
 def _eligible(message: Any) -> bool:

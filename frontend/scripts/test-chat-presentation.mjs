@@ -136,7 +136,7 @@ store.getState().setSettings({ show_full_processing: true });
 assert.equal(store.getState().settings.show_full_processing, true);
 
 const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale,
-  Object.fromEntries(['runs', 'personas'].map((namespace) => [namespace,
+  Object.fromEntries(['runs', 'personas', 'chat'].map((namespace) => [namespace,
     JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'))])),
 ]));
 const i18n = i18next.createInstance();
@@ -205,6 +205,14 @@ for (const locale of ['en', 'zh-CN']) {
   assert.match(imageHtml, /attachments\/aaaa.png/);
   assert.equal((imageHtml.match(/<img /g) || []).length, 1);
   assert.doesNotMatch(imageHtml, /base64/);
+  const warned = { ...imageOnly, metadata: { ...imageOnly.metadata,
+    request_warnings: { run_id: 'r', codes: ['images_ignored', 'tools_ignored'] } } };
+  const warningHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: warned }));
+  assert.equal((warningHtml.match(/class="message-request-warning"/g) || []).length, 2);
+  for (const code of warned.metadata.request_warnings.codes)
+    assert.ok(warningHtml.includes(i18n.t(`chat:requestWarnings.${code}`)));
+  assert.ok(warningHtml.indexOf('message-request-warning') > warningHtml.indexOf('data-slot="bubble-content"'));
+  assert.equal(contextMessageLabel(warned), contextMessageLabel(imageOnly));
   const oversized = { ...failedEmpty, error_code: 'REQUEST_TOO_LARGE', error: 'Local chat request is too large.' };
   assert.ok(render(buildReply(oversized, [], []), false).includes(i18n.t('personas:imageErrors.tooLarge')));
 }

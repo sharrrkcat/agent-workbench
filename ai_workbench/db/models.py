@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint, String
+from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint, String, Text
 from sqlmodel import Field, SQLModel
 
 from ai_workbench.core.time import utc_now
@@ -184,7 +184,6 @@ class ModelProfileRecord(SQLModel, table=True):
     source_type: Optional[str] = None
     provider_profile_id: Optional[str] = Field(default=None, foreign_key="provider_profiles.id", index=True)
     model_ref: str
-    capabilities_json: str = "{}"
     parameters_json: str = "{}"
     lifecycle_json: Optional[str] = None
     execution_options_json: Optional[str] = None
@@ -192,6 +191,7 @@ class ModelProfileRecord(SQLModel, table=True):
     external_enabled: bool = False
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    request_options_json: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
 
 
 class AppMetadataRecord(SQLModel, table=True):

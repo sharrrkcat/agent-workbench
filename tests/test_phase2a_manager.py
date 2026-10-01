@@ -74,7 +74,7 @@ def manager_fixture(*, queue_size=1, timeout=1):
     profiles = ModelProfileStore()
     providers = ProviderProfileStore()
     provider = providers.create(ProviderProfile(name='test', connection={'base_url': 'http://test/v1', 'queue_size': queue_size, 'queue_timeout_seconds': timeout}))
-    profile = profiles.create(ModelProfile(name="chat", alias="chat", kind="llm", model_ref="weights", capabilities={"streaming": True}, source={'type': 'provider', 'provider_profile_id': provider.id}))
+    profile = profiles.create(ModelProfile(name="chat", alias="chat", kind="llm", model_ref="weights", request_options={"streaming": True}, source={'type': 'provider', 'provider_profile_id': provider.id}))
     adapter = ControlledAdapter()
     manager = ModelManager(profiles, providers, ModelSettingsStore(), adapter_factory=lambda _: adapter)
     return manager, profile, adapter
@@ -88,7 +88,7 @@ def local_manager_fixture(tmp_path, lifecycle):
         assert_available=Mock(), installation=lambda **_: Installation(version='fixture', state='installed'))
     manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
     profile = manager.profiles.create(ModelProfile(name='chat', alias='chat', kind='llm', model_ref='llms/fixture',
-        source={'type': 'local', 'lifecycle': lifecycle}, capabilities={'streaming': True}))
+        source={'type': 'local', 'lifecycle': lifecycle}, request_options={"streaming": True}))
     adapter = ControlledLocalAdapter()
     manager._slots[manager.execution_key(profile)] = InferenceSlot(adapter, asyncio.Semaphore(1))
     return manager, profile, adapter

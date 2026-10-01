@@ -325,7 +325,7 @@ for (const locale of ['en', 'zh-CN']) {
       test('session drafts, IME, attachment preview and collapsed approvals', async ({ page, request }) => {
         const session = await (await request.post('/__test__/session', { data: {} })).json();
         await request.patch(`/api/models/profiles/${session.model_profile_id}`, {
-          data: { capabilities: { streaming: true, tools: true, vision: true } },
+          data: { request_options: {"streaming": true} },
         });
         await page.goto('/');
         await page.getByRole('button', { name: personas.sessionSettings, exact: true }).click();

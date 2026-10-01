@@ -41,7 +41,7 @@ def test_inference_responses_match_contract_and_preserve_optional_fields(tmp_pat
     upstream = MockOpenAI()
     with TestClient(create_app(use_memory=True, root=tmp_path, adapter_factory=upstream.factory),
                     client=("127.0.0.1", 40000)) as client:
-        configure_model(client, capabilities={"tools": True, "streaming": True})
+        configure_model(client, request_options={"streaming": True})
         client.patch("/api/models/settings", json={"external_enabled": True, "external_api_key": "test-key"})
         headers = {"Authorization": "Bearer test-key"}
         document = client.get("/openapi.json").json()

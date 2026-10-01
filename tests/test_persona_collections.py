@@ -18,6 +18,7 @@ from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import AppMetadataRecord, KnowledgeBaseRecord, MessageRecord, RunRecord, RuntimeInstallationRecord, WorldbookRecord
 from ai_workbench.db.stores import SqlAppSettingsStore
+from tests.migration_fixtures import insert_pre_request_options_model, model_row
 from tests.model_fixtures import MockOpenAI, configure_model
 
 
@@ -216,7 +217,7 @@ def test_deleted_historical_agent_blocks_retry_before_pruning(client_pair):
 def test_persona_revision_resets_only_affected_state_and_keeps_files(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'upgrade.db'}")
     migrations.upgrade(engine, migrations.DIRECTORY_MODELS_REVISION)
-    profile = ModelProfileStore(engine).create(ModelProfile(name="Keep model", alias="keep", kind="embedding", model_ref="manual"))
+    profile = insert_pre_request_options_model(engine, ModelProfile(name="Keep model", alias="keep", kind="embedding", model_ref="manual"))
     old_persona = "00000000-0000-4000-8000-000000000001"
     with engine.begin() as db:
         db.execute(text("""INSERT INTO sessionrecord

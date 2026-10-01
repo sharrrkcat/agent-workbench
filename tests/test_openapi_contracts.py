@@ -219,7 +219,7 @@ def test_message_parts_preserve_omitted_fields_json_values_and_microseconds(api)
 
 def test_chat_event_variants_and_private_state(api):
     client, upstream = api
-    configure_model(client, capabilities={"streaming": True})
+    configure_model(client, request_options={"streaming": True})
     client.patch("/api/settings/general", json={"persist_streaming_message_deltas": True})
     session_id = client.post("/api/sessions", json={}).json()["session_id"]
     reply = client.post(f"/api/sessions/{session_id}/messages", json={"content": "Hello"}).json()

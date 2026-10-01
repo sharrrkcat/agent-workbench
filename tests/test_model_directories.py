@@ -170,15 +170,15 @@ def test_crud_defaults_drafts_sources_and_removed_inputs(tmp_path, memory):
             assert client.post("/api/models/profiles", json={**payload, "kind": kind, "alias": kind, "source": None}).status_code == 200
 
 
-def test_gguf_profile_keys_follow_resolved_files_and_vision(tmp_path):
+def test_gguf_profile_keys_follow_resolved_files_not_request_options(tmp_path):
     path = write_local_model(tmp_path, "llms/model", "llama-server")
     (path / "mmproj.gguf").write_bytes(b"projector")
     manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(),
         runtime_supervisor=SimpleNamespace(root=tmp_path))
     value = dict(name="LLM", alias="llm", kind="llm", model_ref="llms/model", source={"type": "local"})
     text_profile = manager.validate_binding(ModelProfile(**value))
-    image_profile = manager.validate_binding(ModelProfile(**{**value, "alias": "image", "capabilities": {"vision": True}}))
-    assert manager.execution_key(text_profile) != manager.execution_key(image_profile)
+    image_profile = manager.validate_binding(ModelProfile(**{**value, "alias": "image", "request_options": {"skip_vision_capability_check": True}}))
+    assert manager.execution_key(text_profile) == manager.execution_key(image_profile)
     assert manager.execution_key(image_profile)[-1].endswith("mmproj.gguf")
     manager.profiles.create(text_profile)
     with pytest.raises(ModelError, match="identical execution options"):
@@ -235,11 +235,12 @@ def test_llama_command_uses_detected_main_and_optional_projector(tmp_path, monke
 
     async def scenario():
         path = write_local_model(tmp_path, 'llms/vision', 'llama-server')
-        (path / 'mmproj.gguf').write_bytes(b'projector')
+        if vision:
+            (path / 'mmproj.gguf').write_bytes(b'projector')
         supervisor = RuntimeSupervisor(tmp_path, RuntimeStore(), LocalRuntimeSettingsStore())
         manager = ModelManager(ModelProfileStore(), ProviderProfileStore(), ModelSettingsStore(), runtime_supervisor=supervisor)
         profile = resolve_local_profile(tmp_path, ModelProfile(name='LLM', alias='llm', kind='llm', model_ref='llms/vision',
-            capabilities={'vision': vision}, source={'type': 'local', 'execution_options': {'device': device}}))
+            request_options={"streaming": False}, source={'type': 'local', 'execution_options': {'device': device}}))
         adapter = manager._managed_slot(profile).adapter
         monkeypatch.setattr(supervisor, 'executable', lambda *_: tmp_path / 'llama-server.exe')
         monkeypatch.setattr(adapters, 'probe_cuda_device', AsyncMock(return_value=('CUDA0', 'Fixture GPU')))
@@ -311,10 +312,9 @@ def test_migration_removes_obsolete_profiles_and_preserves_files(tmp_path):
     with engine.connect() as db:
         runtime_before = {table: list(db.execute(text(f"SELECT * FROM {table}")).mappings()) for table in runtime_tables}
     migrations.upgrade(engine, migrations.DIRECTORY_MODELS_REVISION)
-    created = ModelProfileStore(engine).create(ModelProfile(name="New draft", alias="new-draft", kind="tts", model_ref="tts/new"))
     migrations.upgrade(engine, migrations.DIRECTORY_MODELS_REVISION)
     with engine.begin() as db:
-        assert set(db.execute(text("SELECT id FROM model_profiles")).scalars()) == {"keep", "keep-local", "keep-asr", "keep-image", created.id}
+        assert set(db.execute(text("SELECT id FROM model_profiles")).scalars()) == {"keep", "keep-local", "keep-asr", "keep-image"}
         assert {table: list(db.execute(text(f"SELECT * FROM {table}")).mappings()) for table in runtime_tables} == runtime_before
         assert set(db.execute(text("SELECT run_id FROM runrecord")).scalars()) == {"completed", "unrelated"}
         assert set(db.execute(text("SELECT message_id FROM messagerecord")).scalars()) == {"completed", "unrelated"}

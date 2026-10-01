@@ -26,7 +26,7 @@ def presentation_client(tmp_path, request):
 
 
 def configure(client, *, harness=True, streaming=True):
-    configure_model(client, capabilities={"streaming": streaming, "tools": True})
+    configure_model(client, request_options={"streaming": streaming})
     return ok(client.post("/api/sessions", json={"harness_enabled": harness}))
 
 
@@ -231,7 +231,7 @@ def test_cancelled_stream_retains_received_content(tmp_path, use_memory, harness
                          use_memory=use_memory, adapter_factory=upstream.factory)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'p', 'connection': {'base_url': 'http://provider.test/v1'}}))
-            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "capabilities": {"tools": True, "streaming": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
+            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "request_options": {"streaming": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": harness}))
             task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "go"}))
             try:

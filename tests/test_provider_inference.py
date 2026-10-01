@@ -26,7 +26,7 @@ def make_manager(handler):
 def add_model(manager, provider, mode):
     return manager.profiles.create(ModelProfile(name=mode, alias=mode, kind='embedding' if mode == 'embedding' else 'llm',
         model_ref='manually-entered', source={'type': 'provider', 'provider_profile_id': provider.id},
-        capabilities={'streaming': mode == 'stream'}))
+        request_options={"streaming": mode == 'stream'} if mode != 'embedding' else None))
 
 
 async def infer(manager, profile, mode):
@@ -138,7 +138,7 @@ def test_public_inference_accepts_manual_ids_without_discovery(tmp_path, mode):
             adapter_factory=lambda connection: OpenAIAdapter(connection, transport=httpx.MockTransport(handle))),
             client=('127.0.0.1', 40001)) as client:
         profile = configure_model(client, kind='embedding' if mode == 'embedding' else 'llm',
-            model_ref='manual-id', capabilities={'streaming': True} if mode == 'stream' else {})
+            model_ref='manual-id', request_options=None if mode == 'embedding' else {"streaming": mode == 'stream'})
         client.patch('/api/models/settings', json={'external_enabled': True, 'external_api_key': 'test-key'})
         path = '/v1/embeddings' if mode == 'embedding' else '/v1/chat/completions'
         payload = {'input': ['hello']} if mode == 'embedding' else {

@@ -122,9 +122,9 @@ def test_persona_crud_selection_and_strict_schemas(chat_client):
 
 def test_model_generation_and_context_precedence(chat_client):
     client, upstream = chat_client
-    global_model = configure_model(client, alias="global", parameters={"temperature": 0.1}, capabilities={"tools": True})
-    selected_model = configure_model(client, alias="selected", model_ref="other", parameters={"temperature": 0.2, "top_p": 0.7}, capabilities={"tools": True})
-    override_model = configure_model(client, alias="override", model_ref="fake", parameters={"temperature": 0.3}, capabilities={"tools": True})
+    global_model = configure_model(client, alias="global", parameters={"temperature": 0.1}, request_options={"streaming": False})
+    selected_model = configure_model(client, alias="selected", model_ref="other", parameters={"temperature": 0.2, "top_p": 0.7}, request_options={"streaming": False})
+    override_model = configure_model(client, alias="override", model_ref="fake", parameters={"temperature": 0.3}, request_options={"streaming": False})
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": global_model["id"]}))
     role = persona(client)
     session = session_for(client, role["id"], model_profile_id=selected_model["id"], generation={"temperature": 0.6},
@@ -279,7 +279,7 @@ def test_disabled_or_wrong_kind_session_model_never_substitutes(chat_client):
 
 def test_explicit_approval_retains_saved_persona_configuration(chat_client):
     client, upstream = chat_client
-    configure_model(client, capabilities={"tools": True, "streaming": True})
+    configure_model(client, request_options={"streaming": True})
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "USER_BEFORE"}))
     role = persona(client, "Waiting persona")
     session = session_for(client, role['id'], context_policy={'mode': 'current_message'}, generation={'temperature': 0.25}, harness_enabled=True, tools_allowed=['read_file'])
@@ -309,7 +309,7 @@ def test_explicit_approval_retains_saved_persona_configuration(chat_client):
 
 def test_disabled_harness_never_authorizes_unexpected_tools(chat_client):
     client, upstream = chat_client
-    configure_model(client, capabilities={"streaming": True, "tools": True})
+    configure_model(client, request_options={"streaming": True})
     role = persona(client)
     session = session_for(client, role["id"], harness_enabled=False, tools_allowed=["read_file"])
     upstream.stream_events = [
@@ -351,7 +351,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
         app = create_app(root=tmp_path, use_memory=True, adapter_factory=upstream.factory)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}}))
-            model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "capabilities": {"streaming": True, "tools": True}, "parameters": {"temperature": 0.2}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
+            model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "request_options": {"streaming": True}, "parameters": {"temperature": 0.2}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             ok(await client.patch("/api/models/settings", json={"default_model_profile_id": model["id"]}))
             before = ok(await client.post("/api/personas", json={'collection': 'agent', 'name': 'Before', 'system_prompt': 'BEFORE_PROMPT'}))
             session = ok(await client.post("/api/sessions", json={'persona_id': before['id'], 'harness_enabled': True, 'tools_allowed': ['read_file']}))

@@ -112,7 +112,9 @@ export type Message = {
   parts: MessagePart[];
   run_id?: string | null;
   parent_message_id?: string | null;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    request_warnings?: { run_id: string; codes: Array<'images_ignored' | 'images_require_text' | 'tools_ignored'> };
+  };
   created_at: string;
   run?: Run;
 };

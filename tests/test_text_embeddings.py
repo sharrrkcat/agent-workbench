@@ -1,3 +1,4 @@
+from tests.migration_fixtures import insert_pre_request_options_model, model_row
 """Text embedding metadata and boundaries without installed inference dependencies."""
 import hashlib
 import json
@@ -260,8 +261,8 @@ def test_migration_preserves_rows_indexes_and_files(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     migrations.upgrade(engine, migrations.SIGLIP_REVISION)
     provider = ProviderProfileStore(engine).create(ProviderProfile(name="Provider", connection={"base_url": "https://provider.test/v1"}))
-    original = ModelProfileStore(engine).create(profile(source={"type": "provider", "provider_profile_id": provider.id}))
-    before = ModelProfileStore(engine).get(original.id).model_dump()
+    original = insert_pre_request_options_model(engine, profile(source={"type": "provider", "provider_profile_id": provider.id}))
+    before = original.model_dump()
     with engine.begin() as db:
         db.execute(text("INSERT INTO kb_embeddings (id, knowledge_base_id, source_id, chunk_id, embedding_model_profile_id, embedding_model_id_snapshot, embedding_dimension, embedding_normalize_snapshot, vector_blob, created_at) VALUES ('vector', 'base', 'source', 'chunk', :model, 'provider-model', 2, 1, :vector, '2026-09-24')"), {"model": original.id, "vector": b"preserved-vector"})
     paths = [tmp_path / name for name in ("data/models/sentinel", "data/attachments/sentinel", "data/runtimes/sentinel")]

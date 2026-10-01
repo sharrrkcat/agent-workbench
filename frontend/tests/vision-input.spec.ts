@@ -8,7 +8,7 @@ const file = (name: string) => ({ name, mimeType: 'image/png', buffer: png });
 async function configure(request: APIRequestContext) {
   const session = await (await request.post('/__test__/session', { data: {} })).json();
   expect((await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: {
-    capabilities: { vision: true, tools: true, streaming: true },
+    request_options: {"streaming": true },
   } })).ok()).toBeTruthy();
   expect((await request.patch(`/api/sessions/${session.session_id}`, { data: { harness_enabled: false } })).ok()).toBeTruthy();
   return session;
@@ -32,6 +32,32 @@ for (const locale of ['en', 'zh-CN']) {
       test.use({ viewport: { width, height: width === 390 ? 844 : 900 }, hasTouch: width === 390 });
       test.beforeEach(async ({ page }) => {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
+      });
+
+      test('unsupported image-only input retains its attachment and durable warning', async ({ page, request }, info) => {
+        const session = await configure(request);
+        const response = await request.post('/api/models/profiles', { data: {
+          name: 'Text only', alias: `no-image-${locale.toLowerCase()}-${width}`, kind: 'llm',
+          model_ref: 'llms/text-only', source: { type: 'local' },
+        } });
+        expect(response.ok()).toBeTruthy();
+        const model = await response.json();
+        await request.patch(`/api/sessions/${session.session_id}`, { data: { model_profile_id: model.id } });
+        const warning = JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/chat.json`, import.meta.url), 'utf8')).requestWarnings.images_require_text;
+        await page.goto('/');
+        await expect(page.locator('.composer').getByRole('button', { name: labels.attach, exact: true })).toBeEnabled();
+        await page.locator('.composer input[type=file]').setInputFiles(file('unsupported.png'));
+        await expect(page.locator('.upload-ready')).toHaveCount(1);
+        const send = page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true });
+        await expect(send).toBeEnabled();
+        await send.click();
+        await expect(page.locator('.message-request-warning')).toHaveText(warning);
+        await expect(page.locator('.message-row.user img')).toHaveCount(1);
+        await page.screenshot({ path: info.outputPath('image-warning.png') });
+        await page.reload();
+        await expect(page.locator('.message-request-warning')).toHaveText(warning);
+        await expect(page.locator('.message-row.user img')).toHaveCount(1);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
       });
 
       test('select, paste, drop, preview and image-only history', async ({ page, request }, info) => {
@@ -83,7 +109,7 @@ for (const locale of ['en', 'zh-CN']) {
         const session = await configure(request);
         const created = await request.post('/api/models/profiles', { data: {
           name: 'Request limit hint', alias: `limit-hint-${locale.toLowerCase()}-${width}`, kind: 'llm',
-          model_ref: 'llms/fixture', source: { type: 'local' }, capabilities: { vision: true },
+          model_ref: 'llms/fixture', source: { type: 'local' }, request_options: {"streaming": false},
         } });
         expect(created.ok()).toBeTruthy();
         const model = await created.json();
@@ -117,7 +143,7 @@ for (const locale of ['en', 'zh-CN']) {
         }
       });
 
-      test('directories detect projectors, retain Vision choices and allow ambiguous drafts', async ({ page, request }, info) => {
+      test('directories detect projectors without changing request controls', async ({ page, request }, info) => {
         await page.goto('/settings?tab=models&view=llm');
         await page.getByRole('button', { name: llm.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');
@@ -125,17 +151,18 @@ for (const locale of ['en', 'zh-CN']) {
         const reference = dialog.getByLabel(llm.modelRef, { exact: true });
         await reference.press('ArrowDown');
         await page.getByRole('option', { name: 'llms/fixture', exact: true }).click();
-        const vision = dialog.getByRole('switch', { name: llm.cap.vision, exact: true });
+        const vision = dialog.getByRole('switch', { name: llm.requestOptions.skip_vision_capability_check, exact: true });
         const details = dialog.getByRole('group', { name: llm.directory.information, exact: true });
         await expect(reference).toHaveValue('llms/fixture');
         await expect(details).toContainText('llms/fixture/model.gguf');
         await expect(details).toContainText('llms/fixture/mmproj-fixture.gguf');
-        await expect(vision).toBeChecked();
+        await expect(vision).not.toBeChecked();
+        await expect(dialog.getByRole('switch', { name: llm.requestOptions.streaming, exact: true })).toBeChecked();
         await expect(details.getByRole('combobox')).toHaveCount(0);
         await page.screenshot({ path: info.outputPath('projector.png') });
         const alias = `runtime-fixture-gguf-${locale.toLowerCase()}-${width}`;
         await dialog.getByLabel(llm.alias, { exact: true }).fill(alias);
-        await vision.uncheck();
+        await vision.check();
         await dialog.getByRole('button', { name: llm.save, exact: true }).click();
         await expect(dialog).toHaveCount(0);
         const saved = (await (await request.get('/api/models/profiles')).json()).find((profile: { alias: string }) => profile.alias === alias);
@@ -143,12 +170,12 @@ for (const locale of ['en', 'zh-CN']) {
         expect(saved.source.execution_options).not.toHaveProperty('mmproj_ref');
         await page.locator('.model-profile-card').filter({ hasText: alias }).getByRole('button', { name: llm.edit, exact: true }).click();
         await expect(details).toContainText('llms/fixture/mmproj-fixture.gguf');
-        await expect(vision).not.toBeChecked();
+        await expect(vision).toBeChecked();
         await fillCombobox(reference, 'llms/other');
         await expect(vision).toBeChecked();
         await fillCombobox(reference, 'llms/text-only');
-        await expect(vision).toBeDisabled();
-        await expect(vision).not.toBeChecked();
+        await expect(vision).toBeEnabled();
+        await expect(vision).toBeChecked();
         await fillCombobox(reference, 'llms/ambiguous');
         await expect(details).toContainText(llm.directory.diagnostics.ambiguous_model);
         await dialog.getByRole('button', { name: llm.save, exact: true }).click();
@@ -198,14 +225,14 @@ test('partial upload failure preserves successes and late results stay in their 
   await expect(page.locator('.attachment-strip')).toContainText('fresh.png');
 });
 
-test('image capability and attachment policy provide clear prompts', async ({ page, request }) => {
+test('provider images are allowed and attachment policy provides clear prompts', async ({ page, request }) => {
   const session = await configure(request);
-  await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: { capabilities: { streaming: true, tools: true, vision: false } } });
+  await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: { request_options: {"streaming": true} } });
   await page.goto('/');
   await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();
   await page.locator('.composer input[type=file]').setInputFiles(file('image.png'));
-  await expect(page.locator('.composer-warning')).toContainText('does not support images');
-  await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeDisabled();
+  await expect(page.locator('.composer-warning')).toHaveCount(0);
+  await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeEnabled();
   await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { mode: 'session', include_attachments: 'none' } } });
   await page.reload();
   await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();

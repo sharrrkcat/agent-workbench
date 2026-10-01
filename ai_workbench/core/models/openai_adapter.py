@@ -58,8 +58,11 @@ class OpenAIAdapter:
 
     @staticmethod
     def _payload(profile: ModelProfile, request: ChatRequest) -> dict:
+        from ai_workbench.core.models.runtimes.schema import is_transformers
         payload = {**profile.parameters, **request.model_dump(exclude_none=True, by_alias=True, exclude_unset=True, exclude={"cogita"})}
         payload.update(model=profile.model_ref, stream=request.stream)
+        if is_transformers(profile):
+            payload["cogita_request_options"] = profile.request_options.model_dump(exclude={"streaming"})
         return payload
 
     async def chat(self, profile: ModelProfile, request: ChatRequest) -> ChatResult:

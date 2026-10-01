@@ -50,6 +50,7 @@ locally and terminal clocks freeze. General show_full_processing controls initia
 active expansion. User toggles survive incoming deltas; entering a terminal state
 collapses the outer history, and reopened conversations start terminal histories
 collapsed. Final answers and approval controls stay outside that history.
+User message metadata.request_warnings contains run_id and deduplicated images_ignored/images_require_text/tools_ignored codes. Chat emits message_updated on change, including clearing prior warnings on retry. Warnings render as localized warning-colored text below the current user bubble, survive refresh, and never enter model context; historical messages are not rewritten.
 History and tool details use controlled Base UI Collapsible sections; replacing
 their controls does not reset user expansion during streaming. Shared control
 and overlay behavior belongs to [Settings](settings.md#frontend-styling-foundation).

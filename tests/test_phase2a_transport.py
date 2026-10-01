@@ -79,7 +79,7 @@ def transport_app(tmp_path, monkeypatch):
         app = create_app(use_memory=True, root=tmp_path)
         with serve(app) as url, httpx.Client(base_url=url, timeout=5) as client:
             provider = client.post("/api/models/providers", json={'name': 'Socket', 'connection': {'base_url': provider_url + '/v1'}}).json()
-            profile = client.post("/api/models/profiles", json={"name": "Socket", "alias": "socket", "kind": "llm", "model_ref": "socket-model", "capabilities": {"streaming": True}, "external_enabled": True, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}).json()
+            profile = client.post("/api/models/profiles", json={"name": "Socket", "alias": "socket", "kind": "llm", "model_ref": "socket-model", "request_options": {"streaming": True}, "external_enabled": True, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}).json()
             settings = client.patch("/api/models/settings", json={
                 "default_model_profile_id": profile["id"], "external_enabled": True, "external_api_key": "test-key",
             })

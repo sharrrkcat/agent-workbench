@@ -60,12 +60,10 @@ class ProviderProfile(ProviderInput):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
-class Capabilities(StrictModel):
-    streaming: bool = False
-    tools: bool = False
-    vision: bool = False
-    json_object: bool = False
-    json_schema: bool = False
+class ChatRequestOptions(StrictModel):
+    streaming: bool = Field(default=True, strict=True)
+    skip_tool_capability_check: bool = Field(default=False, strict=True)
+    skip_vision_capability_check: bool = Field(default=False, strict=True)
 
 
 class Lifecycle(StrictModel):
@@ -278,7 +276,7 @@ class ModelInput(StrictModel):
     kind: ModelKind
     source: ModelSource | None = None
     model_ref: str = Field(min_length=1, max_length=1024)
-    capabilities: Capabilities = Field(default_factory=Capabilities)
+    request_options: ChatRequestOptions | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     external_enabled: bool = False
@@ -318,8 +316,15 @@ class ModelInput(StrictModel):
             raise ValueError("Providers support only LLM and text embedding models")
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
-        if self.kind != "llm" and any(self.capabilities.model_dump().values()):
-            raise ValueError("Chat capabilities apply only to llm profiles")
+        if self.kind == "llm":
+            if self.request_options is None:
+                self.request_options = ChatRequestOptions()
+            if not isinstance(self.source, LocalSource) and (
+                self.request_options.skip_tool_capability_check or self.request_options.skip_vision_capability_check
+            ):
+                raise ValueError("Skipping capability checks applies only to local LLM profiles")
+        elif self.request_options is not None:
+            raise ValueError("Chat request options apply only to llm profiles")
         return self
 
 

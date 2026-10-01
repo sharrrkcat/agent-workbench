@@ -90,7 +90,7 @@ def create_fixture_app(repository: Path, root: Path):
     upstream = PresentationOpenAI()
     app = create_app(root=root, use_memory=True, adapter_factory=upstream.factory, frontend_dist=repository / "frontend/dist")
     client = TestClient(app)
-    profile = configure_model(client, alias="chat-model", capabilities={"streaming": True, "tools": True})
+    profile = configure_model(client, alias="chat-model", request_options={"streaming": True})
     configure_model(client, kind="embedding", alias="resource-embedding", parameters={"dimensions": 2})
     client.patch("/api/settings/general", json={"auto_generate_session_titles": False}).raise_for_status()
     state = app.state.runtime_state

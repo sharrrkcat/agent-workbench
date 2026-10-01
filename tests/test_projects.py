@@ -12,6 +12,7 @@ from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import AppMetadataRecord, KnowledgeBaseRecord, RuntimeInstallationRecord, WorldbookRecord
+from tests.migration_fixtures import insert_pre_request_options_model, model_row
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
 
@@ -188,7 +189,7 @@ def test_project_knowledge_context_order_and_session_isolation(client_pair):
 
 def test_approval_uses_snapshot_but_cannot_execute_revoked_project_tools(client_pair):
     client, upstream, root = client_pair
-    model = configure_model(client, capabilities={"tools": True})
+    model = configure_model(client, request_options={"streaming": False})
     file = root / "data/knowledge/note.txt"
     file.parent.mkdir(parents=True)
     file.write_text("PRIVATE_FILE_DATA")
@@ -220,7 +221,7 @@ def test_approval_uses_snapshot_but_cannot_execute_revoked_project_tools(client_
 def test_project_migration_preserves_resources_and_files_and_is_repeatable(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'upgrade.db'}")
     migrations.upgrade(engine, migrations.PERSONA_COLLECTIONS_REVISION)
-    profile = ModelProfileStore(engine).create(ModelProfile(name="Keep", alias="keep", kind="embedding", model_ref="manual"))
+    profile = insert_pre_request_options_model(engine, ModelProfile(name="Keep", alias="keep", kind="embedding", model_ref="manual"))
     with DbSession(engine) as db:
         db.add(AppMetadataRecord(key="sentinel", value="preserved"))
         db.add(KnowledgeBaseRecord(id="base", name="Keep", embedding_model_profile_id=profile.id))
@@ -241,13 +242,13 @@ def test_project_migration_preserves_resources_and_files_and_is_repeatable(tmp_p
     for path in files:
         path.parent.mkdir(parents=True)
         path.write_bytes(b"owned file")
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.PROJECTS_REVISION)
     assert rows() == before and all(path.read_bytes() == b"owned file" for path in files)
     schema = migrations.inspect_schema(engine)
     assert {"projects", "project_knowledge_bindings", "project_worldbook_bindings"} <= set(schema.tables)
     with engine.connect() as db:
         assert db.exec_driver_sql("SELECT count(*) FROM sessionrecord").scalar() == 0
         assert db.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.PROJECTS_REVISION)
     assert migrations.inspect_schema(engine) == schema and rows() == before
     engine.dispose()

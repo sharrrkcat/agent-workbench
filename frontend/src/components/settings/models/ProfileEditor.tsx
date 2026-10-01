@@ -53,7 +53,6 @@ import { DirectoryInspectionPanel } from './DirectoryInspection';
 export type ProfileDraft = {
   id?: string; value: ModelInput; detectedEngine?: LocalEngine;
   directory?: { ref: string; kind: string; information?: DirectoryInspection; error?: string };
-  visionInitializedRef?: string; visionEditedRef?: string;
 };
 export function ProfileEditor({
   model,
@@ -96,14 +95,10 @@ export function ProfileEditor({
           || draft.value.kind !== modelKind || draft.value.source?.type !== 'local') return draft;
         const resetSettings = draft.detectedEngine !== undefined
           ? draft.detectedEngine !== information.engine : !draft.id || savedReference !== modelRef;
-        const initializeVision = draft.visionEditedRef !== modelRef && draft.visionInitializedRef !== modelRef
-          && (!draft.id || savedReference !== modelRef);
         return { ...draft,
-          value: applyDirectoryInspection(draft.value, information, resetSettings, initializeVision),
+          value: applyDirectoryInspection(draft.value, information, resetSettings),
           detectedEngine: information.engine ?? draft.detectedEngine,
           directory: { ref: modelRef, kind: modelKind, information },
-          visionInitializedRef: information.kind === 'llm' && information.engine === 'llama-server'
-            ? modelRef : draft.visionInitializedRef,
         };
       });
     }).catch((error) => {
@@ -151,8 +146,6 @@ export function ProfileEditor({
     : t(selectedSource === 'local' ? 'referenceSuggestions.noDirectories' : 'referenceSuggestions.noModels');
   const patchModel = (patch: Partial<ModelInput>) =>
     setModel((draft) => (draft ? { ...draft, value: updateModel(draft.value, patch, engine),
-      ...(patch.capabilities && patch.capabilities.vision !== draft.value.capabilities.vision
-        ? { visionEditedRef: draft.value.model_ref } : {}),
     } : null));
   const patchReference = (modelRef: string, suggestName = false) => setModel((draft) => draft ? {
     ...draft, value: selectModelReference(draft.value, modelRef,
@@ -246,8 +239,7 @@ export function ProfileEditor({
                           draft
                             ? {
                                 ...draft,
-                                ...(selected !== selectedSource ? { directory: undefined, detectedEngine: undefined,
-                                  visionInitializedRef: undefined, visionEditedRef: undefined } : {}),
+                                ...(selected !== selectedSource ? { directory: undefined, detectedEngine: undefined } : {}),
                                 value: selectModelSource(
                                   draft.value,
                                   selected === 'local'
@@ -491,32 +483,22 @@ export function ProfileEditor({
                     {engine === 'sentence-transformers' || engine === 'cross-encoder' ? <p className="model-empty">{t('textEmbedding.deviceHint')}</p> : null}
                   </>
                 ) : null}
-                {model.value.kind === 'llm' ? (
-                  <>
-                    <h3>{t('capabilities')}</h3>
-                    <FieldGroup className="grid gap-4 sm:grid-cols-2">
-                      {(Object.keys(model.value.capabilities) as Array<keyof ModelInput['capabilities']>).map(
-                        (key) => (
-                          <Field
-                            key={key}
-                            orientation="horizontal"
-                            disabled={transformers && ['json_object', 'json_schema'].includes(key)
-                              || key === 'vision' && information?.kind === 'llm' && engine === 'llama-server' && !information.mmproj_ref}
-                          >
-                            <Switch
-                              checked={model.value.capabilities[key]}
-                              disabled={transformers && ['json_object', 'json_schema'].includes(key)
-                                || key === 'vision' && information?.kind === 'llm' && engine === 'llama-server' && !information.mmproj_ref}
-                              onCheckedChange={(v) =>
-                                patchModel({ capabilities: { ...model.value.capabilities, [key]: v } })
-                              }
-                            />
-                            <FieldLabel>{t('cap.' + key)}</FieldLabel>
-                          </Field>
-                        ),
-                      )}
-                    </FieldGroup>
-                  </>
+                {model.value.kind === 'llm' && model.value.request_options ? (
+                  <FieldGroup>
+                    <Field orientation="horizontal">
+                      <Switch checked={model.value.request_options.streaming}
+                        onCheckedChange={(streaming) => patchModel({ request_options: { ...model.value.request_options!, streaming } })} />
+                      <FieldLabel>{t('requestOptions.streaming')}</FieldLabel>
+                    </Field>
+                    {local ? (['skip_tool_capability_check', 'skip_vision_capability_check'] as const).map((key) => (
+                      <Field key={key} orientation="horizontal">
+                        <Switch checked={model.value.request_options![key]}
+                          onCheckedChange={(value) => patchModel({ request_options: { ...model.value.request_options!, [key]: value } })} />
+                        <FieldLabel>{t('requestOptions.' + key)}</FieldLabel>
+                      </Field>
+                    )) : null}
+                    {local ? <p className="text-xs text-muted-foreground">{t('requestOptions.help')}</p> : null}
+                  </FieldGroup>
                 ) : null}
                 {engine !== 'sentence-transformers' && model.value.kind !== 'reranker' ? <>
                   <h3>{t('parameters')}</h3>

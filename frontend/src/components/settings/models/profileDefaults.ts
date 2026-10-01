@@ -20,7 +20,7 @@ export const newModel = (kind: ModelKind): ModelInput => ({
     : localSource(),
   enabled: true,
   external_enabled: false,
-  capabilities: { streaming: kind === 'llm', tools: false, vision: false, json_object: false, json_schema: false },
+  request_options: kind === 'llm' ? { streaming: true, skip_tool_capability_check: false, skip_vision_capability_check: false } : null,
   parameters: kind === 'tts' ? { speed: 1, response_format: 'mp3' }
     : kind === 'vision' ? { task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
     : kind === 'image_embedding' ? { unload_other_tower_on_call: true }
@@ -55,7 +55,7 @@ export function executionDefaults(engine: LocalEngine | null): LocalModelSource[
 }
 
 export function applyDirectoryInspection(value: ModelInput, information: DirectoryInspection,
-  resetSettings: boolean, initializeVision: boolean): ModelInput {
+  resetSettings: boolean): ModelInput {
   const engine = information.engine;
   if (value.source?.type !== 'local' || !engine) return value;
   let parameters = value.parameters;
@@ -66,10 +66,6 @@ export function applyDirectoryInspection(value: ModelInput, information: Directo
   const next = updateModel(value, { parameters, source: { ...value.source,
     execution_options: { ...executionDefaults(engine), ...(resetSettings ? {} : value.source.execution_options) },
   } }, engine);
-  if (information.kind === 'llm' && engine === 'llama-server') {
-    if (!information.mmproj_ref || initializeVision) next.capabilities = { ...next.capabilities,
-      vision: !!information.mmproj_ref && !!information.main_model_ref };
-  }
   return next;
 }
 
@@ -83,7 +79,6 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>, detec
     next.parameters = { ...next.parameters };
     delete next.parameters.presence_penalty;
     delete next.parameters.frequency_penalty;
-    next.capabilities = { ...next.capabilities, json_object: false, json_schema: false };
   }
   if (engine === 'sentence-transformers' && next.model_ref !== value.model_ref) {
     next.parameters = { query_prompt_name: null, document_prompt_name: null };
@@ -107,8 +102,10 @@ export function selectModelSource(value: ModelInput, source: ModelSource | null)
   const parameters = value.kind === 'embedding'
     ? source?.type === 'local' ? { query_prompt_name: null, document_prompt_name: null } : {}
     : value.parameters;
-  if (!source) return { ...value, source: null, parameters };
-  return updateModel(value, { source, parameters, model_ref: value.source ? '' : value.model_ref });
+  const request_options = value.request_options ? { ...value.request_options,
+    skip_tool_capability_check: false, skip_vision_capability_check: false } : null;
+  if (!source) return { ...value, source: null, parameters, request_options };
+  return updateModel(value, { source, parameters, request_options, model_ref: value.source ? '' : value.model_ref });
 }
 
 export const newProvider = (): Omit<ProviderInput, 'enabled'> => ({

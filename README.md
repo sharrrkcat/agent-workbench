@@ -98,7 +98,7 @@ curl -N http://127.0.0.1:8765/v1/chat/completions \
   -d '{"model":"chat-model","messages":[{"role":"user","content":"Hello"}],"stream":true,"stream_options":{"include_usage":true},"cogita":{"include_metrics":true}}'
 ```
 
-Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and supported response_format capabilities. Embeddings accept strings/string arrays, float/base64, dimensions and purpose=query|document (default document). Unsupported fields/capabilities and unavailable models fail explicitly.
+Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and backend-supported response_format values. Embeddings accept strings/string arrays, float/base64, dimensions and purpose=query|document (default document). Unsupported fields/capabilities and unavailable models fail explicitly.
 Chat JSON returns usage when provided; `cogita.include_metrics` additionally returns server-side timing and native/estimated generation speed. Unknown measurements stay null.
 SSE sends one empty-choices statistics tail before `[DONE]`; usage and metrics flags are independent. Timings exclude client rendering; total reply time includes tool/approval waits, generation speed does not.
 [Models](docs/contracts/models.md#external-inference-api) owns request rules; [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior. Other reranker architectures and image

@@ -64,11 +64,12 @@ class HarnessAgentLoop:
         self.allowed_tools = allowed_tools
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
-                  user: MessageSchema, context: list[dict[str, Any]], max_image_bytes: int, active_seconds: float = 0.0) -> RunResult:
+                  user: MessageSchema, context: list[dict[str, Any]], max_image_bytes: int, active_seconds: float = 0.0,
+                  first_metrics: LLMCallMetrics | None = None) -> RunResult:
         state = HarnessState(base_messages=context, active_seconds=active_seconds,
                              max_image_bytes=max_image_bytes,
                              searxng_base_url=self.harness_settings.get().searxng_base_url)
-        return await self._drive(session=session, config=config, run=run, user=user, state=state)
+        return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
 
     async def direct(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                      tool_name: str, arguments: dict[str, Any]) -> RunResult:
@@ -119,7 +120,8 @@ class HarnessAgentLoop:
                                  rejected_call_id=call_id if decision == "reject" else None)
 
     async def _drive(self, *, session, config, run, user, state: HarnessState,
-                     approved_call_id: str | None = None, rejected_call_id: str | None = None) -> RunResult:
+                     approved_call_id: str | None = None, rejected_call_id: str | None = None,
+                     first_metrics: LLMCallMetrics | None = None) -> RunResult:
         task = asyncio.current_task()
         if task is not None and self.active_runs is not None:
             self.active_runs.register(run.run_id, task)
@@ -163,7 +165,8 @@ class HarnessAgentLoop:
                         return self._terminate(run, state, RunStatus.FAILED, outcome.error_code, outcome.error_message)
                     self._complete(run.run_id)
                     return RunResult(success=True, run_id=run.run_id, data=outcome.data)
-                content = await self._model_round(session, config, run, user, state, budget)
+                content = await self._model_round(session, config, run, user, state, budget, first_metrics)
+                first_metrics = None
                 if self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     return RunResult(success=True, run_id=run.run_id, data=content)
         except asyncio.CancelledError:
@@ -185,17 +188,18 @@ class HarnessAgentLoop:
             if self.active_runs is not None:
                 self.active_runs.unregister(run.run_id)
 
-    async def _model_round(self, session, config, run, user, state: HarnessState, budget: _Budget) -> str | None:
+    async def _model_round(self, session, config, run, user, state: HarnessState, budget: _Budget,
+                           first_metrics: LLMCallMetrics | None = None) -> str | None:
         step = self._start_step(run.run_id, "model", "Generating response", {"round": state.rounds + 1})
         if not config.model_profile_id:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
                  for spec in (self.registry.get(name) for name in self.allowed_tools(config))]
-        base_messages = await resolve_context_images(state.base_messages, vision=profile.capabilities.vision,
+        base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
         request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],
-                              tools=tools, stream=profile.capabilities.streaming,
+                              tools=tools, stream=profile.request_options.streaming,
                               **config.generation.model_dump(exclude_none=True))
         self.model_manager.validate_chat(profile, request)
         resolution = {"model_profile_id": profile.id, "alias": profile.alias,
@@ -205,7 +209,7 @@ class HarnessAgentLoop:
         draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
                                run_id=run.run_id, message_id=str(uuid4()), config=config,
                                parent_message_id=user.message_id, streamed=request.stream)
-        metrics = LLMCallMetrics()
+        metrics = first_metrics or LLMCallMetrics()
         try:
             try:
                 calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics),

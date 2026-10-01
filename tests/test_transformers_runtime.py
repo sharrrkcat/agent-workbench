@@ -30,7 +30,7 @@ from tests.model_fixtures import resolve_local_profile, write_local_model
 
 
 def profile(**values):
-    return ModelProfile(**{**dict(name='Transformers', alias='transformers', kind='llm', model_ref='llms/local', capabilities={'streaming': True, 'tools': True}, source={'type': 'local'}), **values})
+    return ModelProfile(**{**dict(name='Transformers', alias='transformers', kind='llm', model_ref='llms/local', request_options={"streaming": True}, source={'type': 'local'}), **values})
 
 
 @pytest.mark.parametrize("patch", [
@@ -38,7 +38,7 @@ def profile(**values):
     {"kind": "embedding"}, {"source": {"type": "local", "execution_options": {"device": "auto"}}},
     {"source": {"type": "local", "execution_options": {"intraop_threads": True}}},
     {"source": {"type": "local", "execution_options": {"dtype": "float16"}}},
-    {"capabilities": {"json_schema": True}},
+    {"request_options": {"json_schema": True}},
     {"parameters": {"presence_penalty": 0.1}}, {"parameters": {"frequency_penalty": -0.1}},
 ])
 def test_transformers_profile_rejects_unimplemented_combinations(tmp_path, patch):
@@ -95,7 +95,7 @@ def test_private_server_authentication_and_local_text_boundary():
         metadata = {"protocol_version": 1, "device_name": "CPU", "tool_calls": True, "vision": False}
         closed = False
 
-        async def chat(self, body, request_id):
+        async def chat(self, body, request_id, *, skip_tool_check=False):
             calls.append(body)
             return JSONResponse({"accepted": request_id})
 

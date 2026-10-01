@@ -15,6 +15,7 @@ import httpx
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.resolution import configure_profile, require_directory, resolve_profile
 from ai_workbench.core.models.images import request_images
+from ai_workbench.core.models.chat_support import local_chat_support, require_chat_support
 from ai_workbench.core.models.processing import MAX_PROCESS_BYTES, processor_resource, validate_process_output
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
@@ -131,7 +132,7 @@ class ManagedAdapter:
             if self.engine == "llama-server":
                 if not all(model_path(self.supervisor.root, ref).is_file() for ref in profile._directory.model_files):
                     raise FileNotFoundError()
-                projector = profile._directory.mmproj_ref if profile.capabilities.vision else None
+                projector = profile._directory.mmproj_ref
                 if projector and not model_path(self.supervisor.root, projector).is_file():
                     raise FileNotFoundError()
             if self.engine != "llama-server":
@@ -258,7 +259,7 @@ class ManagedAdapter:
                     "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],
                     "--batch-size", options["batch_size"], "--parallel", 1,
                     "--reasoning-format", "none", "--offline", "--no-mmproj-auto", "--log-verbosity", 4 if cuda else 1]
-            if profile.capabilities.vision:
+            if profile._directory.mmproj_ref:
                 args.extend(["--mmproj", model_path(self.supervisor.root, profile._directory.mmproj_ref)])
                 args.extend(["--mmproj-offload", "--mmproj-device", device_id] if cuda else ["--no-mmproj-offload"])
             if cuda:
@@ -490,11 +491,10 @@ class LlamaServerAdapter(ManagedAdapter):
 
 
 class TransformersServerAdapter(LlamaServerAdapter):
-    def _require_capabilities(self, request):
-        if (request.tools or any(message.tool_calls or message.role == "tool" for message in request.messages)) and not self.tool_calls_supported:
-            raise ModelError("UNSUPPORTED_CAPABILITY", "The local checkpoint has no supported Transformers tool response template.", 422)
-        if any(request_images(request)) and not self.vision_supported:
-            raise ModelError("UNSUPPORTED_CAPABILITY", "The local checkpoint has no supported image processor.", 422)
+    def _require_support(self, profile, request):
+        require_chat_support(profile, local_chat_support(profile, self),
+            tools=bool(request.tools or any(message.tool_calls or message.role == "tool" for message in request.messages)),
+            vision=any(request_images(request)))
 
     async def _abort(self, error=None):
         await self._stop()
@@ -504,7 +504,7 @@ class TransformersServerAdapter(LlamaServerAdapter):
         self.changed()
 
     async def chat(self, profile, request):
-        self._require_capabilities(request)
+        self._require_support(profile, request)
         try:
             return await super().chat(profile, request)
         except asyncio.CancelledError:
@@ -515,7 +515,7 @@ class TransformersServerAdapter(LlamaServerAdapter):
             raise
 
     async def chat_stream(self, profile, request):
-        self._require_capabilities(request)
+        self._require_support(profile, request)
         completed, error = False, None
         try:
             async with aclosing(super().chat_stream(profile, request)) as stream:

@@ -25,7 +25,6 @@
   "bodyLimitHelp": "Incoming external API bodies: 1–100 MiB, default 32. Valid edits save on leaving the field or pressing Enter.",
   "normalizedBodyLimit": "Normalized request limit (MiB)",
   "normalizedBodyLimitHelp": "1–1024 MiB, default 128. Includes defaults, images and history for local chat, WD14 tagging, SigLIP and reranking, including in-app calls while the external API is disabled. GGUF also has a native 100 MiB limit. Valid edits save on leaving the field or pressing Enter.",
-  "capabilities": "Capabilities",
   "parameters": "Parameters",
   "lifecycle": "Lifecycle",
   "release": "Release policy",
@@ -64,13 +63,6 @@
     "unknown": "Unknown",
     "loaded": "Loaded",
     "unloaded": "Unloaded"
-  },
-  "cap": {
-    "streaming": "Streaming",
-    "tools": "Function tools",
-    "vision": "Image input",
-    "json_object": "JSON object",
-    "json_schema": "JSON schema"
   },
   "policy": {
     "manual": "Manual",
@@ -539,5 +531,11 @@
     "noModels": "No models returned. You can enter a model ID manually.",
     "noMatch": "No matching suggestions. You can use the entered reference.",
     "localUnavailable": "Local directories could not be loaded. You can enter a relative directory manually."
+  },
+  "requestOptions": {
+    "streaming": "Streaming",
+    "skip_tool_capability_check": "Skip tool capability check",
+    "skip_vision_capability_check": "Skip image capability check",
+    "help": "Off: check local support before sending, allowing unknown support. On: send without this check; engine errors can still occur."
   }
 }

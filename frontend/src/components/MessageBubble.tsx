@@ -65,6 +65,11 @@ export function MessageBubble({ message, animate = false }: { message: Message; 
           </div>
         </BubbleContent>
       </Bubble>
+      {isUser ? message.metadata?.request_warnings?.codes.map((code) => (
+        <p key={code} className="message-request-warning" role="status">
+          {t(`chat:requestWarnings.${code}`)}
+        </p>
+      )) : null}
       {isUser ? (
         <MessageActions
           message={message}

@@ -25,7 +25,6 @@
   "bodyLimitHelp": "对外 API 原始请求体：1–100 MiB，默认 32。有效修改在离开输入框或按 Enter 时自动保存。",
   "normalizedBodyLimit": "标准化请求上限（MiB）",
   "normalizedBodyLimitHelp": "1–1024 MiB，默认 128。涵盖本地聊天、WD14 标签、SigLIP 和重排的默认参数、图片及历史；关闭对外 API 时仍适用于应用内调用。GGUF 另受原生 100 MiB 上限约束。有效修改在离开输入框或按 Enter 时自动保存。",
-  "capabilities": "能力",
   "parameters": "参数",
   "lifecycle": "生命周期",
   "release": "释放策略",
@@ -64,13 +63,6 @@
     "unknown": "未知",
     "loaded": "已加载",
     "unloaded": "已卸载"
-  },
-  "cap": {
-    "streaming": "流式输出",
-    "tools": "函数工具",
-    "vision": "图像输入",
-    "json_object": "JSON 对象",
-    "json_schema": "JSON Schema"
   },
   "policy": {
     "manual": "手动",
@@ -539,5 +531,11 @@
     "noModels": "未返回模型，可手动输入模型 ID。",
     "noMatch": "没有匹配的候选项，可使用已输入的引用。",
     "localUnavailable": "无法加载本地模型目录，可手动输入相对目录。"
+  },
+  "requestOptions": {
+    "streaming": "流式输出",
+    "skip_tool_capability_check": "跳过工具能力校验",
+    "skip_vision_capability_check": "跳过图片能力校验",
+    "help": "关闭时发送前校验本地支持情况，未知时放行；开启时跳过对应校验，引擎仍可能报错。"
   }
 }

@@ -58,7 +58,7 @@ def test_strict_persona_and_session_configuration(client_pair):
 
 def test_catalog_defaults_and_session_tool_switches(client_pair):
     client, upstream = client_pair
-    configure_model(client, capabilities={"tools": True})
+    configure_model(client, request_options={"streaming": False})
     catalog = ok(client.get("/api/tools"))
     names = [tool["name"] for tool in catalog]
     session = ok(client.post("/api/sessions", json={}))

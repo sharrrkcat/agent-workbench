@@ -334,7 +334,8 @@ def test_database_revision_resets_bindings_without_converting_or_removing_files(
     before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
     migrations.upgrade(engine, migrations.PROVIDER_RUNTIME_REVISION)
     migrations.upgrade(engine, migrations.PROVIDER_RUNTIME_REVISION)
-    assert ModelProfileStore(engine).list() == []
+    with engine.connect() as db:
+        assert db.execute(text("SELECT COUNT(*) FROM model_profiles")).scalar_one() == 0
     assert ProviderProfileStore(engine).list() == []
     assert LocalRuntimeSettingsStore(engine).get().download.http_proxy is None
     assert ModelSettingsStore(engine).get().external_api_key == 'retained'
@@ -422,8 +423,8 @@ def test_runtime_enablement_removal_preserves_downloads_and_installation(tmp_pat
     protected.parent.mkdir(parents=True)
     protected.write_bytes(b'installed environment')
     before = protected.stat().st_mtime_ns
-    migrations.upgrade(engine)
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.RUNTIME_ALWAYS_ENABLED_REVISION)
+    migrations.upgrade(engine, migrations.RUNTIME_ALWAYS_ENABLED_REVISION)
     assert migrations.current_revision(engine) == migrations.RUNTIME_ALWAYS_ENABLED_REVISION
     settings = LocalRuntimeSettingsStore(engine).get()
     assert settings.download.http_proxy == download['http_proxy']

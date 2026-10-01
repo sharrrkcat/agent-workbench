@@ -1,7 +1,6 @@
 # Chat and context contract
 
-Chat uses explicit Persona data, ContextBuilder and ChatRunner. Ordinary input
-has no intent router. Registered `/tool_name` inputs use the direct executor;
+Chat uses explicit Persona data, ContextBuilder and ChatRunner. Ordinary input has no intent router. Registered `/tool_name` inputs use the direct executor;
 all other prefixes remain text. [Harness/tools](harness-tools.md) owns direct
 syntax, allowlists, bounded loops and approvals.
 
@@ -207,7 +206,8 @@ User images persist only as metadata.attachments references; message parts do no
 ContextBuilder selects history by policy, message count and character budget before reading images.
 Image bytes do not consume the text budget. History projection keeps images with their user message. Image-only messages can be selected context.
 Included references become OpenAI image_url parts immediately before inference, including historical follow-ups.
-The selected LLM must advertise vision; otherwise UNSUPPORTED_CAPABILITY ends the run.
+Before first inference, local image support is checked unless skipped in request_options. Unknown support and provider inputs pass through.
+Explicitly unsupported images are omitted from this request, including selected history; empty historical image messages are omitted. Original messages/attachments stay intact. The current user bubble receives an images_ignored warning; if the current input has no remaining text, images_require_text ends the run as FAILED without main/auxiliary generation.
 Missing selected images return ATTACHMENT_NOT_FOUND; corrupt local images and request limits follow
 [models](models.md#external-inference-api). Excluded or pruned images are never read.
 
@@ -215,7 +215,7 @@ Text-file context obeys the enable switch and per-file/per-message bounds.
 Other attachments contribute bounded descriptive markers. include_attachments=none excludes all image inputs.
 File selection, clipboard images and file dropping share an upload flow with per-file status, previews and removal.
 Partial failure keeps successful uploads. Session changes clear pending attachments and ignore late results.
-Message thumbnails and zoom previews resolve stored references after refresh. Model capability, attachment-policy
+Message thumbnails and zoom previews resolve stored references after refresh. Request warnings, attachment-policy
 and size errors have English/Chinese guidance. Text editing/retry retains image references; pruning cleans unreferenced files.
 
 Tool calls require assistant role, a unique call id within the run, a name and

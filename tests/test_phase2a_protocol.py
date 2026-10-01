@@ -63,7 +63,7 @@ def test_internal_chat_and_external_nonstream_share_transport_and_parameters(app
 
 def test_streaming_tools_vision_schema_usage_and_ids_are_forwarded(app_client):
     client, upstream = app_client
-    configure_model(client, capabilities={"streaming": True, "tools": True, "vision": True, "json_schema": True})
+    configure_model(client, request_options={"streaming": True})
     headers = enable_external(client)
     upstream.stream_events = [
         {"choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [{"index": 0, "id": "call-1", "type": "function", "function": {"name": "lookup", "arguments": '{"q":'}}]}, "finish_reason": None}]},
@@ -112,9 +112,9 @@ def test_strict_protocol_rejects_invalid_requests_before_transport(app_client, p
     assert not upstream.calls
 
 
-def test_unsupported_capabilities_and_alias_visibility_have_no_substitution(app_client):
+def test_disabled_streaming_and_alias_visibility_have_no_substitution(app_client):
     client, upstream = app_client
-    profile = configure_model(client)
+    profile = configure_model(client, request_options={"streaming": False})
     headers = enable_external(client)
     payload = {"model": "local", "messages": [{"role": "user", "content": "hello"}]}
     assert client.post("/v1/chat/completions", headers=headers, json={**payload, "stream": True}).status_code == 422
@@ -128,7 +128,7 @@ def test_unsupported_capabilities_and_alias_visibility_have_no_substitution(app_
 
 def test_stream_failure_is_explicit_and_releases_occupation(app_client):
     client, upstream = app_client
-    profile = configure_model(client, capabilities={"streaming": True})
+    profile = configure_model(client, request_options={"streaming": True})
     upstream.stream_events = [
         {"choices": [{"index": 0, "delta": {"content": "partial"}, "finish_reason": None}]},
         {"error": {"message": "upstream-private-secret"}},
@@ -191,7 +191,7 @@ def test_actual_chunked_body_limit_does_not_trust_content_length():
 
 def test_current_images_reach_provider_and_stream_events_have_stable_identity(app_client):
     client, upstream = app_client
-    profile = configure_model(client, capabilities={"streaming": True, "vision": True})
+    profile = configure_model(client, request_options={"streaming": True})
     session = client.post("/api/sessions", json={"model_profile_id": profile["id"]}).json()
     image = {"id": "image1", "name": "one.png", "type": "image", "mime_type": "image/png",
              "size": 68,

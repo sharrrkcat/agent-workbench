@@ -206,3 +206,5 @@ all file directories survive. Repeating upgrade preserves new Projects and conve
 Revision `0023_dlss_processor` extends local model constraints with processor, adds runtime_components and nullable runtime_jobs.component_id. Base installation identities/jobs, existing profiles and all files remain unchanged. Directory/default-profile creation happens only on explicit component installation, never during migration or startup. Repeated upgrades preserve subsequent edits.
 
 Revision `0024_runtime_always_enabled` removes only the obsolete enabled key from local_runtime_settings. Download settings, installation/component records, jobs and all files remain intact. Local Runtime has no enablement setting; repeated upgrades preserve later download edits.
+
+Revision 0025 replaces model_profiles.capabilities_json with request_options_json. Existing LLMs receive streaming=true and both local support-check skips=false; other kinds receive null. Old declarations are discarded without conversion. Model records, attachments and runtime files are preserved.

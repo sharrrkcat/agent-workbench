@@ -22,6 +22,7 @@ from ai_workbench.workers import reranker_engine
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.reranker_catalog import load_configuration
 from ai_workbench.workers.reranker_server import RerankerWorker
+from tests.migration_fixtures import insert_pre_request_options_model, model_row
 from tests.test_text_embeddings import write_json
 
 REF = "rerankers/representative-pair-model"
@@ -236,7 +237,7 @@ def test_engine_preserves_native_pairs_scores_activation_and_device(tmp_path, mo
 def test_migration_resets_only_abandoned_parameters_and_preserves_model_files(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     migrations.upgrade(engine, migrations.TEXT_EMBEDDING_REVISION)
-    saved = ModelProfileStore(engine).create(profile(source=None))
+    saved = insert_pre_request_options_model(engine, profile(source=None))
     with engine.begin() as database:
         database.execute(text("UPDATE model_profiles SET parameters_json = :value WHERE id = :id"),
             {"value": '{"batch_size": 64}', "id": saved.id})

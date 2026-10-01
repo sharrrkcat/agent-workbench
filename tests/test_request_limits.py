@@ -221,7 +221,7 @@ def test_shared_worker_accepts_above_old_limit_and_enforces_transport_ceiling(mo
 
 def test_transformers_worker_accepts_above_old_limit_and_checks_chunked_transport(monkeypatch):
     assert transformers_server.MAX_BODY == 1024 * MIB
-    async def chat(body, _request_id):
+    async def chat(body, _request_id, *, skip_tool_check=False):
         return JSONResponse({"length": len(body["messages"][0]["content"])})
     engine = SimpleNamespace(chat=chat, close=lambda: None)
     with TestClient(transformers_server.build_app(engine, "token")) as client:

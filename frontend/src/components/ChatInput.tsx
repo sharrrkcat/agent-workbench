@@ -84,9 +84,7 @@ export function ChatInput() {
   const imageIssue =
     hasImages && configuration?.context_policy?.include_attachments !== 'explicit'
       ? t('imagesContextDisabled')
-      : hasImages && profile && !profile.capabilities.vision
-        ? t('imagesUnsupported')
-        : '';
+      : '';
   const cannotSend =
     !ready ||
     sending ||

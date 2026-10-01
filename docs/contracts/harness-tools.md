@@ -13,8 +13,7 @@ already executing handlers continue. Expanding the ceiling does not expand a run
 Timeline Projects expose no Harness or direct execution path.
 Ordinary chat sends no tools
 and rejects unexpected calls with `UNEXPECTED_TOOL_CALL`. An enabled harness
-with an empty allowlist uses ordinary chat. A model lacking native tool support
-returns `UNSUPPORTED_CAPABILITY`; there is no text-command fallback.
+with an empty allowlist uses ordinary chat. Before the first model round, explicit local lack of tool support (unless its request_options skip is enabled) falls back to ordinary chat without sending or executing tools. The current user message gets a tools_ignored warning; saved Harness/allowlist settings do not change. Unknown support and providers pass through. Direct tool execution is independent of model checks. Public native-tool requests and incompatible approval continuations fail with UNSUPPORTED_CAPABILITY; existing tool results are never discarded to restart ordinary chat.
 
 ## Registry and tools
 

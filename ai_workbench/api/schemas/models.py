@@ -5,7 +5,7 @@ from pydantic import Field, RootModel
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.core.models.schema import (
     ASRParameters, EmbeddingParameters, LocalEmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
-    ModelKind, ModelSettings, ProviderInput, ProviderProfile, ProviderSource, Lifecycle, ExternalConnection, RerankParameters, VisionParameters, TTSParameters, ProcessorParameters,
+    ModelKind, ModelSettings, ProviderInput, ProviderProfile, ProviderSource, Lifecycle, ExternalConnection, RerankParameters, VisionParameters, TTSParameters, ProcessorParameters, ChatRequestOptions,
 )
 from ai_workbench.core.models.runtimes.schema import (
     DownloadSettings, Installation, ComponentInstallation, DLSSOptions, LlamaCPUOptions, LlamaCUDAOptions,
@@ -66,6 +66,7 @@ ModelSource = ProviderSource | LocalModelSource
 
 class LlmModel(ModelFields):
     kind: Literal["llm"]
+    request_options: ChatRequestOptions = Field(default_factory=ChatRequestOptions)
     parameters: GenerationParameters = Field(default_factory=GenerationParameters)
     source: ProviderSource | LocalLlmSource | None = None
 

@@ -121,6 +121,11 @@ async def update_profile(profile_id: str, payload: dict, state: RuntimeState = D
     current = state.model_profiles.get(profile_id)
     if payload.get("kind", current.kind) != current.kind:
         raise ModelError("MODEL_KIND_IMMUTABLE", "Create a new profile to use a different model kind.", 409)
+    if current.kind == "llm" and "source" in payload and "request_options" not in payload:
+        source = payload["source"]
+        if source is None or isinstance(source, dict) and source.get("type") == "provider":
+            payload = {**payload, "request_options": {**current.request_options.model_dump(),
+                "skip_tool_capability_check": False, "skip_vision_capability_check": False}}
     updated = ModelInput.model_validate({**current.model_dump(include=set(ModelInput.model_fields)), **payload})
     import asyncio
     updated = ModelProfile(**updated.model_dump(), id=profile_id)

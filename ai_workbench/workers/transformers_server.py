@@ -32,7 +32,11 @@ def options_request(value):
 
 def chat_request(body):
     fields(body, ("model", "messages"), ("stream", "n", "temperature", "top_p", "max_tokens", "seed", "stop",
-        "presence_penalty", "frequency_penalty", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options"))
+        "presence_penalty", "frequency_penalty", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "cogita_request_options"))
+    options = body.get("cogita_request_options", {})
+    fields(options, (), ("skip_tool_capability_check", "skip_vision_capability_check"))
+    if any(type(value) is not bool for value in options.values()):
+        raise WorkerError("INVALID_REQUEST")
     if body["model"] != "managed" or type(body.get("stream", False)) is not bool:
         raise WorkerError("INVALID_REQUEST")
     integer(body.get("n", 1), 1, 1)
@@ -136,11 +140,12 @@ def build_app(engine, token):
             body = chat_request(body)
         except (ValueError, TypeError, KeyError) as exc:
             raise WorkerError("INVALID_REQUEST") from exc
-        if any(isinstance(message.get("content"), list)
+        options = body.pop("cogita_request_options", {})
+        if not options.get("skip_vision_capability_check", False) and any(isinstance(message.get("content"), list)
                and any(part["type"] == "image_url" for part in message["content"])
                for message in body["messages"]) and not engine.metadata["vision"]:
             raise WorkerError("UNSUPPORTED_CAPABILITY")
-        return await engine.chat(body, str(uuid4()))
+        return await engine.chat(body, str(uuid4()), skip_tool_check=options.get("skip_tool_capability_check", False))
 
     return app
 

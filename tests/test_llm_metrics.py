@@ -186,7 +186,7 @@ def test_cancel_before_output_keeps_elapsed_and_releases_occupancy():
 @pytest.mark.parametrize("include_metrics", [False, True])
 def test_external_statistics_are_opt_in_and_one_tail_snapshot(app_client, include_usage, include_metrics):
     client, upstream = app_client
-    configure_model(client, capabilities={"streaming": True})
+    configure_model(client, request_options={"streaming": True})
     upstream.stream_events = [
         {"choices": [{"index": 0, "delta": {"content": "hello"}, "finish_reason": None}]},
         {"choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": None}]},
@@ -224,7 +224,7 @@ def test_external_statistics_are_opt_in_and_one_tail_snapshot(app_client, includ
 
 def test_external_nonstream_metrics_and_missing_stream_usage(app_client):
     client, upstream = app_client
-    configure_model(client, capabilities={"streaming": True})
+    configure_model(client, request_options={"streaming": True})
     headers = enable_external(client)
     payload = {"model": "local", "messages": [{"role": "user", "content": "hello"}], "cogita": {"include_metrics": True}}
     body = ok(client.post("/v1/chat/completions", headers=headers, json=payload))
@@ -253,7 +253,7 @@ def test_external_nonstream_metrics_and_missing_stream_usage(app_client):
 ])
 def test_external_stream_errors_never_publish_successful_statistics(app_client, ending):
     client, upstream = app_client
-    configure_model(client, capabilities={"streaming": True})
+    configure_model(client, request_options={"streaming": True})
     body = ('data: {"choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":null}]}\n\n'
             'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"completion_tokens":3}}\n\n')
 

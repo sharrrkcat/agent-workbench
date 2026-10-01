@@ -22,6 +22,7 @@ from ai_workbench.core.models.schema import ImageEmbeddingRequest, ModelProfile
 from ai_workbench.core.models.siglip import SiglipModelUse
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
+from tests.migration_fixtures import insert_pre_request_options_model, model_row
 from tests.test_phase2b_runtime import installed_worker
 from tests.test_siglip import REF, model_tree
 from tests.test_siglip_runtime import FAKE_ENGINE, until
@@ -314,8 +315,8 @@ def test_migration_deletes_only_obsolete_drafts_and_preserves_files(tmp_path):
         migrations.upgrade(engine, migrations.WD14_REVISION)
         from ai_workbench.core.models.store import ModelProfileStore
         profiles = ModelProfileStore(engine)
-        retained = profiles.create(ModelProfile(name="Keep WD14", alias="keep", kind="vision", model_ref="vision/keep", source={"type": "local"}))
-        before_profile = profiles.get(retained.id).model_dump()
+        retained = insert_pre_request_options_model(engine, ModelProfile(name="Keep WD14", alias="keep", kind="vision", model_ref="vision/keep", source={"type": "local"}))
+        before_profile = model_row(engine, retained.id)
         with engine.begin() as db:
             db.execute(text("INSERT INTO model_profiles (id, name, alias, kind, model_ref, capabilities_json, parameters_json, enabled, external_enabled, created_at, updated_at) "
                 "VALUES ('draft', 'Draft', 'draft', 'image_embedding', 'old', '{}', '{\"architecture\":\"clip\"}', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"))
@@ -329,10 +330,10 @@ def test_migration_deletes_only_obsolete_drafts_and_preserves_files(tmp_path):
         assert migrations.current_revision(engine) == migrations.SIGLIP_REVISION
         with engine.connect() as db:
             assert db.execute(text("SELECT COUNT(*) FROM model_profiles WHERE kind='image_embedding'")).scalar_one() == 0
-        assert profiles.get(retained.id).model_dump() == before_profile
-        saved = ModelProfileStore(engine).create(profile())
+        assert model_row(engine, retained.id) == before_profile
+        saved = insert_pre_request_options_model(engine, profile())
         migrations.upgrade(engine, migrations.SIGLIP_REVISION)
-        assert ModelProfileStore(engine).get(saved.id).source.execution_options["device"] == "cuda"
+        assert json.loads(model_row(engine, saved.id)["execution_options_json"])["device"] == "cuda"
         with engine.begin() as db, pytest.raises(IntegrityError):
             db.execute(text("UPDATE model_profiles SET source_type='provider', provider_profile_id='invalid', execution_options_json=NULL, lifecycle_json=NULL WHERE id=:id"), {"id": saved.id})
         assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths} == before

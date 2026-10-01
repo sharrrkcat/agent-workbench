@@ -9,5 +9,10 @@
   "addPhotosFiles": "Add Photos & Files",
   "userMessageNavigation": "User messages",
   "userMessageNumber": "Message {{number}}",
-  "jumpToUserMessage": "Go to message {{number}}: {{summary}}"
+  "jumpToUserMessage": "Go to message {{number}}: {{summary}}",
+  "requestWarnings": {
+    "images_ignored": "This model does not support images. Images in this request were ignored.",
+    "images_require_text": "This model does not support images. Add text or select another model.",
+    "tools_ignored": "This model does not support tool calls. This request was handled as ordinary chat."
+  }
 }

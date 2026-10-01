@@ -30,8 +30,8 @@ def harness_client(tmp_path, request):
         yield client, upstream, tmp_path
 
 
-def configure(client, *, tools=None, enabled=True, streaming=True, capability=True, model=True):
-    profile = configure_model(client, capabilities={"streaming": streaming, "tools": capability}) if model else None
+def configure(client, *, tools=None, enabled=True, streaming=True, model=True):
+    profile = configure_model(client, request_options={"streaming": streaming}) if model else None
     persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Original persona', 'system_prompt': 'PRIVATE_TOOL_PROMPT'}))
     session = ok(client.post("/api/sessions", json={'persona_id': persona['id'], 'harness_enabled': enabled, 'tools_allowed': tools if tools is not None else ['base64_encode', 'base64_decode'], 'generation': {'temperature': 0.25}}))
     return session, persona, profile
@@ -100,11 +100,11 @@ def test_tool_errors_are_data_and_model_can_continue(harness_client, call, code)
     assert any(step["kind"] == "tool" and step["error_code"] == code for step in response["run"]["steps"])
 
 
-def test_capability_and_empty_allowlist(harness_client):
+def test_provider_tool_support_is_not_prechecked_and_empty_allowlist(harness_client):
     client, upstream, _ = harness_client
-    session, _, _ = configure(client, capability=False)
+    session, _, _ = configure(client)
     response = send(client, session)
-    assert response["run"]["error_code"] == "UNSUPPORTED_CAPABILITY" and upstream.calls == []
+    assert response["success"] and upstream.calls[0]["tools"]
     ok(client.patch(f"/api/sessions/{session['session_id']}", json={"tools_allowed": []}))
     assert send(client, session)["success"]
     assert "tools" not in upstream.calls[-1]
@@ -298,7 +298,7 @@ def test_cancel_registered_execution_and_claim_approval_once(tmp_path, entry):
         state.tool_registry.register(ToolSpec("blocking", "Blocking", {"type": "object"}, blocking, requires_approval=entry == "approval"))
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}}))
-            profile = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "capabilities": {"tools": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
+            profile = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "request_options": {"streaming": False}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             persona = ok(await client.post("/api/personas", json={'collection': 'agent', 'name': 'persona'}))
             session = ok(await client.post("/api/sessions", json={'persona_id': persona['id'], 'model_profile_id': profile['id'], 'harness_enabled': True, 'tools_allowed': ['blocking']}))
             if entry == "chat":
@@ -452,7 +452,7 @@ def test_harness_stream_is_visible_before_completion_and_cancels_model(tmp_path)
         app = create_app(root=tmp_path, use_memory=True, adapter_factory=upstream.factory)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'p', 'connection': {'base_url': 'http://provider.test/v1'}}))
-            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "capabilities": {"tools": True, "streaming": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
+            profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "request_options": {"streaming": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["base64_encode"]}))
             task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "go"}))
             try:
