@@ -28,9 +28,13 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
         const dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
         await dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true }).fill('0');
-        await dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true }).check();
+        await expect(dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true })).toHaveCount(0);
         await dialog.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(dialog).toBeHidden();
+        await page.locator('.chat-model-select').click();
+        await page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true }).click();
+        await expect(page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true })).toBeChecked();
+        await page.keyboard.press('Escape');
         await openSidebar(page);
         const sidebar = page.locator('.session-sidebar');
         const heading = sidebar.locator('[data-sidebar=group-label]').filter({ hasText: new RegExp(`^${labels.sessions}$`) }).locator('..');

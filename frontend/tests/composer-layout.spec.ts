@@ -19,10 +19,11 @@ async function compact(page: Page, touch: boolean) {
   });
   expect(Math.abs(text.lines - 1)).toBeLessThan(0.06);
   const buttons = await composer.locator('[data-slot=input-group-addon] button').all();
-  const plus = (await buttons[0].boundingBox())!, send = (await buttons[1].boundingBox())!;
+  const plus = (await buttons[0].boundingBox())!, model = (await buttons[1].boundingBox())!, send = (await buttons[2].boundingBox())!;
   expect(text.x).toBeGreaterThan(plus.x + plus.width);
-  expect(text.right).toBeLessThan(send.x);
-  for (const box of [plus, send]) {
+  expect(text.right).toBeLessThan(model.x);
+  expect(model.x + model.width).toBeLessThan(send.x);
+  for (const box of [plus, model, send]) {
     expect(Math.abs(box.y + box.height / 2 - text.center)).toBeLessThan(1);
     if (touch) { expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44); }
   }
@@ -70,7 +71,7 @@ for (const locale of ['en', 'zh-CN']) {
         await settled(page);
         const expanded = (await input.boundingBox())!;
         expect(expanded.height).toBeGreaterThanOrEqual(56);
-        const button = (await composer.locator('[data-slot=dropdown-menu-trigger]').boundingBox())!;
+        const button = (await composer.locator('[data-slot=dropdown-menu-trigger]').first().boundingBox())!;
         expect(expanded.y + expanded.height).toBeLessThanOrEqual(button.y);
         expect(await original.evaluate((node) => node === document.querySelector('.composer textarea'))).toBe(true);
         await expect(input).toBeFocused();
@@ -168,7 +169,7 @@ test('available width and short viewports recalculate layout without losing the 
   const draft = 'A line that fits on desktop but wraps in a narrow viewport.';
   await input.fill(draft);
   await compact(page, false);
-  await composer.locator('[data-slot=dropdown-menu-trigger]').click();
+  await composer.locator('[data-slot=dropdown-menu-trigger]').first().click();
   await expect(page.getByRole('menu')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 600 });
   await expect(composer).toHaveAttribute('data-expanded', 'true');

@@ -40,12 +40,13 @@ import { ImagePreview, type PreviewImage } from './messages/ImagePreview';
 import { contextMessageLabel, isContextMessage } from './messages/messageContent';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
 import { usePersonaIdentity } from '../hooks/usePersonaIdentity';
+import { ChatModelMenu } from './ChatModelMenu';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
   const personaIdentity = usePersonaIdentity();
   const draft = useCogitaStore((state) => state.composerDraftText);
-  const { composerRef, textareaRef, measureRef, expanded, textHeight } = useComposerLayout(draft);
+  const { composerRef, textareaRef, measureRef, actionsRef, expanded, textHeight } = useComposerLayout(draft);
   const setDraft = useCogitaStore((state) => state.setComposerDraftText);
   const send = useCogitaStore((state) => state.sendMessage);
   const cancelRun = useCogitaStore((state) => state.cancelRun);
@@ -70,10 +71,12 @@ export function ChatInput() {
   const { items, attachments, uploading, upload, remove, clear } = useComposerAttachments(sessionEpoch);
   const [preview, setPreview] = useState<PreviewImage | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [configurationBusy, setConfigurationBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   useLayoutEffect(() => {
     setPreview(null);
     setDragging(false);
+    setConfigurationBusy(false);
     if (fileRef.current) fileRef.current.value = '';
   }, [sessionEpoch]);
   const contextRequired = configuration?.context_policy?.mode === 'selected_message';
@@ -88,6 +91,7 @@ export function ChatInput() {
   const cannotSend =
     !ready ||
     sending ||
+    configurationBusy ||
     mutatingHistory ||
     uploading ||
     !!imageIssue ||
@@ -248,7 +252,8 @@ export function ChatInput() {
           className="min-h-0 [field-sizing:fixed] transition-[height,padding] duration-180 ease-out motion-reduce:transition-none"
           style={{
             height: expanded ? 'var(--composer-text-height)' : 'var(--composer-compact-height)',
-            paddingInline: expanded ? '12px' : 'var(--composer-inline-inset)',
+            paddingInlineStart: expanded ? '12px' : 'var(--composer-inline-start)',
+            paddingInlineEnd: expanded ? '12px' : 'var(--composer-inline-end)',
             paddingBlock: expanded ? '10px' : 'calc((var(--composer-compact-height) - 1lh) / 2)',
             overflowY: expanded ? 'auto' : 'hidden',
           }}
@@ -296,36 +301,40 @@ export function ChatInput() {
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          {activeRun ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <InputGroupButton
-                    disabled={activeRun.status === 'CANCELLING'}
-                    aria-label={t('cancel')}
-                    onClick={() => void cancelRun(activeRun.run_id)}
-                    variant="destructive"
-                    size="icon-sm"
-                    className="ml-auto rounded-full"
-                  />
-                }
+          <div ref={actionsRef} className="ml-auto flex items-center gap-2">
+            <ChatModelMenu key={sessionEpoch} disabled={!ready || sending || mutatingHistory || configurationBusy}
+              onBusyChange={setConfigurationBusy} />
+            {activeRun ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <InputGroupButton
+                      disabled={activeRun.status === 'CANCELLING'}
+                      aria-label={t('cancel')}
+                      onClick={() => void cancelRun(activeRun.run_id)}
+                      variant="destructive"
+                      size="icon-sm"
+                      className="rounded-full"
+                    />
+                  }
+                >
+                  <Square />
+                </TooltipTrigger>
+                <TooltipContent>{t('cancel')}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <InputGroupButton
+                aria-label={t('send')}
+                disabled={cannotSend}
+                onClick={() => void submit()}
+                variant="default"
+                size="icon-sm"
+                className="rounded-full"
               >
-                <Square />
-              </TooltipTrigger>
-              <TooltipContent>{t('cancel')}</TooltipContent>
-            </Tooltip>
-          ) : (
-            <InputGroupButton
-              aria-label={t('send')}
-              disabled={cannotSend}
-              onClick={() => void submit()}
-              variant="default"
-              size="icon-sm"
-              className="ml-auto rounded-full"
-            >
-              <ArrowUp />
-            </InputGroupButton>
-          )}
+                <ArrowUp />
+              </InputGroupButton>
+            )}
+          </div>
         </InputGroupAddon>
       </InputGroup>
       <div ref={measureRef} className="composer-measure" aria-hidden="true" />

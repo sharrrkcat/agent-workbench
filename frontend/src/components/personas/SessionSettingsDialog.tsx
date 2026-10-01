@@ -4,22 +4,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel, FieldSet, FieldGroup } from '@/components/ui/field';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { RefreshCw, Save } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { knowledgeApi } from '../../api/knowledge';
 import { chatApi } from '../../api/chat';
-import { toolsApi } from '../../api/tools';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import type { ChatDraft, OrdinaryChatDraft, OrdinarySession, Session, SessionPatch } from '../../types/chat';
-import type { HarnessTool } from '../../types/tools';
 import type { KnowledgeBase } from '../../types/knowledge';
 import { Feedback, ResourceLoading, errorText } from '../settings/resources/ResourceUI';
-import { ContextFields, GenerationFields, ModelField, ToolsField } from './ConfigurationFields';
+import { ContextFields, GenerationFields, ModelField } from './ConfigurationFields';
 import { SessionBindings } from './SessionBindings';
 import { WorkspaceSessionSettingsDialog } from '../projects/WorkspaceSessionSettingsDialog';
 
@@ -49,7 +46,6 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
   const [tab, setTab] = useState<Tab>('configuration');
   const [knowledge, setKnowledge] = useState<string[]>([]);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
-  const [tools, setTools] = useState<HarnessTool[]>([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -61,14 +57,12 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
       usePersonasStore.getState().reload(),
       sessionId ? knowledgeApi.listSessionKnowledgeBases(sessionId) : Promise.resolve({ knowledge_base_ids: (session as OrdinaryChatDraft).knowledge_base_ids }),
       knowledgeApi.listKnowledgeBases(),
-      toolsApi.listTools(),
       useModelsStore.getState().reload(),
-    ]).then(([, kb, availableBases, catalog]) => {
+    ]).then(([, kb, availableBases]) => {
       if (live) {
         const pending = useCogitaStore.getState().pendingKnowledge;
         setKnowledge(pending?.sessionId === sessionId ? pending.ids : kb.knowledge_base_ids);
         setBases(availableBases);
-        setTools(catalog);
         setLoading(false);
       }
     }).catch((reason) => { if (live) setError(errorText(reason)); });
@@ -84,8 +78,6 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
       model_profile_id: draft.model_profile_id,
       context_policy: draft.context_policy,
       generation: draft.generation,
-      harness_enabled: draft.harness_enabled,
-      tools_allowed: draft.tools_allowed,
     };
     try {
       if (sessionId) {
@@ -146,12 +138,6 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
                     <ModelField profiles={profiles} value={draft.model_profile_id} onChange={(id) => patch({ model_profile_id: id })} />
                     <ContextFields value={draft.context_policy} onChange={(value) => patch({ context_policy: value })} />
                     <GenerationFields value={draft.generation} onChange={(value) => patch({ generation: value })} />
-                    <Field orientation="horizontal">
-                      <Switch id={formId + '-harness'} checked={draft.harness_enabled}
-                        onCheckedChange={(value) => patch({ harness_enabled: value })} />
-                      <FieldLabel htmlFor={formId + '-harness'}>{t('harnessEnabled')}</FieldLabel>
-                    </Field>
-                    <ToolsField tools={tools} value={draft.tools_allowed} onChange={(value) => patch({ tools_allowed: value })} />
                   </FieldGroup>
                 </TabsContent>
                 <TabsContent value="knowledge">

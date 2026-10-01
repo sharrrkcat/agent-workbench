@@ -520,7 +520,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
   });
   await page.goto('/');
   await expect(page.locator('.chat-model-select')).toContainText('Unavailable');
-  await expect(page.locator('.chat-model-select')).toBeDisabled();
+  await expect(page.locator('.chat-model-select')).toBeEnabled();
   await page.getByRole('button', { name: 'Session settings', exact: true }).click();
   await dialog.getByRole('tab', { name: 'Configuration', exact: true }).click();
   const model = dialog.getByRole('combobox', { name: 'Model', exact: true });

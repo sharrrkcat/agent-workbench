@@ -151,6 +151,7 @@ assert.equal(await store.getState().sendMessage('blocked'), undefined);
 history.resolve([]);
 await selecting;
 assert.equal(store.getState().sessionLoad.status, 'ready');
+
 store.setState({ composerDraftText: 'Keep this' });
 await store.getState().selectSession('second');
 assert.equal(reads, 1);
@@ -216,3 +217,32 @@ lateDetails.resolve({ ...replacement, session_id: 'uncached', title: 'Stale deta
 await Promise.resolve();
 assert.equal(store.getState().currentSession.title, 'Retried details');
 assert.equal(store.getState().sessionLoad.status, 'ready');
+
+
+reset();
+api.updateSession = async (id, patch) => ({ ...first, ...patch });
+assert.equal(await store.getState().updateSession({ harness_enabled: false, tools_allowed: [] }), true);
+assert.equal(store.getState().currentSession.harness_enabled, false);
+assert.deepEqual(store.getState().currentSession.tools_allowed, []);
+api.updateSession = async () => { throw new Error('Configuration save failed'); };
+assert.equal(await store.getState().updateSession({ harness_enabled: true }), false);
+assert.equal(store.getState().currentSession.harness_enabled, false);
+assert.match(store.getState().error, /Configuration save failed/);
+
+reset();
+const pendingConfiguration = deferred();
+api.updateSession = () => pendingConfiguration.promise;
+const savingConfiguration = store.getState().updateSession({ harness_enabled: true });
+await store.getState().selectSession('third');
+pendingConfiguration.resolve({ ...first, harness_enabled: true });
+assert.equal(await savingConfiguration, false);
+assert.equal(store.getState().currentSession.session_id, 'third');
+
+reset();
+await store.getState().startDraft();
+assert.equal(await store.getState().updateSession({ harness_enabled: true, tools_allowed: [] }), true);
+assert.equal(store.getState().chatDraft.harness_enabled, true);
+assert.deepEqual(store.getState().chatDraft.tools_allowed, []);
+store.setState({ sending: true });
+assert.equal(await store.getState().updateSession({ harness_enabled: false }), false);
+assert.equal(store.getState().chatDraft.harness_enabled, true);

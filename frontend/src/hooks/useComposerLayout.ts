@@ -5,6 +5,7 @@ export function useComposerLayout(draft: string) {
   const composerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
   const measureLayout = useRef<() => void>(() => {});
   const [layout, setLayout] = useState({ expanded: false, textHeight: 56 });
 
@@ -12,6 +13,7 @@ export function useComposerLayout(draft: string) {
     const composer = composerRef.current!;
     const textarea = textareaRef.current!;
     const mirror = measureRef.current!;
+    const actions = actionsRef.current!;
     function measure() {
       // The retained chat can be hidden while another page is open.
       if (!composer.clientWidth) return;
@@ -30,8 +32,10 @@ export function useComposerLayout(draft: string) {
       });
       // A zero-width trailing character preserves the height of a final empty line.
       mirror.textContent = textarea.value + '\u200b';
-      const inset = parseFloat(style.getPropertyValue('--composer-inline-inset'));
-      mirror.style.width = `${Math.max(1, composer.clientWidth - inset * 2)}px`;
+      const start = parseFloat(style.getPropertyValue('--composer-inline-start'));
+      const end = actions.getBoundingClientRect().width + 20;
+      composer.style.setProperty('--composer-inline-end', `${end}px`);
+      mirror.style.width = `${Math.max(1, composer.clientWidth - start - end)}px`;
       const expanded = /[\r\n]/.test(textarea.value)
         || (!!textarea.value && mirror.getBoundingClientRect().height > parseFloat(style.lineHeight) + 1);
       mirror.style.width = `${Math.max(1, composer.clientWidth - 24)}px`;
@@ -42,12 +46,15 @@ export function useComposerLayout(draft: string) {
     measureLayout.current = measure;
     measure();
     let width = composer.clientWidth;
+    let actionsWidth = actions.clientWidth;
     const observer = new ResizeObserver(() => {
-      if (composer.clientWidth === width) return;
+      if (composer.clientWidth === width && actions.clientWidth === actionsWidth) return;
       width = composer.clientWidth;
+      actionsWidth = actions.clientWidth;
       measure();
     });
     observer.observe(composer);
+    observer.observe(actions);
     window.addEventListener('resize', measure);
     document.fonts.addEventListener('loadingdone', measure);
     return () => {
@@ -59,5 +66,5 @@ export function useComposerLayout(draft: string) {
 
   useLayoutEffect(() => { measureLayout.current(); }, [draft]);
 
-  return { composerRef, textareaRef, measureRef, ...layout };
+  return { composerRef, textareaRef, measureRef, actionsRef, ...layout };
 }

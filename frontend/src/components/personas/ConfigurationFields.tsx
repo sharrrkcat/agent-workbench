@@ -6,7 +6,7 @@ import {
   SelectGroup,
   SelectItem,
 } from '@/components/ui/select';
-import { FieldGroup, Field, FieldLabel } from '@/components/ui/field';
+import { FieldGroup, Field, FieldLabel, FieldContent, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -257,41 +257,41 @@ export function ToolsField({
   const { t } = useTranslation('settings');
   const { t: p } = useTranslation('personas');
   return (
-    <div className="context-binding-list" role="group" aria-label={p('tools')}>
+    <FieldGroup className="context-binding-list gap-3" role="group" aria-label={p('tools')}>
       {!tools.length ? <p className="model-empty">{p('noTools')}</p> : null}
       {tools.map((tool) => (
-        <div className="context-binding-row" key={tool.name}>
-          <Field orientation="horizontal">
-            <Checkbox
-              checked={value.includes(tool.name) && (!allowed || allowed.includes(tool.name))}
-              disabled={!!allowed && !allowed.includes(tool.name)}
-              onCheckedChange={(enabled) =>
-                onChange(
-                  enabled
-                    ? tools
-                        .filter((item) => (!allowed || allowed.includes(item.name)) && (item.name === tool.name || value.includes(item.name)))
-                        .map((item) => item.name)
-                    : value.filter((name) => name !== tool.name && (!allowed || allowed.includes(name))),
-                )
-              }
-            />
+        <Field orientation="horizontal" className="context-binding-row" key={tool.name}>
+          <Checkbox
+            checked={value.includes(tool.name) && (!allowed || allowed.includes(tool.name))}
+            disabled={!!allowed && !allowed.includes(tool.name)}
+            onCheckedChange={(enabled) =>
+              onChange(
+                enabled
+                  ? tools
+                      .filter((item) => (!allowed || allowed.includes(item.name)) && (item.name === tool.name || value.includes(item.name)))
+                      .map((item) => item.name)
+                  : value.filter((name) => name !== tool.name && (!allowed || allowed.includes(name))),
+              )
+            }
+          />
+          <FieldContent>
             <FieldLabel>{tool.name}</FieldLabel>
-          </Field>
-          <span className="tool-permission-detail">
-            {allowed && !allowed.includes(tool.name) ? <span>{p('projectToolDisabled')}</span> : null}
-            <span>{t('toolRisk.' + tool.risk)}</span>
-            {tool.requires_approval ? (
-              <Tooltip>
-                <TooltipTrigger render={<span tabIndex={0} aria-label={t('approvalRequired')} />}>
-                  <ShieldCheck size={15} />
-                </TooltipTrigger>
-                <TooltipContent>{t('approvalRequired')}</TooltipContent>
-              </Tooltip>
-            ) : null}
-          </span>
-        </div>
+            <FieldDescription className="flex flex-wrap items-center gap-2">
+              {allowed && !allowed.includes(tool.name) ? <span>{p('projectToolDisabled')}</span> : null}
+              <span>{t('toolRisk.' + tool.risk)}</span>
+              {tool.requires_approval ? (
+                <Tooltip>
+                  <TooltipTrigger render={<span tabIndex={0} className="inline-flex" aria-label={t('approvalRequired')} />}>
+                    <ShieldCheck size={15} />
+                  </TooltipTrigger>
+                  <TooltipContent>{t('approvalRequired')}</TooltipContent>
+                </Tooltip>
+              ) : null}
+            </FieldDescription>
+          </FieldContent>
+        </Field>
       ))}
-    </div>
+    </FieldGroup>
   );
 }
 

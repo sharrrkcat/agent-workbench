@@ -84,8 +84,8 @@ Routes survive refresh/history, reject mismatched membership and retain unsaved-
 Timeline conversation creation remains unavailable. Global Settings returns to the previous home route.
 Creation, inheritance and deletion follow [chat/context](chat-context.md#personas-and-sessions).
 
-The fixed chat header contains the sidebar toggle, title, concrete model selector and session settings;
-the selector occupies a second row on narrow screens. Agent Persona selection lives in the session dialog.
+The fixed chat header contains the sidebar toggle, title and session settings; the composer owns the concrete model menu.
+The header stays on one row on narrow screens. Agent Persona selection lives in the session dialog.
 The message column is at most 48rem wide, with an independent scroller and aligned fixed composer/status area.
 Assistant bodies align with both composer edges; user messages align with its right edge. Avatars sit outside
 the body column. Below 61rem of chat width, avatars and names share a row above each body, left-aligned
@@ -218,7 +218,7 @@ Defaults and execution belong to Models.
 Persona editors share identity/avatar/prompts and collection-specific resources; [chat/context](chat-context.md) owns restrictions.
 Cogita Persona opens its singleton editor without create/delete controls. Other collections use lists/dialogs;
 the protected Agent Cogita also has no delete control. Editors retain tab drafts, guard navigation and clean temporary avatars.
-Ordinary session controls are unchanged. Workspace controls show inheritance and per-setting reset,
+Session dialogs own Agent/model/context/temperature and Knowledge; the composer menu and [Harness Sheet](harness-tools.md) own Harness and tool selection. Workspace controls show inheritance and per-setting reset,
 submit only changed overrides, lock Cogita identity and inherited Knowledge, and disable Project-forbidden tools.
 Project editors offer type-specific Configuration and Knowledge/Worldbook tabs; missing required Personas
 have management links. Creation preselects session history, global model inheritance and, for Workspace,

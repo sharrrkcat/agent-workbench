@@ -25,7 +25,7 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(page.locator('.composer')).toHaveAttribute('data-expanded', 'false');
       await expect(page.locator('.composer')).toHaveCSS('border-radius', '20px');
       const toolbarButtons = page.locator('.composer [data-slot=input-group-addon] button');
-      await expect(toolbarButtons).toHaveCount(2);
+      await expect(toolbarButtons).toHaveCount(3);
       for (const button of await toolbarButtons.all()) {
         const radius = await button.evaluate((node) => parseFloat(getComputedStyle(node).borderTopLeftRadius));
         expect(radius).toBeGreaterThanOrEqual((await button.boundingBox())!.height / 2);
@@ -58,7 +58,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect(marks[3].color).toBe(marks[0].color);
         expect(marks[2].color).not.toBe(marks[0].color);
       }
-      const plus = page.locator('.composer [data-slot=dropdown-menu-trigger]');
+      const plus = page.locator('.composer [data-slot=dropdown-menu-trigger]').first();
       await plus.focus();
       await plus.press('Enter');
       const menuItem = page.getByRole('menuitem', { name: locale === 'en' ? 'Add Photos & Files' : '添加照片与文件' });

@@ -21,6 +21,21 @@ for (const locale of ['en', 'zh-CN']) {
         if (width !== 390) await reply.hover();
         await expect(reply.locator('.reply-metrics-summary')).toContainText('60');
         await expect(reply.locator('.reply-metrics-summary')).toContainText('30');
+        const summaryItems = reply.locator('.reply-metrics-summary > div');
+        const labels = locale === 'en'
+          ? ['Input tokens', 'Output tokens', 'First response', 'Generation']
+          : ['输入 tokens', '输出 tokens', '首响应', '生成'];
+        for (const [index, label] of labels.entries()) {
+          await summaryItems.nth(index).focus();
+          await expect(page.locator('[data-slot=tooltip-content][data-open]')).toHaveText(label);
+        }
+        if (width !== 390) {
+          await input.focus();
+          await summaryItems.first().hover();
+          await expect(page.locator('[data-slot=tooltip-content][data-open]')).toHaveText(labels[0]);
+        }
+        await page.keyboard.press('Escape');
+        await page.screenshot({ path: info.outputPath('usage-summary.png') });
         const toggle = reply.getByRole('button', { name: locale === 'en' ? 'Usage details' : '用量详情', exact: true });
         await expect(toggle).toHaveAttribute('aria-expanded', 'false');
         await toggle.scrollIntoViewIfNeeded();
@@ -72,7 +87,7 @@ for (const locale of ['en', 'zh-CN']) {
         const reply = page.locator('article[data-run-id]').last();
         await expect(reply.locator('.reply-metrics')).toBeAttached({ timeout: 20000 });
         const user = page.locator('article.user').last();
-        await expect(user.locator('.message-meta > :first-child')).toHaveJSProperty('tagName', 'TIME');
+        await expect(user.locator('.message-meta time + strong')).toHaveCount(1);
         await expect(reply.locator('.message-meta > :last-child')).toHaveJSProperty('tagName', 'TIME');
         await page.mouse.move(0, 0);
         const actions = reply.locator('.message-actions');

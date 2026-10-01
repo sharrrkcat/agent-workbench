@@ -4,7 +4,9 @@ Harness execution uses effective `harness_enabled` and `tools_allowed`. Ordinary
 sessions default off with all registered tools; explicit [] disables every tool.
 Workspace sessions inherit Project defaults and may override them; Persona owns neither field.
 Changing Harness enablement preserves the list, and new registry entries do
-not rewrite existing lists. The session UI uses catalog-backed tool switches.
+not rewrite existing lists. The composer's model menu toggles Harness immediately, displays on/off text and keeps the menu open; failure preserves confirmed state.
+Its independent settings action opens a right Sheet with fade/slide transitions in both directions for catalog-backed session tool selection. Changes require Save; unsaved closing confirms discard, and failed saves retain edits. The Sheet is full-width on mobile and restores focus to the model trigger on close.
+Session settings no longer edit or submit Harness/allowlists. Workspace inheritance and per-field resets for both fields live in the Sheet; reset submits null. Draft edits remain local until first send. Session changes close the menu/Sheet and ignore late saves. Global search settings remain separate.
 Workspace tools are intersected with the Project allowlist; forbidden override submissions return 422.
 A Project's Harness boolean is a default, so a session may enable it independently.
 Each model round and queued call, including approval resumption, rechecks the current

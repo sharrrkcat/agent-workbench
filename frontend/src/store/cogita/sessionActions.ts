@@ -226,20 +226,27 @@ export const createSessionActions: CogitaActions<
   },
 
   updateSession: async (patch) => {
-    if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return;
+    if (get().sending || (get().sessionLoad && get().sessionLoad?.status !== 'ready')) return false;
     const session = get().currentSession;
-    if (!session) { get().saveDraft(patch); return; }
+    if (!session) {
+      if (!get().chatDraft) return false;
+      get().saveDraft(patch);
+      return true;
+    }
     const epoch = get().sessionEpoch;
+    set({ error: null });
     try {
       const updated = await chatApi.updateSession(session.session_id, patch);
-      if (get().currentSession?.session_id !== updated.session_id || get().sessionEpoch !== epoch) return;
+      if (get().currentSession?.session_id !== updated.session_id || get().sessionEpoch !== epoch) return false;
       set((state) => ({
         currentSession: updated,
         sessions: state.sessions.map((item) => (item.session_id === updated.session_id ? updated : item)),
         sessionVersion: state.sessionVersion + 1,
       }));
+      return true;
     } catch (error) {
-      set({ error: errorText(error) });
+      if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+      return false;
     }
   },
 

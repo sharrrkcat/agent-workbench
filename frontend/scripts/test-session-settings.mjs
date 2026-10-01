@@ -106,11 +106,10 @@ for (const [locale, labels] of [
     const header = renderToStaticMarkup(React.createElement(SidebarProvider, null,
       React.createElement(ChatHeader, { onOpenSettings: () => {} })));
     const settings = renderToStaticMarkup(React.createElement(ModelField, { profiles, value: modelId, onChange: () => {} }));
-    for (const rendered of [header, settings]) {
-      assert.ok(rendered.includes(profiles.find((profile) => profile.id === modelId).name));
-      assert.match(rendered, new RegExp(`<input[^>]*value="${modelId}"`));
-      assert.doesNotMatch(rendered, /Global default|全局默认|<option value=""/);
-    }
+    assert.doesNotMatch(header, /role="combobox"|chat-model-select/);
+    assert.ok(settings.includes(profiles.find((profile) => profile.id === modelId).name));
+    assert.match(settings, new RegExp(`<input[^>]*value="${modelId}"`));
+    assert.doesNotMatch(settings, /Global default|全局默认|<option value=""/);
   }
 }
 

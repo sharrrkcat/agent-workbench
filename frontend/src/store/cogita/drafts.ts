@@ -15,5 +15,6 @@ export function draftConfiguration(draft: ChatDraft, personas: Persona[], profil
     model_profile_id: draft.kind === 'ordinary' ? draft.model_profile_id
       : draft.overrides.model_profile_id ?? project?.model_profile_id ?? defaultModelId(profiles, preferred),
     context_policy: draft.kind === 'ordinary' ? draft.context_policy : draft.overrides.context_policy ?? project?.context_policy,
+    harness_enabled: draft.kind === 'ordinary' ? draft.harness_enabled : draft.overrides.harness_enabled ?? project?.harness_enabled ?? false,
   };
 }

@@ -69,9 +69,9 @@ for (const locale of ['en', 'zh-CN']) {
           await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
           dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
           await expect(dialog.getByLabel(labels.agentPersona, { exact: true })).toContainText(agent.name);
-          await expect(dialog.getByRole('checkbox', { name: 'read_file', exact: true })).toBeDisabled();
+          await expect(dialog.getByRole('checkbox', { name: 'read_file', exact: true })).toHaveCount(0);
           await expect(dialog.getByLabel(labels.collections.user, { exact: true })).toHaveCount(0);
-          await dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true }).check();
+          await expect(dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true })).toHaveCount(0);
           await dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true }).fill('0');
           await dialog.getByRole('tab', { name: labels.knowledge, exact: true }).click();
           const inherited = dialog.getByRole('region', { name: labels.projectBindings }).getByRole('checkbox', { name: bases[0].name, exact: true });
@@ -81,6 +81,14 @@ for (const locale of ['en', 'zh-CN']) {
           await dialog.getByRole('button', { name: labels.save, exact: true }).click();
           await expect(dialog).toBeHidden();
           expect(await json(request.get(`/api/projects/${projectId}/sessions`))).toEqual([]);
+          await page.locator('.chat-model-select').click();
+          await page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true }).click();
+          await expect(page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true })).toBeChecked();
+          await page.getByRole('menuitem', { name: labels.harnessSettings, exact: true }).click();
+          const harness = page.getByRole('dialog', { name: labels.harnessSettings, exact: true });
+          await expect(harness.getByRole('checkbox', { name: 'read_file', exact: true })).toBeDisabled();
+          await page.keyboard.press('Escape');
+          await expect(harness).toBeHidden();
           await page.locator('.composer textarea').fill('Workspace question');
           await page.locator('.composer').getByRole('button', { name: labels.send, exact: true }).click();
           await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
@@ -108,6 +116,23 @@ for (const locale of ['en', 'zh-CN']) {
           const refreshedBindings = await json(request.get(`/api/sessions/${sessionId}/knowledge-bases`));
           expect(refreshedBindings.knowledge_base_ids).toEqual([]);
           expect(refreshedBindings.effective_knowledge_base_ids).toEqual(bases.map((base) => base.id));
+          await page.locator('.chat-model-select').click();
+          await page.getByRole('menuitem', { name: labels.harnessSettings, exact: true }).click();
+          await harness.getByRole('checkbox', { name: 'base64_encode', exact: true }).uncheck();
+          await harness.getByRole('button', { name: labels.save, exact: true }).click();
+          await expect(harness).toBeHidden();
+          const overridden = (await json(request.get(`/api/sessions/${sessionId}`))).overrides;
+          expect(overridden.harness_enabled).toBe(true);
+          expect(overridden.tools_allowed).not.toContain('base64_encode');
+          await page.locator('.chat-model-select').click();
+          await page.getByRole('menuitem', { name: labels.harnessSettings, exact: true }).click();
+          for (const field of [labels.harness, labels.tools]) {
+            await harness.getByRole('button', { name: labels.restoreInheritanceFor.replace('{{field}}', field), exact: true }).click();
+          }
+          await expect(harness.getByRole('checkbox', { name: 'base64_encode', exact: true })).toBeChecked();
+          await harness.getByRole('button', { name: labels.save, exact: true }).click();
+          await expect(harness).toBeHidden();
+          expect((await json(request.get(`/api/sessions/${sessionId}`))).overrides).toEqual({});
           await page.reload();
           await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
           await openSidebar(page);

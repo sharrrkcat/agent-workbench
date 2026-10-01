@@ -170,6 +170,7 @@ Replies sum all model-call usage, excluding auxiliary titles. Speed uses summed 
 Missing/incomplete call counts mark known totals incomplete and suppress aggregate speed. A mix including estimates remains labelled estimated.
 Reply first response starts at Run start; reply total retains the whole Run clock including tools/approval waits. Neither clock measures client rendering.
 At terminal status or approval waiting, input/output, first response and speed follow the reply action buttons.
+Each summary metric pairs an icon with its value and retains a localized screen-reader label and hover/focus tooltip.
 The usage icon opens a controlled modal with aggregate total time, call count and per-call counts, cache/reasoning, timing and source.
 The modal omits explanatory prose, includes Model calls in the summary grid, and separates individual calls with horizontal rules.
 It scrolls within the viewport and returns focus to its trigger without moving the message list.

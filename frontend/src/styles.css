@@ -151,17 +151,13 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .topbar { grid-template-columns: auto minmax(0, 1fr) minmax(12rem, 16rem) auto; }
+  .topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
   .settings-header { grid-template-columns: auto minmax(0, 1fr); }
 
   .chat-title {
     @apply truncate;
     font-size: 0.875rem;
     font-weight: 600;
-  }
-
-  .chat-model-control {
-    min-width: 0;
   }
 
   .conversation-content,
@@ -589,7 +585,9 @@
 
   .reply-metrics-summary > div,
   .reply-metrics-values > div { display: flex; gap: 0.375rem; }
-  .reply-metrics-summary > div { flex-wrap: wrap; }
+  .reply-metrics-summary > div { align-items: center; }
+  .reply-metrics-summary dt { display: flex; align-items: center; }
+  .reply-metrics-summary dt svg { width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
   .reply-metrics dd, .reply-metrics-dialog dd { margin: 0; }
   .reply-metrics-controls:empty { display: none; }
   .reply-metrics-dialog { overflow-y: auto; font-variant-numeric: tabular-nums; }
@@ -612,7 +610,8 @@
   }
 
   .composer {
-    --composer-inline-inset: 48px;
+    --composer-inline-start: 48px;
+    --composer-inline-end: 48px;
     --composer-compact-height: 44px;
     --composer-toolbar-height: 40px;
   }
@@ -625,7 +624,8 @@
   }
   @media (pointer: coarse) {
     .composer {
-      --composer-inline-inset: 64px;
+      --composer-inline-start: 64px;
+      --composer-inline-end: 64px;
       --composer-compact-height: 60px;
       --composer-toolbar-height: 56px;
     }
@@ -642,7 +642,6 @@
     }
 
     .topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
-    .chat-model-control { grid-column: 1 / -1; grid-row: 2; }
     .session-settings-trigger { grid-column: 3; grid-row: 1; }
     .conversation-content, .chat-bottom { --chat-column-padding: 0.75rem; }
     .conversation-content { padding-block: 1.25rem 1.75rem; gap: 1.5rem; }

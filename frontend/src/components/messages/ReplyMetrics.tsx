@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChartNoAxesColumn } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, ChartNoAxesColumn, Gauge, Timer, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -24,13 +24,22 @@ export function ReplyMetrics({ reply }: { reply: Reply }) {
   const item = (label: string, value: string) => (
     <div key={label}><dt>{t(`metrics.${label}`)}</dt><dd>{value}</dd></div>
   );
+  const summaryItem = (label: string, value: string, Icon: LucideIcon) => (
+    <Tooltip>
+      <TooltipTrigger render={<div tabIndex={0} />}>
+        <dt><Icon aria-hidden="true" /><span className="sr-only">{t(`metrics.${label}`)}</span></dt>
+        <dd>{value}</dd>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t(`metrics.${label}`)}</TooltipContent>
+    </Tooltip>
+  );
   const summary = (
     <div className="reply-metrics">
       <dl className="reply-metrics-summary">
-        {item('input', count(metrics.inputTokens))}
-        {item('output', count(metrics.outputTokens))}
-        <div><dt>{t('metrics.respond')}</dt><dd>{duration(metrics.firstResponseMs)}</dd></div>
-        <div><dt className="sr-only">{t('metrics.speed')}</dt><dd>{speed(metrics.tokensPerSecond, metrics.estimated)}</dd></div>
+        {summaryItem('inputTokens', count(metrics.inputTokens), ArrowDownToLine)}
+        {summaryItem('outputTokens', count(metrics.outputTokens), ArrowUpFromLine)}
+        {summaryItem('firstResponse', duration(metrics.firstResponseMs), Timer)}
+        {summaryItem('speed', speed(metrics.tokensPerSecond, metrics.estimated), Gauge)}
       </dl>
       <div className="reply-metrics-controls">
         {reply.run.status === 'WAITING_FOR_USER' ? <Badge variant="secondary">{t('metrics.soFar')}</Badge> : null}

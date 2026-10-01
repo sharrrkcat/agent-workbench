@@ -4,12 +4,9 @@ import { SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { useModelsStore } from '../store/useModelsStore';
 import { useCogitaStore } from '../store/useCogitaStore';
 import type { SettingsRoute } from './settings/navigation';
 import { SessionSettingsDialog } from './personas/SessionSettingsDialog';
-import { ModelSelect } from './personas/ConfigurationFields';
-import { useChatConfiguration } from '../hooks/useChatConfiguration';
 
 export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: SettingsRoute) => void }) {
   const { t } = useTranslation('personas');
@@ -22,9 +19,6 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
   useLayoutEffect(() => setEditing(false), [sessionEpoch]);
   const unavailable = !!sessionLoad && sessionLoad.status !== 'ready';
   const target = session ?? draft;
-  const configuration = useChatConfiguration();
-  const updateSession = useCogitaStore((state) => state.updateSession);
-  const profiles = useModelsStore((state) => state.profiles);
   const title = target ? target.title.trim() || t('newSession')
     : sessionLoad ? t(sessionLoad.status === 'error' ? 'chat:loadFailed' : 'common:loading') : t('newSession');
   return (
@@ -36,16 +30,6 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
       <h1 className="chat-title" title={title}>
         {title}
       </h1>
-      <div className="chat-model-control">
-        <ModelSelect
-          className="chat-model-select w-full min-w-0"
-          profiles={profiles}
-          value={configuration?.model_profile_id ?? null}
-          disabled={!target || sending || unavailable}
-          onChange={(model_profile_id) => void updateSession(target?.kind === 'workspace'
-            ? { overrides: { model_profile_id } } : { model_profile_id })}
-        />
-      </div>
       <Tooltip>
         <TooltipTrigger
           render={

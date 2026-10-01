@@ -5,12 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { chatApi } from '../../api/chat';
 import { knowledgeApi } from '../../api/knowledge';
-import { toolsApi } from '../../api/tools';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
@@ -18,8 +16,7 @@ import { useProjectsStore } from '../../store/useProjectsStore';
 import type { WorkspaceChatDraft, WorkspaceOverrides, WorkspaceSession } from '../../types/chat';
 import type { WorkspaceProject } from '../../types/projects';
 import type { KnowledgeBase } from '../../types/knowledge';
-import type { HarnessTool } from '../../types/tools';
-import { ContextFields, GenerationFields, ModelField, PersonaField, ToolsField } from '../personas/ConfigurationFields';
+import { ContextFields, GenerationFields, ModelField, PersonaField } from '../personas/ConfigurationFields';
 import { SessionBindings } from '../personas/SessionBindings';
 import { Feedback, ResourceLoading, errorText } from '../settings/resources/ResourceUI';
 
@@ -57,7 +54,6 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
   const [knowledge, setKnowledge] = useState<string[]>([]);
   const [originalKnowledge, setOriginalKnowledge] = useState<string[]>([]);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
-  const [tools, setTools] = useState<HarnessTool[]>([]);
   const [tab, setTab] = useState<'configuration' | 'knowledge'>('configuration');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,14 +72,14 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
     void Promise.all([
       useProjectsStore.getState().load(session.project_id), usePersonasStore.getState().reload(),
       sessionId ? knowledgeApi.listSessionKnowledgeBases(sessionId) : Promise.resolve({ knowledge_base_ids: (session as WorkspaceChatDraft).knowledge_base_ids }), knowledgeApi.listKnowledgeBases(),
-      toolsApi.listTools(), useModelsStore.getState().reload(),
-    ]).then(([project, , bindings, bases, tools]) => {
+      useModelsStore.getState().reload(),
+    ]).then(([project, , bindings, bases]) => {
       if (!live) return;
       if (project.kind !== 'workspace') throw new Error(t('timelineCreationOnly'));
       const pending = useCogitaStore.getState().pendingKnowledge;
       setProject(project); setKnowledge(pending?.sessionId === sessionId ? pending.ids : bindings.knowledge_base_ids);
       setOriginalKnowledge(bindings.knowledge_base_ids);
-      setBases(bases); setTools(tools);
+      setBases(bases);
     }).catch((reason) => { if (live) setError(errorText(reason)); });
     return () => { live = false; };
   }, [session.project_id, sessionId, reload]);
@@ -142,12 +138,6 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
                     onChange={(value) => change('context_policy', value)} />)}
                   {inheritance('temperature', t('llm:params.temperature'), <GenerationFields value={{ temperature: overrides.temperature ?? project.temperature }}
                     onChange={(value) => change('temperature', value.temperature ?? null)} />)}
-                  {inheritance('harness_enabled', t('harness'), <Field orientation="horizontal">
-                    <Switch id={formId + '-harness'} checked={overrides.harness_enabled ?? project.harness_enabled} onCheckedChange={(value) => change('harness_enabled', value)} />
-                    <FieldLabel htmlFor={formId + '-harness'}>{t('harnessEnabled')}</FieldLabel>
-                  </Field>)}
-                  {inheritance('tools_allowed', t('tools'), <ToolsField tools={tools} value={overrides.tools_allowed ?? project.tools_allowed}
-                    allowed={project.tools_allowed} onChange={(value) => change('tools_allowed', value)} />)}
                 </FieldGroup>
               </TabsContent>
               <TabsContent value="knowledge"><SessionBindings personaId={overrides.persona_id ?? project.agent_persona_id}
