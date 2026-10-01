@@ -64,6 +64,10 @@ class ChatRequestOptions(StrictModel):
     streaming: bool = Field(default=True, strict=True)
     skip_tool_capability_check: bool = Field(default=False, strict=True)
     skip_vision_capability_check: bool = Field(default=False, strict=True)
+    skip_instant_capability_check: bool = Field(default=False, strict=True,
+        description="Instant declaration. Skips reasoning-off preflight only when the Reasoning declaration is off.")
+    skip_reasoning_capability_check: bool = Field(default=False, strict=True,
+        description="Reasoning declaration. Skips reasoning-on preflight only when the Instant declaration is off.")
 
 
 class Lifecycle(StrictModel):
@@ -321,6 +325,7 @@ class ModelInput(StrictModel):
                 self.request_options = ChatRequestOptions()
             if not isinstance(self.source, LocalSource) and (
                 self.request_options.skip_tool_capability_check or self.request_options.skip_vision_capability_check
+                or self.request_options.skip_instant_capability_check or self.request_options.skip_reasoning_capability_check
             ):
                 raise ValueError("Skipping capability checks applies only to local LLM profiles")
         elif self.request_options is not None:
@@ -451,6 +456,8 @@ class CogitaChatOptions(StrictModel):
 class ChatRequest(GenerationParameters):
     model: str = Field(min_length=1)
     messages: list[ChatMessage] = Field(min_length=1)
+    reasoning: bool | None = Field(default=None, strict=True,
+        description="Select native reasoning mode. False selects instant mode; omission/null keeps the engine default. Does not filter reasoning text.")
     stream: bool = False
     n: Literal[1] = 1
     tools: list[ToolSpec] | None = Field(default=None, min_length=1)

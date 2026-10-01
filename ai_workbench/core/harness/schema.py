@@ -84,6 +84,7 @@ class HarnessState(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
 
     direct: bool = False
+    reasoning: bool = True
     searxng_base_url: str | None = None
     base_messages: list[ContextMessage] = Field(default_factory=list)
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)

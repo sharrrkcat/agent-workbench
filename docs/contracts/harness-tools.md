@@ -87,7 +87,7 @@ Every attempted call has a tool step, including validation failures.
 A sensitive call creates an approval step and sets WAITING_FOR_USER and the
 session's waiting_run_id. Private harness_state_json preserves the original
 input, transcript, ordered remaining calls, approval ID, round count, settings
-and active time. config_snapshot_json preserves the resolved chat configuration.
+and active time. It also preserves the effective reasoning mode selected before the first model round, including automatic adjustment; all rounds and approval resumptions keep that mode despite session edits. config_snapshot_json preserves the requested chat configuration. Retry resolves both modes again.
 Neither private state appears in public run metadata, responses or events.
 Base context stores typed attachment-image references, never image data URLs/base64. Every model round,
 including approval resumption, reads only those references and applies the model's image capability/request limits.

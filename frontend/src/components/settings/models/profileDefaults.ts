@@ -20,7 +20,8 @@ export const newModel = (kind: ModelKind): ModelInput => ({
     : localSource(),
   enabled: true,
   external_enabled: false,
-  request_options: kind === 'llm' ? { streaming: true, skip_tool_capability_check: false, skip_vision_capability_check: false } : null,
+  request_options: kind === 'llm' ? { streaming: true, skip_tool_capability_check: false, skip_vision_capability_check: false,
+    skip_instant_capability_check: false, skip_reasoning_capability_check: false } : null,
   parameters: kind === 'tts' ? { speed: 1, response_format: 'mp3' }
     : kind === 'vision' ? { task: 'tags', thresholds: { general: 0.35, character: 0.85 } }
     : kind === 'image_embedding' ? { unload_other_tower_on_call: true }
@@ -103,7 +104,8 @@ export function selectModelSource(value: ModelInput, source: ModelSource | null)
     ? source?.type === 'local' ? { query_prompt_name: null, document_prompt_name: null } : {}
     : value.parameters;
   const request_options = value.request_options ? { ...value.request_options,
-    skip_tool_capability_check: false, skip_vision_capability_check: false } : null;
+    skip_tool_capability_check: false, skip_vision_capability_check: false,
+    skip_instant_capability_check: false, skip_reasoning_capability_check: false } : null;
   if (!source) return { ...value, source: null, parameters, request_options };
   return updateModel(value, { source, parameters, request_options, model_ref: value.source ? '' : value.model_ref });
 }

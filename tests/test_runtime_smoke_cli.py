@@ -85,6 +85,9 @@ def test_audio_and_loading_defaults_preserve_explicit_cpu_selection():
 
 
 def test_vision_smoke_uses_directory_discovery_and_checks_answers():
+    assert smoke_llm_runtime.parse_args(["--reasoning"]).reasoning
+    with pytest.raises(SystemExit):
+        smoke_llm_runtime.parse_args(["--reasoning", "--vision"])
     assert smoke_llm_runtime.parse_args(["--vision"]).vision
     args = smoke_llm_runtime.parse_args(["--vision", "--engine", "llama-server", "--model-ref", "llms/vision"])
     assert args.model_ref == "llms/vision"

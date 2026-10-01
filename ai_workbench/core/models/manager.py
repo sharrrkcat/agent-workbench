@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.chat_support import local_chat_support, require_chat_support
+from ai_workbench.core.models.chat_support import local_chat_support, require_chat_support, skips_reasoning
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.images import prepare_image_embedding_inputs, prepare_local_images, prepare_tagging_images, validate_local_image_options
@@ -539,11 +539,12 @@ class ModelManager:
             return await slot.adapter.models()
 
     @asynccontextmanager
-    async def check_chat_inputs(self, profile, *, tools: bool, vision: bool, metrics=None):
+    async def check_chat_inputs(self, profile, *, tools: bool, vision: bool, reasoning: bool | None = None, metrics=None):
         """Use ordinary autoload once when a requested feature needs resident metadata."""
         options = profile.request_options
-        needs_worker = is_transformers(profile) and (
+        needs_worker = (is_transformers(profile) and (
             tools and not options.skip_tool_capability_check or vision and not options.skip_vision_capability_check)
+            or isinstance(profile.source, LocalSource) and reasoning is not None and not skips_reasoning(profile, reasoning))
         if not needs_worker:
             yield local_chat_support(profile)
             return
@@ -602,7 +603,8 @@ class ModelManager:
             adapter = slot.adapter if slot and self._statuses.get(self._key(profile), ModelStatus()).state == "ready" else None
             require_chat_support(profile, local_chat_support(profile, adapter),
                 tools=bool(request.tools or any(m.tool_calls or m.role == "tool" for m in request.messages)),
-                vision=any(isinstance(m.content, list) and any(isinstance(p, ImagePart) for p in m.content) for m in request.messages))
+                vision=any(isinstance(m.content, list) and any(isinstance(p, ImagePart) for p in m.content) for m in request.messages),
+                reasoning=request.reasoning)
             validate_local_image_options(request)
 
     async def _prepare_chat(self, profile, request):

@@ -14,6 +14,7 @@ from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessA
 from ai_workbench.core.context import ContextBuilder, LLMContextError
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.chat_support import chat_reasoning_mode, local_chat_support
 from ai_workbench.core.models.images import has_context_images, resolve_context_images, without_context_images
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
@@ -141,9 +142,14 @@ class ChatRunner:
             profile = self.model_manager.profile(config.model_profile_id, "llm")
             use_harness = bool(config.harness_enabled and self.chat_service.tools_for_run(config) and self.harness_loop)
             has_images = has_context_images(context)
+            current = context[-1]["content"]
+            current_text = current if isinstance(current, str) else "\n".join(
+                part["text"] for part in current if part["type"] == "text")
+            rejected_image = (has_images and not current_text.strip() and not profile.request_options.skip_vision_capability_check
+                              and local_chat_support(profile).vision.state == "unsupported")
             first_metrics.start()
             preflight = checks.enter_async_context(self.model_manager.check_chat_inputs(
-                profile, tools=use_harness, vision=has_images, metrics=first_metrics))
+                profile, tools=use_harness, vision=has_images, reasoning=None if rejected_image else config.reasoning, metrics=first_metrics))
             if use_harness:
                 try:
                     support = await asyncio.wait_for(preflight, timeout=ACTIVE_BUDGET_SECONDS - (time.monotonic() - context_started))
@@ -152,11 +158,11 @@ class ChatRunner:
             else:
                 support = await preflight
             warnings = []
+            reasoning = chat_reasoning_mode(profile, support, config.reasoning)
+            if reasoning != config.reasoning:
+                warnings.append("reasoning_enabled" if reasoning else "reasoning_disabled")
             image_only = False
             if has_images and not profile.request_options.skip_vision_capability_check and support.vision.state == "unsupported":
-                current = context[-1]["content"]
-                current_text = current if isinstance(current, str) else "\n".join(
-                    part["text"] for part in current if part["type"] == "text")
                 image_only = not current_text.strip()
                 context = without_context_images(context)
                 warnings.append("images_require_text" if image_only else "images_ignored")
@@ -164,7 +170,8 @@ class ChatRunner:
                 use_harness = False
                 warnings.append("tools_ignored")
             self._input_warnings(user, run.run_id, warnings)
-            self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "harness": use_harness})
+            self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "harness": use_harness,
+                "reasoning": {"requested": config.reasoning, "effective": reasoning}})
             if image_only:
                 raise ModelError("UNSUPPORTED_CAPABILITY", "This model cannot read images. Add text or select another model.", 422)
             self.runs.update_step(
@@ -179,6 +186,7 @@ class ChatRunner:
 
             if use_harness:
                 result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context,
+                                                     reasoning=reasoning,
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
                                                      active_seconds=time.monotonic() - context_started, first_metrics=first_metrics)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
@@ -202,7 +210,8 @@ class ChatRunner:
             streamed = profile.request_options.streaming
             messages = await resolve_context_images(context,
                 max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024)
-            request = ChatRequest(model=profile.alias, messages=messages, stream=streamed, **config.generation.model_dump(exclude_none=True))
+            request = ChatRequest(model=profile.alias, messages=messages, stream=streamed, reasoning=reasoning,
+                                  **config.generation.model_dump(exclude_none=True))
             self.model_manager.validate_chat(profile, request)
             draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session_id,
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,

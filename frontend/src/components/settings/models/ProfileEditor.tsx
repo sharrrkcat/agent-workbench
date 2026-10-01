@@ -8,7 +8,7 @@ import {
   ComboboxEmpty,
 } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
-import { FieldGroup, Field, FieldLabel, FieldDescription, FieldSet } from '@/components/ui/field';
+import { FieldGroup, Field, FieldLabel, FieldDescription, FieldSet, FieldLegend } from '@/components/ui/field';
 import {
   Select,
   SelectTrigger,
@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ProfileParameters } from './ProfileParameters';
 import { Save } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
@@ -65,6 +65,7 @@ export function ProfileEditor({
   setModel: Dispatch<SetStateAction<ProfileDraft | null>>;
 }) {
   const { t } = useTranslation('llm');
+  const formId = useId();
   const activeView = useSettingsView();
   const { providers, profiles } = useModelsStore();
   const local = model?.value.source?.type === 'local' ? model.value.source : null;
@@ -498,6 +499,17 @@ export function ProfileEditor({
                       </Field>
                     )) : null}
                     {local ? <p className="text-xs text-muted-foreground">{t('requestOptions.help')}</p> : null}
+                    {local ? <FieldSet>
+                      <FieldLegend>{t('requestOptions.reasoningPreflight')}</FieldLegend>
+                      <p id={formId + '-reasoning-help'} className="text-xs leading-normal text-muted-foreground">{t('requestOptions.reasoningHelp')}</p>
+                      {(['skip_instant_capability_check', 'skip_reasoning_capability_check'] as const).map((key) => (
+                        <Field key={key} orientation="horizontal">
+                          <Switch id={formId + key} aria-describedby={formId + '-reasoning-help'} checked={model.value.request_options![key]}
+                            onCheckedChange={(value) => patchModel({ request_options: { ...model.value.request_options!, [key]: value } })} />
+                          <FieldLabel htmlFor={formId + key}>{t('requestOptions.' + key)}</FieldLabel>
+                        </Field>
+                      ))}
+                    </FieldSet> : null}
                   </FieldGroup>
                 ) : null}
                 {engine !== 'sentence-transformers' && model.value.kind !== 'reranker' ? <>

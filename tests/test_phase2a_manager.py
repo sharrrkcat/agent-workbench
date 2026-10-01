@@ -46,6 +46,7 @@ class ControlledAdapter:
 class ControlledLocalAdapter(ControlledAdapter):
     def __init__(self):
         super().__init__()
+        self.reasoning_support = {"instant": "unknown", "reasoning": "unknown"}
         self.loads = self.unloads = 0
         self.fail_unload = False
         self.state = ModelStatus(state="unloaded", residency="unloaded", unload_supported=True)

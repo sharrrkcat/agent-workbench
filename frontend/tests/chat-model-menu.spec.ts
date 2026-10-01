@@ -52,11 +52,16 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(groups.first().locator('[data-slot=dropdown-menu-label]')).toHaveText(['Local', ...providerNames, labels.unconfiguredSource]);
           await expect(menu.getByRole('menuitemradio', { name: 'Local menu model', exact: false })).toBeDisabled();
           await expect(menu.getByRole('menuitemradio', { name: 'resource-embedding', exact: true })).toHaveCount(0);
-          await expect(menu.getByRole('menuitem', { name: `${labels.reasoning} ${labels.comingSoon}`, exact: true })).toBeDisabled();
+          const reasoning = menu.getByRole('menuitemcheckbox', { name: labels.reasoning, exact: true });
+          await expect(reasoning).toBeChecked();
+          await reasoning.click();
+          await expect(reasoning).not.toBeChecked();
           await menu.getByRole('menuitemradio', { name: longName, exact: true }).click();
           await expect(menu).toBeHidden();
           await expect(trigger).toHaveText(longName);
-          expect((await json(request.get(`/api/sessions/${session.session_id}`))).model_profile_id).toBe(remote.id);
+          const savedSession = await json(request.get(`/api/sessions/${session.session_id}`));
+          expect(savedSession.model_profile_id).toBe(remote.id);
+          expect(savedSession.reasoning).toBe(false);
           await expect(page.locator('.composer')).toHaveAttribute('data-expanded', 'false');
           const modelBox = (await trigger.boundingBox())!;
           expect(modelBox.width).toBeLessThanOrEqual(width === 390 ? 120 : 160);
@@ -71,14 +76,50 @@ for (const locale of ['en', 'zh-CN']) {
           await trigger.focus();
           await trigger.press('Enter');
           await expect(menu.getByRole('menuitemradio', { name: longName, exact: true })).toBeChecked();
+          await expect(reasoning).not.toBeChecked();
           await page.screenshot({ path: info.outputPath('model-menu.png') });
           await page.keyboard.press('Escape');
           await expect(trigger).toBeFocused();
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+          await page.reload();
+          await trigger.click();
+          await expect(reasoning).not.toBeChecked();
         } finally {
           await request.patch(`/api/sessions/${session.session_id}`, { data: { model_profile_id: session.model_profile_id } });
           for (const id of created) await request.delete(`/api/models/profiles/${id}`);
           await request.delete(`/api/models/providers/${provider.id}`);
+        }
+      });
+
+      test('reasoning draft choice reaches ordinary and Workspace first sends', async ({ page, request }) => {
+        const base = await json(request.post('/__test__/session'));
+        const project = await json(request.post('/api/projects', { data: {
+          kind: 'workspace', name: 'Reasoning workspace', agent_persona_id: base.persona_id,
+          cogita_persona_id: base.user_persona.id, context_policy: base.context_policy,
+          harness_enabled: false, tools_allowed: [],
+        } }));
+        try {
+          for (const workspace of [false, true]) {
+            await page.goto(workspace ? `/projects/${project.id}/new` : '/new');
+            await page.locator('.chat-model-select').click();
+            const reasoning = page.getByRole('menuitemcheckbox', { name: labels.reasoning, exact: true });
+            await expect(reasoning).toBeChecked();
+            await reasoning.click();
+            await expect(reasoning).not.toBeChecked();
+            await page.keyboard.press('Escape');
+            await page.locator('.composer textarea').fill('reasoning choice');
+            const created = page.waitForResponse((response) => response.request().method() === 'POST'
+              && response.url().endsWith(workspace ? `/api/projects/${project.id}/sessions` : '/api/sessions'));
+            await page.locator('.composer textarea').press('Enter');
+            const response = await created;
+            const payload = response.request().postDataJSON();
+            expect(workspace ? payload.overrides.reasoning : payload.reasoning).toBe(false);
+            const session = await response.json();
+            await expect.poll(async () => (await json(request.get(`/api/sessions/${session.session_id}`))).effective.reasoning).toBe(false);
+            await expect(page.locator('.chat-model-select')).toBeEnabled();
+          }
+        } finally {
+          await request.delete(`/api/projects/${project.id}`);
         }
       });
 
@@ -201,7 +242,8 @@ test('no selectable models still exposes Harness without selecting a replacement
   expect((await json(request.get(`/api/sessions/${session.session_id}`))).model_profile_id).toBe(session.model_profile_id);
 });
 
-test('pending configuration blocks sending and a failed toggle keeps the confirmed value', async ({ page, request }) => {
+for (const setting of ['Harness', 'Reasoning']) {
+test(`pending ${setting} configuration blocks sending and a failed toggle keeps the confirmed value`, async ({ page, request }) => {
   const session = await json(request.post('/__test__/session'));
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -220,7 +262,7 @@ test('pending configuration blocks sending and a failed toggle keeps the confirm
   await page.locator('.composer textarea').fill('Retained draft');
   const send = page.locator('.composer').getByRole('button', { name: 'Send', exact: true });
   await page.locator('.chat-model-select').click();
-  const toggle = page.getByRole('menuitemcheckbox', { name: 'Harness', exact: true });
+  const toggle = page.getByRole('menuitemcheckbox', { name: setting, exact: true });
   await toggle.click();
   await expect(toggle).toBeDisabled();
   await expect(toggle).toBeChecked();
@@ -235,3 +277,4 @@ test('pending configuration blocks sending and a failed toggle keeps the confirm
   await expect(toggle).not.toBeChecked();
   await expect(page.locator('.composer textarea')).toHaveValue('Retained draft');
 });
+}

@@ -125,7 +125,8 @@ async def update_profile(profile_id: str, payload: dict, state: RuntimeState = D
         source = payload["source"]
         if source is None or isinstance(source, dict) and source.get("type") == "provider":
             payload = {**payload, "request_options": {**current.request_options.model_dump(),
-                "skip_tool_capability_check": False, "skip_vision_capability_check": False}}
+                "skip_tool_capability_check": False, "skip_vision_capability_check": False,
+                "skip_instant_capability_check": False, "skip_reasoning_capability_check": False}}
     updated = ModelInput.model_validate({**current.model_dump(include=set(ModelInput.model_fields)), **payload})
     import asyncio
     updated = ModelProfile(**updated.model_dump(), id=profile_id)

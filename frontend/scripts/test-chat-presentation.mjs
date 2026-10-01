@@ -171,6 +171,13 @@ const render = (reply, showFullProcessing) => renderToStaticMarkup(
 const approvalStep = { step_id: 'approval', kind: 'approval', status: 'running', run_id: 'r', metadata: { tool_call_id: 'a', risk: 'file' } };
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
+  for (const code of ['reasoning_enabled', 'reasoning_disabled']) {
+    const warning = renderToStaticMarkup(React.createElement(MessageBubble, {
+      message: { ...user, metadata: { request_warnings: { run_id: 'r', codes: [code] } } },
+    }));
+    assert.ok(warning.includes(i18n.t(`chat:requestWarnings.${code}`)));
+    assert.match(warning, /message-request-warning/);
+  }
   const active = buildReply(run, [calls, output, answer], []);
   const hidden = render(active, false);
   assert.match(hidden, /Current agent/);

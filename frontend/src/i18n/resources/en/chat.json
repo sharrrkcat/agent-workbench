@@ -13,6 +13,8 @@
   "requestWarnings": {
     "images_ignored": "This model does not support images. Images in this request were ignored.",
     "images_require_text": "This model does not support images. Add text or select another model.",
-    "tools_ignored": "This model does not support tool calls. This request was handled as ordinary chat."
+    "tools_ignored": "This model does not support tool calls. This request was handled as ordinary chat.",
+    "reasoning_enabled": "This model requires reasoning. Reasoning is enabled for this reply; your saved selection is unchanged.",
+    "reasoning_disabled": "This model supports instant mode only. Reasoning is disabled for this reply; your saved selection is unchanged."
   }
 }

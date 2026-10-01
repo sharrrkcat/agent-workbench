@@ -88,6 +88,7 @@ class ResolvedChatConfig(StrictModel):
     model_profile_id: str | None
     model_source: Literal["session", "project", "global"]
     generation: GenerationParameters
+    reasoning: bool = True
     harness_enabled: bool
     tools_allowed: list[str]
     knowledge_base_ids: list[str]

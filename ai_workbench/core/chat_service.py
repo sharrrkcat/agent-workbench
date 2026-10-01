@@ -234,6 +234,7 @@ class ChatService:
             context_policy=settings.context_policy,
             model_profile_id=model_id, model_source=model_source,
             generation=GenerationParameters.model_validate({**parameters, **generation.model_dump(exclude_none=True)}),
+            reasoning=settings.reasoning,
             harness_enabled=settings.harness_enabled,
             tools_allowed=settings.tools_allowed,
             knowledge_base_ids=self.effective_knowledge_ids(session, selected_id),

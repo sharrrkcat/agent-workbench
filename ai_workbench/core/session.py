@@ -23,6 +23,7 @@ class ChatSettings(StrictModel):
     persona_id: str = COGITA_PERSONA_ID
     context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
     generation: SessionGenerationParameters = Field(default_factory=SessionGenerationParameters)
+    reasoning: StrictBool = True
     harness_enabled: StrictBool = False
     tools_allowed: list[str] = Field(default_factory=list, max_length=128)
     @field_validator("tools_allowed")
@@ -44,6 +45,7 @@ class WorkspaceOverrides(StrictModel):
     model_profile_id: str | None = None
     context_policy: ContextPolicy | None = None
     temperature: float | None = Field(default=None, ge=0, le=2)
+    reasoning: StrictBool | None = None
     harness_enabled: StrictBool | None = None
     tools_allowed: list[str] | None = Field(default=None, max_length=128)
 

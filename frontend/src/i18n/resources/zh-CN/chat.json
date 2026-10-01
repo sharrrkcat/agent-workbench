@@ -13,6 +13,8 @@
   "requestWarnings": {
     "images_ignored": "该模型不支持图片，本次请求中的图片已忽略。",
     "images_require_text": "该模型不支持图片，请补充文字或切换模型。",
-    "tools_ignored": "该模型不支持工具调用，本次已按普通聊天处理。"
+    "tools_ignored": "该模型不支持工具调用，本次已按普通聊天处理。",
+    "reasoning_enabled": "该模型需要开启 reasoning，本次回复已开启，会话保存的选择不变。",
+    "reasoning_disabled": "该模型仅支持 instant 模式，本次回复已关闭 reasoning，会话保存的选择不变。"
   }
 }

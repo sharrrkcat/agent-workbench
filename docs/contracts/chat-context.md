@@ -53,13 +53,13 @@ Submission clears the composer immediately; [Runs/streaming](runs-streaming.md) 
 Creation failure restores the draft; later binding/send failure retains the created id for retry. Existing creation APIs
 remain explicit immediate creation operations; no database migration is needed.
 
-Ordinary context, generation, Harness and tool selection belong to the session. Context defaults to
-session history with explicit attachments. Session generation defaults to {} and accepts only
-optional temperature (0..2); a non-null value overrides the model. {} or temperature:null
-clears the override; PATCH omission preserves it. Other model generation parameters remain
-inherited and available in the resolved configuration. Neither context nor generation is nullable. Harness defaults off. New sessions omit tools_allowed to allow all
-currently registered built-ins; an explicit [] allows none. Saved allowlists
-do not change when the catalog grows. These settings never depend on Persona.
+Ordinary context, generation, Harness and tool selection belong to the session. Context defaults to session history with explicit attachments.
+Generation defaults to {} and accepts only optional temperature (0..2); a non-null value overrides the model. {} or temperature:null clears it; PATCH omission preserves it.
+Other model generation parameters remain inherited and available in resolved configuration. Neither context nor generation is nullable.
+The strict session reasoning boolean defaults true. The composer model menu toggles it immediately, preserving confirmed state on save failure; pending saves block sending. Draft selection persists through first send, and model changes preserve the choice.
+Workspace overrides.reasoning accepts a boolean; omission/null selects true, independently of Project defaults. Ordinary PATCH omission preserves reasoning and null is invalid.
+Before the first model round, local preflight may replace an explicitly unsupported mode with an explicitly supported alternative, unless the selected mode's check is skipped. Unknown support passes through. The user message saves reasoning_enabled/reasoning_disabled warnings and run metadata saves requested/effective modes; session selection and reasoning text remain unchanged. Public /v1 never adjusts modes.
+Harness defaults off. Omitted tools_allowed selects all currently registered built-ins; [] allows none, and saved lists do not change with the catalog. These settings never depend on Persona.
 
 Each run combines Knowledge bindings in Cogita Persona, selected Agent Persona, Project (Workspace only), then
 session-addition order, deduplicating by first occurrence. Clearing additions never removes
@@ -81,7 +81,7 @@ and per-speaker historical identity for Timeline conversations remain unimplemen
 Session.kind and project_id follow the creation location and cannot be changed or moved.
 Ordinary and Workspace have distinct schemas; timeline is a reserved session identity.
 Workspace sessions store only sparse overrides for persona_id, context_policy, model_profile_id,
-temperature, harness_enabled and tools_allowed. PATCH accepts title/overrides; omission keeps
+temperature, reasoning, harness_enabled and tools_allowed. PATCH accepts title/overrides; omission keeps
 values, null removes an override, and false/0/[] are explicit values. Inherited values are
 resolved on reads and runs, never copied into session storage. The fixed Cogita Persona has no override.
 Models resolve session > Project > global default using the ordinary default-selection rule;

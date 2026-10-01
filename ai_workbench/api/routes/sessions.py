@@ -34,6 +34,7 @@ class CreateSessionRequest(BaseModel):
     persona_id: str = COGITA_PERSONA_ID
     context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
     generation: SessionGenerationParameters = Field(default_factory=SessionGenerationParameters)
+    reasoning: StrictBool = True
     harness_enabled: StrictBool = False
     tools_allowed: list[str] = Field(default_factory=list, max_length=128,
         description="Omission selects all currently registered tools; an explicit empty array selects none.")

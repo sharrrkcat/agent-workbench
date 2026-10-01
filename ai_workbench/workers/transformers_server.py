@@ -13,10 +13,12 @@ from uuid import uuid4
 if __package__:
     from .common import MAX_NORMALIZED_REQUEST_MB, WorkerError, fields, integer, local_model, publish_ready
     from .timing import TRACE_ENV, stage, tracing, worker_trace
+    from .reasoning import skip_reasoning_check
 else:
     sys.path.insert(0, str(Path(__file__).parent))
     from common import MAX_NORMALIZED_REQUEST_MB, WorkerError, fields, integer, local_model, publish_ready
     from timing import TRACE_ENV, stage, tracing, worker_trace
+    from reasoning import skip_reasoning_check
 
 MAX_BODY = MAX_NORMALIZED_REQUEST_MB * 1024 * 1024
 PROTOCOL_VERSION = 1
@@ -32,11 +34,15 @@ def options_request(value):
 
 def chat_request(body):
     fields(body, ("model", "messages"), ("stream", "n", "temperature", "top_p", "max_tokens", "seed", "stop",
-        "presence_penalty", "frequency_penalty", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "cogita_request_options"))
+        "presence_penalty", "frequency_penalty", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "cogita_request_options", "chat_template_kwargs"))
     options = body.get("cogita_request_options", {})
-    fields(options, (), ("skip_tool_capability_check", "skip_vision_capability_check"))
+    fields(options, (), ("skip_tool_capability_check", "skip_vision_capability_check", "skip_instant_capability_check", "skip_reasoning_capability_check"))
     if any(type(value) is not bool for value in options.values()):
         raise WorkerError("INVALID_REQUEST")
+    if "chat_template_kwargs" in body:
+        fields(body["chat_template_kwargs"], ("enable_thinking",))
+        if type(body["chat_template_kwargs"]["enable_thinking"]) is not bool:
+            raise WorkerError("INVALID_REQUEST")
     if body["model"] != "managed" or type(body.get("stream", False)) is not bool:
         raise WorkerError("INVALID_REQUEST")
     integer(body.get("n", 1), 1, 1)
@@ -141,6 +147,11 @@ def build_app(engine, token):
         except (ValueError, TypeError, KeyError) as exc:
             raise WorkerError("INVALID_REQUEST") from exc
         options = body.pop("cogita_request_options", {})
+        reasoning = body.get("chat_template_kwargs", {}).get("enable_thinking")
+        if reasoning is not None and not skip_reasoning_check(reasoning,
+                options.get("skip_instant_capability_check", False), options.get("skip_reasoning_capability_check", False)):
+            if engine.metadata["reasoning_support"]["reasoning" if reasoning else "instant"] == "unsupported":
+                raise WorkerError("UNSUPPORTED_CAPABILITY")
         if not options.get("skip_vision_capability_check", False) and any(isinstance(message.get("content"), list)
                and any(part["type"] == "image_url" for part in message["content"])
                for message in body["messages"]) and not engine.metadata["vision"]:

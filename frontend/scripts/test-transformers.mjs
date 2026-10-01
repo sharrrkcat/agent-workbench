@@ -16,7 +16,8 @@ const load = createModuleLoader({
 const { newModel, updateModel, applyDirectoryInspection, localEngine, localSource, localOnly, selectModelSource } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
 const original = { ...newModel('llm'), source: null, model_ref: 'llms/model', parameters: { max_tokens: 128, presence_penalty: 1 },
-  request_options: { streaming: true, skip_tool_capability_check: false, skip_vision_capability_check: false } };
+  request_options: { streaming: true, skip_tool_capability_check: false, skip_vision_capability_check: false,
+    skip_instant_capability_check: false, skip_reasoning_capability_check: false } };
 const bound = selectModelSource(original, localSource());
 assert.equal(localEngine(bound), null);
 const selected = applyDirectoryInspection(bound, { kind: 'llm', model_ref: 'llms/model', engine: 'transformers', architecture: 'Qwen', main_model_ref: null, mmproj_ref: null, model_files: [], diagnostics: [] }, true);
@@ -33,7 +34,8 @@ const llama = applyDirectoryInspection(updateModel(selected, { model_ref: info.m
 assert.equal(localEngine(llama, info.engine), 'llama-server');
 assert.deepEqual(llama.source.execution_options, { device: 'cuda', gpu_layers: 'auto', threads: 4, context_size: 4096, batch_size: 512 });
 assert.deepEqual(llama.request_options, original.request_options);
-const unchecked = updateModel(llama, { request_options: { ...llama.request_options, skip_vision_capability_check: true, skip_tool_capability_check: true } });
+const unchecked = updateModel(llama, { request_options: { ...llama.request_options, skip_vision_capability_check: true, skip_tool_capability_check: true,
+  skip_instant_capability_check: true, skip_reasoning_capability_check: true } });
 assert.deepEqual(applyDirectoryInspection(unchecked, { ...info, mmproj_ref: null }, false).request_options, unchecked.request_options);
 assert.deepEqual(selectModelSource(unchecked, { type: 'provider', provider_profile_id: 'external' }).request_options, original.request_options);
 assert.equal(newModel('embedding').request_options, null);

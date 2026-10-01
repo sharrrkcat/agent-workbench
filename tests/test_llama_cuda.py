@@ -256,8 +256,17 @@ def test_cuda_startup_requires_device_and_positive_offload_and_releases_processe
         real_client = httpx.AsyncClient
 
         def client(*args, **kwargs):
-            kwargs["transport"] = httpx.MockTransport(lambda request: httpx.Response(200,
-                json={"data": [{"id": "managed"}]} if request.url.path.endswith("/models") else {"status": "ok"}))
+            def handle(request):
+                if request.url.path.endswith("/models"):
+                    body = {"data": [{"id": "managed"}]}
+                elif request.url.path == "/props":
+                    body = {"chat_template": "Fixture template"}
+                elif request.url.path == "/apply-template":
+                    body = {"prompt": "Fixture prompt"}
+                else:
+                    body = {"status": "ok"}
+                return httpx.Response(200, json=body)
+            kwargs["transport"] = httpx.MockTransport(handle)
             return real_client(*args, **kwargs)
 
         monkeypatch.setattr(ManagedProcess, "start", start)

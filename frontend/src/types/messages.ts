@@ -115,7 +115,7 @@ export type Message = {
   metadata?: Record<string, unknown> & {
     attachments?: Attachment[];
     client_message_id?: string | null;
-    request_warnings?: { run_id: string; codes: Array<'images_ignored' | 'images_require_text' | 'tools_ignored'> };
+    request_warnings?: { run_id: string; codes: Array<'images_ignored' | 'images_require_text' | 'tools_ignored' | 'reasoning_enabled' | 'reasoning_disabled'> };
   };
   created_at: string;
   run?: Run;

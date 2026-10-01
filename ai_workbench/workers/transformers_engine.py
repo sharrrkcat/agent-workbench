@@ -4,9 +4,11 @@ import sys
 if __package__:
     from .common import WorkerError
     from .timing import stage
+    from .reasoning import THINKING_DELIMITERS, generation_prefix, template_reasoning_support
 else:
     from common import WorkerError
     from timing import stage
+    from reasoning import THINKING_DELIMITERS, generation_prefix, template_reasoning_support
 
 _network_blocked = False
 
@@ -170,8 +172,31 @@ class TransformersEngine:
             template = get_response_template(resident.processor, resident.model)
             vision = (self.manager.get_model_modality(resident.model, resident.processor) in {Modality.VLM, Modality.MULTIMODAL}
                       and hasattr(resident.processor, "image_processor"))
+            with stage("reasoning_support"):
+                from jinja2 import TemplateError
+                processor = resident.processor
+                content = [{"type": "text", "text": "Hello."}] if vision else "Hello."
+                prefixes = {}
+                for enabled in (False, True):
+                    prompts = {}
+                    for add_prompt in (False, True):
+                        try:
+                            prompts[add_prompt] = processor.apply_chat_template(
+                                [{"role": "user", "content": content}], tokenize=False,
+                                add_generation_prompt=add_prompt, enable_thinking=enabled)
+                        except (TemplateError, ValueError):
+                            # Render failures provide no negative capability evidence.
+                            prompts[add_prompt] = None
+                    prefixes[enabled] = generation_prefix(prompts[True], prompts[False])
+                thinking = (template or {}).get("fields", {}).get("thinking", {})
+                delimiters = THINKING_DELIMITERS
+                if (isinstance(thinking.get("open"), str) and thinking["open"]
+                        and isinstance(thinking.get("close"), str) and thinking["close"]):
+                    delimiters = (*delimiters, (thinking["open"], thinking["close"]))
+                reasoning_support = template_reasoning_support(getattr(processor, "chat_template", None), prefixes, delimiters=delimiters)
             self.metadata = {"protocol_version": 1, "device": device, "device_name": device_name,
                              "dtype": str(resident.model.dtype), "vision": vision,
+                             "reasoning_support": reasoning_support,
                              "tool_calls": bool(template and template.get("fields", {}).get("tool_calls"))}
 
     async def chat(self, body, request_id, *, skip_tool_check=False):

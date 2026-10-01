@@ -102,6 +102,8 @@ export type ChatRequestOptions = {
   streaming: boolean;
   skip_tool_capability_check: boolean;
   skip_vision_capability_check: boolean;
+  skip_instant_capability_check: boolean;
+  skip_reasoning_capability_check: boolean;
 };
 
 export type LocalModelSource = {

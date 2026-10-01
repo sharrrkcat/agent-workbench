@@ -17,7 +17,7 @@ from ai_workbench.core.models.resolution import configure_profile, require_direc
 from ai_workbench.core.models.images import request_images
 from ai_workbench.core.models.chat_support import local_chat_support, require_chat_support
 from ai_workbench.core.models.processing import MAX_PROCESS_BYTES, processor_resource, validate_process_output
-from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+from ai_workbench.core.models.openai_adapter import OpenAIAdapter, transport_error
 from ai_workbench.core.models.runtimes.cuda import LlamaCudaLog, confirmed_offload, cuda_arguments, llama_environment, probe_cuda_device
 from ai_workbench.core.models.runtimes.process import ManagedProcess, RuntimeLog, prune_process_logs
 from ai_workbench.core.models.runtimes.schema import ComponentStatus, RuntimeStatus, is_transformers, local_engine, model_path
@@ -26,6 +26,7 @@ from ai_workbench.core.models.schema import AudioOutput, EmbeddingResult, ModelS
 from ai_workbench.workers.tts_catalog import FORMATS, MAX_AUDIO_BYTES
 from ai_workbench.workers.audio import validate_audio
 from ai_workbench.workers.timing import LoadTrace, TRACE_ENV, TRACE_HEADER, current_trace, stage, tracing
+from ai_workbench.workers.reasoning import UNKNOWN_REASONING_SUPPORT, SUPPORT_STATES, generation_prefix, template_reasoning_support
 
 
 class ManagedAdapter:
@@ -55,6 +56,7 @@ class ManagedAdapter:
         self.gpu_layers_total: int | None = None
         self.tool_calls_supported = False
         self.vision_supported = False
+        self.reasoning_support = dict(UNKNOWN_REASONING_SUPPORT)
 
     def begin_trace(self, profile, trigger):
         load_id = str(uuid4())
@@ -278,6 +280,9 @@ class ManagedAdapter:
                 self.openai = OpenAIAdapter(provider)
                 if "managed" not in await self.openai.models():
                     raise ModelError("RUNTIME_BROKEN", "The managed server did not advertise the configured model.", 503)
+            if self.engine == "llama-server":
+                with stage("reasoning_support"):
+                    await self._read_llama_reasoning_support()
         self.state = "ready"
         self.monitor = asyncio.create_task(self._watch(self.process))
         self.changed()
@@ -296,11 +301,15 @@ class ManagedAdapter:
                     port = data["port"]
                     if is_transformers(profile):
                         if (not isinstance(data.get("device_name"), str) or type(data.get("tool_calls")) is not bool
-                                or type(data.get("vision")) is not bool):
+                                or type(data.get("vision")) is not bool
+                                or not isinstance(data.get("reasoning_support"), dict)
+                                or data["reasoning_support"].keys() != UNKNOWN_REASONING_SUPPORT.keys()
+                                or any(not isinstance(value, str) or value not in SUPPORT_STATES for value in data["reasoning_support"].values())):
                             raise ValueError()
                         self.device_name = data["device_name"]
                         self.tool_calls_supported = data["tool_calls"]
                         self.vision_supported = data["vision"]
+                        self.reasoning_support = data["reasoning_support"]
                 except (ValueError, KeyError):
                     raise ModelError("RUNTIME_BROKEN", "Worker readiness response was invalid.", 503)
             if self.process.process.returncode is not None:
@@ -320,6 +329,35 @@ class ManagedAdapter:
             await asyncio.sleep(0.25)
         else:
             raise ModelError("MODEL_TIMEOUT", "The managed process did not become healthy in five minutes.", 504)
+
+    async def _read_llama_reasoning_support(self):
+        try:
+            response = await self.client.get("/props")
+            response.raise_for_status()
+            template = response.json()["chat_template"]
+            if not isinstance(template, str):
+                raise ValueError("Invalid native chat template")
+            prefixes = {}
+            for enabled in (False, True):
+                prompts = {}
+                for add_prompt in (False, True):
+                    response = await self.client.post("/apply-template", json={
+                        "messages": [{"role": "user", "content": "Hello."}],
+                        "add_generation_prompt": add_prompt, "chat_template_kwargs": {"enable_thinking": enabled}})
+                    # Some native templates reject the empty assistant prefill or
+                    # a mode. A render rejection is inconclusive, not a load failure.
+                    if response.status_code == 400:
+                        prompts[add_prompt] = None
+                        continue
+                    response.raise_for_status()
+                    prompt = response.json()["prompt"]
+                    if not isinstance(prompt, str):
+                        raise ValueError("Invalid native template render")
+                    prompts[add_prompt] = prompt
+                prefixes[enabled] = generation_prefix(prompts[True], prompts[False])
+            self.reasoning_support = template_reasoning_support(template, prefixes)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            raise transport_error(exc) from exc
 
     async def _watch(self, process):
         await process.process.wait()
@@ -452,6 +490,7 @@ class ManagedAdapter:
         self.device_name = self.gpu_layers_loaded = self.gpu_layers_total = None
         self.tool_calls_supported = False
         self.vision_supported = False
+        self.reasoning_support = dict(UNKNOWN_REASONING_SUPPORT)
         if self.run_dir and self.run_dir.exists():
             remove_owned(self.supervisor.base, self.run_dir)
         self.run_dir = None
@@ -494,7 +533,7 @@ class TransformersServerAdapter(LlamaServerAdapter):
     def _require_support(self, profile, request):
         require_chat_support(profile, local_chat_support(profile, self),
             tools=bool(request.tools or any(message.tool_calls or message.role == "tool" for message in request.messages)),
-            vision=any(request_images(request)))
+            vision=any(request_images(request)), reasoning=request.reasoning)
 
     async def _abort(self, error=None):
         await self._stop()

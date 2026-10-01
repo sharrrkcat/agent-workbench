@@ -65,8 +65,9 @@ class HarnessAgentLoop:
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                   user: MessageSchema, context: list[dict[str, Any]], max_image_bytes: int, active_seconds: float = 0.0,
+                  reasoning: bool = True,
                   first_metrics: LLMCallMetrics | None = None) -> RunResult:
-        state = HarnessState(base_messages=context, active_seconds=active_seconds,
+        state = HarnessState(base_messages=context, active_seconds=active_seconds, reasoning=reasoning,
                              max_image_bytes=max_image_bytes,
                              searxng_base_url=self.harness_settings.get().searxng_base_url)
         return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
@@ -199,7 +200,7 @@ class HarnessAgentLoop:
         base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
         request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],
-                              tools=tools, stream=profile.request_options.streaming,
+                              tools=tools, stream=profile.request_options.streaming, reasoning=state.reasoning,
                               **config.generation.model_dump(exclude_none=True))
         self.model_manager.validate_chat(profile, request)
         resolution = {"model_profile_id": profile.id, "alias": profile.alias,

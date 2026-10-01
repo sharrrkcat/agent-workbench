@@ -191,7 +191,7 @@ export const createSessionActions: CogitaActions<
           persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)!.id,
           model_profile_id: defaultModelId(models.profiles, models.settings?.default_model_profile_id),
           context_policy: { mode: 'session', max_messages: null, max_chars: null, include_attachments: 'explicit' },
-          generation: {}, harness_enabled: false, tools_allowed: tools.map((tool) => tool.name) } });
+          generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.map((tool) => tool.name) } });
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
     }

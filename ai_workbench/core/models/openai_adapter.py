@@ -59,8 +59,14 @@ class OpenAIAdapter:
     @staticmethod
     def _payload(profile: ModelProfile, request: ChatRequest) -> dict:
         from ai_workbench.core.models.runtimes.schema import is_transformers
-        payload = {**profile.parameters, **request.model_dump(exclude_none=True, by_alias=True, exclude_unset=True, exclude={"cogita"})}
+        from ai_workbench.core.models.schema import LocalSource
+        payload = {**profile.parameters, **request.model_dump(exclude_none=True, by_alias=True, exclude_unset=True, exclude={"cogita", "reasoning"})}
         payload.update(model=profile.model_ref, stream=request.stream)
+        if request.reasoning is not None:
+            if isinstance(profile.source, LocalSource):
+                payload["chat_template_kwargs"] = {"enable_thinking": request.reasoning}
+            else:
+                payload["reasoning_effort"] = "medium" if request.reasoning else "none"
         if is_transformers(profile):
             payload["cogita_request_options"] = profile.request_options.model_dump(exclude={"streaming"})
         return payload

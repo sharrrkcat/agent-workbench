@@ -169,7 +169,9 @@ def test_restart_preserves_only_pending_approval(tmp_path):
     app = create_app(**kwargs)
     with TestClient(app) as client:
         session, _, _ = configure(client, tools=["read_file"])
+        ok(client.patch(f"/api/sessions/{session['session_id']}", json={"reasoning": False}))
         response = send(client, session)
+        ok(client.patch(f"/api/sessions/{session['session_id']}", json={"reasoning": True}))
         run_id = response["run"]["run_id"]
         first_statistics = next(step["metadata"]["llm"] for step in response["run"]["steps"] if step["kind"] == "model")
         assert first_statistics["usage"]["total_tokens"] == 15
@@ -189,6 +191,7 @@ def test_restart_preserves_only_pending_approval(tmp_path):
         calls = [step["metadata"]["llm"] for step in response["run"]["steps"] if step["kind"] == "model"]
         assert len(calls) == 2 and calls[0] == first_statistics
         assert sum(call["usage"]["total_tokens"] for call in calls) == 38
+        assert [call["reasoning_effort"] for call in upstream.calls] == ["none", "none"]
 
 
 def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_client):

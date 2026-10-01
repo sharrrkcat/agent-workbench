@@ -36,6 +36,7 @@ export type OrdinarySessionPatch = Partial<{
   model_profile_id: string | null;
   context_policy: ContextPolicy;
   generation: SessionGenerationParameters;
+  reasoning: boolean;
   harness_enabled: boolean;
   tools_allowed: string[];
 }>;
@@ -45,6 +46,7 @@ export type WorkspaceOverrides = {
   model_profile_id?: string | null;
   context_policy?: ContextPolicy | null;
   temperature?: number | null;
+  reasoning?: boolean | null;
   harness_enabled?: boolean | null;
   tools_allowed?: string[] | null;
 };
@@ -69,6 +71,7 @@ export type EffectiveChatConfig = {
   user_persona_id: string;
   context_policy: ContextPolicy;
   generation: GenerationParameters;
+  reasoning: boolean;
   harness_enabled: boolean;
   tools_allowed: string[];
   knowledge_base_ids: string[];
@@ -93,6 +96,7 @@ export type OrdinarySession = SessionBase & {
   persona_id: string;
   context_policy: ContextPolicy;
   generation: SessionGenerationParameters;
+  reasoning: boolean;
   harness_enabled: boolean;
   tools_allowed: string[];
 };
@@ -107,6 +111,6 @@ export type Session = OrdinarySession | WorkspaceSession;
 
 type DraftBase = { title: string; user_persona: PersonaIdentity; knowledge_base_ids: string[] };
 export type OrdinaryChatDraft = DraftBase & Pick<OrdinarySession,
-  'kind' | 'project_id' | 'model_profile_id' | 'persona_id' | 'context_policy' | 'generation' | 'harness_enabled' | 'tools_allowed'>;
+  'kind' | 'project_id' | 'model_profile_id' | 'persona_id' | 'context_policy' | 'generation' | 'reasoning' | 'harness_enabled' | 'tools_allowed'>;
 export type WorkspaceChatDraft = DraftBase & Pick<WorkspaceSession, 'kind' | 'project_id' | 'overrides'>;
 export type ChatDraft = OrdinaryChatDraft | WorkspaceChatDraft;

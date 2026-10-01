@@ -95,7 +95,12 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
               <Settings2 />
             </DropdownMenuItem>
           </div>
-          <DropdownMenuItem disabled>{t('reasoning')}<span className="ml-auto">{t('comingSoon')}</span></DropdownMenuItem>
+          <DropdownMenuCheckboxItem checked={configuration?.reasoning ?? true}
+            indicator={t(configuration?.reasoning === false ? 'reasoningOff' : 'reasoningOn')}
+            disabled={disabled || busy} onCheckedChange={(reasoning) => void save(target?.kind === 'workspace'
+              ? { overrides: { reasoning } } : { reasoning })}>
+            {t('reasoning')}
+          </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

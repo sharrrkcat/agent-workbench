@@ -20,6 +20,7 @@ from PIL import Image
 
 from ai_workbench.api.deps import build_runtime_state
 from ai_workbench.api.main import create_app
+from ai_workbench.core.assistant_output import ThinkParser
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics, LLMTiming, LLMUsage
 from ai_workbench.core.models.runtimes.store import RuntimeStore
@@ -60,7 +61,7 @@ def check_statistics(body, *, streaming, engine_name):
     return {"usage": usage.model_dump(), "timing": timing.model_dump()}
 
 
-async def validate_device(state, client, model_ref, device, engine_name, vision=False):
+async def validate_device(state, client, model_ref, device, engine_name, vision=False, reasoning=False):
     manager = state.model_manager
     options = {"device": device}
     profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, request_options={"streaming": True}, parameters={'temperature': 0, 'max_tokens': 256 if vision else 192}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
@@ -79,6 +80,12 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
         assert loaded.runtime.gpu_layers_loaded > 0
     else:
         assert profile.source.execution_options["gpu_layers"] == 0
+    if reasoning:
+        result = await validate_reasoning(client, profile, adapter)
+        await manager.unload(profile.id)
+        result.update(engine=engine_name, device=device, device_name=loaded.runtime.device_name, dtype=metadata.get("dtype"))
+        print(json.dumps(result), flush=True)
+        return result
     if vision:
         if engine_name == "transformers":
             assert metadata["vision"] is True
@@ -189,6 +196,60 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     return result
 
 
+async def validate_reasoning(client, profile, adapter):
+    """Check native request controls, template evidence and real output together."""
+    assert adapter.reasoning_support == {"instant": "supported", "reasoning": "supported"}, adapter.reasoning_support
+    payloads, results = [], []
+    async def capture(request):
+        if request.url.path.endswith("/chat/completions"):
+            payloads.append(json.loads(request.content))
+    adapter.openai.client.event_hooks["request"].append(capture)
+    for enabled in (False, True):
+        for stream in (False, True):
+            body = {"model": profile.alias, "messages": [{"role": "user", "content": "What is 17 plus 25? Answer briefly."}],
+                    "reasoning": enabled, "stream": stream, "temperature": 0, "max_tokens": 256}
+            output = {"text": "", "reasoning": ""}
+            finish_reason = None
+            def append(kind, value):
+                output[kind] += value
+            parser = ThinkParser(append)
+            if stream:
+                finished = False
+                async with client.stream("POST", "/v1/chat/completions", json=body) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line == "data: [DONE]":
+                            finished = True
+                        elif line.startswith("data: "):
+                            chunk = json.loads(line[6:])
+                            assert "error" not in chunk, chunk
+                            for choice in chunk["choices"]:
+                                finish_reason = choice.get("finish_reason") or finish_reason
+                                parser.feed(choice["delta"].get("content") or "")
+                                append("reasoning", choice["delta"].get("reasoning_content") or "")
+                assert finished
+            else:
+                response = await checked_json(client, "POST", "/v1/chat/completions", json=body)
+                message = response["choices"][0]["message"]
+                finish_reason = response["choices"][0]["finish_reason"]
+                parser.feed(message.get("content") or "")
+                append("reasoning", message.get("reasoning_content") or "")
+            parser.feed("", final=True)
+            assert payloads[-1]["chat_template_kwargs"] == {"enable_thinking": enabled}
+            assert "reasoning" not in payloads[-1] and "reasoning_format" not in payloads[-1]
+            assert bool(output["reasoning"].strip()) == enabled, output
+            assert finish_reason in {"stop", "length"}, finish_reason
+            # A bounded reasoning trace can exhaust max_tokens before its answer.
+            # Record that outcome; preflight/native controls establish mode support.
+            if not enabled or finish_reason == "stop":
+                assert "42" in output["text"], output
+            results.append({"reasoning": enabled, "stream": stream, "text": output["text"],
+                            "reasoning_chars": len(output["reasoning"].strip()), "finish_reason": finish_reason,
+                            "native_control": payloads[-1]["chat_template_kwargs"]})
+            print(json.dumps({"stage": "reasoning_mode", **results[-1]}), flush=True)
+    return {"reasoning_support": adapter.reasoning_support, "reasoning_cases": results}
+
+
 def vision_image(format_, color):
     output = BytesIO()
     Image.new("RGB", (224, 224), color).save(output, format=format_)
@@ -271,7 +332,7 @@ async def validate_vision(state, client, profile, engine_name):
             "history": "passed", "stream": "passed", "cancellation": "passed", "answers": answers}
 
 
-async def smoke(root, model_ref, devices, install_only, engine_name, vision=False):
+async def smoke(root, model_ref, devices, install_only, engine_name, vision=False, reasoning=False):
     engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
@@ -309,12 +370,12 @@ async def smoke(root, model_ref, devices, install_only, engine_name, vision=Fals
         await until(lambda: server.started)
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=360,
                 headers={"Authorization": f"Bearer {token}"}, trust_env=False) as client:
-            results = [await validate_device(state, client, model_ref, device, engine_name, vision) for device in devices]
+            results = [await validate_device(state, client, model_ref, device, engine_name, vision, reasoning) for device in devices]
         output = root / "build/llm-smoke" / engine_name
         output.mkdir(parents=True, exist_ok=True)
         report = {"model_ref": model_ref, "runtime_version": supervisor.release.version,
                   "results": results, "elapsed_seconds": round(time.monotonic() - started, 2)}
-        (output / ("vision-report.json" if vision else "report.json")).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        (output / ("reasoning-report.json" if reasoning else "vision-report.json" if vision else "report.json")).write_text(json.dumps(report, indent=2), encoding="utf-8")
     finally:
         if server:
             server.should_exit = True
@@ -334,7 +395,9 @@ def parse_args(argv=None):
     parser.add_argument("--model-ref", help="Existing model directory relative to data/models")
     parser.add_argument("--device", choices=("cpu", "cuda", "both"), default="both")
     parser.add_argument("--install-only", action="store_true")
-    parser.add_argument("--vision", action="store_true", help="Verify static images, multi-image order, history, streaming and cancellation")
+    focus = parser.add_mutually_exclusive_group()
+    focus.add_argument("--vision", action="store_true", help="Verify static images, multi-image order, history, streaming and cancellation")
+    focus.add_argument("--reasoning", action="store_true", help="Verify reasoning on/off with native template evidence, payloads and streaming/non-streaming output")
     args = parser.parse_args(argv)
     return args
 
@@ -342,4 +405,4 @@ def parse_args(argv=None):
 if __name__ == "__main__":
     args = parse_args()
     reference = args.model_ref or ("llms/Qwen3.5-0.8B-TF" if args.engine == "transformers" else "llms/Qwen3.5-0.8B-GGUF")
-    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision))
+    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision, args.reasoning))

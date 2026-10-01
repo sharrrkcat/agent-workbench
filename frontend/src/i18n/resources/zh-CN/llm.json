@@ -536,6 +536,10 @@
     "streaming": "流式输出",
     "skip_tool_capability_check": "跳过工具能力校验",
     "skip_vision_capability_check": "跳过图片能力校验",
+    "skip_instant_capability_check": "Instant",
+    "reasoningPreflight": "Reasoning 预检",
+    "skip_reasoning_capability_check": "Reasoning",
+    "reasoningHelp": "模式声明：仅开启 Instant 时跳过关闭 reasoning 的预检；仅开启 Reasoning 时跳过开启 reasoning 的预检。两项同时开启或关闭时均不跳过。这些声明不会改变对话模式。",
     "help": "关闭时发送前校验本地支持情况，未知时放行；开启时跳过对应校验，引擎仍可能报错。"
   }
 }

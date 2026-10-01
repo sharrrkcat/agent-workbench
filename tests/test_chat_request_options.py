@@ -21,7 +21,8 @@ from tests.test_vision_input import image_bytes, part
 from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
 
 
-DEFAULTS = {"streaming": True, "skip_tool_capability_check": False, "skip_vision_capability_check": False}
+DEFAULTS = {"streaming": True, "skip_tool_capability_check": False, "skip_vision_capability_check": False,
+            "skip_instant_capability_check": False, "skip_reasoning_capability_check": False}
 
 
 @pytest.mark.parametrize("memory", [True, False])
@@ -33,7 +34,8 @@ def test_model_crud_defaults_and_source_change_clear_only_inapplicable_skips(tmp
         assert model["request_options"] == DEFAULTS and "capabilities" not in model
         path = f"/api/models/profiles/{model['id']}"
         assert client.patch(path, json={"capabilities": {"vision": True}}).status_code == 422
-        options = {"streaming": False, "skip_tool_capability_check": True, "skip_vision_capability_check": True}
+        options = {"streaming": False, "skip_tool_capability_check": True, "skip_vision_capability_check": True,
+                   "skip_instant_capability_check": True, "skip_reasoning_capability_check": True}
         assert ok(client.patch(path, json={"request_options": options}))["request_options"] == options
         assert ok(client.get(path))["request_options"] == options
         provider = ok(client.post("/api/models/providers", json={"name": "P", "connection": {"base_url": "http://provider.test/v1"}}))
@@ -51,7 +53,7 @@ def test_request_options_are_strict_and_kind_source_scoped():
             ModelInput(**base, request_options=options)
     with pytest.raises(ValidationError):
         ModelInput(**base, capabilities={})
-    for flag in ("skip_tool_capability_check", "skip_vision_capability_check"):
+    for flag in ("skip_tool_capability_check", "skip_vision_capability_check", "skip_instant_capability_check", "skip_reasoning_capability_check"):
         with pytest.raises(ValidationError):
             ModelInput(**{**base, "source": {"type": "provider", "provider_profile_id": "p"}}, request_options={flag: True})
     embedding = {**base, "kind": "embedding", "source": None}

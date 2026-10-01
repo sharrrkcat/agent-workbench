@@ -536,6 +536,10 @@
     "streaming": "Streaming",
     "skip_tool_capability_check": "Skip tool capability check",
     "skip_vision_capability_check": "Skip image capability check",
+    "skip_instant_capability_check": "Instant",
+    "reasoningPreflight": "Reasoning preflight",
+    "skip_reasoning_capability_check": "Reasoning",
+    "reasoningHelp": "Mode declarations: Instant alone skips reasoning-off preflight; Reasoning alone skips reasoning-on preflight. Both on or both off skip neither check. These declarations do not change the chat mode.",
     "help": "Off: check local support before sending, allowing unknown support. On: send without this check; engine errors can still occur."
   }
 }
