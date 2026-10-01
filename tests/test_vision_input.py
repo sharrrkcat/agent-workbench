@@ -18,11 +18,12 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import prepare_local_images, resolve_context_images
 from ai_workbench.core.models.inventory import inventory
 from ai_workbench.core.models.manager import ModelManager
+from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.schema import model_path
 from ai_workbench.core.models.resolution import configure_profile, require_directory
 from ai_workbench.core.models.inspection import inspect_local_directory
 from ai_workbench.workers.model_catalog import DirectoryInformation
-from ai_workbench.core.models.schema import ChatRequest, ModelProfile
+from ai_workbench.core.models.schema import ChatRequest, ChatResult, ModelProfile
 from ai_workbench.core.models.store import ModelProfileStore, ModelSettingsStore, ProviderProfileStore
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.stores import MessageStore
@@ -161,15 +162,15 @@ def test_local_manager_prepares_images_before_admission_off_the_event_loop(tmp_p
     class Adapter:
         async def chat(self, _profile, value):
             admitted.append(value)
-            return "accepted"
+            return ChatResult(message={"role": "assistant", "content": "accepted"}, finish_reason="stop")
 
     @asynccontextmanager
-    async def lease(_profile):
+    async def lease(_profile, **_):
         yield Adapter()
 
     monkeypatch.setattr(manager_module, "prepare_local_images", checked_prepare)
     monkeypatch.setattr(service, "_lease", lease)
-    assert asyncio.run(service.chat(local.id, request(part(image_bytes("JPEG"), "image/jpeg")))) == "accepted"
+    assert asyncio.run(service.chat(local.id, request(part(image_bytes("JPEG"), "image/jpeg")))).message.content == "accepted"
     assert admitted[0].messages[0].content[0].image_url.url.startswith("data:image/png;base64,")
     with pytest.raises(ModelError):
         asyncio.run(service.chat(local.id, request(part(b"corrupt"))))
@@ -302,7 +303,7 @@ def test_worker_rejects_images_when_processor_reports_text_only():
             raise AssertionError("A text-only processor must never receive images")
 
     with TestClient(build_app(Engine(), "token")) as client:
-        body = request(part()).model_dump(exclude_none=True)
-        body["model"] = "managed"
+        body = OpenAIAdapter._payload(profile().model_copy(update={"model_ref": "managed"}),
+                                      request(part(), cogita={"include_metrics": True}))
         response = client.post("/v1/chat/completions", headers={"Authorization": "Bearer token"}, json=body)
         assert response.status_code == 422 and response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"

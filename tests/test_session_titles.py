@@ -90,9 +90,12 @@ def test_auxiliary_selection_is_used_and_disabled_selection_keeps_excerpt(enviro
     client.patch("/api/models/settings", json={"utility_model_profile_id": model["id"]}).raise_for_status()
     upstream.response = "Generated title"
     session_id = create_session(client)
-    send(client, session_id, "Name this conversation")
+    reply = send(client, session_id, "Name this conversation")
     assert client.get(f"/api/sessions/{session_id}").json()["title"] == "Generated title"
     assert upstream.calls[-1]["max_tokens"] == 64
+    assert len(upstream.calls) == 2
+    calls = [step["metadata"]["llm"] for step in reply["run"]["steps"] if step["kind"] == "model"]
+    assert len(calls) == 1 and calls[0]["usage"]["total_tokens"] == 5
     client.patch(f"/api/models/profiles/{model['id']}", json={"enabled": False}).raise_for_status()
     session_id = create_session(client)
     send(client, session_id, "Keep unavailable")

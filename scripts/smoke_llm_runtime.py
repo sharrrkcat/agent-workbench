@@ -21,6 +21,7 @@ from PIL import Image
 from ai_workbench.api.deps import build_runtime_state
 from ai_workbench.api.main import create_app
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.llm_metrics import LLMCallMetrics, LLMTiming, LLMUsage
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore
@@ -39,6 +40,24 @@ async def checked_json(client, method, path, **kwargs):
     response = await client.request(method, path, **kwargs)
     response.raise_for_status()
     return response.json()
+
+
+def check_statistics(body, *, streaming, engine_name):
+    usage = LLMUsage.model_validate(body["usage"])
+    timing = LLMTiming.model_validate(body["cogita_metrics"])
+    assert usage.prompt_tokens > 0 and usage.completion_tokens > 0
+    assert usage.total_tokens == usage.prompt_tokens + usage.completion_tokens
+    assert timing.total_ms > 0 and timing.queue_ms is not None and timing.load_ms is not None
+    assert (timing.first_response_ms is not None) == streaming
+    if timing.first_response_ms is not None:
+        assert 0 <= timing.first_response_ms <= timing.total_ms
+    if engine_name == "llama-server":
+        assert timing.tps_source == "native" and timing.tokens_per_second > 0
+    elif not streaming:
+        assert timing.tokens_per_second is None
+    if timing.tokens_per_second is not None:
+        assert timing.tokens_per_second == timing.generation_tokens * 1000 / timing.generation_ms
+    return {"usage": usage.model_dump(), "timing": timing.model_dump()}
 
 
 async def validate_device(state, client, model_ref, device, engine_name, vision=False):
@@ -69,11 +88,12 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
         print(json.dumps(result), flush=True)
         return result
     request = {"model": profile.alias, "messages": [{"role": "user", "content": "Say hello in a short sentence."}],
-               "temperature": 0, "max_tokens": 32}
+               "temperature": 0, "max_tokens": 32, "cogita": {"include_metrics": True}}
     reply = await checked_json(client, "POST", "/v1/chat/completions", json=request)
     assert reply["choices"][0]["message"]["content"]
-    pieces, finished, done = [], False, False
-    async with client.stream("POST", "/v1/chat/completions", json={**request, "stream": True}) as response:
+    nonstream_statistics = check_statistics(reply, streaming=False, engine_name=engine_name)
+    pieces, finished, done, tails = [], False, False, []
+    async with client.stream("POST", "/v1/chat/completions", json={**request, "stream": True, "stream_options": {"include_usage": True}}) as response:
         response.raise_for_status()
         async for line in response.aiter_lines():
             if line == "data: [DONE]":
@@ -81,10 +101,15 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
             elif line.startswith("data: "):
                 chunk = json.loads(line[6:])
                 assert "error" not in chunk, chunk
+                if not chunk["choices"]:
+                    assert finished
+                    tails.append(chunk)
                 for choice in chunk["choices"]:
                     pieces.append(choice["delta"].get("content") or "")
                     finished = finished or choice.get("finish_reason") is not None
     assert done and finished and "".join(pieces)
+    assert len(tails) == 1
+    stream_statistics = check_statistics(tails[0], streaming=True, engine_name=engine_name)
     assert manager.status(profile.id).residency == "loaded"
 
     session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
@@ -92,8 +117,11 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     chat = await checked_json(client, "POST", f"/api/sessions/{session['session_id']}/messages",
                               json={"content": "Greet me briefly."})
     assert chat["success"] and chat["run"]["status"] == "DONE" and chat["data"]
+    model_steps = [step for step in chat["run"]["steps"] if step["kind"] == "model"]
+    assert len(model_steps) == 1 and model_steps[0]["metadata"]["llm"]["usage"]["completion_tokens"] > 0
     title = await state.utility_llm.generate_title("Plan a simple afternoon walk")
     assert title
+    assert len(state.runs.list_steps(chat["run"]["run_id"])) == len(chat["run"]["steps"])
 
     harness_session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
         "harness_enabled": True, "tools_allowed": ["base64_encode"], "generation": {"temperature": 0}})
@@ -103,14 +131,19 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     assert harness["success"] and harness["run"]["status"] == "DONE", harness["run"]
     assert any(part["data"].get("value") == "aGVsbG8=" for part in tool_results), "The model did not complete the requested Harness tool call"
     assert harness["data"]
+    harness_calls = [step["metadata"]["llm"] for step in harness["run"]["steps"] if step["kind"] == "model"]
+    assert len(harness_calls) >= 2 and all(call["completed"] and call["usage"]["completion_tokens"] > 0 for call in harness_calls)
 
     original_process = adapter.process
     cancel_request = ChatRequest(model=profile.alias, messages=[{"role": "user", "content": "Count from 1 to 1000, one number per line."}],
                                  stream=True, temperature=0, max_tokens=1024)
-    async with aclosing(manager.chat_stream(profile.id, cancel_request)) as stream:
+    cancellation_metrics = LLMCallMetrics()
+    async with aclosing(manager.chat_stream(profile.id, cancel_request, metrics=cancellation_metrics)) as stream:
         async for chunk in stream:
             if chunk.delta.content:
                 break
+    assert not cancellation_metrics.completed and cancellation_metrics.timing().total_ms is not None
+    assert cancellation_metrics.timing().tps_source != "estimated"
     if engine_name == "transformers":
         assert original_process.process.returncode is not None and adapter.process is None
     else:
@@ -149,7 +182,9 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     result = {"engine": engine_name, "device": device, "device_name": loaded.runtime.device_name, "dtype": metadata.get("dtype"),
               "text": "passed", "stream": "passed", "chat": "passed", "title": "passed", "harness": "passed",
               "cancellation": "passed", "cancel_effect": "worker_stopped" if engine_name == "transformers" else "request_closed",
-              "crash_reload": "passed", "manual_unload": "passed"}
+              "crash_reload": "passed", "manual_unload": "passed",
+              "nonstream_statistics": nonstream_statistics, "stream_statistics": stream_statistics,
+              "harness_model_calls": len(harness_calls)}
     print(json.dumps(result), flush=True)
     return result
 

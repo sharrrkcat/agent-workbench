@@ -38,6 +38,8 @@ class FixtureStream(httpx.AsyncByteStream):
             return
         await asyncio.sleep(self.delay)
         yield self._data({"choices": [{"index": 0, "delta": {}, "finish_reason": self.finish}]})
+        yield self._data({"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30,
+            "prompt_tokens_details": {"cached_tokens": 4}, "completion_tokens_details": {"reasoning_tokens": 3}}})
         yield b"data: [DONE]\n\n"
 
     @staticmethod
@@ -58,6 +60,12 @@ class PresentationOpenAI(ToolOpenAI):
         outputs = [item for item in transcript if item["role"] == "tool"]
         if command == "scroll-output":
             stream = FixtureStream([{"content": f"Paragraph {index}: streamed progress text.\n\n"} for index in range(40)], delay=0.12)
+        elif command in {"reasoning-preview", "reasoning-cancel"}:
+            chunks = [{"reasoning_content": "Preview beginning.  \nSecond line.  \nThird line.  \nFourth line.  \n"}]
+            chunks += [{"reasoning_content": f"Latest reasoning {index}.  \n"} for index in range(8)]
+            if command == "reasoning-preview":
+                chunks += [{"content": "Reasoning finished."}, {"content": " Final answer."}]
+            stream = FixtureStream(chunks, delay=0.8, hold=command == "reasoning-cancel")
         elif command == "cancel-stream" or command == "fail-stream":
             stream = FixtureStream([{"reasoning_content": "Received reasoning before interruption."},
                                     {"content": "Incomplete streamed answer."}], hold=command == "cancel-stream", fail=command == "fail-stream")

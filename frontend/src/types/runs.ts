@@ -1,5 +1,6 @@
 import type { Session } from './chat';
 import type { Message } from './messages';
+import type { LLMCallSnapshot } from './llmMetrics';
 
 export type RunStatus =
   | 'PENDING'
@@ -30,7 +31,7 @@ export type RunStep = {
   finished_at?: string | null;
   error_code?: string | null;
   error_message?: string | null;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & { llm?: LLMCallSnapshot };
   created_at: string;
   updated_at: string;
 };

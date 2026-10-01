@@ -6,9 +6,10 @@ from collections.abc import AsyncIterator
 import httpx
 from httpx_sse import aconnect_sse, SSEError
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTiming
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult,
-    ModelProfile, ExternalConnection, Usage,
+    ModelProfile, ExternalConnection,
 )
 
 
@@ -57,7 +58,7 @@ class OpenAIAdapter:
 
     @staticmethod
     def _payload(profile: ModelProfile, request: ChatRequest) -> dict:
-        payload = {**profile.parameters, **request.model_dump(exclude_none=True, by_alias=True, exclude_unset=True)}
+        payload = {**profile.parameters, **request.model_dump(exclude_none=True, by_alias=True, exclude_unset=True, exclude={"cogita"})}
         payload.update(model=profile.model_ref, stream=request.stream)
         return payload
 
@@ -70,7 +71,9 @@ class OpenAIAdapter:
             message = dict(choice["message"])
             if message.pop("refusal", None):
                 raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
-            result = ChatResult(message=message, finish_reason=choice["finish_reason"], usage=data.get("usage"))
+            result = ChatResult(message=message, finish_reason=choice["finish_reason"],
+                                usage=LLMUsage.from_provider(data["usage"]) if data.get("usage") is not None else None,
+                                timings=NativeGenerationTiming.from_provider(data["timings"]) if data.get("timings") is not None else None)
             if result.message.role != "assistant":
                 raise ValueError("expected assistant message")
             return result
@@ -95,10 +98,11 @@ class OpenAIAdapter:
                     if "error" in data:
                         raise ModelError("PROVIDER_ERROR", "Provider reported an error during streaming.", 502)
                     choices = data["choices"]
-                    usage = Usage.model_validate(data["usage"]) if data.get("usage") else None
+                    usage = LLMUsage.from_provider(data["usage"]) if data.get("usage") is not None else None
+                    timings = NativeGenerationTiming.from_provider(data["timings"]) if data.get("timings") is not None else None
                     if not choices:
-                        if usage:
-                            yield ChatChunk(usage=usage)
+                        if usage is not None or timings is not None:
+                            yield ChatChunk(usage=usage, timings=timings)
                         continue
                     if finished or len(choices) != 1 or choices[0]["index"] != 0:
                         raise ValueError("invalid stream choice")
@@ -119,7 +123,7 @@ class OpenAIAdapter:
                         raise ValueError("incomplete tool call")
                     if tool_ids and finish and finish != "tool_calls":
                         raise ValueError("invalid tool finish reason")
-                    chunk = ChatChunk(delta=delta, finish_reason=finish, usage=usage)
+                    chunk = ChatChunk(delta=delta, finish_reason=finish, usage=usage, timings=timings)
                     finished = finish is not None
                     yield chunk
                 raise ValueError("stream ended without DONE")

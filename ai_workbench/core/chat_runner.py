@@ -16,6 +16,7 @@ from ai_workbench.core.knowledge_context import append_knowledge_to_system, buil
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest
+from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
 from ai_workbench.core.user_persona_context import append_system_context, build_user_persona_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
@@ -172,25 +173,31 @@ class ChatRunner:
             draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session_id,
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,
                                    parent_message_id=user.message_id, streamed=streamed)
-            if streamed:
-                async with aclosing(self.model_manager.chat_stream(profile.id, request)) as stream:
-                    async for chunk in stream:
-                        if self._cancelled(run.run_id):
-                            raise asyncio.CancelledError()
-                        draft.append(chunk.delta.content, chunk.delta.reasoning_content)
-                        if chunk.finish_reason == "content_filter":
-                            raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
-                        if chunk.delta.tool_calls:
-                            raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat cannot execute tool calls.", 502)
-            else:
-                response = await self.model_manager.chat(profile.id, request)
-                if response.message.content is not None and not isinstance(response.message.content, str):
-                    raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
-                draft.append(response.message.content, response.message.reasoning_content)
-                if response.finish_reason == "content_filter":
-                    raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
-                if response.message.tool_calls:
-                    raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
+            metrics = LLMCallMetrics()
+            try:
+                if streamed:
+                    async with aclosing(self.model_manager.chat_stream(profile.id, request, metrics=metrics)) as stream:
+                        async for chunk in stream:
+                            if self._cancelled(run.run_id):
+                                raise asyncio.CancelledError()
+                            draft.append(chunk.delta.content, chunk.delta.reasoning_content)
+                            if chunk.finish_reason == "content_filter":
+                                raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
+                            if chunk.delta.tool_calls:
+                                raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat cannot execute tool calls.", 502)
+                else:
+                    response = await self.model_manager.chat(profile.id, request, metrics=metrics)
+                    if response.message.content is not None and not isinstance(response.message.content, str):
+                        raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
+                    draft.append(response.message.content, response.message.reasoning_content)
+                    if response.finish_reason == "content_filter":
+                        raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
+                    if response.message.tool_calls:
+                        raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
+            finally:
+                self.runs.update_step(model_step.step_id, metadata={"llm": metrics.snapshot(
+                    profile.id, profile.alias, draft.message.message_id).model_dump(mode="json")})
+                self._emit_step(run.run_id, model_step.step_id)
             if self._cancelled(run.run_id):
                 raise asyncio.CancelledError()
             self.runs.update_step(

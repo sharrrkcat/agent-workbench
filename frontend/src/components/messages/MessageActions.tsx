@@ -34,7 +34,7 @@ export function MessageActions({
   const isUser = message.role === 'user';
 
   return (
-    <div className="message-actions">
+    <div className="message-actions" data-editing={editing}>
       {isUser && !editing ? (
         <Tooltip>
           <TooltipTrigger

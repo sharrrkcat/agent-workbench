@@ -300,15 +300,13 @@ export function ChatInput() {
           )}
         </InputGroupAddon>
       </InputGroup>
-      <Marker className="composer-hint">
+      {dragging || (hasImages && profile?.source?.type === 'local' && normalizedRequestLimit !== undefined) ? <Marker className="composer-hint">
         <MarkerContent>
           {dragging
             ? t('dropFiles')
-            : hasImages && profile?.source?.type === 'local' && normalizedRequestLimit !== undefined
-              ? t('localImageLimit', { limit: normalizedRequestLimit })
-              : t('imageInputHint')}
+            : t('localImageLimit', { limit: normalizedRequestLimit })}
         </MarkerContent>
-      </Marker>
+      </Marker> : null}
       <ImagePreview
         image={items.some((item) => item.preview === preview?.src) ? preview : null}
         onClose={() => setPreview(null)}

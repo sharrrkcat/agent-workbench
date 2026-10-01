@@ -6,7 +6,6 @@ import { ChatView } from './components/ChatView';
 import { ErrorBanner } from './components/ErrorBanner';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
-import { StatusBar } from './components/StatusBar';
 import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
 import { useCogitaStore } from './store/useCogitaStore';
 import { useModelEvents } from './hooks/useModelEvents';
@@ -267,7 +266,7 @@ export default function App() {
                   if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(projectRoute.projectId);
                   else void activateLocation(projectRoute.projectId, projectRoute.sessionId);
                 }} /></div>}
-                <div className="chat-bottom"><ChatInput /><StatusBar /></div>
+                <div className="chat-bottom"><ChatInput /></div>
               </>}
           </SidebarInset>
         </>

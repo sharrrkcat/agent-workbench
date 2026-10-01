@@ -72,6 +72,7 @@ function Conversation() {
     <MessageScroller className="chat-scroll-container h-auto flex-1">
       <MessageScrollerViewport
         className="chat-view"
+        style={{ scrollbarGutter: 'stable both-edges' }}
         aria-label={t('chat:messages')}
         onClickCapture={(event) => {
           const trigger = (event.target as Element).closest('button[aria-expanded]');

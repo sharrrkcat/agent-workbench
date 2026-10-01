@@ -6,6 +6,7 @@ import json
 import struct
 import time
 from contextlib import aclosing
+from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from uuid import uuid4
 from typing import Literal
 from pathlib import Path
@@ -278,7 +279,7 @@ async def speech(request: Request, state: RuntimeState = Depends(get_state)):
 
 
 @router.post("/chat/completions", response_model=ChatCompletion, response_model_exclude_unset=True,
-             openapi_extra=request_body(ChatRequest), summary="Create a chat completion",
+             openapi_extra=request_body(ChatRequest, description="Use cogita.include_metrics=true for server-side LLM timing and generation speed; this extension is not forwarded upstream. Streaming usage is independently selected by stream_options.include_usage."), summary="Create a chat completion",
              responses={**error_responses(400, 401, 403, 404, 413, 422, 429, 502, 503, 504), 200: SSE_RESPONSE})
 async def chat(request: Request, state: RuntimeState = Depends(get_state)):
     settings = state.model_settings.get()
@@ -288,18 +289,23 @@ async def chat(request: Request, state: RuntimeState = Depends(get_state)):
     profile = manager.external_profile(payload.model, "llm")
     manager.validate_chat(profile, payload)
     identity = {"id": "chatcmpl-" + uuid4().hex, "created": int(time.time()), "model": profile.alias}
+    metrics = LLMCallMetrics()
     if not payload.stream:
-        result = await manager.chat(profile.id, payload)
+        result = await manager.chat(profile.id, payload, metrics=metrics)
         response = {**identity, "object": "chat.completion", "choices": [
             {"index": 0, "message": {**result.message.model_dump(exclude_none=True), "content": result.message.content}, "finish_reason": result.finish_reason}
         ]}
         if result.usage:
             response["usage"] = result.usage.model_dump()
+        if payload.cogita.include_metrics:
+            response["cogita_metrics"] = metrics.timing().model_dump()
         return response
 
     # Resolve source/queue failures before headers; inference failures after
     # headers use an explicit SSE error followed by the terminal sentinel.
-    stream = await manager.prepare_chat_stream(profile.id, payload)
+    include_usage = bool(payload.stream_options and payload.stream_options.include_usage)
+    include_metrics = payload.cogita.include_metrics
+    stream = await manager.prepare_chat_stream(profile.id, payload, metrics=metrics if include_usage or include_metrics else None)
 
     async def events():
         try:
@@ -308,10 +314,17 @@ async def chat(request: Request, state: RuntimeState = Depends(get_state)):
                     delta = chunk.delta.model_dump(exclude_none=True)
                     data = {**identity, "object": "chat.completion.chunk",
                             "choices": [{"index": 0, "delta": delta, "finish_reason": chunk.finish_reason}] if delta or chunk.finish_reason else []}
-                    if payload.stream_options and payload.stream_options.include_usage:
-                        data["usage"] = chunk.usage.model_dump() if chunk.usage else None
-                    if data["choices"] or data.get("usage"):
+                    if include_usage:
+                        data["usage"] = None
+                    if data["choices"]:
                         yield "data: " + json.dumps(data, ensure_ascii=True) + "\n\n"
+            if include_usage or include_metrics:
+                data = {**identity, "object": "chat.completion.chunk", "choices": []}
+                if include_usage:
+                    data["usage"] = metrics.usage.model_dump() if metrics.usage is not None else None
+                if include_metrics:
+                    data["cogita_metrics"] = metrics.timing().model_dump()
+                yield "data: " + json.dumps(data, ensure_ascii=True) + "\n\n"
         except ModelError as exc:
             request.state.inference_error_code = exc.code
             yield "data: " + json.dumps(exc.payload()) + "\n\n"

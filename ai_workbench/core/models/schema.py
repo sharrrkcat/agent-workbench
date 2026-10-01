@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, RootModel, TypeA
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
+from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTiming
 from ai_workbench.workers.common import MAX_NORMALIZED_REQUEST_MB
 from ai_workbench.workers.model_catalog import DirectoryInformation
 
@@ -438,6 +439,10 @@ class StreamOptions(StrictModel):
     include_usage: bool = False
 
 
+class CogitaChatOptions(StrictModel):
+    include_metrics: bool = Field(default=False, strict=True, description="Return Cogita's server-side LLM timing and generation speed.")
+
+
 class ChatRequest(GenerationParameters):
     model: str = Field(min_length=1)
     messages: list[ChatMessage] = Field(min_length=1)
@@ -448,6 +453,7 @@ class ChatRequest(GenerationParameters):
     parallel_tool_calls: bool | None = None
     response_format: ResponseFormat | None = None
     stream_options: StreamOptions | None = None
+    cogita: CogitaChatOptions = Field(default_factory=CogitaChatOptions)
 
     @model_validator(mode="after")
     def valid_tools(self):
@@ -635,7 +641,8 @@ class Usage(BaseModel):
 class ChatResult(StrictModel):
     message: ChatMessage
     finish_reason: Literal["stop", "length", "tool_calls", "content_filter"]
-    usage: Usage | None = None
+    usage: LLMUsage | None = None
+    timings: NativeGenerationTiming | None = None
 
 
 class FunctionDelta(StrictModel):
@@ -660,7 +667,8 @@ class ChatDelta(StrictModel):
 class ChatChunk(StrictModel):
     delta: ChatDelta = Field(default_factory=ChatDelta)
     finish_reason: Literal["stop", "length", "tool_calls", "content_filter"] | None = None
-    usage: Usage | None = None
+    usage: LLMUsage | None = None
+    timings: NativeGenerationTiming | None = None
 
 
 class EmbeddingResult(StrictModel):

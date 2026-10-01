@@ -159,7 +159,9 @@ def test_approval_retains_queue_snapshot_and_original_input(harness_client):
 
 
 def test_restart_preserves_only_pending_approval(tmp_path):
-    upstream = ToolOpenAI(completion(tool_call("read_file", {"path": "data/knowledge/note.txt"})))
+    upstream = ToolOpenAI(
+        {**completion(tool_call("read_file", {"path": "data/knowledge/note.txt"})), "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        {**completion(content="read completed"), "usage": {"prompt_tokens": 20, "completion_tokens": 3}})
     file = tmp_path / "data/knowledge/note.txt"
     file.parent.mkdir(parents=True)
     file.write_text("persisted file")
@@ -169,17 +171,24 @@ def test_restart_preserves_only_pending_approval(tmp_path):
         session, _, _ = configure(client, tools=["read_file"])
         response = send(client, session)
         run_id = response["run"]["run_id"]
+        first_statistics = next(step["metadata"]["llm"] for step in response["run"]["steps"] if step["kind"] == "model")
+        assert first_statistics["usage"]["total_tokens"] == 15
         state = app.state.runtime_state
         orphan_session = state.sessions.create_session()
         orphan = state.runs.create_run(kind="tool", persona_id=COGITA_PERSONA_ID, session_id=orphan_session.session_id)
         state.runs.update_status(orphan.run_id, RunStatus.RUNNING)
     restarted = create_app(**kwargs)
     with TestClient(restarted) as client:
-        assert ok(client.get(f"/api/runs/{run_id}"))["status"] == "WAITING_FOR_USER"
+        saved_run = ok(client.get(f"/api/runs/{run_id}"))
+        assert saved_run["status"] == "WAITING_FOR_USER"
+        assert next(step["metadata"]["llm"] for step in saved_run["steps"] if step["kind"] == "model") == first_statistics
         assert ok(client.get(f"/api/runs/{orphan.run_id}"))["status"] == "INTERRUPTED"
         response = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
         assert response["run"]["status"] == "DONE"
         assert results(response)[0]["data"]["content"] == "persisted file"
+        calls = [step["metadata"]["llm"] for step in response["run"]["steps"] if step["kind"] == "model"]
+        assert len(calls) == 2 and calls[0] == first_statistics
+        assert sum(call["usage"]["total_tokens"] for call in calls) == 38
 
 
 def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_client):

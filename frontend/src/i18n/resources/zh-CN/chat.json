@@ -5,15 +5,5 @@
   "messages": "消息",
   "scrollToEnd": "最新消息",
   "scrollToStart": "最早消息",
-  "loadFailed": "无法打开对话",
-  "service": "服务：{{status}}",
-  "serviceStatus": {
-    "checking": "检查中…",
-    "ok": "就绪",
-    "ready": "就绪",
-    "offline": "离线",
-    "degraded": "部分可用",
-    "unavailable": "不可用",
-    "error": "错误"
-  }
+  "loadFailed": "无法打开对话"
 }

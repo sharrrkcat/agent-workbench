@@ -79,7 +79,7 @@ const unselected = ModelSelect({ profiles, value: null, onChange: () => {} });
 assert.equal(unselected.props.value, '');
 assert.equal(descendants(unselected).find((node) => node.type === SelectItem && node.props.value === '').props.disabled, true);
 
-let headerSession = { kind: 'ordinary', model_profile_id: 'preferred', persona_id: 'cogita', effective: { model_profile_id: 'preferred' } };
+let headerSession = { kind: 'ordinary', title: 'Configuration fixture', model_profile_id: 'preferred', persona_id: 'cogita', effective: { model_profile_id: 'preferred' } };
 const headerLoad = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: (selector) => selector({ profiles }) }),

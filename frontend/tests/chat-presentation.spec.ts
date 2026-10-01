@@ -41,12 +41,14 @@ test('retry replaces the whole reply and deletion removes its tool history', asy
   await page.goto('/');
   const original = page.locator('article[data-run-id]');
   const originalId = await original.getAttribute('data-run-id');
+  await original.hover();
   await original.locator('.reply-actions button').nth(1).click();
   await expect(page.locator('.reply-answer')).toHaveText('Browser final answer.');
   await expect(page.locator('.status-done')).toBeVisible();
   expect(await page.locator('article[data-run-id]').getAttribute('data-run-id')).not.toBe(originalId);
   expect((await request.get(`/api/runs/${originalId}`)).status()).toBe(404);
   await expect(page.locator('.tool-command')).toHaveCount(0);
+  await page.locator('article[data-run-id]').hover();
   await page.locator('.reply-actions button').last().click();
   await answerConfirmation(page, true);
   await expect(page.locator('article[data-run-id]')).toHaveCount(0);
@@ -150,7 +152,7 @@ for (const locale of ['en', 'zh-CN']) {
         await submit(page, 'cancel-stream');
         const second = page.locator('article[data-run-id]').last();
         await expect(second.locator('.reply-answer')).toHaveText('Incomplete streamed answer.');
-        await second.locator('.reply-processing-header').getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click();
+        await page.locator('.composer').getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click();
         await expect(second.locator('.reply-incomplete')).toBeVisible();
         await page.reload();
         await expect(page.locator('.reply-incomplete')).toBeVisible();

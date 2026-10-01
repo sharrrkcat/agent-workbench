@@ -2,7 +2,7 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Check, Copy, RefreshCw, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { terminal } from '../../store/cogita/mergeState';
@@ -10,7 +10,8 @@ import { MessageContextAction } from './MessageActions';
 import { messageText } from './messageContent';
 import type { Reply } from './turns';
 
-export function ReplyActions({ reply }: { reply: Reply }) {
+export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: ReactNode; summary?: ReactNode }) {
+  const ended = terminal(reply.run.status);
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('runs');
   const retry = useCogitaStore((state) => state.retryRun);
@@ -36,7 +37,7 @@ export function ReplyActions({ reply }: { reply: Reply }) {
   }
   return (
     <div className="message-actions reply-actions">
-      {body ? (
+      {ended && body ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -54,7 +55,7 @@ export function ReplyActions({ reply }: { reply: Reply }) {
           <TooltipContent>{t(copied ? 'copied' : 'copyAnswer')}</TooltipContent>
         </Tooltip>
       ) : null}
-      {reply.run.kind === 'chat' ? (
+      {ended && reply.run.kind === 'chat' ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -73,8 +74,9 @@ export function ReplyActions({ reply }: { reply: Reply }) {
           <TooltipContent>{t('retryReply')}</TooltipContent>
         </Tooltip>
       ) : null}
-      {reply.answer ? <MessageContextAction message={reply.answer} /> : null}
-      <Tooltip>
+      {usage}
+      {ended && reply.answer ? <MessageContextAction message={reply.answer} /> : null}
+      {ended ? <Tooltip>
         <TooltipTrigger
           render={
             <Button
@@ -93,7 +95,8 @@ export function ReplyActions({ reply }: { reply: Reply }) {
           <Trash2 size={14} />
         </TooltipTrigger>
         <TooltipContent>{t('deleteReply')}</TooltipContent>
-      </Tooltip>
+      </Tooltip> : null}
+      {summary}
       {confirmation}
     </div>
   );

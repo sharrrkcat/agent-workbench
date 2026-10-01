@@ -192,7 +192,7 @@ attachment_ref), image, audio, video, media_group image galleries, notice,
 error, tool_call and tool_result. Unknown types are rejected; there are no
 forms, actions, command buttons or diff parts.
 
-Text parts choose plain text or Markdown; reasoning uses Markdown with GFM.
+Text parts choose plain text or Markdown; reasoning uses GFM when expanded and [single-line plain-text previews](runs-streaming.md) when compact.
 Knowledge citation labels such as `[K1]` follow ordinary Markdown rendering,
 without a citation-specific parser, source lookup or popover.
 
@@ -241,6 +241,8 @@ processing. Adjacent tools share a collapsed command group, with individually
 collapsed arguments/results. Tool records have no separate avatars. Copy uses
 answer text only. Context selection uses real message ids, including tool details.
 Direct tool runs use this timeline without an invented model answer.
+Assistant replies expose aggregated LLM usage after the action buttons and per-call statistics in a usage modal; auxiliary titles are excluded.
+[Runs/streaming](runs-streaming.md#llm-statistics) owns their timing, persistence, completeness and display rules.
 
 The frontend renders parts without executing or routing text. Markdown remains
 content; edit/retry uses original text. MessageActions owns controls and
@@ -251,10 +253,12 @@ to [runs/streaming](runs-streaming.md).
 
 User messages use right-aligned secondary bubbles; assistant replies use open
 body layout. Assistant replies retain historical identity and avatars; user rows use the current
-Cogita Persona identity. Both retain message timestamps. Message bodies
-use 16px text with Markdown headings, lists, quotes, code, tables and media.
-Wide code, tables and tool results scroll inside their own bounds; tool results
-are limited to 320px height on desktop and 240px below 768px.
+Cogita Persona identity. User headers place time before the name; assistant headers place it after the name.
+Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps, user action buttons and reply usage text appear on message hover or keyboard focus,
+fade in and out over 180ms (instantly with reduced motion), and retain layout space. Touch layouts keep them visible; editing keeps save/cancel visible and an open usage modal keeps its owner visible. Message bodies use 16px text with Markdown headings, lists, quotes, code, tables and media.
+Wide code, tables and tool results scroll inside their own bounds; tool results are limited to 320px height on desktop and 240px below 768px.
+
+The composer omits the static image hint and service footer/health request; contextual drag/limit/error feedback remains.
 
 ## Auxiliary tasks and titles
 

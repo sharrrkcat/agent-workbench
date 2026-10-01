@@ -53,6 +53,20 @@ collapsed. Final answers and approval controls stay outside that history.
 History and tool details use controlled Base UI Collapsible sections; replacing
 their controls does not reset user expansion during streaming. Shared control
 and overlay behavior belongs to [Settings](settings.md#frontend-styling-foundation).
+Disclosure arrows follow labels: the processing clock arrow stays visible; command
+group/item arrows appear on hover or keyboard focus and stay visible on touch.
+The elapsed label aligns with the reply content's left edge. The processing header
+has no cancel button; cancellation remains available in the composer.
+Reasoning previews show one line of plain text extracted from Markdown, merging
+whitespace and retaining code text and link labels. Streaming previews follow the
+tail with a left ellipsis when overflowing; completed previews show the beginning
+with a right ellipsis. Text that fits has no ellipsis and cannot be expanded.
+A later part, message completion
+or terminal run resets that preview to its beginning and collapses manual expansion.
+Reasoning places an icon-only expand/collapse control beside the first preview line,
+without a separate heading or arrow. Incoming deltas preserve manual
+expansion, which renders the full Markdown. Text and width changes remeasure
+horizontal overflow, and reopened histories start compact.
 MessageScroller follows streamed content near the bottom and yields when the user
 reads earlier messages. Disclosures use registered header anchors to retain the
 reading position. Returning to the bottom, choosing Latest messages or sending
@@ -133,6 +147,30 @@ refresh removes records absent from the server without regressing newer events.
 Model/runtime stores reject stale refreshes and keep newer live occupancy/job
 revisions. UI state does not infer residency from a successful health check.
 
+## LLM statistics
+
+Each attempted model call saves one typed `metadata.llm` snapshot on its model step, including model/profile and assistant message ids,
+UTC start/first-response times, completion state, usage and timing. Ordinary chat and Harness use the same ModelManager collector.
+Snapshots survive completed, failed and controlled-cancelled calls, including calls without a saved assistant message. Existing step events/REST
+carry them; messages and runs do not duplicate counts. Approval restoration reuses saved steps. Hard interruption preserves only saved snapshots.
+Input tokens include the complete request; output may include reasoning/tools. Cached input and reasoning output are subsets, never added twice.
+Unknown counts remain null; total is derived only when both input/output counts are known. Embedding accounting is separate.
+Call first response measures manager entry to the first nonempty content/reasoning/tool name or arguments, before text normalization.
+Role, tool id and empty frames do not qualify. Non-streaming has no observed first response. Call total includes preparation, source queue and local
+loading through upstream completion, excluding post-call release. Queue/load are only locally observed; provider load time is unknown.
+Durations use a monotonic clock. Native speed uses `timings.predicted_n/predicted_ms`; estimated speed uses final output tokens divided by
+first-output-to-finish duration. Estimation needs two output chunks and a successful stop/tool finish; length/filter/cancel/truncation cannot estimate.
+Replies sum all model-call usage, excluding auxiliary titles. Speed uses summed generation tokens/time, never averaged rates or tool/approval time.
+Missing/incomplete call counts mark known totals incomplete and suppress aggregate speed. A mix including estimates remains labelled estimated.
+Reply first response starts at Run start; reply total retains the whole Run clock including tools/approval waits. Neither clock measures client rendering.
+At terminal status or approval waiting, input/output, first response and speed follow the reply action buttons.
+The usage icon opens a controlled modal with aggregate total time, call count and per-call counts, cache/reasoning, timing and source.
+The modal omits explanatory prose, includes Model calls in the summary grid, and separates individual calls with horizontal rules.
+It scrolls within the viewport and returns focus to its trigger without moving the message list.
+Approval statistics are labelled So far; failed/cancelled statistics are incomplete. During active generation only the existing Run clock updates.
+User messages, direct tool runs and histories without recorded statistics do not receive invented LLM metrics. Both locales and narrow layouts are supported.
+Qwen3.5-0.8B GGUF/Transformers statistics have Windows CPU/CUDA acceptance. GGUF reports native speed/cache hits; Transformers reports streaming estimates without cache/reasoning breakdowns.
+
 ## Persistence
 
 Final messages use content_version=2 and validated parts. Deltas are transport-only
@@ -152,9 +190,10 @@ The [models contract](models.md#external-inference-api) owns `/v1` request,
 authentication, visibility and statelessness rules. External chat supports SSE
 without invoking internal harness execution.
 
-One public id, created timestamp and alias persist across all chunks. Content
-and tool-call fragments are followed by one finish reason, optional usage when
-stream_options.include_usage=true, and exactly one `data: [DONE]`.
+One public id, created timestamp and alias persist across all chunks. Content/tool fragments are followed by one finish reason,
+then at most one `choices: []` statistics tail and exactly one `data: [DONE]`. `stream_options.include_usage` selects usage;
+`cogita.include_metrics` independently selects cogita_metrics. Upstream same-frame/separate usage snapshots replace rather than accumulate.
+Non-tail usage is null when requested, otherwise omitted. Missing tail usage is null. Failures emit no successful statistics tail.
 Local image validation/normalization, request-size checks, source admission and loading precede response headers;
 providers never perform discovery preflights. Later inference/queue
 failures emit an explicit SSE error and DONE. Disconnects close upstream

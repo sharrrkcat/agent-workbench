@@ -52,7 +52,7 @@ app-layout.spec.ts covers sidebar scrolling/menus, deletion, drawer focus, Markd
 composer growth, disclosure position and breakpoint/short viewport behavior.
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
 independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
-chat-presentation.spec.ts and vision-input.spec.ts retain streaming and image workflows.
+chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning previews, message alignment and images.
 settings-layout.spec.ts covers all 21 grouped pages, collapsed menus, direct links, history, resource
 leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, shared navigation and responsive scroll regions.
 chat-drafts.spec.ts covers unsaved settings, shared creation entries, attachment promotion/retry,

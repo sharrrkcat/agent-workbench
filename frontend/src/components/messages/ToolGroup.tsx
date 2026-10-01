@@ -22,10 +22,10 @@ export function ToolGroup({ calls, run }: { calls: ToolEntry[]; run: Run }) {
         <CollapsibleTrigger
           render={<Button type="button" variant="ghost" className="process-disclosure tool-group-toggle" />}
         >
-          <ChevronRight size={14} className={expanded ? 'expanded' : ''} />
           <Terminal size={15} />
           <span>{t(active ? 'commandsRunning' : 'commands', { count: calls.length })}</span>
           {errors ? <span className="tool-group-errors">{t('commandIssues', { count: errors })}</span> : null}
+          <ChevronRight data-icon="inline-end" className={expanded ? 'disclosure-arrow expanded' : 'disclosure-arrow'} />
         </CollapsibleTrigger>
       </MessageScrollerItem>
       <CollapsibleContent id={id} className="tool-group-list">
@@ -56,9 +56,9 @@ function ToolCommand({ entry, run }: { entry: ToolEntry; run: Run }) {
         <CollapsibleTrigger
           render={<Button type="button" variant="ghost" className="process-disclosure tool-command-toggle" />}
         >
-          <ChevronRight size={13} className={expanded ? 'expanded' : ''} />
           <Icon size={14} className={status === 'running' ? 'animate-spin' : ''} />
           <span>{t(`commandStatus.${status}`, { name: entry.call.tool_name })}</span>
+          <ChevronRight data-icon="inline-end" className={expanded ? 'disclosure-arrow expanded' : 'disclosure-arrow'} />
         </CollapsibleTrigger>
       </MessageScrollerItem>
       <CollapsibleContent className="tool-command-details" id={id}>

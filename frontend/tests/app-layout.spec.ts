@@ -307,7 +307,7 @@ for (const locale of ['en', 'zh-CN']) {
         const trigger = page.locator('[data-sidebar="trigger"]');
         await expect(trigger).toHaveAttribute('aria-expanded', viewport.width < 768 ? 'false' : 'true');
         await expect(page.locator('.composer textarea')).toBeInViewport();
-        await expect(page.locator('.status-bar')).toBeInViewport();
+        await expect(page.locator('.chat-bottom')).toBeInViewport();
         const title = (await page.locator('.chat-title').boundingBox())!;
         const model = (await page.locator('.chat-model-control').boundingBox())!;
         expect(model.y > title.y + title.height).toBe(viewport.width < 768);

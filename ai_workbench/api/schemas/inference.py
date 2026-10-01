@@ -3,7 +3,8 @@ from typing import Literal
 from pydantic import Field
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
-from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ModelDigest, ReferenceTranscript, Tower, Usage, TranscriptionRequest, TranscriptionSegment, ImageProcessRequest
+from ai_workbench.core.models.schema import ChatDelta, ChatMessage, ImageTags, ModelDigest, ReferenceTranscript, Tower, TranscriptionRequest, TranscriptionSegment, ImageProcessRequest
+from ai_workbench.core.models.llm_metrics import LLMTiming, LLMUsage
 
 
 class PublicModel(ApiModel):
@@ -111,7 +112,8 @@ class ChatCompletion(ApiModel):
     created: int
     model: str
     choices: list[CompletionChoice] = Field(min_length=1, max_length=1)
-    usage: Usage | None = None
+    usage: LLMUsage | None = None
+    cogita_metrics: LLMTiming | None = None
 
 
 class ChunkChoice(ApiModel):
@@ -126,7 +128,8 @@ class ChatCompletionChunk(ApiModel):
     created: int
     model: str
     choices: list[ChunkChoice] = Field(max_length=1)
-    usage: Usage | None = None
+    usage: LLMUsage | None = None
+    cogita_metrics: LLMTiming | None = None
 
 
 class EmbeddingUsage(ApiModel):

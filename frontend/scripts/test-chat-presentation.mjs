@@ -11,6 +11,12 @@ const { buildReply, buildConversation, toolEntryStatus } = (await load('../src/c
 const { applyMessageEvent } = (await load('../src/store/messageStream.ts')).exports;
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
 const { toolResponseState } = (await load('../src/store/cogita/mergeState.ts')).exports;
+const { reasoningText } = (await load('../src/components/messages/reasoningText.ts')).exports;
+assert.equal(reasoningText('# Heading\n\nA **bold** [link](https://example.com) and `code`.\n\n- First\n- Second'), 'Heading A bold link and code. First Second');
+assert.equal(reasoningText('```ts\nconst value = 1;\n```\n\n> 思考内容\n\n![diagram](image.png)'), 'const value = 1; 思考内容 diagram');
+assert.equal(reasoningText('| Left | Right |\n| --- | --- |\n| a | b |\n\n[hidden]: https://example.com'), 'Left Right a b');
+assert.equal(reasoningText('First  \nNext\n\n**still streaming'), 'First Next **still streaming');
+assert.equal(reasoningText(' \n\t'), '');
 const at = (n) => `2026-09-07T00:00:00.${String(n).padStart(6, '0')}Z`;
 const run = { run_id: 'r', session_id: 's', persona_id: 'p', kind: 'chat', status: 'RUNNING',
   created_at: at(2), started_at: at(2), updated_at: at(3), metadata: { input_message_id: 'u', configuration: { persona_name: 'Original speaker' } } };

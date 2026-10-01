@@ -77,6 +77,8 @@ events. A tool error or rejected approval is returned to the model as data;
 model refusal, cancellation and the total time limit terminate the run.
 
 Each model round records one assistant message with distinct tool_call parts.
+Its model step stores one LLM statistics snapshot, including failed/cancelled calls; restored approvals retain earlier call statistics.
+The reply aggregates these rounds without charging tool execution or approval waits to generation speed; [Runs/streaming](runs-streaming.md#llm-statistics) owns the accounting rules.
 Results use role=tool and tool_result parts with status
 success/error/rejected/cancelled, data, error fields and a truncation flag.
 Every attempted call has a tool step, including validation failures.

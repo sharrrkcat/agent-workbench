@@ -65,8 +65,8 @@ Direct calls use **Settings > Tools** or a registered slash tool. Enabled `/base
 {"path":"data/knowledge/note.txt"}`. Unknown `/...`, `@...` and `:...` prefixes are ordinary text; results render as data. [Harness/tools](docs/contracts/harness-tools.md) owns limits and APIs.
 
 Each run has one reply, collapsed processing history and final answer. Expand its time row for reasoning/commands, then commands for arguments/results. **Show full processing history** opens active
-processing by default; completed processing stays collapsed and approvals visible. Cancellation/failure preserves incomplete output. Delete/retry affects the whole reply; retry replaces later
-conversation. [Chat](docs/contracts/chat-context.md#messages-and-attachments) owns reply content; [runs/streaming](docs/contracts/runs-streaming.md#run-lifecycle) owns processing visibility/time.
+processing by default; completed processing stays collapsed and approvals visible. Completed/waiting replies show LLM usage, first response, total time and generation speed; **Usage details** expands individual model calls.
+Cancellation/failure preserves incomplete output/statistics. Delete/retry affects the whole reply; retry replaces later conversation. [Chat](docs/contracts/chat-context.md#messages-and-attachments) owns content; [runs/streaming](docs/contracts/runs-streaming.md#llm-statistics) owns accounting and timing.
 
 ## External API
 
@@ -80,9 +80,9 @@ $apiBase = 'http://127.0.0.1:8765/v1'
 $headers = @{ Authorization = 'Bearer YOUR_LOCAL_KEY' }
 Invoke-RestMethod "$apiBase/models" -Headers $headers
 
-$chatBody = @{
-  model = 'chat-model'
+$chatBody = @{ model = 'chat-model'
   messages = @(@{ role = 'user'; content = 'Hello' })
+  cogita = @{ include_metrics = $true }
 } | ConvertTo-Json -Depth 10
 Invoke-RestMethod "$apiBase/chat/completions" -Method Post -Headers $headers -ContentType 'application/json' -Body $chatBody
 
@@ -95,11 +95,12 @@ For SSE with curl (use `curl.exe` on Windows):
 ```shell
 curl -N http://127.0.0.1:8765/v1/chat/completions \
   -H 'Authorization: Bearer YOUR_LOCAL_KEY' -H 'Content-Type: application/json' \
-  -d '{"model":"chat-model","messages":[{"role":"user","content":"Hello"}],"stream":true,"stream_options":{"include_usage":true}}'
+  -d '{"model":"chat-model","messages":[{"role":"user","content":"Hello"}],"stream":true,"stream_options":{"include_usage":true},"cogita":{"include_metrics":true}}'
 ```
 
-Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and supported response_format capabilities. Embeddings accept strings/string arrays, float/base64, dimensions and
-purpose=query|document (default document). Unsupported fields/capabilities and unavailable models produce explicit errors without substitution.
+Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and supported response_format capabilities. Embeddings accept strings/string arrays, float/base64, dimensions and purpose=query|document (default document). Unsupported fields/capabilities and unavailable models fail explicitly.
+Chat JSON returns usage when provided; `cogita.include_metrics` additionally returns server-side timing and native/estimated generation speed. Unknown measurements stay null.
+SSE sends one empty-choices statistics tail before `[DONE]`; usage and metrics flags are independent. Timings exclude client rendering; total reply time includes tool/approval waits, generation speed does not.
 [Models](docs/contracts/models.md#external-inference-api) owns request rules; [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior. Other reranker architectures and image
 generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
 

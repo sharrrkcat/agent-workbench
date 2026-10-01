@@ -18,7 +18,7 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.models import images
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import read_body
-from ai_workbench.core.models.schema import ChatRequest, ImageEmbeddingRequest, ModelProfile, ModelSettings, VisionRequest
+from ai_workbench.core.models.schema import ChatChunk, ChatRequest, ChatResult, ImageEmbeddingRequest, ModelProfile, ModelSettings, VisionRequest
 from ai_workbench.db.models import AppMetadataRecord
 from ai_workbench.workers import server, transformers_server
 from tests.test_vision_input import manager, profile as chat_profile
@@ -137,8 +137,11 @@ def test_saved_limit_applies_before_admission_and_changes_without_reloading(tmp_
     admitted = []
     infer = AsyncMock(return_value="accepted")
     async def stream(*_):
-        yield "accepted"
-    adapter = SimpleNamespace(chat=infer, chat_stream=stream, vision=infer, image_embed=infer, rerank=infer)
+        yield ChatChunk(delta={"content": "accepted"})
+        yield ChatChunk(finish_reason="stop")
+    adapter = SimpleNamespace(chat=AsyncMock(return_value=ChatResult(
+        message={"role": "assistant", "content": "accepted"}, finish_reason="stop")),
+        chat_stream=stream, vision=infer, image_embed=infer, rerank=infer)
     @asynccontextmanager
     async def lease(profile, **_):
         admitted.append(profile.id)
@@ -150,9 +153,9 @@ def test_saved_limit_applies_before_admission_and_changes_without_reloading(tmp_
         if operation in {"chat", "chat_stream", "prepared_stream"}:
             request = ChatRequest(model=model.alias, messages=[{"role": "user", "content": "x" * MIB}], stream=operation != "chat")
             if operation == "chat":
-                return await service.chat(model.id, request)
+                return (await service.chat(model.id, request)).message.content
             chunks = (await service.prepare_chat_stream(model.id, request)) if operation == "prepared_stream" else service.chat_stream(model.id, request)
-            return "".join([chunk async for chunk in chunks])
+            return "".join([chunk.delta.content or "" async for chunk in chunks])
         if operation == "tags":
             return await service.vision(model.id, VisionRequest(model=model.alias, images=[data_url()]))
         if operation == "rerank":

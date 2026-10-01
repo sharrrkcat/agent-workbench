@@ -1,6 +1,7 @@
 """Documentation for bodies deliberately parsed outside FastAPI's body reader."""
 
 from copy import deepcopy
+import json
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
@@ -37,13 +38,27 @@ SSE_EXAMPLE = (
     'data: [DONE]\n\n'
 )
 
+METRICS_EXAMPLE = {"first_response_ms": 100.0, "total_ms": 150.0, "queue_ms": 0.0,
+                   "load_ms": 0.0, "generation_ms": 50.0, "generation_tokens": 1,
+                   "tokens_per_second": 20.0, "tps_source": "native"}
+SSE_METRICS_EXAMPLE = SSE_EXAMPLE.replace('"total_tokens":2}}',
+    '"total_tokens":2},"cogita_metrics":' + json.dumps(METRICS_EXAMPLE) + '}')
+COMPLETION_METRICS_EXAMPLE = {"id": "chatcmpl-example", "object": "chat.completion", "created": 0, "model": "chat-model",
+    "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello"}, "finish_reason": "stop"}],
+    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    "cogita_metrics": {**METRICS_EXAMPLE, "first_response_ms": None}}
+
 SSE_RESPONSE = {"description": "JSON completion when stream=false; SSE text when stream=true.", "content": {
+    "application/json": {"examples": {"metrics": {"value": COMPLETION_METRICS_EXAMPLE}}},
     "text/event-stream": {"x-event-schemas": {"chunk": schema_ref(ChatCompletionChunk), "error": schema_ref(ErrorResponse)},
         "schema": {"type": "string", "description":
         "Each data line contains a ChatCompletionChunk or ErrorResponse JSON payload. "
-        "Usage is included only when requested. Exactly one data: [DONE] terminates the stream. "
+        "After the finish reason, one empty-choices tail carries usage when stream_options.include_usage=true "
+        "and/or cogita_metrics when cogita.include_metrics=true. These flags are independent. "
+        "Unknown statistics remain null; timings measure the server-side model call, excluding post-call release. "
+        "Exactly one data: [DONE] terminates the stream. "
         "Errors before headers use an HTTP error status; later errors are SSE data followed by [DONE]."},
-        "examples": {"completion": {"value": SSE_EXAMPLE}, "failure": {"value":
+        "examples": {"completion": {"value": SSE_EXAMPLE}, "metrics": {"value": SSE_METRICS_EXAMPLE}, "failure": {"value":
             'data: {"error":{"code":"PROVIDER_ERROR","message":"Streaming inference failed.","type":"model_error"}}\n\ndata: [DONE]\n\n'}}}}}
 
 

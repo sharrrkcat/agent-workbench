@@ -3,7 +3,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { Brain, ChevronRight, LoaderCircle } from 'lucide-react';
+import { ChevronRight, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { terminal } from '../../store/cogita/mergeState';
@@ -11,9 +11,10 @@ import type { Run } from '../../types/runs';
 import { MessageFrame } from './MessageFrame';
 import { MessageParts } from './MessageParts';
 import { MessageContextAction } from './MessageActions';
-import { RunApproval, RunCancelButton } from './RunApproval';
-import { ReplyActions } from './ReplyActions';
+import { RunApproval } from './RunApproval';
+import { ReplyMetrics } from './ReplyMetrics';
 import { ToolGroup } from './ToolGroup';
+import { ReasoningPreview } from './ReasoningPreview';
 import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
 
@@ -66,33 +67,38 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
                 />
               }
             >
-              {process.length || !ended ? (
-                <ChevronRight size={14} className={expanded ? 'rotate-90' : ''} />
-              ) : null}
               {!ended ? <LoaderCircle size={14} className="animate-spin" /> : null}
               <span>{t(ended ? 'elapsed' : 'processing', { seconds })}</span>
+              {process.length || !ended ? (
+                <ChevronRight data-icon="inline-end" className={expanded ? 'disclosure-arrow expanded' : 'disclosure-arrow'} />
+              ) : null}
             </CollapsibleTrigger>
             {status ? (
               <span className="reply-run-status" role="status">
                 {t(status)}
               </span>
             ) : null}
-            {!ended ? <RunCancelButton run={run} /> : null}
           </div>
         </MessageScrollerItem>
         <CollapsibleContent id={processId} className="processing-timeline">
           {process.map((item) =>
             item.kind === 'tools' ? (
               <ToolGroup key={item.id} calls={item.calls} run={run} />
+            ) : item.part.type === 'reasoning' ? (
+              <ReasoningPreview
+                key={`${item.message.message_id}-${item.id}`}
+                id={`reasoning-${item.message.message_id}-${item.id}`}
+                part={item.part}
+                streaming={!ended && item.message.metadata?.streaming === true && item.message.parts[item.message.parts.length - 1]?.id === item.id}
+              />
             ) : (
               <div
-                className={`processing-content ${item.part.type === 'reasoning' ? 'processing-reasoning' : ''}`}
+                className="processing-content"
                 key={`${item.message.message_id}-${item.id}`}
               >
-                {item.part.type === 'reasoning' ? <Brain size={14} aria-label={t('reasoning')} /> : null}
                 <div className="processing-content-body">
                   <MessageParts parts={[item.part]} />
-                  {item.part.type !== 'reasoning' ? <MessageContextAction message={item.message} /> : null}
+                  <MessageContextAction message={item.message} />
                 </div>
               </div>
             ),
@@ -120,7 +126,7 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
           {answer?.metadata?.streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
         </div>
       ) : null}
-      {ended ? <ReplyActions reply={reply} /> : null}
+      {ended || run.status === 'WAITING_FOR_USER' ? <ReplyMetrics reply={reply} /> : null}
     </MessageFrame>
   );
 }

@@ -13,5 +13,4 @@ export const settingsApi = {
   getPetSettings: () => request<PetSettingsResponse>('/api/pets/settings'),
   updatePetSettings: (values: PetSettingsPatch) =>
     request<PetSettingsResponse>('/api/pets/settings', { method: 'PATCH', body: JSON.stringify({ values }) }),
-  getHealthDetails: () => request<Record<string, unknown>>('/api/health/details'),
 };

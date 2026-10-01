@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from ai_workbench.core.models.adapter import InferenceAdapter, LocalAdapter, ProviderAdapter
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.images import prepare_image_embedding_inputs, prepare_local_images, prepare_tagging_images, validate_local_image_options
 from ai_workbench.core.models.runtimes.schema import engine_options, is_transformers, local_engine
@@ -20,7 +21,7 @@ from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, EmbeddingParameters, EmbeddingPurpose, EmbeddingResult,
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
     ImageEmbeddingRequest, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
-    ASRParameters, TranscriptionRequest, TranscriptionResult, ImageProcessRequest, ImageOutput,
+    ASRParameters, TranscriptionRequest, TranscriptionResult, ImageProcessRequest, ImageOutput, StreamOptions,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
@@ -296,7 +297,7 @@ class ModelManager:
         return self._slots[key]
 
     @asynccontextmanager
-    async def _execution_lease(self, execution_key, key: tuple | None = None, profile=None, require_runtime=True, on_admit=None):
+    async def _execution_lease(self, execution_key, key: tuple | None = None, profile=None, require_runtime=True, on_admit=None, metrics: LLMCallMetrics | None = None):
         trace = current_trace()
         queue = trace.start_stage("queue_wait") if trace else None
         task = asyncio.current_task()
@@ -314,10 +315,14 @@ class ModelManager:
             slot.tasks.add(task)
             registered = True
             self._publish(key)
+            queue_started = metrics.clock() if metrics else None
             try:
                 await asyncio.wait_for(slot.semaphore.acquire(), timeout=limits.queue_timeout_seconds)
             except asyncio.TimeoutError as exc:
                 raise ModelError("MODEL_BUSY", "Timed out waiting for model source admission.", 429) from exc
+            finally:
+                if metrics:
+                    metrics.add_duration("queue_ms", queue_started)
             acquired = True
             slot.queued -= 1
             slot.model_queued[key] -= 1
@@ -358,7 +363,7 @@ class ModelManager:
                     self._publish(key)
 
     @asynccontextmanager
-    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None, load_trigger=None, tower: Tower | None = None):
+    async def _lease(self, profile: ModelProfile, *, autoload: bool = True, release: bool = True, require_runtime=True, on_admit=None, load_trigger=None, tower: Tower | None = None, metrics: LLMCallMetrics | None = None):
         if profile.source is None:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
         local = isinstance(profile.source, LocalSource)
@@ -379,7 +384,7 @@ class ModelManager:
                 self._cancel_idle(key)
         with tracing(trace):
             try:
-                async with self._execution_lease(self.execution_key(profile), key, profile, require_runtime, admitted) as slot:
+                async with self._execution_lease(self.execution_key(profile), key, profile, require_runtime, admitted, metrics) as slot:
                     try:
                         if siglip and load_trigger != "health":
                             self._cancel_idle(key)
@@ -387,14 +392,19 @@ class ModelManager:
                             if siglip:
                                 self._notify(profile, await slot.adapter.load(profile, tower=tower))
                             else:
-                                async with self._load_locks.setdefault(key, asyncio.Lock()):
-                                    if self._statuses.get(key, ModelStatus()).state != "ready":
-                                        self._notify(profile, await slot.adapter.load(profile))
-                                        if trace:
+                                load_started = metrics.clock() if metrics else None
+                                try:
+                                    async with self._load_locks.setdefault(key, asyncio.Lock()):
+                                        if self._statuses.get(key, ModelStatus()).state != "ready":
+                                            self._notify(profile, await slot.adapter.load(profile))
+                                            if trace:
+                                                trace.finish()
+                                        elif trace:
+                                            trace.reused.update(process_reused=True, model_reused=True)
                                             trace.finish()
-                                    elif trace:
-                                        trace.reused.update(process_reused=True, model_reused=True)
-                                        trace.finish()
+                                finally:
+                                    if metrics:
+                                        metrics.add_duration("load_ms", load_started)
                         executing = True
                         yield slot.adapter
                         if not local:
@@ -480,16 +490,21 @@ class ModelManager:
             self._notify(profile, result)
         return self.status(profile_id) if profile.kind == "image_embedding" else result
 
-    async def load(self, profile_id: str, *, tower: Tower | None = None) -> ModelStatus:
+    async def load(self, profile_id: str, *, tower: Tower | None = None, metrics: LLMCallMetrics | None = None) -> ModelStatus:
         profile = self.profile(profile_id)
         self.require_local(profile)
         self.validate_tower(profile, tower)
-        async with self._lease(profile, autoload=False, release=False, load_trigger="explicit", tower=tower) as adapter:
+        async with self._lease(profile, autoload=False, release=False, load_trigger="explicit", tower=tower, metrics=metrics) as adapter:
             if profile.kind == "image_embedding":
                 result = await adapter.load(profile, explicit=True, tower=tower)
                 self._siglip_activity(profile, adapter)
             else:
-                result = await adapter.load(profile, explicit=True)
+                load_started = metrics.clock() if metrics else None
+                try:
+                    result = await adapter.load(profile, explicit=True)
+                finally:
+                    if metrics:
+                        metrics.add_duration("load_ms", load_started)
             self._notify(profile, result)
         return self.status(profile_id) if profile.kind == "image_embedding" else result
 
@@ -522,18 +537,27 @@ class ModelManager:
         async with self._execution_lease(("provider", provider_id)) as slot:
             return await slot.adapter.models()
 
-    async def prepare_chat_stream(self, profile_id: str, request: ChatRequest) -> AsyncIterator[ChatChunk]:
+    async def prepare_chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None) -> AsyncIterator[ChatChunk]:
         """Resolve source admission and local startup before SSE headers."""
-        profile = self.profile(profile_id, "llm")
-        request = await self._prepare_chat(profile, request)
-        if isinstance(profile.source, LocalSource):
-            await self.load(profile_id)
-        elif profile.source is None:
-            raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
-        else:
-            async with self._execution_lease(self.execution_key(profile), self._key(profile), profile):
-                pass
-        return self._chat_stream(profile, request)
+        collect_usage = metrics is not None
+        metrics = metrics or LLMCallMetrics()
+        metrics.start()
+        try:
+            profile = self.profile(profile_id, "llm")
+            if isinstance(profile.source, LocalSource):
+                metrics.load_ms = 0.0
+            request = await self._prepare_chat(profile, self._usage_request(request, collect_usage))
+            if isinstance(profile.source, LocalSource):
+                await self.load(profile_id, metrics=metrics)
+            elif profile.source is None:
+                raise ModelError("MODEL_NOT_CONFIGURED", "Select a local runtime or provider for this model.", 503)
+            else:
+                async with self._execution_lease(self.execution_key(profile), self._key(profile), profile, metrics=metrics):
+                    pass
+            return self._chat_stream(profile, request, metrics)
+        except BaseException:
+            metrics.finish()
+            raise
 
     def validate_chat(self, profile: ModelProfile, request: ChatRequest) -> None:
         if is_transformers(profile) and (
@@ -560,28 +584,62 @@ class ModelManager:
             return await asyncio.to_thread(prepare_local_images, profile, request, limit)
         return request
 
-    async def chat(self, profile_id: str, request: ChatRequest):
-        profile = self.profile(profile_id, "llm")
-        if request.stream:
-            raise ModelError("INVALID_REQUEST", "Use chat_stream for a streaming request.")
-        request = await self._prepare_chat(profile, request)
-        async with self._lease(profile) as adapter:
-            return await adapter.chat(profile, request)
+    @staticmethod
+    def _usage_request(request: ChatRequest, collect: bool) -> ChatRequest:
+        if request.stream and (collect or request.cogita.include_metrics):
+            return request.model_copy(update={"stream_options": StreamOptions(include_usage=True)})
+        return request
 
-    async def chat_stream(self, profile_id: str, request: ChatRequest) -> AsyncIterator[ChatChunk]:
-        profile = self.profile(profile_id, "llm")
-        if not request.stream:
-            raise ModelError("INVALID_REQUEST", "chat_stream requires stream=true.")
-        request = await self._prepare_chat(profile, request)
-        async with aclosing(self._chat_stream(profile, request)) as stream:
-            async for chunk in stream:
-                yield chunk
+    async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None):
+        metrics = metrics or LLMCallMetrics()
+        metrics.start()
+        try:
+            profile = self.profile(profile_id, "llm")
+            if request.stream:
+                raise ModelError("INVALID_REQUEST", "Use chat_stream for a streaming request.")
+            if isinstance(profile.source, LocalSource):
+                metrics.load_ms = 0.0
+            request = await self._prepare_chat(profile, request)
+            async with self._lease(profile, metrics=metrics) as adapter:
+                try:
+                    result = await adapter.chat(profile, request)
+                    metrics.observe_result(result)
+                    return result
+                finally:
+                    metrics.finish()
+        finally:
+            metrics.finish()
 
-    async def _chat_stream(self, profile, request):
-        async with self._lease(profile) as adapter:
-            async with aclosing(adapter.chat_stream(profile, request)) as stream:
+    async def chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None) -> AsyncIterator[ChatChunk]:
+        collect_usage = metrics is not None
+        metrics = metrics or LLMCallMetrics()
+        metrics.start()
+        try:
+            profile = self.profile(profile_id, "llm")
+            if not request.stream:
+                raise ModelError("INVALID_REQUEST", "chat_stream requires stream=true.")
+            if isinstance(profile.source, LocalSource):
+                metrics.load_ms = 0.0
+            request = await self._prepare_chat(profile, self._usage_request(request, collect_usage))
+            async with aclosing(self._chat_stream(profile, request, metrics)) as stream:
                 async for chunk in stream:
                     yield chunk
+        finally:
+            metrics.finish()
+
+    async def _chat_stream(self, profile, request, metrics):
+        try:
+            async with self._lease(profile, metrics=metrics) as adapter:
+                try:
+                    async with aclosing(adapter.chat_stream(profile, request)) as stream:
+                        async for chunk in stream:
+                            metrics.observe(chunk)
+                            yield chunk
+                    metrics.finish(completed=True)
+                finally:
+                    metrics.finish()
+        finally:
+            metrics.finish()
 
     async def embed(self, profile_id: str, texts: list[str], *, purpose: EmbeddingPurpose = "document", dimensions: int | None = None) -> EmbeddingResult:
         profile = self.profile(profile_id, "embedding")

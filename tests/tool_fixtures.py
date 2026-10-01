@@ -34,8 +34,9 @@ class ToolOpenAI(MockOpenAI):
         turn = self.turns.pop(0) if self.turns else completion(content="finished")
         if callable(turn):
             turn = turn(data)
+        statistics = {key: turn[key] for key in ("usage", "timings") if key in turn}
         if not data.get("stream"):
-            return httpx.Response(200, json={"choices": [{"index": 0, **turn}]})
+            return httpx.Response(200, json={"choices": [{"index": 0, **{key: value for key, value in turn.items() if key not in statistics}}], **statistics})
         if self.stream_chunks is not None:
             chunks = self.stream_chunks
             self.stream_chunks = None
@@ -59,7 +60,7 @@ class ToolOpenAI(MockOpenAI):
             if message.get("refusal"):
                 chunks.append({"refusal": message["refusal"]})
         events = [{"choices": [{"index": 0, "delta": chunk, "finish_reason": None}]} for chunk in chunks]
-        events.append({"choices": [{"index": 0, "delta": {}, "finish_reason": turn["finish_reason"]}]})
+        events.append({"choices": [{"index": 0, "delta": {}, "finish_reason": turn["finish_reason"]}], **statistics})
         body = "".join("data: " + json.dumps(event) + "\n\n" for event in events) + "data: [DONE]\n\n"
         return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, text=body)
 

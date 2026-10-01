@@ -102,7 +102,6 @@
   "uploading": "Uploading…",
   "uploadFailed": "Upload failed.",
   "dropFiles": "Drop files here to attach them",
-  "imageInputHint": "PNG, JPEG, WebP · Paste or drop images",
   "localImageLimit": "Configured normalized request limit: {{limit}} MiB including images and history; runtime limits may be lower",
   "imagesUnsupported": "The selected model does not support images. Choose a vision model or remove the images.",
   "imagesContextDisabled": "Enable Include attachments in session settings to send images.",

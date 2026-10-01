@@ -26,31 +26,32 @@ export function MessageFrame({
   return (
     <Message
       align={role === 'user' ? 'end' : 'start'}
-      className={cn('message-row', role)}
+      className={cn('message-row w-auto', role)}
       data-message-id={messageId}
       data-run-id={runId}
     >
-      <MessageAvatar className="message-avatar self-start">
-        <Avatar>
-          {avatarId ? (
-            <AvatarImage
-              src={resolveAttachmentUrlFromBase(API_BASE_URL, `local://attachments/${avatarId}`)}
-              alt={name}
-            />
-          ) : null}
-          <AvatarFallback>
-            <UserRound />
-          </AvatarFallback>
-        </Avatar>
-      </MessageAvatar>
       <MessageContent className="message-stack">
         <MessageHeader className="message-meta gap-2 px-0">
-          <strong>{name}</strong>
+          <MessageAvatar className="message-avatar">
+            <Avatar>
+              {avatarId ? (
+                <AvatarImage
+                  src={resolveAttachmentUrlFromBase(API_BASE_URL, `local://attachments/${avatarId}`)}
+                  alt={name}
+                />
+              ) : null}
+              <AvatarFallback>
+                <UserRound />
+              </AvatarFallback>
+            </Avatar>
+          </MessageAvatar>
+          {role !== 'user' ? <strong>{name}</strong> : null}
           <time dateTime={createdAt}>
             {Number.isNaN(date.getTime())
               ? ''
               : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </time>
+          {role === 'user' ? <strong>{name}</strong> : null}
         </MessageHeader>
         {children}
       </MessageContent>

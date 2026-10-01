@@ -5,15 +5,5 @@
   "messages": "Messages",
   "scrollToEnd": "Latest messages",
   "scrollToStart": "First messages",
-  "loadFailed": "Unable to open the conversation",
-  "service": "Service: {{status}}",
-  "serviceStatus": {
-    "checking": "Checking…",
-    "ok": "Ready",
-    "ready": "Ready",
-    "offline": "Offline",
-    "degraded": "Degraded",
-    "unavailable": "Unavailable",
-    "error": "Error"
-  }
+  "loadFailed": "Unable to open the conversation"
 }

@@ -281,14 +281,15 @@ public TTS profiles, valid preset files and the current key's unexpired referenc
 Local chat, WD14 tagging, SigLIP image/text embedding and reranking share max_normalized_request_mb (default 128 MiB, range 1..1024). ModelManager snapshots it per preparation and checks complete UTF-8 JSON, including defaults/history, before normalization and after each image expansion, before queue admission. Oversized requests return 413 REQUEST_TOO_LARGE; tagging/SigLIP/rerank HTTP prechecks use the smaller of the HTTP and normalized budgets.
 Both in-app and public calls use this setting, including when the external service is disabled. Python worker transports support the full 1024 MiB range without reload on settings changes. Bundled llama-server b10809 retains its native 100 MiB ceiling, so raising the setting cannot permit larger GGUF requests. Audio, decoded-pixel and attachment limits are independent.
 
-Chat accepts system/developer/user/assistant/tool roles, text, user image_url parts, function tools, tool_choice, parallel_tool_calls, response_format and generation parameters. Only n=1 is accepted.
-Formats are text/json_object/json_schema with matching capabilities. Tool results must match preceding calls; unknown fields, unsupported formats and incomplete histories fail. `/v1` forwards tools;
-[Harness](harness-tools.md) executes them. Provider image URLs/details pass through. Local images require inline data URLs and detail=auto; other values return UNSUPPORTED_CAPABILITY. Local input
-supports static PNG/JPEG/WebP. ModelManager uses Pillow off-loop to decode, apply EXIF orientation, fill transparency white and convert to RGB PNG; original attachments stay unchanged. Invalid images
-return INVALID_IMAGE. Complete local requests follow the shared normalized budget above. Qwen3.5-0.8B GGUF/Transformers CPU/CUDA acceptance covers image content, multiple-image order,
-historical follow-up, streaming and cancellation; other checkpoints are unverified.
+Chat accepts system/developer/user/assistant/tool roles, text, user image_url parts, function tools, tool_choice, parallel_tool_calls, response_format and generation parameters; only n=1. Formats are text/json_object/json_schema with matching capabilities.
+Tool results must match preceding calls; unknown fields, unsupported formats and incomplete histories fail. `/v1` forwards tools; [Harness](harness-tools.md) executes them. Provider image URLs/details pass through.
+Local images require inline data URLs and detail=auto, otherwise UNSUPPORTED_CAPABILITY. Static PNG/JPEG/WebP are decoded off-loop with Pillow, EXIF-oriented, filled white under transparency and converted to RGB PNG; attachments stay unchanged. Invalid images return INVALID_IMAGE.
+Complete local requests follow the normalized budget above. Qwen3.5-0.8B GGUF/Transformers CPU/CUDA acceptance covers image content, multiple-image order, historical follow-up, streaming and cancellation; other checkpoints are unverified.
 
 Non-streaming tool-only content=null; [runs/streaming](runs-streaming.md#external-sse) owns SSE framing, error timing and disconnect cleanup.
+LLM usage preserves nullable input/output/total counts and optional cached-input/reasoning-output subsets; counts are never estimated. Internal streams request usage.
+Optional strict `cogita: {include_metrics: true}` returns `cogita_metrics` with first_response_ms, total_ms, queue_ms, load_ms, generation_ms, generation_tokens, tokens_per_second and native/estimated tps_source. Unknown values are null; the request extension is stripped upstream.
+The extension defaults off and is independent of streaming include_usage. [Runs/streaming](runs-streaming.md#llm-statistics) owns measurement and aggregation semantics; external calls remain stateless.
 
 Assistant messages/deltas accept string reasoning_content, including native tool continuations; other roles reject it.
 `/v1` forwards literal content/reasoning without interpreting <think> markers. ChatRunner/Harness normalize reasoning for the UI.
@@ -296,5 +297,4 @@ Assistant messages/deltas accept string reasoning_content, including native tool
 Text embeddings accept string/nonempty string arrays, float/base64 (little-endian float32), optional dimensions and purpose=query|document (default document). Local dimensions must be omitted or native (otherwise 422); processing matches Knowledge and disconnects cancel inference.
 Other reranker architectures and image generation remain [future services](../FUTURE_MODEL_SERVICES.md).
 
-OpenAPI 3.1 covers management and `/v1`; [check/export commands](../../README.md#http-contract) verify schemas and JSON/SSE/audio responses.
-Reads omit keys, manifest hashes and log paths; invalid results become sanitized 500 INTERNAL_ERROR. Omission/null and timestamp precision survive.
+OpenAPI 3.1 covers management and `/v1`; [check/export commands](../../README.md#http-contract) verify schemas and JSON/SSE/audio responses. Reads omit keys, manifest hashes and log paths; invalid results become sanitized 500 INTERNAL_ERROR. Omission/null and timestamp precision survive.
