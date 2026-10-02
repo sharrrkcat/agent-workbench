@@ -26,7 +26,6 @@ class CreateMessageRequest(BaseModel):
     content: str = ""
     attachments: list[dict[str, Any]] = Field(default_factory=list)
     client_message_id: str = ""
-    source_message_id: str | None = None
 
 
 class EditMessageRequest(BaseModel):
@@ -72,7 +71,6 @@ async def create_message(
         payload.content,
         attachments=attachments,
         client_message_id=payload.client_message_id,
-        source_message_id=payload.source_message_id,
     )
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "CHAT_FAILED", result.error or "Chat failed.")

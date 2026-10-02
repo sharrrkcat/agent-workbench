@@ -35,13 +35,13 @@ def test_strict_persona_and_session_configuration(client_pair):
     client, _ = client_pair
     persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Minimal', 'system_prompt': 'Prompt'}))
     assert set(persona) == {"id", "collection", "is_protected", "name", "avatar_attachment_id", "system_prompt", "created_at", "updated_at"}
-    for field, value in {"model_profile_id": None, "generation": {}, "context_policy": {"mode": "none"},
+    for field, value in {"model_profile_id": None, "generation": {}, "context_policy": {"max_messages": 0},
                          "harness_enabled": True, "tools_allowed": []}.items():
         assert client.post("/api/personas", json={'collection': 'agent', 'name': 'Invalid', field: value}).status_code == 422
         assert client.patch(f"/api/personas/{persona['id']}", json={field: value}).status_code == 422
     session = ok(client.post("/api/sessions", json={}))
     path = f"/api/sessions/{session['session_id']}"
-    assert session["generation"] == {} and session["context_policy"]["mode"] == "session"
+    assert session["generation"] == {} and session["context_policy"] == {"max_messages": None, "max_chars": None, "include_attachments": "explicit"}
     assert session["harness_enabled"] is False
     for field in ("generation", "context_policy", "harness_enabled", "tools_allowed"):
         assert client.post("/api/sessions", json={field: None}).status_code == 422
@@ -49,11 +49,39 @@ def test_strict_persona_and_session_configuration(client_pair):
     for field in ("knowledge_binding_mode", "worldbook_binding_mode"):
         assert client.post("/api/sessions", json={field: "inherit"}).status_code == 422
         assert client.patch(path, json={field: "override"}).status_code == 422
-    assert client.patch(path, json={"context_policy": {"mode": "none", "include_system_prompt": False}}).status_code == 422
+    assert client.patch(path, json={"context_policy": {"max_messages": 0, "include_system_prompt": False}}).status_code == 422
     for suffix in ("knowledge-bases",):
         assert client.patch(path + "/" + suffix, json={"mode": "inherit"}).status_code == 422
         assert client.patch(path + "/" + suffix, json={}).status_code == 422
     assert ok(client.get(path)) == session
+
+
+def test_history_limits_round_trip_and_reject_retired_fields(client_pair):
+    client, upstream = client_pair
+    configure_model(client)
+    session = ok(client.post("/api/sessions", json={"context_policy": {"max_messages": 0}}))
+    path = f"/api/sessions/{session['session_id']}"
+    for mode in ("session", "recent_messages", "current_message", "selected_message", "none"):
+        assert client.post("/api/sessions", json={"context_policy": {"mode": mode}}).status_code == 422
+        assert client.patch(path, json={"context_policy": {"mode": mode}}).status_code == 422
+    for limit in (-1, 10001):
+        assert client.patch(path, json={"context_policy": {"max_messages": limit}}).status_code == 422
+    for source in (None, "message"):
+        assert client.post(path + "/messages", json={"content": "rejected", "source_message_id": source}).status_code == 422
+    assert ok(client.get(path + "/messages")) == [] and upstream.calls == []
+    ok(client.post(path + "/messages", json={"content": "FIRST_INPUT"}))
+    for limit in (0, 1, None):
+        policy = {"max_messages": limit, "max_chars": None, "include_attachments": "explicit"}
+        ok(client.patch(path, json={"context_policy": policy}))
+        assert ok(client.get(path))["context_policy"] == policy
+        prior = ok(client.get(path + "/messages"))
+        result = ok(client.post(path + "/messages", json={"content": "NEXT_INPUT"}))
+        assert result["success"]
+        assert "context_source_message_id" not in result["run"]["metadata"]
+        assert "mode" not in result["session"]["effective"]["context_policy"]
+        sent = [message for message in upstream.calls[-1]["messages"] if message["role"] != "system"]
+        assert len(sent) == (len(prior) if limit is None else limit) + 1
+        assert sent[-1] == {"role": "user", "content": "NEXT_INPUT"}
 
 
 def test_catalog_defaults_and_session_tool_switches(client_pair):
@@ -166,23 +194,23 @@ def test_sessions_without_models_remain_unselected_until_an_explicit_choice(clie
     assert cleared["model_profile_id"] is None and cleared["effective"]["model_profile_id"] is None
 
 
-def test_prompt_is_always_included_once_in_every_history_mode(client_pair):
+def test_prompt_is_always_included_once_with_every_history_limit(client_pair):
     client, upstream = client_pair
     configure_model(client)
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "FIXED_USER_CONTEXT"}))
     persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Speaker', 'system_prompt': 'FIXED_PERSONA_PROMPT'}))
     session = ok(client.post("/api/sessions", json={'persona_id': persona['id']}))
     path = f"/api/sessions/{session['session_id']}"
-    history = ok(client.post(path + "/messages", json={"content": "history"}))["messages"][0]
-    for mode in ("none", "current_message", "recent_messages", "session", "selected_message"):
-        ok(client.patch(path, json={"context_policy": {"mode": mode}}))
-        result = ok(client.post(path + "/messages", json={"content": "current", "source_message_id": history["message_id"]}))
+    ok(client.post(path + "/messages", json={"content": "history"}))
+    for limit in (None, 0, 1, 20):
+        ok(client.patch(path, json={"context_policy": {"max_messages": limit}}))
+        result = ok(client.post(path + "/messages", json={"content": "current"}))
         assert result["success"]
         assert sum(message["content"].count("FIXED_PERSONA_PROMPT") for message in upstream.calls[-1]["messages"]) == 1
         assert sum(message["content"].count("FIXED_USER_CONTEXT") for message in upstream.calls[-1]["messages"]) == 1
         assert upstream.calls[-1]["messages"][0]["role"] == "system"
     ok(client.patch(f"/api/personas/{persona['id']}", json={"system_prompt": ""}))
-    ok(client.post(path + "/messages", json={"content": "empty prompt", "source_message_id": history["message_id"]}))
+    ok(client.post(path + "/messages", json={"content": "empty prompt"}))
     assert "FIXED_PERSONA_PROMPT" not in json.dumps(upstream.calls[-1])
 
 

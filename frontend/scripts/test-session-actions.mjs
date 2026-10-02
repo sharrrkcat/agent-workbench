@@ -33,7 +33,6 @@ function reset(sessions = [first, second, third]) {
     stepsByRunId: { run: [{ step_id: 'step' }] },
     sessionEpoch: 7,
     sessionVersion: 3,
-    sourceMessageId: 'message',
     composerDraftText: 'Retained draft',
   });
   api.deleteSession = async () => {};
@@ -50,7 +49,6 @@ assert.equal(store.getState().currentSession, first);
 assert.equal(store.getState().messages, messages);
 assert.equal(store.getState().runs, runs);
 assert.equal(store.getState().sessionEpoch, 7);
-assert.equal(store.getState().sourceMessageId, 'message');
 assert.equal(store.getState().composerDraftText, 'Retained draft');
 
 reset();
@@ -59,7 +57,6 @@ assert.equal(store.getState().currentSession, second);
 assert.deepEqual(store.getState().sessions, [second, third]);
 assert.deepEqual(store.getState().messages, []);
 assert.deepEqual(store.getState().runs, []);
-assert.equal(store.getState().sourceMessageId, null);
 assert.equal(store.getState().sessionEpoch, 8);
 
 reset([first]);

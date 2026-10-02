@@ -27,7 +27,6 @@ export const chatApi = {
     content: string,
     attachments: Record<string, unknown>[] = [],
     clientMessageId = '',
-    sourceMessageId: string | null = null,
   ) =>
     request<RuntimeResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
       method: 'POST',
@@ -35,7 +34,6 @@ export const chatApi = {
         content,
         attachments,
         client_message_id: clientMessageId,
-        source_message_id: sourceMessageId,
       }),
     }),
   deleteMessage: (messageId: string) =>

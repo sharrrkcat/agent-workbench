@@ -73,6 +73,7 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(dialog.getByLabel(labels.collections.user, { exact: true })).toHaveCount(0);
           await expect(dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true })).toHaveCount(0);
           await dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true }).fill('0');
+          await dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true }).fill('0');
           await dialog.getByRole('tab', { name: labels.knowledge, exact: true }).click();
           const inherited = dialog.getByRole('region', { name: labels.projectBindings }).getByRole('checkbox', { name: bases[0].name, exact: true });
           await expect(inherited).toBeChecked();
@@ -93,13 +94,17 @@ for (const locale of ['en', 'zh-CN']) {
           await page.locator('.composer').getByRole('button', { name: labels.send, exact: true }).click();
           await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
           const sessionId = new URL(page.url()).searchParams.get('session')!;
-          expect((await json(request.get(`/api/sessions/${sessionId}`))).overrides).toEqual({ harness_enabled: true, temperature: 0 });
+          expect((await json(request.get(`/api/sessions/${sessionId}`))).overrides).toEqual({ harness_enabled: true, temperature: 0,
+            context_policy: { max_messages: 0, include_attachments: 'explicit' } });
           await page.locator('.composer textarea').fill('Retained draft');
-          await json(request.patch(`/api/projects/${projectId}`, { data: { temperature: 0.85, context_policy: { mode: 'current_message' } } }));
+          await json(request.patch(`/api/projects/${projectId}`, { data: { temperature: 0.85, context_policy: { max_messages: 20 } } }));
           await expect(page.locator('.composer textarea')).toHaveValue('Retained draft');
           await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
           dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
           await expect(dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true })).toHaveValue('0');
+          await expect(dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true })).toHaveValue('0');
+          await dialog.getByRole('button', { name: labels.restoreInheritanceFor.replace('{{field}}', labels.context), exact: true }).click();
+          await expect(dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true })).toHaveValue('20');
           await dialog.getByRole('button', { name: labels.restoreInheritanceFor.replace('{{field}}', llm.params.temperature), exact: true }).click();
           await expect(dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true })).toHaveValue('0.85');
           await json(request.patch(`/api/projects/${projectId}/knowledge-bases`, { data: { knowledge_base_ids: bases.map((base) => base.id) } }));
@@ -230,7 +235,7 @@ test('A delayed Workspace session creation preserves a later settings navigation
   const agents = await personas(request, 'agent'), users = await personas(request, 'user');
   const project = await json(request.post('/api/projects', { data: {
     kind: 'workspace', name: 'Delayed creation', agent_persona_id: agents[0].id, cogita_persona_id: users[0].id,
-    context_policy: { mode: 'session' }, harness_enabled: false, tools_allowed: [],
+    context_policy: {}, harness_enabled: false, tools_allowed: [],
   } }));
   let release!: () => void, started!: () => void, createdSessionId = '';
   const held = new Promise<void>((resolve) => { release = resolve; });

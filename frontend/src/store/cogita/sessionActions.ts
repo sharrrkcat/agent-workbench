@@ -17,7 +17,7 @@ function conversation(state: CogitaState, session: Session | null, projectId: st
     currentSession: session, currentProjectId: projectId, chatDraft: null, pendingKnowledge: null,
     sessionLoad: null,
     lastOrdinarySessionId: session?.kind === 'ordinary' ? session.session_id : state.lastOrdinarySessionId,
-    messages: [], runs: [], stepsByRunId: {}, error: null, sourceMessageId: null, composerDraftText: '',
+    messages: [], runs: [], stepsByRunId: {}, error: null, composerDraftText: '',
     sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, awaitingAcceptance: false, mutatingHistory: false,
   };
 }
@@ -190,7 +190,7 @@ export const createSessionActions: CogitaActions<
         : { ...base, kind: 'ordinary', project_id: null,
           persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)!.id,
           model_profile_id: defaultModelId(models.profiles, models.settings?.default_model_profile_id),
-          context_policy: { mode: 'session', max_messages: null, max_chars: null, include_attachments: 'explicit' },
+          context_policy: { max_messages: null, max_chars: null, include_attachments: 'explicit' },
           generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.map((tool) => tool.name) } });
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });

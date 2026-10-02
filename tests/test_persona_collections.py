@@ -126,7 +126,7 @@ def test_agent_identity_events_include_historical_ordinary_and_workspace_session
     ordinary = ok(client.post("/api/sessions", json={"persona_id": agent["id"]}))
     project = ok(client.post("/api/projects", json={
         "kind": "workspace", "name": "History", "agent_persona_id": COGITA_PERSONA_ID,
-        "cogita_persona_id": USER_PERSONA_ID, "context_policy": {"mode": "session"},
+        "cogita_persona_id": USER_PERSONA_ID, "context_policy": {},
         "harness_enabled": False, "tools_allowed": [],
     }))
     workspace = ok(client.post(f"/api/projects/{project['id']}/sessions", json={"overrides": {"persona_id": agent["id"]}}))

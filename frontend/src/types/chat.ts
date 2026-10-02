@@ -1,5 +1,4 @@
 export type ContextPolicy = {
-  mode: 'none' | 'current_message' | 'recent_messages' | 'session' | 'selected_message';
   max_messages: number | null;
   max_chars: number | null;
   include_attachments: 'none' | 'explicit';

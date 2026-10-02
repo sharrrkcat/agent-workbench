@@ -23,7 +23,7 @@ roleplay defaults. Both may be edited but not deleted; protection follows stable
 ids and is exposed as read-only is_protected. POST requires a creatable collection;
 PATCH cannot change collection. The Cogita singleton cannot be created through CRUD;
 its category name does not replace its editable name/avatar. Persona deletion fails while referenced by a Project, session or unfinished run.
-Assistant replies and selected-context labels resolve the latest Agent name/avatar by
+Assistant replies resolve the latest Agent name/avatar by
 run.persona_id or message.speaker_id; changing session selection preserves original authorship.
 Deleted Personas display a localized deleted-persona label and default avatar. Assistant
 messages store identity ids without name/avatar snapshots. SessionResponse.user_persona
@@ -112,7 +112,7 @@ A waiting approval blocks new messages and direct calls. Active overlapping
 execution returns SESSION_BUSY. The explicit approval API resumes the same run.
 
 Deleting a different session from the sidebar preserves the current conversation,
-draft and selected context. Deleting the current session selects its first remaining
+draft. Deleting the current session selects its first remaining
 sibling. The last ordinary session opens an unsaved draft; the last Workspace session leaves its Project settings/empty tree. Delayed deletion/draft loading
 responses preserve subsequent session selections; delayed creation/selection cannot replace later navigation. Failed deletion leaves the
 displayed state intact and reports the error.
@@ -140,14 +140,17 @@ History mutations require an idle session. Edits require content and attachment_
 SQLite pruning, text, attachment metadata and timestamps commit in one transaction. Responses and history_pruned events return
 deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
 
-ContextBuilder projects ordinary user/assistant history with none/current_message/
-recent_messages/session/selected_message policies, message/character bounds and explicit
-attachments. The selected Agent's nonempty system prompt is inserted once independently
-of history mode; there is no include_system_prompt switch. The composer selects the concrete
-model; the session dialog owns Agent, model, context, temperature and Knowledge settings. Selected-message context uses an explicit source message and clears on session changes. Context sources
-are bounded data blocks, with compact diagnostics rather than copied content in metadata.
+ContextBuilder projects current-session history with max_messages (0..10000), max_chars
+(1..1000000), both null/unset by default, and include_attachments=explicit.
+A null message limit includes all eligible history; zero excludes history; positive N keeps
+the newest N eligible messages in order, excluding current input from the count. The character
+budget deducts current input text first, then keeps whole recent history messages. Current
+input is always retained, with a warning when it alone exceeds the character budget.
+Context has no mode or selected-message workflow; mode and source_message_id return 422. Workspace inherits or overrides the whole policy, including explicit max_messages=0.
+Agent prompts are inserted once independently of limits. Context sources are bounded data
+blocks; metadata contains compact diagnostics rather than copied content.
 
-Workspace inserts its Project prompt after the Agent prompt and before Persona/Knowledge data, independently of history mode.
+Workspace inserts its Project prompt after the Agent prompt and before Persona/Knowledge data, independently of history limits.
 The singleton Cogita Persona is always active. Its trimmed nonempty system_prompt is
 background data wrapped in <user_persona> tags and appended once to the system context;
 empty text produces no block. The run snapshots this text before execution. Compact
@@ -201,19 +204,19 @@ name, size and compact metadata, never image data URLs. Orphan cleanup is an
 explicit separate operation and considers current Persona avatars, not message/run avatar snapshots.
 
 User images persist only as metadata.attachments references; message parts do not duplicate them.
-ContextBuilder selects history by policy, message count and character budget before reading images.
-Image bytes do not consume the text budget. History projection keeps images with their user message. Image-only messages can be selected context.
+ContextBuilder selects history by message count and character budget before reading images.
+Image bytes do not consume the text budget. History projection keeps images with their user message. Image-only messages remain eligible history.
 Included references become OpenAI image_url parts immediately before inference, including historical follow-ups.
 Before first inference, local image support is checked unless skipped in request_options. Unknown support and provider inputs pass through.
-Explicitly unsupported images are omitted from this request, including selected history; empty historical image messages are omitted. Original messages/attachments stay intact. The current user bubble receives an images_ignored warning; if the current input has no remaining text, images_require_text ends the run as FAILED without main/auxiliary generation.
-Missing selected images return ATTACHMENT_NOT_FOUND; corrupt local images and request limits follow
+Explicitly unsupported images are omitted from this request, including retained history; empty historical image messages are omitted. Original messages/attachments stay intact. The current user bubble receives an images_ignored warning; if the current input has no remaining text, images_require_text ends the run as FAILED without main/auxiliary generation.
+Missing retained images return ATTACHMENT_NOT_FOUND; corrupt local images and request limits follow
 [models](models.md#external-inference-api). Excluded or pruned images are never read.
 
 Text-file context obeys the enable switch and per-file/per-message bounds.
 Other attachments contribute bounded descriptive markers. include_attachments=none excludes all image inputs.
 File selection, clipboard images and file dropping share per-file status, previews and removal; partial failure keeps successful uploads. Session changes clear pending attachments and ignore late results.
 Composer images use 120px vertical Attachment cards with names, types and sizes; other files use horizontal cards, bottom-aligned with image cards. Sizes use uploaded File.size then persisted size, in 1024-based B/KB/MB/GB with at most one decimal. Image removal uses a circular top-right button.
-User metadata.attachments render as right-aligned scrolling groups: files above the text bubble and images below it, preserving order within each group. Images use 160px preview cards without visible names/sizes; file cards retain both. Attachment-only messages have no empty bubble; image/file-only messages can be selected as context.
+User metadata.attachments render as right-aligned scrolling groups: files above the text bubble and images below it, preserving order within each group. Images use 160px preview cards without visible names/sizes; file cards retain both. Attachment-only messages have no empty bubble; image/file-only messages remain eligible history.
 Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Removed references are cleaned after commit only if unreferenced by messages, Personas or Knowledge.
 Thumbnails and zoom previews resolve stored references after refresh. Request warnings, attachment-policy and size errors have English/Chinese guidance; retries retain the message's saved attachments.
 
@@ -222,7 +225,7 @@ finite JSON object arguments. Results require tool role, matching call id,
 success/error/rejected/cancelled status, optional JSON data/error fields and
 truncation flag. Calls in one assistant message have distinct part ids.
 Live loops use native assistant/tool pairs. Historical tool parts are quoted
-as ordinary context data, allowing selected or truncated history without
+as ordinary context data, allowing truncated history without
 orphan protocol calls. They never become system/developer instructions.
 
 Reasoning is assistant-only strict {id,type:reasoning,text} data. The shared
@@ -232,21 +235,18 @@ indented code and escaped markers remain literal. Only internal chat extracts
 markers; /v1 preserves model content. Reasoning never enters general historical
 context. The live tool transcript retains upstream content and structured
 reasoning where the provider needs it for continuation. Incomplete messages
-are not eligible historical context or selected-context sources.
-
+are not eligible historical context.
 The frontend renders one reply per run with its original Persona's current identity,
 processing timeline, final answer and action bar. Only the current model round's
 ordinary text appears as a provisional answer; tool-producing rounds move into
 processing. Adjacent tools share a collapsed command group, with individually
 collapsed arguments/results. Tool records have no separate avatars. Copy uses
-answer text only. Context selection uses real message ids, including tool details.
-Direct tool runs use this timeline without an invented model answer.
+answer text only. Direct tool runs use this timeline without an invented model answer.
 Assistant replies expose aggregated LLM usage after the action buttons and per-call statistics in a usage modal; auxiliary titles are excluded.
 [Runs/streaming](runs-streaming.md#llm-statistics) owns their timing, persistence, completeness and display rules.
 
-The frontend renders parts without executing or routing text. Markdown remains
-content; edit/retry uses original text. MessageActions owns controls and
-selected-context references; MessageParts owns part presentation and ChatAttachments owns uploaded attachment cards/URLs.
+The frontend renders parts without executing or routing text. Markdown remains content;
+edit/retry uses original text. MessageActions owns message controls; MessageParts owns part presentation and ChatAttachments owns uploaded attachment cards/URLs.
 Metadata may hold counts, source refs and warnings, never full part bodies, prompts or secrets. Stream merging belongs
 to [runs/streaming](runs-streaming.md).
 

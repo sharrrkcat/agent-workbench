@@ -17,7 +17,7 @@ function reset() {
   store.setState(store.getInitialState(), true);
   projects.setState(projects.getInitialState(), true);
   store.setState({ initialized: true, sessions: [normal, first, second], currentSession: first, currentProjectId: 'a',
-    lastOrdinarySessionId: normal.session_id, composerDraftText: 'Draft', sourceMessageId: 'old-message', messages: [{ message_id: 'old-message' }] });
+    lastOrdinarySessionId: normal.session_id, composerDraftText: 'Draft', messages: [{ message_id: 'old-message' }] });
   projects.setState({ projects: [project('a'), project('b'), project('timeline', 'timeline')] });
   api.get = async (id) => project(id, id === 'timeline' ? 'timeline' : 'workspace');
   api.getSession = async (id) => [normal, first, second].find((session) => session.session_id === id);
@@ -36,7 +36,6 @@ await store.getState().activateLocation('b');
 assert.equal(store.getState().currentProjectId, 'b');
 assert.equal(store.getState().currentSession, null);
 assert.equal(store.getState().composerDraftText, '');
-assert.equal(store.getState().sourceMessageId, null);
 await store.getState().activateLocation('b', 'second');
 assert.equal(store.getState().currentSession.session_id, 'second');
 await store.getState().activateLocation(null);

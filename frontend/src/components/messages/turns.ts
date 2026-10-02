@@ -4,9 +4,7 @@ import { compareTime, mergeRuns, terminal } from '../../store/cogita/mergeState'
 
 export type ToolEntry = {
   call: ToolCallPart;
-  message: Message;
   result?: ToolResultPart;
-  resultMessage?: Message;
   step?: RunStep;
   approval?: RunStep;
 };
@@ -32,10 +30,10 @@ export function buildReply(run: Run, messages: Message[], steps: RunStep[]): Rep
   const ordered = [...messages].sort((a, b) => compareTime(a.created_at, b.created_at));
   const answer = run.kind === 'chat' ? [...ordered].reverse().find((message) => message.role === 'assistant' &&
     !message.parts.some((part) => part.type === 'tool_call')) : undefined;
-  const results = new Map<string, { part: ToolResultPart; message: Message }>();
+  const results = new Map<string, ToolResultPart>();
   for (const message of ordered) {
     for (const part of message.parts) {
-      if (part.type === 'tool_result') results.set(part.tool_call_id, { part, message });
+      if (part.type === 'tool_result') results.set(part.tool_call_id, part);
     }
   }
   const process: ProcessingItem[] = [];
@@ -43,8 +41,7 @@ export function buildReply(run: Run, messages: Message[], steps: RunStep[]): Rep
     if (message.role !== 'assistant') continue;
     for (const part of message.parts) {
       if (part.type === 'tool_call') {
-        const result = results.get(part.tool_call_id);
-        const entry: ToolEntry = { call: part, message, result: result?.part, resultMessage: result?.message,
+        const entry: ToolEntry = { call: part, result: results.get(part.tool_call_id),
           step: steps.find((step) => step.kind === 'tool' && step.metadata?.tool_call_id === part.tool_call_id),
           approval: [...steps].reverse().find((step) => step.kind === 'approval' && step.metadata?.tool_call_id === part.tool_call_id),
         };

@@ -19,7 +19,7 @@ const { ToolsField, ContextFields, GenerationFields, ModelField, ModelSelect } =
 ).exports;
 const { Checkbox } = (await load('../src/components/ui/checkbox.tsx')).exports;
 const { Switch } = (await load('../src/components/ui/switch.tsx')).exports;
-const { SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
+const { Select, SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
 function descendants(node) {
   if (Array.isArray(node)) return node.flatMap(descendants);
   if (!React.isValidElement(node)) return [];
@@ -46,13 +46,23 @@ for (const name of [...selected])
 assert.deepEqual(selected, []);
 assert.ok(descendants(renderTools()).filter((node) => node.type === Checkbox).every((node) => !node.props.checked));
 
-const policy = { mode: 'session', max_messages: null, max_chars: null, include_attachments: 'explicit' };
+const policy = { max_messages: null, max_chars: null, include_attachments: 'explicit' };
 let changedPolicy;
 const fields = ContextFields({ value: policy, onChange: (value) => { changedPolicy = value; } });
 const policySwitches = descendants(fields).filter((node) => node.type === Switch);
 assert.equal(policySwitches.length, 1);
 policySwitches[0].props.onCheckedChange(false);
 assert.deepEqual(changedPolicy, { ...policy, include_attachments: 'none' });
+const { Input: ContextInput } = (await load('../src/components/ui/input.tsx')).exports;
+assert.equal(descendants(fields).filter((node) => node.type === Select).length, 0);
+const limitInput = descendants(fields).find((node) => node.type === ContextInput);
+assert.equal(limitInput.props.min, 0);
+for (const [input, limit] of [['', null], ['0', 0], ['20', 20]]) {
+  limitInput.props.onChange({ currentTarget: { value: input } });
+  assert.deepEqual(changedPolicy, { ...policy, max_messages: limit });
+  const updated = ContextFields({ value: changedPolicy, onChange: () => {} });
+  assert.equal(descendants(updated).find((node) => node.type === ContextInput).props.value, limit ?? '');
+}
 
 const profiles = [
   { id: 'embedding', name: 'Embedding', kind: 'embedding', enabled: true },
@@ -99,6 +109,7 @@ for (const [locale, labels] of [
     React.createElement(ModelField, { profiles: [], value: null, onChange: () => {} }),
   ));
   for (const label of labels) assert.ok(html.includes(label), label);
+  assert.ok(html.includes(resources[locale].personas.maxMessagesDescription));
   assert.doesNotMatch(html, /include_system_prompt|inheritPersona|overrideHarness|toolRisk\.|Global default|全局默认/);
   assert.equal((html.match(/aria-checked="true"/g) || []).length, 2);
   for (const modelId of ['preferred', 'first']) {
@@ -128,6 +139,8 @@ await worldbookApi.matchWorldbooks({ text: 'lore', worldbook_ids: ['book'] });
 assert.deepEqual(requests.at(-1).body, { text: 'lore', worldbook_ids: ['book'] });
 await chatApi.createSession();
 assert.deepEqual(requests.at(-1).body, {});
+await chatApi.sendMessage('s', 'input', [], 'client');
+assert.deepEqual(requests.at(-1).body, { content: 'input', attachments: [], client_message_id: 'client' });
 await chatApi.updateSession('s', { harness_enabled: false, tools_allowed: [] });
 assert.deepEqual(requests.at(-1).body, { harness_enabled: false, tools_allowed: [] });
 await chatApi.updateSession('s', { model_profile_id: modelChoice });

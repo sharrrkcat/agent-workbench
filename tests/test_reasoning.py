@@ -216,7 +216,7 @@ def test_session_reasoning_is_independent_and_workspace_null_restores_default(tm
             assert client.patch(path, json={"reasoning": value}).status_code == 422
         project = ok(client.post("/api/projects", json={"kind": "workspace", "name": "Work",
             "agent_persona_id": COGITA_PERSONA_ID, "cogita_persona_id": USER_PERSONA_ID,
-            "context_policy": {"mode": "session"}, "harness_enabled": False, "tools_allowed": []}))
+            "context_policy": {}, "harness_enabled": False, "tools_allowed": []}))
         session = ok(client.post(f"/api/projects/{project['id']}/sessions", json={}))
         path = f"/api/sessions/{session['session_id']}"
         assert session["effective"]["reasoning"] is True

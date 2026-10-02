@@ -29,7 +29,7 @@ def client_pair(tmp_path, request):
 def workspace(client, **values):
     return ok(client.post("/api/projects", json={
         "kind": "workspace", "name": "Workspace", "agent_persona_id": COGITA_PERSONA_ID,
-        "cogita_persona_id": USER_PERSONA_ID, "context_policy": {"mode": "session"},
+        "cogita_persona_id": USER_PERSONA_ID, "context_policy": {},
         "harness_enabled": False, "tools_allowed": ["base64_encode", "read_file", "knowledge_search"], **values,
     }))
 
@@ -63,7 +63,7 @@ def test_types_required_fields_and_timeline_creation_only(client_pair):
     book = ok(client.post("/api/worldbooks", json={"name": "Timeline book"}))
     timeline = ok(client.post("/api/projects", json={"kind": "timeline", "name": "Timeline",
         "character_persona_id": personas[0]["id"], "user_persona_id": personas[1]["id"],
-        "context_policy": {"mode": "session"}, "worldbook_ids": [book["id"]]}))
+        "context_policy": {}, "worldbook_ids": [book["id"]]}))
     path = f"/api/projects/{timeline['id']}"
     assert "harness_enabled" not in timeline and "tools_allowed" not in timeline
     assert ok(client.get(path + "/worldbooks"))["worldbook_ids"] == [book["id"]]
@@ -93,24 +93,27 @@ def test_live_inheritance_overrides_reset_and_model_sources(client_pair):
     assert ok(client.get(f"/api/sessions/{ordinary['session_id']}"))["model_profile_id"] == first["id"]
     persona = ok(client.post("/api/personas", json={"collection": "agent", "name": "Project Agent"}))
     ok(client.patch(f"/api/projects/{project['id']}", json={"agent_persona_id": persona["id"],
-        "model_profile_id": first["id"], "harness_enabled": True, "context_policy": {"mode": "none"}}))
+        "model_profile_id": first["id"], "harness_enabled": True, "context_policy": {"max_messages": 0}}))
     resolved = ok(client.get(path))["effective"]
-    assert resolved["persona_id"] == persona["id"] and resolved["context_policy"]["mode"] == "none"
+    assert resolved["persona_id"] == persona["id"] and resolved["context_policy"]["max_messages"] == 0
     assert resolved["model_source"] == "project" and resolved["harness_enabled"]
     assert resolved["generation"]["temperature"] == 0.7 and resolved["generation"]["top_p"] == 0.8
-    overrides = {"persona_id": COGITA_PERSONA_ID, "model_profile_id": second["id"], "context_policy": {"mode": "current_message"},
+    overrides = {"persona_id": COGITA_PERSONA_ID, "model_profile_id": second["id"], "context_policy": {"max_messages": 0},
                  "temperature": 0, "harness_enabled": False, "tools_allowed": []}
     overridden = ok(client.patch(path, json={"overrides": overrides}))
+    assert overridden["overrides"]["context_policy"]["max_messages"] == 0
+    assert overridden["effective"]["context_policy"]["max_messages"] == 0
     assert overridden["overrides"]["temperature"] == 0
     assert overridden["effective"]["model_source"] == "session"
     assert overridden["effective"]["generation"]["temperature"] == 0
     assert overridden["effective"]["tools_allowed"] == [] and not overridden["effective"]["harness_enabled"]
-    ok(client.patch(f"/api/projects/{project['id']}", json={"temperature": 1.2, "context_policy": {"mode": "session"}}))
+    ok(client.patch(f"/api/projects/{project['id']}", json={"temperature": 1.2, "context_policy": {}}))
     unchanged = ok(client.patch(path, json={"title": "Title only"}))
     assert unchanged["overrides"] == overridden["overrides"]
     reset = ok(client.patch(path, json={"overrides": {key: None for key in overrides}}))
     assert reset["overrides"] == {} and reset["effective"]["generation"]["temperature"] == 1.2
     assert reset["effective"]["sources"]["context"] == "project"
+    assert reset["effective"]["context_policy"]["max_messages"] is None
     ok(client.patch(f"/api/projects/{project['id']}", json={"model_profile_id": None, "temperature": None}))
     resolved = ok(client.get(path))["effective"]
     assert resolved["model_profile_id"] == second["id"] and resolved["generation"]["temperature"] == 0.4
@@ -166,10 +169,9 @@ def test_project_knowledge_context_order_and_session_isolation(client_pair):
     assert bindings["project_knowledge_base_ids"] == ids[1:3] and bindings["effective_knowledge_base_ids"] == ids[:4]
     assert client.delete(f"/api/knowledge/bases/{ids[2]}").status_code == 409
     result = ok(client.post(path + "/messages", json={"content": "artifact"}))
-    source = result["messages"][0]["message_id"]
-    for mode in ("none", "current_message", "recent_messages", "session", "selected_message"):
-        ok(client.patch(path, json={"overrides": {"context_policy": {"mode": mode}}}))
-        result = ok(client.post(path + "/messages", json={"content": "artifact", "source_message_id": source}))
+    for limit in (None, 0, 1, 20):
+        ok(client.patch(path, json={"overrides": {"context_policy": {"max_messages": limit}}}))
+        result = ok(client.post(path + "/messages", json={"content": "artifact"}))
         assert result["success"]
         system = upstream.calls[-1]["messages"][0]["content"]
         assert system.index("AGENT_INSTRUCTION") < system.index("PROJECT_INSTRUCTION") < system.index("COGITA_BACKGROUND")
@@ -178,9 +180,10 @@ def test_project_knowledge_context_order_and_session_isolation(client_pair):
         assert result["session"]["user_persona"]["name"] == "Me"
     denied = ok(client.post("/api/tools/knowledge_search/call", json={"session_id": session["session_id"], "arguments": {"query": "artifact", "knowledge_base_ids": ids[4:]}}))
     assert denied["run"]["error_code"] == "KNOWLEDGE_SCOPE_FORBIDDEN"
-    sibling = child(client, project, overrides={"context_policy": {"mode": "selected_message"}})
-    isolated = ok(client.post(f"/api/sessions/{sibling['session_id']}/messages", json={"content": "artifact", "source_message_id": source}))
-    assert isolated["run"]["error_code"] == "CONTEXT_MESSAGE_REQUIRED"
+    sibling = child(client, project, overrides={"context_policy": {}})
+    isolated = ok(client.post(f"/api/sessions/{sibling['session_id']}/messages", json={"content": "artifact"}))
+    assert isolated["success"]
+    assert len([m for m in upstream.calls[-1]["messages"] if m["role"] != "system"]) == 1
     other = child(client, workspace(client, name="Other"))
     assert ok(client.get(f"/api/sessions/{other['session_id']}/knowledge-bases"))["effective_knowledge_base_ids"] == ids[:2]
     cleared = ok(client.patch(path + "/knowledge-bases", json={"knowledge_base_ids": []}))

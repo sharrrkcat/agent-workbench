@@ -170,11 +170,8 @@ assert.deepEqual(cogita.getState().messages, []);
 
 const sourceSession = { ...session, session_id: 'source' };
 cogita.setState({ currentSession: beforePersona, sessions: [beforePersona, sourceSession] });
-cogita.getState().setSourceMessageId('selected-history');
 mockApi.getSession = async (id) => ({ ...session, session_id: id });
 await cogita.getState().selectSession('source');
-assert.equal(cogita.getState().sourceMessageId, null);
-cogita.getState().setSourceMessageId('selected-history');
 let sendArguments;
 mockApi.sendMessage = async (...args) => {
   sendArguments = args;
@@ -182,7 +179,6 @@ mockApi.sendMessage = async (...args) => {
 };
 await cogita.getState().sendMessage('@role:literal');
 assert.equal(sendArguments[1], '@role:literal');
-assert.equal(sendArguments[4], 'selected-history');
 
 const lateRetry = deferred();
 mockApi.retryRun = () => lateRetry.promise;
@@ -191,6 +187,6 @@ cogita.setState({ currentSession: beforePersona, messages: [] });
 lateRetry.resolve({ success: true, session: sourceSession, messages: [{ ...final, session_id: 'source' }] });
 await retry;
 assert.deepEqual(cogita.getState().messages, []);
-console.log('persona speaker identity, configuration refresh, selected context, cancellation and retry isolation: ok');
+console.log('persona speaker identity, configuration refresh, cancellation and retry isolation: ok');
 
 console.log('model reload, live status, chat refresh and session isolation: ok');

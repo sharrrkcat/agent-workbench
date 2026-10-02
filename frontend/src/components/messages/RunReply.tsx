@@ -10,7 +10,6 @@ import { terminal } from '../../store/cogita/mergeState';
 import type { Run } from '../../types/runs';
 import { MessageFrame } from './MessageFrame';
 import { MessageParts } from './MessageParts';
-import { MessageContextAction } from './MessageActions';
 import { RunApproval } from './RunApproval';
 import { ReplyMetrics } from './ReplyMetrics';
 import { ToolGroup } from './ToolGroup';
@@ -94,7 +93,6 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
               >
                 <div className="processing-content-body">
                   <MessageParts parts={[item.part]} />
-                  <MessageContextAction message={item.message} />
                 </div>
               </div>
             ),

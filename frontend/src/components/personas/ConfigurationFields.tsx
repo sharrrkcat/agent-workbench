@@ -144,37 +144,12 @@ export function ContextFields({
     <>
       <FieldGroup className="grid gap-4 sm:grid-cols-2">
         <Field>
-          <FieldLabel>{t('history')}</FieldLabel>
-          <Select
-            value={value.mode}
-            onValueChange={(selected) =>
-              onChange({ ...value, mode: (selected ?? '') as ContextPolicy['mode'] })
-            }
-            items={(
-              ['session', 'recent_messages', 'current_message', 'selected_message', 'none'] as const
-            ).map((mode) => ({ value: mode, label: t('contextModes.' + mode) }))}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>{(['session', 'recent_messages', 'current_message', 'selected_message', 'none'] as const).map(
-                (mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {t('contextModes.' + mode)}
-                  </SelectItem>
-                ),
-              )}</SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
           <FieldLabel>{t('maxMessages')}</FieldLabel>
           <Input
             type="number"
-            min={1}
+            min={0}
             max={10000}
-            placeholder={value.mode === 'recent_messages' ? '20' : t('unlimited')}
+            placeholder={t('unlimited')}
             step={1}
             value={Number.isNaN(value.max_messages) ? '' : (value.max_messages ?? '')}
             onChange={(event) =>
@@ -184,6 +159,7 @@ export function ContextFields({
               })
             }
           />
+          <FieldDescription>{t('maxMessagesDescription')}</FieldDescription>
         </Field>
         <Field>
           <FieldLabel>{t('maxChars')}</FieldLabel>

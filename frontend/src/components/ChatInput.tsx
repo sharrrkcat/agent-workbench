@@ -1,12 +1,3 @@
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-} from '@/components/ui/select';
-import { Field, FieldLabel } from '@/components/ui/field';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   InputGroup,
@@ -26,14 +17,11 @@ import { useModelsStore } from '../store/useModelsStore';
 import { useComposerAttachments } from '../hooks/useComposerAttachments';
 import { useComposerLayout } from '../hooks/useComposerLayout';
 import { ChatAttachments } from './messages/ChatAttachments';
-import { contextMessageLabel, isContextMessage } from './messages/messageContent';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
-import { usePersonaIdentity } from '../hooks/usePersonaIdentity';
 import { ChatModelMenu } from './ChatModelMenu';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
-  const personaIdentity = usePersonaIdentity();
   const draft = useCogitaStore((state) => state.composerDraftText);
   const { composerRef, textareaRef, measureRef, actionsRef, expanded, textHeight } = useComposerLayout(draft);
   const setDraft = useCogitaStore((state) => state.setComposerDraftText);
@@ -47,9 +35,6 @@ export function ChatInput() {
   const configuration = useChatConfiguration();
   const sessionLoad = useCogitaStore((state) => state.sessionLoad);
   const ready = !!(session || chatDraft) && (!sessionLoad || sessionLoad.status === 'ready');
-  const messages = useCogitaStore((state) => state.messages);
-  const sourceMessageId = useCogitaStore((state) => state.sourceMessageId);
-  const selectSource = useCogitaStore((state) => state.setSourceMessageId);
   const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
   const profiles = useModelsStore((state) => state.profiles);
   const normalizedRequestLimit = useModelsStore((state) => state.settings?.max_normalized_request_mb);
@@ -75,9 +60,6 @@ export function ChatInput() {
       submittedItems.current = null;
     }
   }, [sending, awaitingAcceptance]);
-  const contextRequired = configuration?.context_policy?.mode === 'selected_message';
-  const eligible = messages.filter(isContextMessage);
-  const hasSource = !!sourceMessageId && eligible.some((m) => m.message_id === sourceMessageId);
   const profile = profiles.find((item) => item.id === configuration?.model_profile_id);
   const hasImages = attachments.some((item) => item.type === 'image');
   const imageIssue =
@@ -91,7 +73,6 @@ export function ChatInput() {
     mutatingHistory ||
     uploading ||
     !!imageIssue ||
-    (contextRequired && !hasSource) ||
     (!draft.trim() && attachments.length === 0);
 
   async function submit() {
@@ -138,40 +119,6 @@ export function ChatInput() {
         <Marker className="waiting-banner">
           <MarkerContent>{t('waiting')}</MarkerContent>
         </Marker>
-      ) : null}
-      {contextRequired ? (
-        <Field className="composer-context">
-          <FieldLabel>{t('selectedContext')}</FieldLabel>
-          <Select
-            value={hasSource ? sourceMessageId : ''}
-            onValueChange={(selected) => selectSource((selected ?? '') || null)}
-            items={[
-              { value: '', label: t('chooseContext') },
-              ...eligible.map((m) => ({
-                value: m.message_id,
-                label: (
-                  <>
-                    {m.role === 'user' ? session?.user_persona.name : m.role === 'assistant' ? personaIdentity(m.speaker_id).name : m.speaker_name || m.role}: {contextMessageLabel(m)}
-                  </>
-                ),
-              })),
-            ]}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="">{t('chooseContext')}</SelectItem>
-                {eligible.map((m) => (
-                  <SelectItem key={m.message_id} value={m.message_id}>
-                    {m.role === 'user' ? session?.user_persona.name : m.role === 'assistant' ? personaIdentity(m.speaker_id).name : m.speaker_name || m.role}: {contextMessageLabel(m)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
       ) : null}
       <InputGroup
         ref={composerRef}

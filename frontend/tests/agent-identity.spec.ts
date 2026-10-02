@@ -37,19 +37,16 @@ for (const locale of ['en', 'zh-CN']) {
             if (kind === 'workspace') {
               const project = await json(request.post('/api/projects', { data: {
                 kind: 'workspace', name: 'Identity workspace', agent_persona_id: first.id, cogita_persona_id: user.id,
-                context_policy: { mode: 'selected_message' }, harness_enabled: true, tools_allowed: ['read_file'],
+                context_policy: {}, harness_enabled: true, tools_allowed: ['read_file'],
               } }));
               projectId = project.id;
               sessionId = (await json(request.post(`/api/projects/${projectId}/sessions`, { data: {} }))).session_id;
             } else {
               sessionId = (await json(request.post('/api/sessions', { data: {
-                persona_id: first.id, context_policy: { mode: 'selected_message' }, harness_enabled: true, tools_allowed: ['read_file'],
+                persona_id: first.id, context_policy: {}, harness_enabled: true, tools_allowed: ['read_file'],
               } }))).session_id;
             }
             const sessionPath = `/api/sessions/${sessionId}`;
-            // Start with ordinary history context so fixture replies do not need a selected source.
-            await json(request.patch(kind === 'workspace' ? `/api/projects/${projectId}` : sessionPath,
-              { data: { context_policy: { mode: 'session' } } }));
             const firstReply = await json(request.post(sessionPath + '/messages', { data: { content: 'First historical input' } }));
             await json(request.patch(kind === 'workspace' ? `/api/projects/${projectId}` : sessionPath,
               { data: kind === 'workspace' ? { agent_persona_id: second.id } : { persona_id: second.id } }));
@@ -67,11 +64,6 @@ for (const locale of ['en', 'zh-CN']) {
               await expect(firstRow.locator('[data-slot="avatar-image"]')).toHaveAttribute('src', new RegExp(avatar));
               await expect(secondRow.locator('strong').first()).toHaveText(second.name);
             }
-            await json(request.patch(kind === 'workspace' ? `/api/projects/${projectId}` : sessionPath,
-              { data: { context_policy: { mode: 'selected_message' } } }));
-            await page.locator('.composer-context [data-slot="select-trigger"]').click();
-            await expect(page.getByRole('option', { name: 'Replaced avatar: Browser final answer.', exact: true })).toBeVisible();
-            await page.keyboard.press('Escape');
             await json(request.patch(`/api/personas/${first.id}`, { data: { avatar_attachment_id: null } }));
             await expect(firstRow.locator('[data-slot="avatar-image"]')).toHaveCount(0);
             await page.reload();
@@ -87,11 +79,6 @@ for (const locale of ['en', 'zh-CN']) {
             await json(request.delete(`/api/personas/${first.id}`));
             await expect(firstRow.locator('strong').first()).toHaveText(labels.deletedPersona);
             await expect(firstRow.locator('.reply-answer')).toHaveText('Browser final answer.');
-            await page.locator('.composer-context [data-slot="select-trigger"]').click();
-            await expect(page.getByRole('option', { name: `${labels.deletedPersona}: Browser final answer.`, exact: true })).toBeVisible();
-            await page.keyboard.press('Escape');
-            await json(request.patch(kind === 'workspace' ? `/api/projects/${projectId}` : sessionPath,
-              { data: { context_policy: { mode: 'session' } } }));
             await page.locator('.composer textarea').fill('cancel-stream');
             await page.locator('.composer textarea').press('Enter');
             await expect(page.locator('.reply-answer').last()).toContainText('Incomplete streamed answer.');

@@ -17,33 +17,25 @@ class ContextBuildResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class LLMContextError(Exception):
-    def __init__(self, message: str, code: str = "LLM_CONTEXT_INVALID") -> None:
-        super().__init__(message); self.code=code; self.message=message
-
-
 class ContextBuilder:
     def __init__(self, message_store: Any) -> None:
         self.message_store = message_store
 
     def build(self, session_id: str, text: str, policy: ContextPolicy | None = None, *,
-              source_message_id: str | None = None, current_message_id: str | None = None) -> ContextBuildResult:
-        policy = policy or ContextPolicy(mode="session")
+              current_message_id: str | None = None) -> ContextBuildResult:
+        policy = policy or ContextPolicy()
         current = self._current_text(text, current_message_id)
         current_refs = []
         if current_message_id and policy.include_attachments == "explicit":
             current_refs = _image_refs(self.message_store.get_message(current_message_id))
         current_content = _content(current, current_refs)
         history = [m for m in self.message_store.list_messages(session_id) if m.message_id != current_message_id and _eligible(m)]
-        if policy.mode in {"none", "current_message"}:
+        if policy.max_messages == 0:
             selected = []
-        elif policy.mode == "selected_message":
-            selected = [m for m in history if m.message_id == source_message_id]
-            if not selected:
-                raise LLMContextError("Select an eligible message from this session.", "CONTEXT_MESSAGE_REQUIRED")
+        elif policy.max_messages is None:
+            selected = history
         else:
-            count = policy.max_messages or (20 if policy.mode == "recent_messages" else None)
-            selected = history[-count:] if count else history
+            selected = history[-policy.max_messages:]
 
         projected = [_project(m, include_attachments=policy.include_attachments == "explicit") for m in selected]
         projected = [m for m in projected if m is not None]

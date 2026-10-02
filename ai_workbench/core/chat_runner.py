@@ -11,7 +11,7 @@ from contextlib import AsyncExitStack, aclosing
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop
-from ai_workbench.core.context import ContextBuilder, LLMContextError
+from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.chat_support import chat_reasoning_mode, local_chat_support
@@ -71,7 +71,6 @@ class ChatRunner:
         input_message_id: str | None = None,
         client_message_id: str | None = None,
         persona_id: str | None = None,
-        source_message_id: str | None = None,
     ) -> RunResult:
         session = self.sessions.get_session(session_id)
         raw_text = str(text)
@@ -92,7 +91,7 @@ class ChatRunner:
             )
         run = self.runs.create_run(
             kind="chat", persona_id=config.persona_id, session_id=session_id,
-            metadata={"input_message_id": user.message_id, "context_source_message_id": source_message_id,
+            metadata={"input_message_id": user.message_id,
                       "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed)},
             config_snapshot=config.model_dump(mode="json"),
         )
@@ -128,7 +127,6 @@ class ChatRunner:
                 raw_text,
                 user.message_id,
                 attachments,
-                source_message_id,
             )
             if config.harness_enabled and config.tools_allowed:
                 try:
@@ -273,7 +271,7 @@ class ChatRunner:
             )
             await self.maybe_title(session_id, raw_text, user.message_id)
             return RunResult(success=True, run_id=run.run_id, data=draft.text)
-        except (ModelError, ChatError, LLMContextError) as exc:
+        except (ModelError, ChatError) as exc:
             if draft is not None:
                 draft.persist(incomplete=True)
             self._fail_step(active_step_id, exc.code, exc.message)
@@ -317,7 +315,6 @@ class ChatRunner:
         text: str,
         current_message_id: str | None,
         attachments: list[dict[str, Any]],
-        source_message_id: str | None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         policy = config.context_policy
         if policy.include_attachments == "none":
@@ -328,7 +325,6 @@ class ChatRunner:
             current_text,
             policy,
             current_message_id=current_message_id,
-            source_message_id=source_message_id,
         )
         messages = list(result.messages)
         metadata: dict[str, Any] = {

@@ -6,7 +6,7 @@ import { projectsApi } from '../../api/projects';
 import { knowledgeApi } from '../../api/knowledge';
 
 export const createMessageActions: CogitaActions<
-  'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText' | 'setSourceMessageId'
+  'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText'
 > = (set, get, store) => ({
   sendMessage: async (content, attachments = []) => {
     if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return false;
@@ -14,7 +14,6 @@ export const createMessageActions: CogitaActions<
     const draft = get().chatDraft;
     const epoch = get().sessionEpoch;
     if ((!session && !draft) || get().sending || get().mutatingHistory || (!content.trim() && attachments.length === 0)) return false;
-    const sourceMessageId = get().sourceMessageId;
     const knowledgeIds = draft?.knowledge_base_ids ?? get().pendingKnowledge?.ids;
     const clientMessageId = crypto.randomUUID();
     let accepted = false;
@@ -56,7 +55,6 @@ export const createMessageActions: CogitaActions<
         content,
         attachments,
         clientMessageId,
-        sourceMessageId,
       );
       if (get().sessionEpoch !== epoch) return false;
       set((state) => runtimeResponseState(state, response));
@@ -112,5 +110,4 @@ export const createMessageActions: CogitaActions<
 
   setComposerDraftText: (text) => set({ composerDraftText: text }),
 
-  setSourceMessageId: (sourceMessageId) => set({ sourceMessageId }),
 });

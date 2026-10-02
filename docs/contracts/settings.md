@@ -221,7 +221,8 @@ the protected Agent Cogita also has no delete control. Editors retain tab drafts
 Session dialogs own Agent/model/context/temperature and Knowledge; the composer menu and [Harness Sheet](harness-tools.md) own Harness and tool selection. Workspace controls show inheritance and per-setting reset,
 submit only changed overrides, lock Cogita identity and inherited Knowledge, and disable Project-forbidden tools.
 Project editors offer type-specific Configuration and Knowledge/Worldbook tabs; missing required Personas
-have management links. Creation preselects session history, global model inheritance and, for Workspace,
+have management links. Context controls expose message/character limits and attachments, with no History selector.
+Creation defaults to unlimited session history, global model inheritance and, for Workspace,
 the default Agent, fixed Cogita Persona, Harness off and the explicit current tool catalog.
 Harness global settings own only searxng_base_url through `/api/tools/settings`.
 

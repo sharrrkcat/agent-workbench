@@ -25,7 +25,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0024_runtime_always_enabled`; there are 26 current business tables.
+Alembic head is `0026_history_limits`; there are 26 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -208,3 +208,9 @@ Revision `0023_dlss_processor` extends local model constraints with processor, a
 Revision `0024_runtime_always_enabled` removes only the obsolete enabled key from local_runtime_settings. Download settings, installation/component records, jobs and all files remain intact. Local Runtime has no enablement setting; repeated upgrades preserve later download edits.
 
 Revision 0025 replaces model_profiles.capabilities_json with request_options_json. Existing LLMs receive streaming=true and both local support-check skips=false; other kinds receive null. Old declarations are discarded without conversion. Model records, attachments and runtime files are preserved.
+
+Revision `0026_history_limits` removes context-policy mode from ordinary sessions, Workspace
+overrides, Projects, run snapshots and run configuration summaries, plus run context_source_message_id.
+Only obsolete JSON fields are removed; limits are retained without mapping old modes.
+Messages, pending approvals, other configuration and all files survive. Repeated upgrades
+preserve newly saved limits, including zero.

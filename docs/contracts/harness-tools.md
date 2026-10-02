@@ -134,7 +134,7 @@ RunPanel diagnostics and share the same approval controls. Adjacent calls render
 as one collapsed command group; command rows expand arguments and corresponding
 results without separate message avatars. Tool calls are retried only as part of
 their whole chat run, never as standalone assistant answers. Historical tool parts are quoted data in ordinary/group
-context (including selected-message context); live loop results use native tool
+context within history limits; live loop results use native tool
 roles. Tool data is never promoted to a system/developer instruction.
 
 WebSocket tool_call_created, tool_result_created, approval_requested and

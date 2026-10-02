@@ -67,7 +67,6 @@ export function pruneHistoryState(state: CogitaState, change: HistoryPruned): Pa
     messages: retainedMessages(next, state.messages),
     runs: state.runs.filter((run) => !deletedRunIds.includes(run.run_id)),
     stepsByRunId: Object.fromEntries(Object.entries(state.stepsByRunId).filter(([id]) => !deletedRunIds.includes(id))),
-    sourceMessageId: deletedMessageIds.includes(state.sourceMessageId || '') ? null : state.sourceMessageId,
     resolvingApprovals: state.resolvingApprovals.filter((id) => !deletedRunIds.includes(id)),
     messageVersion: state.messageVersion + 1,
     runVersion: state.runVersion + 1,

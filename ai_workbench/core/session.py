@@ -21,7 +21,7 @@ SessionKind = Literal["ordinary", "workspace", "timeline"]
 class ChatSettings(StrictModel):
     model_profile_id: str | None = None
     persona_id: str = COGITA_PERSONA_ID
-    context_policy: ContextPolicy = Field(default_factory=lambda: ContextPolicy(mode="session"))
+    context_policy: ContextPolicy = Field(default_factory=ContextPolicy)
     generation: SessionGenerationParameters = Field(default_factory=SessionGenerationParameters)
     reasoning: StrictBool = True
     harness_enabled: StrictBool = False

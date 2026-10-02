@@ -37,7 +37,7 @@ assert.equal(reply.answer.message_id, 'answer');
 assert.deepEqual(reply.answerParts.map((p) => p.text), ['final answer']);
 assert.deepEqual(reply.process.map((p) => p.kind), ['content', 'content', 'tools', 'content']);
 assert.deepEqual(reply.process[2].calls.map((c) => c.call.tool_call_id), ['a', 'b', 'c']);
-assert.equal(reply.process[2].calls[0].resultMessage.message_id, 'output');
+assert.deepEqual(reply.process[2].calls[0].result, output.parts[0]);
 assert.equal(toolEntryStatus(reply.process[2].calls[0], done), 'success');
 const separated = buildReply(run, [calls, { ...moreCalls, parts: [text('separator', 'next step'), call('c', 'base64_decode')] }, answer], []);
 assert.equal(separated.process.filter((p) => p.kind === 'tools').length, 2);
@@ -72,10 +72,10 @@ assert.equal(classified.answer, undefined);
 assert.ok(classified.process.some((i) => i.kind === 'content' && i.part.text === 'working live'));
 
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { resolve, promise }; }
-const session = { session_id: 's', kind: 'ordinary', project_id: null, title: 'Session', updated_at: at(1), waiting_run_id: null, effective: { context_policy: { mode: 'selected_message' } } };
+const session = { session_id: 's', kind: 'ordinary', project_id: null, title: 'Session', updated_at: at(1), waiting_run_id: null, effective: { context_policy: {} } };
 function reset() {
   store.setState({ currentSession: session, sessions: [session], messages: [user, calls, output, answer], runs: [done], stepsByRunId: {},
-    deletedMessageIds: [], deletedRunIds: [], resolvingApprovals: [], sourceMessageId: 'answer', sending: false, mutatingHistory: false,
+    deletedMessageIds: [], deletedRunIds: [], resolvingApprovals: [], sending: false, mutatingHistory: false,
     messageVersion: 0, runVersion: 0, sessionVersion: 0, sessionEpoch: 0 });
 }
 reset();
@@ -90,7 +90,6 @@ oldRead.resolve([user, calls, output, answer]);
 await refresh;
 assert.deepEqual(store.getState().messages, [user]);
 assert.deepEqual(store.getState().runs, []);
-assert.equal(store.getState().sourceMessageId, null);
 for (const e of [event('message_completed', { message: answer }, 'answer'), event('tool_call_created', { message: calls }, 'calls'),
   event('run_completed', { run: done }), event('run_step_created', { step: { step_id: 'step', run_id: 'r' } })]) store.getState().applyRuntimeEvent(e);
 store.setState(toolResponseState(store.getState(), { session, run: done, messages: [calls, answer] }));
@@ -152,20 +151,17 @@ const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).ex
 const { MessageScrollerProvider } = (await views('../src/components/ui/message-scroller.tsx')).exports;
 const { MessageBubble } = (await views('../src/components/MessageBubble.tsx')).exports;
 const { ChatAttachments, attachmentSize } = (await views('../src/components/messages/ChatAttachments.tsx')).exports;
-const { isContextMessage, contextMessageLabel } = (await views('../src/components/messages/messageContent.ts')).exports;
+const { messagePreview } = (await views('../src/components/messages/messageContent.ts')).exports;
 const imageOnly = { ...user, parts: [], metadata: { attachments: [
   { id: 'image', type: 'image', name: 'photo.png', size: 1126, uri: 'local://attachments/aaaa.png' },
 ] } };
-assert.ok(isContextMessage(imageOnly));
-assert.equal(isContextMessage({ ...imageOnly, metadata: { ...imageOnly.metadata, incomplete: true } }), false);
-assert.equal(contextMessageLabel(imageOnly), 'photo.png');
+assert.equal(messagePreview(imageOnly), 'photo.png');
 assert.equal(attachmentSize(0, 'en'), '0 B');
 assert.equal(attachmentSize(820 * 1024, 'en'), '820 KB');
 assert.equal(attachmentSize(1153434, 'zh-CN'), '1.1 MB');
 const textFile = { id: 'file', type: 'file', name: 'notes.txt', size: 12, mime_type: 'text/plain' };
 const fileOnly = { ...user, parts: [], metadata: { attachments: [textFile] } };
-assert.ok(isContextMessage(fileOnly));
-assert.equal(contextMessageLabel(fileOnly), 'notes.txt');
+assert.equal(messagePreview(fileOnly), 'notes.txt');
 const render = (reply, showFullProcessing) => renderToStaticMarkup(
   React.createElement(MessageScrollerProvider, { autoScroll: true }, React.createElement(RunReply, { reply, showFullProcessing })));
 const approvalStep = { step_id: 'approval', kind: 'approval', status: 'running', run_id: 'r', metadata: { tool_call_id: 'a', risk: 'file' } };
@@ -244,7 +240,7 @@ for (const locale of ['en', 'zh-CN']) {
   for (const code of warned.metadata.request_warnings.codes)
     assert.ok(warningHtml.includes(i18n.t(`chat:requestWarnings.${code}`)));
   assert.ok(warningHtml.indexOf('message-request-warning') > warningHtml.indexOf('message-attachments'));
-  assert.equal(contextMessageLabel(warned), contextMessageLabel(imageOnly));
+  assert.equal(messagePreview(warned), messagePreview(imageOnly));
   const oversized = { ...failedEmpty, error_code: 'REQUEST_TOO_LARGE', error: 'Local chat request is too large.' };
   assert.ok(render(buildReply(oversized, [], []), false).includes(i18n.t('personas:imageErrors.tooLarge')));
 }

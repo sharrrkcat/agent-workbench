@@ -5,7 +5,6 @@ import { Check, ChevronRight, Clock3, LoaderCircle, Terminal, X } from 'lucide-r
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Run } from '../../types/runs';
-import { MessageContextAction } from './MessageActions';
 import { ToolResultBody } from './ToolResultBody';
 import { toolEntryStatus, type ToolEntry } from './turns';
 
@@ -64,14 +63,12 @@ function ToolCommand({ entry, run }: { entry: ToolEntry; run: Run }) {
       <CollapsibleContent className="tool-command-details" id={id}>
         <div className="tool-detail-label">
           <span>{t('arguments')}</span>
-          <MessageContextAction message={entry.message} />
         </div>
         <pre className="part-json">{JSON.stringify(entry.call.arguments, null, 2)}</pre>
         {entry.result ? (
           <>
             <div className="tool-detail-label">
               <span>{t('result')}</span>
-              {entry.resultMessage ? <MessageContextAction message={entry.resultMessage} /> : null}
             </div>
             <ToolResultBody part={entry.result} />
           </>

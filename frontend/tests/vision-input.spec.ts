@@ -82,7 +82,6 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.message-attachments img')).toHaveCount(2);
         await expect(page.locator('.attachment-chip')).toHaveCount(0);
         await expect(page.locator('.status-done')).toBeVisible();
-        await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { mode: 'selected_message' } } });
         await page.reload();
         await expect(page.locator('.message-attachments img')).toHaveCount(2);
         await expect(page.locator('.message-attachments img').first()).toHaveJSProperty('naturalWidth', 1);
@@ -94,8 +93,6 @@ for (const locale of ['en', 'zh-CN']) {
         const user = history.find((message: { role: string }) => message.role === 'user');
         expect(user.parts).toEqual([]);
         expect(user.metadata.attachments).toHaveLength(2);
-        await page.locator('.message-row.user').getByRole('button', { name: labels.selectContext, exact: true }).click();
-        await expect(page.locator('.composer-context').getByRole('combobox')).toContainText('selected.png');
         await page.locator('.composer textarea').fill('Follow up on the images');
         await page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true }).click();
         await expect(page.locator('.status-done')).toHaveCount(2);
@@ -247,7 +244,7 @@ test('provider images are allowed and attachment policy provides clear prompts',
   await page.locator('.composer input[type=file]').setInputFiles(file('image.png'));
   await expect(page.locator('.composer-warning')).toHaveCount(0);
   await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeEnabled();
-  await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { mode: 'session', include_attachments: 'none' } } });
+  await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { include_attachments: 'none' } } });
   await page.reload();
   await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();
   await page.locator('.composer input[type=file]').setInputFiles(file('image.png'));

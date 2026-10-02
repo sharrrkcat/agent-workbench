@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMessageScroller, useMessageScrollerVisibility } from '@/components/ui/message-scroller';
 import type { Message } from '../../types/messages';
-import { contextMessageLabel } from './messageContent';
+import { messagePreview } from './messageContent';
 
 export function UserMessageNavigation({ messages }: { messages: Message[] }) {
   const { t } = useTranslation('chat');
@@ -30,7 +30,7 @@ export function UserMessageNavigation({ messages }: { messages: Message[] }) {
   return (
     <nav ref={rail} className="user-message-navigation" aria-label={t('userMessageNavigation')}>
       {messages.map((message, index) => {
-        const summary = contextMessageLabel(message) || t('userMessageNumber', { number: index + 1 });
+        const summary = messagePreview(message) || t('userMessageNumber', { number: index + 1 });
         return (
           <Tooltip key={message.message_id}>
             <TooltipTrigger render={

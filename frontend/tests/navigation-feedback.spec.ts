@@ -27,7 +27,7 @@ async function workspace(request: APIRequestContext) {
   const users = await (await request.get('/api/personas?collection=user')).json();
   const response = await request.post('/api/projects', { data: {
     kind: 'workspace', name: 'Navigation project', agent_persona_id: agents[0].id, cogita_persona_id: users[0].id,
-    context_policy: { mode: 'session' }, harness_enabled: false, tools_allowed: [],
+    context_policy: {}, harness_enabled: false, tools_allowed: [],
   } });
   expect(response.ok()).toBe(true);
   const project = await response.json();

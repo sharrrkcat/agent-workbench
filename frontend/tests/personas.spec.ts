@@ -123,7 +123,7 @@ for (const locale of ['en', 'zh-CN']) {
         }
       });
 
-      test('historical user messages and context labels show the latest identity', async ({ page, request }, info) => {
+      test('historical user messages show the latest identity', async ({ page, request }, info) => {
         test.setTimeout(90000);
         const user = await singleton(request);
         const tag = `${locale}-${viewport.width}-${Date.now()}`;
@@ -152,10 +152,6 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(row.locator('.message-meta strong')).toHaveText(saved.name);
           await request.patch(`/api/personas/${user.id}`, { data: { name: `Live ${tag}` } });
           await expect(row.locator('.message-meta strong')).toHaveText(`Live ${tag}`);
-          await request.patch(`/api/sessions/${first.session_id}`, { data: { context_policy: { mode: 'selected_message' } } });
-          await page.locator('.composer-context [data-slot="select-trigger"]').click();
-          await expect(page.getByRole('option', { name: `Live ${tag}: Historical user text`, exact: true })).toBeVisible();
-          await page.keyboard.press('Escape');
           await openSidebar(page);
           await page.locator('.session-select').filter({ hasText: `Identity second ${tag}` }).click();
           await page.locator('.composer textarea').fill('New user text');

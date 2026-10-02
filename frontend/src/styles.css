@@ -629,7 +629,6 @@
     }
   }
   .is-dragging .composer { outline: 2px solid var(--ring); outline-offset: 2px; }
-  .composer-context { gap: 0.25rem; }
   .composer-hint { padding-inline: 0.125rem; }
 
   @media (width < 768px) {

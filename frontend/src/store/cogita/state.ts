@@ -27,7 +27,6 @@ export type CogitaState = {
   deletedMessageIds: string[];
   deletedRunIds: string[];
   mutatingHistory: boolean;
-  sourceMessageId: string | null;
   composerDraftText: string;
   loading: boolean;
   sending: boolean;
@@ -55,7 +54,6 @@ export type CogitaState = {
   callTool: (name: string, args: Record<string, unknown>) => Promise<ToolRunResponse | undefined>;
   applyRuntimeEvent: (event: RuntimeEvent) => void;
   setComposerDraftText: (text: string) => void;
-  setSourceMessageId: (id: string | null) => void;
   setError: (error: string | null) => void;
   setSettings: (settings: GeneralSettings) => void;
 };

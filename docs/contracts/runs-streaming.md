@@ -139,7 +139,7 @@ is blocked by run id. Session switches reject previous-session results.
 Session navigation tracks its target and loading/ready/error state separately from initialization;
 no target is idle. Required session/history/run reads commit together before opening the WebSocket.
 Connection-time reconciliation then preserves live events using the existing version checks.
-Real switches increment the epoch once and reset composer/context/attachment/dialog state, while
+Real switches increment the epoch once and reset composer/attachment/dialog state, while
 only the message scroller remounts. Explicit failed-load retry preserves the epoch; repeated target
 selection is a no-op. Background refresh retains content and never re-enters navigation loading.
 Draft promotion retains the composer epoch, uploaded attachments and submission lock.

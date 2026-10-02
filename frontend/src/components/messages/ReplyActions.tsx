@@ -6,7 +6,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { terminal } from '../../store/cogita/mergeState';
-import { MessageContextAction } from './MessageActions';
 import { messageText } from './messageContent';
 import type { Reply } from './turns';
 
@@ -75,7 +74,6 @@ export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: 
         </Tooltip>
       ) : null}
       {usage}
-      {ended && reply.answer ? <MessageContextAction message={reply.answer} /> : null}
       {ended ? <Tooltip>
         <TooltipTrigger
           render={

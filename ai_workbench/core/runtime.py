@@ -58,7 +58,6 @@ class CogitaRuntime:
         input_message_id: str | None = None,
         attachments: list[dict[str, Any]] | None = None,
         client_message_id: str | None = None,
-        source_message_id: str | None = None,
     ) -> RunResult:
         self._assert_available(session)
         direct = self._parse_direct_tool(text)
@@ -71,7 +70,6 @@ class CogitaRuntime:
             attachments=attachments,
             input_message_id=input_message_id,
             client_message_id=client_message_id,
-            source_message_id=source_message_id,
         )
 
     def _parse_direct_tool(self, text: str) -> tuple[str, dict[str, Any]] | None:
@@ -135,7 +133,6 @@ class CogitaRuntime:
             attachments=(source_user_message.metadata or {}).get("attachments") or [],
             input_message_id=source_user_message.message_id,
             persona_id=run.persona_id,
-            source_message_id=run.metadata.get("context_source_message_id"),
         )
 
     async def rerun_user_message(self, session: Any, message: Any) -> RunResult:

@@ -26,7 +26,6 @@ export const useCogitaStore = create<CogitaState>((set, get, store) => ({
   deletedMessageIds: [],
   deletedRunIds: [],
   mutatingHistory: false,
-  sourceMessageId: null,
   composerDraftText: '',
   loading: false,
   sending: false,

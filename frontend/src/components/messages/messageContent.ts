@@ -17,14 +17,7 @@ export function messageText(message: Message): string {
   return message.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n\n');
 }
 
-export function isContextMessage(message: Message): boolean {
-  return ['user', 'assistant', 'tool'].includes(message.role) &&
-    !message.metadata?.streaming && !message.metadata?.incomplete && !message.metadata?.event_type &&
-    !message.parts.some((part) => part.type === 'error') &&
-    (messageAttachments(message).length > 0 || message.parts.some((part) => part.type !== 'reasoning' && (part.type !== 'text' || part.text.trim())));
-}
-
-export function contextMessageLabel(message: Message): string {
+export function messagePreview(message: Message): string {
   const text = messageText(message).trim();
   if (text) return text.slice(0, 90);
   const attachments = messageAttachments(message);

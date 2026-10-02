@@ -1,11 +1,10 @@
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { MessageSquareQuote, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Message } from '../../types/messages';
-import { isContextMessage } from './messageContent';
 
 export function MessageActions({
   message,
@@ -66,7 +65,6 @@ export function MessageActions({
           </Button>
         </>
       ) : null}
-      <MessageContextAction message={message} />
       <Tooltip>
         <TooltipTrigger
           render={
@@ -89,35 +87,5 @@ export function MessageActions({
       </Tooltip>
       {confirmation}
     </div>
-  );
-}
-
-export function MessageContextAction({ message }: { message: Message }) {
-  const { t } = useTranslation('personas');
-  const selectContext = useCogitaStore((state) => state.setSourceMessageId);
-  const selected = useCogitaStore((state) => state.sourceMessageId);
-  const acceptsSelection = useCogitaStore(
-    (state) => state.currentSession?.effective.context_policy.mode === 'selected_message',
-  );
-  if (!acceptsSelection || !isContextMessage(message)) return null;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            aria-pressed={selected === message.message_id}
-            aria-label={t('selectContext')}
-            onClick={() => selectContext(selected === message.message_id ? null : message.message_id)}
-            variant="ghost"
-            size="icon"
-            className="context-action"
-          />
-        }
-      >
-        <MessageSquareQuote size={14} />
-      </TooltipTrigger>
-      <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('selectContext')}</TooltipContent>
-    </Tooltip>
   );
 }

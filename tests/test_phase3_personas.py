@@ -101,7 +101,7 @@ def test_persona_crud_selection_and_strict_schemas(chat_client):
     for patch in (
         {"personas": []}, {"current_persona_id": COGITA_PERSONA_ID}, {"context_mode": "single_assistant"},
         {"persona_id": USER_PERSONA_ID}, {"persona_id": None},
-        {"context_policy": {"mode": "recent_messages", "max_messages": 0}},
+        {"context_policy": {"max_messages": -1}},
         {"harness_enabled": "true"}, {"tools_allowed": ["x", "x"]},
         {"generation": {"temperature": 5}}, {"generation": {"seed": 1}},
     ):
@@ -128,7 +128,7 @@ def test_model_generation_and_context_precedence(chat_client):
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": global_model["id"]}))
     role = persona(client)
     session = session_for(client, role["id"], model_profile_id=selected_model["id"], generation={"temperature": 0.6},
-                          context_policy={"mode": "current_message"}, harness_enabled=True, tools_allowed=["read_file"])
+                          context_policy={"max_messages": 0}, harness_enabled=True, tools_allowed=["read_file"])
     response = send(client, session)
     assert response["run"]["persona_id"] == role["id"]
     assert upstream.calls[-1]["model"] == "other"
@@ -144,14 +144,14 @@ def test_model_generation_and_context_precedence(chat_client):
     assert "PRIVATE_PERSONA_PROMPT" not in json.dumps(events)
     assert client.delete(f"/api/models/profiles/{selected_model['id']}").status_code == 409
     path = f"/api/sessions/{session['session_id']}"
-    ok(client.patch(path, json={"model_profile_id": override_model["id"], "generation": {"temperature": 0.9}, "context_policy": {"mode": "current_message"}}))
+    ok(client.patch(path, json={"model_profile_id": override_model["id"], "generation": {"temperature": 0.9}, "context_policy": {"max_messages": 0}}))
     assert send(client, session, "second")["success"]
     assert upstream.calls[-1]["model"] == "fake" and upstream.calls[-1]["temperature"] == 0.9
     assert upstream.calls[-1]["messages"] == [{"role": "system", "content": "PRIVATE_PERSONA_PROMPT"}, {"role": "user", "content": "second"}]
     ok(client.patch(path, json={"generation": {}}))
     send(client, session, "third")
     assert upstream.calls[-1]["temperature"] == 0.3
-    restored = ok(client.patch(path, json={"model_profile_id": global_model["id"], "generation": {}, "context_policy": {"mode": "session"}}))
+    restored = ok(client.patch(path, json={"model_profile_id": global_model["id"], "generation": {}, "context_policy": {}}))
     assert restored["effective"]["model_source"] == "session"
     send(client, session, "fourth")
     assert upstream.calls[-1]["model"] == "fake" and upstream.calls[-1]["temperature"] == 0.1
@@ -160,7 +160,7 @@ def test_model_generation_and_context_precedence(chat_client):
     assert send(client, session, "missing")["run"]["error_code"] == "MODEL_NOT_CONFIGURED"
 
 
-def test_agent_selection_live_edits_retry_and_selected_context(chat_client):
+def test_agent_selection_live_edits_retry_and_history_isolation(chat_client):
     client, upstream = chat_client
     configure_model(client)
     first = persona(client, "First")
@@ -181,13 +181,11 @@ def test_agent_selection_live_edits_retry_and_selected_context(chat_client):
     assert retried["run"]["persona_id"] == first["id"]
     assert len(ok(client.get(path + "/messages"))) == 2
     assert retried["session"]["persona_id"] == second["id"]
-    ok(client.patch(path, json={"context_policy": {"mode": "selected_message"}}))
+    ok(client.patch(path, json={"context_policy": {}}))
     other_session = session_for(client, COGITA_PERSONA_ID)
-    other_user = send(client, other_session, "SECRET_OTHER_SESSION")["messages"][0]
-    failed = send(client, session, "cross session", source_message_id=other_user["message_id"])
-    assert failed["error_code"] == "CONTEXT_MESSAGE_REQUIRED"
-    selected = send(client, session, "selected", source_message_id=initial["messages"][0]["message_id"])
-    assert selected["success"]
+    send(client, other_session, "SECRET_OTHER_SESSION")
+    followup = send(client, session, "follow up")
+    assert followup["success"]
     assert "first input" in json.dumps(upstream.calls[-1]["messages"])
     assert "SECRET_OTHER_SESSION" not in json.dumps(upstream.calls[-1])
     assert "second input" not in json.dumps(upstream.calls[-1])
@@ -282,7 +280,7 @@ def test_explicit_approval_retains_saved_persona_configuration(chat_client):
     configure_model(client, request_options={"streaming": True})
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "USER_BEFORE"}))
     role = persona(client, "Waiting persona")
-    session = session_for(client, role['id'], context_policy={'mode': 'current_message'}, generation={'temperature': 0.25}, harness_enabled=True, tools_allowed=['read_file'])
+    session = session_for(client, role['id'], context_policy={"max_messages": 0}, generation={'temperature': 0.25}, harness_enabled=True, tools_allowed=['read_file'])
     state = client.app.state.runtime_state
     path = state.repo_root / "data/knowledge/note.txt"
     path.parent.mkdir(parents=True)
@@ -327,11 +325,11 @@ def test_history_budget_and_attachment_policy():
     for index in range(25):
         messages.add_message("s", "user", f"history-{index}", metadata={"attachments": [{"type": "file", "name": "note", "text": "PRIVATE_ATTACHMENT"}]})
     builder = ContextBuilder(messages)
-    result = builder.build("s", "current", ContextPolicy(mode="recent_messages", include_attachments="none"))
+    result = builder.build("s", "current", ContextPolicy(max_messages=20, include_attachments="none"))
     contents = [item["content"] for item in result.messages]
     assert "PRIVATE_ATTACHMENT" not in json.dumps(contents)
     assert "history-4" not in contents and "history-5" in contents
-    limited = builder.build("s", "current", ContextPolicy(mode="session", max_chars=3))
+    limited = builder.build("s", "current", ContextPolicy(max_chars=3))
     assert limited.messages == [{"role": "user", "content": "current"}]
     assert limited.warnings
 
