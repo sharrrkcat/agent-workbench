@@ -156,6 +156,46 @@ refresh removes records absent from the server without regressing newer events.
 Model/runtime stores reject stale refreshes and keep newer live occupancy/job
 revisions. UI state does not infer residency from a successful health check.
 
+## Context detail
+
+Internal ordinary/Workspace and Harness model calls save one immutable private `context_snapshot_json`
+on their model step immediately before transport dispatch. Preparation failures have no snapshot;
+failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
+do not record context. Reads never reconstruct missing inputs from current configuration or history.
+Snapshots preserve the outbound body, source positions, exclusions, model identity, capture time and
+context policy. Images use attachment-store references instead of binary data URLs. Source excerpts
+and Unicode character counts are resolved on the backend; usage stays in `metadata.llm`.
+Step `metadata.context` exposes only availability and message/tool/image counts. Ordinary run/message
+reads and events never carry snapshot content. `GET /api/runs/{run_id}/steps/{step_id}/context`
+returns strict detail data; missing snapshots or mismatched run/step ownership return CONTEXT_NOT_FOUND (404).
+Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and sanitized text.
+
+The Layers action sits between retry and usage, independent of recorded usage. It appears on chat replies
+at terminal status or approval waiting when a snapshot exists. Its read-only modal defaults to the final
+answer's call, otherwise the latest captured call; a single call has no selector. Input structure follows
+send order, with system sources nested as Agent, Project, Cogita Persona and Knowledge, and tools separate.
+Empty system sources recorded as empty/no-bindings/no-results appear muted in Agent/Project/Cogita/Knowledge order,
+with an Empty label and no transmitted-message number for a synthetic system group. They do not change request data
+or counts; other exclusions remain collapsed diagnostics. Ordinary chats do not invent a Project source.
+Request data shows supplied generation parameters; omitted engine defaults and rendered/tokenized native
+prompts are unknown. Each call loads lazily with local caching/error retry;
+late results cannot replace another selection. Navigation, deletion or resumed execution closes the modal.
+The 896px-wide modal is bounded to min(48rem, 100dvh - 2rem). Its title, call badges, tabs and footer stay fixed;
+desktop source/content columns scroll independently. Touch stacks navigation (at most 30%) over independently scrolling
+content; expanded diagnostics have a separate bounded scroll region. Both locales preserve focus and chat scroll position.
+The model uses a primary Badge; message/tool counts and actual input tokens use secondary Badges on the call row.
+Source rows show characters normally and approximate tokens on hover/focus; touch shows approximate tokens directly.
+The count slot reserves its width from known character counts and stays right-aligned before estimates arrive.
+Context and usage dialogs are sibling roots, so Context detail receives the standard dimmed, blurred backdrop.
+An Info Hover Card beside the source name/role contains characters, approximate tokens and captured identifiers;
+keyboard focus and touch press also open it. Changing the source or closing the modal dismisses it.
+Approximate source counts use the bundled gpt-tokenizer o200k_base reference encoding in a lazily loaded Web Worker,
+with special-token strings treated as ordinary text. Counts are cached per call/source only while the dialog is open.
+They remain frontend-only, marked approximately equal and never summed or substituted for actual model usage.
+Empty sources count zero; image, pending and failed estimates are unknown. Tokenization requires no model or network service.
+Included attachments remain referenced by surviving snapshots. History/session/Project pruning removes
+snapshots with their steps and cleans newly unreferenced attachments after commit, including snapshot-only references.
+
 ## LLM statistics
 
 Each attempted model call saves one typed `metadata.llm` snapshot on its model step, including model/profile and assistant message ids,

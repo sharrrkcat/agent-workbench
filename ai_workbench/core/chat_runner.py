@@ -12,14 +12,16 @@ from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop
 from ai_workbench.core.context import ContextBuilder
-from ai_workbench.core.knowledge_context import append_knowledge_to_system, build_session_knowledge_context
+from ai_workbench.core.knowledge_context import build_session_knowledge_context
+from ai_workbench.core.context_snapshot import append_system_block, capture_context, omit_context_images, snapshot_attachment
+from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.chat_support import chat_reasoning_mode, local_chat_support
-from ai_workbench.core.models.images import has_context_images, resolve_context_images, without_context_images
+from ai_workbench.core.models.images import has_context_images, resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
-from ai_workbench.core.user_persona_context import append_system_context, build_user_persona_context
+from ai_workbench.core.user_persona_context import build_user_persona_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
@@ -130,11 +132,11 @@ class ChatRunner:
             )
             if config.harness_enabled and config.tools_allowed:
                 try:
-                    context, context_meta = await asyncio.wait_for(build_context, timeout=ACTIVE_BUDGET_SECONDS)
+                    context, context_meta, context_trace = await asyncio.wait_for(build_context, timeout=ACTIVE_BUDGET_SECONDS)
                 except asyncio.TimeoutError as exc:
                     raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
             else:
-                context, context_meta = await build_context
+                context, context_meta, context_trace = await build_context
             if not config.model_profile_id:
                 raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
             profile = self.model_manager.profile(config.model_profile_id, "llm")
@@ -162,7 +164,7 @@ class ChatRunner:
             image_only = False
             if has_images and not profile.request_options.skip_vision_capability_check and support.vision.state == "unsupported":
                 image_only = not current_text.strip()
-                context = without_context_images(context)
+                context = omit_context_images(context, context_trace)
                 warnings.append("images_require_text" if image_only else "images_ignored")
             if use_harness and not profile.request_options.skip_tool_capability_check and support.tools.state == "unsupported":
                 use_harness = False
@@ -183,7 +185,7 @@ class ChatRunner:
                 return self._cancel_result(run.run_id, session_id)
 
             if use_harness:
-                result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context,
+                result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context, trace=context_trace,
                                                      reasoning=reasoning,
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
                                                      active_seconds=time.monotonic() - context_started, first_metrics=first_metrics)
@@ -215,9 +217,10 @@ class ChatRunner:
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,
                                    parent_message_id=user.message_id, streamed=streamed)
             metrics = first_metrics
+            capture = capture_context(self.runs, model_step.step_id, context_trace, profile, config.context_policy)
             try:
                 if streamed:
-                    async with aclosing(self.model_manager.chat_stream(profile.id, request, metrics=metrics)) as stream:
+                    async with aclosing(self.model_manager.chat_stream(profile.id, request, metrics=metrics, capture=capture)) as stream:
                         async for chunk in stream:
                             if self._cancelled(run.run_id):
                                 raise asyncio.CancelledError()
@@ -227,7 +230,7 @@ class ChatRunner:
                             if chunk.delta.tool_calls:
                                 raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat cannot execute tool calls.", 502)
                 else:
-                    response = await self.model_manager.chat(profile.id, request, metrics=metrics)
+                    response = await self.model_manager.chat(profile.id, request, metrics=metrics, capture=capture)
                     if response.message.content is not None and not isinstance(response.message.content, str):
                         raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
                     draft.append(response.message.content, response.message.reasoning_content)
@@ -315,11 +318,12 @@ class ChatRunner:
         text: str,
         current_message_id: str | None,
         attachments: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], ContextTrace]:
         policy = config.context_policy
         if policy.include_attachments == "none":
             attachments = []
-        current_text = _with_current_attachments(text, attachments, self.app_settings.get())
+        attachment_trace = ContextTrace()
+        current_text = _with_current_attachments(text, attachments, self.app_settings.get(), attachment_trace)
         result = self.context_builder.build(
             session.session_id,
             current_text,
@@ -327,6 +331,13 @@ class ChatRunner:
             current_message_id=current_message_id,
         )
         messages = list(result.messages)
+        trace = result.trace
+        current_index = len(messages) - 1
+        for source in attachment_trace.sources:
+            source.message_index = current_index
+            source.parent_id = "message:" + current_message_id
+        trace.sources.extend(attachment_trace.sources)
+        trace.exclusions.extend(attachment_trace.exclusions)
         metadata: dict[str, Any] = {
             "message_count": len(messages),
             "warnings": result.warnings,
@@ -334,18 +345,36 @@ class ChatRunner:
         }
         if config.system_prompt:
             messages.insert(0, {"role": "system", "content": config.system_prompt})
-        messages = append_system_context(messages, config.project_system_prompt.strip())
+            for source in trace.sources:
+                source.message_index += 1
+            trace.sources[:0] = [ContextSource(id="system:0", kind="system", message_index=0, role="system"),
+                ContextSource(id="agent_persona", kind="agent_persona", parent_id="system:0", message_index=0,
+                    end=len(config.system_prompt), reference_id=config.persona_id, role="system")]
+        else:
+            trace.exclusions.append(ContextExclusion(kind="agent_persona", reason="empty", reference_id=config.persona_id))
+        if session.project_id:
+            messages, _ = append_system_block(messages, trace, config.project_system_prompt.strip(), "project_prompt", session.project_id)
         user_context = build_user_persona_context(persona_id=config.user_persona_id, content=config.user_persona_prompt)
-        messages = append_system_context(messages, user_context.rendered_text)
+        messages, _ = append_system_block(messages, trace, user_context.rendered_text, "cogita_persona", config.user_persona_id)
         metadata["user_persona"] = user_context.metadata
         if self.knowledge_service is not None:
             knowledge = await build_session_knowledge_context(
                 knowledge_service=self.knowledge_service, query=text, session_id=session.session_id, source="chat",
                 knowledge_base_ids=config.knowledge_base_ids,
             )
-            messages = append_knowledge_to_system(messages, knowledge.rendered_text)
+            if knowledge.rendered_text:
+                messages, source = append_system_block(messages, trace, knowledge.rendered_text, "knowledge")
+                for snippet, (start, end) in zip(knowledge.snippets, knowledge.snippet_spans):
+                    trace.sources.append(ContextSource(id=snippet["index"], kind="knowledge_snippet", parent_id=source.id,
+                        message_index=source.message_index, start=source.start + start, end=source.start + end,
+                        reference_id=snippet.get("chunk_id"), source_id=snippet.get("source_id"),
+                        knowledge_base_id=snippet.get("knowledge_base_id"), name=snippet["source_title"], citation=snippet["index"], role="system"))
+            else:
+                reason = knowledge.metadata.get("reason")
+                trace.exclusions.append(ContextExclusion(kind="knowledge", reason="retrieval_failed" if reason == "retrieval_failed"
+                    else "no_bindings" if reason == "no_active_kbs" else "no_results"))
             metadata["knowledge"] = knowledge.metadata
-        return messages, metadata
+        return messages, metadata, trace
 
     def set_input_title(self, session_id: str, text: str, attachments: list[dict[str, Any]],
                         input_id: str, *, auxiliary: bool = True) -> None:
@@ -455,7 +484,7 @@ class ChatRunner:
         return RunResult(success=False, run_id=run_id, error=message, error_code=code)
 
 
-def _with_current_attachments(text: str, attachments: list[dict[str, Any]], settings: Any) -> str:
+def _with_current_attachments(text: str, attachments: list[dict[str, Any]], settings: Any, trace: ContextTrace) -> str:
     blocks = [str(text)] if text else []
     used = 0
     for attachment in attachments:
@@ -468,11 +497,22 @@ def _with_current_attachments(text: str, attachments: list[dict[str, Any]], sett
         if settings.send_text_file_attachments_to_llm and is_text_attachment(attachment):
             remaining = settings.max_total_file_context_per_message_bytes - used
             if remaining > 0:
-                context_text = read_attachment_text(attachment, limit=min(settings.max_file_context_per_file_bytes, remaining))["content"]
+                read = read_attachment_text(attachment, limit=min(settings.max_file_context_per_file_bytes, remaining))
+                context_text = read["content"]
                 used += len(context_text.encode("utf-8"))
+                if read["truncated"]:
+                    trace.exclusions.append(ContextExclusion(kind="attachment", reason="file_text_limit",
+                        reference_id=attachment["id"], name=label))
+            else:
+                trace.exclusions.append(ContextExclusion(kind="attachment", reason="file_text_limit", reference_id=attachment["id"], name=label))
+        elif is_text_attachment(attachment):
+            trace.exclusions.append(ContextExclusion(kind="attachment", reason="file_text_disabled", reference_id=attachment["id"], name=label))
+        start = len("\n\n".join(blocks)) + (2 if blocks else 0)
         if context_text:
             blocks.append(f"[Attachment: {label}]\n{context_text}")
         else:
             kind = str(attachment.get("type") or "file")
             blocks.append(f"[{kind} attachment: {label}]")
+        trace.sources.append(ContextSource(id="attachment:" + attachment["id"], kind="attachment", start=start,
+            end=start + len(blocks[-1]), attachment=snapshot_attachment(attachment)))
     return "\n\n".join(blocks)

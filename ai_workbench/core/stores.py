@@ -8,6 +8,7 @@ SQLite application without any extension registry machinery.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -177,6 +178,7 @@ class RunStore:
         self._step_ids: dict[str, list[str]] = {}
         self._config_snapshots: dict[str, dict] = {}
         self._harness_states: dict[str, dict] = {}
+        self._context_snapshots: dict[str, str] = {}
 
     def create_run(self, kind: str, persona_id: str, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
         run = RunSchema(run_id=str(uuid4()), kind=kind, persona_id=persona_id, session_id=session_id, metadata=metadata or {})
@@ -189,6 +191,23 @@ class RunStore:
     def get_config_snapshot(self, run_id: str) -> dict:
         self.get_run(run_id)
         return deepcopy(self._config_snapshots[run_id])
+
+    def save_context_snapshot(self, step_id, snapshot) -> None:
+        step = self.get_step(step_id)
+        if step.kind != "model" or step_id in self._context_snapshots:
+            raise ValueError("Context requires a model step without an existing snapshot")
+        self._context_snapshots[step_id] = snapshot.model_dump_json(exclude_unset=True, by_alias=True)
+        self.update_step(step_id, metadata={"context": snapshot.summary().model_dump()})
+
+    def get_context_snapshot(self, step_id):
+        from ai_workbench.core.schema.context_snapshot import ContextSnapshot
+        self.get_step(step_id)
+        return ContextSnapshot.model_validate_json(self._context_snapshots[step_id])
+
+    def context_attachment_ids(self, run_ids: set[str] | None = None) -> set[str]:
+        return {attachment for step_id, value in self._context_snapshots.items()
+                if run_ids is None or self._steps[step_id].run_id in run_ids
+                for attachment in json.loads(value)["attachment_ids"]}
 
     def get_harness_state(self, run_id: str) -> dict:
         self.get_run(run_id)
@@ -263,6 +282,7 @@ class RunStore:
         self._harness_states.pop(run_id, None)
         for step_id in self._step_ids.pop(run_id, []):
             self._steps.pop(step_id, None)
+            self._context_snapshots.pop(step_id, None)
 
     def delete_session(self, session_id: str) -> None:
         for run_id in self._session_ids.pop(session_id, []):
@@ -271,6 +291,7 @@ class RunStore:
             self._harness_states.pop(run_id, None)
             for step_id in self._step_ids.pop(run_id, []):
                 self._steps.pop(step_id, None)
+                self._context_snapshots.pop(step_id, None)
 
     def cancel_runs(self, run_ids: list[str], reason: str = "Run was cancelled.") -> list[RunSchema]:
         result: list[RunSchema] = []

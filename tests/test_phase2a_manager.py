@@ -20,7 +20,7 @@ class ControlledAdapter:
         self.closed = False
         self.stream_closed = False
 
-    async def chat(self, profile, request):
+    async def chat(self, profile, request, *, capture=None):
         self.started.set()
         await self.release.wait()
         return ChatResult(message={"role": "assistant", "content": "reply"}, finish_reason="stop")
@@ -30,7 +30,7 @@ class ControlledAdapter:
         await self.release.wait()
         return ["weights"]
 
-    async def chat_stream(self, profile, request):
+    async def chat_stream(self, profile, request, *, capture=None):
         try:
             self.started.set()
             yield ChatChunk(delta={"content": "first"})

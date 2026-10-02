@@ -160,7 +160,7 @@ def test_local_manager_prepares_images_before_admission_off_the_event_loop(tmp_p
         return prepare(*args)
 
     class Adapter:
-        async def chat(self, _profile, value):
+        async def chat(self, _profile, value, *, capture=None):
             admitted.append(value)
             return ChatResult(message={"role": "assistant", "content": "accepted"}, finish_reason="stop")
 
@@ -270,10 +270,12 @@ def test_images_survive_approval_history_retry_edit_and_cleanup(tmp_path, monkey
         edited = ok(client.post(f"/api/messages/{user['message_id']}/edit", json={"content": "edited", "attachment_ids": [attachment["id"]]}))
         assert edited["success"] and expected in json.dumps(upstream.calls[-1])
         assert "edited" in json.dumps(upstream.calls[-1])
-        ok(client.post(path, json={"content": "follow up"}))
+        follow_up = ok(client.post(path, json={"content": "follow up"}))
         assert expected in json.dumps(upstream.calls[-1])
         image_path = resolve_attachment_uri(attachment["uri"])
         ok(client.delete(f"/api/messages/{user['message_id']}"))
+        assert image_path.exists()  # The follow-up's input snapshot still references it.
+        ok(client.delete(f"/api/runs/{follow_up['run']['run_id']}"))
         assert not image_path.exists()
 
 

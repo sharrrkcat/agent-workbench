@@ -131,7 +131,7 @@ def test_transformers_stream_closure_stops_process_before_returning(tmp_path):
         adapter.tool_calls_supported = True
 
         class Upstream:
-            async def chat_stream(self, *_):
+            async def chat_stream(self, *_, capture=None):
                 yield ChatChunk(delta={"content": "partial"})
                 await asyncio.Event().wait()
 

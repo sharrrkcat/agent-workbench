@@ -15,7 +15,7 @@ export function ReplyMetrics({ reply }: { reply: Reply }) {
   const { t, i18n } = useTranslation('runs');
   const [open, setOpen] = useState(false);
   const metrics = buildReplyMetrics(reply);
-  if (!metrics) return terminal(reply.run.status) ? <ReplyActions reply={reply} /> : null;
+  if (!metrics) return terminal(reply.run.status) || reply.run.status === 'WAITING_FOR_USER' ? <ReplyActions reply={reply} /> : null;
   const number = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 2 });
   const count = (value: number | null | undefined) => value == null ? '—' : number.format(value);
   const duration = (value: number | null | undefined) => value == null ? '—' : `${number.format(value / 1000)}s`;
@@ -47,10 +47,8 @@ export function ReplyMetrics({ reply }: { reply: Reply }) {
       </div>
     </div>
   );
-  return (
+  const usage = (
     <Dialog open={open} onOpenChange={setOpen}>
-      <div className="reply-footer" data-usage-open={open}>
-        <ReplyActions reply={reply} summary={summary} usage={
           <Tooltip>
             <TooltipTrigger render={
               <DialogTrigger render={<Button variant="ghost" size="icon" aria-label={t('metrics.details')} />} />
@@ -59,8 +57,6 @@ export function ReplyMetrics({ reply }: { reply: Reply }) {
             </TooltipTrigger>
             <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('metrics.details')}</TooltipContent>
           </Tooltip>
-        } />
-      </div>
       <DialogContent className="reply-metrics-dialog sm:max-w-2xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{t('metrics.details')}</DialogTitle>
@@ -112,4 +108,7 @@ export function ReplyMetrics({ reply }: { reply: Reply }) {
       </DialogContent>
     </Dialog>
   );
+  return <div className="reply-footer" data-usage-open={open}>
+    <ReplyActions reply={reply} summary={summary} usage={usage} />
+  </div>;
 }

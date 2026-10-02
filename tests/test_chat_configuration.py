@@ -272,7 +272,8 @@ def test_configuration_revision_discards_chat_only_and_preserves_files(tmp_path)
         db.add(RunRecord(run_id="run", session_id="old", persona_id="00000000-0000-4000-8000-000000000001", kind="chat", status="WAITING_FOR_USER",
                          config_snapshot_json='{"model_source":"persona"}', harness_state_json='{"old":true}'))
         db.add(MessageRecord(message_id="message", session_id="old", role="user"))
-        db.add(RunStepRecord(step_id="step", run_id="run", kind="approval", status="running"))
+        db.execute(RunStepRecord.__table__.insert(), RunStepRecord(
+            step_id="step", run_id="run", kind="approval", status="running").model_dump(exclude={"context_snapshot_json"}))
         db.add(RunEventRecord(event_id="event", run_id="run", session_id="old", type="approval_requested"))
         db.commit()
     affected = {"personas", "sessionrecord", "session_personas", "persona_knowledge_bindings", "persona_worldbook_bindings",

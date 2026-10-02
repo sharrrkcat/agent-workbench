@@ -40,7 +40,9 @@ OPAQUE_SCHEMA_PATHS: dict[str, str] = {
     "components/schemas/Documented__AttachmentInput/properties/metadata": "Optional finite JSON upload/reference metadata.",
     "components/schemas/Documented__ErrorDetail/properties/details": "Error-code-specific public JSON diagnostics.",
     "components/schemas/Documented__FunctionSpec/properties/parameters": "Caller-provided function argument JSON Schema.",
+    "components/schemas/FunctionSpec/properties/parameters": "Captured function argument JSON Schema in a context snapshot.",
     "components/schemas/Documented__JSONSchema/properties/schema": "Caller-provided structured-output JSON Schema.",
+    "components/schemas/JSONSchema/properties/schema": "Captured structured-output JSON Schema in a context snapshot.",
 }
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
 JSON_VALUE_SCHEMAS = {"JsonValue-Input", "JsonValue-Output", "Documented__JsonValue"}

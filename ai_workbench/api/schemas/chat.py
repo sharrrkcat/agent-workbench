@@ -7,6 +7,7 @@ from pydantic import AfterValidator, Field
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.api.openapi import schema_ref
 from ai_workbench.core.models.llm_metrics import LLMCallSnapshot
+from ai_workbench.core.schema.context_snapshot import ContextSummary
 from ai_workbench.core import message_parts as parts
 from ai_workbench.core.conversation_history import HistoryPruned
 from ai_workbench.core.json_data import JsonValue
@@ -55,13 +56,15 @@ SessionResponse = Annotated[OrdinarySessionResponse | WorkspaceSessionResponse, 
 def validate_step_metadata(value: dict) -> dict:
     if "llm" in value:
         LLMCallSnapshot.model_validate(value["llm"])
+    if "context" in value:
+        ContextSummary.model_validate(value["context"])
     return value
 
 
 RunStepResponse = public_model("RunStepResponse", RunStepSchema, fields={
     "metadata": (Annotated[JsonObject, AfterValidator(validate_step_metadata)], Field(
         description="Compact public step diagnostics; model steps include one typed LLM call snapshot.",
-        json_schema_extra={"properties": {"llm": schema_ref(LLMCallSnapshot)}})),
+        json_schema_extra={"properties": {"llm": schema_ref(LLMCallSnapshot), "context": schema_ref(ContextSummary)}})),
 })
 RunResponse = public_model("RunResponse", RunSchema, fields={
     "metadata": (JsonObject, Field(description="Public ids, timings, counts and configuration summaries; no prompts or private snapshots.")),

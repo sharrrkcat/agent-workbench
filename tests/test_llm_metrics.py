@@ -127,11 +127,11 @@ def test_queue_loading_and_generation_are_measured_before_release(tmp_path, stre
             clock.now += 50
             return await original_unload(*args, **kwargs)
 
-        async def chat(*_):
+        async def chat(*_, capture=None):
             clock.now += 3
             return ChatResult(message={"role": "assistant", "content": "answer"}, finish_reason="stop")
 
-        async def stream(*_):
+        async def stream(*_, capture=None):
             clock.now += 1
             yield ChatChunk(delta={"content": "a"})
             clock.now += 1

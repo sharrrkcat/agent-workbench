@@ -147,8 +147,8 @@ the newest N eligible messages in order, excluding current input from the count.
 budget deducts current input text first, then keeps whole recent history messages. Current
 input is always retained, with a warning when it alone exceeds the character budget.
 Context has no mode or selected-message workflow; mode and source_message_id return 422. Workspace inherits or overrides the whole policy, including explicit max_messages=0.
-Agent prompts are inserted once independently of limits. Context sources are bounded data
-blocks; metadata contains compact diagnostics rather than copied content.
+Agent prompts are inserted once independently of limits. Provenance and exclusions follow the same
+projection; [context snapshots](runs-streaming.md#context-detail) preserve each call privately, outside metadata.
 
 Workspace inserts its Project prompt after the Agent prompt and before Persona/Knowledge data, independently of history limits.
 The singleton Cogita Persona is always active. Its trimmed nonempty system_prompt is
@@ -217,7 +217,7 @@ Other attachments contribute bounded descriptive markers. include_attachments=no
 File selection, clipboard images and file dropping share per-file status, previews and removal; partial failure keeps successful uploads. Session changes clear pending attachments and ignore late results.
 Composer images use 120px vertical Attachment cards with names, types and sizes; other files use horizontal cards, bottom-aligned with image cards. Sizes use uploaded File.size then persisted size, in 1024-based B/KB/MB/GB with at most one decimal. Image removal uses a circular top-right button.
 User metadata.attachments render as right-aligned scrolling groups: files above the text bubble and images below it, preserving order within each group. Images use 160px preview cards without visible names/sizes; file cards retain both. Attachment-only messages have no empty bubble; image/file-only messages remain eligible history.
-Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Removed references are cleaned after commit only if unreferenced by messages, Personas or Knowledge.
+Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Cleanup after commit preserves references from messages, Personas, Knowledge and model-input snapshots.
 Thumbnails and zoom previews resolve stored references after refresh. Request warnings, attachment-policy and size errors have English/Chinese guidance; retries retain the message's saved attachments.
 
 Tool calls require assistant role, a unique call id within the run, a name and

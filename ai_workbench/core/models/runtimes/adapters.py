@@ -516,15 +516,15 @@ class ProcessorWorkerAdapter(ManagedAdapter):
 
 
 class LlamaServerAdapter(ManagedAdapter):
-    async def chat(self, profile, request):
+    async def chat(self, profile, request, *, capture=None):
         if not self.openai or self.failed:
             raise ModelError("MODEL_UNAVAILABLE", "The managed model is not running.", 503)
-        return await self.openai.chat(profile.model_copy(update={"model_ref": "managed"}), request)
+        return await self.openai.chat(profile.model_copy(update={"model_ref": "managed"}), request, capture=capture)
 
-    async def chat_stream(self, profile, request):
+    async def chat_stream(self, profile, request, *, capture=None):
         if not self.openai or self.failed:
             raise ModelError("MODEL_UNAVAILABLE", "The managed model is not running.", 503)
-        async with aclosing(self.openai.chat_stream(profile.model_copy(update={"model_ref": "managed"}), request)) as stream:
+        async with aclosing(self.openai.chat_stream(profile.model_copy(update={"model_ref": "managed"}), request, capture=capture)) as stream:
             async for chunk in stream:
                 yield chunk
 
@@ -542,10 +542,10 @@ class TransformersServerAdapter(LlamaServerAdapter):
             self.error_code = error.code if isinstance(error, ModelError) else "MODEL_UNAVAILABLE"
         self.changed()
 
-    async def chat(self, profile, request):
+    async def chat(self, profile, request, *, capture=None):
         self._require_support(profile, request)
         try:
-            return await super().chat(profile, request)
+            return await super().chat(profile, request, capture=capture)
         except asyncio.CancelledError:
             await self._abort()
             raise
@@ -553,11 +553,11 @@ class TransformersServerAdapter(LlamaServerAdapter):
             await self._abort(exc)
             raise
 
-    async def chat_stream(self, profile, request):
+    async def chat_stream(self, profile, request, *, capture=None):
         self._require_support(profile, request)
         completed, error = False, None
         try:
-            async with aclosing(super().chat_stream(profile, request)) as stream:
+            async with aclosing(super().chat_stream(profile, request, capture=capture)) as stream:
                 async for chunk in stream:
                     yield chunk
             completed = True

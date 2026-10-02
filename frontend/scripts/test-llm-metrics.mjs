@@ -15,6 +15,7 @@ const load = createModuleLoader({ ...apiMocks({}),
 });
 const { buildReplyMetrics } = (await load('../src/components/messages/aggregateReplyMetrics.ts')).exports;
 const { ReplyMetrics } = (await load('../src/components/messages/ReplyMetrics.tsx')).exports;
+const { ReplyContext, contextCalls, defaultContextCall } = (await load('../src/components/messages/ReplyContext.tsx')).exports;
 const { MessageScrollerProvider } = (await load('../src/components/ui/message-scroller.tsx')).exports;
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
 const at = (seconds) => `2026-10-01T00:00:${String(seconds).padStart(2, '0')}.000000Z`;
@@ -94,5 +95,21 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(render(partial).includes(i18n.t('runs:metrics.incomplete')));
   assert.ok(render(paused).includes(i18n.t('runs:metrics.soFar')));
   assert.match(render({ ...reply, steps: [nonstream] }), /—/);
+  const context = { available: true, message_count: 2, tool_count: 0, image_count: 0 };
+  const captured = { ...reply, answer: { message_id: 'a', parts: [] }, steps: [second, first].map((step) =>
+    ({ ...step, metadata: { ...step.metadata, context } })) };
+  assert.deepEqual(contextCalls(captured).map((step) => step.step_id), ['a', 'b']);
+  assert.equal(defaultContextCall(captured), 'a', 'Select the call linked to the displayed answer');
+  assert.equal(defaultContextCall({ ...captured, answer: undefined }), 'b');
+  for (const status of ['DONE', 'FAILED', 'CANCELLED', 'INTERRUPTED', 'WAITING_FOR_USER']) {
+    const withoutMetrics = { ...captured, run: { ...run, status }, steps: [{ ...first, metadata: { context } }] };
+    const rendered = render(withoutMetrics);
+    assert.ok(rendered.includes(i18n.t('runs:context.details')), status);
+    assert.ok(!rendered.includes(i18n.t('runs:metrics.details')), 'Context does not require usage statistics');
+  }
+  const renderContext = (value) => renderToStaticMarkup(React.createElement(ReplyContext, { reply: value }));
+  assert.equal(renderContext({ ...captured, run: { ...run, status: 'RUNNING' } }), '');
+  assert.equal(renderContext({ ...captured, run: { ...run, kind: 'tool' } }), '');
+  assert.equal(renderContext(reply), '');
 }
 console.log('LLM reply accounting, incomplete usage, weighted speeds, event reconciliation and bilingual rendering: ok');

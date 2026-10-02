@@ -30,7 +30,7 @@ mxbai-rerank-base-v2 has CUDA/native, Knowledge and short-text CPU acceptance; o
 
 Personas own identity, prompts and resource bindings. Ordinary sessions own configuration;
 Workspace sessions continuously inherit Project defaults with sparse overrides. Chat combines singleton Cogita Persona, selected Agent, Project and session Knowledge. Each run has one visible
-reply, processing history and whole-reply actions. Per-call LLM usage/timing is saved on model steps for reply summaries and details.
+reply, processing history and whole-reply actions. Model steps retain LLM usage/timing and private input snapshots for per-call context/source/request inspection.
 External chat optionally returns performance metrics.
 Built-in tools share direct and model invocation with bounded execution and durable approvals; `/v1` forwards
 tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.

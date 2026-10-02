@@ -118,6 +118,7 @@ async def delete_session(session_id: str, state: RuntimeState = Depends(get_stat
 def delete_session_data(state: RuntimeState, session_id: str) -> None:
     state.sessions.set_waiting_run(session_id, None)
     messages = state.messages.list_messages(session_id)
+    snapshot_attachments = state.runs.context_attachment_ids({run.run_id for run in state.runs.list_runs(session_id)})
     state.run_events.delete_session(session_id)
     state.runs.delete_session(session_id)
     state.messages.delete_session(session_id)
@@ -125,6 +126,9 @@ def delete_session_data(state: RuntimeState, session_id: str) -> None:
         state.knowledge.delete_session_bindings(session_id)
     for message in messages:
         _cleanup_message_attachments(state, message)
+    for attachment_id in snapshot_attachments:
+        delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, state.messages,
+            persona_store=state.personas, knowledge_store=state.knowledge, run_store=state.runs)
     state.sessions.delete_session(session_id)
 
 
@@ -249,7 +253,7 @@ def _cleanup_message_attachments(state: RuntimeState, message) -> None:
     if isinstance(attachments, list):
         for item in attachments:
             if isinstance(item, dict):
-                delete_attachment_if_unreferenced(item, state.messages, message.session_id, persona_store=state.personas, knowledge_store=state.knowledge)
+                delete_attachment_if_unreferenced(item, state.messages, message.session_id, persona_store=state.personas, knowledge_store=state.knowledge, run_store=state.runs)
 
 
 def _first_string(source: dict | None, keys: tuple[str, ...]) -> str | None:

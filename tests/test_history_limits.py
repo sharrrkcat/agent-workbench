@@ -88,7 +88,7 @@ def test_migration_removes_only_retired_fields_without_mapping_modes(tmp_path, m
         db.add(ordinary)
         db.commit()
     migrations.upgrade(engine)
-    assert migrations.current_revision(engine) == migrations.HISTORY_LIMITS_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     with DbSession(engine) as db:
         assert json.loads(db.get(SessionRecord, "ordinary").configuration_json)["context_policy"] == {"max_messages": 0}
     assert all(path.read_bytes() == b"keep" for path in files)

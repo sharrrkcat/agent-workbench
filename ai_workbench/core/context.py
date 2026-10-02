@@ -9,12 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.models.images import ContextMessage
+from ai_workbench.core.context_snapshot import snapshot_attachment
+from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 
 
 class ContextBuildResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     messages: list[ContextMessage]
     warnings: list[str] = Field(default_factory=list)
+    trace: ContextTrace = Field(default_factory=ContextTrace)
 
 
 class ContextBuilder:
@@ -29,7 +32,11 @@ class ContextBuilder:
         if current_message_id and policy.include_attachments == "explicit":
             current_refs = _image_refs(self.message_store.get_message(current_message_id))
         current_content = _content(current, current_refs)
-        history = [m for m in self.message_store.list_messages(session_id) if m.message_id != current_message_id and _eligible(m)]
+        trace = ContextTrace()
+        candidates = [m for m in self.message_store.list_messages(session_id) if m.message_id != current_message_id]
+        history = [m for m in candidates if _eligible(m)]
+        trace.exclusions.extend(ContextExclusion(kind="history", reason="ineligible_history", reference_id=m.message_id)
+                                for m in candidates if not _eligible(m))
         if policy.max_messages == 0:
             selected = []
         elif policy.max_messages is None:
@@ -37,8 +44,14 @@ class ContextBuilder:
         else:
             selected = history[-policy.max_messages:]
 
-        projected = [_project(m, include_attachments=policy.include_attachments == "explicit") for m in selected]
-        projected = [m for m in projected if m is not None]
+        selected_ids = {m.message_id for m in selected}
+        trace.exclusions.extend(ContextExclusion(kind="history", reason="message_limit", reference_id=m.message_id)
+                                for m in history if m.message_id not in selected_ids)
+        pairs = [(m, _project(m, include_attachments=policy.include_attachments == "explicit")) for m in selected]
+        trace.exclusions.extend(ContextExclusion(kind="history", reason="empty", reference_id=m.message_id)
+                                for m, projected in pairs if projected is None)
+        pairs = [(m, projected) for m, projected in pairs if projected is not None]
+        projected = [item for _, item in pairs]
         # Budget history before adding framing and persona instructions, retaining the current input.
         warnings = []
         if policy.max_chars is not None:
@@ -46,8 +59,20 @@ class ContextBuilder:
             projected = _limit_history(projected, remaining)
             if len(current) > policy.max_chars:
                 warnings.append("Current message exceeds the history character budget; current input is retained.")
+        removed_count = len(pairs) - len(projected)
+        trace.exclusions.extend(ContextExclusion(kind="history", reason="character_limit", reference_id=m.message_id)
+                                for m, _ in pairs[:removed_count])
+        for index, (message, item) in enumerate(pairs[removed_count:]):
+            _trace_message(trace, message, index, item, "history", policy.include_attachments == "explicit")
+        current_message = self.message_store.get_message(current_message_id) if current_message_id else None
+        current_item = {"role": "user", "content": current_content}
+        if current_message is not None:
+            _trace_message(trace, current_message, len(projected), current_item, "current_input",
+                           policy.include_attachments == "explicit")
+        else:
+            trace.sources.append(ContextSource(id="current", kind="current_input", message_index=len(projected), role="user"))
         messages = [*projected, {"role": "user", "content": current_content}]
-        return ContextBuildResult(messages=messages, warnings=warnings)
+        return ContextBuildResult(messages=messages, warnings=warnings, trace=trace)
 
     def _current_text(self, text: str, message_id: str | None) -> str:
         if text: return text
@@ -73,7 +98,7 @@ def _parts(content):
     return [{"type": "text", "text": content}] if isinstance(content, str) else content
 
 
-def message_text(message: Any, *, include_attachments: bool = True) -> str:
+def message_text(message: Any, *, include_attachments: bool = True, attachment_spans: list | None = None) -> str:
     rendered=[]
     for part in getattr(message,"parts",[]) or []:
         if not isinstance(part,dict): continue
@@ -94,10 +119,38 @@ def message_text(message: Any, *, include_attachments: bool = True) -> str:
         for item in attachments:
             if not isinstance(item,dict): continue
             if item.get("type") == "image": continue
+            start = len("\n\n".join(part for part in rendered if part))
+            start += 2 if start else 0
             context_text=item.get("context_text") or item.get("text")
             if context_text: rendered.append(f"[Attachment: {item.get('name') or item.get('id') or 'file'}]\n{context_text}")
             elif item.get("type") == "file": rendered.append(f"[file attachment: {item.get('name') or item.get('id') or ''}]")
+            else: continue
+            if attachment_spans is not None:
+                attachment_spans.append((item, start, start + len(rendered[-1])))
     return "\n\n".join(part for part in rendered if part)
+
+
+def _trace_message(trace, message, index, projected, kind, include_attachments):
+    source_id = "message:" + message.message_id
+    trace.sources.append(ContextSource(id=source_id, kind=kind, message_index=index,
+        reference_id=message.message_id, role=projected["role"]))
+    attachments = (message.metadata or {}).get("attachments", [])
+    if not include_attachments:
+        trace.exclusions.extend(ContextExclusion(kind="attachment", reason="attachments_disabled",
+            reference_id=item.get("id"), name=item.get("name")) for item in attachments)
+        return
+    image_index = 1
+    for item in attachments:
+        if item.get("type") == "image":
+            trace.sources.append(ContextSource(id=f"{source_id}:image:{image_index}", kind="attachment",
+                parent_id=source_id, message_index=index, part_index=image_index, attachment=snapshot_attachment(item)))
+            image_index += 1
+    if kind == "history":
+        spans = []
+        message_text(message, attachment_spans=spans)
+        for item, start, end in spans:
+            trace.sources.append(ContextSource(id=f"{source_id}:file:{item['id']}", kind="attachment",
+                parent_id=source_id, message_index=index, start=start, end=end, attachment=snapshot_attachment(item)))
 
 
 def _project(message: Any, *, include_attachments: bool = True) -> ContextMessage | None:

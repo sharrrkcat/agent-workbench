@@ -147,6 +147,7 @@ class RunStepRecord(SQLModel, table=True):
     metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    context_snapshot_json: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
 
 
 class RunEventRecord(SQLModel, table=True):

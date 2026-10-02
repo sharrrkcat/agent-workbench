@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import httpx
 from httpx_sse import aconnect_sse, SSEError
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.models.adapter import ChatInputCapture
 from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTiming
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult,
@@ -71,8 +72,11 @@ class OpenAIAdapter:
             payload["cogita_request_options"] = profile.request_options.model_dump(exclude={"streaming"})
         return payload
 
-    async def chat(self, profile: ModelProfile, request: ChatRequest) -> ChatResult:
-        data = await self._json("POST", "chat/completions", self._payload(profile, request))
+    async def chat(self, profile: ModelProfile, request: ChatRequest, *, capture: ChatInputCapture | None = None) -> ChatResult:
+        payload = self._payload(profile, request)
+        if capture is not None:
+            capture(payload)
+        data = await self._json("POST", "chat/completions", payload)
         try:
             if len(data["choices"]) != 1 or data["choices"][0]["index"] != 0:
                 raise ValueError("expected one choice")
@@ -89,12 +93,15 @@ class OpenAIAdapter:
         except (KeyError, TypeError, ValueError) as exc:
             raise transport_error(exc) from exc
 
-    async def chat_stream(self, profile: ModelProfile, request: ChatRequest) -> AsyncIterator[ChatChunk]:
+    async def chat_stream(self, profile: ModelProfile, request: ChatRequest, *, capture: ChatInputCapture | None = None) -> AsyncIterator[ChatChunk]:
         finished = False
         tool_ids: dict[int, str] = {}
         tool_names: dict[int, str] = {}
+        payload = self._payload(profile, request)
+        if capture is not None:
+            capture(payload)
         try:
-            async with aconnect_sse(self.client, "POST", "chat/completions", json=self._payload(profile, request)) as source:
+            async with aconnect_sse(self.client, "POST", "chat/completions", json=payload) as source:
                 source.response.raise_for_status()
                 async for event in source.aiter_sse():
                     if event.data == "[DONE]":

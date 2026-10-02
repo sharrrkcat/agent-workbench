@@ -50,18 +50,6 @@ def has_context_images(messages: list[ContextMessage]) -> bool:
                for message in messages)
 
 
-def without_context_images(messages: list[ContextMessage]) -> list[ContextMessage]:
-    result = []
-    for message in messages:
-        content = message["content"]
-        if isinstance(content, list):
-            content = "\n".join(part["text"] for part in content if part["type"] == "text")
-            if not content.strip():
-                continue
-        result.append({**message, "content": content})
-    return result
-
-
 async def resolve_context_images(messages: list[ContextMessage], *, max_image_bytes: int) -> list[dict[str, Any]]:
     if not has_context_images(messages):
         return messages

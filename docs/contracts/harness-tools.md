@@ -79,6 +79,9 @@ model refusal, cancellation and the total time limit terminate the run.
 
 Each model round records one assistant message with distinct tool_call parts.
 Its model step stores one LLM statistics snapshot, including failed/cancelled calls; restored approvals retain earlier call statistics.
+Each dispatched model call also retains its private input snapshot. Base-source provenance and exclusions
+travel in the existing approval continuation; later calls append only already-produced assistant/tool exchanges.
+Tool definitions reflect that round's effective allowlist. [Context detail](runs-streaming.md#context-detail) owns inspection.
 The reply aggregates these rounds without charging tool execution or approval waits to generation speed; [Runs/streaming](runs-streaming.md#llm-statistics) owns the accounting rules.
 Results use role=tool and tool_result parts with status
 success/error/rejected/cancelled, data, error fields and a truncation flag.
@@ -91,7 +94,7 @@ and active time. It also preserves the effective reasoning mode selected before 
 Neither private state appears in public run metadata, responses or events.
 Base context stores typed attachment-image references, never image data URLs/base64. Every model round,
 including approval resumption, reads only those references and applies the model's image capability/request limits.
-The attachment byte limit is snapshotted with the context. Terminal/history cleanup discards private references.
+The attachment byte limit is snapshotted with the context. Terminal cleanup discards continuation state; retained model-input snapshots keep their attachment references until history cleanup.
 
 Only the approval endpoint resumes a waiting run. Approval executes the original
 call; rejection skips its handler and records a rejected result. Remaining

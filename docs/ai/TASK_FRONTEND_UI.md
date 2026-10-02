@@ -20,7 +20,7 @@ Paths below are under frontend/src:
 - components/SessionSidebar.tsx and ChatHeader.tsx compose the home navigation.
   components/projects/ owns the Project tree, routes, editors and Workspace session overrides; store/useProjectsStore.ts owns Project reads/mutations.
   components/ChatView.tsx owns the session-scoped MessageScroller; components/messages/
-  compose replies, disclosure anchors and approvals. ChatInput.tsx owns the composer.
+  compose replies, disclosure anchors and approvals; ReplyContext.tsx owns lazy per-call input inspection. ChatInput.tsx owns the composer.
 - components/SettingsPage.tsx composes components/settings/ domain panels and the
   shared shell. SettingsSidebar.tsx uses grouped routes from settings/navigation.ts;
   settings/SettingsView.tsx retains inactive subpages and hides their overlays.
@@ -62,6 +62,7 @@ personas.spec.ts covers shared Persona CRUD, protected identities, binding restr
 agent-identity.spec.ts covers Agent history, avatars, deletion, reconnects, streaming and approvals in ordinary/Workspace chats;
 test-persona-identity.mjs covers list/event races and deleted identities. projects.spec.ts covers Project creation, type restrictions,
 inherited resources, sparse overrides, guarded history and scoped deletion; test-projects.mjs covers selection/deletion races.
+context-detail.spec.ts covers lazy call selection, exact request views, stale reads, error retry, deletion and modal focus/scroll in both locales/viewports.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
 model-profiles.spec.ts covers all eight card layouts, enable saves/failures, source-required drafts and local suggestion states in both locales/viewports.

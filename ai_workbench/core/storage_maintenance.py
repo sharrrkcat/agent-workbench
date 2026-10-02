@@ -19,7 +19,7 @@ def sqlite_database_path(database_url: str | None = None) -> Path | None:
     return Path(value).resolve()
 
 
-def storage_stats(message_store: Any, database_url: str | None = None, *, persona_store=None, knowledge_store=None) -> dict[str, Any]:
+def storage_stats(message_store: Any, database_url: str | None = None, *, persona_store=None, knowledge_store=None, run_store=None) -> dict[str, Any]:
     warnings: list[str] = []
     db_path = sqlite_database_path(database_url)
     db_size = 0
@@ -32,7 +32,7 @@ def storage_stats(message_store: Any, database_url: str | None = None, *, person
             warnings.append(f"database size unavailable: {exc}")
 
     try:
-        scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store)
+        scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
         attachment_count = scan["attachment_count"]
         attachment_size = scan["attachment_total_size_bytes"]
         orphan_count = scan["orphan_count"]
@@ -65,10 +65,10 @@ def storage_stats(message_store: Any, database_url: str | None = None, *, person
     return payload
 
 
-def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None) -> dict[str, Any]:
+def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None) -> dict[str, Any]:
     root = attachments_root()
     files = _attachment_files(root)
-    referenced = referenced_attachment_filenames(message_store, persona_store=persona_store, knowledge_store=knowledge_store)
+    referenced = referenced_attachment_filenames(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
     orphans = []
     total_size = 0
     for path in files:
@@ -86,9 +86,9 @@ def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge
     }
 
 
-def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None) -> dict[str, Any]:
+def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None) -> dict[str, Any]:
     root = attachments_root().resolve()
-    scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store)
+    scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
     deleted_count = 0
     deleted_size = 0
     errors: list[dict[str, str]] = []
@@ -104,7 +104,7 @@ def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowle
                 continue
             size = path.stat().st_size
             removed = delete_attachment_if_unreferenced({"uri": "local://attachments/" + path.name}, message_store,
-                persona_store=persona_store, knowledge_store=knowledge_store)
+                persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
             if removed:
                 deleted_count += 1
                 deleted_size += size

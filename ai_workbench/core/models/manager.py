@@ -620,7 +620,7 @@ class ModelManager:
             return request.model_copy(update={"stream_options": StreamOptions(include_usage=True)})
         return request
 
-    async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None):
+    async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None):
         metrics = metrics or LLMCallMetrics()
         if metrics.started_at is None:
             metrics.start()
@@ -634,7 +634,7 @@ class ModelManager:
             async with self._lease(profile, metrics=metrics) as adapter:
                 try:
                     self.validate_chat(profile, request)
-                    result = await adapter.chat(profile, request)
+                    result = await adapter.chat(profile, request, capture=capture)
                     metrics.observe_result(result)
                     return result
                 finally:
@@ -642,7 +642,7 @@ class ModelManager:
         finally:
             metrics.finish()
 
-    async def chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None) -> AsyncIterator[ChatChunk]:
+    async def chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None) -> AsyncIterator[ChatChunk]:
         collect_usage = metrics is not None
         metrics = metrics or LLMCallMetrics()
         if metrics.started_at is None:
@@ -654,18 +654,18 @@ class ModelManager:
             if isinstance(profile.source, LocalSource) and metrics.load_ms is None:
                 metrics.load_ms = 0.0
             request = await self._prepare_chat(profile, self._usage_request(request, collect_usage))
-            async with aclosing(self._chat_stream(profile, request, metrics)) as stream:
+            async with aclosing(self._chat_stream(profile, request, metrics, capture)) as stream:
                 async for chunk in stream:
                     yield chunk
         finally:
             metrics.finish()
 
-    async def _chat_stream(self, profile, request, metrics):
+    async def _chat_stream(self, profile, request, metrics, capture=None):
         try:
             async with self._lease(profile, metrics=metrics) as adapter:
                 try:
                     self.validate_chat(profile, request)
-                    async with aclosing(adapter.chat_stream(profile, request)) as stream:
+                    async with aclosing(adapter.chat_stream(profile, request, capture=capture)) as stream:
                         async for chunk in stream:
                             metrics.observe(chunk)
                             yield chunk

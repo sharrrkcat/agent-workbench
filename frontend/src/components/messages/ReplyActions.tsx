@@ -8,6 +8,7 @@ import { useCogitaStore } from '../../store/useCogitaStore';
 import { terminal } from '../../store/cogita/mergeState';
 import { messageText } from './messageContent';
 import type { Reply } from './turns';
+import { ReplyContext } from './ReplyContext';
 
 export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: ReactNode; summary?: ReactNode }) {
   const ended = terminal(reply.run.status);
@@ -73,6 +74,7 @@ export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: 
           <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('retryReply')}</TooltipContent>
         </Tooltip>
       ) : null}
+      <ReplyContext reply={reply} />
       {usage}
       {ended ? <Tooltip>
         <TooltipTrigger

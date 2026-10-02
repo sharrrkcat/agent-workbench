@@ -597,7 +597,7 @@ def language_for_filename(name: str | None) -> str:
     }.get(suffix, "text")
 
 
-def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, knowledge_store: Any = None) -> bool:
+def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None) -> bool:
     if not isinstance(attachment, dict) or not isinstance(attachment.get("uri"), str):
         return False
     try:
@@ -606,7 +606,7 @@ def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store:
         return False
     try:
         referenced = referenced_attachment_filenames(message_store, session_id=session_id, persona_store=persona_store,
-                                                    knowledge_store=knowledge_store)
+                                                    knowledge_store=knowledge_store, run_store=run_store)
     except Exception:
         return False
     if path.name in referenced:
@@ -836,7 +836,7 @@ def _validate_attachment_size(size: int, attachment_type: str, settings: Any = N
 
 
 def referenced_attachment_filenames(message_store: Any, *, session_id: str | None = None,
-                                   persona_store: Any = None, knowledge_store: Any = None) -> set[str]:
+                                   persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None) -> set[str]:
     messages = message_store.list_all_messages() if hasattr(message_store, "list_all_messages") else message_store.list_messages(session_id)
     referenced: set[str] = set()
 
@@ -871,4 +871,6 @@ def referenced_attachment_filenames(message_store: Any, *, session_id: str | Non
             add(persona.avatar_attachment_id)
     if knowledge_store is not None:
         referenced.update(knowledge_store.referenced_attachment_ids())
+    if run_store is not None:
+        referenced.update(run_store.context_attachment_ids())
     return referenced

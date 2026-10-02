@@ -107,7 +107,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(reply.locator('time')).toHaveCSS('opacity', '1');
         expect(await actions.boundingBox()).toEqual(before);
         const names = await actions.locator('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')));
-        expect(names).toEqual(locale === 'en' ? ['Copy answer', 'Retry reply', 'Usage details', 'Delete reply'] : ['复制回复', '重试回复', '用量详情', '删除回复']);
+        expect(names).toEqual(locale === 'en' ? ['Copy answer', 'Retry reply', 'Context detail', 'Usage details', 'Delete reply'] : ['复制回复', '重试回复', '上下文详情', '用量详情', '删除回复']);
         await page.mouse.move(0, 0);
         if (width !== 390) {
           await expect(usage).toHaveCSS('transition-duration', '0.18s');
@@ -157,9 +157,10 @@ for (const locale of ['en', 'zh-CN']) {
         await input.press('Enter');
         const partial = page.locator('article[data-run-id]').last();
         await expect(partial.locator('.reply-answer')).toContainText('Incomplete streamed answer.');
-        await partial.getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click();
+        await page.locator('.composer').getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click();
         await expect(partial.locator('.reply-metrics-controls')).toContainText(locale === 'en' ? 'Incomplete statistics' : '统计不完整');
         await expect(partial.locator('.reply-metrics-summary')).toContainText('—');
+        await expect(partial.getByRole('button', { name: locale === 'en' ? 'Context detail' : '上下文详情', exact: true })).toBeVisible();
       });
     });
   }

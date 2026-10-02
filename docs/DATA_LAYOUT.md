@@ -25,7 +25,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0026_history_limits`; there are 26 current business tables.
+Alembic head is `0027_context_snapshots`; there are 26 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -127,6 +127,12 @@ The global test fixture compares repository model file presence sets only, witho
 sizes or hashes. Runtime artifact and locked-dependency verification follows the Models contract.
 `uv run python scripts/audit_workspace.py --check` verifies current schema,
 integrity, foreign keys and absence of the retired root snapshot/test model stubs.
+
+Revision `0027_context_snapshots` adds nullable `runsteprecord.context_snapshot_json`, without
+backfilling or changing other rows or files. Each dispatched internal model call retains its own input;
+ordinary responses exclude the private column. Included attachment-store filenames join existing reference
+checks, so deleting the original message alone may retain its files. Pruning the last referencing snapshot
+allows post-commit cleanup. See [Context detail](contracts/runs-streaming.md#context-detail).
 
 ## Runtime files
 

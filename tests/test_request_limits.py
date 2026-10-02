@@ -136,7 +136,7 @@ def test_saved_limit_applies_before_admission_and_changes_without_reloading(tmp_
     monkeypatch.setattr(images, "_normalized_image", lambda _url, **_: "data:image/png;base64," + "x" * MIB)
     admitted = []
     infer = AsyncMock(return_value="accepted")
-    async def stream(*_):
+    async def stream(*_, capture=None):
         yield ChatChunk(delta={"content": "accepted"})
         yield ChatChunk(finish_reason="stop")
     adapter = SimpleNamespace(chat=AsyncMock(return_value=ChatResult(

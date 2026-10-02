@@ -1,6 +1,6 @@
 # Models contract
 
-ChatRunner, Utility LLM, Knowledge and `/v1` share `core/models/ModelManager` without HTTP loopback or API-process inference imports.
+ChatRunner, Utility LLM, Knowledge and `/v1` share `core/models/ModelManager` without HTTP loopback or API-process inference imports. Internal chat alone supplies a per-call input callback to the shared OpenAI transport: it builds the body once, captures it after preparation/default merging/reasoning translation, then sends it. [Context detail](runs-streaming.md#context-detail) owns persistence; no headers, credentials or engine-inferred defaults are captured.
 
 ## Profiles and sources
 

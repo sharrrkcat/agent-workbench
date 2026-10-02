@@ -9,6 +9,8 @@ from ai_workbench.core.conversation_history import HistoryPruned
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.messages import _result_payload
 from ai_workbench.core.schema.run import RunStatus
+from ai_workbench.core.schema.context_snapshot import ContextDetail
+from ai_workbench.core.context_snapshot import context_detail
 
 
 router = APIRouter(tags=["runs"])
@@ -56,6 +58,20 @@ def list_run_steps(run_id: str, state: RuntimeState = Depends(get_state)) -> lis
     except KeyError:
         raise_error(404, "RUN_NOT_FOUND", f"Run not found: {run_id}")
     return [step.model_dump(mode="json") for step in state.runs.list_steps(run_id)]
+
+
+@router.get("/api/runs/{run_id}/steps/{step_id}/context", response_model=ContextDetail, response_model_exclude_unset=True,
+    responses=error_responses(404))
+def get_run_context(run_id: str, step_id: str, state: RuntimeState = Depends(get_state)) -> ContextDetail:
+    try:
+        state.runs.get_run(run_id)
+        step = state.runs.get_step(step_id)
+        if step.run_id != run_id or step.kind != "model":
+            raise KeyError(step_id)
+        snapshot = state.runs.get_context_snapshot(step_id)
+    except KeyError:
+        raise_error(404, "CONTEXT_NOT_FOUND", "No recorded context exists for this model call.")
+    return context_detail(snapshot)
 
 
 @router.get("/api/runs/{run_id}/events", response_model=list[RunEventResponse], response_model_exclude_unset=True,

@@ -171,6 +171,36 @@ class SqlHistoryStore:
 class SqlRunStore:
     def __init__(self, engine) -> None: self.engine = engine
 
+    def save_context_snapshot(self, step_id, snapshot) -> None:
+        with DbSession(self.engine) as db:
+            row = db.get(RunStepRecord, step_id)
+            if row is None:
+                raise KeyError(step_id)
+            if row.kind != "model" or row.context_snapshot_json is not None:
+                raise ValueError("Context requires a model step without an existing snapshot")
+            row.context_snapshot_json = snapshot.model_dump_json(exclude_unset=True, by_alias=True)
+            row.metadata_json = _dump({**json.loads(row.metadata_json), "context": snapshot.summary().model_dump()})
+            row.updated_at = utc_now()
+            db.add(row)
+            db.commit()
+
+    def get_context_snapshot(self, step_id):
+        from ai_workbench.core.schema.context_snapshot import ContextSnapshot
+        with DbSession(self.engine) as db:
+            row = db.get(RunStepRecord, step_id)
+            if row is None or row.context_snapshot_json is None:
+                raise KeyError(step_id)
+            return ContextSnapshot.model_validate_json(row.context_snapshot_json)
+
+    def context_attachment_ids(self, run_ids: set[str] | None = None) -> set[str]:
+        from sqlalchemy import func
+        statement = select(func.json_extract(RunStepRecord.context_snapshot_json, "$.attachment_ids")).where(
+            RunStepRecord.context_snapshot_json.is_not(None))
+        if run_ids is not None:
+            statement = statement.where(RunStepRecord.run_id.in_(run_ids))
+        with DbSession(self.engine) as db:
+            return {attachment for value in db.exec(statement).all() for attachment in json.loads(value)}
+
     def create_run(self, kind: str, persona_id: str, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
         row = RunRecord(run_id=str(uuid4()), kind=kind, persona_id=persona_id, config_snapshot_json=_dump(config_snapshot or {}), harness_state_json=_dump(harness_state or {}), session_id=session_id, status=RunStatus.PENDING.value, metadata_json=_dump(metadata or {}))
         with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)

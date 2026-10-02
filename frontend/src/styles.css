@@ -600,6 +600,57 @@
   .reply-metrics-values > div { min-width: 0; justify-content: space-between; }
   .reply-metrics-values dd { text-align: end; overflow-wrap: anywhere; }
 
+  .context-dialog { min-width: 0; height: min(48rem, calc(100dvh - 2rem)); overflow: hidden; }
+  .context-call-header, .context-stats, .context-source-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 1rem; }
+  .context-call-header [data-slot=field] { width: auto; flex-wrap: wrap; }
+  .context-secondary, .context-stats, .context-chars, .context-footer { color: var(--muted-foreground); }
+  .context-stats, .context-chars { font-variant-numeric: tabular-nums; }
+  .context-call-header, .context-footer { flex-shrink: 0; }
+  .context-main, .context-tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .context-tabs > [data-slot=tabs-list] { flex-shrink: 0; }
+  .context-structure-panel, .context-request-panel { min-height: 0; overflow: hidden; }
+  .context-structure { display: grid; grid-template-columns: 15rem minmax(0, 1fr); height: 100%; min-height: 0; padding-top: 0.5rem; }
+  .context-sources, .context-source-detail, .context-request-panel { overflow-y: auto; overscroll-behavior: contain; }
+  .context-sources { min-height: 0; padding-right: 0.75rem; border-right: 1px solid var(--border); }
+  .context-sources ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.125rem; }
+  .context-sources ol ol { padding-left: 0.75rem; }
+  .context-source-row { display: flex; align-items: start; gap: 0.125rem; }
+  .context-source-button { flex: 1; min-width: 0; height: auto; min-height: 2rem; justify-content: space-between; white-space: normal; text-align: start; }
+  .context-source-button > span:first-child { overflow-wrap: anywhere; }
+  .context-count { display: grid; flex-shrink: 0; text-align: end; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .context-count > span { grid-area: 1 / 1; }
+  .context-tokens { visibility: hidden; }
+  .context-source-row:hover .context-chars, .context-source-row:focus-within .context-chars { visibility: hidden; }
+  .context-source-row:hover .context-tokens, .context-source-row:focus-within .context-tokens { visibility: visible; }
+  .context-source-button[data-empty] { color: var(--muted-foreground); }
+  .context-source-detail { min-width: 0; padding-left: 1rem; }
+  .context-reference { overflow-wrap: anywhere; }
+  .context-source-heading { font-weight: 500; margin-bottom: 0.5rem; }
+  .context-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; border-radius: var(--radius); background: var(--muted); padding: 0.75rem; margin-top: 0.75rem; }
+  .context-exclusions { margin-top: 0.5rem; flex-shrink: 0; }
+  .context-exclusions-content { max-height: min(10rem, 25dvh); overflow-y: auto; overscroll-behavior: contain; }
+  .context-info { max-width: calc(100vw - 2rem); }
+  .context-info dl { display: flex; flex-direction: column; gap: 0.5rem; }
+  .context-info dl > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.75rem; }
+  .context-info dd { margin: 0; overflow-wrap: anywhere; text-align: end; }
+  .context-exclusions ul { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.375rem; overflow-wrap: anywhere; }
+  .context-disclosure { transition: transform 0.1s; }
+  [data-slot=collapsible-trigger][data-panel-open] > .context-disclosure { transform: rotate(90deg); }
+  .context-feedback { display: flex; align-items: center; gap: 0.75rem; min-height: 8rem; }
+  .context-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
+  .context-footer > span { display: flex; align-items: center; gap: 0.375rem; }
+  .context-footer svg { width: 0.875rem; height: 0.875rem; }
+  @media (max-width: 767px) {
+    .context-structure { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 30%) minmax(0, 1fr); }
+    .context-sources { border-right: 0; border-bottom: 1px solid var(--border); padding-right: 0; padding-bottom: 0.75rem; }
+    .context-sources > ol { flex-direction: row; flex-wrap: wrap; }
+    .context-source-detail { padding-left: 0; padding-top: 1rem; }
+  }
+  @media (hover: none), (pointer: coarse) {
+    .context-chars { visibility: hidden; }
+    .context-tokens { visibility: visible; }
+  }
+
   .composer-wrap {
     display: flex;
     min-width: 0;

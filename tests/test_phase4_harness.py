@@ -175,6 +175,8 @@ def test_restart_preserves_only_pending_approval(tmp_path):
         run_id = response["run"]["run_id"]
         first_statistics = next(step["metadata"]["llm"] for step in response["run"]["steps"] if step["kind"] == "model")
         assert first_statistics["usage"]["total_tokens"] == 15
+        first_step = next(step for step in response["run"]["steps"] if step["kind"] == "model")
+        first_context = ok(client.get(f"/api/runs/{run_id}/steps/{first_step['step_id']}/context"))
         state = app.state.runtime_state
         orphan_session = state.sessions.create_session()
         orphan = state.runs.create_run(kind="tool", persona_id=COGITA_PERSONA_ID, session_id=orphan_session.session_id)
@@ -183,6 +185,7 @@ def test_restart_preserves_only_pending_approval(tmp_path):
     with TestClient(restarted) as client:
         saved_run = ok(client.get(f"/api/runs/{run_id}"))
         assert saved_run["status"] == "WAITING_FOR_USER"
+        assert ok(client.get(f"/api/runs/{run_id}/steps/{first_step['step_id']}/context")) == first_context
         assert next(step["metadata"]["llm"] for step in saved_run["steps"] if step["kind"] == "model") == first_statistics
         assert ok(client.get(f"/api/runs/{orphan.run_id}"))["status"] == "INTERRUPTED"
         response = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
@@ -192,6 +195,11 @@ def test_restart_preserves_only_pending_approval(tmp_path):
         assert len(calls) == 2 and calls[0] == first_statistics
         assert sum(call["usage"]["total_tokens"] for call in calls) == 38
         assert [call["reasoning_effort"] for call in upstream.calls] == ["none", "none"]
+        snapshots = [ok(client.get(f"/api/runs/{run_id}/steps/{step['step_id']}/context"))
+                     for step in response["run"]["steps"] if step["kind"] == "model"]
+        assert snapshots[0] == first_context
+        assert snapshots[1]["request"] == upstream.calls[1]
+        assert any(source["kind"] == "agent_persona" and source["text"] == "PRIVATE_TOOL_PROMPT" for source in snapshots[1]["sources"])
 
 
 def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_client):

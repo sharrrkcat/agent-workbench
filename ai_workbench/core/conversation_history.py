@@ -109,7 +109,7 @@ class ConversationHistory:
         for attachment in original:
             if attachment["id"] not in retained_ids:
                 delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas,
-                                                 knowledge_store=self.chat_service.knowledge)
+                                                 knowledge_store=self.chat_service.knowledge, run_store=self.runs)
         self.events.emit("message_updated", session_id=message.session_id, message_id=message_id,
                          payload={"message": updated.model_dump(mode="json")})
         return updated, change
@@ -127,10 +127,14 @@ class ConversationHistory:
                    if item.message_id in message_ids or item.run_id in run_ids]
         change = HistoryPruned(deleted_message_ids=[item.message_id for item in deleted],
                                deleted_run_ids=[run.run_id for run in self.runs.list_runs(session_id) if run.run_id in run_ids])
+        snapshot_attachments = self.runs.context_attachment_ids(run_ids)
         self.store.prune(session_id, change, updated)
         self.events.prune_history(session_id, change.model_dump())
         for message in deleted:
             attachments = message.metadata.get("attachments")
             for attachment in attachments if isinstance(attachments, list) else []:
-                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, knowledge_store=self.chat_service.knowledge)
+                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, knowledge_store=self.chat_service.knowledge, run_store=self.runs)
+        for attachment_id in snapshot_attachments:
+            delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, self.messages,
+                persona_store=self.personas, knowledge_store=self.chat_service.knowledge, run_store=self.runs)
         return change
