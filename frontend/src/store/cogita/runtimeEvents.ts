@@ -6,6 +6,8 @@ import { applyMessageEvent } from '../messageStream';
 import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
 import type { Persona, Session } from '../../types/chat';
 import { usePersonasStore } from '../usePersonasStore';
+import { mergeQueueRuntime } from './messageQueue';
+import type { Message } from '../../types/messages';
 
 export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: RuntimeEvent): void {
   if (event.type === 'persona_updated' && event.payload?.persona) {
@@ -28,8 +30,11 @@ export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: Runtim
   if (event.type === 'model_status' && event.payload?.model_profile_id) {
     return;
   }
-  if (event.session_id !== get().currentSession?.session_id) return;
   const payload = event.payload || {};
+  // Observe acceptance and terminal status even outside the visible history window/session.
+  set((state) => ({ messageQueues: mergeQueueRuntime(state.messageQueues,
+    payload.run ? [payload.run as Run] : [], payload.message ? [payload.message as Message] : []) }));
+  if (event.session_id !== get().currentSession?.session_id) return;
   if (event.type === 'history_pruned') {
     const messageIds = payload.deleted_message_ids;
     const runIds = payload.deleted_run_ids;

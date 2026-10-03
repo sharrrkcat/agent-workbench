@@ -17,7 +17,8 @@ function conversation(state: CogitaState, session: Session | null, projectId: st
     currentSession: session, currentProjectId: projectId, chatDraft: null, pendingKnowledge: null,
     sessionLoad: null,
     lastOrdinarySessionId: session?.kind === 'ordinary' ? session.session_id : state.lastOrdinarySessionId,
-    messages: [], runs: [], stepsByRunId: {}, historyWindow: null, historyLoading: false, historyFollowing: true, historyAnchor: null, error: null, composerDraftText: '',
+    messages: [], runs: [], stepsByRunId: {}, historyWindow: null, historyLoading: false, historyFollowing: true, historyAnchor: null, error: null,
+    composerDraftText: session ? state.messageQueues[session.session_id]?.editing?.content ?? '' : '', queueTarget: null,
     sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, awaitingAcceptance: false, pendingClientMessageId: null, mutatingHistory: false,
   };
 }
@@ -59,12 +60,14 @@ export const createSessionActions: CogitaActions<
       if (get().sessionEpoch !== epoch) return;
       set((state) => ({
         ...historyPageState({ ...state, currentSession: session }, page, 'latest'), currentSession: session,
-        sessionLoad: { sessionId: id, projectId: scope, status: 'ready', error: null },
+        composerDraftText: state.messageQueues[id]?.editing?.content ?? state.composerDraftText,
         lastOrdinarySessionId: session.kind === 'ordinary' ? id : state.lastOrdinarySessionId,
         sessions: state.sessions.some((item) => item.session_id === id)
           ? state.sessions.map((item) => item.session_id === id ? session : item) : [...state.sessions, session],
         messageVersion: state.messageVersion + 1, runVersion: state.runVersion + 1, sessionVersion: state.sessionVersion + 1,
       }));
+      await get().reconcileMessageQueue(id);
+      if (get().sessionEpoch === epoch) set({ sessionLoad: { sessionId: id, projectId: scope, status: 'ready', error: null } });
     } catch (error) {
       if (get().sessionEpoch === epoch)
         set({ sessionLoad: { sessionId: id, projectId: scope, status: 'error', error: errorText(error) } });
@@ -166,6 +169,7 @@ export const createSessionActions: CogitaActions<
       const epoch = get().sessionEpoch;
       set((state) => ({
         sessions: state.sessions.filter((item) => item.session_id !== id),
+        messageQueues: Object.fromEntries(Object.entries(state.messageQueues).filter(([sessionId]) => sessionId !== id)),
         sessionVersion: state.sessionVersion + 1,
       }));
       if ((get().sessionLoad?.sessionId ?? get().currentSession?.session_id) === id && get().sessionEpoch === epoch) {
@@ -187,8 +191,9 @@ export const createSessionActions: CogitaActions<
       get().saveDraft(patch);
       return true;
     }
+    if (get().savingSessionIds.includes(session.session_id)) return false;
     const epoch = get().sessionEpoch;
-    set({ error: null });
+    set((state) => ({ error: null, savingSessionIds: [...state.savingSessionIds, session.session_id] }));
     try {
       const updated = await chatApi.updateSession(session.session_id, patch);
       if (get().currentSession?.session_id !== updated.session_id || get().sessionEpoch !== epoch) return false;
@@ -201,6 +206,8 @@ export const createSessionActions: CogitaActions<
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
       return false;
+    } finally {
+      set((state) => ({ savingSessionIds: state.savingSessionIds.filter((id) => id !== session.session_id) }));
     }
   },
 
@@ -227,6 +234,7 @@ export const createSessionActions: CogitaActions<
 
   forgetProject: (projectId) => set((state) => ({
     sessions: state.sessions.filter((session) => session.project_id !== projectId),
+    messageQueues: Object.fromEntries(Object.entries(state.messageQueues).filter(([, queue]) => queue.projectId !== projectId)),
     sessionVersion: state.sessionVersion + 1,
     ...(state.currentProjectId === projectId ? conversation(state, null, null) : {}),
   })),

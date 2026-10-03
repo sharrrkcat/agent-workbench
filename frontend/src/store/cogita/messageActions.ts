@@ -1,5 +1,6 @@
 import type { CogitaActions } from './state';
-import { errorText, pruneHistoryState, runtimeResponseState } from './mergeState';
+import { errorText, pruneHistoryState, runtimeResponseState, terminal } from './mergeState';
+import { emptyQueue } from './messageQueue';
 
 import { chatApi } from '../../api/chat';
 import { projectsApi } from '../../api/projects';
@@ -8,25 +9,54 @@ import { knowledgeApi } from '../../api/knowledge';
 export const createMessageActions: CogitaActions<
   'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText'
 > = (set, get, store) => ({
-  sendMessage: async (content, attachments = []) => {
+  sendMessage: async (content, attachments = [], queueItemId) => {
     if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return false;
     let session = get().currentSession;
     const draft = get().chatDraft;
     const epoch = get().sessionEpoch;
     if ((!session && !draft) || get().sending || get().mutatingHistory || (!content.trim() && attachments.length === 0)) return false;
+    const existingQueue = session ? get().messageQueues[session.session_id] : undefined;
+    if (session && get().savingSessionIds.includes(session.session_id) || session?.waiting_run_id ||
+        get().runs.some((run) => !terminal(run.status)) || existingQueue?.submission ||
+        (!queueItemId && existingQueue?.items.length)) return false;
     const knowledgeIds = draft?.knowledge_base_ids ?? get().pendingKnowledge?.ids;
     const clientMessageId = crypto.randomUUID();
     let accepted = false;
     let submitted = false;
+    const reserve = () => {
+      if (!session) return;
+      const sessionId = session.session_id;
+      set((state) => {
+        const queue = state.messageQueues[sessionId] ?? emptyQueue(session!.project_id, state.runs[state.runs.length - 1]);
+        return { messageQueues: { ...state.messageQueues, [sessionId]: { ...queue,
+          ...(!queueItemId ? { paused: null } : {}),
+          submission: { clientId: clientMessageId, itemId: queueItemId, accepted: false, pending: true,
+            boundary: state.sessionEpoch === epoch ? state.historyWindow?.items.slice(-1)[0]?.id : undefined },
+        } } };
+      });
+    };
     const accept = () => {
       accepted = true;
-      set({ awaitingAcceptance: false });
+      const sessionId = session?.session_id;
+      set((state) => {
+        const queue = sessionId ? state.messageQueues[sessionId] : undefined;
+        return { ...(state.sessionEpoch === epoch ? { awaitingAcceptance: false } : {}),
+          ...(sessionId && queue?.submission?.clientId === clientMessageId ? {
+            messageQueues: { ...state.messageQueues, [sessionId]: { ...queue,
+              submission: { ...queue.submission, accepted: true }, items: queue.items.filter((item) => item.id !== queueItemId),
+            } },
+          } : {}) };
+      });
     };
     const unsubscribe = store.subscribe((state) => {
-      if (!accepted && state.sessionEpoch === epoch && state.messages.some((message) =>
-        message.role === 'user' && message.metadata?.client_message_id === clientMessageId)) accept();
+      const submission = session ? state.messageQueues[session.session_id]?.submission : null;
+      if (!accepted && (submission?.clientId === clientMessageId && submission.accepted ||
+        state.sessionEpoch === epoch && state.messages.some((message) =>
+          message.role === 'user' && message.metadata?.client_message_id === clientMessageId))) accept();
     });
-    set({ sending: true, awaitingAcceptance: true, pendingClientMessageId: clientMessageId, composerDraftText: '', error: null });
+    set({ sending: true, awaitingAcceptance: !queueItemId, pendingClientMessageId: clientMessageId,
+      ...(!queueItemId ? { composerDraftText: '' } : {}), error: null });
+    reserve();
     try {
       if (session && get().historyWindow && !get().historyFollowing) {
         await get().loadHistory('latest');
@@ -49,6 +79,9 @@ export const createMessageActions: CogitaActions<
         }));
       }
       if (!session) return false;
+      const sessionId = session.session_id;
+      if (queueItemId && (get().sessionEpoch !== epoch || get().queueTarget !== sessionId)) return false;
+      if (!get().messageQueues[sessionId]?.submission) reserve();
       if (knowledgeIds?.length) {
         await knowledgeApi.updateSessionKnowledgeBases(session.session_id, knowledgeIds);
         if (get().sessionEpoch === epoch) set({ pendingKnowledge: null });
@@ -60,21 +93,44 @@ export const createMessageActions: CogitaActions<
         attachments,
         clientMessageId,
       );
-      if (get().sessionEpoch !== epoch) return false;
-      set((state) => runtimeResponseState(state, response));
+      if (response.run) get().observeQueueRun(response.run);
       if (response.run) accept();
+      if (get().sessionEpoch !== epoch) {
+        if (get().currentSession?.session_id === sessionId) await get().refreshCurrent();
+        return accepted;
+      }
+      set((state) => runtimeResponseState(state, response));
       if (!response.success && response.error && !response.run && get().currentSession?.session_id === session.session_id)
         set({ error: `${response.error_code || 'CHAT_FAILED'}: ${response.error}` });
       return accepted;
     } catch (error) {
       // A dropped POST response can follow persistence. Reconcile before restoring the input.
-      if (!accepted && submitted && get().sessionEpoch === epoch) await get().refreshCurrent();
+      if (submitted && session) {
+        const sessionId = session.session_id;
+        set((state) => {
+          const queue = state.messageQueues[sessionId];
+          return queue?.submission?.clientId === clientMessageId ? { messageQueues: { ...state.messageQueues, [sessionId]: {
+            ...queue, submission: { ...queue.submission, pending: false },
+          } } } : {};
+        });
+        await get().reconcileMessageQueue(sessionId);
+        if (get().sessionEpoch === epoch) await get().refreshCurrent();
+      }
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
       return accepted;
     } finally {
       unsubscribe();
+      if (session) set((state) => {
+        const sessionId = session!.session_id, queue = state.messageQueues[sessionId];
+        if (queue?.submission?.clientId !== clientMessageId) return {};
+        const unresolved = !accepted && !queue.submission.pending;
+        return { messageQueues: { ...state.messageQueues, [sessionId]: { ...queue,
+          submission: unresolved ? queue.submission : null,
+          paused: unresolved ? queue.paused ?? 'unconfirmed' : !accepted && queue.items.length ? 'submission' : queue.paused,
+        } } };
+      });
       if (get().sessionEpoch === epoch) set({ sending: false, awaitingAcceptance: false, pendingClientMessageId: null,
-        ...(!accepted ? { composerDraftText: content } : {}) });
+        ...(!accepted && !queueItemId ? { composerDraftText: content } : {}) });
     }
   },
 
@@ -112,6 +168,11 @@ export const createMessageActions: CogitaActions<
     }
   },
 
-  setComposerDraftText: (text) => set({ composerDraftText: text }),
+  setComposerDraftText: (text) => set((state) => {
+    const sessionId = state.currentSession?.session_id, queue = sessionId ? state.messageQueues[sessionId] : undefined;
+    return { composerDraftText: text, ...(sessionId && queue?.editing ? {
+      messageQueues: { ...state.messageQueues, [sessionId]: { ...queue, editing: { ...queue.editing, content: text } } },
+    } : {}) };
+  }),
 
 });

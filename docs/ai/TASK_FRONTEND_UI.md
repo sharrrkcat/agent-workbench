@@ -58,6 +58,8 @@ leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, 
 chat-drafts.spec.ts covers unsaved settings, shared creation entries, attachment promotion/retry,
 empty startup and last-session deletion; test-chat-drafts.mjs covers first-send state and races.
 chat-attachments.spec.ts covers immediate submission, acceptance/restoration, mixed cards, sizes, external message attachments and edit removal/cancellation/failure in both locales and viewports.
+message-queue.spec.ts covers queue/edit/attachment controls, scrolling, navigation, approvals and refresh in both locales/viewports;
+test-message-queue.mjs covers FIFO, submission reconciliation, terminal pauses and history/settings races.
 personas.spec.ts covers shared Persona CRUD, protected identities, binding restrictions and live Cogita identity.
 agent-identity.spec.ts covers Agent history, avatars, deletion, reconnects, streaming and approvals in ordinary/Workspace chats;
 test-persona-identity.mjs covers list/event races and deleted identities. projects.spec.ts covers Project creation, type restrictions,

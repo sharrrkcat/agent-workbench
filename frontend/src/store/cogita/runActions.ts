@@ -40,8 +40,13 @@ export const createRunActions: CogitaActions<'deleteRun' | 'retryRun' | 'cancelR
   cancelRun: async (runId) => {
     const sessionId = get().currentSession?.session_id;
     const epoch = get().sessionEpoch;
+    if (sessionId) set((state) => {
+      const queue = state.messageQueues[sessionId];
+      return queue ? { messageQueues: { ...state.messageQueues, [sessionId]: { ...queue, paused: 'stopped' } } } : {};
+    });
     try {
       const response = await runsApi.cancelRun(runId);
+      get().observeQueueRun(response.run);
       if (get().currentSession?.session_id !== response.run.session_id || get().sessionEpoch !== epoch || get().deletedRunIds.includes(runId)) return;
       set((state) => ({
         runs: mergeRuns(state.runs, [response.run]),

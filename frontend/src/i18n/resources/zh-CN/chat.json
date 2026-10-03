@@ -1,6 +1,25 @@
 {
   "placeholder": "发送消息…",
   "shortPlaceholder": "消息",
+  "queue": {
+    "label": "消息队列",
+    "title": "{{count}} 条排队消息",
+    "add": "加入队列",
+    "save": "保存排队消息",
+    "resume": "继续排队",
+    "editing": "编辑中",
+    "submitting": "正在确认接收",
+    "edit": "编辑第 {{number}} 条排队消息",
+    "remove": "删除第 {{number}} 条排队消息",
+    "attachments": "{{count}} 个附件",
+    "waitingEdit": "等待保存或删除第一条排队消息。",
+    "paused": {
+      "stopped": "回复已停止，队列已暂停。",
+      "failed": "回复失败或中断，队列已暂停。",
+      "submission": "消息未被接收，点击继续排队以重试。",
+      "unconfirmed": "暂时无法确认消息是否接收，点击继续排队以先核对状态。"
+    }
+  },
   "waiting": "等待你的回复",
   "prefixes": "前缀会作为普通文本发送",
   "messages": "消息",

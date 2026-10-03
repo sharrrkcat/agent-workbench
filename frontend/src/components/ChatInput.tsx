@@ -10,7 +10,7 @@ import { Marker, MarkerContent } from '@/components/ui/marker';
 import { cn } from '@/lib/utils';
 import { Paperclip, Plus, ArrowUp, Square } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
@@ -21,12 +21,19 @@ import { useChatConfiguration } from '../hooks/useChatConfiguration';
 import { ChatModelMenu } from './ChatModelMenu';
 import { ContextWindowMeter } from './ContextWindowMeter';
 import { configuredContextWindow } from './contextUsage';
+import { MessageQueue } from './MessageQueue';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
   const draft = useCogitaStore((state) => state.composerDraftText);
   const setDraft = useCogitaStore((state) => state.setComposerDraftText);
   const send = useCogitaStore((state) => state.sendMessage);
+  const enqueue = useCogitaStore((state) => state.enqueueMessage);
+  const beginEdit = useCogitaStore((state) => state.beginQueuedEdit);
+  const saveEdit = useCogitaStore((state) => state.saveQueuedEdit);
+  const deleteQueued = useCogitaStore((state) => state.deleteQueuedMessage);
+  const dispatchQueue = useCogitaStore((state) => state.dispatchQueuedMessage);
+  const queue = useCogitaStore((state) => state.currentSession ? state.messageQueues[state.currentSession.session_id] : undefined);
   const cancelRun = useCogitaStore((state) => state.cancelRun);
   const sending = useCogitaStore((state) => state.sending);
   const awaitingAcceptance = useCogitaStore((state) => state.awaitingAcceptance);
@@ -40,6 +47,9 @@ export function ChatInput() {
   const sessionLoad = useCogitaStore((state) => state.sessionLoad);
   const ready = !!(session || chatDraft) && (!sessionLoad || sessionLoad.status === 'ready');
   const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
+  const historyLoading = useCogitaStore((state) => state.historyLoading);
+  const configurationSaving = useCogitaStore((state) => !!state.currentSession && state.savingSessionIds.includes(state.currentSession.session_id));
+  const resolvingApprovals = useCogitaStore((state) => state.resolvingApprovals);
   const profiles = useModelsStore((state) => state.profiles);
   const normalizedRequestLimit = useModelsStore((state) => state.settings?.max_normalized_request_mb);
   const activeRun = useCogitaStore((state) =>
@@ -47,10 +57,18 @@ export function ChatInput() {
       .reverse()
       .find((r) => ['PENDING', 'RUNNING', 'CANCELLING', 'WAITING_FOR_USER'].includes(r.status)),
   );
-  const { items, attachments, uploading, upload, remove, take, restore, discard } = useComposerAttachments(sessionEpoch);
+  const { items, attachments, uploading, uploadFailed, upload, remove, take, restore, discard } = useComposerAttachments(sessionEpoch);
   const submittedItems = useRef<ReturnType<typeof take> | null>(null);
   const [dragging, setDragging] = useState(false);
   const [configurationBusy, setConfigurationBusy] = useState(false);
+  const [queueReady, setQueueReady] = useState<string | null>(null);
+  const queueKey = session ? `${sessionEpoch}:${session.session_id}` : null;
+  useEffect(() => {
+    let live = true;
+    if (session && ready) void useCogitaStore.getState().reconcileMessageQueue(session.session_id)
+      .then(() => { if (live) setQueueReady(queueKey); });
+    return () => { live = false; };
+  }, [queueKey, ready]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   useLayoutEffect(() => {
     submittedItems.current = null;
@@ -68,22 +86,44 @@ export function ChatInput() {
   const windowIssue = profile?.source?.type === 'provider' && configuredContextWindow(profile) === null
     ? t('chat:contextWindowRequired') : '';
   const hasImages = attachments.some((item) => item.type === 'image');
+  const queuedImages = queue?.items[0]?.attachments.some((item) => item.type === 'image');
   const imageIssue =
     hasImages && configuration?.context_policy?.include_attachments !== 'explicit'
       ? t('imagesContextDisabled')
       : '';
+  const queueImageIssue = queuedImages && configuration?.context_policy?.include_attachments !== 'explicit';
+  useLayoutEffect(() => {
+    const target = ready && queueReady === queueKey && !configurationBusy && !windowIssue && !queueImageIssue ? session?.session_id ?? null : null;
+    useCogitaStore.setState({ queueTarget: target });
+    return () => { useCogitaStore.setState({ queueTarget: null }); };
+  }, [session?.session_id, ready, queueReady, queueKey, configurationBusy, windowIssue, queueImageIssue]);
+  useEffect(() => {
+    void dispatchQueue();
+  }, [dispatchQueue, queue, sending, mutatingHistory, historyLoading, session?.waiting_run_id,
+    activeRun?.status, session?.session_id, ready, queueReady, configurationBusy, configurationSaving,
+    resolvingApprovals, windowIssue, queueImageIssue]);
+  const queueMode = !!session && (!!activeRun || sending || !!queue?.items.length || !!queue?.paused || !!queue?.submission);
+  const acceptanceLocked = awaitingAcceptance || (!!queue?.submission && !queue.submission.itemId && !queue.submission.accepted);
+  const submitLabel = queue?.editing ? t('chat:queue.save') : queueMode ? t('chat:queue.add') : t('send');
   const cannotSend =
     !ready ||
-    sending ||
+    acceptanceLocked ||
     configurationBusy ||
+    configurationSaving ||
     mutatingHistory ||
     uploading ||
+    uploadFailed ||
     !!imageIssue ||
     !!windowIssue ||
     (!draft.trim() && attachments.length === 0);
 
   async function submit() {
-    if (cannotSend || activeRun) return;
+    if (cannotSend) return;
+    if (queue?.editing) { if (saveEdit()) textareaRef.current?.focus(); return; }
+    if (queueMode) {
+      if (enqueue(draft, attachments)) discard(take());
+      return;
+    }
     const batch = take();
     submittedItems.current = batch;
     const result = await send(draft, attachments);
@@ -95,7 +135,7 @@ export function ChatInput() {
   }
 
   function addFiles(files: File[]) {
-    if (files.length && ready && !sending && !mutatingHistory) void upload(files);
+    if (files.length && ready && !acceptanceLocked && !mutatingHistory) void upload(files);
   }
 
   return (
@@ -116,10 +156,13 @@ export function ChatInput() {
         addFiles(Array.from(event.dataTransfer.files));
       }}
     >
+      <MessageQueue generating={!!activeRun || sending}
+        onEdit={(id) => { if (beginEdit(id)) { discard(take()); textareaRef.current?.focus(); } }}
+        onDelete={(id) => { const editing = queue?.editing?.id === id; deleteQueued(id); if (editing) textareaRef.current?.focus(); }} />
       <ChatAttachments key={sessionEpoch} items={items} composer onRemove={remove} />
-      {imageIssue || windowIssue ? (
+      {imageIssue || windowIssue || queueImageIssue ? (
         <Alert className="composer-warning" variant="destructive">
-          <AlertDescription>{imageIssue || windowIssue}</AlertDescription>
+          <AlertDescription>{imageIssue || windowIssue || t('imagesContextDisabled')}</AlertDescription>
         </Alert>
       ) : null}
       {session?.waiting_run_id ? (
@@ -159,7 +202,7 @@ export function ChatInput() {
             paddingBlock: expanded ? '10px' : 'calc((var(--composer-compact-height) - 1lh) / 2)',
             overflowY: expanded ? 'auto' : 'hidden',
           }}
-          disabled={(!session && !chatDraft) || awaitingAcceptance}
+          disabled={(!session && !chatDraft) || acceptanceLocked}
           value={draft}
           rows={1}
           placeholder={placeholder}
@@ -185,7 +228,7 @@ export function ChatInput() {
               render={
                 <InputGroupButton
                   aria-label={t('attach')}
-                  disabled={!ready || sending || mutatingHistory}
+                  disabled={!ready || acceptanceLocked || mutatingHistory}
                   variant="outline"
                   size="icon-sm"
                   className="rounded-full"
@@ -226,9 +269,10 @@ export function ChatInput() {
                 </TooltipTrigger>
                 <TooltipContent>{t('cancel')}</TooltipContent>
               </Tooltip>
-            ) : (
+            ) : null}
               <InputGroupButton
-                aria-label={t('send')}
+                aria-label={submitLabel}
+                title={submitLabel}
                 disabled={cannotSend}
                 onClick={() => void submit()}
                 variant="default"
@@ -237,7 +281,6 @@ export function ChatInput() {
               >
                 <ArrowUp />
               </InputGroupButton>
-            )}
           </div>
         </InputGroupAddon>
       </InputGroup>

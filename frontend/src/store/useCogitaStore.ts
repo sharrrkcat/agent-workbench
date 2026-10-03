@@ -7,12 +7,18 @@ import { createSessionActions } from './cogita/sessionActions';
 import { createMessageActions } from './cogita/messageActions';
 import { createRunActions } from './cogita/runActions';
 import { handleRuntimeEvent } from './cogita/runtimeEvents';
+import { createQueueActions } from './cogita/queueActions';
+import { mergeQueueRuntime } from './cogita/messageQueue';
 
 export const useCogitaStore = create<CogitaState>((rawSet, get, store) => {
   const set: CogitaSet = (patch: Parameters<CogitaSet>[0]) => rawSet((state) => {
     const change = typeof patch === 'function' ? patch(state) : patch;
     const next = { ...state, ...change };
-    return { ...change, ...(('messages' in change || 'runs' in change || 'stepsByRunId' in change) ? trimHistory(next) : {}) };
+    return { ...change,
+      ...(('messages' in change || 'runs' in change) ? {
+        messageQueues: mergeQueueRuntime(next.messageQueues, 'runs' in change ? next.runs : [], 'messages' in change ? next.messages : []),
+      } : {}),
+      ...(('messages' in change || 'runs' in change || 'stepsByRunId' in change) ? trimHistory(next) : {}) };
   });
   return ({
   sessions: [],
@@ -37,6 +43,9 @@ export const useCogitaStore = create<CogitaState>((rawSet, get, store) => {
   deletedRunIds: [],
   mutatingHistory: false,
   composerDraftText: '',
+  messageQueues: {},
+  queueTarget: null,
+  savingSessionIds: [],
   loading: false,
   sending: false,
   awaitingAcceptance: false,
@@ -46,6 +55,7 @@ export const useCogitaStore = create<CogitaState>((rawSet, get, store) => {
   ...createSessionActions(set, get, store),
   ...createHistoryActions(set, get, store),
   ...createMessageActions(set, get, store),
+  ...createQueueActions(set, get, store),
   ...createRunActions(set, get, store),
   applyRuntimeEvent: (event) => handleRuntimeEvent(set, get, event),
   setSettings: (settings) => set((state) => ({ settings, settingsVersion: state.settingsVersion + 1 })),

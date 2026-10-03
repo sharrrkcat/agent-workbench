@@ -90,6 +90,7 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
   async function save() {
     if (busy) return;
     setBusy(true); setError('');
+    if (sessionId) useCogitaStore.setState((state) => ({ savingSessionIds: [...state.savingSessionIds, sessionId] }));
     try {
       const patch = { ...(title !== session.title ? { title: title.trim() } : {}),
         ...(Object.keys(changes).length ? { overrides: changes } : {}) };
@@ -101,7 +102,10 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
       } else useCogitaStore.getState().saveDraft(patch, knowledge);
       onClose();
     } catch (reason) { setError(errorText(reason)); }
-    finally { setBusy(false); }
+    finally {
+      if (sessionId) useCogitaStore.setState((state) => ({ savingSessionIds: state.savingSessionIds.filter((id) => id !== sessionId) }));
+      setBusy(false);
+    }
   }
   const overrides = { ...session.overrides, ...changes };
   const change = <K extends keyof WorkspaceOverrides>(key: K, value: WorkspaceOverrides[K]) =>

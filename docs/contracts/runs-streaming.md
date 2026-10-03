@@ -1,8 +1,6 @@
 # Runs and streaming contract
 
-This contract owns run status, steps, persistence and transport reconciliation.
-[Chat/context](chat-context.md) owns Project/Agent/Cogita Persona configuration snapshots and message content;
-[harness/tools](harness-tools.md) owns tool execution and approval rules.
+This contract owns runs, steps, persistence and reconciliation; [Chat/context](chat-context.md) owns configuration snapshots/message content and [Harness/tools](harness-tools.md) owns tools/approvals.
 
 ## Run lifecycle
 
@@ -10,14 +8,12 @@ Run.kind is chat or tool and each run stores its selected Agent persona_id. Stat
 are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and
 INTERRUPTED. Terminal runs never return to running.
 
-RunStep.kind is context/model/save/approval/tool. Step statuses are
-pending/running/completed/failed/skipped. Steps have stable order, optional
-parent ids, timing, compact messages and structured errors. UI labels come
-from stable kinds and both locales, never implementation progress strings.
+RunStep.kind is context/model/save/approval/tool; statuses are pending/running/completed/failed/skipped.
+Steps have stable order, optional parent ids, timing, compact messages and structured errors.
+Both locales label stable kinds, never implementation progress strings.
 
-The optional Pet foundation consumes these same statuses, step kinds and
-progress fields through a pure current-session frontend selector. No Pet UI,
-animation vocabulary, separate task stream or polling participates in execution.
+The optional Pet foundation selects current-session statuses, step kinds and progress;
+no Pet UI, animation vocabulary, separate task stream or polling participates in execution.
 
 ChatRunner persists user messages, runs, steps, assistant/tool messages and
 events. Run/message metadata contains public ids, counts, timings, warnings
@@ -32,11 +28,9 @@ Valid pending approvals survive restart with their original configuration,
 remaining queue and active-time budget. Other unfinished runs become
 INTERRUPTED and are not replayed.
 
-Active/waiting cancellation shares one active-run registry. It records cancelled
-results for outstanding calls, settles open steps, clears private continuation
-and waiting references, and ends as CANCELLED. Interrupted execution carries
-an explanatory error/status. Direct rejection/handler failure is FAILED;
-model-loop tool errors may be followed by a model answer.
+Active/waiting cancellation uses one registry: record cancelled outstanding calls, settle open steps,
+clear continuation/waiting references and end CANCELLED. Interruptions carry explanatory errors/status;
+direct rejection/handler failure is FAILED, while model-loop tool errors may lead to a model answer.
 
 Run reads/cancellation are `/api/runs/{id}`, `/{id}/events`, `/{id}/cancel` and
 `/api/sessions/{id}/history`. Tool responses and explicit approvals are defined by
@@ -82,16 +76,25 @@ content. The fixed shell and responsive layout belong to
 
 ## WebSocket events
 
-The composer snapshots and clears text/attachments on valid submit, locking text until acceptance is observed. A persisted user message's client_message_id confirms acceptance through events or history refresh; the execution response's run also confirms acceptance. Text can then be drafted while sending remains locked until the request and active run settle.
-Creation, binding or unaccepted send failure restores the snapshot in the same session epoch. A failed POST is reconciled once with current history before restoration. Accepted generation failure/cancellation never restores input or overwrites a newer draft. Session changes discard pending UI snapshots and release local previews; uploaded bytes keep their existing storage lifecycle.
+The composer snapshots and clears text/attachments on ordinary submit, locking text until acceptance is observed. A persisted user message's client_message_id confirms acceptance through events or history; the execution response's run also confirms acceptance. Text and attachments can then be drafted and queued while the current request/run settles.
+Creation, binding or unaccepted ordinary send failure restores the snapshot in the same session epoch. Accepted generation failure/cancellation and automatic queue submission never overwrite a newer draft. Session changes discard ordinary UI snapshots and release local previews; queue edits retain their own uploaded references.
 
-Session clients connect to `/api/ws/{session_id}`, request `next_event`, and
-receive events with session_id and optional run_id/message_id plus payload.
-Global model/runtime events use `/api/models/events`, including without a selected chat session.
-Subscriptions filter before enqueueing and retain at most 256 events / 4 MiB of
-serialized payload. Overflow closes with 1013 and releases the queue independently
-of `next_event`; sends time out after five seconds. EventBus retains no event history.
-Reconnect refreshes durable state; unsaved streaming drafts recover at completion.
+Queue dispatch requires a mounted, synchronized conversation with valid configuration, completed configuration/history
+saves, no active/waiting run, approval/message submission, pause or head edit. Submission reserves client_message_id
+and locks the row against edit/delete; only confirmed acceptance removes it. HTTP/WS/database schemas are unchanged;
+there is no backend queue. A lost POST response checks history pages back to the pre-submission boundary and the
+retained active run. Unaccepted items remain paused in place; failed reconciliation retains the submission identity
+and blocks retransmission. Resume queue retries reconciliation first. Run/submission identity outlives bounded history;
+late responses update their original queue, and returning checks pending submissions/nonterminal runs before dispatch.
+Normal completion continues FIFO; FAILED/CANCELLED/INTERRUPTED pause. Stop pauses before requesting cancellation,
+including completion races. Append/edit/delete never resume implicitly. Resume queue is explicit and duplicate/stale
+terminal observations cannot undo it. Enqueueing during approvals preserves the explicit approval workflow.
+
+Clients request `next_event` at `/api/ws/{session_id}` and receive session_id, optional run_id/message_id and payload.
+Global model/runtime events use `/api/models/events`, even without a selected session. Subscriptions filter before
+enqueueing and retain at most 256 events / 4 MiB. Overflow closes with 1013 and releases the queue independently
+of `next_event`; sends time out after five seconds. EventBus has no history. Reconnect refreshes durable state;
+unsaved streaming drafts recover at completion.
 
 | Event | Meaning |
 | --- | --- |
@@ -138,13 +141,10 @@ preserving these incomplete messages and tool results. User-requested cancellati
 returns the cancelled run through REST, without an HTTP failure; external task
 shutdown still propagates cancellation.
 
-useCogitaStore composes session, message and run actions into one Zustand
-store. Shared merge functions preserve atomic session/message/run/step updates.
-Refreshes begun before newer events cannot overwrite live content or approvals.
-Run/step timestamps retain microsecond ordering; old events cannot restore a
-resolved approval or regress terminal status. REST direct-call/approval results
-use the same reconciliation and session isolation. Concurrent approval submission
-is blocked by run id. Session switches reject previous-session results.
+useCogitaStore composes session/message/queue/run actions; shared merges keep session/message/run/step updates atomic.
+Refreshes preserve newer content/approvals. Microsecond run/step ordering prevents stale events from restoring resolved
+approvals or regressing terminal status. REST direct-call/approval results share reconciliation and session isolation;
+concurrent approval submission is blocked by run id. Previous-session results cannot change the visible conversation.
 Session navigation tracks its target and loading/ready/error state separately from initialization;
 no target is idle. Required session/history/run reads commit together before opening the WebSocket.
 Connection-time reconciliation then preserves live events using the existing version checks.

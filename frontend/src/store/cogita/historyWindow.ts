@@ -1,6 +1,7 @@
 import type { CogitaState } from './state';
 import type { HistoryMarker, HistoryPage, HistoryWindow } from '../../types/history';
 import { compareTime, mergeMessages, mergeRuns, mergeSteps, retainedMessages, terminal } from './mergeState';
+import { mergeQueueRuntime } from './messageQueue';
 
 export const HISTORY_WINDOW_LIMIT = 200;
 export type HistoryLoad = 'before' | 'after' | 'around' | 'latest';
@@ -36,6 +37,7 @@ export function historyPageState(state: CogitaState, page: HistoryPage, mode: Hi
   };
   // Event versions protect newer streaming data, but only identities in this window are retained.
   return { ...trimHistory(combined, mode === 'before'),
+    messageQueues: mergeQueueRuntime(state.messageQueues, runs, messages),
     historyFollowing: combined.historyFollowing, messageVersion: state.messageVersion + 1, runVersion: state.runVersion + 1 };
 }
 

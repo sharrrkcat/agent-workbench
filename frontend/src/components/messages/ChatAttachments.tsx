@@ -46,7 +46,7 @@ export function ChatAttachments({ items, composer = false, onRemove }: {
           className={cn(isImage ? composer ? 'w-30' : 'w-40' : 'w-64 flex-nowrap',
             composer && 'attachment-chip', item.status && `upload-${item.status}`)}>
           <AttachmentMedia variant={isImage ? 'image' : 'icon'}>
-            {isImage ? <img src={src} alt={item.name} loading="lazy" /> : <FileText />}
+            {isImage && (item.preview || item.status !== 'uploading') ? <img src={src} alt={item.name} loading="lazy" /> : <FileText />}
           </AttachmentMedia>
           {composer || !isImage ? <AttachmentContent>
             <AttachmentTitle title={item.name}>{item.name}</AttachmentTitle>

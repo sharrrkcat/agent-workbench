@@ -12,6 +12,7 @@ for (const script of [
   'test-session-actions',
   'test-history-window',
   'test-chat-drafts',
+  'test-message-queue',
   'test-projects',
   'test-confirm-dialog',
   'test-pet-foundation',

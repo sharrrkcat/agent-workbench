@@ -1,6 +1,25 @@
 {
   "placeholder": "Message the chat…",
   "shortPlaceholder": "Message",
+  "queue": {
+    "label": "Message queue",
+    "title": "Queued: {{count}}",
+    "add": "Add to queue",
+    "save": "Save queued message",
+    "resume": "Resume queue",
+    "editing": "Editing",
+    "submitting": "Confirming receipt",
+    "edit": "Edit queued message {{number}}",
+    "remove": "Delete queued message {{number}}",
+    "attachments": "Attachments: {{count}}",
+    "waitingEdit": "Waiting for the first message to be saved or deleted.",
+    "paused": {
+      "stopped": "Queue paused after stopping the reply.",
+      "failed": "Queue paused because the reply failed or was interrupted.",
+      "submission": "Message was not accepted. Resume to try again.",
+      "unconfirmed": "Receipt could not be confirmed. Resume to check before sending."
+    }
+  },
   "waiting": "Waiting for your reply",
   "prefixes": "Prefixes are sent as ordinary text",
   "messages": "Messages",

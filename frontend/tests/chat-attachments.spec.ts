@@ -129,7 +129,6 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page.locator('.message-row.user .message-attachments img')).toHaveCount(1);
           await expect(input).toBeEnabled();
           await input.fill('Next draft survives');
-          await input.press('Enter');
           expect(posts).toBe(1);
           await expect(input).toHaveValue('Next draft survives');
           await page.screenshot({ path: info.outputPath('sending-next-draft.png') });

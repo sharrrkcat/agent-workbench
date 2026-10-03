@@ -687,6 +687,10 @@
     visibility: hidden;
     pointer-events: none;
   }
+  .queue-list { max-height: min(15rem, 25dvh); }
+  @media (hover: none), (pointer: coarse) {
+    .message-queue button { min-width: 44px; min-height: 44px; }
+  }
   @media (pointer: coarse) {
     .composer {
       --composer-inline-start: 64px;

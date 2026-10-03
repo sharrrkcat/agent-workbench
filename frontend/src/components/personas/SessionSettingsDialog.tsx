@@ -71,6 +71,7 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
   const patch = (values: Partial<OrdinaryChatDraft>) => setDraft((current) => ({ ...current, ...values }));
   async function save() {
     setBusy(true);
+    if (sessionId) useCogitaStore.setState((state) => ({ savingSessionIds: [...state.savingSessionIds, sessionId] }));
     setError('');
     const values: SessionPatch = {
       ...(draft.title !== session.title ? { title: draft.title.trim() || (sessionId ? undefined : '') } : {}),
@@ -90,6 +91,7 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
     } catch (reason) {
       setError(errorText(reason));
     } finally {
+      if (sessionId) useCogitaStore.setState((state) => ({ savingSessionIds: state.savingSessionIds.filter((id) => id !== sessionId) }));
       setBusy(false);
     }
   }

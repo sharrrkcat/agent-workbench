@@ -6,10 +6,9 @@ syntax, allowlists, bounded loops and approvals.
 
 ## Personas and sessions
 
-Personas are strict editable database records with id, immutable collection, name,
-optional avatar_attachment_id, system_prompt and timestamps. They are identities,
-never executable agents, scripts, manifests or extension registrations. All four collections share CRUD and ordered bindings. Avatars reference existing local image
-filenames; bytes remain in the attachment store.
+Personas are strict editable identity records: id, immutable collection, name, optional avatar_attachment_id,
+system_prompt and timestamps. All four collections share CRUD and ordered bindings. Avatar filenames reference
+local attachment-store bytes. Personas never execute agents, scripts, manifests or extension registrations.
 
 | Collection | Settings page | Resources | Execution |
 | --- | --- | --- | --- |
@@ -30,28 +29,31 @@ messages store identity ids without name/avatar snapshots. SessionResponse.user_
 provides the current singleton identity for user rows/labels. Neither edit rewrites history;
 run prompts/configuration stay fixed. Identity events also reach historical referencing sessions.
 
-Ordinary sessions have one persona_id, initially Cogita; selection accepts only agent records.
-There are no members, speaker lists, conversation modes or group transcripts.
-New ordinary sessions persist a concrete model selection. When POST omits model_profile_id
-or supplies null, select the enabled global-default LLM if present, otherwise the
-first enabled LLM in profile-list order (name, then id). No eligible LLM leaves
-the selection null. Explicit ids are validated and never substituted. Changing
-the global default affects later sessions only; execution uses the saved session
-id. PATCH omission preserves it and null clears it. An unselected session requires
-an explicit choice even after a model is added. Neither chat model selector offers
-a Global default entry; both show the saved model and a disabled empty/unavailable
-state when appropriate. No model discovery, health check or inference is performed
-to initialize a session.
-Ordinary resolved configuration reports model_source=session.
+Ordinary sessions have one persona_id, initially Cogita, accepting only agent records; no members, speaker lists,
+conversation modes or group transcripts. New sessions persist a concrete model selection: omitted/null POST
+model_profile_id selects the enabled global-default LLM, else the first enabled LLM by name/id, else null.
+Explicit ids are validated without substitution. Global-default changes affect later sessions only; execution
+uses the saved id (model_source=session). PATCH omission preserves it; null clears it. Adding a model leaves
+unselected sessions unchanged. Both chat selectors show the saved model or a disabled empty/unavailable state,
+without a Global default entry. Session initialization performs no model discovery, health check or inference.
 
-New chat navigation opens an in-memory ordinary/Workspace draft, without a session
-record or session WebSocket. Drafts support the full configuration dialog and
-Knowledge additions; saving changes only local state. Reopening the same draft
-preserves it; switching conversations/Projects or refreshing discards it. First
-send creates the session, applies additions, then submits captured input and attachments.
-Submission clears the composer immediately; [Runs/streaming](runs-streaming.md) owns acceptance and restoration.
-Creation failure restores the draft; later binding/send failure retains the created id for retry. Existing creation APIs
-remain explicit immediate creation operations; no database migration is needed.
+New chat navigation opens a local ordinary/Workspace draft with full configuration/Knowledge editing and no session
+record or WebSocket. Reopening preserves it; conversation/Project switches and refresh discard it. First send creates
+the session, applies additions and submits captured input/attachments. [Runs/streaming](runs-streaming.md) owns clearing,
+acceptance and restoration. Creation failure restores the draft; binding/send failure retains the created id for retry.
+Creation APIs still create immediately; no database migration is needed.
+
+Ordinary/Workspace composers accept FIFO messages with uploaded attachments during replies/approvals.
+Queues are per-session frontend memory: leaving stops dispatch, returning reconciles before continuing;
+refresh/close clears them, and session/Project deletion discards them. Actual send time determines configuration.
+Rows stack above the composer with two-line text, attachment summaries and edit/delete controls, scrolling within
+min(15rem, 25dvh). They have no history number, immediate-send or reorder action. One edit at a time replaces
+the composer's text/attachments and marks the original row Editing. Submit saves its original id/position;
+a head edit blocks until saved/deleted, while a later edit permits earlier dispatch. Deleting an edit clears its composer.
+Edits survive navigation; ordinary drafts retain their lifecycle. Upload results belong to the original session/edit.
+Stop and enqueue coexist; editing labels submit Save queued message. Enter submits, Shift+Enter inserts a line,
+and IME confirmation does not submit. Uploads must finish before enqueue/save. Removal releases local previews;
+uploaded references retain existing cleanup. [Runs/streaming](runs-streaming.md#websocket-events) owns pauses/acceptance.
 
 Ordinary context, generation, Harness and tool selection belong to the session. Context defaults to session history with explicit attachments.
 Generation defaults to {} and accepts only optional temperature (0..2); a non-null value overrides the model. {} or temperature:null clears it; PATCH omission preserves it.
@@ -207,9 +209,7 @@ attachment_ref), image, audio, video, media_group image galleries, notice,
 error, tool_call and tool_result. Unknown types are rejected; there are no
 forms, actions, command buttons or diff parts.
 
-Text parts choose plain text or Markdown; reasoning uses GFM when expanded and [single-line plain-text previews](runs-streaming.md) when compact.
-Knowledge citation labels such as `[K1]` follow ordinary Markdown rendering,
-without a citation-specific parser, source lookup or popover.
+Text parts use plain text/Markdown; reasoning uses expanded GFM or compact [plain-text previews](runs-streaming.md). Knowledge citations such as `[K1]` use ordinary Markdown without a dedicated parser, lookup or popover.
 
 Large binary data belongs in the attachment store and is referenced by id/URL.
 Uploads and serving use the configured attachment directory; General owns
@@ -228,7 +228,7 @@ Missing retained images return ATTACHMENT_NOT_FOUND; corrupt local images and re
 
 Text-file context obeys the enable switch and per-file/per-message bounds.
 Other attachments contribute bounded descriptive markers. include_attachments=none excludes all image inputs.
-File selection, clipboard images and file dropping share per-file status, previews and removal; partial failure keeps successful uploads. Session changes clear pending attachments and ignore late results.
+File selection, clipboard images and dropping share per-file status, previews and removal; partial failure keeps successful uploads. Session changes clear ordinary pending attachments; queue edits retain theirs.
 Composer images use 120px vertical Attachment cards with names, types and sizes; other files use horizontal cards, bottom-aligned with image cards. Sizes use uploaded File.size then persisted size, in 1024-based B/KB/MB/GB with at most one decimal. Image removal uses a circular top-right button.
 User metadata.attachments render as right-aligned scrolling groups: files above the text bubble and images below it, preserving order within each group. Images use 160px preview cards without visible names/sizes; file cards retain both. Attachment-only messages have no empty bubble; image/file-only messages remain eligible history.
 Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Cleanup after commit preserves references from messages, Personas, Knowledge and model-input snapshots.
