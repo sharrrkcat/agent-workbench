@@ -76,7 +76,7 @@ def test_multi_call_round_and_stream_fragments(harness_client, streaming):
     assert len({part["id"] for part in calls_message["parts"]}) == len(calls_message["parts"])
     state = client.app.state.runtime_state
     assert state.runs.get_harness_state(response["run"]["run_id"]) == {}
-    events = ok(client.get(f"/api/runs/{response['run']['run_id']}/events"))
+    events = ok(client.get(f"/api/runs/{response['run']['run_id']}/events"))["items"]
     assert "PRIVATE_TOOL_PROMPT" not in json.dumps(events)
     if streaming:
         final_id = response["messages"][-1]["message_id"]
@@ -242,7 +242,7 @@ def test_direct_approval_rejection_and_cancellation(harness_client, decision):
         assert not ok(client.post(f"/api/runs/{run_id}/cancel"))["cancelled"]
     assert response["session"]["waiting_run_id"] is None
     assert not upstream.calls
-    events = ok(client.get(f"/api/runs/{run_id}/events"))
+    events = ok(client.get(f"/api/runs/{run_id}/events"))["items"]
     assert "C:" not in json.dumps(events) and "harness_state" not in json.dumps(events)
 
 

@@ -74,8 +74,8 @@ store.setState({
 });
 const pendingRefresh = deferred();
 api.getSession = async () => session;
-api.listMessages = () => pendingRefresh.promise;
-api.listRuns = async () => [run];
+api.messageRows = () => pendingRefresh.promise;
+api.runRows = async () => [run];
 const refresh = store.getState().refreshCurrent();
 store.getState().applyRuntimeEvent(event('tool_call_created', { message: call }, call.message_id));
 store.getState().applyRuntimeEvent(event('tool_call_created', { message: call }, call.message_id));
@@ -102,8 +102,8 @@ store.getState().applyRuntimeEvent(event('tool_result_created', { message: resul
 store.getState().applyRuntimeEvent(event('message_delta', { delta: 'late', seq: 1 }, result.message_id));
 assert.equal(store.getState().messages.length, 2);
 assert.equal(store.getState().messages[1].parts[0].data.text, 'result');
-api.listMessages = async () => [call, result];
-api.listRuns = async () => [done];
+api.messageRows = async () => [call, result];
+api.runRows = async () => [done];
 store.getState().applyRuntimeEvent(event('run_completed', { run: done }));
 store.getState().applyRuntimeEvent(event('approval_requested', { run: { ...waiting, updated_at: at('5') } }));
 assert.equal(store.getState().runs[0].status, 'DONE');

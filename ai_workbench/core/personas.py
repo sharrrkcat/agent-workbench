@@ -16,6 +16,12 @@ BINDINGS = {
 
 
 class PersonaStore:
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        if self.engine is None:
+            return {p.avatar_attachment_id for p in self._personas.values() if p.avatar_attachment_id in names}
+        with Session(self.engine) as db:
+            return set(db.exec(select(PersonaRecord.avatar_attachment_id).where(PersonaRecord.avatar_attachment_id.in_(names))))
+
     def __init__(self, engine=None):
         self.engine = engine
         self._personas = {p.id: p for p in seed_personas()} if engine is None else {}

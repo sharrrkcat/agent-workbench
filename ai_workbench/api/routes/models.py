@@ -116,7 +116,7 @@ async def profile(profile_id: str, state: RuntimeState = Depends(get_state)):
               responses=error_responses(404, 409, 422))
 async def update_profile(profile_id: str, payload: dict, state: RuntimeState = Depends(get_state)):
     if any(state.runs.get_config_snapshot(r.run_id).get("model_profile_id") == profile_id
-           for r in state.runs.list_all_runs() if r.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"}):
+           for r in state.runs.unfinished_runs()):
         raise ModelError("MODEL_BUSY", "An unfinished chat run uses this model configuration.", 409)
     current = state.model_profiles.get(profile_id)
     if payload.get("kind", current.kind) != current.kind:
@@ -160,7 +160,7 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
     references.extend(state.chat_service.saved_model_id(s) for s in state.sessions.list_sessions())
     references.extend(project.model_profile_id for project in state.projects.list())
     references.extend(state.runs.get_config_snapshot(r.run_id).get("model_profile_id")
-        for r in state.runs.list_all_runs() if r.status not in {"DONE", "FAILED", "CANCELLED", "INTERRUPTED"})
+        for r in state.runs.unfinished_runs())
     references.extend(b.embedding_model_profile_id for b in state.knowledge.list_knowledge_bases())
     if profile_id in references:
         raise ModelError("MODEL_IN_USE", "Remove session, Project, unfinished run, default or Knowledge references before deleting this model.", 409)

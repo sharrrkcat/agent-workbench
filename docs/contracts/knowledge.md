@@ -41,6 +41,8 @@ overrides are in its collapsed advanced section.
 ## Retrieval
 
 Vector and keyword candidates are merged with reciprocal rank fusion (RRF).
+SQLite scans vector batches of 256, retains only top-k identities/scores and then reads winning text.
+Exact dot/cosine scoring uses deterministic chunk-id ties in both stores; dimension diagnostics retain counts and at most ten examples.
 The singleton Cogita Persona, selected Agent Persona, Workspace Project and session additions
 define default Knowledge Bases, deduplicated in that order; ordinary sessions have no Project bindings.
 Project bindings remain inherited while additions are independently editable. An empty session list

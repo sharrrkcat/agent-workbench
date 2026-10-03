@@ -1,5 +1,6 @@
+import type { HistoryPage, HistoryUsersPage, HistoryQuery } from '../types/history';
 import type { Persona, PersonaCollection, PersonaCreate, PersonaInput, OrdinarySessionPatch, Session, SessionPatch } from '../types/chat';
-import type { Attachment, Message } from '../types/messages';
+import type { Attachment } from '../types/messages';
 import type { HistoryPruned, RuntimeResponse } from '../types/runs';
 import { request, requestForm } from './http';
 
@@ -17,11 +18,10 @@ export const chatApi = {
     request<{ deleted: boolean; session_id: string }>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
     }),
-  listMessages: (sessionId: string) => request<Message[]>(`/api/sessions/${encodeURIComponent(sessionId)}/messages`),
-  getTimeline: (sessionId: string) =>
-    request<Array<{ kind: string; message?: Message; notification?: Record<string, unknown> }>>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/timeline`,
-    ),
+  getHistory: (sessionId: string, query: HistoryQuery = {}) =>
+    request<HistoryPage>(`/api/sessions/${encodeURIComponent(sessionId)}/history?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`),
+  getHistoryUsers: (sessionId: string, query: HistoryQuery = {}) =>
+    request<HistoryUsersPage>(`/api/sessions/${encodeURIComponent(sessionId)}/history/users?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`),
   sendMessage: (
     sessionId: string,
     content: string,
@@ -45,11 +45,6 @@ export const chatApi = {
       method: 'POST',
       body: JSON.stringify({ content, attachment_ids: attachmentIds, rerun }),
     }),
-  dismissNotification: (sessionId: string, notificationId: string) =>
-    request<{ ok: boolean }>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/notifications/${encodeURIComponent(notificationId)}/dismiss`,
-      { method: 'POST' },
-    ),
   listPersonas: (collection?: PersonaCollection) => request<Persona[]>('/api/personas' + (collection ? `?collection=${collection}` : '')),
   createPersona: (value: PersonaCreate) =>
     request<Persona>('/api/personas', { method: 'POST', body: JSON.stringify(value) }),

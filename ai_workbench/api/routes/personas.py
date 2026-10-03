@@ -113,9 +113,8 @@ def _notify_sessions(state, persona_id):
 
 
 def _notify_identity(state: RuntimeState, persona_id: str, event_type: str, payload: dict) -> None:
-    session_ids = {run.session_id for run in state.runs.list_all_runs() if run.persona_id == persona_id}
-    session_ids.update(message.session_id for message in state.messages.list_all_messages()
-                       if message.speaker_id == persona_id)
+    session_ids = state.runs.referencing_session_ids(persona_id)
+    session_ids.update(state.messages.referencing_session_ids(persona_id))
     for session in state.sessions.list_sessions():
         if (persona_id == USER_PERSONA_ID or session.session_id in session_ids
                 or state.chat_service.selected_agent_id(session) == persona_id):

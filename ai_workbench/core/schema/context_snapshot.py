@@ -147,3 +147,4 @@ class ContextSourceDetail(ContextSource):
 
 class ContextDetail(ContextSnapshot):
     sources: list[ContextSourceDetail]
+    reference_numbers: dict[str, int] = Field(default_factory=dict)

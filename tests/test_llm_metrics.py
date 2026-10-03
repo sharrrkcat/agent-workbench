@@ -293,7 +293,7 @@ def test_call_snapshots_persist_once_per_model_step(presentation_client, harness
     assert all("llm" not in message["metadata"] for message in response["messages"])
     if streaming:
         assert all(call["stream_options"]["include_usage"] for call in upstream.calls)
-    events = ok(client.get(f"/api/runs/{saved['run_id']}/events"))
+    events = ok(client.get(f"/api/runs/{saved['run_id']}/events"))["items"]
     assert any(event["type"] == "run_step_updated" and event["payload"]["step"]["metadata"].get("llm") for event in events)
 
 

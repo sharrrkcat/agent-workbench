@@ -38,8 +38,8 @@ function reset(sessions = [first, second, third]) {
   api.deleteSession = async () => {};
   api.createSession = async () => replacement;
   api.getSession = async (id) => records.get(id);
-  api.listMessages = async () => [];
-  api.listRuns = async () => [];
+  api.messageRows = async () => [];
+  api.runRows = async () => [];
 }
 
 reset();
@@ -128,7 +128,7 @@ console.log(
 reset();
 let reads = 0;
 const history = deferred();
-api.listMessages = () => { reads++; return history.promise; };
+api.messageRows = () => { reads++; return history.promise; };
 await store.getState().selectSession('first');
 assert.equal(reads, 0, 'Clicking the current session preserves its draft and history');
 assert.equal(store.getState().composerDraftText, 'Retained draft');
@@ -155,7 +155,7 @@ assert.equal(reads, 1);
 assert.equal(store.getState().composerDraftText, 'Keep this');
 
 reset();
-api.listRuns = async () => { throw new Error('History unavailable'); };
+api.runRows = async () => { throw new Error('History unavailable'); };
 await store.getState().selectSession('second');
 assert.equal(store.getState().currentSession, second);
 assert.equal(store.getState().sessionLoad.status, 'error');
@@ -163,11 +163,11 @@ assert.match(store.getState().sessionLoad.error, /History unavailable/);
 const failedEpoch = store.getState().sessionEpoch;
 await store.getState().selectSession('second');
 assert.equal(store.getState().sessionLoad.status, 'error', 'Only explicit retry restarts a failed load');
-api.listRuns = async () => [];
+api.runRows = async () => [];
 await store.getState().retrySession();
 assert.equal(store.getState().sessionLoad.status, 'ready');
 assert.equal(store.getState().sessionEpoch, failedEpoch, 'Retry does not reset the conversation identity');
-api.listMessages = async () => { throw new Error('Background refresh failed'); };
+api.messageRows = async () => { throw new Error('Background refresh failed'); };
 await store.getState().refreshCurrent();
 assert.equal(store.getState().sessionLoad.status, 'ready', 'Background errors do not replace the conversation');
 assert.match(store.getState().error, /Background refresh failed/);
@@ -175,7 +175,7 @@ assert.match(store.getState().error, /Background refresh failed/);
 for (const destination of ['third', 'first']) {
   reset();
   const oldHistory = deferred();
-  api.listMessages = (id) => id === 'second' ? oldHistory.promise : Promise.resolve([]);
+  api.messageRows = (id) => id === 'second' ? oldHistory.promise : Promise.resolve([]);
   const oldSelection = store.getState().selectSession('second');
   await store.getState().selectSession(destination);
   const currentEpoch = store.getState().sessionEpoch;
@@ -191,7 +191,7 @@ for (const destination of ['third', 'first']) {
 reset();
 const earlierVisit = deferred();
 let visits = 0;
-api.listMessages = (id) => id === 'second' && ++visits === 1 ? earlierVisit.promise : Promise.resolve([]);
+api.messageRows = (id) => id === 'second' && ++visits === 1 ? earlierVisit.promise : Promise.resolve([]);
 const earlierSelection = store.getState().selectSession('second');
 await store.getState().selectSession('third');
 await store.getState().selectSession('second');
@@ -203,12 +203,12 @@ console.log('Session loading, deduplication, retry, background refresh and navig
 reset();
 const lateDetails = deferred();
 api.getSession = () => lateDetails.promise;
-api.listMessages = async () => { throw new Error('Messages failed before details'); };
+api.messageRows = async () => { throw new Error('Messages failed before details'); };
 await store.getState().selectSession('uncached');
 assert.equal(store.getState().sessionLoad.status, 'error');
 assert.equal(store.getState().currentSession, null);
 api.getSession = async () => ({ ...replacement, session_id: 'uncached', title: 'Retried details' });
-api.listMessages = async () => [];
+api.messageRows = async () => [];
 await store.getState().retrySession();
 lateDetails.resolve({ ...replacement, session_id: 'uncached', title: 'Stale details' });
 await Promise.resolve();

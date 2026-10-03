@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from itertools import islice
 from typing import Any
 
 from ai_workbench.core.attachments import attachments_root, referenced_attachment_filenames, delete_attachment_if_unreferenced
@@ -32,7 +33,7 @@ def storage_stats(message_store: Any, database_url: str | None = None, *, person
             warnings.append(f"database size unavailable: {exc}")
 
     try:
-        scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
+        scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store, include_details=False)
         attachment_count = scan["attachment_count"]
         attachment_size = scan["attachment_total_size_bytes"]
         orphan_count = scan["orphan_count"]
@@ -65,35 +66,38 @@ def storage_stats(message_store: Any, database_url: str | None = None, *, person
     return payload
 
 
-def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None) -> dict[str, Any]:
-    root = attachments_root()
-    files = _attachment_files(root)
-    referenced = referenced_attachment_filenames(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
-    orphans = []
-    total_size = 0
-    for path in files:
+def _scanned_files(message_store, *, persona_store, knowledge_store, run_store):
+    files = iter(_attachment_files(attachments_root()))
+    while batch := list(islice(files, 128)):
+        referenced = referenced_attachment_filenames(message_store, {path.name for path in batch},
+            persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
+        for path in batch:
+            yield path, path.name not in referenced
+
+
+def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None,
+                           include_details: bool = True) -> dict[str, Any]:
+    result = {"attachment_count": 0, "attachment_total_size_bytes": 0, "orphan_count": 0, "orphan_size_bytes": 0, "orphans": []}
+    for path, orphan in _scanned_files(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store):
         size = _safe_size(path)
-        total_size += size
-        if path.name in referenced:
-            continue
-        orphans.append({"id": path.name, "path": str(path), "size_bytes": size})
-    return {
-        "attachment_count": len(files),
-        "attachment_total_size_bytes": total_size,
-        "orphan_count": len(orphans),
-        "orphan_size_bytes": sum(item["size_bytes"] for item in orphans),
-        "orphans": orphans,
-    }
+        result["attachment_count"] += 1
+        result["attachment_total_size_bytes"] += size
+        if orphan:
+            result["orphan_count"] += 1
+            result["orphan_size_bytes"] += size
+            if include_details:
+                result["orphans"].append({"id": path.name, "path": str(path), "size_bytes": size})
+    return result
 
 
 def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None) -> dict[str, Any]:
     root = attachments_root().resolve()
-    scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
     deleted_count = 0
     deleted_size = 0
     errors: list[dict[str, str]] = []
-    for orphan in scan["orphans"]:
-        path = Path(orphan["path"]).resolve()
+    for path, orphan in _scanned_files(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store):
+        if not orphan:
+            continue
         try:
             path.relative_to(root)
         except ValueError:
@@ -113,8 +117,7 @@ def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowle
     return {"deleted_count": deleted_count, "deleted_size_bytes": deleted_size, "errors": errors}
 
 
-def _attachment_files(root: Path) -> list[Path]:
-    files: list[Path] = []
+def _attachment_files(root: Path):
     for child in ("images", "files"):
         directory = (root / child).resolve()
         try:
@@ -122,8 +125,9 @@ def _attachment_files(root: Path) -> list[Path]:
         except ValueError:
             continue
         if directory.exists():
-            files.extend(path.resolve() for path in directory.iterdir() if path.is_file())
-    return sorted(files)
+            for path in directory.iterdir():
+                if path.is_file() and not path.is_symlink():
+                    yield path.resolve()
 
 
 def _safe_size(path: Path) -> int:

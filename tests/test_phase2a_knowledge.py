@@ -66,12 +66,12 @@ def test_rag_rerank_contract_uses_manager_and_rrf_on_failure(tmp_path, monkeypat
         search = lambda: client.post("/api/knowledge/search", json={"query": "alpha", "knowledge_base_ids": [base["id"]], "debug": True}).json()
         ranked = search()
         assert ranked["metadata"]["reranker_used"] is True
-        assert ranked["results"][0]["content"] == "alpha second"
+        assert ranked["results"][0]["rerank_score"] == 1
         monkeypatch.setattr(manager, 'rerank', original)
         fallback = search()
         assert fallback["metadata"]["rerank_fallback"] is True
         assert fallback["metadata"]["reranker_used"] is False
-        assert fallback["results"][0]["content"] == "alpha first"
+        assert [item["content"] for item in fallback["results"]] == [item["content"] for item in reversed(ranked["results"])]
 
 
 def test_titles_only_use_explicit_auxiliary_after_main_lease_releases(tmp_path):

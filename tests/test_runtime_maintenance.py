@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import inspect
 
 from ai_workbench.api.main import create_app
-from ai_workbench.core.events import EventBus
+from tests.event_recorder import RecordingEventBus as EventBus
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore, ProviderProfileStore
 from ai_workbench.core.models.runtimes.schema import CacheCleanupResult, Installation, RuntimeJob, StorageUsage

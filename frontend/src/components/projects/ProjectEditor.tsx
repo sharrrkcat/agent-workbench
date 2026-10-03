@@ -29,7 +29,7 @@ export function projectInput(project: Project): ProjectInput {
 
 export function newProjectInput(kind: ProjectKind, personas: Persona[], tools: HarnessTool[]): ProjectInput {
   const common = { name: '', model_profile_id: null, temperature: null,
-    context_policy: { max_messages: null, max_chars: null, include_attachments: 'explicit' as const } };
+    context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'explicit' as const } };
   return kind === 'workspace' ? { ...common, kind,
     agent_persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)?.id || '',
     cogita_persona_id: personas.find((p) => p.collection === 'user')?.id || '',

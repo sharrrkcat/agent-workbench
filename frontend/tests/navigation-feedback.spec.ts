@@ -179,7 +179,7 @@ for (const locale of ['en', 'zh-CN']) {
           const header = await page.locator('.topbar').elementHandle();
           const composer = await page.locator('.composer textarea').elementHandle();
           await pauseClock(page);
-          const first = await holdResponse(page, `**/api/sessions/${sessions[0].session_id}/messages`);
+          const first = await holdResponse(page, `**/api/sessions/${sessions[0].session_id}/history?*`);
           pending.push(first);
           await project.getByRole('button', { name: sessions[0].title, exact: true }).click();
           await first.requested;
@@ -196,7 +196,7 @@ for (const locale of ['en', 'zh-CN']) {
           await page.clock.runFor(1);
           await expect(page.locator('.workspace').locator(status)).toHaveText(common.loading);
           await openSidebar(page);
-          const second = await holdResponse(page, `**/api/sessions/${sessions[1].session_id}/messages`);
+          const second = await holdResponse(page, `**/api/sessions/${sessions[1].session_id}/history?*`);
           pending.push(second);
           await project.getByRole('button', { name: sessions[1].title, exact: true }).click();
           await second.requested;
@@ -242,7 +242,7 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page.getByRole('button', { name: labels.sessionSettings, exact: true })).toBeEnabled();
           const header = await page.locator('.topbar').elementHandle();
           const composer = await page.locator('.composer textarea').elementHandle();
-          const failed = await holdResponse(page, `**/api/sessions/${target.session_id}/messages`, true);
+          const failed = await holdResponse(page, `**/api/sessions/${target.session_id}/history?*`, true);
           pending.push(failed);
           await openSidebar(page);
           await rows.filter({ hasText: 'Retry target' }).click();
@@ -252,7 +252,7 @@ for (const locale of ['en', 'zh-CN']) {
           await failed.release();
           await expect(page.locator('.chat-view').getByRole('alert')).toContainText('Retry loading');
           await expect(page.getByRole('button', { name: labels.attach, exact: true })).toBeDisabled();
-          const retry = await holdResponse(page, `**/api/sessions/${target.session_id}/messages`);
+          const retry = await holdResponse(page, `**/api/sessions/${target.session_id}/history?*`);
           pending.push(retry);
           await page.locator('.chat-view').getByRole('button', { name: settings.resources.refresh, exact: true }).click();
           await retry.requested;

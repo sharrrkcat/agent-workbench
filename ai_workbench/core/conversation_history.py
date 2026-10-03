@@ -43,7 +43,8 @@ class MemoryHistoryStore:
             self.run_events.delete_run(run_id)
         if updated is not None:
             self.messages.update_message(updated)
-        self.sessions.touch_session(session_id)
+        session = self.sessions.get_session(session_id)
+        self.sessions.update_session(session_id, {"history_version": session.history_version + 1})
 
 
 class ConversationHistory:
@@ -64,8 +65,7 @@ class ConversationHistory:
     def delete_user(self, message_id: str) -> HistoryPruned:
         message = self._user(message_id)
         self.chat_service.assert_idle(message.session_id)
-        run_ids = {run.run_id for run in self.runs.list_runs(message.session_id)
-                   if run.metadata.get("input_message_id") == message_id}
+        run_ids = set(self.runs.run_ids_for_input(message.session_id, message_id))
         return self._apply(message.session_id, run_ids, {message_id})
 
     def retry(self, run_id: str):
@@ -78,11 +78,8 @@ class ConversationHistory:
             raise ChatError("MESSAGE_SESSION_MISMATCH", "Reply input belongs to another session.", 400)
         session = self.sessions.get_session(run.session_id)
         self.chat_service.resolve(session, persona_id=run.persona_id)
-        ordered_runs = self.runs.list_runs(run.session_id)
-        index = next(i for i, item in enumerate(ordered_runs) if item.run_id == run_id)
-        run_ids = {item.run_id for item in ordered_runs[index:]}
-        message_ids = {item.message_id for item in self.messages.list_messages(run.session_id)
-                       if item.created_at >= run.created_at and item.message_id != source.message_id}
+        run_ids = set(self.runs.later_run_ids(run))
+        message_ids = self.messages.message_ids_after_run(run, source.message_id)
         change = self._apply(run.session_id, run_ids, message_ids)
         return run, source, change
 
@@ -100,11 +97,8 @@ class ConversationHistory:
                                                "parts": [make_text_part(content, format="plain")] if content.strip() else [],
                                                "metadata": {**message.metadata, "attachments": attachments},
                                                "created_at": utc_now()})
-        ordered = self.messages.list_messages(message.session_id)
-        index = next(i for i, item in enumerate(ordered) if item.message_id == message_id)
-        message_ids = {item.message_id for item in ordered[index + 1:]}
-        run_ids = {run.run_id for run in self.runs.list_runs(message.session_id)
-                   if run.created_at >= message.created_at or run.metadata.get("input_message_id") == message_id}
+        message_ids = self.messages.later_message_ids(message)
+        run_ids = set(self.runs.run_ids_after_message(message))
         change = self._apply(message.session_id, run_ids, message_ids, updated)
         for attachment in original:
             if attachment["id"] not in retained_ids:
@@ -123,18 +117,14 @@ class ConversationHistory:
     def _apply(self, session_id: str, run_ids: set[str], message_ids: set[str] | None = None,
                updated: MessageSchema | None = None) -> HistoryPruned:
         message_ids = message_ids or set()
-        deleted = [item for item in self.messages.list_messages(session_id)
-                   if item.message_id in message_ids or item.run_id in run_ids]
-        change = HistoryPruned(deleted_message_ids=[item.message_id for item in deleted],
-                               deleted_run_ids=[run.run_id for run in self.runs.list_runs(session_id) if run.run_id in run_ids])
+        deleted = self.messages.selected_message_ids(session_id, message_ids, run_ids)
+        change = HistoryPruned(deleted_message_ids=deleted,
+                               deleted_run_ids=self.runs.existing_run_ids(session_id, run_ids))
+        attachments = set(self.messages.attachment_filenames(session_id=session_id, message_ids=set(deleted)))
         snapshot_attachments = self.runs.context_attachment_ids(run_ids)
         self.store.prune(session_id, change, updated)
-        self.events.prune_history(session_id, change.model_dump())
-        for message in deleted:
-            attachments = message.metadata.get("attachments")
-            for attachment in attachments if isinstance(attachments, list) else []:
-                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, knowledge_store=self.chat_service.knowledge, run_store=self.runs)
-        for attachment_id in snapshot_attachments:
+        self.events.emit("history_pruned", session_id=session_id, payload=change.model_dump())
+        for attachment_id in snapshot_attachments | attachments:
             delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, self.messages,
                 persona_store=self.personas, knowledge_store=self.chat_service.knowledge, run_store=self.runs)
         return change

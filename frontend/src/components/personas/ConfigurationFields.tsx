@@ -177,6 +177,7 @@ export function ContextFields({
               })
             }
           />
+          <FieldDescription>{t('maxCharsDescription')}</FieldDescription>
         </Field>
       </FieldGroup>
       <Field orientation="horizontal">

@@ -1,3 +1,4 @@
+import { readMessages, mockHistory } from './history';
 import { expect, test } from '@playwright/test';
 
 for (const locale of ['en', 'zh-CN']) {
@@ -210,12 +211,12 @@ for (const locale of ['en', 'zh-CN']) {
         const call = run.steps.find((step: { kind: string }) => step.kind === 'model');
         const snapshot = await (await request.get(`/api/runs/${runId}/steps/${call.step_id}/context`)).json();
         const current = snapshot.sources.find((source: { kind: string }) => source.kind === 'current_input');
-        const sessionMessages = await (await request.get(`/api/sessions/${run.session_id}/messages`)).json();
+        const sessionMessages = await readMessages(request, run.session_id);
         const originalUser = sessionMessages.find((message: { message_id: string }) => message.message_id === current.reference_id);
         const numberedMessages = Array.from({ length: 105 }, (_, i) => ({ ...originalUser,
           message_id: `numbered-${i}`, created_at: new Date(Date.UTC(2020, 0, 1, 0, 0, i)).toISOString(),
           parts: [{ id: `text-${i}`, type: 'text', text: `Earlier message ${i + 1}` }], run: null, run_id: null }));
-        await page.route(`**/sessions/${run.session_id}/messages`, (route) => route.fulfill({ json: [...numberedMessages, ...sessionMessages] }));
+        await mockHistory(page, request, run.session_id, [...numberedMessages, ...sessionMessages]);
         await page.reload();
         await expect(page.locator('.message-number').last()).toHaveText('#107');
         const longText = 'scrollable content\n'.repeat(250);

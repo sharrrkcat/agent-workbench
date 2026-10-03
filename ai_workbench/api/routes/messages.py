@@ -42,13 +42,6 @@ CreateMessageBody = public_model("CreateMessageBody", CreateMessageRequest, fiel
 })
 
 
-@router.get("/messages", response_model=list[MessageResponse], response_model_exclude_unset=True,
-    responses=error_responses(404))
-def list_messages(session_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
-    _get_session_or_404(state, session_id)
-    return [_message_payload(state, item) for item in state.messages.list_messages(session_id)]
-
-
 @router.post("/messages", response_model=ChatResult, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 409, 422),
     openapi_extra=request_body(CreateMessageBody, description="Attachment metadata is validated by the attachment service; malformed attachments return INVALID_ATTACHMENTS."))
@@ -65,7 +58,6 @@ async def create_message(
     if not payload.content.strip() and not attachments:
         raise_error(400, "EMPTY_MESSAGE", "Message content or an attachment is required.")
 
-    before = {item.message_id for item in state.messages.list_messages(session_id)}
     result = await state.runtime.handle_input(
         session,
         payload.content,
@@ -74,7 +66,7 @@ async def create_message(
     )
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "CHAT_FAILED", result.error or "Chat failed.")
-    return _result_payload(state, session_id, result, before)
+    return _result_payload(state, session_id, result, include_input=True)
 
 
 @message_router.delete("/{message_id}", response_model=HistoryPruned, response_model_exclude_unset=True,
@@ -103,11 +95,10 @@ async def edit_message(
         return {"success": True, "data": updated.model_dump(mode="json"), "error": None, "run": None,
                 "session": state.chat_service.session_response(state.sessions.get_session(session.session_id)),
                 "messages": [updated.model_dump(mode="json")], **change.model_dump()}
-    before = {item.message_id for item in state.messages.list_messages(session.session_id)}
     result = await state.runtime.rerun_user_message(session, updated)
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "MESSAGE_EDIT_FAILED", result.error or "Message edit failed.")
-    response = _result_payload(state, session.session_id, result, before)
+    response = _result_payload(state, session.session_id, result)
     response["messages"].insert(0, updated.model_dump(mode="json"))
     return {**response, **change.model_dump()}
 
@@ -119,9 +110,11 @@ def _get_message_or_404(state: RuntimeState, message_id: str) -> MessageSchema:
         raise_error(404, "MESSAGE_NOT_FOUND", f"Message not found: {message_id}")
 
 
-def _result_payload(state: RuntimeState, session_id: str, result: Any, before: set[str]) -> dict:
-    new_messages = [item for item in state.messages.list_messages(session_id) if item.message_id not in before]
+def _result_payload(state: RuntimeState, session_id: str, result: Any, *, include_input: bool = False) -> dict:
     run = state.runs.get_run(result.run_id) if result.run_id else None
+    new_messages = state.messages.messages_for_run(run.run_id) if run else []
+    if include_input and run and run.metadata.get("input_message_id"):
+        new_messages.insert(0, state.messages.get_message(run.metadata["input_message_id"]))
     return {
         "success": result.success,
         "data": result.data,

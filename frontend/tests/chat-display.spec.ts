@@ -1,3 +1,4 @@
+import { readMessages, mockHistory } from './history';
 import { expect, test, type Locator } from '@playwright/test';
 
 async function previewEdges(preview: Locator) {
@@ -66,10 +67,10 @@ for (const locale of ['en', 'zh-CN']) {
 
       test('single-line previews handle long text and sidebar width changes', async ({ page, request }) => {
         const session = await (await request.post('/__test__/session', { data: { long_history: true } })).json();
-        const history = await (await request.get(`/api/sessions/${session.session_id}/messages`)).json();
+        const history = await readMessages(request, session.session_id);
         const message = history.find((item: { parts: { type: string }[] }) => item.parts.some((part) => part.type === 'reasoning'));
         const part = message.parts.find((part: { type: string }) => part.type === 'reasoning');
-        await page.route(`**/api/sessions/${session.session_id}/messages`, (route) => route.fulfill({ json: history }));
+        await mockHistory(page, request, session.session_id, history);
         for (const text of ['短思考', '开始思考，中英文 mixed text。'.repeat(30), 'Beginning' + 'x'.repeat(600) + 'End']) {
           part.text = text;
           await page.goto('/');
@@ -171,10 +172,10 @@ test('cancelled reasoning returns to the beginning and remains expandable after 
 
 test('short reasoning becomes expandable after overflowing a narrower chat region', async ({ page, request }) => {
   const session = await (await request.post('/__test__/session', { data: { long_history: true } })).json();
-  const history = await (await request.get(`/api/sessions/${session.session_id}/messages`)).json();
+  const history = await readMessages(request, session.session_id);
   const message = history.find((item: { parts: { type: string }[] }) => item.parts.some((part) => part.type === 'reasoning'));
   message.parts.find((part: { type: string }) => part.type === 'reasoning').text = 'A **formatted** reasoning preview with [a link](https://example.com) and `code`.\nNext line.';
-  await page.route(`**/api/sessions/${session.session_id}/messages`, (route) => route.fulfill({ json: history }));
+  await mockHistory(page, request, session.session_id, history);
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto('/');
   await page.locator('.processing-toggle').click();

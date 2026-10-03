@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages, history_runs
 import asyncio
 import json
 
@@ -116,7 +117,7 @@ def test_failed_stream_persists_partial_content(presentation_client, harness):
     partial = response["messages"][-1]
     assert partial["metadata"]["incomplete"] is True and not partial["metadata"].get("streaming")
     assert [p["text"] for p in partial["parts"]] == ["received reasoning", "partial answer"]
-    history = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))
+    history = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))
     assert history[-1]["message_id"] == partial["message_id"] and history[-1]["metadata"]["incomplete"]
     state = client.app.state.runtime_state
     context = ContextBuilder(state.messages).build(session["session_id"], "next", ContextPolicy())
@@ -152,13 +153,13 @@ def test_delete_reply_and_user_prune_all_owned_records(presentation_client):
     with pytest.raises(KeyError):
         state.runs.get_config_snapshot(first_id)
     assert state.runs.list_steps(first_id) == [] and state.run_events.list_events(first_id) == []
-    assert not any(e.run_id == first_id for e in state.events.list_events())
+    assert state.events.list_events()[-1].type == "history_pruned"
     assert state.messages.get_message(first["messages"][0]["message_id"]).role == "user"
     user_id = later["messages"][0]["message_id"]
     change = ok(client.delete(f"/api/messages/{user_id}"))
     assert change["deleted_run_ids"] == [later["run"]["run_id"]]
-    assert ok(client.get(f"/api/sessions/{session['session_id']}/runs")) == []
-    assert [m["message_id"] for m in ok(client.get(f"/api/sessions/{session['session_id']}/messages"))] == [first["messages"][0]["message_id"]]
+    assert history_runs(ok(client.get(f"/api/sessions/{session['session_id']}/history"))) == []
+    assert [m["message_id"] for m in history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))] == [first["messages"][0]["message_id"]]
 
 
 def test_retry_and_edit_prune_old_tools_and_later_runs(presentation_client, monkeypatch):
@@ -172,18 +173,18 @@ def test_retry_and_edit_prune_old_tools_and_later_runs(presentation_client, monk
     assert "old process" not in json.dumps(upstream.calls[-1]["messages"])
     assert "tool_calls" not in json.dumps(upstream.calls[-1]["messages"])
     assert client.post(f"/api/messages/{first['messages'][-1]['message_id']}/retry").status_code == 404
-    history = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))
+    history = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))
     assert [m["role"] for m in history] == ["user", "assistant"]
     from ai_workbench.core.time import utc_now, isoformat_utc
     edited_at = utc_now()
     monkeypatch.setattr("ai_workbench.core.conversation_history.utc_now", lambda: edited_at)
     edited = ok(client.post(f"/api/messages/{history[0]['message_id']}/edit", json={"content": "edited", "attachment_ids": [], "rerun": False}))
     assert edited["deleted_run_ids"] == [replacement["run"]["run_id"]]
-    assert ok(client.get(f"/api/sessions/{session['session_id']}/runs")) == []
-    assert ok(client.get(f"/api/sessions/{session['session_id']}/messages"))[0]["parts"][0]["text"] == "edited"
+    assert history_runs(ok(client.get(f"/api/sessions/{session['session_id']}/history"))) == []
+    assert history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))[0]["parts"][0]["text"] == "edited"
     assert edited["messages"][0]["created_at"] == isoformat_utc(edited_at)
     assert edited["messages"][0]["created_at"] != history[0]["created_at"]
-    stored = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))[0]
+    stored = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))[0]
     assert stored["created_at"] == edited["messages"][0]["created_at"]
     assert stored["message_id"] == history[0]["message_id"]
 
@@ -241,7 +242,7 @@ def test_cancelled_stream_retains_received_content(tmp_path, use_memory, harness
                 ok(await client.post(f"/api/runs/{started.run_id}/cancel"))
                 cancelled = ok(await asyncio.wait_for(task, 3))
                 assert cancelled["run"]["status"] == "CANCELLED" and not cancelled["success"]
-                history = ok(await client.get(f"/api/sessions/{session['session_id']}/messages"))
+                history = history_messages(ok(await client.get(f"/api/sessions/{session['session_id']}/history")))
                 assert history[-1]["message_id"] == started.message_id
                 assert history[-1]["metadata"]["incomplete"] is True
                 assert [p["text"] for p in history[-1]["parts"]] == ["reason", "partial"]

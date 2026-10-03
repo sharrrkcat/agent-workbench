@@ -57,6 +57,7 @@ class WorkspaceOverrides(StrictModel):
 
 class SessionBase(StrictModel):
     session_id: str
+    history_version: int = 0
     title: str = ""
     waiting_run_id: str | None = None
     title_generation_state: Literal["pending", "done", "skipped", "failed", "manual"] = "pending"

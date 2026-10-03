@@ -36,6 +36,7 @@ export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: Runtim
     if (Array.isArray(messageIds) && messageIds.every((id) => typeof id === 'string') &&
         Array.isArray(runIds) && runIds.every((id) => typeof id === 'string')) {
       set((state) => pruneHistoryState(state, { deleted_message_ids: messageIds, deleted_run_ids: runIds }));
+      void get().refreshCurrent();
     }
     return;
   }
@@ -45,6 +46,11 @@ export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: Runtim
       event.type,
     )
   ) {
+    const window = get().historyWindow;
+    if (window && !get().historyFollowing && !window.items.some((i) => i.id === event.message_id || i.id === event.run_id)) {
+      if (!window.has_after) set({ historyWindow: { ...window, has_after: true } });
+      return;
+    }
     if (
       event.type === 'message_started' &&
       get().runs.some(
@@ -97,6 +103,7 @@ export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: Runtim
   if (event.type === 'run_step_updated' || event.type === 'run_step_created') {
     const step = payload.step as RunStep | undefined;
     if (!step || get().deletedRunIds.includes(step.run_id)) return;
+    if (get().historyWindow && !get().historyFollowing && !get().historyWindow?.items.some((i) => i.id === step.run_id)) return;
     set((state) => ({ stepsByRunId: mergeSteps(state.stepsByRunId, [step]), runVersion: state.runVersion + 1 }));
   }
   if (['run_started', 'run_completed', 'run_failed', 'run_cancelled'].includes(event.type)) void get().refreshCurrent();

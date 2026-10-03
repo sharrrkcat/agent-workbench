@@ -605,7 +605,7 @@ def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store:
     except ValueError:
         return False
     try:
-        referenced = referenced_attachment_filenames(message_store, session_id=session_id, persona_store=persona_store,
+        referenced = referenced_attachment_filenames(message_store, {path.name}, persona_store=persona_store,
                                                     knowledge_store=knowledge_store, run_store=run_store)
     except Exception:
         return False
@@ -835,42 +835,34 @@ def _validate_attachment_size(size: int, attachment_type: str, settings: Any = N
         raise ValueError(f"Attachment file is too large. Maximum size is {max_mb} MB.")
 
 
-def referenced_attachment_filenames(message_store: Any, *, session_id: str | None = None,
-                                   persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None) -> set[str]:
-    messages = message_store.list_all_messages() if hasattr(message_store, "list_all_messages") else message_store.list_messages(session_id)
-    referenced: set[str] = set()
+def attachment_filename(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    filename = value.removeprefix("local://attachments/").removeprefix("/api/attachments/")
+    return filename if _ATTACHMENT_NAME_RE.fullmatch(filename) else None
 
-    def add(value: Any) -> None:
-        if not isinstance(value, str):
-            return
-        filename = value.removeprefix("local://attachments/").removeprefix("/api/attachments/")
-        if _ATTACHMENT_NAME_RE.fullmatch(filename):
-            referenced.add(filename)
 
-    def parts(items: list) -> None:
+def message_attachment_filenames(message):
+    def parts(items):
         for part in items:
-            if not isinstance(part, dict):
-                continue
             for key in ("attachment_id", "uri", "url"):
-                add(part.get(key))
+                filename = attachment_filename(part.get(key))
+                if filename:
+                    yield filename
             if part.get("type") == "media_group":
-                parts(part.get("items") or [])
+                yield from parts(part.get("items") or [])
+    yield from parts(message.parts)
+    for item in (message.metadata or {}).get("attachments", []):
+        for key in ("id", "uri"):
+            filename = attachment_filename(item.get(key))
+            if filename:
+                yield filename
 
-    for message in messages:
-        parts(getattr(message, "parts", []))
-        attachments = (message.metadata or {}).get("attachments")
-        if not isinstance(attachments, list):
-            continue
-        for item in attachments:
-            if not isinstance(item, dict):
-                continue
-            add(item.get("id"))
-            add(item.get("uri"))
-    if persona_store is not None:
-        for persona in persona_store.list():
-            add(persona.avatar_attachment_id)
-    if knowledge_store is not None:
-        referenced.update(knowledge_store.referenced_attachment_ids())
-    if run_store is not None:
-        referenced.update(run_store.context_attachment_ids())
+
+def referenced_attachment_filenames(message_store: Any, filenames: set[str], *,
+                                   persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None) -> set[str]:
+    referenced: set[str] = set()
+    for store in (message_store, persona_store, knowledge_store, run_store):
+        if store is not None and filenames - referenced:
+            referenced.update(store.referenced_attachments(filenames - referenced))
     return referenced

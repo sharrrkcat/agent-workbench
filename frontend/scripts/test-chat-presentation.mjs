@@ -88,15 +88,15 @@ assert.ok(classified.process.some((i) => i.kind === 'content' && i.part.text ===
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { resolve, promise }; }
 const session = { session_id: 's', kind: 'ordinary', project_id: null, title: 'Session', updated_at: at(1), waiting_run_id: null, effective: { context_policy: {} } };
 function reset() {
-  store.setState({ currentSession: session, sessions: [session], messages: [user, calls, output, answer], runs: [done], stepsByRunId: {},
+  store.setState({ historyWindow: null, historyFollowing: true, historyLoading: false, historyAnchor: null, currentSession: session, sessions: [session], messages: [user, calls, output, answer], runs: [done], stepsByRunId: {},
     deletedMessageIds: [], deletedRunIds: [], resolvingApprovals: [], sending: false, mutatingHistory: false,
     messageVersion: 0, runVersion: 0, sessionVersion: 0, sessionEpoch: 0 });
 }
 reset();
 const oldRead = deferred();
 api.getSession = async () => session;
-api.listMessages = () => oldRead.promise;
-api.listRuns = async () => [done];
+api.messageRows = () => oldRead.promise;
+api.runRows = async () => [done];
 const refresh = store.getState().refreshCurrent();
 const change = { deleted_message_ids: ['calls', 'output', 'answer'], deleted_run_ids: ['r'] };
 store.getState().applyRuntimeEvent(event('history_pruned', change, undefined));
@@ -109,22 +109,22 @@ for (const e of [event('message_completed', { message: answer }, 'answer'), even
 store.setState(toolResponseState(store.getState(), { session, run: done, messages: [calls, answer] }));
 assert.deepEqual(store.getState().messages, [user]);
 assert.deepEqual(store.getState().stepsByRunId, {});
-api.listMessages = async () => [user];
-api.listRuns = async () => [];
+api.messageRows = async () => [user];
+api.runRows = async () => [];
 await store.getState().refreshCurrent();
 assert.deepEqual(store.getState().runs, []);
 
 reset();
 store.setState({ messages: [user, { ...draft, metadata: { streaming: true }, parts: [text('body', 'still visible')] }], runs: [{ ...run, status: 'CANCELLING' }] });
-api.listMessages = async () => [user];
-api.listRuns = async () => [{ ...run, status: 'CANCELLING' }];
+api.messageRows = async () => [user];
+api.runRows = async () => [{ ...run, status: 'CANCELLING' }];
 await store.getState().refreshCurrent();
 assert.equal(store.getState().messages.at(-1).parts[0].text, 'still visible');
 
 reset();
 store.setState({ messages: [user, incomplete], runs: [{ ...run, status: 'FAILED' }] });
-api.listMessages = async () => [user, incomplete];
-api.listRuns = async () => [{ ...done, status: 'FAILED' }];
+api.messageRows = async () => [user, incomplete];
+api.runRows = async () => [{ ...done, status: 'FAILED' }];
 store.getState().applyRuntimeEvent(event('run_failed', { run: { ...done, status: 'FAILED' } }));
 await store.getState().refreshCurrent();
 assert.equal(store.getState().messages.at(-1).metadata.incomplete, true);
@@ -135,8 +135,8 @@ api.retryRun = () => late.promise;
 const retry = store.getState().retryRun('r');
 const other = { ...session, session_id: 'other' };
 api.getSession = async (id) => id === 's' ? session : other;
-api.listMessages = async () => [];
-api.listRuns = async () => [];
+api.messageRows = async () => [];
+api.runRows = async () => [];
 store.setState({ sessions: [session, other] });
 await store.getState().selectSession('other');
 await store.getState().selectSession('s');

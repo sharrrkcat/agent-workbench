@@ -1,3 +1,4 @@
+import { historyPage } from './history-fixtures.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -25,6 +26,10 @@ export function mockModule(exports) {
 }
 
 export function apiMocks(api) {
+  api.getHistory ??= async (id, query) => {
+    const [messages, runs] = await Promise.all([api.messageRows?.(id) ?? [], api.runRows?.(id) ?? []]);
+    return historyPage(messages, runs, query);
+  };
   return Object.fromEntries(
     ['chat', 'models', 'runs', 'tools', 'knowledge', 'worldbook', 'settings', 'projects'].map((domain) => [
       sourceUrl(`api/${domain}.ts`),

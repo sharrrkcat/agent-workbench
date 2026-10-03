@@ -28,5 +28,7 @@
     "output": "Output reserve",
     "inputBudget": "Input budget",
     "removed": "History turns removed"
-  }
+  },
+  "loadEarlier": "Load earlier messages",
+  "loadLater": "Load later messages"
 }

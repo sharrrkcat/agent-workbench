@@ -102,7 +102,8 @@ and preserves shared resources. Persona/model/resource deletion rejects Project 
 | `/api/projects/{id}/sessions` | Workspace session creation and scoped listing |
 | `/api/sessions` and `/{id}` | Ordinary creation/listing; individual ordinary/Workspace configuration |
 | `/api/sessions/{id}/knowledge-bases` | Additions, Cogita/Agent/Project bindings and effective ids |
-| `/api/sessions/{id}/messages` | History and new input |
+| `/api/sessions/{id}/messages` | New input |
+| `/api/sessions/{id}/history`, `/history/users` | Bounded conversation and user-navigation pages |
 | `/api/messages/{id}`, `/edit` | User-message deletion and edit |
 | `/api/runs/{id}`, `/{id}/retry` | Whole-reply deletion and chat retry |
 
@@ -137,16 +138,15 @@ DELETE /api/runs/{id} deletes only that reply's messages, steps, events and
 private state, preserving its user input. User deletion also removes its
 associated replies; user edit removes later conversation and associated runs, retains the message id, and persists created_at as the latest submission time in both the response and message_updated event.
 History mutations require an idle session. Edits require content and attachment_ids (the unique subset of original attachments to retain, in original order); [] removes all attachments. Empty text with no retained attachments returns EMPTY_MESSAGE; invalid ids return INVALID_ATTACHMENTS. Editing cannot add attachments.
-SQLite pruning, text, attachment metadata and timestamps commit in one transaction. Responses and history_pruned events return
-deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
+SQLite pruning, text, attachments, timestamps and history_version commit together. Responses and history_pruned events return deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
 
-ContextBuilder projects current-session history with max_messages (0..10000), max_chars
-(1..1000000), both null/unset by default, and include_attachments=explicit. Null retains all
+ContextBuilder projects current-session history with max_messages (0..10000), max_chars (1..1000000), defaulting to 100 messages / 100000 characters, and include_attachments=explicit. Explicit null retains all
 eligible history; zero messages excludes history; positive N keeps newest N excluding current input.
 Characters deduct current input first and retain whole recent messages; oversized current input
 stays with a warning. mode/source_message_id return 422; Workspace inherits/overrides the whole
 policy. Agent prompts are inserted independently of history limits. Provenance follows projection;
 [context snapshots](runs-streaming.md#context-detail) preserve each call privately, outside metadata.
+SQLite reads eligible history in batches of 128 and stops at count/character limits; zero skips history reads. Window-external exclusions aggregate counts, including empty projections with no message limit; turn identities use identity-only lookups. Existing explicit policies are unchanged. Both limits null may grow memory with history; character-only limits do not bound image-only history, and row counts do not bound single-message size.
 
 Every internal model call enforces input tokens + output reserve + margin <= effective window.
 Runs snapshot the configured window and output reserve. Unset maximum output reserves
@@ -294,7 +294,7 @@ input excerpt and originating input id or successful auxiliary generation.
 
 ## HTTP schemas
 
-OpenAPI covers Personas, resolved configuration, message parts, timelines, bindings, history and Worldbook, excluding private continuation/configuration snapshots.
+OpenAPI covers Personas, configuration, parts, bindings, paginated history and Worldbook; private snapshots remain excluded.
 Responses preserve optional-field omission, explicit nulls and existing PATCH/error behavior.
 Message/run timestamps retain UTC Z and microseconds; Worldbook keeps +00:00. Uploads document
 one multipart file; downloads document stored-MIME bytes, Range, 200/206 headers and empty 416.

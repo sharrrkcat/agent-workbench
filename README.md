@@ -280,7 +280,6 @@ uv pip compile ai_workbench/core/models/runtimes/requirements-local.in -o ai_wor
 ```
 
 Review package/hash changes and dependency-source annotations, then repeat the command to verify stability. Installation consumes only the hash lock; changed pins/hashes require Repair and affected-engine acceptance. Input/comment-only edits preserve installation identity. Source-build tools use isolated build environments; they are not runtime roots. Misaki language dependencies are selected explicitly because its broad extras include unused pipelines/resources.
-
 ## Verification
 
 ```powershell
@@ -288,6 +287,7 @@ uv run pytest -q # Only when backend code changes
 uv run python -m compileall -q ai_workbench
 uv run python scripts/openapi.py check
 uv run python scripts/check_docs_size.py
+uv run python scripts/check_history_memory.py # Bounded history acceptance; no models loaded
 uv run python scripts/audit_workspace.py --check
 Push-Location frontend
 npm test

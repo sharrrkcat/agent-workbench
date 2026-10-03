@@ -33,46 +33,43 @@ class ContextBuilder:
             current_refs = _image_refs(self.message_store.get_message(current_message_id))
         current_content = _content(current, current_refs)
         trace = ContextTrace()
-        candidates = [m for m in self.message_store.list_messages(session_id) if m.message_id != current_message_id]
-        history = [m for m in candidates if _eligible(m)]
-        turns, run_turns, current_turn = {}, {}, None
-        for message in history:
-            if message.role == "user":
-                current_turn = message.message_id
-            turn = message.parent_message_id or run_turns.get(message.run_id) or current_turn or message.message_id
-            turns[message.message_id] = turn
-            if message.run_id:
-                run_turns[message.run_id] = turn
-        trace.exclusions.extend(ContextExclusion(kind="history", reason="ineligible_history", reference_id=m.message_id)
-                                for m in candidates if not _eligible(m))
-        if policy.max_messages == 0:
-            selected = []
-        elif policy.max_messages is None:
-            selected = history
-        else:
-            selected = history[-policy.max_messages:]
-
-        selected_ids = {m.message_id for m in selected}
-        trace.exclusions.extend(ContextExclusion(kind="history", reason="message_limit", reference_id=m.message_id)
-                                for m in history if m.message_id not in selected_ids)
-        pairs = [(m, _project(m, include_attachments=policy.include_attachments == "explicit")) for m in selected]
-        trace.exclusions.extend(ContextExclusion(kind="history", reason="empty", reference_id=m.message_id)
-                                for m, projected in pairs if projected is None)
-        pairs = [(m, projected) for m, projected in pairs if projected is not None]
-        projected = [item for _, item in pairs]
-        # Budget history before adding framing and persona instructions, retaining the current input.
         warnings = []
-        if policy.max_chars is not None:
-            remaining = max(0, policy.max_chars - len(current))
-            projected = _limit_history(projected, remaining)
-            if len(current) > policy.max_chars:
-                warnings.append("Current message exceeds the history character budget; current input is retained.")
-        removed_count = len(pairs) - len(projected)
-        trace.exclusions.extend(ContextExclusion(kind="history", reason="character_limit", reference_id=m.message_id)
-                                for m, _ in pairs[:removed_count])
-        for index, (message, item) in enumerate(pairs[removed_count:]):
+        pairs = []
+        if policy.max_messages != 0:
+            total, eligible = self.message_store.context_history_counts(session_id, current_message_id)
+            allowed = eligible if policy.max_messages is None else min(eligible, policy.max_messages)
+            if total > eligible:
+                trace.exclusions.append(ContextExclusion(kind="history", reason="ineligible_history", count=total - eligible))
+            if eligible > allowed:
+                trace.exclusions.append(ContextExclusion(kind="history", reason="message_limit", count=eligible - allowed))
+            remaining = None if policy.max_chars is None else max(0, policy.max_chars - len(current))
+            history = iter(self.message_store.iter_context_history(session_id, current_message_id))
+            empty_count = 0
+            for position in range(allowed):
+                message = next(history)
+                projected = _project(message, include_attachments=policy.include_attachments == "explicit")
+                if projected is None:
+                    if policy.max_messages is None:
+                        empty_count += 1
+                    else:
+                        trace.exclusions.append(ContextExclusion(kind="history", reason="empty", reference_id=message.message_id))
+                    continue
+                length = sum(len(part["text"]) for part in _parts(projected["content"]) if part["type"] == "text")
+                if remaining is not None:
+                    if length > remaining:
+                        trace.exclusions.append(ContextExclusion(kind="history", reason="character_limit", count=allowed - position))
+                        break
+                    remaining -= length
+                pairs.append((message, projected))
+            if empty_count:
+                trace.exclusions.append(ContextExclusion(kind="history", reason="empty", count=empty_count))
+            pairs.reverse()
+        if policy.max_chars is not None and len(current) > policy.max_chars:
+            warnings.append("Current message exceeds the history character budget; current input is retained.")
+        projected = [item for _, item in pairs]
+        for index, (message, item) in enumerate(pairs):
             _trace_message(trace, message, index, item, "history", policy.include_attachments == "explicit",
-                           turn_id=turns[message.message_id])
+                           turn_id=self.message_store.context_turn_id(message))
         current_message = self.message_store.get_message(current_message_id) if current_message_id else None
         current_item = {"role": "user", "content": current_content}
         if current_message is not None:
@@ -180,12 +177,3 @@ def _eligible(message: Any) -> bool:
     if any(isinstance(part,dict) and part.get("type")=="error" for part in getattr(message,"parts",[]) or []): return False
     metadata=getattr(message,"metadata",{}) or {}
     return not bool(metadata.get("event_type") or metadata.get("incomplete") or metadata.get("streaming"))
-
-
-def _limit_history(messages: list[ContextMessage], limit: int) -> list[ContextMessage]:
-    kept=[]; used=0
-    for item in reversed(messages):
-        length = sum(len(part["text"]) for part in _parts(item["content"]) if part["type"] == "text")
-        if used + length > limit: break
-        kept.append(item); used += length
-    return list(reversed(kept))

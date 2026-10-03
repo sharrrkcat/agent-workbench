@@ -1,3 +1,4 @@
+import { readMessages } from './history';
 import { readFileSync } from 'node:fs';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { answerConfirmation, openSidebar } from './controls';
@@ -78,7 +79,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.chat-title')).toHaveText('Draft attachmen…');
         await expect(page.locator('.composer textarea')).toHaveValue('');
         await expect(page.locator('.attachment-chip')).toHaveCount(0);
-        const messages = await (await request.get(`/api/sessions/${session.session_id}/messages`)).json();
+        const messages = await readMessages(request, session.session_id);
         expect(messages.find((m: { role: string }) => m.role === 'user').metadata.attachments[0].name).toBe('draft.txt');
         await expect(page.locator('.composer-context, .context-action')).toHaveCount(0);
         let previous = '0';

@@ -8,6 +8,7 @@ SQLite application without any extension registry machinery.
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import timedelta
 import json
 from typing import Any, Optional
 from uuid import uuid4
@@ -78,6 +79,32 @@ class SessionStore:
 
 
 class MessageStore:
+    def selected_message_ids(self, session_id, message_ids, run_ids):
+        return [m.message_id for m in self.list_messages(session_id) if m.message_id in message_ids or m.run_id in run_ids]
+
+    def later_message_ids(self, message):
+        return {m.message_id for m in self._messages.values() if m.session_id == message.session_id
+                and (m.created_at, m.message_id) > (message.created_at, message.message_id)}
+
+    def message_ids_after_run(self, run, exclude_id):
+        return {m.message_id for m in self._messages.values() if m.session_id == run.session_id
+                and m.created_at > run.created_at and m.message_id != exclude_id}
+
+    def referencing_session_ids(self, persona_id):
+        return {m.session_id for m in self._messages.values() if m.speaker_id == persona_id}
+
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        return {name for name in self.attachment_filenames() if name in names}
+
+    def attachment_filenames(self, *, session_id=None, message_ids=None, run_ids=None):
+        from ai_workbench.core.attachments import message_attachment_filenames
+        for message in self._messages.values():
+            if session_id is not None and message.session_id != session_id:
+                continue
+            if (message_ids is not None or run_ids is not None) and message.message_id not in (message_ids or ()) and message.run_id not in (run_ids or ()):
+                continue
+            yield from message_attachment_filenames(message)
+
     def __init__(self, session_store: SessionStore | None = None) -> None:
         self._messages: dict[str, MessageSchema] = {}
         self._session_ids: dict[str, list[str]] = {}
@@ -126,6 +153,9 @@ class MessageStore:
         )
         if message.message_id in self._messages:
             raise ValueError("message_id already exists")
+        previous_ids = self._session_ids.get(session_id, [])
+        if previous_ids:
+            message.created_at = max(message.created_at, self._messages[previous_ids[-1]].created_at + timedelta(microseconds=1))
         self._messages[message.message_id] = message
         self._session_ids.setdefault(session_id, []).append(message.message_id)
         if self.session_store is not None:
@@ -154,7 +184,39 @@ class MessageStore:
         return message
 
     def list_messages(self, session_id: str) -> list[MessageSchema]:
-        return [self._messages[item] for item in self._session_ids.get(session_id, []) if item in self._messages]
+        return sorted((self._messages[item] for item in self._session_ids.get(session_id, []) if item in self._messages),
+                      key=lambda m: (m.created_at, m.message_id))
+
+    def iter_context_history(self, session_id: str, exclude_id: str | None):
+        from ai_workbench.core.context import _eligible
+        return (m for m in reversed(self.list_messages(session_id)) if m.message_id != exclude_id and _eligible(m))
+
+    def context_history_counts(self, session_id: str, exclude_id: str | None) -> tuple[int, int]:
+        from ai_workbench.core.context import _eligible
+        total = eligible = 0
+        for message_id in self._session_ids.get(session_id, []):
+            if message_id != exclude_id:
+                total += 1
+                eligible += int(_eligible(self._messages[message_id]))
+        return total, eligible
+
+    def context_turn_id(self, message: MessageSchema) -> str:
+        from ai_workbench.core.context import _eligible
+        turns, current = {}, None
+        for item in self.list_messages(message.session_id):
+            if not _eligible(item):
+                continue
+            if item.role == "user":
+                current = item.message_id
+            turn = item.parent_message_id or turns.get(item.run_id) or current or item.message_id
+            if item.run_id:
+                turns[item.run_id] = turn
+            if item.message_id == message.message_id:
+                return turn
+        return message.message_id
+
+    def messages_for_run(self, run_id: str) -> list[MessageSchema]:
+        return sorted((m for m in self._messages.values() if m.run_id == run_id), key=lambda m: (m.created_at, m.message_id))
 
     def list_all_messages(self) -> list[MessageSchema]:
         return list(self._messages.values())
@@ -171,6 +233,32 @@ class MessageStore:
 
 
 class RunStore:
+    def unfinished_runs(self):
+        return (r for r in self._runs.values() if r.status not in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED})
+
+    def has_unfinished(self, *, session_id=None, persona_id=None):
+        return any((session_id is None or r.session_id == session_id) and (persona_id is None or r.persona_id == persona_id)
+                   for r in self.unfinished_runs())
+
+    def run_ids_for_input(self, session_id, message_id):
+        return [r.run_id for r in self.list_runs(session_id) if r.metadata.get("input_message_id") == message_id]
+
+    def later_run_ids(self, run):
+        return [r.run_id for r in self.list_runs(run.session_id) if (r.created_at, r.run_id) >= (run.created_at, run.run_id)]
+
+    def run_ids_after_message(self, message):
+        return [r.run_id for r in self.list_runs(message.session_id)
+                if r.created_at >= message.created_at or r.metadata.get("input_message_id") == message.message_id]
+
+    def existing_run_ids(self, session_id, ids):
+        return [r.run_id for r in self.list_runs(session_id) if r.run_id in ids]
+
+    def referencing_session_ids(self, persona_id):
+        return {r.session_id for r in self._runs.values() if r.persona_id == persona_id}
+
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        return {name for value in self._context_snapshots.values() for name in json.loads(value)["attachment_ids"] if name in names}
+
     def __init__(self) -> None:
         self._runs: dict[str, RunSchema] = {}
         self._session_ids: dict[str, list[str]] = {}
@@ -204,9 +292,10 @@ class RunStore:
         self.get_step(step_id)
         return ContextSnapshot.model_validate_json(self._context_snapshots[step_id])
 
-    def context_attachment_ids(self, run_ids: set[str] | None = None) -> set[str]:
+    def context_attachment_ids(self, run_ids: set[str] | None = None, *, session_id: str | None = None) -> set[str]:
         return {attachment for step_id, value in self._context_snapshots.items()
-                if run_ids is None or self._steps[step_id].run_id in run_ids
+                if (run_ids is None or self._steps[step_id].run_id in run_ids)
+                and (session_id is None or self._runs[self._steps[step_id].run_id].session_id == session_id)
                 for attachment in json.loads(value)["attachment_ids"]}
 
     def get_harness_state(self, run_id: str) -> dict:
@@ -363,6 +452,16 @@ class RunStore:
 
 
 class RunEventStore:
+    def page_events(self, run_id: str, after: str | None, limit: int):
+        from ai_workbench.core.history_page import HistoryCursor, cursor_for
+        from ai_workbench.core.time import ensure_utc
+        cursor = HistoryCursor.decode(after, run_id).key() if after else None
+        items = sorted(self.list_events(run_id), key=lambda e: (ensure_utc(e.created_at), 1, e.event_id))
+        items = [e for e in items if cursor is None or (ensure_utc(e.created_at), 1, e.event_id) > cursor][:limit + 1]
+        more = len(items) > limit
+        next_cursor = cursor_for(run_id, (items[limit - 1].created_at, 1, items[limit - 1].event_id)) if more else None
+        return {"items": [e.model_dump(mode="json") for e in items[:limit]], "next_cursor": next_cursor, "has_more": more}
+
     def __init__(self) -> None:
         self._events: dict[str, RunEventSchema] = {}
         self._run_ids: dict[str, list[str]] = {}

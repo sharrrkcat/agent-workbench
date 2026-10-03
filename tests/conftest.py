@@ -16,6 +16,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MODELS_ROOT = REPO_ROOT / "data" / "models"
 
 
+@pytest.fixture(autouse=True)
+def record_runtime_events(monkeypatch):
+    from ai_workbench.api import deps
+    from tests.event_recorder import RecordingEventBus
+    monkeypatch.setattr(deps, "EventBus", RecordingEventBus)
+
+
 def _snapshot_model_files() -> set[str]:
     if not MODELS_ROOT.is_dir():
         return set()

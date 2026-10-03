@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from array import array
 from dataclasses import dataclass
+from collections import Counter
+from heapq import nlargest
 import math
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from ai_workbench.core.models.schema import EmbeddingSimilarity
 
 
@@ -29,6 +31,15 @@ class VectorSearchResult:
     vector_rank: int
 
 
+@dataclass
+class VectorRank:
+    score: float
+    chunk_id: str
+
+    def __lt__(self, other):
+        return self.score < other.score if self.score != other.score else self.chunk_id > other.chunk_id
+
+
 def search_vectors(
     *,
     engine: Any,
@@ -50,11 +61,6 @@ def search_vectors(
         f"""
         SELECT
           e.chunk_id,
-          e.knowledge_base_id,
-          e.source_id,
-          src.title,
-          c.heading_path,
-          c.content,
           e.embedding_dimension,
           e.vector_blob
         FROM kb_embeddings e
@@ -65,47 +71,36 @@ def search_vectors(
           AND src.status = 'indexed'
         """
     )
-    scored: list[VectorSearchResult] = []
+    skipped = Counter()
+    examples: list[str] = []
     query_dimension = len(query_vector)
     with engine.connect() as connection:
-        rows = connection.execute(statement, params).mappings().all()
-    for row in rows:
-        if int(row["embedding_dimension"]) != query_dimension:
-            warnings.append(
-                f"Skipped chunk {row['chunk_id']} because vector dimension {row['embedding_dimension']} did not match query dimension {query_dimension}."
-            )
-            continue
-        vector = _vector_from_blob(row["vector_blob"])
-        if len(vector) != query_dimension:
-            warnings.append(
-                f"Skipped chunk {row['chunk_id']} because vector BLOB dimension {len(vector)} did not match query dimension {query_dimension}."
-            )
-            continue
-        scored.append(
-            VectorSearchResult(
-                chunk_id=str(row["chunk_id"]),
-                knowledge_base_id=str(row["knowledge_base_id"]),
-                source_id=str(row["source_id"]),
-                title=str(row["title"] or ""),
-                heading_path=str(row["heading_path"] or ""),
-                content=str(row["content"] or ""),
-                vector_score=embedding_score(query_vector, vector, similarity),
-                vector_rank=0,
-            )
-        )
-    scored.sort(key=lambda item: item.vector_score, reverse=True)
-    results = scored[:top_k]
-    for index, item in enumerate(results, start=1):
-        item.vector_rank = index
+        def ranks():
+            with connection.execute(statement, params) as cursor:
+                for batch in cursor.mappings().partitions(256):
+                    for row in batch:
+                        reason = ("dimension" if int(row["embedding_dimension"]) != query_dimension else
+                                  "BLOB dimension" if len(row["vector_blob"]) != query_dimension * 4 else None)
+                        if reason:
+                            skipped[reason] += 1
+                            if len(examples) < 10:
+                                examples.append(f"{row['chunk_id']} ({reason})")
+                            continue
+                        yield VectorRank(embedding_score(query_vector, _vector_from_blob(row["vector_blob"]), similarity), str(row["chunk_id"]))
+        best = nlargest(top_k, ranks())
+        winners = text("""SELECT c.id, c.knowledge_base_id, c.source_id, src.title, c.heading_path, c.content
+                          FROM kb_chunks c JOIN kb_sources src ON src.id = c.source_id WHERE c.id IN :ids""").bindparams(bindparam("ids", expanding=True))
+        details = {row["id"]: row for row in connection.execute(winners, {"ids": [item.chunk_id for item in best]}).mappings()}
+        results = [VectorSearchResult(item.chunk_id, details[item.chunk_id]["knowledge_base_id"],
+            details[item.chunk_id]["source_id"], details[item.chunk_id]["title"] or "", details[item.chunk_id]["heading_path"] or "",
+            details[item.chunk_id]["content"] or "", item.score, index) for index, item in enumerate(best, start=1)]
+    if skipped:
+        warnings.append("Skipped vectors: " + ", ".join(f"{reason}={count}" for reason, count in skipped.items())
+                        + "; examples: " + ", ".join(examples))
     return results, warnings
 
 
-def _vector_from_blob(blob: bytes) -> list[float]:
-    try:
-        import numpy as np  # type: ignore
-
-        return [float(value) for value in np.frombuffer(blob, dtype=np.float32).tolist()]
-    except Exception:
-        vector = array("f")
-        vector.frombytes(blob)
-        return [float(value) for value in vector.tolist()]
+def _vector_from_blob(blob: bytes) -> array:
+    vector = array("f")
+    vector.frombytes(blob)
+    return vector

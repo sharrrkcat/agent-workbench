@@ -109,7 +109,7 @@ def get_tool_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict[
 
 def _tool_result_payload(state: RuntimeState, session_id: str, run_id: str) -> dict[str, Any]:
     run = state.runs.get_run(run_id)
-    messages = [item.model_dump(mode="json") for item in state.messages.list_messages(session_id) if item.run_id == run_id]
+    messages = [item.model_dump(mode="json") for item in state.messages.messages_for_run(run_id)]
     payload = run.model_dump(mode="json")
     payload["steps"] = [step.model_dump(mode="json") for step in state.runs.list_steps(run_id)]
     return {"run": payload, "messages": messages,

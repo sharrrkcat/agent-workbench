@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.events import EventBus
+from tests.event_recorder import RecordingEventBus as EventBus
 from ai_workbench.core.models.manager import InferenceSlot, ModelManager
 from ai_workbench.core.models.runtimes.schema import Installation
 from ai_workbench.core.models.schema import ChatChunk, ChatRequest, ChatResult, ModelProfile, ModelStatus, ProviderProfile

@@ -193,10 +193,9 @@ def test_knowledge_rrf_is_deterministic_and_empty_rerank_is_not_reported_as_fail
 
 
 def test_context_builder_projects_generic_messages_without_extension_metadata() -> None:
-    class Store:
-        def list_messages(self, _session_id: str) -> list[MessageSchema]:
-            return [MessageSchema(message_id="m", session_id="s", role="user", parts=[{"type": "text", "text": "hello"}])]
-
-    result = ContextBuilder(Store()).build("s", "reply")
+    from ai_workbench.core.stores import MessageStore
+    store = MessageStore()
+    store.add_message("s", "user", "hello")
+    result = ContextBuilder(store).build("s", "reply")
     assert result.messages[-1] == {"role": "user", "content": "reply"}
     assert all(("agent" + "_id") not in message and ("action" + "_id") not in message for message in result.messages)

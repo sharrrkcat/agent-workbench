@@ -5,6 +5,8 @@ import type { Message } from '../../types/messages';
 import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
 import type { ChatDraft, Session, SessionPatch } from '../../types/chat';
 import type { ToolRunResponse } from '../../types/tools';
+import type { HistoryWindow } from '../../types/history';
+import type { HistoryLoad } from './historyWindow';
 
 export type CogitaState = {
   sessions: Session[];
@@ -16,6 +18,13 @@ export type CogitaState = {
   lastOrdinarySessionId: string | null;
   initialized: boolean;
   messages: Message[];
+  historyWindow: HistoryWindow | null;
+  historyLoading: boolean;
+  historyFollowing: boolean;
+  historyAnchor: string | null;
+  loadHistory: (direction: HistoryLoad, cursor?: string) => Promise<void>;
+  setHistoryAnchor: (cursor: string | null) => void;
+  setHistoryFollowing: (following: boolean) => void;
   runs: Run[];
   stepsByRunId: Record<string, RunStep[]>;
   settings: GeneralSettings | null;
@@ -31,6 +40,7 @@ export type CogitaState = {
   loading: boolean;
   sending: boolean;
   awaitingAcceptance: boolean;
+  pendingClientMessageId: string | null;
   resolvingApprovals: string[];
   error: string | null;
   initialize: (selectOrdinary?: boolean) => Promise<void>;

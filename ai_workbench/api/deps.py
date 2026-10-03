@@ -13,6 +13,8 @@ from ai_workbench.core.chat_runner import ChatRunner
 from ai_workbench.core.harness import HarnessSettingsStore, ToolRegistry, register_builtin_tools
 from ai_workbench.core.chat_service import ChatService
 from ai_workbench.core.conversation_history import ConversationHistory, MemoryHistoryStore
+from ai_workbench.core.history_page import MemoryHistoryReader
+from ai_workbench.db.history_page import SqlHistoryReader
 from ai_workbench.core.personas import PersonaStore
 from ai_workbench.core.projects import ProjectStore
 from ai_workbench.core.project_service import ProjectService
@@ -73,6 +75,7 @@ class RuntimeState:
     database_url: str
     started_at: datetime = field(default_factory=utc_now)
     active_websockets: int = 0
+    history_reader: Any = None
 
 
 def build_runtime_state(root: str | Path | None = None, database_url: str | None = None,
@@ -145,6 +148,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         runtime_supervisor=supervisor,
         tool_registry=tool_registry, harness_settings=harness_settings,
         database_url=resolved_database_url,
+        history_reader=MemoryHistoryReader(sessions, messages, runs) if use_memory else SqlHistoryReader(engine),
     )
 
 

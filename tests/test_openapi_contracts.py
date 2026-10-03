@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages
 """Contract gates and wire-format cases beyond the domain regression suites."""
 
 import asyncio
@@ -207,14 +208,14 @@ def test_message_parts_preserve_omitted_fields_json_values_and_microseconds(api)
     state.messages.add_message(session_id, "tool", parts=[{
         "type": "tool_result", "tool_call_id": "call-1", "tool_name": "base64_encode", "status": "success",
     }])
-    messages = client.get(f"/api/sessions/{session_id}/messages").json()
+    messages = history_messages(client.get(f"/api/sessions/{session_id}/history").json())
     assert messages[0]["created_at"] == "2026-09-08T01:02:03.120034Z"
     assert "run" not in messages[0] and "run_steps" not in messages[0]
     assert messages[0]["metadata"] == {"fixture": {"null": None, "list": [True, 1]}}
     assert messages[0]["parts"][2]["data"] == contents[2]["data"]
     assert "filename" not in messages[0]["parts"][3]
     assert "data" not in messages[1]["parts"][0]
-    assert client.get(f"/api/sessions/{session_id}/timeline").status_code == 200
+    assert client.get(f"/api/sessions/{session_id}/history/users").status_code == 200
 
 
 def test_chat_event_variants_and_private_state(api):
@@ -228,7 +229,7 @@ def test_chat_event_variants_and_private_state(api):
     assert "config_snapshot_json" not in run and "harness_state_json" not in run
     state = client.app.state.runtime_state
     assert state.runs.get_config_snapshot(run["run_id"])["system_prompt"]
-    events = client.get(f"/api/runs/{run['run_id']}/events").json()
+    events = client.get(f"/api/runs/{run['run_id']}/events").json()["items"]
     assert {"run_started", "message_started", "message_delta", "message_completed", "run_completed"} <= {event["type"] for event in events}
     assert all("config_snapshot_json" not in event["payload"].get("run", {}) for event in events)
     cancelled = client.post(f"/api/runs/{run['run_id']}/cancel").json()
@@ -236,11 +237,10 @@ def test_chat_event_variants_and_private_state(api):
     upstream.failure = 500
     failed = client.post(f"/api/sessions/{session_id}/messages", json={"content": "Fail this request"}).json()
     assert failed["run"]["status"] == "FAILED"
-    timeline = client.get(f"/api/sessions/{session_id}/timeline").json()
-    notification = next(item["notification"] for item in timeline if item["kind"] == "notification")
-    assert notification["created_at"].endswith("+00:00")
-    assert "steps" not in notification["run"]
-    assert client.post(f"/api/sessions/{session_id}/notifications/{notification['id']}/dismiss").json()["dismissed"]
+    history = client.get(f"/api/sessions/{session_id}/history").json()
+    failed_item = next(item for item in history["items"] if item["kind"] == "reply" and item["id"] == failed["run"]["run_id"])
+    assert failed_item["run"]["status"] == "FAILED"
+    assert "steps" in failed_item["run"]
 
 
 def test_attachment_multipart_range_and_empty_416(api):

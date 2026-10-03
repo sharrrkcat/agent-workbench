@@ -28,5 +28,7 @@
     "output": "输出预留",
     "inputBudget": "可用输入预算",
     "removed": "移除历史轮次"
-  }
+  },
+  "loadEarlier": "加载更早的消息",
+  "loadLater": "加载后续消息"
 }

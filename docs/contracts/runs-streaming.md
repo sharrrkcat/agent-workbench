@@ -39,14 +39,14 @@ an explanatory error/status. Direct rejection/handler failure is FAILED;
 model-loop tool errors may be followed by a model answer.
 
 Run reads/cancellation are `/api/runs/{id}`, `/{id}/events`, `/{id}/cancel` and
-`/api/sessions/{id}/runs`. Tool responses and explicit approvals are defined by
+`/api/sessions/{id}/history`. Tool responses and explicit approvals are defined by
 the harness contract. Direct tool runs never create model summaries or auxiliary titles;
 explicit chat tool input receives the basic input title described in the chat contract.
 
 Visible conversation items have consecutive session-local numbers starting at #1 beside their timestamps.
 Each standalone message or whole reply occupies one number, including active, failed, cancelled and
 direct-tool replies. Processing messages share their reply's number. Numbers follow current display
-order, are recomputed after history mutations and are not persisted. User-message navigation uses
+order, are computed by database counts after history mutations and are not persisted. User-message navigation uses
 these same numbers while continuing to target only user messages.
 The chat view presents each run inside its reply, without a separate footer
 RunPanel or context/model/save step list. Elapsed seconds use started_at (or
@@ -88,6 +88,10 @@ Creation, binding or unaccepted send failure restores the snapshot in the same s
 Session clients connect to `/api/ws/{session_id}`, request `next_event`, and
 receive events with session_id and optional run_id/message_id plus payload.
 Global model/runtime events use `/api/models/events`, including without a selected chat session.
+Subscriptions filter before enqueueing and retain at most 256 events / 4 MiB of
+serialized payload. Overflow closes with 1013 and releases the queue independently
+of `next_event`; sends time out after five seconds. EventBus retains no event history.
+Reconnect refreshes durable state; unsaved streaming drafts recover at completion.
 
 | Event | Meaning |
 | --- | --- |
@@ -156,7 +160,15 @@ Whole-reply/user history operations atomically remove messages, runs, steps and
 events. REST pruning responses and history_pruned share a frontend reducer.
 Deleted ids block late messages, steps, runs and REST results; session epochs
 reject requests from earlier visits even after switching back. Authoritative
-refresh removes records absent from the server without regressing newer events.
+refresh removes records absent from the window without regressing newer events.
+History pages use before/after/around cursors (mutually exclusive), default 50/max 100,
+ordered by created_at, kind (message before reply), id. Replies remain whole.
+Responses provide numbers, boundary cursors, has_before/has_after, history_version and a compact active_run.
+The UI retains at most 200 items and their associated messages/steps, preserving scroll anchors on eviction.
+Automatic pagination responds to user scrolling; programmatic jumps do not load adjacent pages.
+Older-history browsing updates loaded items and active status only; Latest messages or sending loads the tail.
+User navigation independently reads 50 summaries via /history/users. Destructive version changes reload around the anchor.
+Concurrent refreshes coalesce. /runs/{id}/events uses after, limit (default 100/max 500), items/next_cursor/has_more.
 
 Model/runtime stores reject stale refreshes and keep newer live occupancy/job
 revisions. UI state does not infer residency from a successful health check.
@@ -187,7 +199,7 @@ Step `metadata.context` exposes availability, message/tool/image counts and a st
 and effective window_tokens, input_budget_tokens, pre-call input_tokens, counting=native|estimated,
 output_tokens, margin_tokens and removed_turns. The snapshot contains the same budget. Counts are
 distinct from actual usage; public statistics contain no prompt text. Ordinary run/message
-reads and events never carry snapshot content. `GET /api/runs/{run_id}/steps/{step_id}/context`
+reads and events never load private snapshot columns. `GET /api/runs/{run_id}/steps/{step_id}/context`
 returns strict detail data; missing snapshots or mismatched run/step ownership return CONTEXT_NOT_FOUND (404).
 Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and sanitized text.
 
@@ -210,7 +222,7 @@ The count slot reserves its width from known character counts and stays right-al
 Desktop source navigation is 17rem wide. History and current-input sources with message references
 use Message #N (localized), matching the current conversation number in navigation and detail headings,
 without the request-position prefix. Their labels stay on one line; attachment/citation names may wrap.
-Multiple sources from one reply share its number. Deleted references show Deleted message; sources
+Context detail supplies current reference_numbers even outside the loaded window; multiple sources from one reply share its number. Deleted references show Deleted message; sources
 without a message reference retain their category label. Tool sources retain tool labels.
 Context and usage dialogs are sibling roots, so Context detail receives the standard dimmed, blurred backdrop.
 An Info Hover Card beside the source name/role contains characters, approximate tokens and captured identifiers;
@@ -280,7 +292,7 @@ Access logs record the final outcome after the complete response ends.
 OpenAPI describes the chat 200 response as either JSON or text/event-stream.
 The SSE body remains text, with fixed chunk, usage, failure and DONE examples;
 x-event-schemas references the generated chunk/error models for frame validation.
-REST run, step, timeline and stored-event responses have runtime validation and
+REST run, step, history and stored-event responses have runtime validation and
 typed lifecycle/message/delta/tool/approval payloads. Omitted fields and explicit
 nulls remain distinct, and timestamps retain microseconds. Private snapshots are
 absent from those types. WebSocket transport remains defined here rather than

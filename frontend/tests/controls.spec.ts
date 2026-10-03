@@ -1,3 +1,4 @@
+import { readRuns } from './history';
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { navigateModelSettings, answerConfirmation, navigateSettings, openSidebar } from './controls';
@@ -334,19 +335,10 @@ for (const locale of ['en', 'zh-CN']) {
         const temperature = dialog.getByLabel(llm.params.temperature, { exact: true });
         await expect(dialog.getByLabel(llm.params.seed, { exact: true })).toHaveCount(0);
         await expect(dialog.getByLabel(llm.params.presence_penalty, { exact: true })).toHaveCount(0);
-        const tool = dialog.getByRole('checkbox', { name: 'base64_encode', exact: true });
-        await tool.uncheck();
         await temperature.fill('0');
         await dialog.getByRole('tab', { name: personas.knowledge, exact: true }).click();
         await dialog.getByRole('tab', { name: personas.configuration, exact: true }).click();
         await expect(temperature).toHaveValue('0');
-        await expect(tool).not.toBeChecked();
-        if (viewport.width === 390) {
-          const label = dialog.locator('[data-slot="field-label"]').filter({ hasText: /^base64_encode$/ });
-          expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-          expect((await tool.boundingBox())!.height).toBeLessThan(44);
-        }
-        await tool.check();
         await dialog.getByRole('button', { name: common.save, exact: true }).click();
         await expect(dialog).toBeHidden();
         expect(
@@ -361,7 +353,7 @@ for (const locale of ['en', 'zh-CN']) {
             new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }),
           ),
         );
-        expect(await (await request.get(`/api/sessions/${session.session_id}/runs`)).json()).toEqual([]);
+        expect(await readRuns(request, session.session_id)).toEqual([]);
         await expect(input).toHaveValue('中文输入');
         await composer
           .locator('input[type="file"]')

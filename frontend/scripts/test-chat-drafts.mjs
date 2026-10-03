@@ -23,9 +23,9 @@ function reset() {
   api.listSessions = async () => [];
   api.getGeneralSettings = async () => ({});
   api.getSession = async (id) => saved(id);
-  api.listMessages = async () => [];
-  api.listRuns = async () => [];
-  api.listRuns = async () => [];
+  api.messageRows = async () => [];
+  api.runRows = async () => [];
+  api.runRows = async () => [];
   api.createSession = async (...args) => { calls.push(['create', ...args]); return saved('created', typeof args[0] === 'string' ? args[0] : null); };
   api.updateSessionKnowledgeBases = async (...args) => { calls.push(['bindings', ...args]); };
   api.sendMessage = async (...args) => { calls.push(['send', ...args]); return result(saved(args[0])); };
@@ -158,7 +158,7 @@ const recoveredSession = saved('recovered');
 store.setState({ currentSession: recoveredSession, sessions: [recoveredSession] });
 api.getSession = async () => recoveredSession;
 api.sendMessage = async (_session, _content, _attachments, id) => {
-  api.listMessages = async () => [{ message_id: 'saved', session_id: 'recovered', role: 'user',
+  api.messageRows = async () => [{ message_id: 'saved', session_id: 'recovered', role: 'user',
     created_at: recoveredSession.updated_at, parts: [], metadata: { client_message_id: id } }];
   throw new Error('Lost response before WebSocket notification');
 };

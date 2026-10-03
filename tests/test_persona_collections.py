@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages
 import base64
 import json
 
@@ -141,7 +142,7 @@ def test_agent_identity_events_include_historical_ordinary_and_workspace_session
         assert "speaker_avatar_attachment_id" not in result["messages"][-1]["metadata"]
         patch = {"persona_id": COGITA_PERSONA_ID} if session["kind"] == "ordinary" else {"overrides": {"persona_id": None}}
         ok(client.patch(session_path, json=patch))
-        histories[session_path] = ok(client.get(session_path + "/messages"))
+        histories[session_path] = history_messages(ok(client.get(session_path + "/history")))
     # A run without an assistant message and a standalone assistant message also own identity.
     run_only = ok(client.post("/api/sessions", json={}))
     run = state.runs.create_run(kind="tool", session_id=run_only["session_id"], persona_id=agent["id"])
@@ -165,7 +166,7 @@ def test_agent_identity_events_include_historical_ordinary_and_workspace_session
         assert delivered == affected
         assert unrelated["session_id"] not in delivered
     for session_path, history in histories.items():
-        assert ok(client.get(session_path + "/messages")) == history
+        assert history_messages(ok(client.get(session_path + "/history"))) == history
 
 
 def test_user_identity_is_live_and_does_not_retain_old_avatar_snapshots(client_pair):
@@ -183,13 +184,13 @@ def test_user_identity_is_live_and_does_not_retain_old_avatar_snapshots(client_p
     run_id = result["run"]["run_id"]
     snapshot = client.app.state.runtime_state.runs.get_config_snapshot(run_id)
     assert snapshot["user_persona_prompt"] == "PRIVATE_USER_CONTEXT"
-    history = ok(client.get(path + "/messages"))
+    history = history_messages(ok(client.get(path + "/history")))
     assert history[0]["speaker_id"] == USER_PERSONA_ID
     assert "speaker_avatar_attachment_id" not in history[0]["metadata"]
     ok(client.patch(user_path, json={"name": "After", "avatar_attachment_id": avatars[1]}))
     for session in ok(client.get("/api/sessions")):
         assert session["user_persona"] == {"id": USER_PERSONA_ID, "name": "After", "avatar_attachment_id": avatars[1]}
-    assert ok(client.get(path + "/messages")) == history
+    assert history_messages(ok(client.get(path + "/history"))) == history
     for session in sessions:
         assert ok(client.get(f"/api/sessions/{session['session_id']}"))["user_persona"]["name"] == "After"
     assert client.get(f"/api/attachments/{avatars[0]}").status_code == 200
@@ -209,9 +210,9 @@ def test_deleted_historical_agent_blocks_retry_before_pruning(client_pair):
     ok(client.patch(path, json={"persona_id": COGITA_PERSONA_ID}))
     ok(client.post(path + "/messages", json={"content": "second"}))
     ok(client.delete(f"/api/personas/{agent['id']}"))
-    history = ok(client.get(path + "/messages"))
+    history = history_messages(ok(client.get(path + "/history")))
     assert client.post(f"/api/runs/{first['run']['run_id']}/retry").status_code == 404
-    assert ok(client.get(path + "/messages")) == history
+    assert history_messages(ok(client.get(path + "/history"))) == history
 
 
 def test_persona_revision_resets_only_affected_state_and_keeps_files(tmp_path):

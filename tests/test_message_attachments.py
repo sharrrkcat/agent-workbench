@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages
 import json
 
 import pytest
@@ -39,7 +40,7 @@ def test_edit_persists_retained_order_and_regenerates_only_retained_attachments(
         "content": "edited", "attachment_ids": [attachments[1]["id"], attachments[0]["id"]],
     }))
     assert response["success"]
-    history = ok(client.get(path))
+    history = history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))
     assert [message["role"] for message in history] == ["user", "assistant"]
     assert history[0]["message_id"] == user["message_id"]
     assert history[0]["created_at"] != user["created_at"]
@@ -57,7 +58,7 @@ def test_edit_persists_retained_order_and_regenerates_only_retained_attachments(
 
 def test_invalid_attachment_edits_do_not_prune_or_change_the_message(chat):
     client, _, path, user, attachments = chat
-    before = ok(client.get(path))
+    before = history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))
     cases = [
         ({"content": "edited"}, 422, None),
         ({"content": "edited", "attachment_ids": [1]}, 422, None),
@@ -70,7 +71,7 @@ def test_invalid_attachment_edits_do_not_prune_or_change_the_message(chat):
         assert response.status_code == status, response.text
         if code:
             assert response.json()["error"]["code"] == code
-        assert ok(client.get(path)) == before
+        assert history_messages(ok(client.get(path.removesuffix("/messages") + "/history"))) == before
         assert all(resolve_attachment_uri(item["uri"]).exists() for item in attachments)
 
 
@@ -83,10 +84,10 @@ def test_attachment_only_edit_and_remove_all_preserve_shared_files(chat):
     url = f"/api/messages/{user['message_id']}/edit"
     edited = ok(client.post(url, json={"content": "", "attachment_ids": [attachments[0]["id"]], "rerun": False}))
     assert edited["messages"][0]["parts"] == []
-    assert ok(client.get(path))[0]["metadata"]["attachments"] == attachments[:1]
+    assert history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))[0]["metadata"]["attachments"] == attachments[:1]
     assert not resolve_attachment_uri(attachments[1]["uri"]).exists()
     ok(client.post(url, json={"content": "text only", "attachment_ids": [], "rerun": False}))
-    assert ok(client.get(path))[0]["metadata"]["attachments"] == []
+    assert history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))[0]["metadata"]["attachments"] == []
     image_path = resolve_attachment_uri(attachments[0]["uri"])
     assert image_path.exists()
     other_user = next(message for message in other["messages"] if message["role"] == "user")
@@ -97,7 +98,7 @@ def test_attachment_only_edit_and_remove_all_preserve_shared_files(chat):
 def test_failed_edit_commit_preserves_history_metadata_and_files(chat, monkeypatch):
     client, _, path, user, attachments = chat
     state = client.app.state.runtime_state
-    before = ok(client.get(path))
+    before = history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))
     engine = getattr(state.history.store, "engine", None)
 
     def fail(*args):
@@ -119,6 +120,6 @@ def test_failed_edit_commit_preserves_history_metadata_and_files(chat, monkeypat
     finally:
         if engine:
             event.remove(engine, "before_cursor_execute", fail_update)
-    assert ok(client.get(path)) == before
+    assert history_messages(ok(client.get(path.removesuffix("/messages") + "/history"))) == before
     assert state.runs.list_runs(user["session_id"])
     assert all(resolve_attachment_uri(item["uri"]).exists() for item in attachments)

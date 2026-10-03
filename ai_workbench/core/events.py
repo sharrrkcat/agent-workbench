@@ -1,10 +1,47 @@
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from ai_workbench.core.time import isoformat_utc, utc_now
+
+
+MAX_PENDING_EVENTS = 256
+MAX_PENDING_BYTES = 4 * 1024 * 1024
+
+
+class EventSubscription:
+    """One bounded transport mailbox, with closure independent of consumption."""
+
+    def __init__(self, session_id: str) -> None:
+        self.session_id = session_id
+        self.queue: asyncio.Queue[tuple[str, int]] = asyncio.Queue(maxsize=MAX_PENDING_EVENTS)
+        self.pending_bytes = 0
+        self.closed = asyncio.Event()
+        self.close_code = 1000
+
+    def publish(self, data: str, size: int) -> bool:
+        if self.queue.full() or self.pending_bytes + size > MAX_PENDING_BYTES:
+            self.close(1013)
+            return False
+        self.queue.put_nowait((data, size))
+        self.pending_bytes += size
+        return True
+
+    async def get(self) -> str:
+        data, size = await self.queue.get()
+        self.pending_bytes -= size
+        return data
+
+    def close(self, code: int = 1000) -> None:
+        if self.closed.is_set():
+            return
+        self.close_code = code
+        self.closed.set()
+        while not self.queue.empty():
+            self.queue.get_nowait()
+        self.pending_bytes = 0
 
 
 class Event(BaseModel):
@@ -24,8 +61,7 @@ class Event(BaseModel):
 
 class EventBus:
     def __init__(self, run_event_store=None, app_settings_store=None) -> None:
-        self._events: List[Event] = []
-        self._subscribers: List[asyncio.Queue] = []
+        self._subscribers: list[EventSubscription] = []
         self.run_event_store = run_event_store
         self.app_settings_store = app_settings_store
         self._closed = False
@@ -45,7 +81,6 @@ class EventBus:
             message_id=message_id,
             payload=payload or {},
         )
-        self._events.append(event)
         if self.run_event_store is not None and event.run_id and self.should_persist_event(event.type):
             self.run_event_store.add_event(
                 run_id=event.run_id,
@@ -55,8 +90,13 @@ class EventBus:
                 payload=event.payload,
             )
         if not self._closed:
-            for queue in list(self._subscribers):
-                queue.put_nowait(event)
+            subscribers = [s for s in self._subscribers if event.session_id in {s.session_id, ""}]
+            if subscribers:
+                data = event.model_dump_json()
+                size = len(data.encode("utf-8"))
+                for subscription in subscribers:
+                    if not subscription.publish(data, size):
+                        self._subscribers.remove(subscription)
         return event
 
     def should_persist_event(self, event_type: str) -> bool:
@@ -70,35 +110,26 @@ class EventBus:
             return False
         return bool(getattr(settings, "persist_streaming_message_deltas", False))
 
-    def list_events(self) -> List[Event]:
-        return list(self._events)
-
-    def prune_history(self, session_id: str, payload: dict[str, Any]) -> None:
-        messages = set(payload["deleted_message_ids"])
-        runs = set(payload["deleted_run_ids"])
-        self._events = [event for event in self._events
-                        if event.session_id != session_id or (event.message_id not in messages and event.run_id not in runs)]
-        self.emit("history_pruned", session_id=session_id, payload=payload)
-
     def subscriber_count(self) -> int:
         return len(self._subscribers)
 
-    def subscribe(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+    def subscribe(self, session_id: str) -> EventSubscription:
+        subscription = EventSubscription(session_id)
         if self._closed:
-            queue.put_nowait(None)
-            return queue
-        self._subscribers.append(queue)
-        return queue
+            subscription.close()
+        else:
+            self._subscribers.append(subscription)
+        return subscription
 
-    def unsubscribe(self, queue: asyncio.Queue) -> None:
-        if queue in self._subscribers:
-            self._subscribers.remove(queue)
+    def unsubscribe(self, subscription: EventSubscription) -> None:
+        if subscription in self._subscribers:
+            self._subscribers.remove(subscription)
+        subscription.close()
 
     def close(self) -> None:
         self._closed = True
-        for queue in list(self._subscribers):
-            queue.put_nowait(None)
+        for subscription in self._subscribers:
+            subscription.close()
         self._subscribers.clear()
 
 

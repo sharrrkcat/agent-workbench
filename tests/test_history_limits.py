@@ -1,5 +1,6 @@
 import json
 
+from sqlalchemy import text
 import pytest
 from sqlmodel import Session as DbSession
 
@@ -59,12 +60,16 @@ def test_migration_removes_only_retired_fields_without_mapping_modes(tmp_path, m
         for kind in ("workspace", "timeline"):
             db.add(ProjectRecord(id=kind, kind=kind, name=kind, configuration_json=json.dumps(config)))
         db.commit()
-        db.add(SessionRecord(session_id="ordinary", kind="ordinary", title="Saved title", waiting_run_id="run",
-                             configuration_json=json.dumps(config)))
-        db.add(SessionRecord(session_id="workspace", kind="workspace", project_id="workspace",
-                             configuration_json=json.dumps({"overrides": config})))
-        db.add(SessionRecord(session_id="inherited", kind="workspace", project_id="workspace",
-                             configuration_json='{"overrides": {}}'))
+        for session_id, kind, project_id, title, waiting, configuration in (
+            ("ordinary", "ordinary", None, "Saved title", "run", config),
+            ("workspace", "workspace", "workspace", "", None, {"overrides": config}),
+            ("inherited", "workspace", "workspace", "", None, {"overrides": {}}),
+        ):
+            db.execute(text("INSERT INTO sessionrecord (session_id, kind, project_id, title, waiting_run_id, "
+                "configuration_json, title_generation_state, title_generation_metadata_json, created_at, updated_at) "
+                "VALUES (:id, :kind, :project, :title, :waiting, :config, 'pending', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"),
+                {"id": session_id, "kind": kind, "project": project_id, "title": title,
+                 "waiting": waiting, "config": json.dumps(configuration)})
         db.add(RunRecord(run_id="run", session_id="ordinary", persona_id="persona", kind="chat", status="WAITING_FOR_USER",
                          config_snapshot_json=json.dumps(config), metadata_json=json.dumps(metadata),
                          harness_state_json=json.dumps(continuation)))

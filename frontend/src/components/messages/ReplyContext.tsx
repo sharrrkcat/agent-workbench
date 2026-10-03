@@ -21,6 +21,7 @@ import type { RunStep } from '../../types/runs';
 import { terminal } from '../../store/cogita/mergeState';
 import { ChatAttachments, attachmentSize } from './ChatAttachments';
 import type { Reply } from './turns';
+import { useCogitaStore } from '../../store/useCogitaStore';
 
 export function contextCalls(reply: Reply): RunStep[] {
   return reply.steps.filter((step) => step.kind === 'model' && step.metadata?.context?.available)
@@ -35,6 +36,7 @@ export function defaultContextCall(reply: Reply, calls = contextCalls(reply)): s
 export function ReplyContext({ reply }: { reply: Reply }) {
   const { t } = useTranslation('runs');
   const [open, setOpen] = useState(false);
+  const historyVersion = useCogitaStore((state) => state.historyWindow?.history_version);
   useEffect(() => { setOpen(false); }, [reply.run.run_id, reply.run.session_id, reply.run.status]);
   const calls = contextCalls(reply);
   if (reply.run.kind !== 'chat' || !calls.length || (!terminal(reply.run.status) && reply.run.status !== 'WAITING_FOR_USER')) return null;
@@ -47,7 +49,7 @@ export function ReplyContext({ reply }: { reply: Reply }) {
     </Tooltip>
     <DialogContent className="context-dialog sm:max-w-4xl" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{t('context.details')}</DialogTitle></DialogHeader>
-      {open ? <ContextInspector key={reply.run.run_id} reply={reply} calls={calls} /> : null}
+      {open ? <ContextInspector key={`${reply.run.run_id}:${historyVersion}`} reply={reply} calls={calls} /> : null}
     </DialogContent>
   </Dialog>;
 }
@@ -96,7 +98,7 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
     if (source.attachment) return source.attachment.name;
     if (source.citation) return `[${source.citation}] ${source.name || ''}`;
     if (isMessage(source)) {
-      const number = numbers.get(source.reference_id!);
+      const number = numbers.get(source.reference_id!) ?? detail?.reference_numbers?.[source.reference_id!];
       return number == null ? t('context.deletedMessage') : t('context.messageNumber', { number });
     }
     return t(`context.sources.${source.kind}`);

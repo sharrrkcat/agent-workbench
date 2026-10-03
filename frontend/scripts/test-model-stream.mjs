@@ -121,8 +121,8 @@ const session = { session_id: 's', kind: 'ordinary', project_id: null, title: ''
 cogita.setState({ currentSession: session, sessions: [session], messages: [], runs: [] });
 mockApi.getSession = async () => session;
 const historyRead = deferred();
-mockApi.listMessages = () => historyRead.promise;
-mockApi.listRuns = async () => [{ run_id: 'r', session_id: 's', status: 'RUNNING' }];
+mockApi.messageRows = () => historyRead.promise;
+mockApi.runRows = async () => [{ run_id: 'r', session_id: 's', status: 'RUNNING' }];
 const historyRefresh = cogita.getState().refreshCurrent();
 cogita.getState().applyRuntimeEvent(event('message_started', { message }));
 cogita.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'live' }));
@@ -134,7 +134,7 @@ cogita.getState().applyRuntimeEvent(event('message_delta', { seq: 2, delta: 'lat
 assert.deepEqual(cogita.getState().messages, [final]);
 
 const previousSessionRead = deferred();
-mockApi.listMessages = () => previousSessionRead.promise;
+mockApi.messageRows = () => previousSessionRead.promise;
 const oldSessionRefresh = cogita.getState().refreshCurrent();
 cogita.setState({ currentSession: { session_id: 'other' }, messages: [] });
 previousSessionRead.resolve([final]);
@@ -146,8 +146,8 @@ const afterPersona = { ...beforePersona, persona_id: 'second', effective: { pers
 cogita.setState({ currentSession: beforePersona, sessions: [beforePersona], messages: [], runs: [] });
 const staleSession = deferred();
 mockApi.getSession = () => staleSession.promise;
-mockApi.listMessages = async () => [];
-mockApi.listRuns = async () => [];
+mockApi.messageRows = async () => [];
+mockApi.runRows = async () => [];
 const staleRefresh = cogita.getState().refreshCurrent();
 cogita.getState().applyRuntimeEvent(event('session_updated', { session: afterPersona }));
 staleSession.resolve(beforePersona);
@@ -161,6 +161,7 @@ const speakerMessage = {
   speaker_name: 'First',
   metadata: { speaker_avatar_attachment_id: 'image.png' },
 };
+cogita.setState({ historyWindow: null, historyFollowing: true });
 cogita.getState().applyRuntimeEvent(event('message_started', { message: speakerMessage }));
 cogita.getState().applyRuntimeEvent(event('message_delta', { seq: 1, delta: 'response' }));
 assert.equal(cogita.getState().messages[0].speaker_name, 'First');

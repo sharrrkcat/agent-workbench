@@ -1,12 +1,13 @@
 """Hybrid knowledge retrieval with deterministic RRF fallback."""
 
 from __future__ import annotations
+from heapq import nlargest
 
 from dataclasses import dataclass
 from typing import Any
 
 from ai_workbench.core.keyword_search import search_keywords
-from ai_workbench.core.vector_store import embedding_score, search_vectors
+from ai_workbench.core.vector_store import VectorRank, embedding_score, search_vectors
 from ai_workbench.core.models.schema import EmbeddingSimilarity
 
 
@@ -125,27 +126,25 @@ def _keyword(item: Any) -> RetrievalCandidate: return RetrievalCandidate(item.ch
 
 
 def _memory_vector_candidates(store: Any, query_vector: list[float], knowledge_base_ids: list[str], profile_id: str, top_k: int, similarity: EmbeddingSimilarity = "dot") -> list[RetrievalCandidate]:
-    rows: list[RetrievalCandidate] = []
-    sources = getattr(store, "_sources", {})
-    chunks_by_source = getattr(store, "_chunks", {})
-    vectors_by_source = getattr(store, "_vectors", {})
-    for source_id, source in sources.items():
-        if source.knowledge_base_id not in knowledge_base_ids or source.status != "indexed":
-            continue
-        chunks = chunks_by_source.get(source_id, [])
-        vectors = vectors_by_source.get(source_id, [])
-        for index, vector in enumerate(vectors):
-            if len(vector) != len(query_vector):
+    def candidates():
+        sources = getattr(store, "_sources", {})
+        chunks_by_source = getattr(store, "_chunks", {})
+        vectors_by_source = getattr(store, "_vectors", {})
+        for source_id, source in sources.items():
+            if source.knowledge_base_id not in knowledge_base_ids or source.status != "indexed":
                 continue
-            chunk = chunks[index] if index < len(chunks) else None
-            if chunk is None:
-                continue
-            chunk_id = str(getattr(chunk, "id", "") or f"{source_id}:{index}")
-            rows.append(RetrievalCandidate(chunk_id, source.knowledge_base_id, source_id, source.title, chunk.heading_path, chunk.content, vector_score=embedding_score(query_vector, vector, similarity)))
-    rows.sort(key=lambda item: item.vector_score or 0.0, reverse=True)
-    for index, item in enumerate(rows[:top_k], start=1):
+            chunks = chunks_by_source.get(source_id, [])
+            for index, vector in enumerate(vectors_by_source.get(source_id, [])):
+                if len(vector) != len(query_vector) or index >= len(chunks):
+                    continue
+                chunk = chunks[index]
+                chunk_id = str(getattr(chunk, "id", "") or f"{source_id}:{index}")
+                yield RetrievalCandidate(chunk_id, source.knowledge_base_id, source_id, source.title, chunk.heading_path,
+                    chunk.content, vector_score=embedding_score(query_vector, vector, similarity))
+    rows = nlargest(top_k, candidates(), key=lambda item: VectorRank(item.vector_score or 0.0, item.chunk_id))
+    for index, item in enumerate(rows, start=1):
         item.vector_rank = index
-    return rows[:top_k]
+    return rows
 
 
 def _memory_keyword_candidates(store: Any, query: str, knowledge_base_ids: list[str], top_k: int) -> list[RetrievalCandidate]:

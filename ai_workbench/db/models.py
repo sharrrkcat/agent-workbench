@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint, String, Text
+from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint, String, Text, Index, Integer
 from sqlmodel import Field, SQLModel
 
 from ai_workbench.core.time import utc_now
@@ -26,6 +26,7 @@ class SessionRecord(SQLModel, table=True):
     title_generation_metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    history_version: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
 
 
 class ProjectRecord(SQLModel, table=True):
@@ -83,6 +84,10 @@ class PersonaWorldbookBindingRecord(SQLModel, table=True):
 
 
 class MessageRecord(SQLModel, table=True):
+    __table_args__ = (
+        Index("ix_message_session_order", "session_id", "created_at", "message_id"),
+        Index("ix_message_run_order", "run_id", "created_at", "message_id"),
+    )
     message_id: str = Field(primary_key=True)
     session_id: str = Field(index=True)
     role: str
@@ -101,6 +106,8 @@ class MessageRecord(SQLModel, table=True):
 class RunRecord(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint("kind IN ('chat', 'tool')", name="ck_runrecord_kind"),
+        Index("ix_run_session_order", "session_id", "created_at", "run_id"),
+        Index("ix_run_session_status", "session_id", "status"),
     )
     run_id: str = Field(primary_key=True)
     kind: str
@@ -151,6 +158,7 @@ class RunStepRecord(SQLModel, table=True):
 
 
 class RunEventRecord(SQLModel, table=True):
+    __table_args__ = (Index("ix_event_run_order", "run_id", "created_at", "event_id"),)
     event_id: str = Field(primary_key=True)
     run_id: str = Field(index=True)
     session_id: str = Field(index=True)

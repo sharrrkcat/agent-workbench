@@ -131,7 +131,7 @@ class ChatService:
         return self.sessions.update_session(session_id, values)
 
     def assert_idle(self, session_id: str) -> None:
-        if any(r.status not in TERMINAL_RUNS for r in self.runs.list_runs(session_id)):
+        if self.runs.has_unfinished(session_id=session_id):
             raise ChatError("SESSION_BUSY", "Cancel the active run before changing conversation history.", 409)
 
     def delete_persona(self, persona_id: str):
@@ -140,7 +140,7 @@ class ChatService:
             raise ChatError("PERSONA_PROTECTED", "This persona can be edited but cannot be deleted.", 409)
         if self.projects.references_persona(persona_id) or any(self.selected_agent_id(s) == persona_id for s in self.sessions.list_sessions()):
             raise ChatError("PERSONA_IN_USE", "Select another persona in its sessions before deleting it.", 409)
-        if any(r.persona_id == persona_id and r.status not in TERMINAL_RUNS for r in self.runs.list_all_runs()):
+        if self.runs.has_unfinished(persona_id=persona_id):
             raise ChatError("PERSONA_IN_USE", "This persona is used by an unfinished run.", 409)
         return self.personas.delete(persona_id)
 

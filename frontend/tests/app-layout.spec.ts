@@ -1,3 +1,4 @@
+import { readMessages, mockHistory } from './history';
 import { readFileSync } from 'node:fs';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { answerConfirmation, openSidebar } from './controls';
@@ -201,7 +202,7 @@ for (const locale of ['en', 'zh-CN']) {
         request,
       }, info) => {
         const session = await fixture(request);
-        const history = await (await request.get('/api/sessions/' + session.session_id + '/messages')).json();
+        const history = await readMessages(request, session.session_id);
         const answer = history.filter((message: { role: string }) => message.role === 'assistant').at(-1);
         const columns = Array.from({ length: 14 }, (_, index) => 'Column ' + index);
         const markdown = [
@@ -225,9 +226,7 @@ for (const locale of ['en', 'zh-CN']) {
           '```js\n  const pending = true;',
         ].join('\n\n');
         answer.parts = [{ id: 'layout-answer', type: 'text', format: 'markdown', text: markdown }];
-        await page.route('**/api/sessions/' + session.session_id + '/messages', (route) =>
-          route.fulfill({ json: history }),
-        );
+        await mockHistory(page, request, session.session_id, history);
         await page.goto('/');
         const body = page.locator('.reply-answer');
         await expect(body.getByRole('heading', { name: 'A readable answer' })).toBeVisible();

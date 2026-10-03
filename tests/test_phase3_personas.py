@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages
 import asyncio
 import base64
 import hashlib
@@ -140,7 +141,7 @@ def test_model_generation_and_context_precedence(chat_client):
     assert "PRIVATE_PERSONA_PROMPT" not in json.dumps(response)
     state = client.app.state.runtime_state
     assert state.runs.get_config_snapshot(response["run"]["run_id"])["system_prompt"] == "PRIVATE_PERSONA_PROMPT"
-    events = ok(client.get(f"/api/runs/{response['run']['run_id']}/events"))
+    events = ok(client.get(f"/api/runs/{response['run']['run_id']}/events"))["items"]
     assert "PRIVATE_PERSONA_PROMPT" not in json.dumps(events)
     assert client.delete(f"/api/models/profiles/{selected_model['id']}").status_code == 409
     path = f"/api/sessions/{session['session_id']}"
@@ -174,12 +175,12 @@ def test_agent_selection_live_edits_retry_and_history_isolation(chat_client):
     assert result["messages"][-1]["speaker_id"] == second["id"]
     assert {"role": "assistant", "content": "reply"} in upstream.calls[-1]["messages"]
     ok(client.patch(f"/api/personas/{first['id']}", json={"name": "Renamed", "system_prompt": "NEW_PROMPT"}))
-    history = ok(client.get(path + "/messages"))
+    history = history_messages(ok(client.get(path + "/history")))
     assert history[1]["speaker_name"] is None
     retried = ok(client.post(f"/api/runs/{original['run_id']}/retry"))
     assert len(retried["messages"]) == 1 and retried["messages"][0]["speaker_name"] is None
     assert retried["run"]["persona_id"] == first["id"]
-    assert len(ok(client.get(path + "/messages"))) == 2
+    assert len(history_messages(ok(client.get(path + "/history")))) == 2
     assert retried["session"]["persona_id"] == second["id"]
     ok(client.patch(path, json={"context_policy": {}}))
     other_session = session_for(client, COGITA_PERSONA_ID)
@@ -235,7 +236,7 @@ def test_avatar_reference_belongs_to_current_personas_not_history(chat_client):
     assert client.delete(attachment_path).status_code == 409
     ok(client.delete(f"/api/personas/{second['id']}"))
     assert client.get(attachment_path).status_code == 404
-    assert ok(client.get(f"/api/sessions/{session['session_id']}/messages"))[-1]["speaker_id"] == first["id"]
+    assert history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))[-1]["speaker_id"] == first["id"]
 
 
 def test_sql_restart_preserves_persona_bindings_history_and_snapshot(tmp_path):
@@ -257,7 +258,7 @@ def test_sql_restart_preserves_persona_bindings_history_and_snapshot(tmp_path):
         assert loaded["generation"]["temperature"] == 0.6
         assert loaded["persona_id"] == role["id"]
         assert client.app.state.runtime_state.runs.get_config_snapshot(run["run_id"])["system_prompt"] == "PRIVATE_PERSONA_PROMPT"
-        history = ok(client.get(f"/api/sessions/{session['session_id']}/messages"))
+        history = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))
         assert history[-1]["speaker_name"] is None
 
 
@@ -317,7 +318,7 @@ def test_disabled_harness_never_authorizes_unexpected_tools(chat_client):
     result = send(client, session)
     assert not result["success"] and result["error_code"] == "UNEXPECTED_TOOL_CALL"
     assert "tools" not in upstream.calls[-1]
-    assert [m["role"] for m in ok(client.get(f"/api/sessions/{session['session_id']}/messages"))] == ["user"]
+    assert [m["role"] for m in history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))] == ["user"]
 
 
 def test_history_budget_and_attachment_policy():

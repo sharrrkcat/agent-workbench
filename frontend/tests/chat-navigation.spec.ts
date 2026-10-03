@@ -1,16 +1,16 @@
+import { readMessages, mockHistory } from './history';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { answerConfirmation } from './controls';
 
 async function navigationHistory(page: Page, request: APIRequestContext, count: number) {
   const session = await (await request.post('/__test__/session', { data: { long_history: true } })).json();
-  const history = await (await request.get(`/api/sessions/${session.session_id}/messages`)).json();
+  const history = await readMessages(request, session.session_id);
   const original = history.find((message: { role: string }) => message.role === 'user');
   const messages = Array.from({ length: count }, (_, index) => ({ ...original,
     message_id: `navigation-${index}`, created_at: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
     parts: [{ id: `text-${index}`, type: 'text', text: `Question ${index + 1}` }],
   }));
-  await page.route(`**/api/sessions/${session.session_id}/messages`, (route) => route.fulfill({ json: messages }));
-  await page.route(`**/api/sessions/${session.session_id}/runs`, (route) => route.fulfill({ json: [] }));
+  await mockHistory(page, request, session.session_id, messages, []);
 }
 
 for (const locale of ['en', 'zh-CN']) {
@@ -25,7 +25,7 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(page.locator('.composer')).toHaveAttribute('data-expanded', 'false');
       await expect(page.locator('.composer')).toHaveCSS('border-radius', '20px');
       const toolbarButtons = page.locator('.composer [data-slot=input-group-addon] button');
-      await expect(toolbarButtons).toHaveCount(3);
+      await expect(toolbarButtons).toHaveCount(4);
       for (const button of await toolbarButtons.all()) {
         const radius = await button.evaluate((node) => parseFloat(getComputedStyle(node).borderTopLeftRadius));
         expect(radius).toBeGreaterThanOrEqual((await button.boundingBox())!.height / 2);
@@ -137,19 +137,19 @@ test('navigation keeps earlier turns stable while streaming and removes deleted 
 });
 
 test('long navigation scrolls internally and highlights the visible turn', async ({ page, request }, info) => {
-  await page.setViewportSize({ width: 1366, height: 600 });
+  await page.setViewportSize({ width: 1366, height: 450 });
   await navigationHistory(page, request, 150);
   await page.goto('/');
   const rail = page.locator('.user-message-navigation');
-  await expect(rail.getByRole('button')).toHaveCount(150);
+  await expect(rail.locator('.user-message-tick')).toHaveCount(50);
   await expect.poll(() => rail.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
   await page.locator('.chat-view').evaluate((node) => { node.scrollTop = node.scrollHeight; });
   await expect(rail.locator('[aria-current=step]')).toHaveCount(1);
   await expect(rail.locator('[aria-current=step]')).toBeInViewport();
   await expect.poll(() => rail.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   await page.locator('.chat-view').evaluate((node) => { node.scrollTop = 0; });
-  await expect(rail.getByRole('button').first()).toHaveAttribute('aria-current', 'step');
-  await expect(rail.getByRole('button').first()).toBeInViewport();
+  await expect(rail.locator('.user-message-tick').first()).toHaveAttribute('aria-current', 'step');
+  await expect(rail.locator('.user-message-tick').first()).toBeInViewport();
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
   await page.screenshot({ path: info.outputPath('long-navigation.png') });
 });

@@ -56,7 +56,7 @@ def test_context_captures_the_actual_request_and_stays_private(presentation_clie
         if step["kind"] == "model":
             assert step["metadata"]["context"]["available"] is True
     state = client.app.state.runtime_state
-    events = ok(client.get(f"/api/runs/{run['run_id']}/events"))
+    events = ok(client.get(f"/api/runs/{run['run_id']}/events"))["items"]
     assert all("request" not in event["payload"].get("step", {}) for event in events)
     with pytest.raises(ValueError, match="existing snapshot"):
         state.runs.save_context_snapshot(snapshots[0]["step_id"], state.runs.get_context_snapshot(snapshots[0]["step_id"]))
@@ -91,8 +91,8 @@ def test_sources_preserve_workspace_order_unicode_and_selection(presentation_cli
         return {"results": [{"chunk_id": "chunk-1", "source_id": "source-1", "knowledge_base_id": base["id"],
                              "title": "guide.md", "content": "KNOWLEDGE 中文😀"}], "debug": {}}
     monkeypatch.setattr(state.knowledge_service, "search", search)
-    for role, content in [("user", "old"), ("assistant", "middle"), ("user", "long" * 20), ("assistant", "recent")]:
-        state.messages.add_message(session["session_id"], role, content)
+    for index, (role, content) in enumerate([("user", "old"), ("assistant", "middle"), ("user", "long" * 20), ("assistant", "recent")]):
+        state.messages.add_message(session["session_id"], role, content, message_id=f"history-{index}")
     state.messages.add_message(session["session_id"], "assistant", "skip", metadata={"incomplete": True})
     result = send(client, session, "current😀")
     assert result["success"], result

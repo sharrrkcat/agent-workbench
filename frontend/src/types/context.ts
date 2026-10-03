@@ -46,6 +46,7 @@ export type ContextRequest = {
     skip_instant_capability_check?: boolean; skip_reasoning_capability_check?: boolean } | null;
 };
 export type ContextDetail = {
+  reference_numbers?: Record<string, number>;
   run_id: string; step_id: string; captured_at: string; model_profile_id: string; model_alias: string;
   source_type: 'local' | 'provider'; request: ContextRequest; policy: ContextPolicy;
   sources: ContextSource[]; exclusions: ContextExclusion[]; attachment_ids: string[];

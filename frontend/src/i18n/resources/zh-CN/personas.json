@@ -20,7 +20,7 @@
   "worldbook": "世界书",
   "generation": "生成参数",
   "maxMessages": "历史消息数量上限",
-  "maxMessagesDescription": "留空不限制历史消息数量；0 表示不带历史。",
+  "maxMessagesDescription": "新会话默认保留 100 条历史。留空表示不限，0 表示不使用历史。",
   "maxChars": "历史上下文字符预算",
   "unlimited": "不限",
   "includeAttachments": "包含附件",
@@ -64,7 +64,10 @@
   "newTimeline": "新建时间线",
   "projects": "项目",
   "noProjects": "暂无项目",
-  "projectKinds": { "workspace": "工作区", "timeline": "时间线" },
+  "projectKinds": {
+    "workspace": "工作区",
+    "timeline": "时间线"
+  },
   "projectSettings": "项目设置",
   "projectName": "项目名称",
   "projectPrompt": "项目提示词（可选）",
@@ -135,5 +138,6 @@
   "agentPersona": "助手身份",
   "userPersonaBindings": "Cogita 身份绑定",
   "agentPersonaBindings": "助手身份绑定",
-  "saved": "身份已保存"
+  "saved": "身份已保存",
+  "maxCharsDescription": "新会话默认最多 100,000 字符。两项限制均留空时，长历史可能增加内存占用。"
 }

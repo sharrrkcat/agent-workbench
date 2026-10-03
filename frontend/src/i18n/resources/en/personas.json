@@ -20,7 +20,7 @@
   "worldbook": "Worldbook",
   "generation": "Generation parameters",
   "maxMessages": "History message limit",
-  "maxMessagesDescription": "Leave blank for unlimited history; 0 excludes history.",
+  "maxMessagesDescription": "New sessions default to 100 messages. Leave blank for unlimited; 0 excludes history.",
   "maxChars": "History character budget",
   "unlimited": "Unlimited",
   "includeAttachments": "Include attachments",
@@ -64,7 +64,10 @@
   "newTimeline": "New Timeline",
   "projects": "Projects",
   "noProjects": "No projects yet",
-  "projectKinds": { "workspace": "Workspace", "timeline": "Timeline" },
+  "projectKinds": {
+    "workspace": "Workspace",
+    "timeline": "Timeline"
+  },
   "projectSettings": "Project settings",
   "projectName": "Project name",
   "projectPrompt": "Project prompt (optional)",
@@ -135,5 +138,6 @@
   "agentPersona": "Agent Persona",
   "userPersonaBindings": "Cogita Persona bindings",
   "agentPersonaBindings": "Agent Persona bindings",
-  "saved": "Persona saved"
+  "saved": "Persona saved",
+  "maxCharsDescription": "New sessions default to 100,000 characters. Leaving both limits blank may increase memory use with long histories."
 }

@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages
 import json
 
 import pytest
@@ -41,7 +42,7 @@ def test_strict_persona_and_session_configuration(client_pair):
         assert client.patch(f"/api/personas/{persona['id']}", json={field: value}).status_code == 422
     session = ok(client.post("/api/sessions", json={}))
     path = f"/api/sessions/{session['session_id']}"
-    assert session["generation"] == {} and session["context_policy"] == {"max_messages": None, "max_chars": None, "include_attachments": "explicit"}
+    assert session["generation"] == {} and session["context_policy"] == {"max_messages": 100, "max_chars": 100000, "include_attachments": "explicit"}
     assert session["harness_enabled"] is False
     for field in ("generation", "context_policy", "harness_enabled", "tools_allowed"):
         assert client.post("/api/sessions", json={field: None}).status_code == 422
@@ -68,13 +69,13 @@ def test_history_limits_round_trip_and_reject_retired_fields(client_pair):
         assert client.patch(path, json={"context_policy": {"max_messages": limit}}).status_code == 422
     for source in (None, "message"):
         assert client.post(path + "/messages", json={"content": "rejected", "source_message_id": source}).status_code == 422
-    assert ok(client.get(path + "/messages")) == [] and upstream.calls == []
+    assert history_messages(ok(client.get(path + "/history"))) == [] and upstream.calls == []
     ok(client.post(path + "/messages", json={"content": "FIRST_INPUT"}))
     for limit in (0, 1, None):
         policy = {"max_messages": limit, "max_chars": None, "include_attachments": "explicit"}
         ok(client.patch(path, json={"context_policy": policy}))
         assert ok(client.get(path))["context_policy"] == policy
-        prior = ok(client.get(path + "/messages"))
+        prior = history_messages(ok(client.get(path + "/history")))
         result = ok(client.post(path + "/messages", json={"content": "NEXT_INPUT"}))
         assert result["success"]
         assert "context_source_message_id" not in result["run"]["metadata"]

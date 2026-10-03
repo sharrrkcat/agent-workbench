@@ -157,6 +157,10 @@ class KnowledgeStore:
 
 
 class MemoryKnowledgeStore(KnowledgeStore):
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        return {source.uri.removeprefix("local://attachments/") for source in self._sources.values()
+                if source.source_type == "attachment_text" and source.uri.removeprefix("local://attachments/") in names}
+
     def __init__(self) -> None:
         self._settings = KnowledgeSettings()
         self._bases: dict[str, KnowledgeBase] = {}

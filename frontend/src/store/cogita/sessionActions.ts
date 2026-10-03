@@ -1,30 +1,29 @@
 import type { CogitaActions, CogitaState } from './state';
 import type { Session } from '../../types/chat';
-import { errorText, mergeMessages, mergeRuns, mergeSteps, retainedMessages, terminal } from './mergeState';
+import { errorText } from './mergeState';
 
 import { useModelsStore } from '../useModelsStore';
 import { chatApi } from '../../api/chat';
 import { settingsApi } from '../../api/settings';
-import { runsApi } from '../../api/runs';
 import { projectsApi } from '../../api/projects';
 import { useProjectsStore } from '../useProjectsStore';
 import { usePersonasStore } from '../usePersonasStore';
 import { toolsApi } from '../../api/tools';
 import { defaultModelId } from './drafts';
+import { historyPageState } from './historyWindow';
 
 function conversation(state: CogitaState, session: Session | null, projectId: string | null): Partial<CogitaState> {
   return {
     currentSession: session, currentProjectId: projectId, chatDraft: null, pendingKnowledge: null,
     sessionLoad: null,
     lastOrdinarySessionId: session?.kind === 'ordinary' ? session.session_id : state.lastOrdinarySessionId,
-    messages: [], runs: [], stepsByRunId: {}, error: null, composerDraftText: '',
-    sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, awaitingAcceptance: false, mutatingHistory: false,
+    messages: [], runs: [], stepsByRunId: {}, historyWindow: null, historyLoading: false, historyFollowing: true, historyAnchor: null, error: null, composerDraftText: '',
+    sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, awaitingAcceptance: false, pendingClientMessageId: null, mutatingHistory: false,
   };
 }
 
 export const createSessionActions: CogitaActions<
   | 'initialize'
-  | 'refreshCurrent'
   | 'reloadSessions'
   | 'selectSession'
   | 'retrySession'
@@ -47,8 +46,8 @@ export const createSessionActions: CogitaActions<
         if (active && get().sessionEpoch === epoch) set({ currentSession: session });
         return session;
       });
-      const [session, messages, runs] = await Promise.all([
-        sessionRequest, chatApi.listMessages(id), runsApi.listRuns(id),
+      const [session, page] = await Promise.all([
+        sessionRequest, chatApi.getHistory(id),
         usePersonasStore.getState().reload().catch((error) => {
           if (get().sessionEpoch === epoch) set({ error: errorText(error) });
         }),
@@ -59,7 +58,7 @@ export const createSessionActions: CogitaActions<
       ]);
       if (get().sessionEpoch !== epoch) return;
       set((state) => ({
-        currentSession: session, messages, runs, stepsByRunId: mergeSteps({}, runs.flatMap((run) => run.steps || [])),
+        ...historyPageState({ ...state, currentSession: session }, page, 'latest'), currentSession: session,
         sessionLoad: { sessionId: id, projectId: scope, status: 'ready', error: null },
         lastOrdinarySessionId: session.kind === 'ordinary' ? id : state.lastOrdinarySessionId,
         sessions: state.sessions.some((item) => item.session_id === id)
@@ -96,51 +95,6 @@ export const createSessionActions: CogitaActions<
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
     } finally {
       if (request === initializationVersion) set({ loading: false, initialized: true });
-    }
-  },
-
-  refreshCurrent: async () => {
-    if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return;
-    const session = get().currentSession;
-    if (!session) return;
-    const version = get().messageVersion;
-    const runVersion = get().runVersion;
-    const sessionVersion = get().sessionVersion;
-    const epoch = get().sessionEpoch;
-    try {
-      const [freshSession, messages, runs] = await Promise.all([
-        chatApi.getSession(session.session_id),
-        chatApi.listMessages(session.session_id),
-        runsApi.listRuns(session.session_id),
-      ]);
-      if (get().currentSession?.session_id !== session.session_id || get().sessionEpoch !== epoch) return;
-      set((state) => ({
-        currentSession: state.sessionVersion === sessionVersion ? freshSession : state.currentSession,
-        sessions:
-          state.sessionVersion === sessionVersion
-            ? state.sessions.map((item) => (item.session_id === freshSession.session_id ? freshSession : item))
-            : state.sessions,
-        messages:
-          state.messageVersion !== version
-            ? mergeMessages(retainedMessages(state, messages), state.messages)
-            : mergeMessages(
-                state.messages.filter(
-                  (m) => m.metadata?.streaming && runs.some((r) => r.run_id === m.run_id && !terminal(r.status)),
-                ),
-                retainedMessages(state, messages),
-              ),
-        runs: mergeRuns(state.runVersion === runVersion ? state.runs.filter((run) => runs.some((fresh) => fresh.run_id === run.run_id)) : state.runs,
-          runs.filter((run) => !state.deletedRunIds.includes(run.run_id))),
-        stepsByRunId: mergeSteps(
-          state.runVersion === runVersion ? Object.fromEntries(Object.entries(state.stepsByRunId).filter(([id]) => runs.some((run) => run.run_id === id))) : state.stepsByRunId,
-          runs.filter((run) => !state.deletedRunIds.includes(run.run_id)).flatMap((run) => run.steps || []),
-        ),
-        messageVersion: state.messageVersion + 1,
-        runVersion: state.runVersion + 1,
-        sessionVersion: state.sessionVersion + 1,
-      }));
-    } catch (error) {
-      if (get().sessionEpoch === epoch) set({ error: errorText(error) });
     }
   },
 
@@ -190,7 +144,7 @@ export const createSessionActions: CogitaActions<
         : { ...base, kind: 'ordinary', project_id: null,
           persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)!.id,
           model_profile_id: defaultModelId(models.profiles, models.settings?.default_model_profile_id),
-          context_policy: { max_messages: null, max_chars: null, include_attachments: 'explicit' },
+          context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'explicit' },
           generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.map((tool) => tool.name) } });
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });

@@ -1,3 +1,4 @@
+import { readRuns } from './history';
 import { answerConfirmation, backToChat } from './controls';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -55,7 +56,7 @@ test('retry replaces the whole reply and deletion removes its tool history', asy
   await page.reload();
   await expect(page.locator('.message-row.user')).toHaveCount(1);
   await expect(page.locator('article[data-run-id]')).toHaveCount(0);
-  expect(await (await request.get(`/api/sessions/${session.session_id}/runs`)).json()).toEqual([]);
+  expect(await readRuns(request, session.session_id)).toEqual([]);
 });
 
 for (const locale of ['en', 'zh-CN']) {

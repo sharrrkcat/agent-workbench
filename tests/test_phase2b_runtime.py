@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from ai_workbench.api.main import create_app
-from ai_workbench.core.events import EventBus
+from tests.event_recorder import RecordingEventBus as EventBus
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.manager import ModelManager
 from ai_workbench.core.models.runtimes.catalog import catalog

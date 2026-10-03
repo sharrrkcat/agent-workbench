@@ -6,17 +6,16 @@ export function useNewUserMessages() {
   const [animatedIds, setAnimatedIds] = useState<Set<string>>(() => new Set());
   useLayoutEffect(() => {
     const initial = useCogitaStore.getState();
-    const seen = new Set(initial.messages.map((message) => message.message_id));
-    return useCogitaStore.subscribe((state, previous) => {
+    return useCogitaStore.subscribe((state) => {
       if (state.sessionEpoch !== initial.sessionEpoch) return;
-      const added: string[] = [];
-      for (const message of state.messages) {
-        if (seen.has(message.message_id)) continue;
-        seen.add(message.message_id);
-        if ((state.sending || previous.sending) && message.role === 'user' &&
-            message.session_id === state.currentSession?.session_id) added.push(message.message_id);
-      }
-      if (added.length) setAnimatedIds((ids) => new Set([...ids, ...added]));
+      const visible = new Set(state.messages.map((m) => m.message_id));
+      const added = state.messages.filter((m) => state.pendingClientMessageId &&
+        m.role === 'user' && m.metadata?.client_message_id === state.pendingClientMessageId).map((m) => m.message_id);
+      setAnimatedIds((ids) => {
+        const retained = new Set([...ids].filter((id) => visible.has(id)));
+        for (const id of added) retained.add(id);
+        return retained.size === ids.size && [...retained].every((id) => ids.has(id)) ? ids : retained;
+      });
     });
   }, []);
   return animatedIds;

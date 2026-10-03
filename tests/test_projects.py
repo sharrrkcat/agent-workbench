@@ -113,7 +113,7 @@ def test_live_inheritance_overrides_reset_and_model_sources(client_pair):
     reset = ok(client.patch(path, json={"overrides": {key: None for key in overrides}}))
     assert reset["overrides"] == {} and reset["effective"]["generation"]["temperature"] == 1.2
     assert reset["effective"]["sources"]["context"] == "project"
-    assert reset["effective"]["context_policy"]["max_messages"] is None
+    assert reset["effective"]["context_policy"]["max_messages"] == 100
     ok(client.patch(f"/api/projects/{project['id']}", json={"model_profile_id": None, "temperature": None}))
     resolved = ok(client.get(path))["effective"]
     assert resolved["model_profile_id"] == second["id"] and resolved["generation"]["temperature"] == 0.4

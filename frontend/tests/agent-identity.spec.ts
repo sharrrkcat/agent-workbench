@@ -1,3 +1,4 @@
+import { readRuns } from './history';
 import { readFileSync } from 'node:fs';
 import { expect, test, type APIResponse } from '@playwright/test';
 
@@ -100,7 +101,7 @@ for (const locale of ['en', 'zh-CN']) {
             await page.screenshot({ path: info.outputPath('live-agent-identity.png') });
           } finally {
             if (sessionId) {
-              for (const run of await json(request.get(`/api/sessions/${sessionId}/runs`))) {
+              for (const run of await readRuns(request, sessionId)) {
                 if (!['DONE', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(run.status)) await request.post(`/api/runs/${run.run_id}/cancel`);
               }
               await request.delete(`/api/sessions/${sessionId}`);

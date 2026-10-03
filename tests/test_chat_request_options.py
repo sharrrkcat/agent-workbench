@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages
 """Request controls, local preflight decisions and durable chat degradation."""
 import json
 from unittest.mock import AsyncMock
@@ -146,10 +147,10 @@ def test_chat_drops_images_and_tools_persists_warning_and_retry_recomputes(tmp_p
         expected = {"run_id": response["run"]["run_id"], "codes": ["images_ignored", "tools_ignored"]}
         assert user["metadata"]["request_warnings"] == expected
         assert user["metadata"]["attachments"] == [attachment]
-        assert ok(client.get(path))[0]["metadata"]["request_warnings"] == expected
+        assert history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))[0]["metadata"]["request_warnings"] == expected
         assert ok(client.get(f"/api/sessions/{session['session_id']}"))["harness_enabled"]
         assert adapter.state == "stopped"
-        events = app.state.runtime_state.events._events
+        events = app.state.runtime_state.events.recorded
         assert any(event.type == "message_updated" and event.message_id == user["message_id"] and event.payload.get("message", {}).get("metadata", {}).get("request_warnings") == expected for event in events)
         provider = configure_model(client, alias="provider")
         ok(client.patch(f"/api/sessions/{session['session_id']}", json={"model_profile_id": provider["id"], "harness_enabled": False}))
@@ -157,7 +158,7 @@ def test_chat_drops_images_and_tools_persists_warning_and_retry_recomputes(tmp_p
         app.state.runtime_state.model_manager.adapter_factory = upstream.factory
         retried = ok(client.post(f"/api/runs/{response['run']['run_id']}/retry"))
         assert retried["success"], retried
-        refreshed = next(m for m in ok(client.get(path)) if m["message_id"] == user["message_id"])
+        refreshed = next(m for m in history_messages(ok(client.get(path.removesuffix("/messages") + "/history"))) if m["message_id"] == user["message_id"])
         assert "request_warnings" not in refreshed["metadata"]
         assert refreshed["metadata"]["attachments"] == [attachment]
 

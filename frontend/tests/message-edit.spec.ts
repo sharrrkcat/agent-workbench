@@ -1,3 +1,4 @@
+import { readMessages } from './history';
 import { expect, test } from '@playwright/test';
 
 for (const locale of ['en', 'zh-CN']) {
@@ -6,13 +7,13 @@ for (const locale of ['en', 'zh-CN']) {
       await page.setViewportSize({ width, height: 900 });
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       const session = await (await request.post('/__test__/session', { data: { long_history: true } })).json();
-      const messagesUrl = `**/api/sessions/${session.session_id}/messages`;
+      const messagesUrl = `**/api/sessions/${session.session_id}/history?*`;
       let initialHistory = true;
       await page.route(messagesUrl, async (route) => {
         const response = await route.fetch();
         const messages = await response.json();
         if (initialHistory) {
-          messages.find((message: { role: string }) => message.role === 'user').created_at = new Date(Date.now() - 3600000).toISOString();
+          messages.items.find((item: any) => item.kind === 'message' && item.message.role === 'user').message.created_at = new Date(Date.now() - 3600000).toISOString();
         }
         await route.fulfill({ json: messages });
       });
@@ -45,7 +46,7 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(edit).toBeEnabled();
       await expect(user.locator('time')).not.toHaveText(originalTime!);
       const savedTime = await user.locator('time').getAttribute('datetime');
-      const savedMessages = await (await request.get(`/api/sessions/${session.session_id}/messages`)).json();
+      const savedMessages = await readMessages(request, session.session_id);
       expect(savedTime).toBe(savedMessages.find((message: { role: string }) => message.role === 'user').created_at);
       await page.reload();
       await expect(user.locator('time')).toHaveAttribute('datetime', savedTime!);

@@ -1,3 +1,4 @@
+from tests.history_helpers import history_messages
 import asyncio
 import base64
 from contextlib import asynccontextmanager
@@ -259,7 +260,7 @@ def test_images_survive_approval_history_retry_edit_and_cleanup(tmp_path, monkey
         HarnessState.model_validate(saved)
         user = next(item for item in pending["messages"] if item["role"] == "user")
         assert user["parts"] == [] and user["metadata"]["attachments"][0]["uri"] == attachment["uri"]
-        assert "base64" not in json.dumps(ok(client.get(path)))
+        assert "base64" not in json.dumps(history_messages(ok(client.get(path.removesuffix("/messages") + "/history"))))
         resumed = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
         assert resumed["run"]["status"] == "DONE" and state.runs.get_harness_state(run_id) == {}
         expected = part()["image_url"]["url"]

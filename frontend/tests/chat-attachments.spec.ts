@@ -1,3 +1,4 @@
+import { readMessages } from './history';
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator } from '@playwright/test';
 
@@ -92,7 +93,7 @@ for (const locale of ['en', 'zh-CN']) {
         await save.click();
         await expect(edit).toBeEnabled();
         const sessions = await (await request.get('/api/sessions')).json();
-        const history = await (await request.get(`/api/sessions/${sessions[0].session_id}/messages`)).json();
+        const history = await readMessages(request, sessions[0].session_id);
         expect(history.find((message: { role: string }) => message.role === 'user').metadata.attachments.map((item: { name: string }) => item.name)).toEqual([text.name]);
         await page.reload();
         await expect(attachments.locator(card)).toHaveCount(1);

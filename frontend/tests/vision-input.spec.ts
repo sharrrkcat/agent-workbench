@@ -1,3 +1,4 @@
+import { readMessages } from './history';
 import { backToChat, fillCombobox } from './controls';
 import fs from 'node:fs';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -89,7 +90,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.locator('.message-attachments button').first().click();
         await expect(page.getByRole('dialog').locator('.image-preview')).toBeVisible();
         await page.keyboard.press('Escape');
-        const history = await (await request.get(`/api/sessions/${session.session_id}/messages`)).json();
+        const history = await readMessages(request, session.session_id);
         const user = history.find((message: { role: string }) => message.role === 'user');
         expect(user.parts).toEqual([]);
         expect(user.metadata.attachments).toHaveLength(2);

@@ -26,8 +26,12 @@ export const createMessageActions: CogitaActions<
       if (!accepted && state.sessionEpoch === epoch && state.messages.some((message) =>
         message.role === 'user' && message.metadata?.client_message_id === clientMessageId)) accept();
     });
-    set({ sending: true, awaitingAcceptance: true, composerDraftText: '', error: null });
+    set({ sending: true, awaitingAcceptance: true, pendingClientMessageId: clientMessageId, composerDraftText: '', error: null });
     try {
+      if (session && get().historyWindow && !get().historyFollowing) {
+        await get().loadHistory('latest');
+        if (get().sessionEpoch !== epoch || get().error) return false;
+      }
       if (!session && draft) {
         if (draft.kind === 'workspace') {
           session = await projectsApi.createSession(draft.project_id, { title: draft.title.trim(), overrides: draft.overrides });
@@ -69,7 +73,7 @@ export const createMessageActions: CogitaActions<
       return accepted;
     } finally {
       unsubscribe();
-      if (get().sessionEpoch === epoch) set({ sending: false, awaitingAcceptance: false,
+      if (get().sessionEpoch === epoch) set({ sending: false, awaitingAcceptance: false, pendingClientMessageId: null,
         ...(!accepted ? { composerDraftText: content } : {}) });
     }
   },

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from ai_workbench.api.schemas.history import RunEventsPage
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.schemas.common import error_responses
@@ -14,13 +15,6 @@ from ai_workbench.core.context_snapshot import context_detail
 
 
 router = APIRouter(tags=["runs"])
-
-
-@router.get("/api/sessions/{session_id}/runs", response_model=list[RunResponse], response_model_exclude_unset=True,
-    responses=error_responses(404))
-def list_runs(session_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
-    _require_session(state, session_id)
-    return [_run_payload(state, run) for run in state.runs.list_runs(session_id)]
 
 
 @router.get("/api/runs/{run_id}", response_model=RunResponse, response_model_exclude_unset=True,
@@ -43,11 +37,10 @@ async def delete_run(run_id: str, state: RuntimeState = Depends(get_state)) -> d
 async def retry_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     run, source, change = state.history.retry(run_id)
     session = state.sessions.get_session(run.session_id)
-    before = {item.message_id for item in state.messages.list_messages(run.session_id)}
     result = await state.runtime.retry_chat_run(session, run, source)
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "RUN_RETRY_FAILED", result.error or "Reply retry failed.")
-    return {**_result_payload(state, run.session_id, result, before), **change.model_dump()}
+    return {**_result_payload(state, run.session_id, result), **change.model_dump()}
 
 
 @router.get("/api/runs/{run_id}/steps", response_model=list[RunStepResponse], response_model_exclude_unset=True,
@@ -71,17 +64,24 @@ def get_run_context(run_id: str, step_id: str, state: RuntimeState = Depends(get
         snapshot = state.runs.get_context_snapshot(step_id)
     except KeyError:
         raise_error(404, "CONTEXT_NOT_FOUND", "No recorded context exists for this model call.")
-    return context_detail(snapshot)
+    detail = context_detail(snapshot)
+    detail.reference_numbers = state.history_reader.reference_numbers(
+        state.runs.get_run(run_id).session_id, {source.reference_id for source in detail.sources if source.reference_id})
+    return detail
 
 
-@router.get("/api/runs/{run_id}/events", response_model=list[RunEventResponse], response_model_exclude_unset=True,
-    responses=error_responses(404))
-def list_run_events(run_id: str, state: RuntimeState = Depends(get_state)) -> list[dict]:
+@router.get("/api/runs/{run_id}/events", response_model=RunEventsPage, response_model_exclude_unset=True,
+    responses=error_responses(404, 422))
+def list_run_events(run_id: str, after: str | None = Query(default=None, max_length=1024),
+                    limit: int = Query(default=100, ge=1, le=500), state: RuntimeState = Depends(get_state)) -> dict:
     try:
         state.runs.get_run(run_id)
     except KeyError:
         raise_error(404, "RUN_NOT_FOUND", f"Run not found: {run_id}")
-    return [event.model_dump(mode="json") for event in state.run_events.list_events(run_id)]
+    try:
+        return state.run_events.page_events(run_id, after, limit)
+    except ValueError:
+        raise_error(422, "INVALID_HISTORY_CURSOR", "Invalid event cursor.")
 
 
 @router.post("/api/runs/{run_id}/cancel", response_model=RunCancellation, response_model_exclude_unset=True,

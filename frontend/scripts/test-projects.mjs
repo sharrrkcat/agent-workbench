@@ -21,8 +21,8 @@ function reset() {
   projects.setState({ projects: [project('a'), project('b'), project('timeline', 'timeline')] });
   api.get = async (id) => project(id, id === 'timeline' ? 'timeline' : 'workspace');
   api.getSession = async (id) => [normal, first, second].find((session) => session.session_id === id);
-  api.listMessages = async () => [];
-  api.listRuns = async () => [];
+  api.messageRows = async () => [];
+  api.runRows = async () => [];
   api.deleteSession = async () => {};
   api.remove = async () => {};
 }

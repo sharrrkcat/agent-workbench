@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import json
 from array import array
+from datetime import timedelta
 from typing import Any, Optional
 from uuid import uuid4
 
 from sqlmodel import Session as DbSession, delete, select
+from sqlalchemy import func, cast, Integer, or_, tuple_
+from sqlalchemy.orm import defer
+from ai_workbench.db.history_queries import eligible_history, message_key
 
 from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
 from ai_workbench.core.knowledge_store import KnowledgeBase, KnowledgeSource, KnowledgeSourceIndexResult, SessionKnowledgeBinding, base_index_status
@@ -16,7 +20,7 @@ from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepKind, RunS
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session, SessionBase, parse_session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
-from ai_workbench.core.time import utc_now
+from ai_workbench.core.time import utc_now, ensure_utc
 from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.worldbook import Worldbook, WorldbookEntry, WorldbookSettings, sync_worldbook_settings_patch
 from ai_workbench.db.models import (
@@ -99,6 +103,34 @@ class SqlSessionStore:
 class SqlMessageStore:
     def __init__(self, engine) -> None: self.engine = engine
 
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        from ai_workbench.db.attachment_queries import referenced_messages
+        return referenced_messages(self.engine, names)
+
+    def attachment_filenames(self, *, session_id=None, message_ids=None, run_ids=None):
+        from ai_workbench.db.attachment_queries import selected_message_attachments
+        return selected_message_attachments(self.engine, session_id=session_id, message_ids=message_ids, run_ids=run_ids)
+
+    def selected_message_ids(self, session_id, message_ids, run_ids):
+        with DbSession(self.engine) as db:
+            return list(db.exec(select(MessageRecord.message_id).where(MessageRecord.session_id == session_id,
+                or_(MessageRecord.message_id.in_(message_ids), MessageRecord.run_id.in_(run_ids)))
+                .order_by(MessageRecord.created_at, MessageRecord.message_id)))
+
+    def later_message_ids(self, message):
+        with DbSession(self.engine) as db:
+            return set(db.exec(select(MessageRecord.message_id).where(MessageRecord.session_id == message.session_id,
+                message_key() > (message.created_at, message.message_id))))
+
+    def message_ids_after_run(self, run, exclude_id):
+        with DbSession(self.engine) as db:
+            return set(db.exec(select(MessageRecord.message_id).where(MessageRecord.session_id == run.session_id,
+                MessageRecord.created_at > run.created_at, MessageRecord.message_id != exclude_id)))
+
+    def referencing_session_ids(self, persona_id):
+        with DbSession(self.engine) as db:
+            return set(db.exec(select(MessageRecord.session_id).where(MessageRecord.speaker_id == persona_id).distinct()))
+
     def add_message(self, session_id: str, role: str, content: Any = None, *, parts: list[dict[str, Any]] | None = None, run_id: str | None = None, parent_message_id: str | None = None, metadata: dict[str, Any] | None = None, speaker_type: str | None = None, speaker_id: str | None = None, speaker_name: str | None = None, origin: str | None = None, message_id: str | None = None) -> MessageSchema:
         metadata = dict(metadata or {})
         speaker = infer_speaker_identity(role, metadata=metadata, speaker_type=speaker_type, speaker_id=speaker_id, speaker_name=speaker_name, origin=origin)
@@ -106,6 +138,10 @@ class SqlMessageStore:
         validated = validate_message_parts(parts)
         record = MessageRecord(message_id=message_id or str(uuid4()), session_id=session_id, role=role, **speaker, parts_json=_dump(validated), run_id=run_id, parent_message_id=parent_message_id, metadata_json=_dump(metadata))
         with DbSession(self.engine) as db:
+            previous = db.exec(select(MessageRecord.created_at).where(MessageRecord.session_id == session_id)
+                .order_by(MessageRecord.created_at.desc(), MessageRecord.message_id.desc()).limit(1)).first()
+            if previous is not None:
+                record.created_at = max(record.created_at, ensure_utc(previous) + timedelta(microseconds=1))
             db.add(record)
             session = db.get(SessionRecord, session_id)
             if session is not None: session.updated_at = utc_now(); db.add(session)
@@ -127,13 +163,69 @@ class SqlMessageStore:
             return _message(row)
 
     def list_messages(self, session_id: str) -> list[MessageSchema]:
-        with DbSession(self.engine) as db: return [_message(row) for row in db.exec(select(MessageRecord).where(MessageRecord.session_id == session_id).order_by(MessageRecord.created_at)).all()]
+        with DbSession(self.engine) as db: return [_message(row) for row in db.exec(select(MessageRecord).where(MessageRecord.session_id == session_id).order_by(MessageRecord.created_at, MessageRecord.message_id)).all()]
+
+    def iter_context_history(self, session_id: str, exclude_id: str | None):
+        statement = select(MessageRecord).where(MessageRecord.session_id == session_id, eligible_history())
+        if exclude_id:
+            statement = statement.where(MessageRecord.message_id != exclude_id)
+        before = None
+        while True:
+            query = statement if before is None else statement.where(message_key() < before)
+            with DbSession(self.engine) as db:
+                rows = db.exec(query.order_by(MessageRecord.created_at.desc(), MessageRecord.message_id.desc()).limit(128)).all()
+                batch = [_message(row) for row in rows]
+            if not batch:
+                return
+            for message in batch:
+                yield message
+            before = (batch[-1].created_at, batch[-1].message_id)
+
+    def context_history_counts(self, session_id: str, exclude_id: str | None) -> tuple[int, int]:
+        statement = select(func.count(), func.coalesce(func.sum(cast(eligible_history(), Integer)), 0)).select_from(MessageRecord).where(
+            MessageRecord.session_id == session_id)
+        if exclude_id:
+            statement = statement.where(MessageRecord.message_id != exclude_id)
+        with DbSession(self.engine) as db:
+            total, eligible = db.exec(statement).one()
+            return int(total), int(eligible)
+
+    def context_turn_id(self, message: MessageSchema) -> str:
+        if message.parent_message_id:
+            return message.parent_message_id
+        before = (message.created_at, message.message_id)
+        fallback = message.message_id
+        statement = select(MessageRecord.message_id, MessageRecord.created_at, MessageRecord.parent_message_id).where(
+            MessageRecord.session_id == message.session_id, eligible_history(), message_key() <= before)
+        with DbSession(self.engine) as db:
+            if message.run_id:
+                run = statement.where(MessageRecord.run_id == message.run_id)
+                parent = db.exec(run.where(MessageRecord.parent_message_id.is_not(None)).order_by(
+                    MessageRecord.created_at.desc(), MessageRecord.message_id.desc()).limit(1)).first()
+                if parent:
+                    return parent.parent_message_id
+                first = db.exec(run.order_by(MessageRecord.created_at, MessageRecord.message_id).limit(1)).first()
+                if first:
+                    before = (first.created_at, first.message_id)
+                    fallback = first.message_id
+            user = db.exec(select(MessageRecord.message_id).where(MessageRecord.session_id == message.session_id,
+                MessageRecord.role == "user", eligible_history(), message_key() <= before).order_by(
+                    MessageRecord.created_at.desc(), MessageRecord.message_id.desc()).limit(1)).first()
+        return user or fallback
+
+    def messages_for_run(self, run_id: str) -> list[MessageSchema]:
+        with DbSession(self.engine) as db:
+            return [_message(row) for row in db.exec(select(MessageRecord).where(MessageRecord.run_id == run_id)
+                .order_by(MessageRecord.created_at, MessageRecord.message_id)).all()]
     def list_all_messages(self) -> list[MessageSchema]:
         with DbSession(self.engine) as db: return [_message(row) for row in db.exec(select(MessageRecord).order_by(MessageRecord.created_at)).all()]
     def delete_session(self, session_id: str) -> None:
         with DbSession(self.engine) as db: db.exec(delete(MessageRecord).where(MessageRecord.session_id == session_id)); db.commit()
     def find_latest_assistant_message(self, session_id: str) -> MessageSchema | None:
-        return next((item for item in reversed(self.list_messages(session_id)) if item.role == "assistant"), None)
+        with DbSession(self.engine) as db:
+            row = db.exec(select(MessageRecord).where(MessageRecord.session_id == session_id, MessageRecord.role == "assistant")
+                .order_by(MessageRecord.created_at.desc(), MessageRecord.message_id.desc()).limit(1)).first()
+            return _message(row) if row else None
 
 
 class SqlHistoryStore:
@@ -146,14 +238,17 @@ class SqlHistoryStore:
             if session is None:
                 raise KeyError(session_id)
             for model, ids in ((MessageRecord, change.deleted_message_ids), (RunRecord, change.deleted_run_ids)):
-                for record_id in ids:
-                    row = db.get(model, record_id)
-                    if row is None or row.session_id != session_id:
+                key = model.message_id if model is MessageRecord else model.run_id
+                for start in range(0, len(ids), 256):
+                    batch = ids[start:start + 256]
+                    count = db.exec(select(func.count()).select_from(model).where(model.session_id == session_id, key.in_(batch))).one()
+                    if count != len(batch):
                         raise ValueError("History record belongs to another session or no longer exists")
-                    db.delete(row)
-            if change.deleted_run_ids:
-                db.exec(delete(RunStepRecord).where(RunStepRecord.run_id.in_(change.deleted_run_ids)))
-                db.exec(delete(RunEventRecord).where(RunEventRecord.run_id.in_(change.deleted_run_ids)))
+                    db.exec(delete(model).where(model.session_id == session_id, key.in_(batch)))
+            for start in range(0, len(change.deleted_run_ids), 256):
+                ids = change.deleted_run_ids[start:start + 256]
+                db.exec(delete(RunStepRecord).where(RunStepRecord.run_id.in_(ids)))
+                db.exec(delete(RunEventRecord).where(RunEventRecord.run_id.in_(ids)))
             if updated is not None:
                 updated = MessageSchema.model_validate(updated.model_dump())
                 row = db.get(MessageRecord, updated.message_id)
@@ -164,12 +259,58 @@ class SqlHistoryStore:
                 row.created_at = updated.created_at
                 db.add(row)
             session.updated_at = utc_now()
+            session.history_version += 1
             db.add(session)
             db.commit()
 
 
 class SqlRunStore:
     def __init__(self, engine) -> None: self.engine = engine
+
+    def has_unfinished(self, *, session_id=None, persona_id=None):
+        query = select(RunRecord.run_id).where(RunRecord.status.in_(("PENDING", "RUNNING", "CANCELLING", "WAITING_FOR_USER")))
+        if session_id is not None:
+            query = query.where(RunRecord.session_id == session_id)
+        if persona_id is not None:
+            query = query.where(RunRecord.persona_id == persona_id)
+        with DbSession(self.engine) as db:
+            return db.exec(query.limit(1)).first() is not None
+
+    def unfinished_runs(self):
+        with DbSession(self.engine) as db:
+            query = select(RunRecord).options(defer(RunRecord.config_snapshot_json), defer(RunRecord.harness_state_json)).where(
+                RunRecord.status.in_(("PENDING", "RUNNING", "CANCELLING", "WAITING_FOR_USER")))
+            for row in db.exec(query).yield_per(128):
+                yield _run(row)
+
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        from sqlalchemy import text, bindparam
+        statement = text("""SELECT a.value FROM runsteprecord s, json_each(s.context_snapshot_json, '$.attachment_ids') a
+                            WHERE a.value IN :names""").bindparams(bindparam("names", expanding=True))
+        with self.engine.connect() as connection:
+            return set(connection.execute(statement, {"names": list(names)}).scalars())
+
+    def _matching_ids(self, session_id, condition):
+        with DbSession(self.engine) as db:
+            return list(db.exec(select(RunRecord.run_id).where(RunRecord.session_id == session_id, condition)
+                .order_by(RunRecord.created_at, RunRecord.run_id)))
+
+    def run_ids_for_input(self, session_id, message_id):
+        return self._matching_ids(session_id, func.json_extract(RunRecord.metadata_json, "$.input_message_id") == message_id)
+
+    def later_run_ids(self, run):
+        return self._matching_ids(run.session_id, tuple_(RunRecord.created_at, RunRecord.run_id) >= (run.created_at, run.run_id))
+
+    def run_ids_after_message(self, message):
+        return self._matching_ids(message.session_id, or_(RunRecord.created_at >= message.created_at,
+            func.json_extract(RunRecord.metadata_json, "$.input_message_id") == message.message_id))
+
+    def existing_run_ids(self, session_id, ids):
+        return self._matching_ids(session_id, RunRecord.run_id.in_(ids))
+
+    def referencing_session_ids(self, persona_id):
+        with DbSession(self.engine) as db:
+            return set(db.exec(select(RunRecord.session_id).where(RunRecord.persona_id == persona_id).distinct()))
 
     def save_context_snapshot(self, step_id, snapshot) -> None:
         with DbSession(self.engine) as db:
@@ -192,14 +333,16 @@ class SqlRunStore:
                 raise KeyError(step_id)
             return ContextSnapshot.model_validate_json(row.context_snapshot_json)
 
-    def context_attachment_ids(self, run_ids: set[str] | None = None) -> set[str]:
+    def context_attachment_ids(self, run_ids: set[str] | None = None, *, session_id: str | None = None) -> set[str]:
         from sqlalchemy import func
         statement = select(func.json_extract(RunStepRecord.context_snapshot_json, "$.attachment_ids")).where(
             RunStepRecord.context_snapshot_json.is_not(None))
         if run_ids is not None:
             statement = statement.where(RunStepRecord.run_id.in_(run_ids))
+        if session_id is not None:
+            statement = statement.where(RunStepRecord.run_id.in_(select(RunRecord.run_id).where(RunRecord.session_id == session_id)))
         with DbSession(self.engine) as db:
-            return {attachment for value in db.exec(statement).all() for attachment in json.loads(value)}
+            return {attachment for value in db.exec(statement).yield_per(128) for attachment in json.loads(value)}
 
     def create_run(self, kind: str, persona_id: str, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
         row = RunRecord(run_id=str(uuid4()), kind=kind, persona_id=persona_id, config_snapshot_json=_dump(config_snapshot or {}), harness_state_json=_dump(harness_state or {}), session_id=session_id, status=RunStatus.PENDING.value, metadata_json=_dump(metadata or {}))
@@ -232,7 +375,7 @@ class SqlRunStore:
 
     def get_run(self, run_id: str) -> RunSchema:
         with DbSession(self.engine) as db:
-            row = db.get(RunRecord, run_id)
+            row = db.get(RunRecord, run_id, options=[defer(RunRecord.config_snapshot_json), defer(RunRecord.harness_state_json)])
             if row is None: raise KeyError(f"unknown run id: {run_id}")
             return _run(row)
 
@@ -269,9 +412,9 @@ class SqlRunStore:
             row.metadata_json = _dump(metadata); row.updated_at = utc_now(); db.add(row); db.commit(); db.refresh(row); return _run(row)
 
     def list_runs(self, session_id: str) -> list[RunSchema]:
-        with DbSession(self.engine) as db: return [_run(row) for row in db.exec(select(RunRecord).where(RunRecord.session_id == session_id).order_by(RunRecord.created_at)).all()]
+        with DbSession(self.engine) as db: return [_run(row) for row in db.exec(select(RunRecord).options(defer(RunRecord.config_snapshot_json), defer(RunRecord.harness_state_json)).where(RunRecord.session_id == session_id).order_by(RunRecord.created_at)).all()]
     def list_all_runs(self) -> list[RunSchema]:
-        with DbSession(self.engine) as db: return [_run(row) for row in db.exec(select(RunRecord).order_by(RunRecord.created_at)).all()]
+        with DbSession(self.engine) as db: return [_run(row) for row in db.exec(select(RunRecord).options(defer(RunRecord.config_snapshot_json), defer(RunRecord.harness_state_json)).order_by(RunRecord.created_at)).all()]
     def delete_session(self, session_id: str) -> None:
         with DbSession(self.engine) as db:
             run_ids = select(RunRecord.run_id).where(RunRecord.session_id == session_id)
@@ -290,7 +433,10 @@ class SqlRunStore:
         from ai_workbench.core.harness.schema import has_saved_approval
 
         result=[]
-        for run in self.list_all_runs():
+        with DbSession(self.engine) as db:
+            ids = db.exec(select(RunRecord.run_id).where(RunRecord.status.in_(["PENDING", "RUNNING", "CANCELLING", "WAITING_FOR_USER"]))).all()
+        for run_id in ids:
+            run = self.get_run(run_id)
             if run.status == RunStatus.WAITING_FOR_USER and not run.cancel_requested and has_saved_approval(self.get_harness_state(run.run_id)):
                 continue
             if run.status not in {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}:
@@ -307,7 +453,7 @@ class SqlRunStore:
         if parent_step_id is not None and self.get_step(parent_step_id).run_id != run_id:
             raise ValueError("parent_step_id must belong to the same run")
         with DbSession(self.engine) as db:
-            count = len(db.exec(select(RunStepRecord).where(RunStepRecord.run_id == run_id)).all()); now = utc_now()
+            count = db.exec(select(func.count()).select_from(RunStepRecord).where(RunStepRecord.run_id == run_id)).one(); now = utc_now()
             row = RunStepRecord(step_id=str(uuid4()), run_id=run_id, kind=kind, parent_step_id=parent_step_id, label=label, status=status.value, message=message or "", order=count, started_at=now if status == RunStepStatus.RUNNING else None, metadata_json=_dump(metadata or {}), created_at=now, updated_at=now)
             db.add(row); db.commit(); db.refresh(row); return _step(row)
 
@@ -324,11 +470,11 @@ class SqlRunStore:
             row.updated_at = now; db.add(row); db.commit(); db.refresh(row); return _step(row)
     def get_step(self, step_id: str) -> RunStepSchema:
         with DbSession(self.engine) as db:
-            row = db.get(RunStepRecord, step_id)
+            row = db.get(RunStepRecord, step_id, options=[defer(RunStepRecord.context_snapshot_json)])
             if row is None: raise KeyError(f"unknown run step id: {step_id}")
             return _step(row)
     def list_steps(self, run_id: str) -> list[RunStepSchema]:
-        with DbSession(self.engine) as db: return [_step(row) for row in db.exec(select(RunStepRecord).where(RunStepRecord.run_id == run_id).order_by(RunStepRecord.order)).all()]
+        with DbSession(self.engine) as db: return [_step(row) for row in db.exec(select(RunStepRecord).options(defer(RunStepRecord.context_snapshot_json)).where(RunStepRecord.run_id == run_id).order_by(RunStepRecord.order)).all()]
 
 
 class SqlRunEventStore:
@@ -339,6 +485,20 @@ class SqlRunEventStore:
         return _event(row)
     def list_events(self, run_id: str) -> list[RunEventSchema]:
         with DbSession(self.engine) as db: return [_event(row) for row in db.exec(select(RunEventRecord).where(RunEventRecord.run_id == run_id).order_by(RunEventRecord.created_at)).all()]
+
+    def page_events(self, run_id: str, after: str | None, limit: int):
+        from sqlalchemy import tuple_
+        from ai_workbench.core.history_page import HistoryCursor, cursor_for
+        statement = select(RunEventRecord).where(RunEventRecord.run_id == run_id)
+        if after:
+            cursor = HistoryCursor.decode(after, run_id)
+            statement = statement.where(tuple_(RunEventRecord.created_at, RunEventRecord.event_id) > (cursor.created_at, cursor.id))
+        with DbSession(self.engine) as db:
+            rows = db.exec(statement.order_by(RunEventRecord.created_at, RunEventRecord.event_id).limit(limit + 1)).all()
+            items = [_event(row).model_dump(mode="json") for row in rows[:limit]]
+            more = len(rows) > limit
+            cursor = cursor_for(run_id, (rows[limit - 1].created_at, 1, rows[limit - 1].event_id)) if more else None
+            return {"items": items, "next_cursor": cursor, "has_more": more}
     def delete_session(self, session_id: str) -> None:
         with DbSession(self.engine) as db: db.exec(delete(RunEventRecord).where(RunEventRecord.session_id == session_id)); db.commit()
 
@@ -433,6 +593,12 @@ class SqlWorldbookStore:
 
 
 class SqlKnowledgeStore:
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        with DbSession(self.engine) as db:
+            return {uri.removeprefix("local://attachments/") for uri in db.exec(select(KnowledgeSourceRecord.uri).where(
+                KnowledgeSourceRecord.source_type == "attachment_text",
+                KnowledgeSourceRecord.uri.in_(["local://attachments/" + name for name in names])))}
+
     def __init__(self, engine) -> None: self.engine=engine
     def get_settings(self) -> KnowledgeSettings:
         with DbSession(self.engine) as db:
@@ -586,10 +752,10 @@ def _event(row: RunEventRecord) -> RunEventSchema:
     return RunEventSchema(event_id=row.event_id,run_id=row.run_id,session_id=row.session_id,type=row.type,message=row.message,payload=_load(row.payload_json,{}),created_at=row.created_at)
 def _worldbook_settings(row: WorldbookSettingsRecord) -> WorldbookSettings: return WorldbookSettings(**{key:getattr(row,key) for key in WorldbookSettings.model_fields if hasattr(row,key)})
 def _worldbook(row: WorldbookRecord, db: DbSession) -> Worldbook:
-    entries = len(db.exec(select(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id == row.id)).all())
+    entries = db.exec(select(func.count()).select_from(WorldbookEntryRecord).where(WorldbookEntryRecord.worldbook_id == row.id)).one()
     return Worldbook(id=row.id, name=row.name, description=row.description, enabled=row.enabled,
                      created_at=row.created_at, updated_at=row.updated_at, entry_count=entries)
 def _entry(row: WorldbookEntryRecord) -> WorldbookEntry: return WorldbookEntry(id=row.id,worldbook_id=row.worldbook_id,name=row.name,keywords_text=row.keywords_text,content=row.content,activation_mode=row.activation_mode,enabled=row.enabled,sort_order=row.sort_order,created_at=row.created_at,updated_at=row.updated_at)
 def _kb(row: KnowledgeBaseRecord) -> KnowledgeBase: return KnowledgeBase(**{key:getattr(row,key) for key in KnowledgeBase.model_fields if hasattr(row,key)})
 def _source(row: KnowledgeSourceRecord, db: DbSession) -> KnowledgeSource:
-    chunks=db.exec(select(KnowledgeChunkRecord).where(KnowledgeChunkRecord.source_id==row.id)).all(); return KnowledgeSource(id=row.id,knowledge_base_id=row.knowledge_base_id,source_type=row.source_type,uri=row.uri,title=row.title,relative_path=row.relative_path,virtual_path=row.virtual_path,folder_path=row.folder_path,file_name=row.file_name,extension=row.extension,path_depth=row.path_depth,file_status=row.file_status,source_mtime=row.source_mtime,source_size_bytes=row.source_size_bytes,mime_type=row.mime_type,size_bytes=row.size_bytes,content_hash=row.content_hash,indexed_at=row.indexed_at,status=row.status,error=row.error,metadata=_load(row.metadata_json,{}),chunks=len(chunks))
+    chunks=db.exec(select(func.count()).select_from(KnowledgeChunkRecord).where(KnowledgeChunkRecord.source_id==row.id)).one(); return KnowledgeSource(id=row.id,knowledge_base_id=row.knowledge_base_id,source_type=row.source_type,uri=row.uri,title=row.title,relative_path=row.relative_path,virtual_path=row.virtual_path,folder_path=row.folder_path,file_name=row.file_name,extension=row.extension,path_depth=row.path_depth,file_status=row.file_status,source_mtime=row.source_mtime,source_size_bytes=row.source_size_bytes,mime_type=row.mime_type,size_bytes=row.size_bytes,content_hash=row.content_hash,indexed_at=row.indexed_at,status=row.status,error=row.error,metadata=_load(row.metadata_json,{}),chunks=chunks)

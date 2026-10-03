@@ -35,11 +35,12 @@ def test_message_store_persists_generic_speaker_parts_and_parent() -> None:
     session = sessions.create_session()
     session_id = session.session_id
 
-    first = store.add_message(session_id=session_id, role="user", content="hello")
+    first = store.add_message(session_id=session_id, role="user", content="hello", message_id="first")
     second = store.add_message(
         session_id=session_id,
         role="assistant",
         content="reply",
+        message_id="second",
         run_id="run-1",
         parent_message_id=first.message_id,
         speaker_id=COGITA_PERSONA_ID,

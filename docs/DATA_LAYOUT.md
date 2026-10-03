@@ -137,6 +137,13 @@ ordinary responses exclude the private column. Included attachment-store filenam
 checks, so deleting the original message alone may retain its files. Pruning the last referencing snapshot
 allows post-commit cleanup. See [Context detail](contracts/runs-streaming.md#context-detail).
 
+Revision `0029_bounded_history` adds session history_version and message/run/event read indexes.
+It does not convert configuration or alter files. Public run/step reads exclude private JSON columns.
+Attachment checks extract only reference values in SQLite; single-file checks stop on a match.
+Storage statistics and cleanup process 128 files at a time, without a full orphan list; explicit scan
+responses still contain the requested complete orphan list. Cleanup rechecks references before deletion.
+Large history mutations retain affected ids/attachment names, rather than message bodies.
+
 ## Runtime files
 
 Installation directories and process ownership are defined in

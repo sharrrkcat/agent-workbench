@@ -31,8 +31,8 @@ def test_native_budget_keeps_whole_recent_turns_and_remaps_sources():
     async def scenario():
         store = MessageStore()
         for index in range(16):
-            user = store.add_message('s', 'user', f'user-{index}')
-            store.add_message('s', 'assistant', f'answer-{index}', run_id=f'run-{index}', parent_message_id=user.message_id)
+            user = store.add_message('s', 'user', f'user-{index}', message_id=f'{index:03}-user')
+            store.add_message('s', 'assistant', f'answer-{index}', run_id=f'run-{index}', parent_message_id=user.message_id, message_id=f'{index:03}-zanswer')
         built = ContextBuilder(store).build('s', 'current')
         original = deepcopy(built)
         payloads = []
