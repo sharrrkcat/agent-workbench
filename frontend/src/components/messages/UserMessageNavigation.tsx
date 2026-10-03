@@ -6,7 +6,7 @@ import { useMessageScroller, useMessageScrollerVisibility } from '@/components/u
 import type { Message } from '../../types/messages';
 import { messagePreview } from './messageContent';
 
-export function UserMessageNavigation({ messages }: { messages: Message[] }) {
+export function UserMessageNavigation({ messages, numbers }: { messages: Message[]; numbers: ReadonlyMap<string, number> }) {
   const { t } = useTranslation('chat');
   const { currentAnchorId, visibleMessageIds } = useMessageScrollerVisibility();
   const { scrollToMessage } = useMessageScroller();
@@ -30,12 +30,13 @@ export function UserMessageNavigation({ messages }: { messages: Message[] }) {
   return (
     <nav ref={rail} className="user-message-navigation" aria-label={t('userMessageNavigation')}>
       {messages.map((message, index) => {
-        const summary = messagePreview(message) || t('userMessageNumber', { number: index + 1 });
+        const number = numbers.get(message.message_id);
+        const summary = messagePreview(message) || t('userMessageNumber', { number });
         return (
           <Tooltip key={message.message_id}>
             <TooltipTrigger render={
               <Button variant="ghost" size="icon" className="user-message-tick h-2 w-11 justify-start pl-[10px] pointer-coarse:min-h-2"
-                aria-label={t('jumpToUserMessage', { number: index + 1, summary })}
+                aria-label={t('jumpToUserMessage', { number, summary })}
                 aria-current={message.message_id === activeId ? 'step' : undefined}
                 data-adjacent={activeIndex >= 0 && Math.abs(index - activeIndex) === 1 ? '' : undefined}
                 onClick={() => scrollToMessage(message.message_id, {

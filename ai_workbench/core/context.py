@@ -35,6 +35,14 @@ class ContextBuilder:
         trace = ContextTrace()
         candidates = [m for m in self.message_store.list_messages(session_id) if m.message_id != current_message_id]
         history = [m for m in candidates if _eligible(m)]
+        turns, run_turns, current_turn = {}, {}, None
+        for message in history:
+            if message.role == "user":
+                current_turn = message.message_id
+            turn = message.parent_message_id or run_turns.get(message.run_id) or current_turn or message.message_id
+            turns[message.message_id] = turn
+            if message.run_id:
+                run_turns[message.run_id] = turn
         trace.exclusions.extend(ContextExclusion(kind="history", reason="ineligible_history", reference_id=m.message_id)
                                 for m in candidates if not _eligible(m))
         if policy.max_messages == 0:
@@ -63,7 +71,8 @@ class ContextBuilder:
         trace.exclusions.extend(ContextExclusion(kind="history", reason="character_limit", reference_id=m.message_id)
                                 for m, _ in pairs[:removed_count])
         for index, (message, item) in enumerate(pairs[removed_count:]):
-            _trace_message(trace, message, index, item, "history", policy.include_attachments == "explicit")
+            _trace_message(trace, message, index, item, "history", policy.include_attachments == "explicit",
+                           turn_id=turns[message.message_id])
         current_message = self.message_store.get_message(current_message_id) if current_message_id else None
         current_item = {"role": "user", "content": current_content}
         if current_message is not None:
@@ -130,10 +139,10 @@ def message_text(message: Any, *, include_attachments: bool = True, attachment_s
     return "\n\n".join(part for part in rendered if part)
 
 
-def _trace_message(trace, message, index, projected, kind, include_attachments):
+def _trace_message(trace, message, index, projected, kind, include_attachments, *, turn_id=None):
     source_id = "message:" + message.message_id
     trace.sources.append(ContextSource(id=source_id, kind=kind, message_index=index,
-        reference_id=message.message_id, role=projected["role"]))
+        reference_id=message.message_id, role=projected["role"], turn_id=turn_id))
     attachments = (message.metadata or {}).get("attachments", [])
     if not include_attachments:
         trace.exclusions.extend(ContextExclusion(kind="attachment", reason="attachments_disabled",

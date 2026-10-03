@@ -24,6 +24,7 @@ for (const locale of ['en', 'zh-CN']) {
         const reply = page.locator('article[data-run-id]').last();
         await expect(reply.getByRole('button', { name: title, exact: true })).toHaveCount(0);
         await expect(reply.locator('.reply-answer')).toContainText('aGk= decodes to hi.', { timeout: 20000 });
+        await expect(page.locator('.message-number')).toHaveText(['#1', '#2']);
         const trigger = reply.getByRole('button', { name: title, exact: true });
         await expect(trigger).toBeVisible();
         expect(contextRequests).toHaveLength(0);
@@ -94,6 +95,39 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.getByRole('dialog', { name: title }).locator('.context-source-detail')).toBeVisible();
       });
 
+      test('message numbers match filtered history and renumber after deletion', async ({ page, request }) => {
+        const input = page.locator('.composer textarea');
+        await input.fill('first context');
+        await input.press('Enter');
+        await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible();
+        const firstRunId = await page.locator('article[data-run-id]').first().getAttribute('data-run-id');
+        const firstRun = await (await request.get(`/api/runs/${firstRunId}`)).json();
+        expect((await request.patch(`/api/sessions/${firstRun.session_id}`, { data: { context_policy: {
+          max_messages: 1, max_chars: null, include_attachments: 'explicit',
+        } } })).ok()).toBe(true);
+        await input.fill('second context');
+        await input.press('Enter');
+        const trigger = page.getByRole('button', { name: title, exact: true }).last();
+        await expect(page.locator('.message-number')).toHaveText(['#1', '#2', '#3', '#4']);
+        await expect(page.getByRole('button', { name: zh ? '跳转到第 3 条消息：second context' : 'Go to message 3: second context', exact: true, includeHidden: true })).toHaveCount(1);
+        await expect(page.locator('article[data-run-id]').last().getByRole('button', { name: title, exact: true })).toBeVisible();
+        await trigger.click();
+        const dialog = page.getByRole('dialog', { name: title });
+        const history = dialog.locator('[data-context-source=history]');
+        await expect(history.locator('.context-message-label')).toHaveText(zh ? '消息 #2' : 'Message #2');
+        await expect(dialog.locator('[data-context-source=current_input] .context-message-label')).toHaveText(zh ? '消息 #3' : 'Message #3');
+        await history.click();
+        await expect(dialog.locator('.context-source-heading')).toContainText(zh ? '消息 #2' : 'Message #2');
+        await page.keyboard.press('Escape');
+        expect((await request.delete(`/api/runs/${firstRunId}`)).ok()).toBe(true);
+        await expect(page.locator('.message-number')).toHaveText(['#1', '#2', '#3']);
+        await page.reload();
+        await expect(page.locator('.message-number')).toHaveText(['#1', '#2', '#3']);
+        await page.getByRole('button', { name: title, exact: true }).click();
+        await expect(history.locator('.context-message-label')).toHaveText(zh ? '已删除消息' : 'Deleted message');
+        await expect(dialog.locator('[data-context-source=current_input] .context-message-label')).toHaveText(zh ? '消息 #2' : 'Message #2');
+      });
+
       test('retries failed reads and closes when history is removed', async ({ page, request }) => {
         await page.locator('.composer textarea').fill('context 中文😀');
         await page.locator('.composer textarea').press('Enter');
@@ -145,7 +179,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('button', { name: title, exact: true }).click();
         const dialog = page.getByRole('dialog', { name: title });
         await expect(dialog.locator('.context-source-detail')).toBeVisible();
-        const expand = zh ? '展开或收起 当前输入' : 'Expand or collapse Current input';
+        const expand = zh ? '展开或收起 消息 #1' : 'Expand or collapse Message #1';
         await dialog.getByRole('button', { name: expand, exact: true }).click();
         const attachment = dialog.locator('[data-context-source=attachment]');
         await expect(attachment.locator('.context-tokens')).toHaveText('— tokens');
@@ -176,16 +210,26 @@ for (const locale of ['en', 'zh-CN']) {
         const call = run.steps.find((step: { kind: string }) => step.kind === 'model');
         const snapshot = await (await request.get(`/api/runs/${runId}/steps/${call.step_id}/context`)).json();
         const current = snapshot.sources.find((source: { kind: string }) => source.kind === 'current_input');
+        const sessionMessages = await (await request.get(`/api/sessions/${run.session_id}/messages`)).json();
+        const originalUser = sessionMessages.find((message: { message_id: string }) => message.message_id === current.reference_id);
+        const numberedMessages = Array.from({ length: 105 }, (_, i) => ({ ...originalUser,
+          message_id: `numbered-${i}`, created_at: new Date(Date.UTC(2020, 0, 1, 0, 0, i)).toISOString(),
+          parts: [{ id: `text-${i}`, type: 'text', text: `Earlier message ${i + 1}` }], run: null, run_id: null }));
+        await page.route(`**/sessions/${run.session_id}/messages`, (route) => route.fulfill({ json: [...numberedMessages, ...sessionMessages] }));
+        await page.reload();
+        await expect(page.locator('.message-number').last()).toHaveText('#107');
         const longText = 'scrollable content\n'.repeat(250);
         await page.route('**/steps/*/context', (route) => route.fulfill({ json: { ...snapshot,
           sources: [...snapshot.sources, ...Array.from({ length: 45 }, (_, i) => ({ id: `history-${i}`, kind: 'history',
-            role: 'user', message_index: i + 2, text: longText, char_count: longText.length }))] } }));
+            reference_id: `numbered-${i + 60}`, role: 'user', message_index: i + 2, text: longText, char_count: longText.length }))] } }));
         await trigger.click();
         const dialog = page.getByRole('dialog', { name: title });
         const backdrop = page.locator('[data-slot=dialog-overlay]');
         await expect(backdrop).toBeVisible();
         await expect(backdrop).not.toHaveCSS('backdrop-filter', 'none');
         const nav = dialog.locator('.context-sources');
+        await expect(nav.locator('[data-context-source=system] > span').first()).toHaveText('System');
+        await expect(dialog.locator('.context-source-heading > span').first()).toHaveText('System');
         await expect(nav.getByText(zh ? '实际发送顺序' : 'Actual send order', { exact: true })).toHaveCount(0);
         await expect(dialog.locator('.context-call-header [data-slot=badge]')).toHaveCount(4);
         const badges = dialog.locator('.context-call-header [data-slot=badge]');
@@ -204,6 +248,7 @@ for (const locale of ['en', 'zh-CN']) {
         const charsBefore = await currentRow.locator('.context-chars').boundingBox();
         releaseWorker();
         await expect(currentRow.locator('.context-tokens')).toHaveText('≈ 4 tokens');
+        await expect(currentRow.locator('.context-message-label')).toHaveText(zh ? '消息 #106' : 'Message #106');
         expect(await currentRow.locator('.context-count').boundingBox()).toEqual(countBefore);
         expect(await currentRow.locator('.context-chars').boundingBox()).toEqual(charsBefore);
         expect(workerLoads).toBe(1);
@@ -230,6 +275,19 @@ for (const locale of ['en', 'zh-CN']) {
         await page.screenshot({ path: info.outputPath('context-info.png'), animations: 'disabled' });
         await nav.locator('[data-context-source=history]').first().click();
         await expect(card).toHaveCount(0);
+        const numberedRow = nav.locator('[data-context-source=history]').last();
+        await numberedRow.scrollIntoViewIfNeeded();
+        await expect(numberedRow.locator('.context-message-label')).toHaveText(zh ? '消息 #105' : 'Message #105');
+        await expect(numberedRow.locator('.context-tokens')).toContainText('≈');
+        const rowBefore = await numberedRow.boundingBox();
+        if (width === 1366) await numberedRow.hover(); else await numberedRow.tap();
+        expect((await numberedRow.boundingBox())!.height).toBe(rowBefore!.height);
+        expect(await numberedRow.locator('.context-message-label').evaluate((node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return range.getClientRects().length;
+        })).toBe(1);
+        expect(await numberedRow.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
         const panel = dialog.locator('.context-source-detail');
         const tabsY = (await dialog.getByRole('tab', { name: structureLabel }).boundingBox())!.y;
         const navTop = await nav.evaluate((node) => node.scrollTop);

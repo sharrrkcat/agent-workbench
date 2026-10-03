@@ -64,7 +64,7 @@ def append_system_block(messages, trace: ContextTrace, text: str, kind, referenc
     return result, source
 
 
-def capture_context(runs, step_id, trace: ContextTrace, profile, policy):
+def capture_context(runs, step_id, trace: ContextTrace, profile, policy, *, budget=None):
     """Bind one chat call to its step; the transport supplies the body it sends."""
     def capture(payload: dict) -> None:
         body = deepcopy(payload)
@@ -91,7 +91,8 @@ def capture_context(runs, step_id, trace: ContextTrace, profile, policy):
             snapshot = ContextSnapshot(run_id=runs.get_step(step_id).run_id, step_id=step_id, captured_at=utc_now(),
                 model_profile_id=profile.id, model_alias=profile.alias, source_type=profile.source.type,
                 request=SnapshotRequest.model_validate(body), policy=policy,
-                sources=sources, exclusions=trace.exclusions, attachment_ids=list(dict.fromkeys(attachments)))
+                sources=sources, exclusions=trace.exclusions, attachment_ids=list(dict.fromkeys(attachments)),
+                budget=budget.stats if budget is not None else None)
             runs.save_context_snapshot(step_id, snapshot)
         except (ValidationError, SQLAlchemyError) as exc:
             raise ModelError("CONTEXT_SAVE_FAILED", "The model input could not be saved.", 500) from exc

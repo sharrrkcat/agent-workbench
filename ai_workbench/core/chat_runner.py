@@ -12,6 +12,7 @@ from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop
 from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.knowledge_context import build_session_knowledge_context
 from ai_workbench.core.context_snapshot import append_system_block, capture_context, omit_context_images, snapshot_attachment
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
@@ -217,10 +218,11 @@ class ChatRunner:
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,
                                    parent_message_id=user.message_id, streamed=streamed)
             metrics = first_metrics
-            capture = capture_context(self.runs, model_step.step_id, context_trace, profile, config.context_policy)
+            budget = ChatContextBudget(config.context_limits, context_trace)
+            capture = capture_context(self.runs, model_step.step_id, budget.trace, profile, config.context_policy, budget=budget)
             try:
                 if streamed:
-                    async with aclosing(self.model_manager.chat_stream(profile.id, request, metrics=metrics, capture=capture)) as stream:
+                    async with aclosing(self.model_manager.chat_stream(profile.id, request, metrics=metrics, capture=capture, budget=budget)) as stream:
                         async for chunk in stream:
                             if self._cancelled(run.run_id):
                                 raise asyncio.CancelledError()
@@ -230,7 +232,7 @@ class ChatRunner:
                             if chunk.delta.tool_calls:
                                 raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat cannot execute tool calls.", 502)
                 else:
-                    response = await self.model_manager.chat(profile.id, request, metrics=metrics, capture=capture)
+                    response = await self.model_manager.chat(profile.id, request, metrics=metrics, capture=capture, budget=budget)
                     if response.message.content is not None and not isinstance(response.message.content, str):
                         raise ModelError("UNEXPECTED_TOOL_CALL", "Ordinary chat requires a text response.", 502)
                     draft.append(response.message.content, response.message.reasoning_content)

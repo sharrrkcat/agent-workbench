@@ -8,6 +8,7 @@ from pydantic import Field, field_serializer, field_validator
 
 from ai_workbench.core.models.schema import GenerationParameters, StrictModel
 from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
@@ -85,6 +86,7 @@ class ResolvedChatConfig(StrictModel):
     user_persona_id: str
     user_persona_prompt: str
     context_policy: ContextPolicy
+    context_limits: ContextLimits = Field(default_factory=ContextLimits)
     model_profile_id: str | None
     model_source: Literal["session", "project", "global"]
     generation: GenerationParameters

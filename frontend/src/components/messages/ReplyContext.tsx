@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useContext, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Info, Layers, LockKeyhole } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { contextPresentation, type DisplayContextSource } from './contextPresentation';
 import { useContextTokens } from './useContextTokens';
+import { MessageNumbersContext } from './MessageNumbersContext';
 import { runsApi } from '../../api/runs';
 import type { ContextDetail, ContextSource } from '../../types/context';
 import type { RunStep } from '../../types/runs';
@@ -53,6 +54,7 @@ export function ReplyContext({ reply }: { reply: Reply }) {
 
 function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) {
   const { t, i18n } = useTranslation('runs');
+  const numbers = useContext(MessageNumbersContext);
   const selectId = useId();
   const [callId, setCallId] = useState(() => defaultContextCall(reply, calls));
   const [sourceId, setSourceId] = useState<string>();
@@ -89,9 +91,14 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
   const exclusions = presentation?.exclusions || [];
   const tokens = (source: DisplayContextSource) => source.empty ? 0 : estimates?.[source.id];
   const tokenLabel = (source: DisplayContextSource) => tokens(source) == null ? '— tokens' : `≈ ${count(tokens(source))} tokens`;
+  const isMessage = (source: ContextSource) => (source.kind === 'history' || source.kind === 'current_input') && !!source.reference_id;
   function label(source: ContextSource) {
     if (source.attachment) return source.attachment.name;
     if (source.citation) return `[${source.citation}] ${source.name || ''}`;
+    if (isMessage(source)) {
+      const number = numbers.get(source.reference_id!);
+      return number == null ? t('context.deletedMessage') : t('context.messageNumber', { number });
+    }
     return t(`context.sources.${source.kind}`);
   }
   function sourceNode(source: DisplayContextSource) {
@@ -100,7 +107,9 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
       <Button variant={selected?.id === source.id ? 'secondary' : 'ghost'}
         className="context-source-button h-auto min-h-8 min-w-0 flex-1 justify-between whitespace-normal text-start" aria-pressed={selected?.id === source.id}
         data-context-source={source.kind} data-empty={source.empty || undefined} onClick={() => setSourceId(source.id)}>
-        <span>{!source.parent_id && source.message_index != null ? `${source.message_index + 1}. ` : ''}{label(source)}</span>
+        <span className={isMessage(source) ? 'context-message-label' : undefined}>
+          {!isMessage(source) && source.kind !== 'system' && !source.parent_id && source.message_index != null ? `${source.message_index + 1}. ` : ''}{label(source)}
+        </span>
         {source.empty ? <span>{t('context.empty')}</span> : <span className="context-count"
           style={{ width: `${Math.max(12, count(source.char_count * 4).length + 9)}ch` }}>
           <span className="context-chars">{source.attachment?.type === 'image' ? '—' : t('context.chars', { count: source.char_count })}</span>

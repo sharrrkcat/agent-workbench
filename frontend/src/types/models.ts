@@ -114,6 +114,7 @@ export type LocalModelSource = {
 export type ModelSource = LocalModelSource | { type: 'provider'; provider_profile_id: string };
 
 export type ModelInput = {
+  context_window_tokens?: number | null;
   alias: string;
   name: string;
   kind: ModelKind;

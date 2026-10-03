@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 
 def insert_pre_request_options_model(engine, profile):
-    data = profile.model_dump(exclude={"source", "request_options", "parameters"})
+    data = profile.model_dump(exclude={"source", "request_options", "parameters", "context_window_tokens"})
     source = profile.source
     local = source is not None and source.type == "local"
     data.update(source_type=source.type if source else None,

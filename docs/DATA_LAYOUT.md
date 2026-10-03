@@ -1,5 +1,8 @@
 # Local data layout
 
+Alembic revision 0028_context_budget adds nullable model_profiles.context_window_tokens for
+provider LLMs without modifying model files, attachments or installed runtimes.
+
 SQLite records are disposable test state. Files have separate ownership and
 are never removed by schema revisions.
 

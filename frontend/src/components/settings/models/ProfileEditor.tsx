@@ -433,7 +433,6 @@ export function ProfileEditor({
                       {(engine === 'llama-server'
                         ? [
                             ['threads', 4, 1, 256],
-                            ['context_size', 4096, 512, 1048576],
                             ['batch_size', 512, 1, 4096],
                           ]
                         : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? [['intraop_threads', 4, 1, 256], ['max_batch_size', 1, 1, 16]]
@@ -514,7 +513,19 @@ export function ProfileEditor({
                 ) : null}
                 {engine !== 'sentence-transformers' && model.value.kind !== 'reranker' ? <>
                   <h3>{t('parameters')}</h3>
+                  {model.value.kind === 'llm' ? <Field>
+                    <FieldLabel htmlFor={formId + '-context-window'}>{t('contextWindow')}</FieldLabel>
+                    <Input id={formId + '-context-window'} type="number" min={512} max={local ? 1048576 : undefined} step={1}
+                      value={(local ? local.execution_options.context_size ?? 4096 : model.value.context_window_tokens) ?? ''}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value === '' ? null : Number(event.currentTarget.value);
+                        if (local) patchLocal({ execution_options: { ...local.execution_options, context_size: value ?? 4096 } });
+                        else patchModel({ context_window_tokens: value });
+                      }} />
+                    <FieldDescription>{t(local ? 'contextWindowLocalHelp' : 'contextWindowProviderHelp')}</FieldDescription>
+                  </Field> : null}
                   <ProfileParameters value={model.value} engine={engine} onChange={(parameters) => patchModel({ parameters })} />
+                  {model.value.kind === 'llm' ? <p className="model-empty">{t('outputReserveHelp')}</p> : null}
                 </> : null}
                 {audio ? <p className="model-empty">{t('ttsSeedHint')}</p> : null}
                 {engine === 'chatterbox' ? (

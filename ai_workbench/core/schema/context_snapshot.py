@@ -10,6 +10,7 @@ from ai_workbench.core.models.schema import (
     ChatRequestOptions, GenerationParameters, ResponseFormat, StreamOptions, TextPart, ToolCall, ToolChoice, ToolSpec,
 )
 from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_budget import ContextBudgetStats
 from ai_workbench.core.time import isoformat_utc
 
 
@@ -82,6 +83,7 @@ class ContextSource(SnapshotModel):
     start: int = Field(default=0, ge=0)
     end: int | None = Field(default=None, ge=0)
     reference_id: str | None = None
+    turn_id: str | None = None
     name: str | None = None
     citation: str | None = None
     knowledge_base_id: str | None = None
@@ -93,7 +95,7 @@ class ContextSource(SnapshotModel):
 class ContextExclusion(SnapshotModel):
     kind: SourceKind
     reason: Literal[
-        "ineligible_history", "message_limit", "character_limit", "empty", "attachments_disabled",
+        "ineligible_history", "message_limit", "character_limit", "token_limit", "empty", "attachments_disabled",
         "images_unsupported", "file_text_disabled", "file_text_limit", "no_bindings", "no_results", "retrieval_failed",
     ]
     reference_id: str | None = None
@@ -111,6 +113,7 @@ class ContextSummary(SnapshotModel):
     message_count: int = Field(ge=0)
     tool_count: int = Field(ge=0)
     image_count: int = Field(ge=0)
+    budget: ContextBudgetStats | None = None
 
 
 class ContextSnapshot(SnapshotModel):
@@ -125,13 +128,14 @@ class ContextSnapshot(SnapshotModel):
     sources: list[ContextSource]
     exclusions: list[ContextExclusion]
     attachment_ids: list[str]
+    budget: ContextBudgetStats | None = None
 
     @field_serializer("captured_at", when_used="json")
     def serialize_time(self, value: datetime) -> str:
         return isoformat_utc(value)
 
     def summary(self) -> ContextSummary:
-        return ContextSummary(message_count=len(self.request.messages), tool_count=len(self.request.tools or []),
+        return ContextSummary(budget=self.budget, message_count=len(self.request.messages), tool_count=len(self.request.tools or []),
             image_count=sum(isinstance(part, SnapshotImagePart) for message in self.request.messages
                             if isinstance(message.content, list) for part in message.content))
 

@@ -9,7 +9,7 @@ from ai_workbench.core.models.schema import (
 )
 from ai_workbench.core.models.runtimes.schema import (
     DownloadSettings, Installation, ComponentInstallation, DLSSOptions, LlamaCPUOptions, LlamaCUDAOptions,
-    PythonOptions, OnnxCPUOptions, SiglipOptions, EmbeddingOptions, RerankerOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
+    PythonOptions, TransformersOptions, OnnxCPUOptions, SiglipOptions, EmbeddingOptions, RerankerOptions, RuntimeJob, LocalEngine, LocalRuntimeSettings,
 )
 
 
@@ -17,7 +17,7 @@ class EmptyExecutionOptions(ApiModel):
     """Local options are populated from the selected model's engine defaults."""
 
 
-LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | PythonOptions
+LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | TransformersOptions
 ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions | RerankerOptions | DLSSOptions
 Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters | ASRParameters | ProcessorParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "source"})

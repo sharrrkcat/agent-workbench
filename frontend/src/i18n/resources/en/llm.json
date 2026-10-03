@@ -541,5 +541,9 @@
     "skip_reasoning_capability_check": "Reasoning",
     "reasoningHelp": "Mode declarations: Instant alone skips reasoning-off preflight; Reasoning alone skips reasoning-on preflight. Both on or both off skip neither check. These declarations do not change the chat mode.",
     "help": "Off: check local support before sending, allowing unknown support. On: send without this check; engine errors can still occur."
-  }
+  },
+  "contextWindow": "Context window (tokens)",
+  "contextWindowLocalHelp": "Includes input and output; actual capacity is bounded by the running instance and model.",
+  "contextWindowProviderHelp": "Required before chatting. Includes input and output; provider input counts are estimates.",
+  "outputReserveHelp": "An empty maximum output reserves one quarter of the window, up to 4,096 tokens."
 }

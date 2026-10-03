@@ -71,6 +71,13 @@ answer. A further tool round fails with `TOOL_LOOP_LIMIT`. Each tool has a
 30-second timeout; the harness has five minutes of cumulative active time.
 Waiting for approval consumes no active time and holds no model lease.
 
+Each model round, including after approval, applies the shared
+[chat token budget](chat-context.md#configuration-snapshots-and-context) to its final request.
+Only prior conversation turns may be removed; the entire active tool transcript stays paired and
+intact. Oversized tool results can end a run with CONTEXT_WINDOW_EXCEEDED before its next model
+dispatch. Saved base context/configuration remain stable through approval; each call captures
+its own retained request and budget. Tool-result compression is unimplemented.
+
 Streaming call fragments are merged by index. IDs, names and JSON are validated
 before execution; duplicate IDs across a run and incomplete calls are terminal
 protocol errors. Assistant text streams incrementally over the existing message

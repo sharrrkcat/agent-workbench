@@ -541,5 +541,9 @@
     "skip_reasoning_capability_check": "Reasoning",
     "reasoningHelp": "模式声明：仅开启 Instant 时跳过关闭 reasoning 的预检；仅开启 Reasoning 时跳过开启 reasoning 的预检。两项同时开启或关闭时均不跳过。这些声明不会改变对话模式。",
     "help": "关闭时发送前校验本地支持情况，未知时放行；开启时跳过对应校验，引擎仍可能报错。"
-  }
+  },
+  "contextWindow": "上下文窗口（token）",
+  "contextWindowLocalHelp": "窗口包含输入和输出；实际容量受运行实例和模型上限限制。",
+  "contextWindowProviderHelp": "聊天前必须填写。窗口包含输入和输出；外部模型的输入计数为估算。",
+  "outputReserveHelp": "最大输出留空时，预留窗口的四分之一，最多 4,096 token。"
 }

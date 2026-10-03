@@ -70,6 +70,10 @@ class PythonOptions(Strict):
     intraop_threads: int = Field(default=4, ge=1, le=256, strict=True)
 
 
+class TransformersOptions(PythonOptions):
+    context_size: int = Field(default=4096, ge=512, le=1048576, strict=True)
+
+
 class SiglipOptions(PythonOptions):
     max_batch_size: int = Field(default=1, ge=1, le=16, strict=True)
 
@@ -108,7 +112,7 @@ def local_engine(profile) -> LocalEngine | None:
 def engine_options(engine: LocalEngine, values: dict):
     if engine == "llama-server":
         return llama_options(values.get("device", "cuda"))
-    return {"kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions,
+    return {"transformers": TransformersOptions, "kokoro": OnnxCPUOptions, "wd14": OnnxCPUOptions,
         "siglip2": SiglipOptions, "sentence-transformers": EmbeddingOptions,
         "cross-encoder": RerankerOptions, "dlss5nr": DLSSOptions}.get(engine, PythonOptions)
 

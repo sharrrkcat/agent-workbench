@@ -61,7 +61,7 @@ def check_statistics(body, *, streaming, engine_name):
     return {"usage": usage.model_dump(), "timing": timing.model_dump()}
 
 
-async def validate_device(state, client, model_ref, device, engine_name, vision=False, reasoning=False):
+async def validate_device(state, client, model_ref, device, engine_name, vision=False, reasoning=False, context_budget=False):
     manager = state.model_manager
     options = {"device": device}
     profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, request_options={"streaming": True}, parameters={'temperature': 0, 'max_tokens': 256 if vision else 192}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
@@ -80,6 +80,13 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
         assert loaded.runtime.gpu_layers_loaded > 0
     else:
         assert profile.source.execution_options["gpu_layers"] == 0
+    if context_budget:
+        from scripts.smoke_context_budget import validate_context_budget
+        result = await validate_context_budget(manager, profile)
+        await manager.unload(profile.id)
+        result.update(engine=engine_name, device=device, device_name=loaded.runtime.device_name, dtype=metadata.get('dtype'))
+        print(json.dumps(result), flush=True)
+        return result
     if reasoning:
         result = await validate_reasoning(client, profile, adapter)
         await manager.unload(profile.id)
@@ -332,7 +339,7 @@ async def validate_vision(state, client, profile, engine_name):
             "history": "passed", "stream": "passed", "cancellation": "passed", "answers": answers}
 
 
-async def smoke(root, model_ref, devices, install_only, engine_name, vision=False, reasoning=False):
+async def smoke(root, model_ref, devices, install_only, engine_name, vision=False, reasoning=False, context_budget=False):
     engine = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(engine)
     state = build_runtime_state(root=root, use_memory=True)
@@ -370,12 +377,12 @@ async def smoke(root, model_ref, devices, install_only, engine_name, vision=Fals
         await until(lambda: server.started)
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=360,
                 headers={"Authorization": f"Bearer {token}"}, trust_env=False) as client:
-            results = [await validate_device(state, client, model_ref, device, engine_name, vision, reasoning) for device in devices]
+            results = [await validate_device(state, client, model_ref, device, engine_name, vision, reasoning, context_budget) for device in devices]
         output = root / "build/llm-smoke" / engine_name
         output.mkdir(parents=True, exist_ok=True)
         report = {"model_ref": model_ref, "runtime_version": supervisor.release.version,
                   "results": results, "elapsed_seconds": round(time.monotonic() - started, 2)}
-        (output / ("reasoning-report.json" if reasoning else "vision-report.json" if vision else "report.json")).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        (output / ("context-budget-report.json" if context_budget else "reasoning-report.json" if reasoning else "vision-report.json" if vision else "report.json")).write_text(json.dumps(report, indent=2), encoding="utf-8")
     finally:
         if server:
             server.should_exit = True
@@ -396,6 +403,7 @@ def parse_args(argv=None):
     parser.add_argument("--device", choices=("cpu", "cuda", "both"), default="both")
     parser.add_argument("--install-only", action="store_true")
     focus = parser.add_mutually_exclusive_group()
+    focus.add_argument("--context-budget", action="store_true", help="Compare native input counts with usage for text, images, tools and reasoning in both response modes")
     focus.add_argument("--vision", action="store_true", help="Verify static images, multi-image order, history, streaming and cancellation")
     focus.add_argument("--reasoning", action="store_true", help="Verify reasoning on/off with native template evidence, payloads and streaming/non-streaming output")
     args = parser.parse_args(argv)
@@ -405,4 +413,4 @@ def parse_args(argv=None):
 if __name__ == "__main__":
     args = parse_args()
     reference = args.model_ref or ("llms/Qwen3.5-0.8B-TF" if args.engine == "transformers" else "llms/Qwen3.5-0.8B-GGUF")
-    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision, args.reasoning))
+    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision, args.reasoning, args.context_budget))

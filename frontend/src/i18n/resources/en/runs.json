@@ -58,6 +58,8 @@
     "modelCalls": "Model calls"
   },
   "context": {
+    "messageNumber": "Message #{{number}}",
+    "deletedMessage": "Deleted message",
     "details": "Context detail",
     "modelCall": "Model call",
     "finalAnswer": "Final answer",
@@ -78,7 +80,7 @@
     "retry": "Retry",
     "requestHint": "Images use attachment references. Parameters not listed are left to engine defaults.",
     "sources": {
-      "system": "system",
+      "system": "System",
       "agent_persona": "Agent Persona",
       "project_prompt": "Project prompt",
       "cogita_persona": "Cogita Persona",
@@ -102,7 +104,8 @@
       "file_text_limit": "File text limited by the attachment budget",
       "no_bindings": "No active Knowledge bindings",
       "no_results": "No Knowledge excerpts retrieved",
-      "retrieval_failed": "Knowledge retrieval failed"
+      "retrieval_failed": "Knowledge retrieval failed",
+      "token_limit": "Outside the context token budget"
     },
     "empty": "Empty",
     "sourceInfo": "Source information",
@@ -144,5 +147,10 @@
     "safe": "Allow this tool call with the displayed arguments.",
     "file": "Read the displayed file from the allowed Knowledge or attachment directories.",
     "network": "Allow a public HTTP(S) request with the displayed arguments."
+  },
+  "contextErrors": {
+    "required": "Set the model context window before retrying.",
+    "exceeded": "Input, instructions, knowledge or active tool data plus the output reserve exceed the context window. Shorten the input, reduce injected content or adjust model settings.",
+    "countFailed": "The model input could not be counted. Generation was not sent. Check the local model and retry."
   }
 }

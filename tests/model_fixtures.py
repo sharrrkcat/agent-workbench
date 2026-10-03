@@ -72,7 +72,7 @@ def configure_model(client, *, kind="llm", alias="local", **overrides):
         provider = client.post("/api/models/providers", json={'name': 'Test', 'connection': {'base_url': 'http://provider.test/v1', 'api_key': 'provider-private-key'}})
         assert provider.status_code == 200, provider.text
         provider_id = provider.json()["id"]
-    payload = {"alias": alias, "name": alias, "kind": kind, "model_ref": "fake" if kind == "llm" else "embed", "external_enabled": True, 'source': {'type': 'provider', 'provider_profile_id': provider_id}, **overrides}
+    payload = {"alias": alias, "name": alias, "kind": kind, "model_ref": "fake" if kind == "llm" else "embed", "external_enabled": True, 'source': {'type': 'provider', 'provider_profile_id': provider_id}, "context_window_tokens": 32768 if kind == "llm" else None, **overrides}
     profile = client.post("/api/models/profiles", json=payload)
     assert profile.status_code == 200, profile.text
     if kind == "llm":

@@ -1,5 +1,6 @@
 {
   "placeholder": "发送消息…",
+  "shortPlaceholder": "消息",
   "waiting": "等待你的回复",
   "prefixes": "前缀会作为普通文本发送",
   "messages": "消息",
@@ -16,5 +17,16 @@
     "tools_ignored": "该模型不支持工具调用，本次已按普通聊天处理。",
     "reasoning_enabled": "该模型需要开启 reasoning，本次回复已开启，会话保存的选择不变。",
     "reasoning_disabled": "该模型仅支持 instant 模式，本次回复已关闭 reasoning，会话保存的选择不变。"
+  },
+  "contextWindowRequired": "请先在模型设置中填写上下文窗口大小。",
+  "contextMeter": {
+    "title": "上下文占用",
+    "generating": "正在生成",
+    "windowUnknown": "尚未配置窗口",
+    "usageUnknown": "未提供用量",
+    "noCalls": "尚无匹配配置的调用",
+    "output": "输出预留",
+    "inputBudget": "可用输入预算",
+    "removed": "移除历史轮次"
   }
 }

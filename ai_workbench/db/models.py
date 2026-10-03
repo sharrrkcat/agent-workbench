@@ -193,6 +193,7 @@ class ModelProfileRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     request_options_json: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    context_window_tokens: Optional[int] = None
 
 
 class AppMetadataRecord(SQLModel, table=True):

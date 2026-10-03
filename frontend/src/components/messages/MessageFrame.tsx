@@ -12,6 +12,7 @@ export function MessageFrame({
   createdAt,
   messageId,
   runId,
+  messageNumber,
   children,
 }: {
   role: string;
@@ -20,6 +21,7 @@ export function MessageFrame({
   createdAt: string;
   messageId?: string;
   runId?: string;
+  messageNumber?: number;
   children: ReactNode;
 }) {
   const date = new Date(createdAt);
@@ -51,6 +53,7 @@ export function MessageFrame({
               ? ''
               : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </time>
+          {messageNumber != null ? <span className="message-number text-muted-foreground whitespace-nowrap tabular-nums">#{messageNumber}</span> : null}
           {role === 'user' ? <strong>{name}</strong> : null}
         </MessageHeader>
         {children}

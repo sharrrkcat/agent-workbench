@@ -23,7 +23,7 @@ assert.equal(localEngine(bound), null);
 const selected = applyDirectoryInspection(bound, { kind: 'llm', model_ref: 'llms/model', engine: 'transformers', architecture: 'Qwen', main_model_ref: null, mmproj_ref: null, model_files: [], diagnostics: [] }, true);
 assert.equal(selected.source.type, 'local');
 assert.equal(localEngine(selected, 'transformers'), 'transformers');
-assert.deepEqual(selected.source.execution_options, { device: 'cuda', intraop_threads: 4 });
+assert.deepEqual(selected.source.execution_options, { device: 'cuda', intraop_threads: 4, context_size: 4096 });
 assert.deepEqual(selected.parameters, { max_tokens: 128 });
 assert.deepEqual(selected.request_options, original.request_options);
 assert.equal(selected.source.lifecycle.unload, 'manual');

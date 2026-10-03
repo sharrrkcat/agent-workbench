@@ -24,8 +24,9 @@ from tests.runtime_browser_fixture import install_runtime_fixture
 
 
 class FixtureStream(httpx.AsyncByteStream):
-    def __init__(self, chunks, finish="stop", delay=0.15, hold=False, fail=False):
+    def __init__(self, chunks, finish="stop", delay=0.15, hold=False, fail=False, prompt_tokens=20):
         self.chunks, self.finish, self.delay, self.hold, self.fail = chunks, finish, delay, hold, fail
+        self.prompt_tokens = prompt_tokens
 
     async def __aiter__(self):
         for chunk in self.chunks:
@@ -38,8 +39,9 @@ class FixtureStream(httpx.AsyncByteStream):
             return
         await asyncio.sleep(self.delay)
         yield self._data({"choices": [{"index": 0, "delta": {}, "finish_reason": self.finish}]})
-        yield self._data({"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30,
-            "prompt_tokens_details": {"cached_tokens": 4}, "completion_tokens_details": {"reasoning_tokens": 3}}})
+        if self.prompt_tokens is not None:
+            yield self._data({"choices": [], "usage": {"prompt_tokens": self.prompt_tokens, "completion_tokens": 10, "total_tokens": self.prompt_tokens + 10,
+                "prompt_tokens_details": {"cached_tokens": 4}, "completion_tokens_details": {"reasoning_tokens": 3}}})
         yield b"data: [DONE]\n\n"
 
     @staticmethod
@@ -60,7 +62,10 @@ class PresentationOpenAI(ToolOpenAI):
             command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
-        if command == "scroll-output":
+        if command in {"context-usage", "context-no-usage"}:
+            stream = FixtureStream([{"content": "Context meter answer."}], delay=1,
+                prompt_tokens=8126 if command == "context-usage" else None)
+        elif command == "scroll-output":
             stream = FixtureStream([{"content": f"Paragraph {index}: streamed progress text.\n\n"} for index in range(40)], delay=0.12)
         elif command in {"reasoning-preview", "reasoning-cancel"}:
             chunks = [{"reasoning_content": "Preview beginning.  \nSecond line.  \nThird line.  \nFourth line.  \n"}]

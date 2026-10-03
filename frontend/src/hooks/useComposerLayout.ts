@@ -1,13 +1,15 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 
 /** Measure against the compact width so expanding cannot immediately collapse the composer. */
-export function useComposerLayout(draft: string) {
+export function useComposerLayout(draft: string, fullPlaceholder: string, shortPlaceholder: string) {
   const composerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const measureLayout = useRef<() => void>(() => {});
-  const [layout, setLayout] = useState({ expanded: false, textHeight: 56 });
+  const placeholders = useRef([fullPlaceholder, shortPlaceholder]);
+  placeholders.current = [fullPlaceholder, shortPlaceholder];
+  const [layout, setLayout] = useState({ expanded: false, textHeight: 56, placeholder: fullPlaceholder });
 
   useLayoutEffect(() => {
     const composer = composerRef.current!;
@@ -30,18 +32,26 @@ export function useComposerLayout(draft: string) {
         overflowWrap: style.overflowWrap,
         wordBreak: style.wordBreak,
       });
-      // A zero-width trailing character preserves the height of a final empty line.
-      mirror.textContent = textarea.value + '\u200b';
       const start = parseFloat(style.getPropertyValue('--composer-inline-start'));
       const end = actions.getBoundingClientRect().width + 20;
       composer.style.setProperty('--composer-inline-end', `${end}px`);
-      mirror.style.width = `${Math.max(1, composer.clientWidth - start - end)}px`;
+      const available = Math.max(1, composer.clientWidth - start - end);
+      mirror.style.width = 'max-content';
+      mirror.style.whiteSpace = 'pre';
+      const placeholder = placeholders.current.find((value) => {
+        mirror.textContent = value;
+        return mirror.getBoundingClientRect().width <= available;
+      }) ?? '';
+      mirror.style.whiteSpace = style.whiteSpace;
+      // A zero-width trailing character preserves the height of a final empty line.
+      mirror.textContent = textarea.value + '\u200b';
+      mirror.style.width = `${available}px`;
       const expanded = /[\r\n]/.test(textarea.value)
         || (!!textarea.value && mirror.getBoundingClientRect().height > parseFloat(style.lineHeight) + 1);
       mirror.style.width = `${Math.max(1, composer.clientWidth - 24)}px`;
       const textHeight = Math.max(56, Math.ceil(mirror.getBoundingClientRect().height + 20));
-      setLayout((previous) => previous.expanded === expanded && previous.textHeight === textHeight
-        ? previous : { expanded, textHeight });
+      setLayout((previous) => previous.expanded === expanded && previous.textHeight === textHeight && previous.placeholder === placeholder
+        ? previous : { expanded, textHeight, placeholder });
     }
     measureLayout.current = measure;
     measure();
@@ -64,7 +74,7 @@ export function useComposerLayout(draft: string) {
     };
   }, []);
 
-  useLayoutEffect(() => { measureLayout.current(); }, [draft]);
+  useLayoutEffect(() => { measureLayout.current(); }, [draft, fullPlaceholder, shortPlaceholder]);
 
   return { composerRef, textareaRef, measureRef, actionsRef, ...layout };
 }

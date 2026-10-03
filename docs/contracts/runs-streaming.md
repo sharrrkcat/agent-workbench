@@ -43,6 +43,11 @@ Run reads/cancellation are `/api/runs/{id}`, `/{id}/events`, `/{id}/cancel` and
 the harness contract. Direct tool runs never create model summaries or auxiliary titles;
 explicit chat tool input receives the basic input title described in the chat contract.
 
+Visible conversation items have consecutive session-local numbers starting at #1 beside their timestamps.
+Each standalone message or whole reply occupies one number, including active, failed, cancelled and
+direct-tool replies. Processing messages share their reply's number. Numbers follow current display
+order, are recomputed after history mutations and are not persisted. User-message navigation uses
+these same numbers while continuing to target only user messages.
 The chat view presents each run inside its reply, without a separate footer
 RunPanel or context/model/save step list. Elapsed seconds use started_at (or
 created_at) through finished_at, including approval waits; active clocks update
@@ -158,6 +163,19 @@ revisions. UI state does not infer residency from a successful health check.
 
 ## Context detail
 
+The composer places a context ring immediately left of the model selector, included in width
+measurement. Its Hover Card supports hover, focus and touch (44px minimum target). It shows the
+latest terminal model step's actual (prompt_tokens + completion_tokens) / effective window,
+full token numbers, output reserve, input budget and removed turns. Cached and reasoning tokens
+are already included in their respective counts; output reserve is not actual usage. The card omits
+the latest-call subtitle and separate model, window and input rows. Totals above the effective window
+use the overflow color; the ring caps at 100% while numbers retain the actual total.
+During generation it retains the previous reported call and labels generation in progress. Missing
+input or output usage stays unknown without substituting estimates or earlier calls; zero is valid.
+New sessions and model/window
+mismatches are neutral until a matching call completes. Run/step events and refresh restore the
+display; pruning removes deleted calls. No polling or draft preview API is used.
+
 Internal ordinary/Workspace and Harness model calls save one immutable private `context_snapshot_json`
 on their model step immediately before transport dispatch. Preparation failures have no snapshot;
 failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
@@ -165,7 +183,10 @@ do not record context. Reads never reconstruct missing inputs from current confi
 Snapshots preserve the outbound body, source positions, exclusions, model identity, capture time and
 context policy. Images use attachment-store references instead of binary data URLs. Source excerpts
 and Unicode character counts are resolved on the backend; usage stays in `metadata.llm`.
-Step `metadata.context` exposes only availability and message/tool/image counts. Ordinary run/message
+Step `metadata.context` exposes availability, message/tool/image counts and a strict budget: configured
+and effective window_tokens, input_budget_tokens, pre-call input_tokens, counting=native|estimated,
+output_tokens, margin_tokens and removed_turns. The snapshot contains the same budget. Counts are
+distinct from actual usage; public statistics contain no prompt text. Ordinary run/message
 reads and events never carry snapshot content. `GET /api/runs/{run_id}/steps/{step_id}/context`
 returns strict detail data; missing snapshots or mismatched run/step ownership return CONTEXT_NOT_FOUND (404).
 Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and sanitized text.
@@ -173,7 +194,7 @@ Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and
 The Layers action sits between retry and usage, independent of recorded usage. It appears on chat replies
 at terminal status or approval waiting when a snapshot exists. Its read-only modal defaults to the final
 answer's call, otherwise the latest captured call; a single call has no selector. Input structure follows
-send order, with system sources nested as Agent, Project, Cogita Persona and Knowledge, and tools separate.
+send order, with system sources nested as Agent, Project, Cogita Persona and Knowledge, and tools separate. System groups use the label System without a request-position prefix.
 Empty system sources recorded as empty/no-bindings/no-results appear muted in Agent/Project/Cogita/Knowledge order,
 with an Empty label and no transmitted-message number for a synthetic system group. They do not change request data
 or counts; other exclusions remain collapsed diagnostics. Ordinary chats do not invent a Project source.
@@ -186,6 +207,11 @@ content; expanded diagnostics have a separate bounded scroll region. Both locale
 The model uses a primary Badge; message/tool counts and actual input tokens use secondary Badges on the call row.
 Source rows show characters normally and approximate tokens on hover/focus; touch shows approximate tokens directly.
 The count slot reserves its width from known character counts and stays right-aligned before estimates arrive.
+Desktop source navigation is 17rem wide. History and current-input sources with message references
+use Message #N (localized), matching the current conversation number in navigation and detail headings,
+without the request-position prefix. Their labels stay on one line; attachment/citation names may wrap.
+Multiple sources from one reply share its number. Deleted references show Deleted message; sources
+without a message reference retain their category label. Tool sources retain tool labels.
 Context and usage dialogs are sibling roots, so Context detail receives the standard dimmed, blurred backdrop.
 An Info Hover Card beside the source name/role contains characters, approximate tokens and captured identifiers;
 keyboard focus and touch press also open it. Changing the source or closing the modal dismisses it.

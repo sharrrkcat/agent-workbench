@@ -8,6 +8,7 @@ import { apiMocks, createModuleLoader, mockModule, sourceUrl } from './module-lo
 const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { buildReply, buildConversation, toolEntryStatus } = (await load('../src/components/messages/turns.ts')).exports;
+const { messageNumbers } = (await load('../src/components/messages/messageNumbers.ts')).exports;
 const { applyMessageEvent } = (await load('../src/store/messageStream.ts')).exports;
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
 const { toolResponseState } = (await load('../src/store/cogita/mergeState.ts')).exports;
@@ -46,6 +47,19 @@ assert.equal(direct.answer, undefined);
 const items = buildConversation('s', [user, calls, output, moreCalls, answer, { ...user, session_id: 'other', message_id: 'other' }], [done], {});
 assert.deepEqual(items.map((i) => i.kind), ['message', 'reply']);
 assert.equal(items[1].reply.messages.length, 4);
+const numbers = messageNumbers(items);
+assert.equal(numbers.get('u'), 1);
+for (const id of ['r', 'calls', 'output', 'more', 'answer']) assert.equal(numbers.get(id), 2);
+assert.equal(numbers.has('other'), false);
+const nextUser = { ...user, message_id: 'next', created_at: at(10) };
+for (const status of ['PENDING', 'RUNNING', 'WAITING_FOR_USER', 'DONE', 'FAILED', 'CANCELLED', 'INTERRUPTED']) {
+  const conversation = buildConversation('s', [user, nextUser], [{ ...run, status }], {});
+  assert.deepEqual([...messageNumbers(conversation)], [['u', 1], ['r', 2], ['next', 3]]);
+}
+assert.deepEqual([...messageNumbers(buildConversation('s', [user, nextUser], [], {}))], [['u', 1], ['next', 2]]);
+assert.deepEqual([...messageNumbers(buildConversation('s', [user], [{ ...run, run_id: 'retry' }], {}))], [['u', 1], ['retry', 2]]);
+assert.deepEqual([...messageNumbers(buildConversation('s', [user, nextUser], [{ ...done, kind: 'tool' }], {}))], [['u', 1], ['r', 2], ['next', 3]]);
+assert.deepEqual([...messageNumbers(buildConversation('s', [user, answer, calls, moreCalls, output], [done], {}))], [...numbers]);
 const failedEmpty = { ...done, run_id: 'empty', status: 'FAILED', created_at: at(9), error_code: 'MODEL_NOT_CONFIGURED', error: 'Select a model.' };
 assert.equal(buildConversation('s', [user], [failedEmpty], {})[1].reply.process.length, 0);
 

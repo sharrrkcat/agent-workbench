@@ -20,6 +20,7 @@ export const newModel = (kind: ModelKind): ModelInput => ({
     : localSource(),
   enabled: true,
   external_enabled: false,
+  context_window_tokens: null,
   request_options: kind === 'llm' ? { streaming: true, skip_tool_capability_check: false, skip_vision_capability_check: false,
     skip_instant_capability_check: false, skip_reasoning_capability_check: false } : null,
   parameters: kind === 'tts' ? { speed: 1, response_format: 'mp3' }
@@ -49,6 +50,7 @@ export function localEngine(value: ModelInput, detected: LocalEngine | null = nu
 export function executionDefaults(engine: LocalEngine | null): LocalModelSource['execution_options'] {
   return engine === 'llama-server'
     ? { device: 'cuda', threads: 4, context_size: 4096, batch_size: 512, gpu_layers: 'auto' }
+    : engine === 'transformers' ? { device: 'cuda', intraop_threads: 4, context_size: 4096 }
     : engine === 'dlss5nr' ? { device: 'd3d12', gpu_index: 0 }
     : engine === 'kokoro' || engine === 'wd14' ? { device: 'cpu', intraop_threads: 4, max_batch_size: 1 }
     : engine === 'siglip2' || engine === 'sentence-transformers' || engine === 'cross-encoder' ? { device: 'cuda', intraop_threads: 4, max_batch_size: 1 }
@@ -72,6 +74,7 @@ export function applyDirectoryInspection(value: ModelInput, information: Directo
 
 export function updateModel(value: ModelInput, patch: Partial<ModelInput>, detected: LocalEngine | null = null): ModelInput {
   const next = { ...value, ...patch };
+  if (next.kind !== 'llm' || next.source?.type === 'local') next.context_window_tokens = null;
   const engine = localEngine(next, detected);
   if (next.source?.type === 'local' && engine !== localEngine(value, detected)) {
     next.source = { ...next.source, execution_options: executionDefaults(engine) };

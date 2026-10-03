@@ -56,7 +56,7 @@ def test_alias_identity_devices_and_request_limits(tmp_path):
     assert manager.execution_key(first) == manager.execution_key(alias)
     assert manager._key(first) == manager._key(alias)
     assert manager.execution_key(first) != manager.execution_key(cpu)
-    assert first.source.execution_options == {"device": "cuda", "intraop_threads": 4}
+    assert first.source.execution_options == {"device": "cuda", "intraop_threads": 4, "context_size": 4096}
     request = ChatRequest(model=first.alias, messages=[{"role": "user", "content": "hello"}])
     manager.validate_chat(first, request)
     for values in ({"presence_penalty": 0.2}, {"frequency_penalty": -0.1},

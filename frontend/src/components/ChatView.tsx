@@ -16,6 +16,8 @@ import { cn } from '@/lib/utils';
 import { MessageBubble } from './MessageBubble';
 import { RunReply } from './messages/RunReply';
 import { buildConversation } from './messages/turns';
+import { messageNumbers } from './messages/messageNumbers';
+import { MessageNumbersContext } from './messages/MessageNumbersContext';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { ResourceLoading } from './settings/resources/ResourceUI';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
@@ -49,6 +51,7 @@ function Conversation() {
     () => (currentSession ? buildConversation(currentSession.session_id, messages, runs, steps) : []),
     [currentSession?.session_id, messages, runs, steps],
   );
+  const numbers = useMemo(() => messageNumbers(items), [items]);
 
   useEffect(() => {
     if (sending) scrollToEnd({ behavior: 'instant' });
@@ -72,6 +75,7 @@ function Conversation() {
   }
 
   return (
+    <MessageNumbersContext.Provider value={numbers}>
     <MessageScroller className="chat-scroll-container h-auto flex-1">
       <MessageScrollerViewport
         className="chat-view"
@@ -106,17 +110,18 @@ function Conversation() {
             <MessageScrollerItem key={item.id} messageId={item.id}
               scrollAnchor={item.kind === 'message' && item.message.role === 'user'}>
               {item.kind === 'message' ? (
-                <MessageBubble message={item.message} animate={animatedIds.has(item.id)} />
+                <MessageBubble message={item.message} messageNumber={numbers.get(item.id)} animate={animatedIds.has(item.id)} />
               ) : (
-                <RunReply reply={item.reply} showFullProcessing={showFullProcessing} />
+                <RunReply reply={item.reply} messageNumber={numbers.get(item.id)} showFullProcessing={showFullProcessing} />
               )}
             </MessageScrollerItem>
           ))}
         </MessageScrollerContent>
       </MessageScrollerViewport>
-      <UserMessageNavigation messages={items.flatMap((item) =>
+      <UserMessageNavigation numbers={numbers} messages={items.flatMap((item) =>
         item.kind === 'message' && item.message.role === 'user' ? [item.message] : [])} />
       <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')} />
     </MessageScroller>
+    </MessageNumbersContext.Provider>
   );
 }

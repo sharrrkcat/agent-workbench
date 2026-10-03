@@ -21,6 +21,15 @@ Local request support is supported/unsupported/unknown, derived from resolved fi
 
 ## Lifecycle and status
 
+LLM settings expose the input-plus-output window beside maximum output. Provider context_window_tokens
+is nullable (minimum 512): saving without it is allowed, internal chat is blocked until configured.
+Local execution_options.context_size is 512..1048576 (default 4096), including Transformers; effective
+capacity is min(configured, llama-server /props n_ctx or identifiable native text position limit).
+Internal /v1/chat/completions/input_tokens counting uses the resident native processor/template,
+reasoning and image expansion within the generation lease. Provider estimates use bundled offline
+o200k_base over messages/tools plus 4096 tokens/image, excluding base64; cross-model error remains.
+No runtime vocabulary/model downloads occur. Public /v1 and auxiliary titles do not use chat budgeting. Count/usage parity is verified on Qwen3.5-0.8B GGUF/Transformers CUDA; other checkpoints remain unverified.
+
 Source queues default to concurrency 1, 32 waiting slots and 30-second timeout; provider discovery shares its queue. Overflow/timeout returns MODEL_BUSY; cancellation/stream closure releases occupancy. Provider aliases share status/occupancy by provider id and model_ref. GGUF shares normalized model/projector paths, device, process and identical options; Transformers shares path/options, Kokoro an engine queue. Audio, ASR, WD14, SigLIP, text embedding reranker and processor profiles have separate processes, queues and cancellation scopes, even for the same path. Local models autoload with manual release by default, or after_request/idle (300 seconds). Enabled manual aliases retain shared weights; otherwise the longest idle timeout wins. Release errors preserve successful inference. Local crashes require explicit load; provider failures permit another request.
 
 | Operation | Endpoint under `/api/models` | Effect |
@@ -260,18 +269,11 @@ The service defaults disabled and requires loopback clients plus one key via `Au
 
 | Endpoint | Supported operation |
 | --- | --- |
-| GET `/v1/models` | Enabled public model aliases; optional kind filter, no weight loading |
-| POST `/v1/chat/completions` | Non-streaming or SSE chat |
-| POST `/v1/embeddings` | Text embeddings |
-| POST `/v1/rerank` | Native CrossEncoder text-pair scoring (Cogita extension) |
-| POST `/v1/images/process` | Static DLSS NR image processing with PNG output (Cogita extension) |
-| POST `/v1/images/tags` | Static WD14 image tagging (Cogita extension) |
-| POST `/v1/images/embeddings` | SigLIP image/text embeddings (Cogita extension) |
-| POST `/v1/audio/speech` | Complete MP3/WAV speech |
-| POST `/v1/audio/transcriptions` | Complete local WAV/MP3 transcription and optional segment timestamps |
-| GET `/v1/audio/voices` | Preset/temporary voice discovery (Cogita extension) |
-| POST `/v1/audio/voice-references` | Upload a temporary Chatterbox/Qwen Base reference |
-| DELETE `/v1/audio/voice-references/{voice_id}` | Delete an unused reference |
+| GET `/v1/models`; POST `/v1/chat/completions` | Enabled public aliases (optional kind filter, no load); non-streaming/SSE chat |
+| POST `/v1/embeddings`; POST `/v1/rerank` | Text embeddings; native CrossEncoder scoring (Cogita extension) |
+| POST `/v1/images/process`, `/v1/images/tags`, `/v1/images/embeddings` | Static DLSS NR PNG processing, WD14 tags, SigLIP vectors (Cogita extensions) |
+| POST `/v1/audio/speech`, `/v1/audio/transcriptions` | Complete MP3/WAV TTS; local WAV/MP3 ASR with optional segments |
+| GET `/v1/audio/voices`; POST `/v1/audio/voice-references`; DELETE `/v1/audio/voice-references/{voice_id}` | Discover presets/temporary voices, upload Chatterbox/Qwen references, delete unused references (Cogita extensions) |
 
 Discovery reports owned_by=cogita. Public aliases must be enabled, visible and match endpoint kind/request options; stateless calls create no session/message/run/attachment/Knowledge rows.
 Content-Length/received bytes obey max_request_mb (default 32 MiB, range 1..100); strict schemas reject unsupported fields without echoing values. Responses include X-Request-Id; logs record outcome/time without keys, prompts,
@@ -286,10 +288,8 @@ Tool results must match preceding calls; unknown fields, unsupported formats and
 Local images require inline data URLs and detail=auto, otherwise UNSUPPORTED_CAPABILITY. Static PNG/JPEG/WebP are decoded off-loop with Pillow, EXIF-oriented, filled white under transparency and converted to RGB PNG; attachments stay unchanged. Invalid images return INVALID_IMAGE.
 Complete local requests follow the normalized budget above. Qwen3.5-0.8B GGUF/Transformers CPU/CUDA acceptance covers image content, multiple-image order, historical follow-up, streaming and cancellation; other checkpoints are unverified.
 
-Non-streaming tool-only content=null; [runs/streaming](runs-streaming.md#external-sse) owns SSE framing, error timing and disconnect cleanup.
-LLM usage preserves nullable input/output/total counts and optional cached-input/reasoning-output subsets; counts are never estimated. Internal streams request usage.
-Optional strict `cogita: {include_metrics: true}` returns `cogita_metrics` with first_response_ms, total_ms, queue_ms, load_ms, generation_ms, generation_tokens, tokens_per_second and native/estimated tps_source. Unknown values are null; the request extension is stripped upstream.
-The extension defaults off and is independent of streaming include_usage. [Runs/streaming](runs-streaming.md#llm-statistics) owns measurement and aggregation semantics; external calls remain stateless.
+Non-streaming tool-only content=null. [Runs/streaming](runs-streaming.md#external-sse) owns SSE framing, failures and disconnects.
+Its [statistics](runs-streaming.md#llm-statistics) own actual usage and optional cogita.include_metrics (default false, independent of include_usage, stripped upstream). External calls stay stateless.
 
 ChatRequest and /v1 accept strict nullable reasoning: true enables native reasoning, false selects instant, omission/null preserves engine defaults. Local GGUF/Transformers send chat_template_kwargs.enable_thinking; Providers send reasoning_effort=medium/none without discovery or alternate-protocol retries. Unsupported explicit local modes return 422 before SSE headers. Other Provider parameter formats are unsupported. Qwen3.5-0.8B GGUF/Transformers have CPU/CUDA on/off and streaming/non-streaming acceptance using native template evidence, payloads and output. Bounded reasoning can reach max_tokens before a final answer; other templates may remain unknown. Assistant messages/deltas accept string reasoning_content, including native tool continuations; other roles reject it.
 `/v1` forwards literal content/reasoning without interpreting <think> markers. ChatRunner/Harness normalize reasoning for the UI.

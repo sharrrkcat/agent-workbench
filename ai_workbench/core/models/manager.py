@@ -416,7 +416,7 @@ class ModelManager:
                         elif local and not siglip and release and slot.model_active[key] == 1 and not slot.model_queued[key] and not self._closed:
                             await self._release_policy(profile, slot.adapter)
             except ModelError as exc:
-                if (local and not siglip and exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "UNSUPPORTED_CAPABILITY", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE"}) or (
+                if (local and not siglip and exc.code not in {"MODEL_BUSY", "UNLOAD_UNSUPPORTED", "UNSUPPORTED_CAPABILITY", "INVALID_AUDIO", "AUDIO_TOO_LONG", "AUDIO_TOO_LARGE", "CONTEXT_WINDOW_REQUIRED", "CONTEXT_WINDOW_EXCEEDED", "CONTEXT_COUNT_FAILED"}) or (
                     not local and executing and exc.code in {"MODEL_TIMEOUT", "MODEL_UNAVAILABLE", "PROVIDER_ERROR", "PROVIDER_PROTOCOL_ERROR", "MODEL_REFUSAL", "EMBEDDING_DIMENSION_MISMATCH"}
                 ):
                     self._notify(profile, ModelStatus(state="failed", error_code=exc.code))
@@ -620,7 +620,7 @@ class ModelManager:
             return request.model_copy(update={"stream_options": StreamOptions(include_usage=True)})
         return request
 
-    async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None):
+    async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None, budget=None):
         metrics = metrics or LLMCallMetrics()
         if metrics.started_at is None:
             metrics.start()
@@ -634,6 +634,8 @@ class ModelManager:
             async with self._lease(profile, metrics=metrics) as adapter:
                 try:
                     self.validate_chat(profile, request)
+                    if budget is not None:
+                        request = await budget.prepare(profile, request, adapter)
                     result = await adapter.chat(profile, request, capture=capture)
                     metrics.observe_result(result)
                     return result
@@ -642,7 +644,7 @@ class ModelManager:
         finally:
             metrics.finish()
 
-    async def chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None) -> AsyncIterator[ChatChunk]:
+    async def chat_stream(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None, budget=None) -> AsyncIterator[ChatChunk]:
         collect_usage = metrics is not None
         metrics = metrics or LLMCallMetrics()
         if metrics.started_at is None:
@@ -654,17 +656,19 @@ class ModelManager:
             if isinstance(profile.source, LocalSource) and metrics.load_ms is None:
                 metrics.load_ms = 0.0
             request = await self._prepare_chat(profile, self._usage_request(request, collect_usage))
-            async with aclosing(self._chat_stream(profile, request, metrics, capture)) as stream:
+            async with aclosing(self._chat_stream(profile, request, metrics, capture, budget)) as stream:
                 async for chunk in stream:
                     yield chunk
         finally:
             metrics.finish()
 
-    async def _chat_stream(self, profile, request, metrics, capture=None):
+    async def _chat_stream(self, profile, request, metrics, capture=None, budget=None):
         try:
             async with self._lease(profile, metrics=metrics) as adapter:
                 try:
                     self.validate_chat(profile, request)
+                    if budget is not None:
+                        request = await budget.prepare(profile, request, adapter)
                     async with aclosing(adapter.chat_stream(profile, request, capture=capture)) as stream:
                         async for chunk in stream:
                             metrics.observe(chunk)

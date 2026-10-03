@@ -25,11 +25,12 @@ PROTOCOL_VERSION = 1
 
 
 def options_request(value):
-    fields(value, ("device", "intraop_threads"))
+    fields(value, ("device", "intraop_threads"), ("context_size",))
     if value["device"] not in {"cpu", "cuda"}:
         raise WorkerError("INVALID_REQUEST")
     integer(value["intraop_threads"], 1, 256)
-    return value
+    integer(value.get("context_size", 4096), 512, 1048576)
+    return {"context_size": 4096, **value}
 
 
 def chat_request(body):
@@ -134,8 +135,7 @@ def build_app(engine, token):
     async def models():
         return {"object": "list", "data": [{"id": "managed", "object": "model", "owned_by": "cogita"}]}
 
-    @app.post("/v1/chat/completions")
-    async def chat(request: Request):
+    async def parsed_chat(request: Request):
         raw = bytearray()
         async for chunk in request.stream():
             if len(raw) + len(chunk) > MAX_BODY:
@@ -156,7 +156,18 @@ def build_app(engine, token):
                and any(part["type"] == "image_url" for part in message["content"])
                for message in body["messages"]) and not engine.metadata["vision"]:
             raise WorkerError("UNSUPPORTED_CAPABILITY")
-        return await engine.chat(body, str(uuid4()), skip_tool_check=options.get("skip_tool_capability_check", False))
+        return body, options.get("skip_tool_capability_check", False)
+
+    @app.post("/v1/chat/completions")
+    async def chat(request: Request):
+        body, skip_tool_check = await parsed_chat(request)
+        return await engine.chat(body, str(uuid4()), skip_tool_check=skip_tool_check)
+
+    @app.post("/v1/chat/completions/input_tokens")
+    async def count_input_tokens(request: Request):
+        body, skip_tool_check = await parsed_chat(request)
+        count = await asyncio.to_thread(engine.count_input_tokens, body, skip_tool_check=skip_tool_check)
+        return {"object": "response.input_tokens", "input_tokens": count}
 
     return app
 

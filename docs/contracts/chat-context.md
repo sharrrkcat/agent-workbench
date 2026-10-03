@@ -141,14 +141,28 @@ SQLite pruning, text, attachment metadata and timestamps commit in one transacti
 deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
 
 ContextBuilder projects current-session history with max_messages (0..10000), max_chars
-(1..1000000), both null/unset by default, and include_attachments=explicit.
-A null message limit includes all eligible history; zero excludes history; positive N keeps
-the newest N eligible messages in order, excluding current input from the count. The character
-budget deducts current input text first, then keeps whole recent history messages. Current
-input is always retained, with a warning when it alone exceeds the character budget.
-Context has no mode or selected-message workflow; mode and source_message_id return 422. Workspace inherits or overrides the whole policy, including explicit max_messages=0.
-Agent prompts are inserted once independently of limits. Provenance and exclusions follow the same
-projection; [context snapshots](runs-streaming.md#context-detail) preserve each call privately, outside metadata.
+(1..1000000), both null/unset by default, and include_attachments=explicit. Null retains all
+eligible history; zero messages excludes history; positive N keeps newest N excluding current input.
+Characters deduct current input first and retain whole recent messages; oversized current input
+stays with a warning. mode/source_message_id return 422; Workspace inherits/overrides the whole
+policy. Agent prompts are inserted independently of history limits. Provenance follows projection;
+[context snapshots](runs-streaming.md#context-detail) preserve each call privately, outside metadata.
+
+Every internal model call enforces input tokens + output reserve + margin <= effective window.
+Runs snapshot the configured window and output reserve. Unset maximum output reserves
+min(4096, floor(configured window / 4)) and sends it as max_tokens; explicit limits are never reduced.
+Local native counts reserve 32 tokens; provider estimates reserve max(128, ceil(window * 0.1)).
+Missing provider windows return CONTEXT_WINDOW_REQUIRED. Counting covers the final translated
+request, including images and tool definitions, within the existing model lease. Oldest history
+turns are removed as complete groups after message/character filters, without restoring exclusions
+or changing stored messages. A bounded suffix search recounts the final selection. Current input,
+configured instructions, Knowledge and active run tool records stay intact. If they do not fit,
+CONTEXT_WINDOW_EXCEEDED ends the call before dispatch. Counting failures return CONTEXT_COUNT_FAILED;
+these request failures do not mark the model broken. Sources, token_limit exclusions and attachment
+references describe the retained request. Summaries, tool-result compression and draft previews
+remain unimplemented.
+
+The [context meter](runs-streaming.md#context-detail) displays actual per-call input plus output usage beside the model selector. Input reflects history limits and token trimming; policy edits affect the next request, not recorded usage.
 
 Workspace inserts its Project prompt after the Agent prompt and before Persona/Knowledge data, independently of history limits.
 The singleton Cogita Persona is always active. Its trimmed nonempty system_prompt is
@@ -186,7 +200,7 @@ and image handling follow the attachment rules below.
 
 ## Messages and attachments
 
-Messages use content_version=2 and validated parts. The strict message schema
+Messages use content_version=2 and validated parts; [Runs/streaming](runs-streaming.md) owns their visible session numbering. The strict message schema
 owns role, speaker identity, run/parent references and compact metadata.
 Supported parts are text (plain/markdown), reasoning, json, file (inline_text or
 attachment_ref), image, audio, video, media_group image galleries, notice,
@@ -236,14 +250,9 @@ markers; /v1 preserves model content. Reasoning never enters general historical
 context. The live tool transcript retains upstream content and structured
 reasoning where the provider needs it for continuation. Incomplete messages
 are not eligible historical context.
-The frontend renders one reply per run with its original Persona's current identity,
-processing timeline, final answer and action bar. Only the current model round's
-ordinary text appears as a provisional answer; tool-producing rounds move into
-processing. Adjacent tools share a collapsed command group, with individually
-collapsed arguments/results. Tool records have no separate avatars. Copy uses
-answer text only. Direct tool runs use this timeline without an invented model answer.
-Assistant replies expose aggregated LLM usage after the action buttons and per-call statistics in a usage modal; auxiliary titles are excluded.
-[Runs/streaming](runs-streaming.md#llm-statistics) owns their timing, persistence, completeness and display rules.
+[Runs/streaming](runs-streaming.md) owns the single reply, provisional answer, processing timeline,
+reasoning, command groups and usage display. Replies retain their original Persona's current
+identity. Copy uses only answer text; direct tool runs never invent a model answer.
 
 The frontend renders parts without executing or routing text. Markdown remains content;
 edit/retry uses original text. MessageActions owns message controls; MessageParts owns part presentation and ChatAttachments owns uploaded attachment cards/URLs.
@@ -258,20 +267,16 @@ Markdown block code uses gray secondary Bubble surfaces with 24px corners and pr
 Saving a user edit immediately restores the bubble with the submitted text while regeneration runs; request failure restores the editor and draft with the existing error feedback. Newly sent user bubbles animate once with a 300ms blur fade and 6px upward motion; historical loading, session switches and edits do not replay it. Reduced motion disables the animation.
 User messages are MessageScroller anchors. A vertically centered left tick rail tracks the current turn, previews summaries on hover/focus and navigates to user messages; it scrolls internally and is hidden below 768px message-area width or with fewer than two user messages. Ticks have 8px center spacing, 2px thickness and a shared left edge; ordinary, immediately neighboring and active ticks are 12px, 18px and 24px wide. Only the active tick changes color. History reading pauses streaming follow; the latest-message button resumes it.
 The InputGroup composer has 20px corners and circular buttons: an outlined plus opens the Photos & Files upload menu, an up arrow sends, and active runs expose stop. Empty or single-line drafts place buttons and text on one row; explicit newlines or wrapping expand the text above the toolbar. Deleting back to one line or clearing collapses it. Wrapping is measured at the compact text width, excluding the placeholder, and recalculated for content, width and font changes. The same textarea and toolbar stay mounted; height and text layout transition over 180ms ease-out, instantly with reduced motion. Expanded text starts at 56px and grows to min(12rem, 30dvh), then scrolls internally. Attachments and context remain outside the input and do not force expansion. Existing draft, upload and keyboard behavior remains; contextual drag/limit/error feedback remains, without a static image hint or service footer/health request.
-The composer places a fully rounded model menu before send/stop, capped at 160px (120px below 640px), truncating long names. Text measurement reserves the actual action widths. One model group contains all LLM profiles with Local first and provider labels; unconfigured sources are separate. Disabled/missing selections remain visible without automatic replacement. A second group contains the immediate Harness toggle, its independent settings action and a disabled Reasoning placeholder. The menu stays accessible without eligible models. [Harness/tools](harness-tools.md) owns the session Sheet; selection/configuration saves block sending until settled.
+The composer places a fully rounded model menu before send/stop, capped at 160px (120px below 640px), truncating long names. Text measurement reserves the actual action widths; the placeholder uses a fitting short label or hides when necessary, retaining its full accessible name. One model group contains all LLM profiles with Local first and provider labels; unconfigured sources are separate. Disabled/missing selections remain visible without automatic replacement. A second group contains the immediate Harness toggle, its independent settings action and the immediate Reasoning toggle. The menu stays accessible without eligible models. [Harness/tools](harness-tools.md) owns the session Sheet; selection/configuration saves block sending until settled.
 
 ## Auxiliary tasks and titles
 
-UtilityLLMService is an internal ModelManager client without a separate backend,
-unload path or public route. utility_model_profile_id is its only selector and
-must identify an enabled LLM UUID. Missing or failed selection raises
-UTILITY_MODEL_UNAVAILABLE and never borrows the default chat model.
-
-generate_text uses non-streaming manager chat with only the supplied prompt.
-generate_json parses the entire response and validates the supplied Pydantic
-schema. Fenced/embedded JSON, unexpected calls and invalid output raise
-UTILITY_OUTPUT_INVALID. These tasks create no messages/runs and share the
-provider queue, lifecycle and status observations.
+UtilityLLMService uses ModelManager's queue, lifecycle and status with no separate backend,
+public route or message/run records. Its only selector, utility_model_profile_id, must be an
+enabled LLM UUID; absence/failure returns UTILITY_MODEL_UNAVAILABLE without borrowing chat's model.
+generate_text sends only the supplied prompt without streaming. generate_json parses the entire
+response and validates its Pydantic schema; fenced/embedded JSON, tool calls and invalid output
+return UTILITY_OUTPUT_INVALID.
 
 First accepted input names an untitled session from its first 15 Unicode characters,
 after trimming/collapsing whitespace, with an ellipsis only when truncated. Attachment-only
@@ -289,12 +294,7 @@ input excerpt and originating input id or successful auxiliary generation.
 
 ## HTTP schemas
 
-OpenAPI defines public Personas, resolved session configuration, typed message
-parts, timelines, bindings, history mutations and Worldbook match diagnostics.
-Responses are validated without adding absent optional fields or removing
-explicit nulls. Message/run UTC timestamps retain Z and microsecond precision;
-Worldbook's existing +00:00 timestamps remain unchanged. Manual attachment and
-Persona parsing retain their current error codes and PATCH merge behavior.
-Uploads document one multipart file; downloads document stored-MIME binary bytes,
-the single Range header, 200/206 length/range headers and an empty 416 response.
-Private run continuation and configuration snapshots are absent from public types.
+OpenAPI covers Personas, resolved configuration, message parts, timelines, bindings, history and Worldbook, excluding private continuation/configuration snapshots.
+Responses preserve optional-field omission, explicit nulls and existing PATCH/error behavior.
+Message/run timestamps retain UTC Z and microseconds; Worldbook keeps +00:00. Uploads document
+one multipart file; downloads document stored-MIME bytes, Range, 200/206 headers and empty 416.

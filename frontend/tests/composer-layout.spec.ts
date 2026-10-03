@@ -13,17 +13,28 @@ async function compact(page: Page, touch: boolean) {
   const input = composer.locator('textarea');
   const text = await input.evaluate((node) => {
     const box = node.getBoundingClientRect(), style = getComputedStyle(node);
+    const label = document.createElement('span');
+    label.style.font = style.font;
+    label.style.whiteSpace = 'pre';
+    label.textContent = node.placeholder;
+    document.body.append(label);
+    const placeholderWidth = label.getBoundingClientRect().width;
+    label.remove();
     return { x: box.x + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight),
+      placeholderWidth,
       center: box.y + box.height / 2, lines: (node.clientHeight - parseFloat(style.paddingTop)
         - parseFloat(style.paddingBottom)) / parseFloat(style.lineHeight) };
   });
   expect(Math.abs(text.lines - 1)).toBeLessThan(0.06);
+  expect(text.placeholderWidth).toBeLessThanOrEqual(text.right - text.x);
   const buttons = await composer.locator('[data-slot=input-group-addon] button').all();
-  const plus = (await buttons[0].boundingBox())!, model = (await buttons[1].boundingBox())!, send = (await buttons[2].boundingBox())!;
+  const plus = (await buttons[0].boundingBox())!, meter = (await buttons[1].boundingBox())!,
+    model = (await buttons[2].boundingBox())!, send = (await buttons[3].boundingBox())!;
   expect(text.x).toBeGreaterThan(plus.x + plus.width);
-  expect(text.right).toBeLessThan(model.x);
+  expect(text.right).toBeLessThan(meter.x);
+  expect(meter.x + meter.width).toBeLessThan(model.x);
   expect(model.x + model.width).toBeLessThan(send.x);
-  for (const box of [plus, model, send]) {
+  for (const box of [plus, meter, model, send]) {
     expect(Math.abs(box.y + box.height / 2 - text.center)).toBeLessThan(1);
     if (touch) { expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44); }
   }
@@ -101,7 +112,12 @@ for (const locale of ['en', 'zh-CN']) {
         await composer.locator('input[type=file]').setInputFiles({ name: 'layout.txt', mimeType: 'text/plain', buffer: Buffer.from('Attachment') });
         await expect(page.locator('.attachment-chip')).toContainText('layout.txt');
         await compact(page, touch);
-        await input.click();
+        const textPosition = await input.evaluate((node) => {
+          const style = getComputedStyle(node);
+          const start = parseFloat(style.paddingLeft), end = parseFloat(style.paddingRight);
+          return { x: start + (node.clientWidth - start - end) / 2, y: node.clientHeight / 2 };
+        });
+        await input.click({ position: textPosition });
         await expect(input).toBeFocused();
         await page.screenshot({ path: info.outputPath('compact.png') });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -13,7 +13,7 @@ import { MessageParts } from './messages/MessageParts';
 import { MessageActions } from './messages/MessageActions';
 import { usePersonaIdentity } from '../hooks/usePersonaIdentity';
 
-export function MessageBubble({ message, animate = false }: { message: Message; animate?: boolean }) {
+export function MessageBubble({ message, messageNumber, animate = false }: { message: Message; messageNumber?: number; animate?: boolean }) {
   const { t } = useTranslation('personas');
   const userPersona = useCogitaStore((s) => s.currentSession?.user_persona);
   const [editing, setEditing] = useState(false);
@@ -48,6 +48,7 @@ export function MessageBubble({ message, animate = false }: { message: Message; 
       avatarId={isUser ? userPersona?.avatar_attachment_id : message.role === 'assistant' ? identity.avatar_attachment_id : null}
       createdAt={message.created_at}
       messageId={message.message_id}
+      messageNumber={messageNumber}
     >
       <ChatAttachments items={shownAttachments.filter((item) => item.type !== 'image')}
         onRemove={editing ? (id) => setAttachments((items) => items.filter((item) => item.id !== id)) : undefined} />

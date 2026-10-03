@@ -1,5 +1,6 @@
 {
   "placeholder": "Message the chat…",
+  "shortPlaceholder": "Message",
   "waiting": "Waiting for your reply",
   "prefixes": "Prefixes are sent as ordinary text",
   "messages": "Messages",
@@ -16,5 +17,16 @@
     "tools_ignored": "This model does not support tool calls. This request was handled as ordinary chat.",
     "reasoning_enabled": "This model requires reasoning. Reasoning is enabled for this reply; your saved selection is unchanged.",
     "reasoning_disabled": "This model supports instant mode only. Reasoning is disabled for this reply; your saved selection is unchanged."
+  },
+  "contextWindowRequired": "Set the context window in model settings before chatting.",
+  "contextMeter": {
+    "title": "Context usage",
+    "generating": "Generating",
+    "windowUnknown": "Window not configured",
+    "usageUnknown": "Usage not provided",
+    "noCalls": "No calls for this configuration",
+    "output": "Output reserve",
+    "inputBudget": "Input budget",
+    "removed": "History turns removed"
   }
 }

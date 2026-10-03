@@ -21,6 +21,7 @@ from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest, ToolCall
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.context_snapshot import capture_context
+from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
@@ -214,8 +215,9 @@ class HarnessAgentLoop:
         metrics = first_metrics or LLMCallMetrics()
         try:
             try:
-                capture = capture_context(self.runs, step.step_id, state.context_trace, profile, config.context_policy)
-                calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture),
+                context_budget = ChatContextBudget(config.context_limits, state.context_trace)
+                capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy, budget=context_budget)
+                calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture, context_budget),
                                                timeout=budget.check())
             except asyncio.TimeoutError as exc:
                 raise ToolExecutionError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.") from exc
@@ -247,9 +249,9 @@ class HarnessAgentLoop:
         self._save_state(run.run_id, state)
 
     async def _model_turn(self, profile_id: str, request: ChatRequest, run_id: str,
-                          draft: AssistantDraft, metrics: LLMCallMetrics, capture) -> list[ToolCall]:
+                          draft: AssistantDraft, metrics: LLMCallMetrics, capture, context_budget) -> list[ToolCall]:
         if not request.stream:
-            result = await self.model_manager.chat(profile_id, request, metrics=metrics, capture=capture)
+            result = await self.model_manager.chat(profile_id, request, metrics=metrics, capture=capture, budget=context_budget)
             if result.message.content is not None and not isinstance(result.message.content, str):
                 raise ModelError("MODEL_PROTOCOL_ERROR", "Model returned an invalid tool response.", 502)
             draft.append(result.message.content, result.message.reasoning_content)
@@ -261,7 +263,7 @@ class HarnessAgentLoop:
             return calls
         calls: dict[int, dict[str, str]] = {}
         finish = None
-        async with aclosing(self.model_manager.chat_stream(profile_id, request, metrics=metrics, capture=capture)) as stream:
+        async with aclosing(self.model_manager.chat_stream(profile_id, request, metrics=metrics, capture=capture, budget=context_budget)) as stream:
             async for chunk in stream:
                 self._check_cancelled(run_id)
                 draft.append(chunk.delta.content, chunk.delta.reasoning_content)

@@ -282,6 +282,8 @@ class ModelInput(StrictModel):
     model_ref: str = Field(min_length=1, max_length=1024)
     request_options: ChatRequestOptions | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    context_window_tokens: int | None = Field(default=None, ge=512, strict=True,
+        description="Provider LLM context window, including input and output. Required for internal chat.")
     enabled: bool = True
     external_enabled: bool = False
 
@@ -298,7 +300,9 @@ class ModelInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_parameters(self):
-        from ai_workbench.core.models.runtimes.schema import LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, engine_options, local_engine, relative_ref
+        from ai_workbench.core.models.runtimes.schema import LlamaCPUOptions, LlamaCUDAOptions, OnnxCPUOptions, PythonOptions, TransformersOptions, engine_options, local_engine, relative_ref
+        if self.context_window_tokens is not None and (self.kind != "llm" or isinstance(self.source, LocalSource)):
+            raise ValueError("context_window_tokens applies only to provider or unbound LLM profiles")
         local_embedding = self.kind == "embedding" and (isinstance(self.source, LocalSource)
             or self.source is None and bool(self.parameters.keys() & LocalEmbeddingParameters.model_fields.keys()))
         parameters_schema = LocalEmbeddingParameters if local_embedding else PARAMETERS[self.kind]
@@ -311,7 +315,7 @@ class ModelInput(StrictModel):
             if self.kind in {"llm", "tts", "vision"}:
                 if self.kind == "llm" and self.model_ref.lower().endswith(".gguf"):
                     raise ValueError("Local LLM model_ref must reference a directory, not a GGUF file")
-                options = {"llm": LlamaCPUOptions | LlamaCUDAOptions | PythonOptions,
+                options = {"llm": LlamaCPUOptions | LlamaCUDAOptions | TransformersOptions,
                     "tts": OnnxCPUOptions | PythonOptions, "vision": OnnxCPUOptions}[self.kind]
                 self.source.execution_options = TypeAdapter(options).validate_python(self.source.execution_options).model_dump(exclude_unset=True)
             else:

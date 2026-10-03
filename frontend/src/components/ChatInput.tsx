@@ -19,11 +19,12 @@ import { useComposerLayout } from '../hooks/useComposerLayout';
 import { ChatAttachments } from './messages/ChatAttachments';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
 import { ChatModelMenu } from './ChatModelMenu';
+import { ContextWindowMeter } from './ContextWindowMeter';
+import { configuredContextWindow } from './contextUsage';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
   const draft = useCogitaStore((state) => state.composerDraftText);
-  const { composerRef, textareaRef, measureRef, actionsRef, expanded, textHeight } = useComposerLayout(draft);
   const setDraft = useCogitaStore((state) => state.setComposerDraftText);
   const send = useCogitaStore((state) => state.sendMessage);
   const cancelRun = useCogitaStore((state) => state.cancelRun);
@@ -33,6 +34,9 @@ export function ChatInput() {
   const session = useCogitaStore((state) => state.currentSession);
   const chatDraft = useCogitaStore((state) => state.chatDraft);
   const configuration = useChatConfiguration();
+  const fullPlaceholder = t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') });
+  const { composerRef, textareaRef, measureRef, actionsRef, expanded, textHeight, placeholder } =
+    useComposerLayout(draft, fullPlaceholder, t('chat:shortPlaceholder'));
   const sessionLoad = useCogitaStore((state) => state.sessionLoad);
   const ready = !!(session || chatDraft) && (!sessionLoad || sessionLoad.status === 'ready');
   const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
@@ -61,6 +65,8 @@ export function ChatInput() {
     }
   }, [sending, awaitingAcceptance]);
   const profile = profiles.find((item) => item.id === configuration?.model_profile_id);
+  const windowIssue = profile?.source?.type === 'provider' && configuredContextWindow(profile) === null
+    ? t('chat:contextWindowRequired') : '';
   const hasImages = attachments.some((item) => item.type === 'image');
   const imageIssue =
     hasImages && configuration?.context_policy?.include_attachments !== 'explicit'
@@ -73,6 +79,7 @@ export function ChatInput() {
     mutatingHistory ||
     uploading ||
     !!imageIssue ||
+    !!windowIssue ||
     (!draft.trim() && attachments.length === 0);
 
   async function submit() {
@@ -110,9 +117,9 @@ export function ChatInput() {
       }}
     >
       <ChatAttachments key={sessionEpoch} items={items} composer onRemove={remove} />
-      {imageIssue ? (
+      {imageIssue || windowIssue ? (
         <Alert className="composer-warning" variant="destructive">
-          <AlertDescription>{imageIssue}</AlertDescription>
+          <AlertDescription>{imageIssue || windowIssue}</AlertDescription>
         </Alert>
       ) : null}
       {session?.waiting_run_id ? (
@@ -155,8 +162,8 @@ export function ChatInput() {
           disabled={(!session && !chatDraft) || awaitingAcceptance}
           value={draft}
           rows={1}
-          placeholder={t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') })}
-          aria-label={t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') })}
+          placeholder={placeholder}
+          aria-label={fullPlaceholder}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
@@ -197,6 +204,8 @@ export function ChatInput() {
             </DropdownMenuContent>
           </DropdownMenu>
           <div ref={actionsRef} className="ml-auto flex items-center gap-2">
+            <ContextWindowMeter key={`context:${sessionEpoch}`} profile={profile}
+              generating={!!activeRun && activeRun.status !== 'WAITING_FOR_USER'} />
             <ChatModelMenu key={sessionEpoch} disabled={!ready || sending || mutatingHistory || configurationBusy}
               onBusyChange={setConfigurationBusy} />
             {activeRun ? (

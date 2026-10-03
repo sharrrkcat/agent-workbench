@@ -349,7 +349,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
         app = create_app(root=tmp_path, use_memory=True, adapter_factory=upstream.factory)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}}))
-            model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "request_options": {"streaming": True}, "parameters": {"temperature": 0.2}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
+            model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "context_window_tokens": 32768, "request_options": {"streaming": True}, "parameters": {"temperature": 0.2}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             ok(await client.patch("/api/models/settings", json={"default_model_profile_id": model["id"]}))
             before = ok(await client.post("/api/personas", json={'collection': 'agent', 'name': 'Before', 'system_prompt': 'BEFORE_PROMPT'}))
             session = ok(await client.post("/api/sessions", json={'persona_id': before['id'], 'harness_enabled': True, 'tools_allowed': ['read_file']}))

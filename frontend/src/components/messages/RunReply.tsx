@@ -18,7 +18,7 @@ import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
 import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
 
-export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFullProcessing: boolean }) {
+export function RunReply({ reply, messageNumber, showFullProcessing }: { reply: Reply; messageNumber?: number; showFullProcessing: boolean }) {
   const { t } = useTranslation(['runs', 'personas']);
   const { run, process, answer, answerParts } = reply;
   const ended = terminal(run.status);
@@ -30,7 +30,9 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
   const identity = usePersonaIdentity()(run.persona_id);
   const processId = `processing-${run.run_id}`;
   const error = run.error_message || run.error || '';
-  const errorKey = imageErrorKey(run.error_code, error);
+  const contextErrors: Record<string, string> = { CONTEXT_WINDOW_REQUIRED: 'contextErrors.required',
+    CONTEXT_WINDOW_EXCEEDED: 'contextErrors.exceeded', CONTEXT_COUNT_FAILED: 'contextErrors.countFailed' };
+  const errorKey = contextErrors[run.error_code ?? ''] ?? imageErrorKey(run.error_code, error);
   const status = (
     {
       PENDING: 'queued',
@@ -48,6 +50,7 @@ export function RunReply({ reply, showFullProcessing }: { reply: Reply; showFull
       avatarId={identity.avatar_attachment_id}
       createdAt={run.created_at}
       runId={run.run_id}
+      messageNumber={messageNumber}
     >
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <MessageScrollerItem messageId={'disclosure-' + processId} data-scroll-pause>

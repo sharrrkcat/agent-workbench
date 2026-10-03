@@ -220,10 +220,15 @@ class ChatService:
                 sources[source] = "session" if key in overridden else "project"
             sources["temperature"] = "session" if "temperature" in overridden else "project" if project.temperature is not None else "model"
             model_source = "session" if session.overrides.model_profile_id is not None else "project" if project.model_profile_id is not None else "global"
+        from ai_workbench.core.models.context_budget import configured_limits
+        from ai_workbench.core.schema.context_budget import ContextLimits
         parameters = {}
+        limits = ContextLimits()
         if model_id:
             try:
-                parameters = self.model_manager.profiles.get(model_id).parameters
+                profile = self.model_manager.profiles.get(model_id)
+                parameters = profile.parameters
+                limits = configured_limits(profile)
             except KeyError:
                 pass  # Readable sessions remain editable when a referenced model is unavailable.
         generation = settings.generation
@@ -232,6 +237,7 @@ class ChatService:
             persona_id=persona.id, persona_name=persona.name, avatar_attachment_id=persona.avatar_attachment_id,
             system_prompt=persona.system_prompt, user_persona_id=user_persona.id, user_persona_prompt=user_persona.system_prompt,
             context_policy=settings.context_policy,
+            context_limits=limits,
             model_profile_id=model_id, model_source=model_source,
             generation=GenerationParameters.model_validate({**parameters, **generation.model_dump(exclude_none=True)}),
             reasoning=settings.reasoning,

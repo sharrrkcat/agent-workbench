@@ -42,7 +42,7 @@ def test_context_captures_the_actual_request_and_stays_private(presentation_clie
         assert snapshot["request"] == request
         assert snapshot["request"]["temperature"] == 0
         assert snapshot["request"]["reasoning_effort"] == "none"
-        assert "max_tokens" not in snapshot["request"]
+        assert snapshot["request"]["max_tokens"] == 4096
         current = next(source for source in snapshot["sources"] if source["kind"] == "current_input")
         assert current["text"] == "PRIVATE_INPUT 中文😀"
         assert current["char_count"] == len(current["text"])

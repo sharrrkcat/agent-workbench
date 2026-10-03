@@ -516,6 +516,28 @@ class ProcessorWorkerAdapter(ManagedAdapter):
 
 
 class LlamaServerAdapter(ManagedAdapter):
+    async def context_window(self):
+        try:
+            response = await self.client.get("/props")
+            response.raise_for_status()
+            value = response.json()["default_generation_settings"]["n_ctx"]
+            if type(value) is not int or value < 1:
+                raise ValueError("Invalid context capacity")
+            return value
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            raise ModelError("CONTEXT_COUNT_FAILED", "The model's context capacity could not be read.", 502) from exc
+
+    async def count_input_tokens(self, payload):
+        try:
+            response = await self.client.post("/v1/chat/completions/input_tokens", json=payload)
+            response.raise_for_status()
+            value = response.json()["input_tokens"]
+            if type(value) is not int or value < 0:
+                raise ValueError("Invalid input token count")
+            return value
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            raise ModelError("CONTEXT_COUNT_FAILED", "The model input could not be counted.", 502) from exc
+
     async def chat(self, profile, request, *, capture=None):
         if not self.openai or self.failed:
             raise ModelError("MODEL_UNAVAILABLE", "The managed model is not running.", 503)
@@ -530,6 +552,17 @@ class LlamaServerAdapter(ManagedAdapter):
 
 
 class TransformersServerAdapter(LlamaServerAdapter):
+    async def context_window(self):
+        try:
+            response = await self.client.get("/health")
+            response.raise_for_status()
+            value = response.json()["context_window_tokens"]
+            if type(value) is not int or value < 1:
+                raise ValueError("Invalid context capacity")
+            return value
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            raise ModelError("CONTEXT_COUNT_FAILED", "The model's context capacity could not be read.", 502) from exc
+
     def _require_support(self, profile, request):
         require_chat_support(profile, local_chat_support(profile, self),
             tools=bool(request.tools or any(message.tool_calls or message.role == "tool" for message in request.messages)),

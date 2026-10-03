@@ -609,7 +609,7 @@
   .context-main, .context-tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
   .context-tabs > [data-slot=tabs-list] { flex-shrink: 0; }
   .context-structure-panel, .context-request-panel { min-height: 0; overflow: hidden; }
-  .context-structure { display: grid; grid-template-columns: 15rem minmax(0, 1fr); height: 100%; min-height: 0; padding-top: 0.5rem; }
+  .context-structure { display: grid; grid-template-columns: 17rem minmax(0, 1fr); height: 100%; min-height: 0; padding-top: 0.5rem; }
   .context-sources, .context-source-detail, .context-request-panel { overflow-y: auto; overscroll-behavior: contain; }
   .context-sources { min-height: 0; padding-right: 0.75rem; border-right: 1px solid var(--border); }
   .context-sources ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.125rem; }
@@ -617,6 +617,7 @@
   .context-source-row { display: flex; align-items: start; gap: 0.125rem; }
   .context-source-button { flex: 1; min-width: 0; height: auto; min-height: 2rem; justify-content: space-between; white-space: normal; text-align: start; }
   .context-source-button > span:first-child { overflow-wrap: anywhere; }
+  .context-source-button > .context-message-label { white-space: nowrap; overflow-wrap: normal; }
   .context-count { display: grid; flex-shrink: 0; text-align: end; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
   .context-count > span { grid-area: 1 / 1; }
   .context-tokens { visibility: hidden; }
@@ -649,6 +650,21 @@
   @media (hover: none), (pointer: coarse) {
     .context-chars { visibility: hidden; }
     .context-tokens { visibility: visible; }
+  }
+
+  .context-meter-ring { width: 1.25rem; height: 1.25rem; fill: none; stroke-width: 2; transform: rotate(-90deg); }
+  .context-meter-track { stroke: var(--border); }
+  .context-meter-fill { stroke: var(--primary); }
+  .context-meter-ring[data-known=false] .context-meter-fill { visibility: hidden; }
+  .context-meter-ring[data-full=true] .context-meter-fill { stroke: var(--destructive); }
+  .context-meter-card { max-width: calc(100vw - 2rem); }
+  .context-meter-value { margin-block: 0.5rem; font-variant-numeric: tabular-nums; }
+  .context-meter-card dl { display: flex; flex-direction: column; gap: 0.25rem; }
+  .context-meter-card dl > div { display: flex; justify-content: space-between; gap: 1rem; }
+  .context-meter-card dt { color: var(--muted-foreground); }
+  .context-meter-card dd { margin: 0; text-align: end; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  @media (hover: none), (pointer: coarse) {
+    .context-meter { min-width: 44px; min-height: 44px; }
   }
 
   .composer-wrap {

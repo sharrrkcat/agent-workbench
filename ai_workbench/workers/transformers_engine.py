@@ -169,6 +169,11 @@ class TransformersEngine:
             self.generation = GenerationState(continuous_batching=False, compile=False)
             self.handler_type = LocalChatCompletionHandler
             resident = self.manager.loaded_models["managed@main"]
+            text_config = resident.model.config.get_text_config()
+            native_window = getattr(text_config, "max_position_embeddings", None)
+            window = options.get("context_size", 4096)
+            if type(native_window) is int and native_window > 0:
+                window = min(window, native_window)
             template = get_response_template(resident.processor, resident.model)
             vision = (self.manager.get_model_modality(resident.model, resident.processor) in {Modality.VLM, Modality.MULTIMODAL}
                       and hasattr(resident.processor, "image_processor"))
@@ -195,13 +200,31 @@ class TransformersEngine:
                     delimiters = (*delimiters, (thinking["open"], thinking["close"]))
                 reasoning_support = template_reasoning_support(getattr(processor, "chat_template", None), prefixes, delimiters=delimiters)
             self.metadata = {"protocol_version": 1, "device": device, "device_name": device_name,
+                             "context_window_tokens": window,
                              "dtype": str(resident.model.dtype), "vision": vision,
                              "reasoning_support": reasoning_support,
                              "tool_calls": bool(template and template.get("fields", {}).get("tool_calls"))}
 
-    async def chat(self, body, request_id, *, skip_tool_check=False):
+    def _require_tools(self, body, skip_tool_check):
         if not skip_tool_check and (body.get("tools") or any(message.get("tool_calls") or message["role"] == "tool" for message in body["messages"])) and not self.metadata["tool_calls"]:
             raise WorkerError("UNSUPPORTED_CAPABILITY")
+
+    def count_input_tokens(self, body, *, skip_tool_check=False):
+        self._require_tools(body, skip_tool_check)
+        handler = self.handler_type(self.manager, self.generation, [])
+        _, model, processor = handler._resolve_model(body)
+        modality = self.manager.get_model_modality(model, processor=processor)
+        messages = handler.get_processor_inputs_from_messages(body["messages"], modality)
+        # Match the pinned v5.16.1 serving preparation, without generation or
+        # copying image tensors to the GPU. Native image expansion is included.
+        kwargs = {**handler.chat_template_kwargs, **body.get("chat_template_kwargs", {})}
+        inputs = processor.apply_chat_template(messages, add_generation_prompt=True,
+            tools=body.get("tools"), return_tensors="pt", return_dict=True, tokenize=True,
+            load_audio_from_video=False, **kwargs)
+        return int(inputs["input_ids"].shape[-1])
+
+    async def chat(self, body, request_id, *, skip_tool_check=False):
+        self._require_tools(body, skip_tool_check)
         stops = body.get("stop") or []
         handler = self.handler_type(self.manager, self.generation, [stops] if isinstance(stops, str) else stops)
         return await handler.handle_request(body, request_id)
