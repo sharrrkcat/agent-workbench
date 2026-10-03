@@ -67,3 +67,4 @@ generation and verification commands are in the [README](../README.md#http-contr
   ownership and active-plan completion rules.
 - [Future model services](FUTURE_MODEL_SERVICES.md): unimplemented design boundaries.
   Future Pet visuals remain undecided under [Settings](contracts/settings.md#pet-foundations).
+- [Future QQ integration](FUTURE_QQ_INTEGRATION.md): intended scope, current gaps and limited Linux feasibility evidence; not implemented.

@@ -17,6 +17,8 @@ content, identifiers and API payloads are outside this documentation policy.
 - `docs/DATA_LAYOUT.md` owns storage boundaries, revision effects and maintenance.
 - `docs/FUTURE_MODEL_SERVICES.md` records unimplemented design boundaries,
   without authorizing implementation or promising frozen interfaces.
+- `docs/FUTURE_QQ_INTEGRATION.md` records QQ integration scope, unresolved design
+  and project-relevant feasibility evidence; host operations remain outside this repository.
 
 When behavior changes, update the owning contract and both frontend locales
 when text is user-visible. Do not document removed extension concepts as
