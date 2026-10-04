@@ -28,6 +28,7 @@ for (const script of [
   'test-transformers',
   'test-harness',
   'test-chat-presentation',
+  'test-qq-conversation',
   'test-persona-identity',
   'test-llm-metrics',
   'test-context-detail',

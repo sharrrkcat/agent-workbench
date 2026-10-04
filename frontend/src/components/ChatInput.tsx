@@ -1,16 +1,12 @@
+import { ComposerSurface, ComposerTextarea, ComposerToolbar } from './ComposerSurface';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea,
-} from '@/components/ui/input-group';
+import { InputGroupButton } from '@/components/ui/input-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { cn } from '@/lib/utils';
 import { Paperclip, Plus, ArrowUp, Square } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
@@ -170,17 +166,7 @@ export function ChatInput() {
           <MarkerContent>{t('waiting')}</MarkerContent>
         </Marker>
       ) : null}
-      <InputGroup
-        ref={composerRef}
-        data-expanded={expanded}
-        className="composer block rounded-[20px] has-[textarea]:rounded-[20px] has-data-[align=block-end]:rounded-[20px] transition-[height] duration-180 ease-out motion-reduce:transition-none"
-        style={{
-          '--composer-text-height': `min(${textHeight}px, 12rem, 30dvh)`,
-          height: expanded
-            ? 'calc(var(--composer-text-height) + var(--composer-toolbar-height) + 2px)'
-            : 'calc(var(--composer-compact-height) + 2px)',
-        } as CSSProperties}
-      >
+      <ComposerSurface ref={composerRef} expanded={expanded} textHeight={textHeight}>
         <input
           ref={fileRef}
           type="file"
@@ -192,16 +178,7 @@ export function ChatInput() {
             event.target.value = '';
           }}
         />
-        <InputGroupTextarea
-          ref={textareaRef}
-          className="min-h-0 [field-sizing:fixed] transition-[height,padding] duration-180 ease-out motion-reduce:transition-none"
-          style={{
-            height: expanded ? 'var(--composer-text-height)' : 'var(--composer-compact-height)',
-            paddingInlineStart: expanded ? '12px' : 'var(--composer-inline-start)',
-            paddingInlineEnd: expanded ? '12px' : 'var(--composer-inline-end)',
-            paddingBlock: expanded ? '10px' : 'calc((var(--composer-compact-height) - 1lh) / 2)',
-            overflowY: expanded ? 'auto' : 'hidden',
-          }}
+        <ComposerTextarea ref={textareaRef} expanded={expanded}
           disabled={(!session && !chatDraft) || acceptanceLocked}
           value={draft}
           rows={1}
@@ -222,7 +199,7 @@ export function ChatInput() {
             }
           }}
         />
-        <InputGroupAddon align="block-end" className="composer-toolbar absolute inset-x-0 bottom-0 gap-2 pt-1 pointer-events-none [&_button]:pointer-events-auto">
+        <ComposerToolbar>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -282,8 +259,8 @@ export function ChatInput() {
                 <ArrowUp />
               </InputGroupButton>
           </div>
-        </InputGroupAddon>
-      </InputGroup>
+        </ComposerToolbar>
+      </ComposerSurface>
       <div ref={measureRef} className="composer-measure" aria-hidden="true" />
       {dragging || (hasImages && profile?.source?.type === 'local' && normalizedRequestLimit !== undefined) ? <Marker className="composer-hint">
         <MarkerContent>

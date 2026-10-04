@@ -170,20 +170,14 @@
     "resume": "Resume",
     "stop": "Stop",
     "paused": "Paused",
-    "messages": "QQ messages",
-    "batches": "Batches",
-    "deliveries": "Sent messages",
-    "older": "Older",
-    "latest": "Latest",
     "empty": "No records yet",
     "emptyConversations": "No QQ conversations bound",
-    "inspectRun": "Inspect run",
     "status": {
       "disabled": "Disconnected",
       "connecting": "Connecting",
       "connected": "Connected",
       "pending": "Pending",
-      "batched": "Batched",
+      "batched": "Included in a batch",
       "skipped": "Outside batch window",
       "queued": "Queued",
       "running": "Running",
@@ -206,6 +200,8 @@
       "RUN_CANCELLED": "Run stopped",
       "QQ_ACCOUNT_MISMATCH": "Account mismatch",
       "QQ_DELIVERY_UNKNOWN": "Delivery result unknown"
-    }
+    },
+    "readOnly": "QQ conversation is read-only. Send messages in QQ.",
+    "readOnlyShort": "Read-only"
   }
 }

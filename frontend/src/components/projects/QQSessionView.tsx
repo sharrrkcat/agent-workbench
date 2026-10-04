@@ -1,119 +1,164 @@
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Check, CheckCheck, Clock, CircleHelp, CircleX, LoaderCircle, SkipForward, Plus, ArrowUp } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Message, MessageContent, MessageHeader } from '@/components/ui/message';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
-import { MessageScroller, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport } from '@/components/ui/message-scroller';
+import { InputGroupButton } from '@/components/ui/input-group';
+import { MessageScrollerButton, MessageScrollerItem, MessageScrollerProvider, useMessageScroller } from '@/components/ui/message-scroller';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { qqApi, type QQBinding, type QQMessage, type QQBatch, type QQDelivery, type QQPage } from '../../api/qq';
-import { toolsApi } from '../../api/tools';
-import type { ToolRunResponse } from '../../types/tools';
+import type { QQMessage, QQDelivery } from '../../api/qq';
 import type { QQSession } from '../../types/chat';
-import { Feedback, ResourceLoading, errorText } from '../settings/resources/ResourceUI';
-import { RunPanel } from '../RunPanel';
-import { ReplyContext } from '../messages/ReplyContext';
-import { buildReply } from '../messages/turns';
+import type { Run } from '../../types/runs';
+import { Feedback, ResourceLoading } from '../settings/resources/ResourceUI';
+import { MessageFrame } from '../messages/MessageFrame';
+import { RunReply } from '../messages/RunReply';
+import { MessageNumbersContext } from '../messages/MessageNumbersContext';
+import { ConversationScroller, ConversationViewport, ConversationContent } from '../ConversationSurface';
+import { ComposerSurface, ComposerTextarea, ComposerToolbar } from '../ComposerSurface';
+import { ContextWindowMeter } from '../ContextWindowMeter';
+import { ChatModelMenu } from '../ChatModelMenu';
+import { useComposerLayout } from '../../hooks/useComposerLayout';
+import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
+import { useModelsStore } from '../../store/useModelsStore';
+import { useCogitaStore } from '../../store/useCogitaStore';
+import { terminal } from '../../store/cogita/mergeState';
+import { buildQQConversation } from './qqConversation';
+import { useQQConversation } from './useQQConversation';
 
 export function QQSessionView({ session }: { session: QQSession }) {
-  const { t } = useTranslation('personas');
-  const [binding, setBinding] = useState<QQBinding>();
-  const [tab, setTab] = useState('messages');
-  const [before, setBefore] = useState<number>();
-  const [page, setPage] = useState<QQPage<QQMessage | QQBatch | QQDelivery>>({ items: [], next_cursor: null });
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const controlling = useRef(false);
-  const revision = useRef(0);
-  const [reload, setReload] = useState(0);
-  const [runId, setRunId] = useState<string>();
-  useEffect(() => {
-    let active = true;
-    let pending = false;
-    const refresh = async () => {
-      if (pending || controlling.current) return;
-      pending = true;
-      const version = revision.current;
-      try {
-        const [value, rows] = await Promise.all([qqApi.binding(session.session_id),
-          tab === 'messages' ? qqApi.messages(session.session_id, before) : tab === 'batches' ? qqApi.batches(session.session_id, before) : qqApi.deliveries(session.session_id, before)]);
-        if (active && version === revision.current) { setBinding(value); setPage(rows); setError(''); setLoading(false); }
-      } catch (reason) { if (active) setError(errorText(reason)); }
-      finally { pending = false; }
-    };
-    void refresh(); const timer = setInterval(() => void refresh(), 1500);
-    return () => { active = false; clearInterval(timer); };
-  }, [session.session_id, tab, before, reload]);
-  async function control(action: 'pause' | 'resume' | 'stop') {
-    if (controlling.current) return;
-    controlling.current = true; revision.current++;
-    setBusy(true);
-    try { setBinding(await qqApi.control(session.session_id, action)); setReload((n) => n + 1); }
-    catch (reason) { setError(errorText(reason)); }
-    finally { controlling.current = false; setBusy(false); }
+  return <MessageScrollerProvider autoScroll scrollEdgeThreshold={32}>
+    <QQConversation session={session} />
+  </MessageScrollerProvider>;
+}
+
+function QQConversation({ session }: { session: QQSession }) {
+  const { t } = useTranslation(['personas', 'chat']);
+  const data = useQQConversation(session.session_id);
+  const { scrollToMessage } = useMessageScroller();
+  const viewport = useRef<HTMLDivElement>(null);
+  const showFullProcessing = useCogitaStore((state) => state.settings?.show_full_processing === true);
+  const items = useMemo(() => buildQQConversation(data.messages.items, data.batches.items, data.deliveries.items, data.runs),
+    [data.messages, data.batches, data.deliveries, data.runs]);
+  const numbers = useMemo(() => {
+    const values = new Map<string, number>();
+    let number = 0;
+    for (const item of items) {
+      values.set(item.id, ++number);
+      if (item.kind === 'reply') for (const message of item.reply.messages) values.set(message.message_id, number);
+    }
+    return values;
+  }, [items]);
+  async function older() {
+    const node = viewport.current;
+    const anchor = Array.from(node?.querySelectorAll<HTMLElement>('[data-qq-item]') ?? [])
+      .find((row) => row.getBoundingClientRect().bottom > node!.getBoundingClientRect().top);
+    const id = anchor?.dataset.messageId;
+    const margin = anchor && node ? anchor.getBoundingClientRect().top - node.getBoundingClientRect().top : 0;
+    await data.loadOlder();
+    if (id) requestAnimationFrame(() => scrollToMessage(id, { align: 'start', behavior: 'instant', scrollMargin: margin }));
   }
   return <>
-    <header className="settings-header"><SidebarTrigger /><div className="flex min-w-0 flex-wrap items-center gap-2"><h1 className="min-w-0 flex-1 truncate">{session.title || `${t('qq.' + session.target_kind)} ${session.target_id}`}</h1>
-      <Badge variant="secondary">{session.target_id}</Badge>
-      <Button variant="outline" disabled={busy || !binding} onClick={() => void control(binding?.paused ? 'resume' : 'pause')}>{t(binding?.paused ? 'qq.resume' : 'qq.pause')}</Button>
-      <Button variant="outline" disabled={busy || !binding} onClick={() => void control('stop')}>{t('qq.stop')}</Button>
-    </div></header>
-    <div className="flex flex-col gap-2 px-4 py-2"><Feedback error={error} />
-      {binding?.paused ? <p role="status">{t('qq.paused')}: {t('qq.status.' + binding.pause_reason, { defaultValue: binding.pause_reason })}</p> : null}
-      <Tabs value={tab} onValueChange={(value) => { setTab(value); setBefore(undefined); setPage({ items: [], next_cursor: null }); setLoading(true); }}><TabsList>
-        <TabsTrigger value="messages">{t('qq.messages')}</TabsTrigger><TabsTrigger value="batches">{t('qq.batches')}</TabsTrigger><TabsTrigger value="deliveries">{t('qq.deliveries')}</TabsTrigger>
-      </TabsList></Tabs>
-      <div className="flex gap-2"><Button variant="ghost" disabled={loading || !page.next_cursor} onClick={() => { setBefore(page.next_cursor!); setLoading(true); }}>{t('qq.older')}</Button><Button variant="ghost" onClick={() => { setBefore(undefined); setReload((n) => n + 1); }}>{t('qq.latest')}</Button></div>
-    </div>
-    <MessageScrollerProvider autoScroll={before === undefined}>
-      <MessageScroller className="min-h-0 flex-1"><MessageScrollerViewport><MessageScrollerContent className="flex flex-col gap-4 p-4">
-        {loading ? <ResourceLoading error={error} retry={() => setReload((n) => n + 1)} /> : page.items.length === 0 ? <Empty><EmptyHeader><EmptyTitle>{t('qq.empty')}</EmptyTitle></EmptyHeader></Empty> : null}
-        {[...page.items].reverse().map((row) => <MessageScrollerItem key={`${tab}-${row.id}`} data-message-id={`${tab}-${row.id}`}>
-          <Message><MessageContent><MessageHeader className="flex-wrap gap-2">
-            {'sender_name' in row ? <span className="wrap-anywhere">{row.sender_name} ({row.sender_id}) · {row.timestamp}</span> : <span>#{row.id} · {new Date(row.created_at * 1000).toLocaleString()}</span>}
-            <Badge variant="secondary">{t('qq.status.' + ('disposition' in row ? row.disposition : row.status), { defaultValue: 'disposition' in row ? row.disposition : row.status })}</Badge>
-          </MessageHeader><Bubble variant="muted"><BubbleContent className="whitespace-pre-wrap wrap-anywhere">{row.text}</BubbleContent></Bubble>
-            {'error_code' in row && row.error_code ? <p>{t('qq.status.' + row.error_code, { defaultValue: row.error_code })}</p> : null}
-            {'status' in row && 'external_id' in row && row.external_id ? <span>{t('qq.externalId')}: {row.external_id}</span> : null}
-            {'run_id' in row && row.run_id ? <Button variant="ghost" className="self-start" onClick={() => setRunId(row.run_id!)}>{t('qq.inspectRun')}</Button> : null}
-          </MessageContent></Message>
-        </MessageScrollerItem>)}
-      </MessageScrollerContent></MessageScrollerViewport></MessageScroller>
-    </MessageScrollerProvider>
-    {runId ? <QQRunDetails key={runId} runId={runId} onClose={() => setRunId(undefined)} /> : null}
+    <header className="topbar"><SidebarTrigger className="sidebar-toggle" />
+      <h1 className="chat-title flex-1" title={session.title}>{session.title || `${t('qq.' + session.target_kind)} ${session.target_id}`}</h1>
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-muted-foreground hidden sm:inline">{session.target_id}</span>
+        <Button variant="ghost" size="sm" disabled={data.controlling || !data.binding}
+          onClick={() => void data.control(data.binding?.paused ? 'resume' : 'pause')}>{t(data.binding?.paused ? 'qq.resume' : 'qq.pause')}</Button>
+        <Button variant="ghost" size="sm" disabled={data.controlling || !data.binding} onClick={() => void data.control('stop')}>{t('qq.stop')}</Button>
+      </div>
+    </header>
+    {data.error || data.binding?.paused ? <div className="px-4 py-2 text-sm">
+      <Feedback error={data.error} />
+      {data.error && !data.loading ? <Button variant="ghost" size="sm" onClick={() => void data.refresh()}>{t('retry')}</Button> : null}
+      {data.binding?.paused ? <p role="status">{t('qq.paused')}: {t('qq.status.' + data.binding.pause_reason, { defaultValue: data.binding.pause_reason })}</p> : null}
+    </div> : null}
+    <MessageNumbersContext.Provider value={numbers}>
+      <ConversationScroller>
+        <ConversationViewport ref={viewport} aria-label={t('chat:messages')}
+          onClickCapture={(event) => {
+            const anchor = (event.target as Element).closest('button[aria-expanded]')?.closest<HTMLElement>('[data-scroll-pause]');
+            if (anchor?.dataset.messageId) scrollToMessage(anchor.dataset.messageId, { align: 'nearest', behavior: 'instant' });
+          }}>
+          <ConversationContent className="qq-conversation gap-0" aria-live="polite">
+            {data.hasOlder ? <MessageScrollerItem messageId="qq-older"><Button variant="ghost" size="sm" disabled={data.historyLoading} onClick={() => void older()}>{t('chat:loadEarlier')}</Button></MessageScrollerItem> : null}
+            {data.loading ? <MessageScrollerItem messageId="qq-loading"><ResourceLoading error={data.error} retry={() => void data.refresh()} /></MessageScrollerItem>
+              : !items.length ? <MessageScrollerItem messageId="qq-empty"><Empty><EmptyHeader><EmptyTitle>{t('qq.empty')}</EmptyTitle></EmptyHeader></Empty></MessageScrollerItem> : null}
+            {items.map((item) => <MessageScrollerItem key={item.id} messageId={item.id} data-qq-item
+              data-qq-continuation={item.kind === 'incoming' && !item.showIdentity ? '' : undefined}
+              scrollAnchor={item.kind === 'incoming'}>
+              {item.kind === 'incoming' ? <QQIncoming message={item.message} showIdentity={item.showIdentity} /> : <>
+                <RunReply reply={item.reply} readOnly showFullProcessing={showFullProcessing} />
+                {item.deliveries.length ? <div className="mt-2 flex flex-col gap-1.5" data-qq-deliveries>
+                  {item.deliveries.map((delivery) => <QQOutgoing key={delivery.id} delivery={delivery} personaId={item.reply.run.persona_id} />)}
+                </div> : null}
+              </>}
+            </MessageScrollerItem>)}
+          </ConversationContent>
+        </ConversationViewport>
+        <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')} />
+      </ConversationScroller>
+    </MessageNumbersContext.Provider>
+    <div className="chat-bottom"><QQComposer session={session} runs={Object.values(data.runs).map((value) => value.run)} /></div>
   </>;
 }
 
-function QQRunDetails({ runId, onClose }: { runId: string; onClose: () => void }) {
+function QQStatus({ status, detail }: { status: QQMessage['disposition'] | QQDelivery['status']; detail?: string }) {
   const { t } = useTranslation('personas');
-  const [data, setData] = useState<ToolRunResponse>();
-  const [error, setError] = useState('');
-  const [reload, setReload] = useState(0);
-  useEffect(() => {
-    let active = true;
-    let pending = false;
-    let complete = false;
-    const refresh = async () => {
-      if (pending || complete) return;
-      pending = true;
-      try {
-        const value = await toolsApi.getToolRun(runId);
-        if (active) { setData(value); setError(''); }
-        complete = ['DONE', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(value.run.status);
-      } catch (reason) { if (active) setError(errorText(reason)); }
-      finally { pending = false; }
-    };
-    void refresh(); const timer = setInterval(() => void refresh(), 1500);
-    return () => { active = false; clearInterval(timer); };
-  }, [runId, reload]);
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="sm:max-w-3xl"><DialogHeader><DialogTitle>{t('qq.inspectRun')}</DialogTitle></DialogHeader>
-    <div className="max-h-[65dvh] overflow-y-auto"><Feedback error={error} />{data ? <>
-      <RunPanel run={data.run} /><ReplyContext reply={buildReply(data.run, data.messages, data.run.steps || [])} />
-      {data.messages.map((message) => <pre key={message.message_id} className="whitespace-pre-wrap wrap-anywhere">{message.parts.map((part) => 'text' in part ? part.text : JSON.stringify(part)).join('\n')}</pre>)}
-    </> : <ResourceLoading error={error} retry={() => setReload((n) => n + 1)} />}</div>
-  </DialogContent></Dialog>;
+  const [open, setOpen] = useState(false);
+  const Icon = { pending: Clock, batched: Check, skipped: SkipForward, sending: LoaderCircle,
+    sent: CheckCheck, failed: CircleX, unknown: CircleHelp }[status];
+  const label = t('qq.status.' + status);
+  return <Tooltip open={open} onOpenChange={setOpen}><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} onClick={() => setOpen(true)}
+    className={status === 'failed' ? 'shrink-0 text-destructive' : 'shrink-0 text-muted-foreground'} />}>
+    <Icon className={status === 'sending' ? 'animate-spin motion-reduce:animate-none' : undefined} />
+  </TooltipTrigger><TooltipContent>{label}{detail ? ` · ${detail}` : ''}</TooltipContent></Tooltip>;
+}
+
+function QQIncoming({ message, showIdentity }: { message: QQMessage; showIdentity: boolean }) {
+  return <MessageFrame role="user" name={message.sender_name || message.sender_id} createdAt={message.timestamp}
+    messageId={`qq-message-${message.id}`} showIdentity={showIdentity} showTime={showIdentity} textAvatar>
+    <div className="flex min-w-0 items-center justify-end gap-1" data-qq-incoming={message.id}>
+      <QQStatus status={message.disposition} />
+      <Bubble variant="secondary" align="end"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><div className="message">{message.text}</div></BubbleContent></Bubble>
+    </div>
+  </MessageFrame>;
+}
+
+function QQOutgoing({ delivery, personaId }: { delivery: QQDelivery; personaId: string | null }) {
+  const { t } = useTranslation('personas');
+  const identity = usePersonaIdentity()(personaId);
+  const detail = [delivery.error_code ? t('qq.status.' + delivery.error_code, { defaultValue: delivery.error_code }) : '',
+    delivery.external_id ? `${t('qq.externalId')}: ${delivery.external_id}` : ''].filter(Boolean).join(' · ');
+  return <div data-qq-delivery={delivery.id}>
+    <MessageFrame role="assistant" name={identity.name} createdAt={new Date(delivery.created_at * 1000).toISOString()} showIdentity={false} showTime={false}>
+      <div className="flex min-w-0 items-center gap-1">
+        <Bubble variant="secondary"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><div className="message">{delivery.text}</div></BubbleContent></Bubble>
+        <QQStatus status={delivery.status} detail={detail} />
+      </div>
+    </MessageFrame>
+  </div>;
+}
+
+function QQComposer({ session, runs }: { session: QQSession; runs: Run[] }) {
+  const { t } = useTranslation(['personas', 'chat']);
+  const fullPlaceholder = t('qq.readOnly');
+  const { composerRef, textareaRef, measureRef, actionsRef, expanded, textHeight, placeholder } =
+    useComposerLayout('', fullPlaceholder, t('qq.readOnlyShort'));
+  const profile = useModelsStore((state) => state.profiles.find((item) => item.id === session.effective.model_profile_id));
+  return <div className="composer-wrap" onDragOver={(event) => event.preventDefault()} onDrop={(event) => event.preventDefault()}>
+    <ComposerSurface ref={composerRef} expanded={expanded} textHeight={textHeight}>
+      <ComposerTextarea ref={textareaRef} expanded={expanded} disabled value="" rows={1} placeholder={placeholder} aria-label={fullPlaceholder} />
+      <ComposerToolbar>
+        <InputGroupButton disabled variant="outline" size="icon-sm" className="rounded-full" aria-label={t('attach')}><Plus /></InputGroupButton>
+        <div ref={actionsRef} className="ml-auto flex items-center gap-2">
+          <ContextWindowMeter profile={profile} runs={runs} generating={runs.some((run) => !terminal(run.status))} />
+          <ChatModelMenu disabled onBusyChange={() => {}} />
+          <InputGroupButton disabled size="icon-sm" className="rounded-full" aria-label={t('send')}><ArrowUp /></InputGroupButton>
+        </div>
+      </ComposerToolbar>
+    </ComposerSurface>
+    <div ref={measureRef} className="composer-measure" aria-hidden="true" />
+  </div>;
 }

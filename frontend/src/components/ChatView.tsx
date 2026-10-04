@@ -1,13 +1,11 @@
+import { ConversationScroller, ConversationViewport, ConversationContent } from './ConversationSurface';
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MessageSquare, ArrowDown } from 'lucide-react';
 import {
-  MessageScroller,
   MessageScrollerButton,
-  MessageScrollerContent,
   MessageScrollerItem,
   MessageScrollerProvider,
-  MessageScrollerViewport,
   useMessageScroller,
   useMessageScrollerVisibility,
 } from '@/components/ui/message-scroller';
@@ -118,12 +116,10 @@ function Conversation() {
 
   return (
     <MessageNumbersContext.Provider value={numbers}>
-    <MessageScroller className="chat-scroll-container h-auto flex-1">
-      <MessageScrollerViewport
+    <ConversationScroller>
+      <ConversationViewport
         ref={viewport}
         preserveScrollOnPrepend={false}
-        className="chat-view"
-        style={{ scrollbarGutter: 'stable both-edges' }}
         aria-label={t('chat:messages')}
         onWheel={() => { userScrolling.current = true; }}
         onTouchMove={() => { userScrolling.current = true; }}
@@ -152,8 +148,8 @@ function Conversation() {
             scrollToMessage(anchor.dataset.messageId, { align: 'nearest', behavior: 'instant' });
         }}
       >
-        <MessageScrollerContent
-          className={cn('conversation-content', !items.length && 'justify-center')}
+        <ConversationContent
+          className={cn(!items.length && 'justify-center')}
           aria-live="polite"
         >
           {history?.has_before && <Button variant="ghost" size="sm" disabled={historyLoading} onClick={() => void page('before')}>{t('chat:loadEarlier')}</Button>}
@@ -181,14 +177,14 @@ function Conversation() {
             </MessageScrollerItem>
           ))}
           {history?.has_after && <Button variant="ghost" size="sm" disabled={historyLoading} onClick={() => void page('after')}>{t('chat:loadLater')}</Button>}
-        </MessageScrollerContent>
-      </MessageScrollerViewport>
+        </ConversationContent>
+      </ConversationViewport>
       <UserMessageNavigation />
       {history?.has_after ? <Button variant="secondary" size="icon-sm" className="latest-message-button absolute bottom-4 left-1/2 -translate-x-1/2"
         aria-label={t('chat:scrollToEnd')} disabled={historyLoading} onClick={() => void latest()}><ArrowDown /></Button>
         : <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')}
             onClick={(event) => { event.preventDefault(); void latest(); }} />}
-    </MessageScroller>
+    </ConversationScroller>
     </MessageNumbersContext.Provider>
   );
 }

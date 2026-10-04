@@ -18,7 +18,7 @@ import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
 import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
 
-export function RunReply({ reply, messageNumber, showFullProcessing }: { reply: Reply; messageNumber?: number; showFullProcessing: boolean }) {
+export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = false }: { reply: Reply; messageNumber?: number; showFullProcessing: boolean; readOnly?: boolean }) {
   const { t } = useTranslation(['runs', 'personas']);
   const { run, process, answer, answerParts } = reply;
   const ended = terminal(run.status);
@@ -103,7 +103,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing }: { reply: 
           {!process.length && !ended ? <span className="run-muted">{t('preparing')}</span> : null}
         </CollapsibleContent>
       </Collapsible>
-      <RunApproval run={run} steps={reply.steps} messages={reply.messages} />
+      {!readOnly && <RunApproval run={run} steps={reply.steps} messages={reply.messages} />}
       {error ? (
         <Alert className="reply-error" variant="destructive">
           <AlertDescription>
@@ -123,7 +123,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing }: { reply: 
           {answer?.metadata?.streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
         </div>
       ) : null}
-      {ended || run.status === 'WAITING_FOR_USER' ? <ReplyMetrics reply={reply} /> : null}
+      {ended || run.status === 'WAITING_FOR_USER' ? <ReplyMetrics reply={reply} readOnly={readOnly} /> : null}
     </MessageFrame>
   );
 }

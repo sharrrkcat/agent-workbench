@@ -190,24 +190,24 @@ and image handling follow the attachment rules below.
 
 QQBot Projects own bot_account, ws/wss websocket_url, write-only access_token, connection_enabled, optional Agent,
 Project prompt, explicit external LLM, temperature, reasoning, context policy, keyword reply mode and batch limit.
-Defaults are disconnected, no Agent/model, empty keywords, reasoning on and 20 messages (1..200). Connecting requires
-an external LLM; QQ has no global model fallback. One Project owns each account; bound Sessions prevent account changes.
+Defaults: disconnected, no Agent/model, empty keywords, reasoning on, batch size 20 (1..200). Connecting requires an external LLM.
+Accounts belong to one Project and cannot change while Sessions are bound; QQ has no global model fallback.
 An omitted token preserves it; an empty token removes it. Reads expose only has_access_token. URL credentials/query/fragment are rejected.
 QQ Sessions bind an immutable group|friend and positive decimal-string target_id, unique per Project; only title is editable.
-Project settings apply to every Session at execution time. Agent contributes identity/prompt only; Cogita Persona, Knowledge,
-Worldbook, attachments and session configuration/resource overrides are excluded. Resource APIs reject QQ targets.
-Only bound incoming conversations are recorded. Normalization retains sender ids/names, UTC-offset timestamps and mention/reply
-references; media becomes text placeholders without downloads. Array segments and CQ-encoded strings are accepted.
+Sessions use Project settings at execution time and Agent identity/prompt only; Cogita Persona, Knowledge, Worldbook, attachments and overrides are excluded. Resource APIs reject QQ targets.
+Only bound conversations are recorded, retaining sender identity, UTC-offset time and mention/reply references from arrays or CQ strings; media becomes text placeholders.
 Group keywords use case-insensitive substring alternatives over text segments; mentions/quotes/media do not trigger independently.
 Empty keywords disable group replies; every private message triggers. Each trigger resets a fixed five-second receipt-time deadline;
 non-triggering arrivals do not. Serialized expiry precedes arrivals exactly at the deadline, freezing the newest configured count
 of unassigned messages in receipt order and marking earlier records skipped. Each batch is one user input of `[time][name]:content` lines.
-History contains submitted batches and confirmed sends within existing context limits; unsubmitted/skipped records, internal
-model/tool prose and failed/unknown deliveries are excluded. [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns execution/recovery.
+History includes submitted batches and confirmed sends within context limits; unsubmitted/skipped records, internal prose and failed/unknown sends are excluded. [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns execution/recovery.
 `/api/qq/projects/{id}/status` reads connection state; `/api/qq/sessions/{id}` reads binding/pause state. Its `/messages`, `/batches`
 and `/deliveries` reads use newest-first integer before cursors, default 50/max 100; `/control` accepts pause|resume|stop.
-The bilingual read-only page shows participants, batches/deliveries and run/context inspection. Ordinary send, direct tools,
-history editing, deletion of individual turns and regeneration are rejected; whole-session/Project deletion remains available when idle.
+The bilingual read-only conversation shares ordinary chat layout, scrolling, composer surfaces and model replies (processing, usage and context detail).
+Right-side secondary bubbles group consecutive sender IDs within 120 seconds of the group start, interrupted by a different sender or model reply. Only the first row has an avatar, name and time; continuations have no header and a 6px gap. Outside icons retain each message's pending/batched/skipped state and stored timestamps are unchanged.
+Each run appears once on the left with its original time and delivery states; batch inputs are not duplicated. Delivery bubbles have no headers or times, with 6px gaps and 8px after the model action area. Older records load into the same conversation without transcript tabs or pagination controls.
+The composer disables input/uploads/configuration, retaining model/context display. The header retains pause/resume/stop; only idle whole-session/Project deletion is allowed.
+Ordinary send, direct tools, editing, individual deletion and regeneration remain rejected and hidden.
 
 ## Messages and attachments
 

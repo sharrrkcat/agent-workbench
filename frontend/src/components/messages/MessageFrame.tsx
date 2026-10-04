@@ -13,6 +13,9 @@ export function MessageFrame({
   messageId,
   runId,
   messageNumber,
+  showIdentity = true,
+  showTime = true,
+  textAvatar = false,
   children,
 }: {
   role: string;
@@ -22,6 +25,9 @@ export function MessageFrame({
   messageId?: string;
   runId?: string;
   messageNumber?: number;
+  showIdentity?: boolean;
+  showTime?: boolean;
+  textAvatar?: boolean;
   children: ReactNode;
 }) {
   const date = new Date(createdAt);
@@ -33,8 +39,8 @@ export function MessageFrame({
       data-run-id={runId}
     >
       <MessageContent className="message-stack">
-        <MessageHeader className="message-meta gap-2 px-0">
-          <MessageAvatar className="message-avatar">
+        {showIdentity || showTime || messageNumber != null ? <MessageHeader className="message-meta gap-2 px-0">
+          {showIdentity ? <MessageAvatar className="message-avatar">
             <Avatar>
               {avatarId ? (
                 <AvatarImage
@@ -43,19 +49,19 @@ export function MessageFrame({
                 />
               ) : null}
               <AvatarFallback>
-                <UserRound />
+                {textAvatar ? Array.from(name.trim())[0] : <UserRound />}
               </AvatarFallback>
             </Avatar>
-          </MessageAvatar>
-          {role !== 'user' ? <strong>{name}</strong> : null}
-          <time dateTime={createdAt}>
+          </MessageAvatar> : null}
+          {showIdentity && role !== 'user' ? <strong>{name}</strong> : null}
+          {showTime ? <time dateTime={createdAt}>
             {Number.isNaN(date.getTime())
               ? ''
               : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </time>
+          </time> : null}
           {messageNumber != null ? <span className="message-number text-muted-foreground whitespace-nowrap tabular-nums">#{messageNumber}</span> : null}
-          {role === 'user' ? <strong>{name}</strong> : null}
-        </MessageHeader>
+          {showIdentity && role === 'user' ? <strong>{name}</strong> : null}
+        </MessageHeader> : null}
         {children}
       </MessageContent>
     </Message>

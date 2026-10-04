@@ -9,7 +9,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
   test.describe(`QQBot ${locale} ${width}`, () => {
     test.use({ viewport: { width, height: width === 390 ? 844 : 900 }, hasTouch: width === 390 });
     test('creation, immutable binding, settings and read-only conversation controls', async ({ page, request }, info) => {
-      const labels = words(locale, 'personas'), runs = words(locale, 'runs');
+      const labels = words(locale, 'personas'), runs = words(locale, 'runs'), chat = words(locale, 'chat');
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
       await request.post('/__test__/session');
@@ -67,33 +67,114 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         const session = await (await bound).json();
         await expect(bind).toBeHidden();
         await expect(page.getByRole('heading', { name: session.title, exact: true })).toBeVisible();
-        await expect(page.locator('textarea')).toHaveCount(0);
+        await expect(page.getByRole('textbox', { name: labels.qq.readOnly })).toBeDisabled();
+        await expect(page.getByRole('button', { name: labels.send, exact: true })).toBeDisabled();
+        await expect(page.getByRole('button', { name: labels.model, exact: true })).toBeDisabled();
         if (width === 390) await expect(page.locator('.session-sidebar')).toBeHidden();
         await json(request.post(`/__test__/qq/${session.session_id}`));
         await expect(page.getByText('qq-fixture bot', { exact: false })).toBeVisible();
-        await expect(page.getByText('QQ participant (9999)', { exact: false }).first()).toBeVisible();
-        await page.getByRole('button', { name: labels.qq.older, exact: true }).click();
-        await expect(page.getByText('Record 1[图片]', { exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: labels.qq.older, exact: true })).toBeDisabled();
-        await page.getByRole('button', { name: labels.qq.latest, exact: true }).click();
+        await expect(page.locator('[data-qq-incoming]')).toHaveCount(50);
+        await expect(page.locator('.message-row.user [data-slot="message-avatar"]')).toHaveCount(1);
+        await expect(page.locator('.message-row.user [data-slot="avatar-fallback"]')).toHaveText('Q');
+        await expect(page.getByRole('tab')).toHaveCount(0);
+        await page.getByRole('button', { name: chat.loadEarlier, exact: true }).click();
+        await expect(page.locator('[data-qq-incoming]')).toHaveCount(65);
+        await expect(page.getByRole('button', { name: chat.loadEarlier, exact: true })).toHaveCount(0);
+        await expect(page.getByText('Record 1[图片]', { exact: true })).toBeAttached();
+        await expect(page.locator('.message-row.user [data-slot="message-avatar"]')).toHaveCount(1);
+        await page.getByRole('button', { name: chat.scrollToEnd, exact: true }).click();
+        await expect(page.locator('.message-row.user time')).toHaveCount(1);
+        await expect(page.locator('[data-qq-continuation]')).toHaveCount(64);
+        await expect(page.locator('[data-qq-continuation] .message-meta')).toHaveCount(0);
+        await expect(page.locator('[data-qq-incoming] button')).toHaveCount(65);
+        const continuationGap = await page.locator('[data-qq-continuation]').first().evaluate((element) =>
+          element.getBoundingClientRect().top - element.previousElementSibling!.getBoundingClientRect().bottom);
+        expect(continuationGap).toBeCloseTo(6, 1);
         await page.getByRole('button', { name: labels.qq.pause, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.qq.resume, exact: true })).toBeVisible();
         await page.getByRole('button', { name: labels.qq.resume, exact: true }).click();
         await page.getByRole('button', { name: labels.qq.stop, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.qq.resume, exact: true })).toBeVisible();
-        await page.getByRole('tab', { name: labels.qq.deliveries, exact: true }).click();
-        await expect(page.getByText('Confirmed QQ reply', { exact: true })).toBeVisible();
-        await expect(page.getByText(labels.qq.externalId + ': 9001', { exact: true })).toBeVisible();
-        await page.getByRole('tab', { name: labels.qq.batches, exact: true }).click();
-        await page.getByRole('button', { name: labels.qq.inspectRun, exact: true }).click();
-        const details = page.getByRole('dialog', { name: labels.qq.inspectRun, exact: true });
-        await expect(details.getByText('Internal QQ prose', { exact: true })).toBeVisible();
-        await details.getByRole('button', { name: runs.context.details, exact: true }).click();
-        await expect(page.getByRole('dialog').last()).toBeVisible();
+        const delivery = page.locator('[data-qq-delivery]').first();
+        await expect(delivery.getByText('Confirmed QQ reply', { exact: true })).toBeVisible();
+        await expect(delivery.locator('[data-slot="bubble"]')).toHaveAttribute('data-variant', 'secondary');
+        await delivery.getByRole('button', { name: labels.qq.status.sent, exact: true }).click();
+        await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(labels.qq.externalId + ': 9001');
+        await expect(page.getByText('Internal QQ prose', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: runs.retryReply, exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: runs.deleteReply, exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: labels.editMessage, exact: true })).toHaveCount(0);
+        await page.getByRole('button', { name: runs.context.details, exact: true }).click();
+        await expect(page.getByRole('dialog')).toBeVisible();
         await page.keyboard.press('Escape');
+        await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+        await page.getByRole('button', { name: runs.metrics.details, exact: true }).click();
+        await expect(page.getByRole('dialog')).toBeVisible();
         await page.keyboard.press('Escape');
+        await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
         await page.screenshot({ path: info.outputPath('qq-conversation.png') });
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+        // The browser fixtures below vary presentation states without changing the QQ service.
+        await page.route(`**/api/qq/sessions/${session.session_id}/messages*`, async (route) => {
+          const response = await route.fetch();
+          const body = await response.json();
+          for (const row of body.items) {
+            if (row.external_id === '64') { row.sender_id = '8888'; row.sender_name = 'Second participant'; }
+            if (row.external_id === '65') { row.disposition = 'pending'; row.text = 'QQ long message\n' + '长文本 / long text '.repeat(30); }
+          }
+          await route.fulfill({ response, json: body });
+        });
+        let echoed = false;
+        await page.route(`**/api/qq/sessions/${session.session_id}/deliveries*`, async (route) => {
+          const response = await route.fetch();
+          const body = await response.json();
+          const sent = body.items[0];
+          if (sent) body.items = [
+            { ...sent, echoed },
+            ...['pending', 'sending', 'failed', 'unknown'].map((status, index) => ({
+              ...sent, id: sent.id + index + 1, status, external_id: null, text: `Delivery ${status}`, error_code: status === 'failed' ? 'QQ_ACTION_FAILED' : null,
+            })),
+          ];
+          await route.fulfill({ response, json: body });
+        });
+        await expect(page.locator('[data-qq-delivery]')).toHaveCount(5);
+        await expect(page.locator('.message-row.user [data-slot="message-avatar"]')).toHaveCount(3);
+        await expect(page.locator('[data-qq-delivery] .message-meta')).toHaveCount(0);
+        await expect(page.locator('[data-qq-delivery] time')).toHaveCount(0);
+        await expect(page.locator('.message-row.assistant time')).toHaveCount(1);
+        const deliveryGaps = await page.locator('[data-qq-deliveries]').evaluate((element) => {
+          const rows = Array.from(element.children);
+          return {
+            first: element.getBoundingClientRect().top - element.previousElementSibling!.getBoundingClientRect().bottom,
+            between: rows.slice(1).map((row, index) => row.getBoundingClientRect().top - rows[index].getBoundingClientRect().bottom),
+          };
+        });
+        expect(deliveryGaps.first).toBeCloseTo(8, 1);
+        for (const gap of deliveryGaps.between) expect(gap).toBeCloseTo(6, 1);
+        for (const status of ['pending', 'sending', 'sent', 'failed', 'unknown']) {
+          await expect(page.locator('[data-qq-delivery]').getByRole('button', { name: labels.qq.status[status], exact: true })).toHaveCount(1);
+        }
+        echoed = true;
+        await page.waitForResponse((response) => response.url().endsWith(`/qq/sessions/${session.session_id}/deliveries`));
+        await expect(page.locator('[data-qq-delivery]')).toHaveCount(5);
+        const incoming = page.locator('[data-qq-incoming]').last();
+        const incomingBubble = incoming.locator('[data-slot="bubble"]');
+        const statusIcon = incoming.getByRole('button');
+        await expect(incomingBubble).toHaveAttribute('data-align', 'end');
+        const bubbleBox = await incomingBubble.boundingBox(), iconBox = await statusIcon.boundingBox();
+        expect(iconBox!.x + iconBox!.width).toBeLessThanOrEqual(bubbleBox!.x);
+        const last = page.locator('[data-qq-delivery]').last();
+        await last.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: info.outputPath('qq-delivery-states.png') });
+        await incoming.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: info.outputPath('qq-participants.png') });
+        const dimensions = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight,
+          viewportWidth: innerWidth, viewportHeight: innerHeight,
+          overflow: Array.from(document.querySelectorAll('body > *')).map((node) => ({
+            tag: node.tagName, slot: node.getAttribute('data-slot'), rect: node.getBoundingClientRect().toJSON(),
+          })),
+        }));
+        expect(dimensions.width, JSON.stringify(dimensions)).toBeLessThanOrEqual(dimensions.viewportWidth);
+        expect(dimensions.height, JSON.stringify(dimensions)).toBeLessThanOrEqual(dimensions.viewportHeight);
         expect(errors).toEqual([]);
       } finally {
         if (projectId) await json(request.delete(`/api/projects/${projectId}`));

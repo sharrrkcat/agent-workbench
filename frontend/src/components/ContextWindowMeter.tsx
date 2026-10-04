@@ -4,13 +4,14 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { InputGroupButton } from '@/components/ui/input-group';
 import { useCogitaStore } from '../store/useCogitaStore';
 import type { ModelProfile } from '../types/models';
+import type { Run } from '../types/runs';
 import { configuredContextWindow, latestContextUsage } from './contextUsage';
 
-export function ContextWindowMeter({ profile, generating }: { profile: ModelProfile | undefined; generating: boolean }) {
+export function ContextWindowMeter({ profile, generating, runs: suppliedRuns }: { profile: ModelProfile | undefined; generating: boolean; runs?: Run[] }) {
   const { t, i18n } = useTranslation('chat');
   const sessionId = useCogitaStore((state) => state.currentSession?.session_id);
   const runs = useCogitaStore((state) => state.runs);
-  const usage = latestContextUsage(runs, sessionId, profile);
+  const usage = latestContextUsage(suppliedRuns ?? runs, sessionId, profile);
   const configured = configuredContextWindow(profile);
   const [open, setOpen] = useState(false);
   const pressed = useRef(false);

@@ -10,7 +10,7 @@ import { messageText } from './messageContent';
 import type { Reply } from './turns';
 import { ReplyContext } from './ReplyContext';
 
-export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: ReactNode; summary?: ReactNode }) {
+export function ReplyActions({ reply, usage, summary, readOnly = false }: { reply: Reply; usage?: ReactNode; summary?: ReactNode; readOnly?: boolean }) {
   const ended = terminal(reply.run.status);
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('runs');
@@ -55,7 +55,7 @@ export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: 
           <TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t(copied ? 'copied' : 'copyAnswer')}</TooltipContent>
         </Tooltip>
       ) : null}
-      {ended && reply.run.kind === 'chat' ? (
+      {!readOnly && ended && reply.run.kind === 'chat' ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -76,7 +76,7 @@ export function ReplyActions({ reply, usage, summary }: { reply: Reply; usage?: 
       ) : null}
       <ReplyContext reply={reply} />
       {usage}
-      {ended ? <Tooltip>
+      {!readOnly && ended ? <Tooltip>
         <TooltipTrigger
           render={
             <Button

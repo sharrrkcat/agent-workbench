@@ -178,6 +178,8 @@
   }
 
   .workspace { container: chat-shell / inline-size; }
+  .qq-conversation > * + * { margin-top: 1.5rem; }
+  .qq-conversation > [data-qq-continuation] { margin-top: 6px; }
   .chat-scroll-container { container: conversation / inline-size; }
   .user-message-navigation {
     position: absolute;

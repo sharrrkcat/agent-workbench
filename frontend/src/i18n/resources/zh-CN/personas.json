@@ -170,20 +170,14 @@
     "resume": "恢复",
     "stop": "停止",
     "paused": "已暂停",
-    "messages": "QQ 消息",
-    "batches": "消息批次",
-    "deliveries": "发送记录",
-    "older": "更早记录",
-    "latest": "最新记录",
     "empty": "暂无记录",
     "emptyConversations": "尚未绑定 QQ 会话",
-    "inspectRun": "查看运行详情",
     "status": {
       "disabled": "未连接",
       "connecting": "连接中",
       "connected": "已连接",
       "pending": "待处理",
-      "batched": "已入批次",
+      "batched": "已纳入批次",
       "skipped": "超出批次范围",
       "queued": "排队中",
       "running": "运行中",
@@ -206,6 +200,8 @@
       "RUN_CANCELLED": "运行已停止",
       "QQ_ACCOUNT_MISMATCH": "账号不匹配",
       "QQ_DELIVERY_UNKNOWN": "发送结果未知"
-    }
+    },
+    "readOnly": "QQ 会话仅供查看，请在 QQ 中发送消息。",
+    "readOnlyShort": "仅供查看"
   }
 }

@@ -176,8 +176,8 @@ assert.equal(attachmentSize(1153434, 'zh-CN'), '1.1 MB');
 const textFile = { id: 'file', type: 'file', name: 'notes.txt', size: 12, mime_type: 'text/plain' };
 const fileOnly = { ...user, parts: [], metadata: { attachments: [textFile] } };
 assert.equal(messagePreview(fileOnly), 'notes.txt');
-const render = (reply, showFullProcessing) => renderToStaticMarkup(
-  React.createElement(MessageScrollerProvider, { autoScroll: true }, React.createElement(RunReply, { reply, showFullProcessing })));
+const render = (reply, showFullProcessing, readOnly = false) => renderToStaticMarkup(
+  React.createElement(MessageScrollerProvider, { autoScroll: true }, React.createElement(RunReply, { reply, showFullProcessing, readOnly })));
 const approvalStep = { step_id: 'approval', kind: 'approval', status: 'running', run_id: 'r', metadata: { tool_call_id: 'a', risk: 'file' } };
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
@@ -199,6 +199,10 @@ for (const locale of ['en', 'zh-CN']) {
   assert.doesNotMatch(shown, /aGk=|tool-command-details/);
   assert.equal((shown.match(/data-slot="message-avatar"/g) || []).length, 1);
   assert.equal((shown.match(/data-slot="message"/g) || []).length, 1);
+  const readOnly = render(reply, true, true);
+  assert.ok(readOnly.includes(i18n.t('runs:copyAnswer')));
+  assert.ok(!readOnly.includes(i18n.t('runs:retryReply')));
+  assert.ok(!readOnly.includes(i18n.t('runs:deleteReply')));
   const completed = render(reply, true);
   assert.doesNotMatch(completed, /first reasoning|processing-timeline/);
   assert.match(completed, /final answer/);
