@@ -27,7 +27,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0031_qq_delivery_echo`; there are 30 current business tables.
+Alembic head is `0032_qq_followup`; there are 31 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -235,6 +235,8 @@ adds nullable provider LLM context windows. `0029_bounded_history` adds conversa
 Revision `0030_qqbot` extends Project/Session kind constraints and adds qq_bindings, qq_messages,
 qq_batches and qq_deliveries, with indexed deduplication, batch reservation, queue and receipt lookups.
 Revision `0031_qq_delivery_echo` adds the observed-echo flag and external receipt index to QQ deliveries.
+Revision `0032_qq_followup` adds qq_participants (Session/sender key, keyword epoch, absolute expiry and window membership),
+binding window policy and batch trigger/participant snapshots. Schema defaults keep existing batches mandatory; no prior eligibility is reconstructed. No files are changed.
 QQ access tokens remain unencrypted in private Project configuration and are omitted from public reads.
 QQ references_json retains real mention positions and submitted name/self snapshots. Frozen batch text stays raw; the submitted user message stores the model-facing name/id projection. These JSON changes require no schema revision or historical backfill.
 All existing records and file directories survive these revisions; no data conversion or compatibility tables are added.

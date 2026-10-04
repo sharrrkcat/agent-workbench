@@ -9,6 +9,7 @@ from ai_workbench.core.json_data import validate_json_data
 from ai_workbench.core.models.schema import ToolCall
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
+from ai_workbench.core.schema.qq import QQTriggerKind
 
 if TYPE_CHECKING:
     from ai_workbench.core.harness.settings import HarnessSettings
@@ -98,6 +99,8 @@ class HarnessState(BaseModel):
     approval_step_id: str | None = None
     rounds: int = Field(default=0, ge=0)
     qq_sent_count: int = Field(default=0, ge=0)
+    qq_trigger_kind: QQTriggerKind | None = None
+    qq_skipped: bool = False
     active_seconds: float = Field(default=0.0, ge=0)
     last_result: ToolOutcome | None = None
 

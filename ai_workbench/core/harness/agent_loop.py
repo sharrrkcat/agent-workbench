@@ -71,6 +71,7 @@ class HarnessAgentLoop:
                   reasoning: bool = True,
                   first_metrics: LLMCallMetrics | None = None) -> RunResult:
         state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning,
+                             qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
                              max_image_bytes=max_image_bytes,
                              searxng_base_url=self.harness_settings.get().searxng_base_url)
         return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
@@ -144,7 +145,7 @@ class HarnessAgentLoop:
                     call = state.pending_calls[0]
                     try:
                         spec = self.registry.get(call.function.name)
-                        if call.function.name not in self.allowed_tools(config):
+                        if call.function.name not in self._allowed_tools(config, state):
                             raise ToolExecutionError("TOOL_NOT_ALLOWED", "Tool is not allowed for this session or Project.")
                         if state.direct and not spec.direct_callable:
                             raise ToolExecutionError("TOOL_NOT_DIRECT_CALLABLE", "Tool cannot be called directly.")
@@ -152,7 +153,8 @@ class HarnessAgentLoop:
                         self.registry.validate_arguments(spec.name, arguments)
                     except ToolExecutionError as exc:
                         self._record_result(session, run, state, call, ToolOutcome(
-                            status="error", error_code=exc.code, error_message=exc.message))
+                            status="rejected" if call.function.name == "qq_skip_reply" and exc.code == "TOOL_NOT_ALLOWED" else "error",
+                            error_code=exc.code, error_message=exc.message))
                         state.pending_calls.pop(0)
                         continue
                     if spec.requires_approval and call.id != approved_call_id:
@@ -161,6 +163,16 @@ class HarnessAgentLoop:
                     await self._execute_one(session, config, run, state, call, arguments, budget)
                     state.pending_calls.pop(0)
                     self._save_state(run.run_id, state)
+                    if state.qq_skipped:
+                        self._check_cancelled(run.run_id)
+                        budget.check()
+                        for remaining in state.pending_calls:
+                            self._record_result(session, run, state, remaining, ToolOutcome(
+                                status="rejected", error_code="QQ_REPLY_SKIPPED",
+                                error_message="This QQ follow-up batch ended without a reply."))
+                        state.pending_calls = []
+                        self._complete(run.run_id)
+                        return RunResult(success=True, run_id=run.run_id)
                     if session.kind == "qqbot" and state.qq_sent_count >= config.qq_reply_message_limit:
                         self._check_cancelled(run.run_id)
                         budget.check()
@@ -210,14 +222,14 @@ class HarnessAgentLoop:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
-                 for spec in (self.registry.get(name) for name in self.allowed_tools(config))]
+                 for spec in (self.registry.get(name) for name in self._allowed_tools(config, state))]
         base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
         trace = state.context_trace
         if session.kind == "qqbot":
             trace = trace.model_copy(deep=True)
             base_messages, _ = append_system_block(base_messages, trace,
-                runtime_prompt(config, user.metadata["qq_batch_id"], state.qq_sent_count), "qq_runtime")
+                runtime_prompt(config, user.metadata["qq_batch_id"], state.qq_sent_count, state.qq_trigger_kind), "qq_runtime")
         request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],
                               tools=tools, stream=profile.request_options.streaming, reasoning=state.reasoning,
                               **({"tool_choice": "required" if state.rounds == 0 else "auto"} if session.kind == "qqbot" else {}),
@@ -243,7 +255,7 @@ class HarnessAgentLoop:
             budget.check()
             self._validate_calls(calls, state)
             if not calls and session.kind == "qqbot" and state.qq_sent_count == 0:
-                raise ToolExecutionError("QQ_REPLY_REQUIRED", "The model ended without sending a QQ reply.")
+                raise ToolExecutionError("QQ_REPLY_REQUIRED", "The model ended without a confirmed QQ reply or an allowed skip.")
             if calls and state.rounds >= MAX_TOOL_ROUNDS:
                 raise ToolExecutionError("TOOL_LOOP_LIMIT", "Tool loop reached the maximum of 8 rounds.")
         except (Exception, asyncio.CancelledError):
@@ -328,6 +340,10 @@ class HarnessAgentLoop:
         except (ValueError, TypeError, RecursionError) as exc:
             raise ToolExecutionError("TOOL_INVALID_ARGUMENTS", "Tool arguments must be a valid JSON object matching the schema.") from exc
 
+    def _allowed_tools(self, config, state):
+        return [name for name in self.allowed_tools(config)
+                if name != "qq_skip_reply" or (state.qq_trigger_kind == "followup" and state.qq_sent_count == 0)]
+
     async def _execute_one(self, session, config, run, state, call, arguments, budget) -> None:
         step = self._start_step(run.run_id, "tool", call.function.name,
                                 {"tool_name": call.function.name, "tool_call_id": call.id})
@@ -350,6 +366,9 @@ class HarnessAgentLoop:
         if session.kind == "qqbot" and call.function.name == "qq_send_message" and outcome.status == "success":
             state.qq_sent_count += 1
             self._update_qq_reply(run.run_id, config, state)
+        if session.kind == "qqbot" and call.function.name == "qq_skip_reply" and outcome.status == "success":
+            state.qq_skipped = True
+            self._update_qq_reply(run.run_id, config, state)
         self._record_result(session, run, state, call, outcome, step_id=step.step_id)
         if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and outcome.status != "success"):
             state.pending_calls.pop(0)
@@ -358,7 +377,7 @@ class HarnessAgentLoop:
     def _update_qq_reply(self, run_id, config, state, *, limit_reached=False) -> None:
         self.runs.update_metadata(run_id, {**self.runs.get_run(run_id).metadata,
             "qq_reply": {"sent_count": state.qq_sent_count, "message_limit": config.qq_reply_message_limit,
-                         "limit_reached": limit_reached}})
+                         "limit_reached": limit_reached, "skipped": state.qq_skipped}})
 
     def _record_result(self, session, run, state, call, outcome: ToolOutcome, *, step_id=None) -> None:
         if step_id is None:

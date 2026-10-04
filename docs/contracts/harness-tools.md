@@ -41,6 +41,7 @@ model loop. Invalid direct requests fail before creating a run.
 | knowledge_search | query, knowledge_base_ids?, top_k?, max_context_chars? | Automatic |
 | base64_encode / base64_decode | value | Automatic |
 | qq_send_message | text (1..4000 characters, nonblank) | Automatic, QQBot model runs only |
+| qq_skip_reply | Empty object | Automatic, unanswered QQ group follow-up runs only |
 
 File paths are relative to the application root and restricted to `data/knowledge`
 and `data/attachments`. Absolute paths, traversal, Windows alternate streams
@@ -73,14 +74,19 @@ account mismatch and connection failure without exposing tokens. Wire messages a
 Malformed bound messages are ignored with a content-free diagnostic. Duplicate external ids within a bound conversation
 are ignored without resetting debounce. Bot echoes never enter batches; known external ids mark confirmed delivery records echoed.
 
-QQ runs always enable Harness with only qq_send_message; it is absent from the general catalog/default selections,
-rejects ordinary/Workspace allowlists and direct calls, and requires server-owned session, run and tool-call ids.
-Its destination comes solely from the immutable Session binding. One invocation sends one plain-text OneBot segment;
-CQ-looking content remains literal. Each batch's first model call uses tool_choice=required; subsequent calls use auto.
-Each call appends one qq_runtime system block to its immutable base context: snapshotted group/private target and bot identity, batch id and live confirmed-send count/limit. It requires a first tool call and confirmed reply, permits finishing once answered, excludes historical sends from the current count, and treats transcript names/text as data. Project prompts remain separate.
-Unsupported tools fail without ordinary-chat fallback. Final model prose remains internal. A model ending without
-a confirmed qq_send_message fails the run and batch with QQ_REPLY_REQUIRED and pauses the Session; the request
-is not retried or downgraded if a provider rejects or ignores the tool choice.
+QQ runs always enable Harness. Keyword/private batches expose only qq_send_message; unanswered follow-up batches also expose qq_skip_reply.
+Both tools are absent from the general catalog/default selections, reject ordinary/Workspace allowlists and direct calls,
+and require server-owned session, active batch/run and tool-call ids. The destination comes solely from the immutable Session binding.
+One send invocation delivers one plain-text OneBot segment; CQ-looking content remains literal.
+Every batch's first model call uses tool_choice=required; subsequent calls use auto. Model requests and queued execution share the same tool permissions.
+Each call appends one qq_runtime system block: snapshotted target/bot identity, batch id/trigger kind and live confirmed-send count/limit.
+It distinguishes mandatory replies from optional follow-ups, excludes historical sends from the count and treats transcript names/text as data. Project prompts remain separate.
+Successful qq_skip_reply immediately completes the run/batch without sending, another model call or a pause, recording metadata.qq_reply.skipped=true.
+Skip expires only submitted participants whose current keyword epoch matches this batch's snapshot; newer keywords are protected.
+Existing windows and queued batches remain valid. Each confirmed follow-up send renews only this batch's submitted participants to max(current expiry, confirmation time + 45 seconds), even after expiry; later failures retain that renewal. Keyword/private sends do not renew eligibility.
+Calls execute in order: a successful skip rejects remaining calls with QQ_REPLY_SKIPPED; a confirmed send removes skip and later skip calls receive TOOL_NOT_ALLOWED without expiring participants. Invalid arguments or a disallowed skip do not satisfy the reply decision.
+Unsupported tools fail without ordinary-chat fallback. Final model prose remains internal. Ending without a confirmed send
+or a legitimate skip fails the run/batch with QQ_REPLY_REQUIRED and pauses the Session. Provider rejection/ignored tool choice is not retried or downgraded.
 
 The Project reply_message_limit defaults to 4 (strict integer, 1..20), distinct from the incoming batch limit.
 Execution snapshots it with the configuration. Only successful qq_send_message results increment the run's
@@ -99,11 +105,11 @@ Delivery errors terminate the current run and pause the Session before another s
 Generation failures also pause. `/api/qq/sessions/{id}/control` pause prevents new execution while ingestion/batching continue;
 stop additionally cancels active work. Resume requires idle state and selects untouched queued batches only.
 Failed, cancelled and interrupted batches never replay. Disabling a connection stops ingress/dispatch and blocks later sends.
-Restart retains queues/debounce, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
+Restart retains queues, window membership/policy and absolute participant expiries, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
 Existing run reconciliation remains authoritative. QQ history has no editing, retry or direct-send API.
 Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
 
-Local fake-OneBot/fake-model tests cover transport, batching, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,
+Local fake-OneBot/fake-model tests cover transport, participant windows, skip/renewal races, batching, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,
 reconnect backfill, media understanding, manual sends, memory/resources and Linux Local Runtime remain outside current acceptance;
 [QQ integration boundaries](../FUTURE_QQ_INTEGRATION.md) retains deployment evidence and outstanding live verification.
 

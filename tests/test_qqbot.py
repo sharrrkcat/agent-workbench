@@ -16,7 +16,7 @@ from ai_workbench.core.qq_service import QQService
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.persona import USER_PERSONA_ID
-from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
+from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, completion, tool_call, ok
 
@@ -77,7 +77,7 @@ def test_project_identity_resources_and_write_only_token(qq_client):
     assert session["user_persona"] is None
     assert session["effective"]["knowledge_base_ids"] == []
     assert session["effective"]["persona_id"] == ""
-    assert session["effective"]["tools_allowed"] == ["qq_send_message"]
+    assert session["effective"]["tools_allowed"] == ["qq_send_message", "qq_skip_reply"]
     assert session["effective"]["harness_enabled"]
     assert client.post(f"/api/projects/{p['id']}/sessions", json={}).status_code == 422
     assert client.post(f"/api/projects/{p['id']}/sessions", json={"target_kind": "group", "target_id": "7788"}).status_code == 409
@@ -103,7 +103,7 @@ def test_debounce_dedup_cutoff_fifo_and_private_media(qq_client):
         ingest(client, state, p, event(i, "context"), i / 100)
     ingest(client, state, p, event(25, "hello BoT"), 1)
     ingest(client, state, p, event(26, "BOT again"), 5)
-    ingest(client, state, p, event(27, "tail"), 9)
+    ingest(client, state, p, event(27, "tail", sender="8888"), 9)
     assert freeze(state, session, 9.99) is None
     batch = freeze(state, session, 10)
     assert batch.text.count("[Group name]") == 20
@@ -251,7 +251,7 @@ def test_missing_reply_fails_and_pauses_without_replaying(qq_client, streaming, 
     code = "PROVIDER_PROTOCOL_ERROR" if content is None and not streaming else "QQ_REPLY_REQUIRED"
     assert batch.status == "failed" and batch.error_code == code
     assert run.status == "FAILED" and run.error_code == code
-    assert run.metadata["qq_reply"] == {"sent_count": 0, "message_limit": 4, "limit_reached": False}
+    assert run.metadata["qq_reply"] == {"sent_count": 0, "message_limit": 4, "limit_reached": False, "skipped": False}
     assert all(row.status != "running" for row in state.runs.list_steps(run.run_id))
     assert not any(row.type == "run_completed" and row.run_id == run.run_id for row in state.events.list_events())
     assert len(upstream.calls) == 1 and upstream.calls[0]["tool_choice"] == "required"
@@ -310,31 +310,31 @@ def test_exact_deadline_references_media_and_pagination(qq_client):
     session = child(client, p)
     sid = session["session_id"]
     ingest(client, state, p, event(1), 0)
-    ingest(client, state, p, event(2, "tail"), 4.99)
+    ingest(client, state, p, event(2, "tail", sender="8888"), 4.99)
     ingest(client, state, p, event(3), 5)  # Expiry precedes this new trigger.
     first = state.qq.store.next_batch(p["id"])
     assert first.text.count("[Group name]") == 2 and "tail" in first.text
     ingest(client, state, p, event(3), 6)
     assert state.qq.store.get(QQBinding, sid).deadline == 10
-    data = event(4)
-    data["message"] = "[CQ:at,qq=bot][CQ:reply,id=bot][CQ:image,url=https://bot.test/a]literal &#91;ok&#93;"
+    data = event(4, sender="8888")
+    data["message"] = "[CQ:at,qq=7777][CQ:reply,id=bot][CQ:image,url=https://bot.test/a]literal &#91;ok&#93;"
     ingest(client, state, p, data, 8)
     assert state.qq.store.get(QQBinding, sid).deadline == 10
     normalized, keyword_text = normalize(data)
-    assert normalized["text"] == "@bot[引用:bot][图片]literal [ok]"
-    assert keyword_text == "literal [ok]"
+    assert normalized["text"] == "@7777[引用:bot][图片]literal [ok]"
+    assert keyword_text == "@7777literal [ok]"
     ingest(client, state, p, {**event(5), "message": [{"data": {}}]}, 9)
     second = freeze(state, session, 10)
     assert second.text.count("[Group name]") == 2
     page = ok(client.get(f"/api/qq/sessions/{sid}/messages?limit=2"))
     assert [r["external_id"] for r in page["items"]] == ["4", "3"]
     assert page["items"][0]["references"] == [
-        {"type": "at", "id": "bot", "name": None, "is_self": False},
+        {"type": "at", "id": "7777", "name": None, "is_self": False},
         {"type": "reply", "id": "bot", "name": None, "is_self": False}]
     older = ok(client.get(f"/api/qq/sessions/{sid}/messages?limit=2&before={page['next_cursor']}"))
     assert [r["external_id"] for r in older["items"]] == ["2", "1"] and older["next_cursor"] is None
     ok(client.patch(f"/api/projects/{p['id']}", json={"keywords": []}))
-    ingest(client, state, p, event(6), 11)
+    ingest(client, state, p, event(6, sender="8888"), 11)
     assert freeze(state, session, 20) is None
     friend = child(client, p, "9999", "friend")
     ingest(client, state, p, {**event(7, kind="private"), "message": "[CQ:record,file=voice]"}, 12)
@@ -373,7 +373,7 @@ def test_stop_during_send_keeps_confirmed_reply_and_queued_windows(qq_client):
         await asyncio.wait_for(task, 5)
         assert state.qq.store.get(QQBatch, batch.id).status == "cancelled"
         run = state.runs.get_run(state.qq.store.get(QQBatch, batch.id).run_id)
-        assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False}
+        assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False, "skipped": False}
         records = state.qq.store.page(QQDelivery, sid)["items"]
         assert [row["status"] for row in records] == ["unknown", "sent"]
         assert state.qq.store.get(QQBinding, sid).paused
@@ -453,6 +453,7 @@ def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, mo
         queued = freeze(state, session, 12)
         ingest(client, state, p, event(3), time.time() + 100)
         deadline = state.qq.store.get(QQBinding, session["session_id"]).deadline
+        participant = state.qq.store.get(QQParticipant, (session["session_id"], "9999"))
         state.qq.store.save(QQDelivery(session_id=session["session_id"], run_id=run.run_id, tool_call_id="lost",
             status="sending", text="Unconfirmed", created_at=0))
     restarted = create_app(root=tmp_path, database_url=database_url, adapter_factory=ToolOpenAI().factory)
@@ -461,6 +462,10 @@ def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, mo
         assert state.runs.get_run(run.run_id).status == RunStatus.INTERRUPTED
         assert state.qq.store.get(QQBatch, running.id).status == "interrupted"
         assert state.qq.store.get(QQBinding, session["session_id"]).deadline == deadline
+        restored = state.qq.store.get(QQParticipant, (session["session_id"], "9999"))
+        assert restored.expires_at == participant.expires_at and restored.in_window
+        assert restored.keyword_message_id == participant.keyword_message_id
+        assert state.qq.store.get(QQBatch, queued.id).participants == queued.participants
         assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == "unknown"
         assert state.qq.store.next_batch(p["id"]) is None
         ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))

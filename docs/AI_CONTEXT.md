@@ -36,7 +36,7 @@ Internal chat budgets every model call, trims old turns and displays actual per-
 Built-in tools share direct and model invocation with bounded execution and durable approvals; `/v1` forwards
 tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.
 Timeline Projects support creation/settings and roleplay Persona/Worldbook selection; internal sessions and context injection remain deferred.
-QQBot Projects bind group/friend Sessions through external OneBot v11, use keyword/private-message batching and Harness-only text delivery, and exclude Cogita/Knowledge/Worldbook inheritance. Local simulated acceptance is separate from live NapCat delivery.
+QQBot Projects bind group/friend Sessions through external OneBot v11, use keyword/follow-up/private batching with participant eligibility and explicit follow-up skip, and deliver text only through Harness. Cogita/Knowledge/Worldbook inheritance is excluded. Local simulated acceptance is separate from live NapCat delivery.
 Pet has position, dragging and task-state foundations only, with no mounted UI.
 
 ## Contracts

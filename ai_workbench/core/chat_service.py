@@ -7,6 +7,7 @@ from ai_workbench.core.models.schema import GenerationParameters
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.schema.persona import USER_PERSONA_ID, PersonaInput, ResolvedChatConfig
 from ai_workbench.core.schema.project import WorkspaceProject
+from ai_workbench.core.schema.qq import QQ_TOOLS
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.session import ChatSettings, OrdinarySession, Session, WorkspaceSession, parse_session
 from ai_workbench.core.time import utc_now
@@ -53,8 +54,8 @@ class ChatService:
                 raise ChatError("PERSONA_AVATAR_INVALID", "Choose an existing image attachment.") from exc
 
     def validate_tools(self, tools: list[str]) -> None:
-        if "qq_send_message" in tools:
-            raise ChatError("TOOL_NOT_ALLOWED", "QQ sending is available only to QQBot sessions.", 422)
+        if set(tools).intersection(QQ_TOOLS):
+            raise ChatError("TOOL_NOT_ALLOWED", "QQ tools are available only to QQBot sessions.", 422)
         if self.tool_registry is not None:
             try:
                 self.tool_registry.validate_allowlist(tools)
@@ -114,7 +115,7 @@ class ChatService:
             profile = self.model_manager.default_chat_profile()
             values = {**values, "model_profile_id": profile.id if profile else None}
         if "tools_allowed" not in values:
-            values = {**values, "tools_allowed": [tool.name for tool in self.tool_registry.list() if tool.name != "qq_send_message"] if self.tool_registry else []}
+            values = {**values, "tools_allowed": [tool.name for tool in self.tool_registry.list() if tool.name not in QQ_TOOLS] if self.tool_registry else []}
         candidate = OrdinarySession(session_id="new", **values)
         self.validate_session(candidate)
         return self.sessions.create_session(**values)
@@ -258,7 +259,7 @@ class ChatService:
 
     def tools_for_run(self, config: ResolvedChatConfig) -> list[str]:
         if config.session_kind == "qqbot":
-            return ["qq_send_message"]
+            return list(QQ_TOOLS) if config.qq_target_kind == "group" else ["qq_send_message"]
         if config.project_id is None:
             return config.tools_allowed
         allowed = self.workspace(config.project_id).tools_allowed
@@ -299,6 +300,6 @@ class ChatService:
             user_persona_id="", user_persona_prompt="", context_policy=project.context_policy, context_limits=limits,
             model_profile_id=project.model_profile_id, model_source="project",
             generation=GenerationParameters.model_validate(parameters), reasoning=project.reasoning,
-            harness_enabled=True, tools_allowed=["qq_send_message"], knowledge_base_ids=[],
+            harness_enabled=True, tools_allowed=list(QQ_TOOLS) if session.target_kind == "group" else ["qq_send_message"], knowledge_base_ids=[],
             qq_reply_message_limit=project.reply_message_limit, qq_bot_account=project.bot_account,
             qq_target_kind=session.target_kind, qq_target_id=session.target_id)

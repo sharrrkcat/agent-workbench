@@ -1,7 +1,8 @@
 """Bounded SQLite operations for QQ queues; batches reserve ingress atomically."""
+import json
 from sqlmodel import Session, select, delete
 from sqlalchemy import update, func
-from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
+from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant
 
 
 class QQStore:
@@ -28,16 +29,33 @@ class QQStore:
         with Session(self.engine) as db:
             return db.exec(select(QQBinding).where(QQBinding.project_id == project_id)).all()
 
-    def ingest(self, binding, message, *, trigger, now):
+    def ingest(self, binding, message, *, keyword, now):
         with Session(self.engine) as db:
             if db.exec(select(QQMessage.id).where(QQMessage.session_id == binding.session_id,
                     QQMessage.external_id == message.external_id)).first() is not None:
                 return False
             db.add(message)
-            if trigger:
-                current = db.get(QQBinding, binding.session_id)
+            db.flush()
+            current = db.get(QQBinding, binding.session_id)
+            if current.target_kind == "friend":
+                current.window_kind = "private"
                 current.deadline = now + 5
                 db.add(current)
+            else:
+                participant = db.get(QQParticipant, (binding.session_id, message.sender_id))
+                if keyword:
+                    if participant is None:
+                        participant = QQParticipant(session_id=binding.session_id, sender_id=message.sender_id,
+                            keyword_message_id=message.id, expires_at=now + 60)
+                    participant.keyword_message_id = message.id
+                    participant.expires_at = now + 60
+                if participant is not None and (keyword or participant.in_window or participant.expires_at > now):
+                    if keyword or current.deadline is None:
+                        current.window_kind = "keyword" if keyword else "followup"
+                    participant.in_window = True
+                    current.deadline = now + 5
+                    db.add(participant)
+                    db.add(current)
             db.commit()
             return True
 
@@ -50,11 +68,17 @@ class QQStore:
                 QQMessage.disposition == "pending").order_by(QQMessage.id.desc()).limit(limit)).all()
             binding.deadline = None
             db.add(binding)
+            participants = db.exec(select(QQParticipant).where(QQParticipant.session_id == session_id,
+                QQParticipant.in_window == True, QQParticipant.sender_id.in_({row.sender_id for row in rows}))).all()
+            db.exec(update(QQParticipant).where(QQParticipant.session_id == session_id,
+                QQParticipant.in_window == True).values(in_window=False))
             if not rows:
                 db.commit()
                 return None
             rows.reverse()
             batch = QQBatch(session_id=session_id, project_id=binding.project_id, created_at=now,
+                trigger_kind="private" if binding.target_kind == "friend" else binding.window_kind,
+                participants_json=json.dumps({p.sender_id: p.keyword_message_id for p in participants}),
                 text="\n".join(f"[{m.timestamp}][{m.sender_name}]:{m.text}" for m in rows))
             db.add(batch)
             db.flush()
@@ -93,6 +117,11 @@ class QQStore:
         with Session(self.engine) as db:
             return db.exec(select(QQDelivery).where(QQDelivery.run_id == run_id,
                 QQDelivery.tool_call_id == call_id)).first()
+
+    def has_sent(self, run_id):
+        with Session(self.engine) as db:
+            return db.exec(select(QQDelivery.id).where(QQDelivery.run_id == run_id,
+                QQDelivery.status == "sent").limit(1)).first() is not None
 
     def batch_messages(self, batch_id):
         with Session(self.engine) as db:
@@ -148,6 +177,19 @@ class QQStore:
             return db.exec(select(QQBatch).where(QQBatch.session_id == session_id,
                 QQBatch.status == "running").limit(1)).first()
 
+    @staticmethod
+    def renew_participants(db, batch, now):
+        if batch.trigger_kind == "followup":
+            db.exec(update(QQParticipant).where(QQParticipant.session_id == batch.session_id,
+                QQParticipant.sender_id.in_(batch.participants)).values(expires_at=func.max(QQParticipant.expires_at, now + 45)))
+
+    def skip_participants(self, batch, now):
+        with Session(self.engine) as db:
+            for sender_id, keyword_id in batch.participants.items():
+                db.exec(update(QQParticipant).where(QQParticipant.session_id == batch.session_id,
+                    QQParticipant.sender_id == sender_id, QQParticipant.keyword_message_id == keyword_id).values(expires_at=now))
+            db.commit()
+
     def recover(self):
         with Session(self.engine) as db:
             for kind, statuses in ((QQBatch, ["running"]), (QQDelivery, ["pending", "sending"])):
@@ -168,6 +210,6 @@ class QQStore:
 
     def delete_session(self, session_id):
         with Session(self.engine) as db:
-            for kind in (QQDelivery, QQBatch, QQMessage, QQBinding):
+            for kind in (QQDelivery, QQBatch, QQMessage, QQParticipant, QQBinding):
                 db.exec(delete(kind).where(kind.session_id == session_id))
             db.commit()

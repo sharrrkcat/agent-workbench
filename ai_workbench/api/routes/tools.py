@@ -14,6 +14,7 @@ from ai_workbench.core.harness.schema import ApprovalDecision, ToolExecutionErro
 from ai_workbench.core.message_parts import text_from_parts
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.schema.run import RunStatus
+from ai_workbench.core.schema.qq import QQ_TOOLS
 
 
 async def validate_tool_json(request: Request) -> None:
@@ -42,7 +43,7 @@ class DirectToolRequest(BaseModel):
 @router.get("", response_model=list[ToolCatalogItem], response_model_exclude_unset=True,
     responses=error_responses(422))
 def list_tools(state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
-    return [tool for tool in state.tool_registry.catalog() if tool["name"] != "qq_send_message"]
+    return [tool for tool in state.tool_registry.catalog() if tool["name"] not in QQ_TOOLS]
 
 
 @router.get("/settings", response_model=HarnessSettings, response_model_exclude_unset=True,

@@ -55,7 +55,7 @@ def test_each_batch_forces_its_first_tool_call_and_then_allows_stop(qq_client, s
                           completion(content="Private ending")]
         batch, run = execute_batch(client, state, p, session, number, private=private)
         assert batch.status == "done" and run.status == "DONE"
-        assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False}
+        assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False, "skipped": False}
         requests = upstream.calls[-2:]
         assert [r["tool_choice"] for r in requests] == ["required", "auto"]
         system = requests[0]["messages"][0]["content"]
@@ -87,7 +87,7 @@ def test_single_round_limit_rejects_unsent_calls_and_completes(qq_client, stream
                       completion(content="Must not request another model round")]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "done" and run.status == "DONE" and run.error_code is None
-    assert run.metadata["qq_reply"] == {"sent_count": limit, "message_limit": limit, "limit_reached": True}
+    assert run.metadata["qq_reply"] == {"sent_count": limit, "message_limit": limit, "limit_reached": True, "skipped": False}
     assert len(upstream.calls) == 1 and len(upstream.turns) == 1
     assert [params["message"][0]["data"]["text"] for _, params in connection.calls] == list(map(str, range(limit)))
     deliveries = state.qq.store.page(QQDelivery, session["session_id"])["items"]
@@ -110,7 +110,7 @@ def test_limit_spans_model_rounds_and_new_batch_resets_count(qq_client, streamin
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "next batch"})), completion(content="")]
     next_batch, next_run = execute_batch(client, state, p, session, 2)
     assert next_batch.status == "done"
-    assert next_run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False}
+    assert next_run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False, "skipped": False}
     assert len(connection.calls) == 5 and len(upstream.calls) == 6
     assert upstream.calls[-2]["tool_choice"] == "required"
 
@@ -124,7 +124,7 @@ def test_running_limit_is_snapshotted_and_progress_retains_confirmed_count(qq_cl
         if not connection.calls:
             state.project_service.update(p["id"], {"reply_message_limit": 1})
         else:
-            assert state.runs.get_run(run_id).metadata["qq_reply"] == {"sent_count": 1, "message_limit": 2, "limit_reached": False}
+            assert state.runs.get_run(run_id).metadata["qq_reply"] == {"sent_count": 1, "message_limit": 2, "limit_reached": False, "skipped": False}
             assert state.runs.get_harness_state(run_id)["qq_sent_count"] == 1
         return await original(action, params)
     connection.call = change_limit
@@ -136,7 +136,7 @@ def test_running_limit_is_snapshotted_and_progress_retains_confirmed_count(qq_cl
     connection.call = original
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "next"}))]
     _, next_run = execute_batch(client, state, p, session, 2)
-    assert next_run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 1, "limit_reached": True}
+    assert next_run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 1, "limit_reached": True, "skipped": False}
 
 
 @pytest.mark.parametrize("recover", [False, True])
@@ -181,7 +181,7 @@ def test_partial_delivery_failure_preserves_count_and_stops(qq_client, failure, 
     upstream.turns = [completion(*(tool_call("qq_send_message", {"text": str(n)}, f"call_{n}") for n in range(3)))]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "failed" and run.error_code == ("QQ_ACTION_FAILED" if status == "failed" else "QQ_DELIVERY_UNKNOWN")
-    assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 2, "limit_reached": False}
+    assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 2, "limit_reached": False, "skipped": False}
     assert len(connection.calls) == 2
     assert [d["status"] for d in state.qq.store.page(QQDelivery, session["session_id"])["items"]] == [status, "sent"]
     assert state.qq.store.get(QQBinding, session["session_id"]).paused
@@ -198,7 +198,7 @@ def test_provider_error_does_not_retry_or_hide_confirmed_sends(qq_client, stream
     upstream.turns = ([completion(tool_call("qq_send_message", {"text": "confirmed"}))] if after_send else []) + [reject]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "failed" and run.error_code == "PROVIDER_ERROR"
-    assert run.metadata["qq_reply"] == {"sent_count": int(after_send), "message_limit": 4, "limit_reached": False}
+    assert run.metadata["qq_reply"] == {"sent_count": int(after_send), "message_limit": 4, "limit_reached": False, "skipped": False}
     assert len(upstream.calls) == 1 + int(after_send) and upstream.calls[0]["tool_choice"] == "required"
     assert len(connection.calls) == int(after_send)
     assert state.qq.store.get(QQBinding, session["session_id"]).paused
@@ -218,7 +218,7 @@ def test_cancellation_wins_over_reaching_limit(qq_client):
                                  tool_call("qq_send_message", {"text": "never sent"}, "two"))]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "cancelled" and run.error_code == "RUN_CANCELLED"
-    assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 1, "limit_reached": False}
+    assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 1, "limit_reached": False, "skipped": False}
     assert len(connection.calls) == 1 and state.qq.store.get(QQBinding, session["session_id"]).paused
 
 
@@ -228,6 +228,6 @@ def test_shared_tool_round_limit_still_applies(qq_client):
     upstream.turns = [completion(tool_call("qq_send_message", {"text": str(n)}, f"call_{n}")) for n in range(9)]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "failed" and run.error_code == "TOOL_LOOP_LIMIT"
-    assert run.metadata["qq_reply"] == {"sent_count": 8, "message_limit": 20, "limit_reached": False}
+    assert run.metadata["qq_reply"] == {"sent_count": 8, "message_limit": 20, "limit_reached": False, "skipped": False}
     assert len(upstream.calls) == 9 and len(connection.calls) == 8
     assert state.qq.store.get(QQBinding, session["session_id"]).paused

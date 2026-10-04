@@ -69,6 +69,8 @@ class PresentationOpenAI(ToolOpenAI):
             stream = FixtureStream([{"tool_calls": calls}], "tool_calls", delay=.01)
         elif "qq-missing-fixture" in command:
             stream = FixtureStream([{"content": "This reply was never sent to QQ"}], delay=.01)
+        elif "qq-skip-fixture" in command:
+            stream = FixtureStream([{"tool_calls": [{"index": 0, **tool_call("qq_skip_reply", "{}")}]}], "tool_calls", delay=.01)
         elif "qq-fixture" in command:
             chunks = [{"tool_calls": [{"index": 0, **tool_call("qq_send_message", {"text": "Confirmed QQ reply"})}]}] if not outputs else [{"content": "Internal QQ prose"}]
             stream = FixtureStream(chunks, "tool_calls" if not outputs else "stop", delay=.01)

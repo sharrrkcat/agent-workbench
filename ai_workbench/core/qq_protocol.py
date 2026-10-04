@@ -62,6 +62,7 @@ def normalize(event):
         elif kind == "at":
             value = str(data.get("qq", ""))
             text.append("@" + value)
+            keywords.append(text[-1])
             refs.append({"type": "at", "id": value, "start": offset, "end": offset + len(text[-1]),
                          "name": None, "is_self": value == str(event.get("self_id")), "frozen": False})
         elif kind == "reply":

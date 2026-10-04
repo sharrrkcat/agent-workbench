@@ -201,7 +201,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       }
     });
 
-    test('reply limit completes normally and missing reply pauses with a clear error', async ({ page, request }, info) => {
+    test('reply limit and skip complete normally while missing reply pauses', async ({ page, request }, info) => {
       const labels = words(locale, 'personas');
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
@@ -222,8 +222,21 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.getByRole('button', { name: labels.qq.pause, exact: true })).toBeVisible();
         const limitedRun = await json(request.get(`/api/runs/${limited.run_id}`));
         expect(limitedRun.status).toBe('DONE');
-        expect(limitedRun.metadata.qq_reply).toEqual({ sent_count: 2, message_limit: 2, limit_reached: true });
+        expect(limitedRun.metadata.qq_reply).toEqual({ sent_count: 2, message_limit: 2, limit_reached: true, skipped: false });
         await page.screenshot({ path: info.outputPath('qq-reply-limit.png') });
+
+        const skipped = await json(request.post(`/__test__/qq/${session.session_id}/reply/skip`));
+        await expect(page.locator('[data-qq-reply-skipped]')).toHaveText(labels.qq.replySkipped);
+        await expect(page.locator('[data-qq-delivery]')).toHaveCount(2);
+        await expect(page.getByRole('button', { name: labels.qq.pause, exact: true })).toBeVisible();
+        const skippedRun = await json(request.get(`/api/runs/${skipped.run_id}`));
+        expect(skippedRun.status).toBe('DONE');
+        expect(skippedRun.metadata.qq_reply).toEqual({ sent_count: 0, message_limit: 2, limit_reached: false, skipped: true });
+        const skippedBatch = (await json(request.get(`/api/qq/sessions/${session.session_id}/batches`))).items.find((batch: { id: number }) => batch.id === skipped.batch_id);
+        expect(skippedBatch.trigger_kind).toBe('followup');
+        await page.reload();
+        await expect(page.locator('[data-qq-reply-skipped]')).toHaveText(labels.qq.replySkipped);
+        await page.screenshot({ path: info.outputPath('qq-skipped-reply.png') });
 
         const missing = await json(request.post(`/__test__/qq/${session.session_id}/reply/missing`));
         await expect(page.getByRole('button', { name: labels.qq.resume, exact: true })).toBeVisible();

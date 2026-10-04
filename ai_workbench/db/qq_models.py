@@ -1,6 +1,7 @@
 """Durable QQ ingress, batching and delivery records."""
 from sqlalchemy import UniqueConstraint, Index, false
 from sqlmodel import SQLModel, Field
+from ai_workbench.core.schema.qq import participant_epochs
 
 
 class QQBinding(SQLModel, table=True):
@@ -13,6 +14,16 @@ class QQBinding(SQLModel, table=True):
     paused: bool = False
     pause_reason: str = ""
     deadline: float | None = None
+    window_kind: str = Field(default="keyword", sa_column_kwargs={"server_default": "keyword"})
+
+
+class QQParticipant(SQLModel, table=True):
+    __tablename__ = "qq_participants"
+    session_id: str = Field(primary_key=True)
+    sender_id: str = Field(primary_key=True)
+    keyword_message_id: int
+    expires_at: float
+    in_window: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
 
 
 class QQMessage(SQLModel, table=True):
@@ -43,6 +54,12 @@ class QQBatch(SQLModel, table=True):
     input_message_id: str | None = None
     run_id: str | None = None
     error_code: str | None = None
+    trigger_kind: str = Field(default="keyword", sa_column_kwargs={"server_default": "keyword"})
+    participants_json: str = Field(default="{}", sa_column_kwargs={"server_default": "{}"})
+
+    @property
+    def participants(self) -> dict[str, int]:
+        return participant_epochs.validate_json(self.participants_json)
 
 
 class QQDelivery(SQLModel, table=True):

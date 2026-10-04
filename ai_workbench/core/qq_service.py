@@ -27,6 +27,9 @@ class QQService:
         state.tool_registry.register(ToolSpec("qq_send_message", "Send one plain-text message to the current QQ conversation.",
             {"type": "object", "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 4000}},
              "required": ["text"], "additionalProperties": False}, lambda args, context: self.send(args, context), "network", False, False))
+        state.tool_registry.register(ToolSpec("qq_skip_reply", "End this follow-up batch without replying. Available only before sending a reply.",
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            lambda args, context: self.skip(context), "safe", False, False))
 
     def start(self):
         self.supervisor = asyncio.create_task(self.run())
@@ -113,7 +116,7 @@ class QQService:
         # Synchronous transactions run without yielding: expiry wins at the exact deadline.
         self.store.freeze(binding.session_id, project.batch_message_limit, now)
         if self.store.ingest(binding, QQMessage(session_id=binding.session_id, **values),
-                trigger=kind == "friend" or any(k in keyword_text for k in project.keywords), now=now):
+                keyword=any(k in keyword_text for k in project.keywords), now=now):
             self.names.observe(binding, values["sender_id"], values["sender_name"])
 
     async def execute(self, batch):
@@ -134,7 +137,7 @@ class QQService:
             self.store.save_references(rows)
             text = "\n".join(f"[{row['timestamp']}][{row['sender_name']}（QQ:{row['sender_id']}）]:{row['text']}" for row in rows)
             user = self.state.messages.add_message(batch.session_id, role="user", content=text,
-                metadata={"input_source": "qq", "qq_batch_id": batch.id})
+                metadata={"input_source": "qq", "qq_batch_id": batch.id, "qq_trigger_kind": batch.trigger_kind})
             batch.input_message_id = user.message_id
             self.store.save(batch)
             result = await self.state.chat_runner.run(session_id=batch.session_id, text=text,
@@ -156,10 +159,24 @@ class QQService:
         finally:
             self.store.save(batch)
 
-    async def send(self, arguments, context):
+    def tool_batch(self, context):
         session = self.state.sessions.get_session(context.session_id)
         if session.kind != "qqbot" or not context.run_id or not context.tool_call_id:
-            raise ToolExecutionError("TOOL_NOT_ALLOWED", "QQ sending requires a QQBot run.")
+            raise ToolExecutionError("TOOL_NOT_ALLOWED", "QQ tools require a QQBot run.")
+        batch = self.store.active_batch(session.session_id)
+        if batch is None or batch.run_id != context.run_id:
+            raise ToolExecutionError("TOOL_NOT_ALLOWED", "QQ tools require the active batch run.")
+        return session, batch
+
+    async def skip(self, context):
+        _, batch = self.tool_batch(context)
+        if batch.trigger_kind != "followup" or self.store.has_sent(context.run_id):
+            raise ToolExecutionError("TOOL_NOT_ALLOWED", "Only an unanswered follow-up batch can skip its reply.")
+        self.store.skip_participants(batch, time.time())
+        return {"status": "skipped"}
+
+    async def send(self, arguments, context):
+        session, batch = self.tool_batch(context)
         if not arguments["text"].strip():
             raise ToolExecutionError("TOOL_INVALID_ARGUMENTS", "Message cannot be blank.")
         existing = self.store.delivery(context.run_id, context.tool_call_id)
@@ -191,6 +208,7 @@ class QQService:
                     speaker_id=self.state.runs.get_run(context.run_id).persona_id, run_id=context.run_id,
                     metadata={"qq_delivery_id": delivery.id, "qq_external_id": delivery.external_id}, **transaction)
                 db.add(delivery)
+                self.store.renew_participants(db, batch, time.time())
                 db.commit()
                 db.refresh(delivery)
             self.state.events.emit("message_completed", session_id=session.session_id, run_id=context.run_id,

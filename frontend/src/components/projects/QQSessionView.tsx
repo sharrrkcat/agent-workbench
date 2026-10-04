@@ -91,6 +91,9 @@ function QQConversation({ session }: { session: QQSession }) {
               scrollAnchor={item.kind === 'incoming'}>
               {item.kind === 'incoming' ? <QQIncoming message={item.message} showIdentity={item.showIdentity} /> : <>
                 <RunReply reply={item.reply} readOnly showFullProcessing={showFullProcessing} />
+                {item.reply.run.metadata?.qq_reply?.skipped ? <Marker className="mt-2" data-qq-reply-skipped>
+                  <MarkerContent>{t('qq.replySkipped')}</MarkerContent>
+                </Marker> : null}
                 {item.deliveries.length ? <div className="mt-2 flex flex-col gap-1.5" data-qq-deliveries>
                   {item.deliveries.map((delivery) => <QQOutgoing key={delivery.id} delivery={delivery} personaId={item.reply.run.persona_id} />)}
                 </div> : null}

@@ -242,7 +242,7 @@ Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
 
 Choose New QQBot, enter an independently installed NapCat OneBot v11 WebSocket endpoint and bot account,
 select an external LLM, then enable the connection. Bind each group/friend manually through New session.
-Group keywords use a five-second quiet window; private messages always trigger. Sessions show read-only records, delivery/run details and pause/resume/stop controls. Only the QQ send tool
+Group keywords (including configured @QQ ids) grant 60-second follow-up eligibility; participants extend a five-second quiet window. Follow-up batches may explicitly skip; private messages require replies. Sessions show read-only records, delivery/skip/run details and pause/resume/stop controls. Only the QQ send tool
 publishes replies. [Chat/context](docs/contracts/chat-context.md#qqbot-conversations) owns settings;
 [QQ boundaries](docs/FUTURE_QQ_INTEGRATION.md) owns exclusions and outstanding live acceptance.
 Bilingual desktop/touch verification: `npm run test:browser -- qqbot.spec.ts` after building frontend assets.

@@ -8,7 +8,7 @@ owns model execution and inspection. This note retains deployment evidence and u
 
 ## Supported boundary and deployment
 
-Cogita manages connections, bound-message recording, keyword/private-message batches,
+Cogita manages connections, bound-message recording, keyword/follow-up/private batches with explicit follow-up skip,
 external OpenAI-compatible inference through core/models, and text delivery through
 qq_send_message. A separate Node.js agent service is unnecessary. Agent Persona identity
 and prompts are optional; Knowledge, Worldbook and Cogita Persona inheritance are excluded.
