@@ -13,7 +13,7 @@ await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } })
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { newModel, updateModel, applyDirectoryInspection, localEngine, localSource, localOnly, selectModelSource } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
+const { newModel, updateModel, applyDirectoryInspection, localEngine, localSource, localOnly, selectModelSource, selectModelReference } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
 const original = { ...newModel('llm'), source: null, model_ref: 'llms/model', parameters: { max_tokens: 128, presence_penalty: 1 },
   request_options: { streaming: true, skip_tool_capability_check: false, skip_vision_capability_check: false,
@@ -49,6 +49,40 @@ assert.equal(selectModelSource(manual, null).model_ref, 'manual-id');
 assert.equal(selectModelSource(manual, manual.source), manual);
 assert.equal(selectModelSource(manual, { type: 'provider', provider_profile_id: 'second' }).model_ref, '');
 assert.equal(updateModel(selected, { name: 'Renamed' }).source.execution_options, selected.source.execution_options);
+// Creation identity suggestions fill fields independently and never track later edits.
+for (const kind of ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor']) {
+  const draft = newModel(kind);
+  const named = selectModelReference(draft, 'Org/Model V2', true);
+  assert.equal(named.name, 'Org/Model V2');
+  assert.equal(named.alias, 'org-model-v2');
+  assert.equal(selectModelReference({ ...draft, name: 'Custom' }, 'Org/Model', true).name, 'Custom');
+  assert.equal(selectModelReference({ ...draft, name: 'Custom' }, 'Org/Model', true).alias, 'org-model');
+  assert.equal(selectModelReference({ ...draft, alias: 'custom' }, 'Org/Model', true).name, 'Org/Model');
+  assert.equal(selectModelReference(named, 'Other/Model', true).alias, named.alias);
+  assert.equal(selectModelReference(draft, 'Org/Model', false).name, '');
+  assert.equal(selectModelReference(draft, 'Org/Model', false).alias, '');
+}
+assert.equal(selectModelReference(newModel('llm'), '../__Org//A B', true).alias, 'org-a-b');
+assert.equal(selectModelReference(newModel('llm'), '模型', true).alias, '');
+assert.equal(selectModelReference(newModel('llm'), 'A'.repeat(200), true).alias, 'a'.repeat(128));
+const providerSource = { type: 'provider', provider_profile_id: 'external' };
+const initial = newModel('llm');
+assert.equal(initial.source.execution_options.context_size, 4096);
+const switched = selectModelSource(initial, providerSource, true);
+assert.equal(switched.context_window_tokens, 4096);
+assert.equal(selectModelReference(switched, 'Org/Remote', true).alias, 'org-remote');
+const cleared = { ...initial, source: { ...initial.source, execution_options: { context_size: null } } };
+assert.equal(selectModelSource(cleared, providerSource, true).context_window_tokens, 258000);
+const customContext = { ...switched, context_window_tokens: 64000 };
+const back = selectModelSource(customContext, localSource(), true);
+assert.equal(back.source.execution_options.context_size, 64000);
+assert.equal(back.context_window_tokens, null);
+assert.equal(selectModelSource({ ...switched, context_window_tokens: null }, localSource(), true).source.execution_options.context_size, 4096);
+assert.equal(selectModelSource(customContext, { ...providerSource, provider_profile_id: 'second' }, true).context_window_tokens, 64000);
+assert.equal(applyDirectoryInspection(back, info, true).source.execution_options.context_size, 64000);
+assert.equal(applyDirectoryInspection(cleared, info, true).source.execution_options.context_size, null);
+assert.equal(selectModelSource({ ...initial, kind: 'embedding' }, providerSource, true).context_window_tokens, null);
+assert.equal(selectModelSource(cleared, providerSource).context_window_tokens, null);
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');

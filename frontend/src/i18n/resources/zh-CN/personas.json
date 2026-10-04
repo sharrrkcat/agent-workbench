@@ -144,6 +144,9 @@
   "newQQBot": "新建 QQBot",
   "qq": {
     "account": "机器人 QQ 号",
+    "defaultPrompt": "自然参与当前 QQ 对话，围绕最新话题，用对方的语言简短回应。通常一条消息说完，确有必要才补充。有人设时遵循人设，否则保持友善自然。避免复读、无关补话和替他人发言。",
+    "botSelf": "机器人本人",
+    "everyone": "全体成员",
     "url": "OneBot WebSocket 地址",
     "token": "访问 Token",
     "tokenSaved": "已保存 Token",

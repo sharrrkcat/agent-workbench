@@ -545,6 +545,7 @@
     "help": "Off: check local support before sending, allowing unknown support. On: send without this check; engine errors can still occur."
   },
   "contextWindow": "Context window (tokens)",
+  "contextWindowCreateHelp": "Required when creating a model. Empty windows default to 4096 for Local Runtime or 258000 for a provider when selecting a source; existing values are preserved.",
   "contextWindowLocalHelp": "Includes input and output; actual capacity is bounded by the running instance and model.",
   "contextWindowProviderHelp": "Required before chatting. Includes input and output; provider input counts are estimates.",
   "outputReserveHelp": "An empty maximum output reserves one quarter of the window, up to 4,096 tokens."

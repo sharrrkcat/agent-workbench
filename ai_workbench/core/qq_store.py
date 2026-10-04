@@ -1,6 +1,6 @@
 """Bounded SQLite operations for QQ queues; batches reserve ingress atomically."""
 from sqlmodel import Session, select, delete
-from sqlalchemy import update
+from sqlalchemy import update, func
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 
@@ -93,6 +93,49 @@ class QQStore:
         with Session(self.engine) as db:
             return db.exec(select(QQDelivery).where(QQDelivery.run_id == run_id,
                 QQDelivery.tool_call_id == call_id)).first()
+
+    def batch_messages(self, batch_id):
+        with Session(self.engine) as db:
+            return db.exec(select(QQMessage).where(QQMessage.batch_id == batch_id).order_by(QQMessage.id)).all()
+
+    def save_references(self, rows):
+        with Session(self.engine) as db:
+            for row in rows:
+                db.exec(update(QQMessage).where(QQMessage.id == row["id"]).values(references_json=row["references_json"]))
+            db.commit()
+
+    @staticmethod
+    def _history_filter(session_id, current_message_id):
+        conditions = [QQBatch.session_id == session_id, QQBatch.input_message_id.is_not(None)]
+        if current_message_id is not None:
+            conditions.append(QQBatch.input_message_id != current_message_id)
+        return conditions
+
+    def history_message_count(self, session_id, current_message_id):
+        conditions = self._history_filter(session_id, current_message_id)
+        with Session(self.engine) as db:
+            batches = db.exec(select(func.count()).select_from(QQBatch).where(*conditions)).one()
+            deliveries = db.exec(select(func.count()).select_from(QQDelivery).join(QQBatch, QQBatch.run_id == QQDelivery.run_id)
+                .where(*conditions, QQDelivery.status == "sent")).one()
+            return batches + deliveries
+
+    def iter_history(self, session_id, current_message_id):
+        conditions = self._history_filter(session_id, current_message_id)
+        before = None
+        while True:
+            with Session(self.engine) as db:
+                query = select(QQBatch.id, QQBatch.input_message_id, QQBatch.run_id).where(*conditions)
+                if before is not None:
+                    query = query.where(QQBatch.id < before)
+                batches = db.exec(query.order_by(QQBatch.id.desc()).limit(64)).all()
+            if not batches:
+                return
+            for batch in batches:
+                with Session(self.engine) as db:
+                    deliveries = db.exec(select(QQDelivery).where(QQDelivery.run_id == batch.run_id,
+                        QQDelivery.session_id == session_id, QQDelivery.status == "sent").order_by(QQDelivery.id)).all()
+                yield batch, deliveries
+            before = batches[-1].id
 
     def reconcile_echo(self, session_id, external_id):
         with Session(self.engine) as db:

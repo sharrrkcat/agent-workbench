@@ -1,7 +1,7 @@
 import { request } from './http';
 import type { QQSession } from '../types/chat';
 export type QQBinding = { session_id: string; project_id: string; target_kind: 'group' | 'friend'; target_id: string; paused: boolean; pause_reason: string; deadline: number | null };
-export type QQMessage = { id: number; external_id: string; sender_id: string; sender_name: string; timestamp: string; text: string; disposition: 'pending' | 'batched' | 'skipped'; batch_id: number | null; references: { type: 'at' | 'reply'; id: string }[] };
+export type QQMessage = { id: number; external_id: string; sender_id: string; sender_name: string; timestamp: string; text: string; disposition: 'pending' | 'batched' | 'skipped'; batch_id: number | null; references: { type: 'at' | 'reply'; id: string; name: string | null; is_self: boolean }[] };
 export type QQBatch = { id: number; status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'; text: string; created_at: number; run_id: string | null; error_code: string | null };
 export type QQDelivery = { id: number; run_id: string; text: string; status: 'pending' | 'sending' | 'sent' | 'failed' | 'unknown'; external_id: string | null; echoed: boolean; error_code: string | null; created_at: number };
 export type QQPage<T> = { items: T[]; next_cursor: number | null };

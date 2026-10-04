@@ -190,17 +190,22 @@ and image handling follow the attachment rules below.
 
 QQBot Projects own bot_account, ws/wss websocket_url, write-only access_token, connection_enabled, optional Agent, Project prompt, explicit external LLM, temperature, reasoning, context policy, keyword reply mode and input/reply limits.
 Defaults: disconnected, no Agent/model, empty keywords, reasoning on, input batch size 20 (1..200), reply_message_limit 4 (strict integer, 1..20).
+New Projects use an editable, brief conversational prompt: stay on topic, match the participants' language, usually reply once and follow the selected Persona. API omission selects English; explicit empty text stays empty. Existing prompts are preserved.
 Project creation/reads/PATCH expose both limits; omitted PATCH fields are retained and null is invalid. Connecting requires an external LLM.
 Accounts belong to one Project and cannot change while Sessions are bound; QQ has no global model fallback.
 An omitted token preserves it; an empty token removes it. Reads expose only has_access_token. URL credentials/query/fragment are rejected.
 QQ Sessions bind an immutable group|friend and positive decimal-string target_id, unique per Project; only title is editable.
 Sessions use Project settings at execution time and Agent identity/prompt only; Cogita Persona, Knowledge, Worldbook, attachments and overrides are excluded. Resource APIs reject QQ targets.
-Resolved configuration snapshots qq_reply_message_limit; server instructions identify group/private conversation and require a tool first, a confirmed reply, and completion within that batch's send limit.
+Resolved configuration snapshots the bot account, target and reply limit. Each model call adds a separate qq_runtime source with the batch id and current confirmed count; [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns its rules.
 Only bound conversations are recorded, retaining sender identity, UTC-offset time and mention/reply references from arrays or CQ strings; media becomes text placeholders.
 Group keywords use case-insensitive substring alternatives over text segments; mentions/quotes/media do not trigger independently.
 Empty keywords disable group replies; every private message triggers. Triggers reset a fixed five-second receipt-time deadline; other arrivals do not.
-Serialized expiry precedes arrivals exactly at the deadline, freezing the newest configured count of unassigned messages in receipt order and marking earlier records skipped. Each batch is one user input of `[time][name]:content` lines.
-History includes submitted batches and confirmed sends within context limits; unsubmitted/skipped records, internal prose and failed/unknown sends are excluded. [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns execution/recovery.
+Serialized expiry precedes arrivals exactly at the deadline, freezing the newest configured count of unassigned messages in receipt order and marking earlier records skipped. Batch text stays raw; submission saves one projected input of `[time][name (QQ:id)]:content` lines.
+Real at segments retain code-point positions, ids, names and self flags in references_json; literal typed mentions are untouched. Model mentions include names and ids, marking the bot as self; display uses names with ids/self in status details. at=all means everyone. Existing references without positions are not reconstructed.
+Display reads and batch submission share asynchronous name projection outside the socket reader. Same-conversation observed sender names take precedence; missing group names use get_group_member_info (card then nickname), private names use get_stranger_info, and self may use verified login information.
+The per-Project cache holds at most 1024 conversation/member entries for 600 seconds, or 60 seconds after failure. Shared queries allow four concurrent calls; each page/batch waits at most two seconds. Failure/offline preserves ids without pausing. Submission freezes reference names and input text; later renames do not rewrite them. Names and mentions never affect triggers.
+QQ history projects each confirmed QQDelivery as a native assistant qq_send_message call and matching sent receipt, with a stable delivery-derived call id and no duplicate assistant prose. Earlier sends survive failed/cancelled runs; unsubmitted/skipped inputs, internal prose and failed/unknown sends are excluded.
+Input batches and their confirmed sends are selected/pruned together. max_messages counts saved inputs/sends, not expanded protocol messages; character/token budgets include expanded tool data. Historical pairs are never executed. [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns execution/recovery.
 `/api/qq/projects/{id}/status` reads connection state; `/api/qq/sessions/{id}` reads binding/pause state. Its `/messages`, `/batches` and `/deliveries` reads use newest-first integer before cursors, default 50/max 100; `/control` accepts pause|resume|stop.
 The bilingual read-only conversation shares ordinary chat layout, scrolling, composer surfaces and model replies (processing, usage and context detail).
 Right-side secondary bubbles group consecutive sender IDs within 120 seconds of the group start, interrupted by a different sender or model reply. Only the first row has an avatar, name and time; continuations have no header and a 6px gap. Outside icons retain each message's pending/batched/skipped state and stored timestamps are unchanged.
@@ -243,17 +248,12 @@ User metadata.attachments render as right-aligned scrolling groups: files above 
 Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Cleanup after commit preserves references from messages, Personas, Knowledge and model-input snapshots.
 Thumbnails and zoom previews resolve stored references after refresh. Request warnings, attachment-policy and size errors have English/Chinese guidance; retries retain the message's saved attachments.
 
-Tool calls require assistant role, run-unique call id, name and finite JSON object arguments, with distinct part ids per message.
-Results require tool role, matching call id, success/error/rejected/cancelled status, optional JSON data/errors and truncation flag.
-Live loops use native assistant/tool pairs. Ordinary/Workspace history quotes tool parts as data, permitting truncation
-without orphan protocol calls or promoting data to system/developer instructions. QQ excludes internal tool history.
+Tool calls require assistant role, run-unique call id, name and finite JSON object arguments, with distinct part ids per message. Results require tool role, matching call id, success/error/rejected/cancelled status, optional JSON data/errors and truncation flag.
+Live loops use native assistant/tool pairs. Ordinary/Workspace history quotes tool parts as data, permitting truncation without orphan protocol calls or promoting data to system/developer instructions. QQ uses the confirmed-delivery pairs described above, excluding other internal tool history.
 
-Reasoning is assistant-only strict {id,type:reasoning,text} data. The output normalizer accepts reasoning_content
-and incrementally extracts <think> markers, including split tags; Markdown inline/fenced/indented code and escapes stay literal.
-Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete messages are excluded from history;
-live tool transcripts retain upstream content/structured reasoning for provider continuation.
-[Runs/streaming](runs-streaming.md) owns replies, provisional answers, processing/reasoning, command groups and usage.
-Replies retain original Persona identity; copy uses answer text only, and direct tools never invent a model answer.
+Reasoning is assistant-only strict {id,type:reasoning,text} data. The output normalizer accepts reasoning_content and incrementally extracts <think> markers, including split tags; Markdown inline/fenced/indented code and escapes stay literal.
+Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete messages are excluded from history; live tool transcripts retain upstream content/structured reasoning for provider continuation.
+[Runs/streaming](runs-streaming.md) owns replies, provisional answers, processing/reasoning, command groups and usage. Replies retain original Persona identity; copy uses answer text only, and direct tools never invent a model answer.
 
 The frontend renders parts as content without execution/routing; edit/retry uses original text. MessageActions owns controls,
 MessageParts owns presentation, ChatAttachments owns cards/URLs, and [runs/streaming](runs-streaming.md) owns stream merging.

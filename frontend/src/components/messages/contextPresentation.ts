@@ -1,7 +1,7 @@
 import type { ContextDetail, ContextSource, ContextSourceKind } from '../../types/context';
 
 export type DisplayContextSource = ContextSource & { empty?: boolean };
-const systemOrder: ContextSourceKind[] = ['agent_persona', 'project_prompt', 'cogita_persona', 'knowledge'];
+const systemOrder: ContextSourceKind[] = ['agent_persona', 'project_prompt', 'qq_runtime', 'cogita_persona', 'knowledge'];
 
 export function contextPresentation(detail: ContextDetail) {
   const sources: DisplayContextSource[] = detail.sources.map((source) => ({ ...source }));

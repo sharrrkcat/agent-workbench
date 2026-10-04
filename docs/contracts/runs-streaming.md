@@ -206,7 +206,7 @@ Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and
 The Layers action sits between retry and usage, independent of recorded usage. It appears on chat replies
 at terminal status or approval waiting when a snapshot exists. Its read-only modal defaults to the final
 answer's call, otherwise the latest captured call; a single call has no selector. Input structure follows
-send order, with system sources nested as Agent, Project, Cogita Persona and Knowledge, and tools separate. System groups use the label System without a request-position prefix.
+send order, with system sources nested as Agent, Project, QQ runtime (QQ only), Cogita Persona and Knowledge, and tools separate. QQ runtime records that call's identity/batch/count; paired historical sends retain whole-message excerpts and a shared input turn for pruning. System groups use the label System without a request-position prefix.
 Empty system sources recorded as empty/no-bindings/no-results appear muted in Agent/Project/Cogita/Knowledge order,
 with an Empty label and no transmitted-message number for a synthetic system group. They do not change request data
 or counts; other exclusions remain collapsed diagnostics. Ordinary chats do not invent a Project source.

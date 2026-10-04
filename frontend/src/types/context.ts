@@ -9,7 +9,7 @@ export type ContextBudgetStats = {
 export type ContextSummary = { available: true; message_count: number; tool_count: number; image_count: number;
   budget?: ContextBudgetStats | null };
 export type ContextSourceKind = 'system' | 'agent_persona' | 'project_prompt' | 'cogita_persona' | 'knowledge' |
-  'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools';
+  'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime';
 export type ContextAttachment = Pick<Attachment, 'id' | 'name' | 'type' | 'mime_type' | 'size' | 'uri'>;
 export type ContextSource = {
   id: string; kind: ContextSourceKind; parent_id?: string | null;

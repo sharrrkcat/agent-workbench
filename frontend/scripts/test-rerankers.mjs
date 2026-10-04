@@ -21,7 +21,7 @@ assert.deepEqual(model.parameters, {});
 assert.deepEqual(model.source.execution_options, { device: 'cuda', intraop_threads: 4, max_batch_size: 1 });
 assert.equal(model.source.lifecycle.unload, 'manual');
 const selected = selectModelReference(model, 'rerankers/model-a', true);
-assert.equal(selected.name, 'model-a');
+assert.equal(selected.name, 'rerankers/model-a');
 const edited = { ...selected, name: 'My reranker', source: {
   ...selected.source, execution_options: { device: 'cpu', intraop_threads: 2, max_batch_size: 4 },
 } };

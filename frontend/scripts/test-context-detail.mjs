@@ -21,6 +21,9 @@ assert.equal(view.sources[0].message_index, undefined);
 assert.ok(view.sources.every((item) => item.empty && item.char_count === 0));
 assert.equal(view.exclusions.length, 0);
 assert.equal(contextPresentation({ sources: [], exclusions: [{ kind: 'knowledge', reason: 'retrieval_failed' }] }).sources.length, 0);
+view = contextPresentation({ sources: [source('sys', 'system'), source('qq', 'qq_runtime', 'sys'),
+  source('project', 'project_prompt', 'sys'), source('input', 'current_input')], exclusions: [] });
+assert.deepEqual(view.byParent.get('sys').map((item) => item.kind), ['project_prompt', 'qq_runtime']);
 
 let response;
 globalThis.self = { postMessage: (value) => { response = value; } };

@@ -41,7 +41,7 @@ for (const locale of ['en', 'zh-CN']) {
         const input = dialog.getByLabel(labels.modelRef, { exact: true });
         await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
         await fillCombobox(input, reference);
-        await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('browser-model');
+        await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('asr/browser-model');
         await expect(dialog).toContainText('WhisperProcessor');
         await expect(dialog).toContainText('16000');
         await expect(dialog).toContainText('en, zh');
@@ -65,7 +65,7 @@ for (const locale of ['en', 'zh-CN']) {
         releaseSlow!();
         await slowResponse;
         await expect(dialog.getByText('stale-processor', { exact: true })).toHaveCount(0);
-        await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('browser-model');
+        await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('asr/browser-model');
         const alias = `asr-${locale.toLowerCase()}-${viewport.width}`;
         await dialog.getByLabel(labels.alias, { exact: true }).fill(alias);
         expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBeTruthy();

@@ -83,6 +83,7 @@
       "system": "System",
       "agent_persona": "Agent Persona",
       "project_prompt": "Project prompt",
+      "qq_runtime": "QQ runtime",
       "cogita_persona": "Cogita Persona",
       "knowledge": "Knowledge",
       "knowledge_snippet": "Knowledge excerpt",

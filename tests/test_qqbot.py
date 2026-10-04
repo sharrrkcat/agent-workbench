@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session as DbSession, select
 
 from ai_workbench.api.main import create_app
-from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.qq_service import QQService
@@ -175,11 +175,12 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert "AGENT_PROMPT" in request and "PROJECT_PROMPT" in request and "PRIVATE_USER_PROMPT" not in request
     assert upstream.calls[0]["messages"][-1]["role"] == "user"
     assert "/read_file bot" in upstream.calls[0]["messages"][-1]["content"]
-    context = ContextBuilder(state.messages).build(session["session_id"], "next", ContextPolicy()).messages
-    contents = json.dumps(context, ensure_ascii=False)
+    context = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    contents = context.model_dump_json()
     assert "first" in contents and "[CQ:at,qq=all]" in contents
     assert "PRIVATE_THOUGHT" not in contents and "PRIVATE_FINAL" not in contents
-    assert "tool_call" not in contents
+    assert "tool_calls" in contents
+    assert [m["role"] for m in context.messages] == ["user", "assistant", "tool", "assistant", "tool", "user"]
     assert state.chat_service.resolve(state.sessions.get_session(session["session_id"])).knowledge_base_ids == []
     ingest(client, state, p, {**event(1001, sender="12345"), "post_type": "message_sent"}, 20)
     records = state.qq.store.page(QQDelivery, session["session_id"])["items"]
@@ -261,7 +262,7 @@ def test_missing_reply_fails_and_pauses_without_replaying(qq_client, streaming, 
     if content:
         messages = state.messages.list_messages(session["session_id"])
         assert any(m.metadata.get("qq_internal") and content in json.dumps(m.parts) for m in messages)
-        assert content not in json.dumps(ContextBuilder(state.messages).build(session["session_id"], "next").messages)
+        assert content not in build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
     assert state.qq.store.next_batch(p["id"]).id == queued.id
 
@@ -327,7 +328,9 @@ def test_exact_deadline_references_media_and_pagination(qq_client):
     assert second.text.count("[Group name]") == 2
     page = ok(client.get(f"/api/qq/sessions/{sid}/messages?limit=2"))
     assert [r["external_id"] for r in page["items"]] == ["4", "3"]
-    assert page["items"][0]["references"] == [{"type": "at", "id": "bot"}, {"type": "reply", "id": "bot"}]
+    assert page["items"][0]["references"] == [
+        {"type": "at", "id": "bot", "name": None, "is_self": False},
+        {"type": "reply", "id": "bot", "name": None, "is_self": False}]
     older = ok(client.get(f"/api/qq/sessions/{sid}/messages?limit=2&before={page['next_cursor']}"))
     assert [r["external_id"] for r in older["items"]] == ["2", "1"] and older["next_cursor"] is None
     ok(client.patch(f"/api/projects/{p['id']}", json={"keywords": []}))
@@ -382,7 +385,7 @@ def test_stop_during_send_keeps_confirmed_reply_and_queued_windows(qq_client):
         await state.qq.execute(queued)
         assert state.qq.store.next_batch(p["id"]).id == batch.id + 2
     client.portal.call(scenario)
-    context = json.dumps(ContextBuilder(state.messages).build(sid, "next", ContextPolicy()).messages)
+    context = build_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None).model_dump_json()
     assert "confirmed" in context and "uncertain" not in context
     assert len(connection.calls) == 3
 

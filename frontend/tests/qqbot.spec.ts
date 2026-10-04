@@ -23,6 +23,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.locator('.session-sidebar').getByRole('button', { name: labels.newQQBot, exact: true }).click();
         const dialog = page.getByRole('dialog', { name: labels.newQQBot, exact: true });
         await expect(dialog).toBeVisible();
+        await expect(dialog.getByLabel(labels.projectPrompt, { exact: true })).toHaveValue(labels.qq.defaultPrompt);
         await dialog.getByLabel(labels.projectName, { exact: true }).fill('QQ browser');
         await dialog.getByLabel(labels.qq.account, { exact: true }).fill(account);
         await dialog.getByLabel(labels.qq.token, { exact: true }).fill('fixture-secret');
@@ -45,6 +46,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect(project.access_token).toBeUndefined();
         expect(project.keywords).toEqual(['bot', 'hello']);
         expect(project.reply_message_limit).toBe(3);
+        expect(project.system_prompt).toBe(labels.qq.defaultPrompt);
         await expect(dialog).toBeHidden();
         await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`));
         await expect(page.getByLabel(labels.qq.token, { exact: true })).toHaveValue('');
@@ -54,6 +56,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
         expect((await json(request.get(`/api/projects/${projectId}`))).has_access_token).toBe(true);
         expect((await json(request.get(`/api/projects/${projectId}`))).reply_message_limit).toBe(2);
+        expect((await json(request.get(`/api/projects/${projectId}`))).system_prompt).toBe('Project prompt');
+        await page.getByLabel(labels.projectPrompt, { exact: true }).fill('');
+        await page.getByRole('button', { name: labels.save, exact: true }).click();
+        await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
+        expect((await json(request.get(`/api/projects/${projectId}`))).system_prompt).toBe('');
         await page.getByRole('button', { name: labels.qq.clearToken, exact: true }).click();
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
@@ -78,6 +85,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         if (width === 390) await expect(page.locator('.session-sidebar')).toBeHidden();
         await json(request.post(`/__test__/qq/${session.session_id}`));
         await expect(page.getByText('qq-fixture bot', { exact: false })).toBeVisible();
+        await expect(page.locator('[data-qq-incoming]').last()).toContainText('@QQ bot@Mentioned member');
+        await page.locator('[data-qq-incoming]').last().getByRole('button').click();
+        await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(`QQ: ${account}`);
+        await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(labels.qq.botSelf);
+        await page.keyboard.press('Escape');
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(50);
         await expect(page.locator('.message-row.user [data-slot="message-avatar"]')).toHaveCount(1);
         await expect(page.locator('.message-row.user [data-slot="avatar-fallback"]')).toHaveText('Q');
@@ -111,6 +123,9 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.getByRole('button', { name: labels.editMessage, exact: true })).toHaveCount(0);
         await page.getByRole('button', { name: runs.context.details, exact: true }).click();
         await expect(page.getByRole('dialog')).toBeVisible();
+        await page.locator('[data-context-source="qq_runtime"]').click();
+        await expect(page.locator('.context-source-detail')).toContainText('confirmed sends=1/2');
+        await expect(page.locator('.context-source-detail')).toContainText(`your QQ account=${account}`);
         await page.keyboard.press('Escape');
         await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
         await page.getByRole('button', { name: runs.metrics.details, exact: true }).click();

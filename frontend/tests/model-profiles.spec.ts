@@ -59,7 +59,9 @@ for (const locale of ['en', 'zh-CN']) {
           await reference.press('ArrowDown');
           await page.getByRole('option', { name: profile.model_ref, exact: true }).click();
           await expect(reference).toHaveValue(profile.model_ref);
-          await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('card-fixture');
+          await expect(dialog.getByLabel(labels.alias, { exact: true })).toHaveValue(profile.model_ref.replaceAll('/', '-'));
+          await expect(dialog.getByRole('switch', { name: labels.enabled, exact: true })).toHaveCount(0);
+          await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue(profile.model_ref);
           await dialog.getByRole('button', { name: labels.close, exact: true }).click();
         }
 
@@ -98,6 +100,101 @@ for (const locale of ['en', 'zh-CN']) {
         await page.reload();
         await expect(toggle).toBeChecked();
         for (const item of profiles) await request.delete(`/api/models/profiles/${item.id}`);
+      });
+
+      test('new model identity and required windows survive source changes and directory inspection', async ({ page, request }) => {
+        const provider = await (await request.post('/api/models/providers', { data: {
+          name: `Creation provider ${locale} ${width}`, connection: { base_url: 'https://provider.test/v1' },
+        } })).json();
+        await page.route(`**/api/models/providers/${provider.id}/models`, (route) => route.fulfill({ json: { models: ['Org/Remote V2'] } }));
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => { release = resolve; });
+        await page.route('**/api/models/inspect?*', async (route) => {
+          await pending;
+          await route.fulfill({ json: { kind: 'llm', model_ref: 'llms/Test', engine: 'transformers',
+            architecture: 'Qwen', main_model_ref: null, mmproj_ref: null, model_files: [], diagnostics: [] } });
+        });
+        await page.goto('/settings?tab=models&view=llm');
+        await page.getByRole('button', { name: labels.addModel, exact: true }).click();
+        const dialog = page.getByRole('dialog');
+        const source = dialog.getByLabel(labels.source, { exact: true });
+        const reference = dialog.getByLabel(labels.modelRef, { exact: true });
+        const name = dialog.getByLabel(labels.name, { exact: true });
+        const alias = dialog.getByLabel(labels.alias, { exact: true });
+        const context = dialog.getByLabel(labels.contextWindow, { exact: true });
+        const save = dialog.getByRole('button', { name: labels.save, exact: true });
+        const choose = async (label: string) => {
+          await source.click();
+          await page.getByRole('option', { name: label, exact: true }).click();
+        };
+        await expect(context).toHaveValue('4096');
+        await choose(provider.name);
+        await expect(context).toHaveValue('4096');
+        await reference.press('ArrowDown');
+        await page.getByRole('option', { name: 'Org/Remote V2', exact: true }).click();
+        await expect(name).toHaveValue('Org/Remote V2');
+        await expect(alias).toHaveValue('org-remote-v2');
+        await choose(labels.localRuntime);
+        await context.fill('');
+        await choose(provider.name);
+        await expect(context).toHaveValue('258000');
+        await context.fill('64000');
+        await choose(labels.localRuntime);
+        await expect(context).toHaveValue('64000');
+        await name.fill('');
+        await fillCombobox(reference, 'llms/Test');
+        await expect(name).toHaveValue('llms/Test');
+        await expect(alias).toHaveValue('org-remote-v2');
+        release();
+        await expect(dialog.getByText(labels.engines.transformers, { exact: true }).first()).toBeVisible();
+        await expect(context).toHaveValue('64000');
+        await alias.fill('');
+        await fillCombobox(reference, 'llms/Other');
+        await expect(name).toHaveValue('llms/Test');
+        await expect(alias).toHaveValue('llms-other');
+        for (const invalid of ['', '511', '512.5', '1048577']) {
+          await context.fill(invalid);
+          await save.click();
+          await expect(dialog).toBeVisible();
+          expect(await context.evaluate((node: HTMLInputElement) => node.validity.valid)).toBe(false);
+        }
+        await context.fill('');
+        await choose(provider.name);
+        await expect(context).toHaveValue('258000');
+        await fillCombobox(reference, 'Org/Manual');
+        await alias.fill(`creation-${locale.toLowerCase()}-${width}`);
+        await context.fill('');
+        await save.click();
+        expect(await context.evaluate((node: HTMLInputElement) => node.validity.valueMissing)).toBe(true);
+        await context.fill('258000');
+        const created = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/models/profiles'));
+        await save.click();
+        const response = await created;
+        expect(response.ok(), await response.text()).toBe(true);
+        const profile = await response.json();
+        expect(profile.context_window_tokens).toBe(258000);
+        expect(profile.enabled).toBe(true);
+        await expect(dialog).toHaveCount(0);
+        const card = page.getByRole('group', { name: profile.name, exact: true });
+        await card.getByRole('switch').click();
+        await expect(card.getByRole('switch')).not.toBeChecked();
+        await card.getByRole('button', { name: labels.edit, exact: true }).click();
+        await expect(dialog.getByRole('switch', { name: labels.enabled, exact: true })).toHaveCount(0);
+        await name.fill('');
+        await alias.fill('');
+        await fillCombobox(reference, 'Org/Edited');
+        await expect(name).toHaveValue('');
+        await expect(alias).toHaveValue('');
+        await name.fill(profile.name);
+        await alias.fill(profile.alias);
+        await context.fill('');
+        await save.click();
+        await expect(dialog).toHaveCount(0);
+        const saved = await (await request.get(`/api/models/profiles/${profile.id}`)).json();
+        expect(saved.enabled).toBe(false);
+        expect(saved.context_window_tokens).toBe(null);
+        await request.delete(`/api/models/profiles/${profile.id}`);
+        await request.delete(`/api/models/providers/${provider.id}`);
       });
 
       test('provider badges and existing unbound drafts require a source for edit and copy', async ({ page, request }, info) => {

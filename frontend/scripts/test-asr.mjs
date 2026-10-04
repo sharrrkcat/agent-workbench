@@ -22,7 +22,7 @@ assert.deepEqual(model.source.execution_options, { device: 'cuda', intraop_threa
 assert.equal(model.source.lifecycle.unload, 'manual');
 assert.deepEqual(model.parameters, { language: 'auto', prompt: '', temperature: 0, response_format: 'json' });
 const selected = selectModelReference(model, 'asr/native-directory', true);
-assert.equal(selected.name, 'native-directory');
+assert.equal(selected.name, 'asr/native-directory');
 const edited = { ...selected, name: 'My ASR', parameters: { language: 'zh', prompt: 'context', temperature: 0.4, response_format: 'verbose_json' } };
 const changed = selectModelReference(edited, 'asr/another-model', true);
 assert.equal(changed.name, edited.name);

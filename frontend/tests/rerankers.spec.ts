@@ -45,7 +45,7 @@ for (const locale of ['en', 'zh-CN']) {
         const name = dialog.getByLabel(labels.name, { exact: true });
         await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
         await fillCombobox(input, reference);
-        await expect(name).toHaveValue('browser-model');
+        await expect(name).toHaveValue('rerankers/browser-model');
         await expect(dialog).toContainText('example-backbone');
         await expect(dialog).toContainText('32768');
         await expect(dialog).toContainText('Transformer → LogitScore');

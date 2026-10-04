@@ -21,7 +21,7 @@ assert.deepEqual(model.parameters, { query_prompt_name: null, document_prompt_na
 assert.deepEqual(model.source.execution_options, { device: 'cuda', intraop_threads: 4, max_batch_size: 1 });
 assert.equal(model.source.lifecycle.unload, 'manual');
 const selected = selectModelReference(model, 'embeddings/model-a', true);
-assert.equal(selected.name, 'model-a');
+assert.equal(selected.name, 'embeddings/model-a');
 const edited = { ...selected, name: 'My embedding', parameters: { query_prompt_name: 'sts_query', document_prompt_name: null },
   source: { ...selected.source, execution_options: { device: 'cpu', intraop_threads: 2, max_batch_size: 4 } } };
 const changed = selectModelReference(edited, 'embeddings/model-b', true);

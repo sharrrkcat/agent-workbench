@@ -20,7 +20,8 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest, ToolCall
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
-from ai_workbench.core.context_snapshot import capture_context
+from ai_workbench.core.context_snapshot import append_system_block, capture_context
+from ai_workbench.core.qq_context import runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.persona import ResolvedChatConfig
@@ -212,6 +213,11 @@ class HarnessAgentLoop:
                  for spec in (self.registry.get(name) for name in self.allowed_tools(config))]
         base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
+        trace = state.context_trace
+        if session.kind == "qqbot":
+            trace = trace.model_copy(deep=True)
+            base_messages, _ = append_system_block(base_messages, trace,
+                runtime_prompt(config, user.metadata["qq_batch_id"], state.qq_sent_count), "qq_runtime")
         request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],
                               tools=tools, stream=profile.request_options.streaming, reasoning=state.reasoning,
                               **({"tool_choice": "required" if state.rounds == 0 else "auto"} if session.kind == "qqbot" else {}),
@@ -227,7 +233,7 @@ class HarnessAgentLoop:
         metrics = first_metrics or LLMCallMetrics()
         try:
             try:
-                context_budget = ChatContextBudget(config.context_limits, state.context_trace)
+                context_budget = ChatContextBudget(config.context_limits, trace)
                 capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy, budget=context_budget)
                 calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture, context_budget),
                                                timeout=budget.check())

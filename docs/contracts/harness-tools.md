@@ -77,6 +77,7 @@ QQ runs always enable Harness with only qq_send_message; it is absent from the g
 rejects ordinary/Workspace allowlists and direct calls, and requires server-owned session, run and tool-call ids.
 Its destination comes solely from the immutable Session binding. One invocation sends one plain-text OneBot segment;
 CQ-looking content remains literal. Each batch's first model call uses tool_choice=required; subsequent calls use auto.
+Each call appends one qq_runtime system block to its immutable base context: snapshotted group/private target and bot identity, batch id and live confirmed-send count/limit. It requires a first tool call and confirmed reply, permits finishing once answered, excludes historical sends from the current count, and treats transcript names/text as data. Project prompts remain separate.
 Unsupported tools fail without ordinary-chat fallback. Final model prose remains internal. A model ending without
 a confirmed qq_send_message fails the run and batch with QQ_REPLY_REQUIRED and pauses the Session; the request
 is not retried or downgraded if a provider rejects or ignores the tool choice.
@@ -90,7 +91,7 @@ Cancellation, delivery errors and existing Harness limits retain precedence. Cou
 
 Every expired debounce window creates an immutable SQLite FIFO batch, including during inference or pause.
 Messages are reserved once. Execution is serialized across each Project, loading only the next unpaused Session's batch.
-Project configuration resolves when execution starts, then follows the existing immutable run snapshot.
+Project configuration resolves when execution starts, before asynchronous member lookup, then follows the existing immutable run snapshot.
 Delivery intents persist before dispatch, unique by run/tool-call id, with pending/sending/sent/failed/unknown states.
 Successful confirmation and its historical assistant message commit atomically; later failures preserve earlier sends.
 OneBot rejection is failed; disconnect, timeout, cancellation during sending or an invalid receipt is unknown.
@@ -102,7 +103,7 @@ Restart retains queues/debounce, marks running batches interrupted and in-flight
 Existing run reconciliation remains authoritative. QQ history has no editing, retry or direct-send API.
 Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
 
-Local fake-OneBot/fake-model tests cover transport, batching, context, failures, cancellation and restart. Live NapCat delivery,
+Local fake-OneBot/fake-model tests cover transport, batching, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,
 reconnect backfill, media understanding, manual sends, memory/resources and Linux Local Runtime remain outside current acceptance;
 [QQ integration boundaries](../FUTURE_QQ_INTEGRATION.md) retains deployment evidence and outstanding live verification.
 

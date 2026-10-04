@@ -144,6 +144,9 @@
   "newQQBot": "New QQBot",
   "qq": {
     "account": "Bot QQ account",
+    "defaultPrompt": "Participate naturally in the current QQ conversation. Stay on the latest topic and reply briefly in the other participants' language. Usually finish in one message; add another only when necessary. Follow the selected persona when present; otherwise be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others.",
+    "botSelf": "Bot account",
+    "everyone": "Everyone",
     "url": "OneBot WebSocket URL",
     "token": "Access token",
     "tokenSaved": "Token saved",

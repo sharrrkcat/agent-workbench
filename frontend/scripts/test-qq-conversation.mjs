@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { createModuleLoader, mockModule, sourceUrl } from './module-loader.mjs';
 
 const load = createModuleLoader();
@@ -126,3 +127,63 @@ try {
   Object.assign(globalThis, intervals);
 }
 console.log('QQ refresh caching, retry, control races and session isolation passed');
+
+// Use the editor's actual textarea handlers and retained hook state across locale changes.
+const prompts = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale,
+  JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/personas.json`, import.meta.url), 'utf8')).qq.defaultPrompt]));
+let editorCells = [], editorCursor = 0, editorLocale = 'en', editorCleanups = [];
+const savedWindow = globalThis.window;
+globalThis.window = { addEventListener() {}, removeEventListener() {} };
+const storeHook = (state) => Object.assign((select) => select(state), { getState: () => ({ reload: async () => {} }) });
+const editorLoader = createModuleLoader({
+  react: mockModule({ ...React,
+    useId: () => 'qq-editor', useCallback: (callback) => callback,
+    useState(initial) {
+      const cell = editorCells[editorCursor++] ??= { value: typeof initial === 'function' ? initial() : initial };
+      return [cell.value, (value) => { cell.value = typeof value === 'function' ? value(cell.value) : value; }];
+    },
+    useRef(initial) { return editorCells[editorCursor++] ??= { current: initial }; },
+    useEffect(effect) {
+      const cell = editorCells[editorCursor++] ??= { mounted: false };
+      if (!cell.mounted) { cell.mounted = true; const cleanup = effect(); if (cleanup) editorCleanups.push(cleanup); }
+    },
+  }),
+  'react-i18next': mockModule({ useTranslation: () => ({ t: (key) => key === 'qq.defaultPrompt' ? prompts[editorLocale] : key }) }),
+  [sourceUrl('hooks/useConfirmDialog.tsx')]: mockModule({ useConfirmDialog: () => ({ confirm: async () => true, confirmation: null }) }),
+  [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: storeHook({ profiles: [] }) }),
+  [sourceUrl('store/usePersonasStore.ts')]: mockModule({ usePersonasStore: storeHook({ personas: [] }) }),
+  [sourceUrl('store/useProjectsStore.ts')]: mockModule({ useProjectsStore: storeHook({}) }),
+  [sourceUrl('store/useCogitaStore.ts')]: mockModule({ useCogitaStore: storeHook({}) }),
+});
+try {
+  const { QQBotEditor, qqInput } = (await editorLoader('../src/components/projects/QQBotEditor.tsx')).exports;
+  const children = (node) => Array.isArray(node) ? node.flatMap(children) : React.isValidElement(node)
+    ? [node, ...children(node.props.children)] : [];
+  const renderEditor = () => {
+    editorCursor = 0;
+    return QQBotEditor({ onSaved() {}, onLeaveGuardChange() {} });
+  };
+  const promptField = () => children(renderEditor()).find((node) => node.props.id === 'qq-editor-prompt');
+  for (const locale of ['en', 'zh-CN']) {
+    editorLocale = locale;
+    renderEditor(); await new Promise(setImmediate);
+    assert.equal(promptField().props.value, prompts[locale]);
+    editorLocale = locale === 'en' ? 'zh-CN' : 'en';
+    assert.equal(promptField().props.value, prompts[locale], 'A locale switch preserves the opening default');
+    promptField().props.onChange({ target: { value: 'Edited prompt' } });
+    editorLocale = locale;
+    assert.equal(promptField().props.value, 'Edited prompt');
+    promptField().props.onChange({ target: { value: '' } });
+    editorLocale = locale === 'en' ? 'zh-CN' : 'en';
+    assert.equal(promptField().props.value, '', 'A cleared draft remains empty after a locale switch');
+    for (const cleanup of editorCleanups) cleanup();
+    editorCells = []; editorCleanups = [];
+  }
+  for (const system_prompt of ['', 'Saved prompt']) {
+    const existing = { ...qqInput(undefined, prompts.en), id: 'existing', system_prompt };
+    assert.equal(qqInput(existing, prompts['zh-CN']).system_prompt, system_prompt);
+  }
+} finally {
+  globalThis.window = savedWindow;
+}
+console.log('QQ editor defaults, edits and cleared prompts survive language changes; saved projects retain their prompts');

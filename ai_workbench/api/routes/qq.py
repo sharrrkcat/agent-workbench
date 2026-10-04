@@ -1,6 +1,5 @@
 """Read-only QQ transcript and explicit execution controls."""
 from typing import Literal
-import json
 from fastapi import APIRouter, Depends, Query
 from ai_workbench.api.deps import get_state, RuntimeState
 from ai_workbench.api.schemas.common import ApiModel, public_model, error_responses
@@ -14,6 +13,8 @@ BindingResponse = public_model("QQBindingResponse", QQBinding, fields={"target_k
 class QQReference(ApiModel):
     type: Literal["at", "reply"]
     id: str
+    name: str | None = None
+    is_self: bool = False
 
 
 MessageResponse = public_model("QQMessageResponse", QQMessage, omit={"references_json"}, fields={
@@ -82,12 +83,13 @@ async def control(session_id: str, payload: Control, state: RuntimeState = Depen
 
 
 @router.get("/sessions/{session_id}/messages", response_model=MessagePage, responses=error_responses(404))
-def messages(session_id: str, before: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
+async def messages(session_id: str, before: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
              state: RuntimeState = Depends(get_state)):
-    binding(state, session_id)
+    bound = binding(state, session_id)
     page = state.qq.store.page(QQMessage, session_id, before, limit)
+    await state.qq.names.project(bound, state.projects.get(bound.project_id).bot_account, page["items"])
     for row in page["items"]:
-        row["references"] = json.loads(row.pop("references_json"))
+        row.pop("references_json")
     return page
 
 

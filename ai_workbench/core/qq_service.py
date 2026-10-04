@@ -8,17 +8,18 @@ from pydantic import ValidationError
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolSpec, ToolExecutionError
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
-from ai_workbench.core.qq_store import QQStore
+from ai_workbench.core.qq_names import QQNames
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 log = logging.getLogger(__name__)
 
 
 class QQService:
-    def __init__(self, state, engine):
+    def __init__(self, state, store):
         self.state = state
-        self.store = QQStore(engine)
+        self.store = store
         self.connections = {}
+        self.names = QQNames(self.connections)
         self.tasks = {}
         self.workers = {}
         self.supervisor = None
@@ -37,10 +38,13 @@ class QQService:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.names.close()
 
     async def run(self):
         while True:
-            projects = {p.id: p for p in self.state.projects.list() if p.kind == "qqbot" and p.connection_enabled}
+            all_projects = [p for p in self.state.projects.list() if p.kind == "qqbot"]
+            self.names.retain_projects({p.id for p in all_projects})
+            projects = {p.id: p for p in all_projects if p.connection_enabled}
             for key in list(self.tasks):
                 connection = self.connections[key]
                 project = projects.get(key)
@@ -108,8 +112,9 @@ class QQService:
         now = time.time() if now is None else now
         # Synchronous transactions run without yielding: expiry wins at the exact deadline.
         self.store.freeze(binding.session_id, project.batch_message_limit, now)
-        self.store.ingest(binding, QQMessage(session_id=binding.session_id, **values),
-            trigger=kind == "friend" or any(k in keyword_text for k in project.keywords), now=now)
+        if self.store.ingest(binding, QQMessage(session_id=binding.session_id, **values),
+                trigger=kind == "friend" or any(k in keyword_text for k in project.keywords), now=now):
+            self.names.observe(binding, values["sender_id"], values["sender_name"])
 
     async def execute(self, batch):
         binding = self.store.get(QQBinding, batch.session_id)
@@ -123,12 +128,17 @@ class QQService:
             batch.run_id = run_id
             self.store.save(batch)
         try:
-            user = self.state.messages.add_message(batch.session_id, role="user", content=batch.text,
+            config = self.state.chat_service.resolve(self.state.sessions.get_session(batch.session_id))
+            rows = await self.names.project(binding, config.qq_bot_account,
+                [row.model_dump() for row in self.store.batch_messages(batch.id)], freeze=True, for_model=True)
+            self.store.save_references(rows)
+            text = "\n".join(f"[{row['timestamp']}][{row['sender_name']}（QQ:{row['sender_id']}）]:{row['text']}" for row in rows)
+            user = self.state.messages.add_message(batch.session_id, role="user", content=text,
                 metadata={"input_source": "qq", "qq_batch_id": batch.id})
             batch.input_message_id = user.message_id
             self.store.save(batch)
-            result = await self.state.chat_runner.run(session_id=batch.session_id, text=batch.text,
-                input_message_id=user.message_id, on_run_created=run_created)
+            result = await self.state.chat_runner.run(session_id=batch.session_id, text=text,
+                input_message_id=user.message_id, on_run_created=run_created, resolved_config=config)
             batch.run_id = result.run_id
             batch.status = "done" if result.success else (
                 "cancelled" if result.error_code == "RUN_CANCELLED" else "failed")

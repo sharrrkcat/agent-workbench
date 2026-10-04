@@ -17,13 +17,13 @@ import type { Project, QQBotProject, QQBotInput } from '../../types/projects';
 import { ContextFields, GenerationFields, ModelField } from '../personas/ConfigurationFields';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 
-export function qqInput(project?: QQBotProject): QQBotInput {
+export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput {
   if (project) {
     const { id: _id, created_at: _created, updated_at: _updated, has_access_token: _has, ...values } = project;
     return values;
   }
   return { kind: 'qqbot', name: '', bot_account: '', websocket_url: 'ws://127.0.0.1:3001',
-    connection_enabled: false, agent_persona_id: null, system_prompt: '', model_profile_id: null,
+    connection_enabled: false, agent_persona_id: null, system_prompt: defaultPrompt, model_profile_id: null,
     temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20, reply_message_limit: 4,
     context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'none' } };
 }
@@ -35,8 +35,8 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
   const { t } = useTranslation('personas');
   const id = useId();
   const { confirm, confirmation } = useConfirmDialog();
-  const [draft, setDraft] = useState(() => qqInput(project));
-  const [baseline, setBaseline] = useState(() => JSON.stringify(qqInput(project)));
+  const [draft, setDraft] = useState(() => qqInput(project, t('qq.defaultPrompt')));
+  const [baseline, setBaseline] = useState(() => JSON.stringify(draft));
   const [keywords, setKeywords] = useState(() => draft.keywords.join('\n'));
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);

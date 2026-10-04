@@ -49,6 +49,13 @@ class TimelineInput(ProjectInput):
     worldbook_ids: list[str] = Field(default_factory=list, max_length=128)
 
 
+QQ_DEFAULT_PROMPT = (
+    "Participate naturally in the current QQ conversation. Stay on the latest topic and reply briefly in the other "
+    "participants' language. Usually finish in one message; add another only when necessary. Follow the selected "
+    "persona when present; otherwise be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others."
+)
+
+
 class QQBotInput(ProjectInput):
     kind: Literal["qqbot"]
     bot_account: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
@@ -56,7 +63,7 @@ class QQBotInput(ProjectInput):
     access_token: str = Field(default="", max_length=4096, repr=False)
     connection_enabled: StrictBool = False
     agent_persona_id: str | None = None
-    system_prompt: str = Field(default="", max_length=100000)
+    system_prompt: str = Field(default=QQ_DEFAULT_PROMPT, max_length=100000)
     reasoning: StrictBool = True
     group_reply_mode: Literal["keyword"] = "keyword"
     keywords: list[str] = Field(default_factory=list, max_length=128)

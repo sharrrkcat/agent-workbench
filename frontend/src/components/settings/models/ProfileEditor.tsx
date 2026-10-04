@@ -150,7 +150,7 @@ export function ProfileEditor({
     } : null));
   const patchReference = (modelRef: string, suggestName = false) => setModel((draft) => draft ? {
     ...draft, value: selectModelReference(draft.value, modelRef,
-      suggestName && !draft.id && draft.value.source?.type === 'local'),
+      suggestName && !draft.id),
   } : null);
   const patchLocal = (patch: Partial<LocalModelSource>) =>
     setModel((draft) =>
@@ -251,6 +251,7 @@ export function ProfileEditor({
                                           provider_profile_id: selected.slice('provider:'.length),
                                         }
                                       : null,
+                                  !draft.id,
                                 ),
                               }
                             : null,
@@ -315,7 +316,7 @@ export function ProfileEditor({
                       <ComboboxInput required aria-label={t('modelRef')} disabled={busy}
                         onBlur={() => setModel((draft) => draft ? { ...draft,
                           value: selectModelReference(draft.value, draft.value.model_ref,
-                            !draft.id && draft.value.source?.type === 'local'),
+                            !draft.id),
                         } : null)} />
                       <ComboboxContent>
                         <ComboboxEmpty>{suggestionsMessage}</ComboboxEmpty>
@@ -349,13 +350,6 @@ export function ProfileEditor({
                     ) : null}
                   </Field>
                   <FieldGroup className="grid gap-4 sm:grid-cols-2">
-                    <Field orientation="horizontal">
-                      <Switch
-                        checked={model.value.enabled}
-                        onCheckedChange={(enabled) => patchModel({ enabled })}
-                      />
-                      <FieldLabel>{t('enabled')}</FieldLabel>
-                    </Field>
                     <Field orientation="horizontal">
                       <Switch
                         checked={model.value.external_enabled}
@@ -515,14 +509,14 @@ export function ProfileEditor({
                   <h3>{t('parameters')}</h3>
                   {model.value.kind === 'llm' ? <Field>
                     <FieldLabel htmlFor={formId + '-context-window'}>{t('contextWindow')}</FieldLabel>
-                    <Input id={formId + '-context-window'} type="number" min={512} max={local ? 1048576 : undefined} step={1}
-                      value={(local ? local.execution_options.context_size ?? 4096 : model.value.context_window_tokens) ?? ''}
+                    <Input id={formId + '-context-window'} type="number" required={!model.id} min={512} max={local ? 1048576 : undefined} step={1}
+                      value={(local ? local.execution_options.context_size ?? (model.id ? 4096 : '') : model.value.context_window_tokens) ?? ''}
                       onChange={(event) => {
                         const value = event.currentTarget.value === '' ? null : Number(event.currentTarget.value);
-                        if (local) patchLocal({ execution_options: { ...local.execution_options, context_size: value ?? 4096 } });
+                        if (local) patchLocal({ execution_options: { ...local.execution_options, context_size: value ?? (model.id ? 4096 : null) } });
                         else patchModel({ context_window_tokens: value });
                       }} />
-                    <FieldDescription>{t(local ? 'contextWindowLocalHelp' : 'contextWindowProviderHelp')}</FieldDescription>
+                    <FieldDescription>{t(local ? 'contextWindowLocalHelp' : 'contextWindowProviderHelp')}{!model.id ? ` ${t('contextWindowCreateHelp')}` : ''}</FieldDescription>
                   </Field> : null}
                   <ProfileParameters value={model.value} engine={engine} onChange={(parameters) => patchModel({ parameters })} />
                   {model.value.kind === 'llm' ? <p className="model-empty">{t('outputReserveHelp')}</p> : null}

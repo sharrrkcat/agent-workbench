@@ -17,7 +17,7 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   source: kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
     : kind === 'processor' ? { ...localSource(), execution_options: { device: 'd3d12', gpu_index: 0 } }
     : kind === 'asr' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4 } }
-    : localSource(),
+    : kind === 'llm' ? { ...localSource(), execution_options: { context_size: 4096 } } : localSource(),
   enabled: true,
   external_enabled: false,
   context_window_tokens: null,
@@ -67,7 +67,10 @@ export function applyDirectoryInspection(value: ModelInput, information: Directo
     parameters = { ...common, ...ttsGenerationDefaults[information.engine!], ...(resetSettings ? {} : parameters) };
   }
   const next = updateModel(value, { parameters, source: { ...value.source,
-    execution_options: { ...executionDefaults(engine), ...(resetSettings ? {} : value.source.execution_options) },
+    execution_options: { ...executionDefaults(engine), ...(resetSettings ? {} : value.source.execution_options),
+      ...(value.kind === 'llm' && 'context_size' in value.source.execution_options
+        ? { context_size: value.source.execution_options.context_size } : {}),
+    },
   } }, engine);
   return next;
 }
@@ -77,7 +80,10 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>, detec
   if (next.kind !== 'llm' || next.source?.type === 'local') next.context_window_tokens = null;
   const engine = localEngine(next, detected);
   if (next.source?.type === 'local' && engine !== localEngine(value, detected)) {
-    next.source = { ...next.source, execution_options: executionDefaults(engine) };
+    next.source = { ...next.source, execution_options: { ...executionDefaults(engine),
+      ...(next.kind === 'llm' && 'context_size' in next.source.execution_options
+        ? { context_size: next.source.execution_options.context_size } : {}),
+    } };
   }
   if (engine === 'transformers') {
     next.parameters = { ...next.parameters };
@@ -90,10 +96,14 @@ export function updateModel(value: ModelInput, patch: Partial<ModelInput>, detec
   return next;
 }
 
-export function selectModelReference(value: ModelInput, model_ref: string, suggestName: boolean): ModelInput {
+export function selectModelReference(value: ModelInput, model_ref: string, suggestIdentity: boolean): ModelInput {
+  const reference = model_ref.trim();
   return updateModel(value, { model_ref,
-    ...(suggestName && !value.name.trim() && model_ref.trim()
-      ? { name: model_ref.replace(/\/+$/, '').split('/').pop()! } : {}),
+    ...(suggestIdentity && reference ? {
+      ...(!value.name.trim() ? { name: reference } : {}),
+      ...(!value.alias.trim() ? { alias: reference.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^[^a-z0-9]+/, '').slice(0, 128) } : {}),
+    } : {}),
   });
 }
 
@@ -101,7 +111,7 @@ export function sourceValue(source: ModelSource | null): string {
   return source?.type === 'provider' ? `provider:${source.provider_profile_id}` : source?.type ?? '';
 }
 
-export function selectModelSource(value: ModelInput, source: ModelSource | null): ModelInput {
+export function selectModelSource(value: ModelInput, source: ModelSource | null, newDraft = false): ModelInput {
   if (sourceValue(source) === sourceValue(value.source)) return value;
   const parameters = value.kind === 'embedding'
     ? source?.type === 'local' ? { query_prompt_name: null, document_prompt_name: null } : {}
@@ -110,7 +120,16 @@ export function selectModelSource(value: ModelInput, source: ModelSource | null)
     skip_tool_capability_check: false, skip_vision_capability_check: false,
     skip_instant_capability_check: false, skip_reasoning_capability_check: false } : null;
   if (!source) return { ...value, source: null, parameters, request_options };
-  return updateModel(value, { source, parameters, request_options, model_ref: value.source ? '' : value.model_ref });
+  const context = value.source?.type === 'local'
+    ? value.source.execution_options.context_size : value.context_window_tokens;
+  const contextWindow = newDraft && value.kind === 'llm'
+    ? context ?? (source.type === 'local' ? 4096 : 258000) : undefined;
+  return updateModel(value, {
+    source: source.type === 'local' && contextWindow !== undefined
+      ? { ...source, execution_options: { ...source.execution_options, context_size: contextWindow } } : source,
+    ...(source.type === 'provider' && contextWindow !== undefined ? { context_window_tokens: Number(contextWindow) } : {}),
+    parameters, request_options, model_ref: value.source ? '' : value.model_ref,
+  });
 }
 
 export const newProvider = (): Omit<ProviderInput, 'enabled'> => ({

@@ -122,10 +122,14 @@ function QQStatus({ status, detail }: { status: QQMessage['disposition'] | QQDel
 }
 
 function QQIncoming({ message, showIdentity }: { message: QQMessage; showIdentity: boolean }) {
+  const { t } = useTranslation('personas');
+  const references = message.references.map((ref) => ref.type === 'reply'
+    ? `${t('qq.externalId')}: ${ref.id}`
+    : ref.id === 'all' ? t('qq.everyone') : `@${ref.name ?? ref.id} (QQ: ${ref.id})${ref.is_self ? ` · ${t('qq.botSelf')}` : ''}`);
   return <MessageFrame role="user" name={message.sender_name || message.sender_id} createdAt={message.timestamp}
     messageId={`qq-message-${message.id}`} showIdentity={showIdentity} showTime={showIdentity} textAvatar>
     <div className="flex min-w-0 items-center justify-end gap-1" data-qq-incoming={message.id}>
-      <QQStatus status={message.disposition} />
+      <QQStatus status={message.disposition} detail={references.join(' · ')} />
       <Bubble variant="secondary" align="end"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><div className="message">{message.text}</div></BubbleContent></Bubble>
     </div>
   </MessageFrame>;

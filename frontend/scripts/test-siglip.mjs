@@ -31,7 +31,7 @@ assert.deepEqual(model.parameters, { unload_other_tower_on_call: true });
 assert.deepEqual(model.source.execution_options, { device: 'cuda', intraop_threads: 4, max_batch_size: 1 });
 assert.equal(model.source.lifecycle.unload, 'manual');
 const selected = selectModelReference(model, 'image_embeddings/family-model', true);
-assert.equal(selected.name, 'family-model');
+assert.equal(selected.name, 'image_embeddings/family-model');
 assert.equal(selectModelReference(model, 'image_embeddings/typing', false).name, '');
 const edited = { ...selected, name: 'Chosen name', parameters: { unload_other_tower_on_call: false },
   source: { ...selected.source, execution_options: { device: 'cpu', intraop_threads: 2, max_batch_size: 8 },

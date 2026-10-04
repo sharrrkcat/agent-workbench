@@ -30,7 +30,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(batch).toHaveValue('1');
         await reference.press('ArrowDown');
         await page.getByRole('option', { name: 'image_embeddings/browser-naflex', exact: true }).click();
-        await expect(name).toHaveValue('browser-naflex');
+        await expect(name).toHaveValue('image_embeddings/browser-naflex');
         await expect(dialog).toContainText(labels.siglip.structures.naflex);
         await expect(dialog.getByText(labels.siglip.fields.textLimit, { exact: true }).locator('..')).toContainText('64');
         await expect(dialog).not.toContainText('1e+30');

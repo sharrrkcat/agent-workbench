@@ -125,11 +125,21 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     project_service = ProjectService(projects=projects, chat_service=chat_service)
     knowledge_service = KnowledgeService(store=knowledge, model_manager=manager, repo_root=repo_root,
         session_binding_resolver=lambda session_id: chat_service.effective_knowledge_ids(sessions.get_session(session_id)))
+    from ai_workbench.core.qq_store import QQStore
+    if engine is None:
+        from sqlmodel import create_engine, SQLModel
+        from sqlalchemy.pool import StaticPool
+        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
+        qq_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery)])
+    else:
+        qq_engine = engine
+    qq_store = QQStore(qq_engine)
     chat_runner = ChatRunner(
         sessions=sessions, messages=messages, runs=runs, events=events,
         model_manager=manager, app_settings=app_settings, utility_llm=utility_llm,
         knowledge_service=knowledge_service, active_runs=active_runs,
-        chat_service=chat_service,
+        chat_service=chat_service, qq_store=qq_store,
         tool_registry=tool_registry, harness_settings=harness_settings, network_policy=network_policy, repo_root=repo_root,
     )
     runtime = CogitaRuntime(chat_runner=chat_runner, active_runs=active_runs)
@@ -152,15 +162,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         history_reader=MemoryHistoryReader(sessions, messages, runs) if use_memory else SqlHistoryReader(engine),
     )
     from ai_workbench.core.qq_service import QQService
-    if engine is None:
-        from sqlmodel import create_engine, SQLModel
-        from sqlalchemy.pool import StaticPool
-        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
-        qq_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery)])
-    else:
-        qq_engine = engine
-    state.qq = QQService(state, qq_engine)
+    state.qq = QQService(state, qq_store)
     return state
 
 

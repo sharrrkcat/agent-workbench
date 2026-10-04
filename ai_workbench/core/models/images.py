@@ -11,12 +11,12 @@ from typing import Annotated, Any, Literal
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ConfigDict, Field
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from ai_workbench.core.attachments import attachment_mime_type, resolve_attachment_uri
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
-from ai_workbench.core.models.schema import ChatRequest, ImagePart
+from ai_workbench.core.models.schema import ChatRequest, ImagePart, ToolCall
 
 
 MAX_TAGGING_PIXELS = 64_000_000
@@ -40,8 +40,10 @@ ContextPart = Annotated[ContextText | AttachmentImageRef, Field(discriminator="t
 
 class ContextMessage(TypedDict):
     __pydantic_config__ = ConfigDict(extra="forbid", strict=True)
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str | list[ContextPart]
+    tool_calls: NotRequired[list[ToolCall]]
+    tool_call_id: NotRequired[str]
 
 
 def has_context_images(messages: list[ContextMessage]) -> bool:

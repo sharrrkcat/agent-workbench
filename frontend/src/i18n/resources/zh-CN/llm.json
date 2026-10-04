@@ -545,6 +545,7 @@
     "help": "关闭时发送前校验本地支持情况，未知时放行；开启时跳过对应校验，引擎仍可能报错。"
   },
   "contextWindow": "上下文窗口（token）",
+  "contextWindowCreateHelp": "新建模型时必填。选择来源时，空值自动填入：本地运行时为 4096，外部提供商为 258000；已有值保持不变。",
   "contextWindowLocalHelp": "窗口包含输入和输出；实际容量受运行实例和模型上限限制。",
   "contextWindowProviderHelp": "聊天前必须填写。窗口包含输入和输出；外部模型的输入计数为估算。",
   "outputReserveHelp": "最大输出留空时，预留窗口的四分之一，最多 4,096 token。"

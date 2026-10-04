@@ -19,6 +19,11 @@ class OneBotSender(BaseModel):
     nickname: str = ""
 
 
+class OneBotUser(OneBotSender):
+    model_config = ConfigDict(strict=True)
+    user_id: StrictInt | StrictStr
+
+
 class OneBotMessage(BaseModel):
     # Adapter extensions are ignored at this protocol boundary.
     model_config = ConfigDict(allow_inf_nan=False)
@@ -45,7 +50,7 @@ def _cq_segments(value):
 def normalize(event):
     parsed = OneBotMessage.model_validate(event)
     segments = _cq_segments(parsed.message) if isinstance(parsed.message, str) else parsed.message
-    text, keywords, refs = [], [], []
+    text, keywords, refs, offset = [], [], [], 0
     placeholders = {"image": "[图片]", "face": "[表情包]", "mface": "[表情包]",
         "record": "[语音]", "video": "[视频]", "file": "[文件]", "forward": "[转发消息]"}
     for segment in segments:
@@ -57,7 +62,8 @@ def normalize(event):
         elif kind == "at":
             value = str(data.get("qq", ""))
             text.append("@" + value)
-            refs.append({"type": "at", "id": value})
+            refs.append({"type": "at", "id": value, "start": offset, "end": offset + len(text[-1]),
+                         "name": None, "is_self": value == str(event.get("self_id")), "frozen": False})
         elif kind == "reply":
             value = str(data.get("id", ""))
             text.append("[引用:" + value + "]")
@@ -65,6 +71,7 @@ def normalize(event):
         else:
             sticker = kind == "image" and str(data.get("sub_type", "0")) != "0"
             text.append("[表情包]" if sticker else placeholders.get(kind, "[非文字消息]"))
+        offset += len(text[-1])
     sender_id = str(parsed.user_id)
     return dict(external_id=str(parsed.message_id), sender_id=sender_id,
         sender_name=parsed.sender.card or parsed.sender.nickname or sender_id,
@@ -79,6 +86,7 @@ class OneBotConnection:
         self.pending = {}
         self.ready = False
         self.status = "connecting"
+        self.login_name = ""
 
     async def run(self):
         headers = {"Authorization": "Bearer " + self.project.access_token} if self.project.access_token else {}
@@ -86,9 +94,10 @@ class OneBotConnection:
                            max_queue=16, open_timeout=10) as socket:
             self.socket = socket
             try:
-                login = await asyncio.wait_for(self.login(), 20)
-                if str(login.get("user_id")) != self.project.bot_account:
+                login = OneBotUser.model_validate(await asyncio.wait_for(self.login(), 20))
+                if str(login.user_id) != self.project.bot_account:
                     raise ToolExecutionError("QQ_ACCOUNT_MISMATCH", "Connected account differs from the Project.")
+                self.login_name = login.nickname
                 self.ready, self.status = True, "connected"
                 await self.read()
             finally:

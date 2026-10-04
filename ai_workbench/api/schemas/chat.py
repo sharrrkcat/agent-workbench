@@ -42,7 +42,7 @@ PersonaResponse = public_model("PersonaResponse", Persona, fields={
 })
 PersonaPatch = patch_model("PersonaPatch", PersonaInput)
 ResolvedConfiguration = public_model("ResolvedConfiguration", ResolvedChatConfig,
-    omit={"system_prompt", "project_system_prompt", "user_persona_prompt"})
+    omit={"system_prompt", "project_system_prompt", "user_persona_prompt", "qq_bot_account", "qq_target_kind", "qq_target_id"})
 
 
 _session_fields = {

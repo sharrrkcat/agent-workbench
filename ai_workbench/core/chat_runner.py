@@ -12,6 +12,7 @@ from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop
 from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.knowledge_context import build_session_knowledge_context
 from ai_workbench.core.context_snapshot import append_system_block, capture_context, omit_context_images, snapshot_attachment
@@ -46,6 +47,7 @@ class ChatRunner:
         harness_settings: Any = None,
         network_policy: Any = None,
         repo_root: Any = None,
+        qq_store: Any = None,
     ) -> None:
         self.sessions = sessions
         self.messages = messages
@@ -57,6 +59,7 @@ class ChatRunner:
         self.knowledge_service = knowledge_service
         self.active_runs = active_runs
         self.chat_service = chat_service
+        self.qq_store = qq_store
         self.harness_loop = HarnessAgentLoop(
             sessions=sessions, messages=messages, runs=runs, events=events, model_manager=model_manager,
             registry=tool_registry, network_policy=network_policy, harness_settings=harness_settings,
@@ -75,6 +78,7 @@ class ChatRunner:
         client_message_id: str | None = None,
         persona_id: str | None = None,
         on_run_created: Callable[[str], None] | None = None,
+        resolved_config: ResolvedChatConfig | None = None,
     ) -> RunResult:
         session = self.sessions.get_session(session_id)
         raw_text = str(text)
@@ -85,7 +89,7 @@ class ChatRunner:
                 raise ChatError("MESSAGE_SESSION_MISMATCH", "Input must be a user message from this session.")
 
         self.chat_service.assert_idle(session_id)
-        config = self.chat_service.resolve(session, persona_id=persona_id)
+        config = resolved_config if resolved_config is not None else self.chat_service.resolve(session, persona_id=persona_id)
         if input_message_id:
             user = self.messages.get_message(input_message_id)
         else:
@@ -335,12 +339,9 @@ class ChatRunner:
             attachments = []
         attachment_trace = ContextTrace()
         current_text = _with_current_attachments(text, attachments, self.app_settings.get(), attachment_trace)
-        result = self.context_builder.build(
-            session.session_id,
-            current_text,
-            policy,
-            current_message_id=current_message_id,
-        )
+        result = (build_qq_context(self.qq_store, self.messages, session.session_id, current_text, policy, current_message_id)
+                  if session.kind == "qqbot" else self.context_builder.build(
+                      session.session_id, current_text, policy, current_message_id=current_message_id))
         messages = list(result.messages)
         trace = result.trace
         current_index = len(messages) - 1

@@ -14,6 +14,8 @@ def install_qq_fixture(app):
         receipt = 9000
         async def send(action, params):
             nonlocal receipt
+            if action == "get_group_member_info":
+                return {"user_id": params["user_id"], "card": "QQ bot" if str(params["user_id"]) == project.bot_account else "Mentioned member"}
             receipt += 1
             return {"message_id": receipt}
         state.projects.save(project.model_copy(update={"connection_enabled": True}))
@@ -50,6 +52,8 @@ def install_qq_fixture(app):
                 "message_id": number, "time": 1700000000 + number,
                 "sender": {"nickname": "QQ participant"},
                 "message": [{"type": "text", "data": {"text": f"Record {number}" if number < 65 else "qq-fixture bot"}},
+                            *([{"type": "at", "data": {"qq": project.bot_account}},
+                               {"type": "at", "data": {"qq": "8888"}}] if number == 65 else []),
                             {"type": "image", "data": {}}],
             }, now=number / 100)
         batch = state.qq.store.freeze(session_id, project.batch_message_limit, 10)

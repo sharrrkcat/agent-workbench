@@ -46,7 +46,7 @@ for (const locale of ['en', 'zh-CN']) {
         const input = dialog.getByLabel(labels.modelRef, { exact: true });
         await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
         await fillCombobox(input, reference);
-        await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('browser-text');
+        await expect(dialog.getByLabel(labels.name, { exact: true })).toHaveValue('embeddings/browser-text');
         await expect(dialog).toContainText('1024');
         await expect(dialog).toContainText('32768');
         await expect(dialog).toContainText('lasttoken');

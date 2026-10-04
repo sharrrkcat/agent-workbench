@@ -60,13 +60,21 @@ def test_each_batch_forces_its_first_tool_call_and_then_allows_stop(qq_client, s
         assert [r["tool_choice"] for r in requests] == ["required", "auto"]
         system = requests[0]["messages"][0]["content"]
         assert f"QQ {'private' if private else 'group'} conversation" in system
-        assert "This batch has been selected for a reply" in system and "at most 4 messages" in system
+        assert "This batch needs a reply" in system and "confirmed sends=0/4" in system
+        assert system.count("Current batch=") == 1
+        assert "confirmed sends=1/4" in requests[1]["messages"][0]["content"]
         assert requests[1]["messages"][-1]["role"] == "tool"
         if number > 1:
-            assert any(m.get("content") == f"reply {number - 1}" for m in requests[0]["messages"])
+            assert any(json.loads(call["function"]["arguments"])["text"] == f"reply {number - 1}"
+                       for m in requests[0]["messages"] for call in m.get("tool_calls", []))
+            assert not any(m.get("content") == f"reply {number - 1}" for m in requests[0]["messages"])
         model_steps = [s for s in state.runs.list_steps(run.run_id) if s.kind == "model"]
         assert len(model_steps) == 2
         assert [state.runs.get_context_snapshot(s.step_id).request.tool_choice for s in model_steps] == ["required", "auto"]
+        for index, step in enumerate(model_steps):
+            snapshot = state.runs.get_context_snapshot(step.step_id)
+            runtime = next(source for source in snapshot.sources if source.kind == "qq_runtime")
+            assert f"confirmed sends={index}/4" in snapshot.request.messages[runtime.message_index].content[runtime.start:runtime.end]
     assert len(connection.calls) == 3
 
 
@@ -124,7 +132,7 @@ def test_running_limit_is_snapshotted_and_progress_retains_confirmed_count(qq_cl
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "done" and run.metadata["qq_reply"]["sent_count"] == 2
     assert state.runs.get_config_snapshot(run.run_id)["qq_reply_message_limit"] == 2
-    assert all("at most 2 messages" in r["messages"][0]["content"] for r in upstream.calls)
+    assert all(f"confirmed sends={i}/2" in r["messages"][0]["content"] for i, r in enumerate(upstream.calls))
     connection.call = original
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "next"}))]
     _, next_run = execute_batch(client, state, p, session, 2)

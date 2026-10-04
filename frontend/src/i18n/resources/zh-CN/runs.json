@@ -83,6 +83,7 @@
       "system": "System",
       "agent_persona": "Agent Persona",
       "project_prompt": "项目提示词",
+      "qq_runtime": "QQ 运行信息",
       "cogita_persona": "Cogita Persona",
       "knowledge": "Knowledge",
       "knowledge_snippet": "知识片段",

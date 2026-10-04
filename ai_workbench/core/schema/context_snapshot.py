@@ -69,7 +69,7 @@ class SnapshotRequest(GenerationParameters):
 
 SourceKind = Literal[
     "system", "agent_persona", "project_prompt", "cogita_persona", "knowledge", "knowledge_snippet",
-    "history", "current_input", "attachment", "tool_call", "tool_result", "tools",
+    "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime",
 ]
 
 

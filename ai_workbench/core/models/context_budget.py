@@ -84,7 +84,7 @@ class ChatContextBudget:
     def _history_groups(self):
         # An old system message can share its slot with newly appended instructions.
         fixed = {s.message_index for s in self.trace.sources if s.kind in {
-            "agent_persona", "project_prompt", "cogita_persona", "knowledge", "current_input"}}
+            "agent_persona", "project_prompt", "cogita_persona", "knowledge", "current_input", "qq_runtime"}}
         groups = {}
         for source in self.trace.sources:
             if source.kind == "history" and source.message_index not in fixed:
