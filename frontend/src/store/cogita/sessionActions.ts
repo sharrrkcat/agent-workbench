@@ -54,7 +54,7 @@ export const createSessionActions: CogitaActions<
         }),
         scope ? Promise.resolve(useProjectsStore.getState().projects.find((project) => project.id === scope)
           ?? useProjectsStore.getState().load(scope)).then((project) => {
-          if (project.kind !== 'workspace') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
+          if (project.kind === 'timeline') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
         }) : Promise.resolve(),
       ]);
       if (get().sessionEpoch !== epoch) return;
@@ -88,7 +88,7 @@ export const createSessionActions: CogitaActions<
       if (request !== initializationVersion) return;
       const sessions = listed;
       const selected = selectOrdinary ? sessions[0] : null;
-      set((state) => ({ sessions: [...state.sessions.filter((session) => session.kind === 'workspace'), ...sessions] }));
+      set((state) => ({ sessions: [...state.sessions.filter((session) => session.kind !== 'ordinary'), ...sessions] }));
       if (get().settingsVersion === settingsVersion) get().setSettings(settings);
       if (get().sessionEpoch === epoch) {
         if (selectOrdinary && !selected) await get().startDraft();
@@ -148,7 +148,7 @@ export const createSessionActions: CogitaActions<
           persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)!.id,
           model_profile_id: defaultModelId(models.profiles, models.settings?.default_model_profile_id),
           context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'explicit' },
-          generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.map((tool) => tool.name) } });
+          generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.filter((tool) => tool.name !== "qq_send_message").map((tool) => tool.name) } });
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
     }

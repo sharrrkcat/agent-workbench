@@ -23,9 +23,10 @@ class ProjectStore:
     def _decode(row: ProjectRecord, db: Session) -> Project:
         values = row.model_dump()
         values.update(json.loads(values.pop("configuration_json")))
-        record, key, field = BINDINGS[row.kind]
-        values[field] = [getattr(binding, key) for binding in db.exec(
-            select(record).where(record.project_id == row.id).order_by(record.sort_order)).all()]
+        if row.kind in BINDINGS:
+            record, key, field = BINDINGS[row.kind]
+            values[field] = [getattr(binding, key) for binding in db.exec(
+                select(record).where(record.project_id == row.id).order_by(record.sort_order)).all()]
         return project_adapter.validate_python(values)
 
     def list(self) -> list[Project]:
@@ -49,9 +50,9 @@ class ProjectStore:
         if self.engine is None:
             self._projects[project.id] = project.model_copy(deep=True)
         else:
-            record, key, field = BINDINGS[project.kind]
+            binding = BINDINGS.get(project.kind)
             values = project.model_dump()
-            ids = values.pop(field)
+            ids = values.pop(binding[2]) if binding else []
             metadata = {key: values.pop(key) for key in ("id", "name", "kind", "created_at", "updated_at")}
             metadata["configuration_json"] = json.dumps(values, ensure_ascii=False)
             with Session(self.engine) as db:
@@ -63,9 +64,11 @@ class ProjectStore:
                         setattr(row, name, value)
                 db.add(row)
                 db.flush()
-                db.exec(delete(record).where(record.project_id == project.id))
-                for index, resource_id in enumerate(ids):
-                    db.add(record(project_id=project.id, sort_order=index, **{key: resource_id}))
+                if binding:
+                    record, key, _ = binding
+                    db.exec(delete(record).where(record.project_id == project.id))
+                    for index, resource_id in enumerate(ids):
+                        db.add(record(project_id=project.id, sort_order=index, **{key: resource_id}))
                 db.commit()
         return project.model_copy(deep=True)
 
@@ -74,15 +77,17 @@ class ProjectStore:
         if self.engine is None:
             del self._projects[project_id]
         else:
-            record, _, _ = BINDINGS[project.kind]
             with Session(self.engine) as db:
-                db.exec(delete(record).where(record.project_id == project_id))
+                if project.kind in BINDINGS:
+                    record, _, _ = BINDINGS[project.kind]
+                    db.exec(delete(record).where(record.project_id == project_id))
                 db.delete(db.get(ProjectRecord, project_id))
                 db.commit()
 
     def references_persona(self, persona_id: str) -> bool:
         return any(persona_id in (
             (project.agent_persona_id, project.cogita_persona_id) if project.kind == "workspace"
+            else (project.agent_persona_id,) if project.kind == "qqbot"
             else (project.character_persona_id, project.user_persona_id)) for project in self.list())
 
     def references_resource(self, kind: str, resource_id: str) -> bool:

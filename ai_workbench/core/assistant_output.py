@@ -110,7 +110,7 @@ class AssistantDraft:
             message_id=message_id, session_id=session_id, run_id=run_id, role="assistant",
             speaker_type="assistant", speaker_id=config.persona_id,
             parent_message_id=parent_message_id,
-            metadata={"streamed": streamed},
+            metadata={"streamed": streamed, **({"qq_internal": True} if config.session_kind == "qqbot" else {})},
         )
         draft = self.message.model_copy(update={"metadata": {**self.message.metadata, "streaming": True}})
         self._emit("message_started", {"message": draft.model_dump(mode="json"), "seq": 0})

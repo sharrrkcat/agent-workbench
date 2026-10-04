@@ -59,6 +59,7 @@ class ConversationHistory:
 
     def delete_reply(self, run_id: str) -> HistoryPruned:
         run = self.runs.get_run(run_id)
+        self._assert_editable(run.session_id)
         self.chat_service.assert_idle(run.session_id)
         return self._apply(run.session_id, {run_id})
 
@@ -70,6 +71,7 @@ class ConversationHistory:
 
     def retry(self, run_id: str):
         run = self.runs.get_run(run_id)
+        self._assert_editable(run.session_id)
         self.chat_service.assert_idle(run.session_id)
         if run.kind != "chat":
             raise ChatError("CANNOT_RETRY_RUN", "Only chat replies can be retried.", 400)
@@ -108,8 +110,13 @@ class ConversationHistory:
                          payload={"message": updated.model_dump(mode="json")})
         return updated, change
 
+    def _assert_editable(self, session_id):
+        if self.sessions.get_session(session_id).kind == "qqbot":
+            raise ChatError("QQ_READ_ONLY", "QQ history cannot be edited or regenerated.", 409)
+
     def _user(self, message_id: str) -> MessageSchema:
         message = self.messages.get_message(message_id)
+        self._assert_editable(message.session_id)
         if message.role != "user":
             raise ChatError("CANNOT_EDIT_MESSAGE", "Use the reply's run for assistant history operations.", 400)
         return message

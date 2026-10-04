@@ -1,3 +1,5 @@
+import { QQSessionDialog } from "./components/projects/QQSessionDialog";
+import { QQSessionView } from "./components/projects/QQSessionView";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createWebSocketUrl } from './api/url';
 import { usePersonasStore } from './store/usePersonasStore';
@@ -39,6 +41,7 @@ export default function App() {
   const activateLocation = useCogitaStore((state) => state.activateLocation);
   const refreshCurrent = useCogitaStore((state) => state.refreshCurrent);
   const applyRuntimeEvent = useCogitaStore((state) => state.applyRuntimeEvent);
+  const [qqCreate, setQQCreate] = useState<string | null>(null);
   const [location, setLocation] = useState(readLocation);
   const committed = useRef(location);
   const lastHome = useRef(location.pathname === '/settings' ? '/' : location.url);
@@ -120,6 +123,10 @@ export default function App() {
     const target = newChatUrl(projectId);
     if (guarded(committed.current) && !(await leaveSettings.current(new URL(target, window.location.href)))) return false;
     if (committed.current !== origin) return false;
+    if (projectId && useProjectsStore.getState().projects.find((p) => p.id === projectId)?.kind === 'qqbot') {
+      setQQCreate(projectId);
+      return true;
+    }
     await useCogitaStore.getState().startDraft(projectId);
     if (committed.current !== origin || useCogitaStore.getState().chatDraft?.project_id !== projectId) return false;
     commitUrl(target);
@@ -260,7 +267,7 @@ export default function App() {
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
             {projectRoute.projectId && !projectRoute.sessionId && !isDraftRoute(location) ?
               <ProjectPage projectId={projectRoute.projectId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} onCreateSession={createSession} /> :
-              <>
+              currentSession?.kind === 'qqbot' && conversationReady ? <QQSessionView key={currentSession.session_id} session={currentSession} /> : <>
                 <ChatHeader onOpenSettings={(route) => void navigate(settingsRouteUrl(route))} />
                 <ErrorBanner />
                 {conversationReady || draftReady || sessionLoad ? <ChatView key={sessionEpoch} /> :
@@ -273,6 +280,9 @@ export default function App() {
           </SidebarInset>
         </>
       )}
+      {qqCreate ? <QQSessionDialog projectId={qqCreate} onClose={() => setQQCreate(null)} onSaved={(id) => {
+        const projectId = qqCreate; setQQCreate(null); void selectSession(id, projectId);
+      }} /> : null}
     </SidebarProvider>
   );
 }

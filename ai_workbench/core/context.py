@@ -176,4 +176,4 @@ def _eligible(message: Any) -> bool:
     if getattr(message,"role","") not in {"system","user","assistant","tool"}: return False
     if any(isinstance(part,dict) and part.get("type")=="error" for part in getattr(message,"parts",[]) or []): return False
     metadata=getattr(message,"metadata",{}) or {}
-    return not bool(metadata.get("event_type") or metadata.get("incomplete") or metadata.get("streaming"))
+    return not bool(metadata.get("qq_internal") or metadata.get("event_type") or metadata.get("incomplete") or metadata.get("streaming"))

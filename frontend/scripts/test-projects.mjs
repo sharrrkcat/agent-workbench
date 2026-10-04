@@ -142,4 +142,12 @@ await chatApi.updateSession('child', { overrides: { temperature: 0, harness_enab
 assert.deepEqual(requests.at(-1).body, { overrides: { temperature: 0, harness_enabled: false, tools_allowed: [] } });
 await chatApi.updateSession('child', { overrides: { temperature: null } });
 assert.deepEqual(requests.at(-1).body, { overrides: { temperature: null } });
+const { qqApi } = (await realLoad('../src/api/qq.ts')).exports;
+await qqApi.createSession('qq/a', { title: '', target_kind: 'friend', target_id: '12345678901234567' });
+assert.deepEqual(requests.at(-1), { url: '/api/projects/qq%2Fa/sessions', method: 'POST',
+  body: { title: '', target_kind: 'friend', target_id: '12345678901234567' } });
+await qqApi.control('session/a', 'stop');
+assert.deepEqual(requests.at(-1), { url: '/api/qq/sessions/session%2Fa/control', method: 'POST', body: { action: 'stop' } });
+await qqApi.messages('session/a', 42);
+assert.equal(requests.at(-1).url, '/api/qq/sessions/session%2Fa/messages?before=42');
 console.log('Project routing, scope isolation, delayed selection/deletion and sparse override payloads: ok');

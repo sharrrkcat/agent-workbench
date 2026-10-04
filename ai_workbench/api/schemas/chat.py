@@ -15,7 +15,7 @@ from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.persona import Persona, PersonaIdentity, PersonaInput, ResolvedChatConfig
 from ai_workbench.core.schema.run import RunSchema, RunStepSchema
 from ai_workbench.core.schema.run_event import RunEventSchema
-from ai_workbench.core.session import OrdinarySession, WorkspaceSession
+from ai_workbench.core.session import OrdinarySession, WorkspaceSession, QQSession
 
 
 class JsonPart(parts.JsonPart):
@@ -52,7 +52,8 @@ _session_fields = {
 }
 OrdinarySessionResponse = public_model("OrdinarySessionResponse", OrdinarySession, fields=_session_fields)
 WorkspaceSessionResponse = public_model("WorkspaceSessionResponse", WorkspaceSession, fields=_session_fields)
-SessionResponse = Annotated[OrdinarySessionResponse | WorkspaceSessionResponse, Field(discriminator="kind")]
+QQSessionResponse = public_model("QQSessionResponse", QQSession, fields={**_session_fields, "user_persona": (None, None)})
+SessionResponse = Annotated[OrdinarySessionResponse | WorkspaceSessionResponse | QQSessionResponse, Field(discriminator="kind")]
 def validate_step_metadata(value: dict) -> dict:
     if "llm" in value:
         LLMCallSnapshot.model_validate(value["llm"])

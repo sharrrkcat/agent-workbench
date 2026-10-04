@@ -21,6 +21,7 @@ from ai_workbench.core.schema.run import RunStatus
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, tool_call
 from tests.runtime_browser_fixture import install_runtime_fixture
+from tests.qq_browser_fixture import install_qq_fixture
 
 
 class FixtureStream(httpx.AsyncByteStream):
@@ -62,7 +63,10 @@ class PresentationOpenAI(ToolOpenAI):
             command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
-        if command in {"context-usage", "context-no-usage"}:
+        if "qq-fixture" in command:
+            chunks = [{"tool_calls": [{"index": 0, **tool_call("qq_send_message", {"text": "Confirmed QQ reply"})}]}] if not outputs else [{"content": "Internal QQ prose"}]
+            stream = FixtureStream(chunks, "tool_calls" if not outputs else "stop", delay=.01)
+        elif command in {"context-usage", "context-no-usage"}:
             stream = FixtureStream([{"content": "Context meter answer."}], delay=1,
                 prompt_tokens=8126 if command == "context-usage" else None)
         elif command == "scroll-output":
@@ -100,6 +104,7 @@ def create_fixture_app(repository: Path, root: Path):
     client.patch("/api/settings/general", json={"auto_generate_session_titles": False}).raise_for_status()
     state = app.state.runtime_state
     install_runtime_fixture(app, root)
+    install_qq_fixture(app)
 
     @app.post("/__test__/session")
     async def fixture_session(values: dict = Body(default={})):

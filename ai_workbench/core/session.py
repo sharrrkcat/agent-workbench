@@ -15,7 +15,7 @@ class SessionGenerationParameters(StrictModel):
     temperature: float | None = Field(default=None, ge=0, le=2)
 
 
-SessionKind = Literal["ordinary", "workspace", "timeline"]
+SessionKind = Literal["ordinary", "workspace", "timeline", "qqbot"]
 
 
 class ChatSettings(StrictModel):
@@ -86,7 +86,14 @@ class WorkspaceSession(SessionBase):
 
 
 # Timeline is a reserved identity, not a constructible conversation in this release.
-Session = Annotated[OrdinarySession | WorkspaceSession, Field(discriminator="kind")]
+class QQSession(SessionBase):
+    kind: Literal["qqbot"] = "qqbot"
+    project_id: str
+    target_kind: Literal["group", "friend"]
+    target_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+
+
+Session = Annotated[OrdinarySession | WorkspaceSession | QQSession, Field(discriminator="kind")]
 session_adapter = TypeAdapter(Session)
 
 

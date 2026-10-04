@@ -171,7 +171,7 @@ def test_context_migration_adds_only_private_storage(tmp_path):
     for file in files:
         file.parent.mkdir()
         file.write_text("keep")
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.CONTEXT_SNAPSHOTS_REVISION)
     after = migrations.inspect_schema(engine)
     assert set(after.columns["runsteprecord"]) - set(before.columns["runsteprecord"]) == {"context_snapshot_json"}
     assert after.tables == before.tables

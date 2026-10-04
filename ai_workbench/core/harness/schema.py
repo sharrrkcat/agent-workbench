@@ -53,6 +53,8 @@ class ToolExecutionContext:
     network_policy: Any
     knowledge_service: Any = None
     session_id: str | None = None
+    run_id: str | None = None
+    tool_call_id: str | None = None
     knowledge_base_ids: list[str] | None = None
     harness_settings: HarnessSettings | None = None
 

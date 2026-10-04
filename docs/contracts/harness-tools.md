@@ -1,7 +1,7 @@
 # Harness and tools contract
 
 Harness execution uses effective `harness_enabled` and `tools_allowed`. Ordinary
-sessions default off with all registered tools; explicit [] disables every tool.
+sessions default off with all general-purpose tools; explicit [] disables every tool.
 Workspace sessions inherit Project defaults and may override them; Persona owns neither field.
 Changing Harness enablement preserves the list, and new registry entries do
 not rewrite existing lists. The composer's model menu toggles Harness immediately, displays on/off text and keeps the menu open; failure preserves confirmed state.
@@ -24,7 +24,7 @@ does not load manifests, plugin directories or dynamic modules. Each ToolSpec
 has a lower snake_case name (at most 64 characters), description, Draft 2020-12
 object schema, handler, risk, requires_approval and direct_callable.
 Session allowlists are unique and reference registered names.
-Built-ins support both model and direct invocation through the same handler,
+General-purpose built-ins support model and direct invocation through the same handler,
 schema, permissions, approval and persistence paths. MCP clients and ComfyUI
 tools are outside the current catalog and require separate design decisions.
 
@@ -40,6 +40,7 @@ model loop. Invalid direct requests fail before creating a run.
 | fetch_url | url, max_chars? | Every call |
 | knowledge_search | query, knowledge_base_ids?, top_k?, max_context_chars? | Automatic |
 | base64_encode / base64_decode | value | Automatic |
+| qq_send_message | text (1..4000 characters, nonblank) | Automatic, QQBot model runs only |
 
 File paths are relative to the application root and restricted to `data/knowledge`
 and `data/attachments`. Absolute paths, traversal, Windows alternate streams
@@ -63,6 +64,38 @@ Changing settings while waiting affects later runs. Knowledge search accepts
 only subsets of the run's resolved session bindings, including an explicit
 empty subset. Codec input and output are each capped at 1 MiB and decoded
 bytes must be valid UTF-8.
+
+## QQ delivery and queues
+
+The application owns one OneBot v11 WebSocket connection per enabled QQBot Project, with external NapCat installation/login.
+Identity verification precedes ingestion. Transport reconnects automatically; status distinguishes authentication,
+account mismatch and connection failure without exposing tokens. Wire messages are at most 1 MiB with a bounded receive queue.
+Malformed bound messages are ignored with a content-free diagnostic. Duplicate external ids within a bound conversation
+are ignored without resetting debounce. Bot echoes never enter batches; known external ids mark confirmed delivery records echoed.
+
+QQ runs always enable Harness with only qq_send_message; it is absent from the general catalog/default selections,
+rejects ordinary/Workspace allowlists and direct calls, and requires server-owned session, run and tool-call ids.
+Its destination comes solely from the immutable Session binding. One invocation sends one plain-text OneBot segment;
+CQ-looking content remains literal. Multiple invocations use normal Harness limits. Unsupported tools fail the run,
+without ordinary-chat fallback. Final model prose remains internal; a successful run without sends becomes no_reply.
+
+Every expired debounce window creates an immutable SQLite FIFO batch, including during inference or pause.
+Messages are reserved once. Execution is serialized across each Project, loading only the next unpaused Session's batch.
+Project configuration resolves when execution starts, then follows the existing immutable run snapshot.
+Delivery intents persist before dispatch, unique by run/tool-call id, with pending/sending/sent/failed/unknown states.
+Successful confirmation and its historical assistant message commit atomically; later failures preserve earlier sends.
+OneBot rejection is failed; disconnect, timeout, cancellation during sending or an invalid receipt is unknown.
+Delivery errors terminate the current run and pause the Session before another send. No automatic resend or regeneration occurs.
+Generation failures also pause. `/api/qq/sessions/{id}/control` pause prevents new execution while ingestion/batching continue;
+stop additionally cancels active work. Resume requires idle state and selects untouched queued batches only.
+Failed, cancelled and interrupted batches never replay. Disabling a connection stops ingress/dispatch and blocks later sends.
+Restart retains queues/debounce, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
+Existing run reconciliation remains authoritative. QQ history has no editing, retry or direct-send API.
+Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
+
+Local fake-OneBot/fake-model tests cover transport, batching, context, failures, cancellation and restart. Live NapCat delivery,
+reconnect backfill, media understanding, manual sends, memory/resources and Linux Local Runtime remain outside current acceptance;
+[QQ integration boundaries](../FUTURE_QQ_INTEGRATION.md) retains deployment evidence and outstanding live verification.
 
 ## Loop, approval and cancellation
 

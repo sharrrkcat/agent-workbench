@@ -16,11 +16,24 @@ import { usePersonasStore } from '../../store/usePersonasStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Persona, PersonaCollection } from '../../types/chat';
-import type { Project, ProjectInput, ProjectKind } from '../../types/projects';
+import type { Project as AnyProject, ProjectInput as AnyProjectInput, ProjectKind as AnyProjectKind } from '../../types/projects';
 import type { HarnessTool } from '../../types/tools';
 import { BindingsField, ContextFields, GenerationFields, ModelField, PersonaAvatar, PersonaField, ToolsField } from '../personas/ConfigurationFields';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 import { settingsRouteUrl, type SettingsNavigate } from '../settings/navigation';
+
+import { QQBotEditor } from './QQBotEditor';
+type Project = Exclude<AnyProject, { kind: 'qqbot' }>;
+type ProjectInput = Exclude<AnyProjectInput, { kind: 'qqbot' }>;
+type ProjectKind = Exclude<AnyProjectKind, 'qqbot'>;
+type EditorProps = {
+  project?: AnyProject; kind: AnyProjectKind; onSaved: (project: AnyProject) => void; onNavigate: SettingsNavigate;
+  onLeaveGuardChange: (guard: LeaveGuard) => void; dialog?: boolean;
+};
+export function ProjectEditor(props: EditorProps) {
+  if (props.kind === 'qqbot') return <QQBotEditor {...props} project={props.project?.kind === 'qqbot' ? props.project : undefined} />;
+  return <StandardProjectEditor {...props} kind={props.kind} project={props.project?.kind !== 'qqbot' ? props.project : undefined} />;
+}
 
 export function projectInput(project: Project): ProjectInput {
   const { id: _id, created_at: _created, updated_at: _updated, ...values } = project;
@@ -33,11 +46,11 @@ export function newProjectInput(kind: ProjectKind, personas: Persona[], tools: H
   return kind === 'workspace' ? { ...common, kind,
     agent_persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)?.id || '',
     cogita_persona_id: personas.find((p) => p.collection === 'user')?.id || '',
-    harness_enabled: false, tools_allowed: tools.map((tool) => tool.name), system_prompt: '', knowledge_base_ids: [],
+    harness_enabled: false, tools_allowed: tools.filter((tool) => tool.name !== "qq_send_message").map((tool) => tool.name), system_prompt: '', knowledge_base_ids: [],
   } : { ...common, kind, character_persona_id: '', user_persona_id: '', worldbook_ids: [] };
 }
 
-export function ProjectEditor({ project, kind, onSaved, onNavigate, onLeaveGuardChange, dialog = false }: {
+function StandardProjectEditor({ project, kind, onSaved, onNavigate, onLeaveGuardChange, dialog = false }: {
   project?: Project; kind: ProjectKind; onSaved: (project: Project) => void; onNavigate: SettingsNavigate;
   onLeaveGuardChange: (guard: LeaveGuard) => void; dialog?: boolean;
 }) {
@@ -108,7 +121,7 @@ export function ProjectEditor({ project, kind, onSaved, onNavigate, onLeaveGuard
     setBusy(true); setError(''); setNotice('');
     try {
       const saved = await useProjectsStore.getState().save(draft, project?.id);
-      if (!live.current) return;
+      if (!live.current || saved.kind === "qqbot") return;
       const values = projectInput(saved);
       setDraft(values); setBaseline(JSON.stringify(values)); setNotice(t('projectSaved'));
       status.current = { dirty: false, busy: false };

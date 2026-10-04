@@ -16,7 +16,7 @@ from ai_workbench.api.deps import RuntimeState, build_runtime_state
 from ai_workbench.api.routes import attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook, tools
 from ai_workbench.api.ws import router as ws_router
 from ai_workbench.api.routes import runtimes
-from ai_workbench.api.routes import personas, projects, history
+from ai_workbench.api.routes import personas, projects, history, qq
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.models.http import InferenceObservabilityMiddleware
 from ai_workbench.core.models.errors import ModelError
@@ -30,9 +30,11 @@ async def runtime_lifespan(app: FastAPI):
     import asyncio
     try:
         await asyncio.to_thread(lambda: app.state.runtime_state.model_manager.asr_inputs)
+        app.state.runtime_state.qq.start()
         yield
     finally:
         state = app.state.runtime_state
+        await state.qq.close()
         await state.active_runs.cancel_all()
         await state.runtime_supervisor.close()
         await state.model_manager.close()
@@ -119,6 +121,7 @@ def create_app(
     app.include_router(sessions.router)
     app.include_router(personas.router)
     app.include_router(projects.router)
+    app.include_router(qq.router)
     app.include_router(tools.router)
     app.include_router(history.router)
     app.include_router(messages.router)

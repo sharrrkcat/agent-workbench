@@ -24,7 +24,7 @@ export function HarnessSettingsSheet({ session, onClose, finalFocus, onBusyChang
   const sessionEpoch = useCogitaStore((state) => state.sessionEpoch);
   const project = useProjectsStore((state) => state.projects.find((item) => item.id === session.project_id));
   const workspace = project?.kind === 'workspace' ? project : null;
-  const [initialTools] = useState(() => session.kind === 'ordinary' ? session.tools_allowed : session.overrides.tools_allowed ?? null);
+  const [initialTools] = useState(() => session.kind === 'ordinary' ? session.tools_allowed : session.kind === "workspace" ? session.overrides.tools_allowed ?? null : ["qq_send_message"]);
   const [selectedTools, setSelectedTools] = useState(initialTools);
   const [restoreHarness, setRestoreHarness] = useState(false);
   const [tools, setTools] = useState<HarnessTool[]>([]);

@@ -42,7 +42,7 @@ class DirectToolRequest(BaseModel):
 @router.get("", response_model=list[ToolCatalogItem], response_model_exclude_unset=True,
     responses=error_responses(422))
 def list_tools(state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
-    return state.tool_registry.catalog()
+    return [tool for tool in state.tool_registry.catalog() if tool["name"] != "qq_send_message"]
 
 
 @router.get("/settings", response_model=HarnessSettings, response_model_exclude_unset=True,

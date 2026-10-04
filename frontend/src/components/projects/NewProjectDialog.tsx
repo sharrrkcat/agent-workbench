@@ -20,7 +20,7 @@ export function NewProjectDialog({ kind, onClose, onSaved, onNavigate }: {
   };
   return <Dialog open onOpenChange={(open) => { if (!open) void leave(); }}>
     <DialogContent className="sm:max-w-3xl">
-      <DialogHeader><DialogTitle>{t(kind === 'workspace' ? 'newWorkspace' : 'newTimeline')}</DialogTitle></DialogHeader>
+      <DialogHeader><DialogTitle>{t(kind === 'qqbot' ? 'newQQBot' : kind === 'workspace' ? 'newWorkspace' : 'newTimeline')}</DialogTitle></DialogHeader>
       <ProjectEditor kind={kind} dialog onSaved={onSaved} onNavigate={leave} onLeaveGuardChange={register} />
     </DialogContent>
   </Dialog>;

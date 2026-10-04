@@ -24,10 +24,16 @@ export type TimelineInput = ProjectSettings & {
   worldbook_ids: string[];
 };
 
-export type ProjectInput = WorkspaceInput | TimelineInput;
+export type QQBotInput = ProjectSettings & {
+  kind: 'qqbot'; bot_account: string; websocket_url: string; access_token?: string;
+  connection_enabled: boolean; agent_persona_id: string | null; system_prompt: string;
+  reasoning: boolean; group_reply_mode: 'keyword'; keywords: string[]; batch_message_limit: number;
+};
+export type QQBotProject = Omit<QQBotInput, 'access_token'> & ProjectIdentity & { has_access_token: boolean };
+export type ProjectInput = WorkspaceInput | TimelineInput | QQBotInput;
 export type ProjectKind = ProjectInput['kind'];
 type ProjectIdentity = { id: string; created_at: string; updated_at: string };
 export type WorkspaceProject = WorkspaceInput & ProjectIdentity;
 export type TimelineProject = TimelineInput & ProjectIdentity;
-export type Project = WorkspaceProject | TimelineProject;
-export type ProjectPatch = Partial<Omit<WorkspaceInput, 'kind'>> | Partial<Omit<TimelineInput, 'kind'>>;
+export type Project = WorkspaceProject | TimelineProject | QQBotProject;
+export type ProjectPatch = Partial<Omit<WorkspaceInput, 'kind'>> | Partial<Omit<TimelineInput, 'kind'>> | Partial<Omit<QQBotInput, 'kind'>>;

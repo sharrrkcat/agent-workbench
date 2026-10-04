@@ -75,7 +75,7 @@ class ConfigurationSources(StrictModel):
 
 
 class ResolvedChatConfig(StrictModel):
-    session_kind: Literal["ordinary", "workspace"]
+    session_kind: Literal["ordinary", "workspace", "qqbot"]
     project_id: str | None
     project_system_prompt: str = ""
     sources: ConfigurationSources

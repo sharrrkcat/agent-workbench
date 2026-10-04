@@ -1,0 +1,145 @@
+"""OneBot v11 text transport. QQ/NapCat remains an external program."""
+import asyncio
+import json
+import re
+from datetime import datetime, timezone
+from uuid import uuid4
+from websockets.asyncio.client import connect
+from pydantic import BaseModel, Field, StrictInt, StrictStr, ConfigDict
+from ai_workbench.core.harness.schema import ToolExecutionError
+
+
+class OneBotSegment(BaseModel):
+    type: str
+    data: dict = Field(default_factory=dict)
+
+
+class OneBotSender(BaseModel):
+    card: str = ""
+    nickname: str = ""
+
+
+class OneBotMessage(BaseModel):
+    # Adapter extensions are ignored at this protocol boundary.
+    model_config = ConfigDict(allow_inf_nan=False)
+    message_id: StrictInt | StrictStr
+    user_id: StrictInt | StrictStr
+    time: float = Field(ge=0, le=253402300799)
+    sender: OneBotSender = Field(default_factory=OneBotSender)
+    message: list[OneBotSegment] | str
+
+
+def _cq_segments(value):
+    def decode(text):
+        return text.replace("&#91;", "[").replace("&#93;", "]").replace("&#44;", ",").replace("&amp;", "&")
+    result, offset = [], 0
+    for match in re.finditer(r"\[CQ:(\w+)((?:,[^\]]*)?)\]", value):
+        result.append(OneBotSegment(type="text", data={"text": decode(value[offset:match.start()])}))
+        data = dict(part.split("=", 1) for part in match[2].split(",")[1:] if "=" in part)
+        result.append(OneBotSegment(type=match[1], data={key: decode(val) for key, val in data.items()}))
+        offset = match.end()
+    result.append(OneBotSegment(type="text", data={"text": decode(value[offset:])}))
+    return result
+
+
+def normalize(event):
+    parsed = OneBotMessage.model_validate(event)
+    segments = _cq_segments(parsed.message) if isinstance(parsed.message, str) else parsed.message
+    text, keywords, refs = [], [], []
+    placeholders = {"image": "[图片]", "face": "[表情包]", "mface": "[表情包]",
+        "record": "[语音]", "video": "[视频]", "file": "[文件]", "forward": "[转发消息]"}
+    for segment in segments:
+        kind, data = segment.type, segment.data
+        if kind == "text":
+            value = str(data.get("text", ""))
+            text.append(value)
+            keywords.append(value)
+        elif kind == "at":
+            value = str(data.get("qq", ""))
+            text.append("@" + value)
+            refs.append({"type": "at", "id": value})
+        elif kind == "reply":
+            value = str(data.get("id", ""))
+            text.append("[引用:" + value + "]")
+            refs.append({"type": "reply", "id": value})
+        else:
+            sticker = kind == "image" and str(data.get("sub_type", "0")) != "0"
+            text.append("[表情包]" if sticker else placeholders.get(kind, "[非文字消息]"))
+    sender_id = str(parsed.user_id)
+    return dict(external_id=str(parsed.message_id), sender_id=sender_id,
+        sender_name=parsed.sender.card or parsed.sender.nickname or sender_id,
+        timestamp=datetime.fromtimestamp(parsed.time, timezone.utc).isoformat(),
+        text="".join(text), references_json=json.dumps(refs, ensure_ascii=False)), "".join(keywords).casefold()
+
+
+class OneBotConnection:
+    def __init__(self, project, receive):
+        self.project, self.receive = project, receive
+        self.socket = None
+        self.pending = {}
+        self.ready = False
+        self.status = "connecting"
+
+    async def run(self):
+        headers = {"Authorization": "Bearer " + self.project.access_token} if self.project.access_token else {}
+        async with connect(self.project.websocket_url, additional_headers=headers, max_size=1024 * 1024,
+                           max_queue=16, open_timeout=10) as socket:
+            self.socket = socket
+            try:
+                login = await asyncio.wait_for(self.login(), 20)
+                if str(login.get("user_id")) != self.project.bot_account:
+                    raise ToolExecutionError("QQ_ACCOUNT_MISMATCH", "Connected account differs from the Project.")
+                self.ready, self.status = True, "connected"
+                await self.read()
+            finally:
+                self.ready = False
+                for future in self.pending.values():
+                    if not future.done():
+                        future.set_exception(ConnectionError("OneBot disconnected"))
+                self.socket = None
+
+    async def login(self):
+        echo = str(uuid4())
+        await self.socket.send(json.dumps({"action": "get_login_info", "params": {}, "echo": echo}))
+        async for raw in self.socket:
+            value = json.loads(raw)
+            if not isinstance(value, dict):
+                raise ValueError("Expected OneBot object")
+            if value.get("echo") == echo:
+                return self.action_data(value)
+        raise ConnectionError("OneBot disconnected before account verification")
+
+    @staticmethod
+    def action_data(response):
+        if response.get("status") != "ok" or response.get("retcode") != 0:
+            raise ToolExecutionError("QQ_ACTION_FAILED", "OneBot rejected the action.")
+        data = response.get("data")
+        if not isinstance(data, dict):
+            raise ValueError("Expected OneBot action data")
+        return data
+
+    async def read(self):
+        async for raw in self.socket:
+            value = json.loads(raw)
+            if not isinstance(value, dict):
+                raise ValueError("Expected OneBot object")
+            echo = value.get("echo")
+            if isinstance(echo, str) and echo in self.pending:
+                future = self.pending[echo]
+                if not future.done():
+                    future.set_result(value)
+            elif self.ready and value.get("post_type") in {"message", "message_sent"}:
+                await self.receive(value)
+
+    async def call(self, action, params):
+        if self.socket is None:
+            raise ConnectionError("OneBot is disconnected")
+        echo = str(uuid4())
+        future = asyncio.get_running_loop().create_future()
+        self.pending[echo] = future
+        try:
+            await self.socket.send(json.dumps({"action": action, "params": params, "echo": echo}))
+            response = await asyncio.wait_for(future, 20)
+            return self.action_data(response)
+        finally:
+            self.pending.pop(echo, None)

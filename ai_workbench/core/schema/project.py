@@ -49,7 +49,39 @@ class TimelineInput(ProjectInput):
     worldbook_ids: list[str] = Field(default_factory=list, max_length=128)
 
 
-ProjectCreate = Annotated[WorkspaceInput | TimelineInput, Field(discriminator="kind")]
+class QQBotInput(ProjectInput):
+    kind: Literal["qqbot"]
+    bot_account: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+    websocket_url: str = Field(max_length=2048)
+    access_token: str = Field(default="", max_length=4096, repr=False)
+    connection_enabled: StrictBool = False
+    agent_persona_id: str | None = None
+    system_prompt: str = Field(default="", max_length=100000)
+    reasoning: StrictBool = True
+    group_reply_mode: Literal["keyword"] = "keyword"
+    keywords: list[str] = Field(default_factory=list, max_length=128)
+    batch_message_limit: int = Field(default=20, ge=1, le=200, strict=True)
+
+    @field_validator("websocket_url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"ws", "wss"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("Use a ws/wss URL without credentials, query or fragment")
+        if parsed.port == 0:
+            raise ValueError("Use a valid WebSocket port")
+        return value
+
+    @field_validator("keywords")
+    @classmethod
+    def normalize_keywords(cls, values: list[str]) -> list[str]:
+        if any(not value.strip() or len(value) > 200 for value in values):
+            raise ValueError("Keywords must contain 1..200 characters")
+        return list(dict.fromkeys(value.strip().casefold() for value in values))
+
+
+ProjectCreate = Annotated[WorkspaceInput | TimelineInput | QQBotInput, Field(discriminator="kind")]
 
 
 class ProjectMetadata(StrictModel):
@@ -70,5 +102,10 @@ class TimelineProject(TimelineInput, ProjectMetadata):
     pass
 
 
-Project = Annotated[WorkspaceProject | TimelineProject, Field(discriminator="kind")]
+class QQBotProject(QQBotInput, ProjectMetadata):
+    def public_response(self) -> dict:
+        return {**self.model_dump(mode="json", exclude={"access_token"}), "has_access_token": bool(self.access_token)}
+
+
+Project = Annotated[WorkspaceProject | TimelineProject | QQBotProject, Field(discriminator="kind")]
 project_adapter = TypeAdapter(Project)

@@ -76,6 +76,7 @@ class RuntimeState:
     started_at: datetime = field(default_factory=utc_now)
     active_websockets: int = 0
     history_reader: Any = None
+    qq: Any = None
 
 
 def build_runtime_state(root: str | Path | None = None, database_url: str | None = None,
@@ -136,7 +137,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         store=MemoryHistoryStore(sessions, messages, runs, run_events) if use_memory else SqlHistoryStore(engine),
         sessions=sessions, messages=messages, runs=runs, events=events, chat_service=chat_service, personas=personas,
     )
-    return RuntimeState(
+    state = RuntimeState(
         sessions=sessions, messages=messages, runs=runs, run_events=run_events, events=events,
         runtime=runtime, chat_runner=chat_runner, active_runs=active_runs,
         chat_service=chat_service, history=history, personas=personas, projects=projects, project_service=project_service,
@@ -150,6 +151,18 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         database_url=resolved_database_url,
         history_reader=MemoryHistoryReader(sessions, messages, runs) if use_memory else SqlHistoryReader(engine),
     )
+    from ai_workbench.core.qq_service import QQService
+    if engine is None:
+        from sqlmodel import create_engine, SQLModel
+        from sqlalchemy.pool import StaticPool
+        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
+        qq_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery)])
+    else:
+        qq_engine = engine
+    state.qq = QQService(state, qq_engine)
+    return state
+
 
 
 def get_state(request: Request) -> RuntimeState:

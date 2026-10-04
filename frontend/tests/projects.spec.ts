@@ -95,7 +95,7 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
           const sessionId = new URL(page.url()).searchParams.get('session')!;
           expect((await json(request.get(`/api/sessions/${sessionId}`))).overrides).toEqual({ harness_enabled: true, temperature: 0,
-            context_policy: { max_messages: 0, include_attachments: 'explicit' } });
+            context_policy: { max_messages: 0, max_chars: 100000, include_attachments: 'explicit' } });
           await page.locator('.composer textarea').fill('Retained draft');
           await json(request.patch(`/api/projects/${projectId}`, { data: { temperature: 0.85, context_policy: { max_messages: 20 } } }));
           await expect(page.locator('.composer textarea')).toHaveValue('Retained draft');

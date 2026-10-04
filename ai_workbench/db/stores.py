@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from array import array
 from datetime import timedelta
 from typing import Any, Optional
@@ -131,13 +132,13 @@ class SqlMessageStore:
         with DbSession(self.engine) as db:
             return set(db.exec(select(MessageRecord.session_id).where(MessageRecord.speaker_id == persona_id).distinct()))
 
-    def add_message(self, session_id: str, role: str, content: Any = None, *, parts: list[dict[str, Any]] | None = None, run_id: str | None = None, parent_message_id: str | None = None, metadata: dict[str, Any] | None = None, speaker_type: str | None = None, speaker_id: str | None = None, speaker_name: str | None = None, origin: str | None = None, message_id: str | None = None) -> MessageSchema:
+    def add_message(self, session_id: str, role: str, content: Any = None, *, parts: list[dict[str, Any]] | None = None, run_id: str | None = None, parent_message_id: str | None = None, metadata: dict[str, Any] | None = None, speaker_type: str | None = None, speaker_id: str | None = None, speaker_name: str | None = None, origin: str | None = None, message_id: str | None = None, transaction: DbSession | None = None) -> MessageSchema:
         metadata = dict(metadata or {})
         speaker = infer_speaker_identity(role, metadata=metadata, speaker_type=speaker_type, speaker_id=speaker_id, speaker_name=speaker_name, origin=origin)
         if parts is None: parts = [make_text_part(str(content), format="markdown" if role == "assistant" else "plain")] if content not in (None, "") else []
         validated = validate_message_parts(parts)
         record = MessageRecord(message_id=message_id or str(uuid4()), session_id=session_id, role=role, **speaker, parts_json=_dump(validated), run_id=run_id, parent_message_id=parent_message_id, metadata_json=_dump(metadata))
-        with DbSession(self.engine) as db:
+        with nullcontext(transaction) if transaction is not None else DbSession(self.engine) as db:
             previous = db.exec(select(MessageRecord.created_at).where(MessageRecord.session_id == session_id)
                 .order_by(MessageRecord.created_at.desc(), MessageRecord.message_id.desc()).limit(1)).first()
             if previous is not None:
@@ -145,7 +146,11 @@ class SqlMessageStore:
             db.add(record)
             session = db.get(SessionRecord, session_id)
             if session is not None: session.updated_at = utc_now(); db.add(session)
-            db.commit(); db.refresh(record)
+            if transaction is None:
+                db.commit()
+            else:
+                db.flush()
+            db.refresh(record)
         return _message(record)
 
     def get_message(self, message_id: str) -> MessageSchema:

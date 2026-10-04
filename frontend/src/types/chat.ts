@@ -54,7 +54,7 @@ export type SessionPatch = OrdinarySessionPatch | WorkspaceSessionPatch;
 
 export type EffectiveChatConfig = {
   context_limits: { window_tokens: number | null; output_tokens: number | null };
-  session_kind: 'ordinary' | 'workspace';
+  session_kind: 'ordinary' | 'workspace' | 'qqbot';
   project_id: string | null;
   sources: {
     persona: 'session' | 'project';
@@ -107,7 +107,10 @@ export type WorkspaceSession = SessionBase & {
   overrides: WorkspaceOverrides;
 };
 
-export type Session = OrdinarySession | WorkspaceSession;
+export type QQSession = Omit<SessionBase, 'user_persona'> & {
+  kind: 'qqbot'; project_id: string; user_persona: null; target_kind: 'group' | 'friend'; target_id: string;
+};
+export type Session = OrdinarySession | WorkspaceSession | QQSession;
 
 type DraftBase = { title: string; user_persona: PersonaIdentity; knowledge_base_ids: string[] };
 export type OrdinaryChatDraft = DraftBase & Pick<OrdinarySession,

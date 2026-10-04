@@ -47,12 +47,13 @@ OrdinarySessionPatch = patch_model("OrdinarySessionPatch", CreateSessionRequest,
     "tools_allowed": (list[str], Field(default_factory=lambda: None, max_length=128,
         description="Omission keeps the saved allowlist; an empty array disables all tools.")),
 })
+QQSessionPatch = patch_model("QQSessionPatch", CreateSessionRequest, omit=set(CreateSessionRequest.model_fields) - {"title"})
 WorkspaceSessionPatch = patch_model("WorkspaceSessionPatch", WorkspaceSessionCreate, fields={
     "title": (str, Field(default_factory=lambda: None, min_length=1, max_length=MAX_SESSION_TITLE_LENGTH)),
 })
 
 
-class SessionPatchRequest(RootModel[OrdinarySessionPatch | WorkspaceSessionPatch]):
+class SessionPatchRequest(RootModel[OrdinarySessionPatch | WorkspaceSessionPatch | QQSessionPatch]):
     pass
 
 
@@ -83,7 +84,7 @@ async def update_session(
     state: RuntimeState = Depends(get_state),
 ) -> dict:
     session = _get_session_or_404(state, session_id)
-    schema = OrdinarySessionPatch if session.kind == "ordinary" else WorkspaceSessionPatch
+    schema = {"ordinary": OrdinarySessionPatch, "workspace": WorkspaceSessionPatch, "qqbot": QQSessionPatch}[session.kind]
     values = schema.model_validate(payload).model_dump(exclude_unset=True)
     if "title" in values:
         title = values["title"].strip()
@@ -107,11 +108,13 @@ async def update_session(
 async def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
     session = _get_session_or_404(state, session_id)
     state.chat_service.assert_idle(session_id)
+    state.qq.assert_idle(session_id)
     delete_session_data(state, session_id)
     return {"deleted": True, "session_id": session.session_id}
 
 
 def delete_session_data(state: RuntimeState, session_id: str) -> None:
+    state.qq.store.delete_session(session_id)
     state.sessions.set_waiting_run(session_id, None)
     attachments = set(state.messages.attachment_filenames(session_id=session_id))
     attachments.update(state.runs.context_attachment_ids(session_id=session_id))

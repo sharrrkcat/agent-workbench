@@ -98,6 +98,8 @@ class CogitaRuntime:
         return head, arguments
 
     def _assert_available(self, session: Any) -> None:
+        if session.kind == "qqbot":
+            raise ChatError("QQ_READ_ONLY", "QQ sessions accept only bound external messages.", 409)
         current = self.chat_runner.sessions.get_session(session.session_id)
         if current.waiting_run_id:
             raise ChatError("RUN_WAITING_FOR_APPROVAL", "Resolve the pending tool approval before sending another message.", 409)

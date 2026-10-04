@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 from contextlib import AsyncExitStack, aclosing
 
@@ -74,6 +74,7 @@ class ChatRunner:
         input_message_id: str | None = None,
         client_message_id: str | None = None,
         persona_id: str | None = None,
+        on_run_created: Callable[[str], None] | None = None,
     ) -> RunResult:
         session = self.sessions.get_session(session_id)
         raw_text = str(text)
@@ -98,6 +99,8 @@ class ChatRunner:
                       "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed)},
             config_snapshot=config.model_dump(mode="json"),
         )
+        if on_run_created:
+            on_run_created(run.run_id)
         self.set_input_title(session_id, raw_text, attachments, user.message_id)
 
         self.runs.update_status(run.run_id, RunStatus.RUNNING, current_step="context")
@@ -141,6 +144,8 @@ class ChatRunner:
             if not config.model_profile_id:
                 raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
             profile = self.model_manager.profile(config.model_profile_id, "llm")
+            if session.kind == "qqbot" and (not profile.source or profile.source.type != "provider"):
+                raise ModelError("QQ_EXTERNAL_MODEL_REQUIRED", "QQBot requires an external LLM profile.", 422)
             use_harness = bool(config.harness_enabled and self.chat_service.tools_for_run(config) and self.harness_loop)
             has_images = has_context_images(context)
             current = context[-1]["content"]
@@ -168,6 +173,8 @@ class ChatRunner:
                 context = omit_context_images(context, context_trace)
                 warnings.append("images_require_text" if image_only else "images_ignored")
             if use_harness and not profile.request_options.skip_tool_capability_check and support.tools.state == "unsupported":
+                if session.kind == "qqbot":
+                    raise ModelError("UNSUPPORTED_CAPABILITY", "QQBot requires model tool support.", 422)
                 use_harness = False
                 warnings.append("tools_ignored")
             self._input_warnings(user, run.run_id, warnings)

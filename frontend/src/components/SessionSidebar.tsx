@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Boxes, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
+import { Bot, Boxes, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { cn } from '@/lib/utils';
 import {
@@ -86,6 +86,11 @@ export function SessionSidebar({ onOpenSettings, onNavigate, onSelectSession, on
               <SidebarMenuButton type="button" onClick={() => { setCreating('timeline'); setOpenMobile(false); }}>
                 <Boxes data-icon="inline-start" />
                 <span>{t('newTimeline')}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" onClick={() => { setCreating('qqbot'); setOpenMobile(false); }}>
+                <Bot data-icon="inline-start" /><span>{t('newQQBot')}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

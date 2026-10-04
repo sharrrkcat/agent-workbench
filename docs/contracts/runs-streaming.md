@@ -4,7 +4,7 @@ This contract owns runs, steps, persistence and reconciliation; [Chat/context](c
 
 ## Run lifecycle
 
-Run.kind is chat or tool and each run stores its selected Agent persona_id. Statuses
+Run.kind is chat or tool and stores its Agent persona_id (empty for QQ without an Agent). Statuses
 are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and
 INTERRUPTED. Terminal runs never return to running.
 
@@ -12,11 +12,11 @@ RunStep.kind is context/model/save/approval/tool; statuses are pending/running/c
 Steps have stable order, optional parent ids, timing, compact messages and structured errors.
 Both locales label stable kinds, never implementation progress strings.
 
-The optional Pet foundation selects current-session statuses, step kinds and progress;
-no Pet UI, animation vocabulary, separate task stream or polling participates in execution.
+The optional Pet foundation selects session statuses/steps/progress without a UI, separate stream or polling.
+QQ uses chat runs and existing inspection/cancellation; its durable batches and delivery states belong to
+[Harness/tools](harness-tools.md#qq-delivery-and-queues), separately from internal model prose and run outcomes.
 
-ChatRunner persists user messages, runs, steps, assistant/tool messages and
-events. Run/message metadata contains public ids, counts, timings, warnings
+ChatRunner persists messages, runs, steps and events. Run/message metadata contains public ids, counts, timings, warnings
 and source refs, never prompts, full history/context, vectors, binaries or keys. Model resolution includes
 source_type and provider_profile_id (null for local/unbound); local worker traces carry source_type=local.
 config_snapshot_json and harness_state_json are private and absent from public
@@ -188,7 +188,7 @@ New sessions and model/window
 mismatches are neutral until a matching call completes. Run/step events and refresh restore the
 display; pruning removes deleted calls. No polling or draft preview API is used.
 
-Internal ordinary/Workspace and Harness model calls save one immutable private `context_snapshot_json`
+Internal ordinary/Workspace/QQBot and Harness model calls save one immutable private `context_snapshot_json`
 on their model step immediately before transport dispatch. Preparation failures have no snapshot;
 failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
 do not record context. Reads never reconstruct missing inputs from current configuration or history.

@@ -70,18 +70,19 @@ is at most 18rem wide with viewport margins; Close/backdrop/Escape return focus 
 Drawers are titled Sessions or Settings. Accepted navigation/creation closes the drawer;
 rejected navigation keeps it open.
 
-The sidebar fixes its brand, New session/New Workspace/New Timeline actions and Settings footer.
+The sidebar fixes its brand, New session/New Workspace/New Timeline/New QQBot actions and Settings footer.
 The scrolling tree contains Projects and ordinary sessions. Sessions has a header creation icon;
-Project names toggle expansion. Workspace rows place creation before settings/delete actions,
+Project names toggle expansion. Workspace/QQBot rows place creation before settings/delete actions,
 without a separate arrow or internal creation row.
 Creation icons respond to their header-row hover or keyboard-visible focus; session actions respond only to their own row or open menu.
 Mouse focus does not retain hover feedback. Touch actions stay visible with 44px targets.
 Project sessions retain left indentation and share the Project's right action column; selections keep their own highlight.
 Opening a Workspace draft expands its row. Timeline expands an unavailable-chat notice.
-Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace session.
+Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace/QQBot session.
 `/new` and `/projects/{id}/new` open drafts, replaced with conversation locations on first send.
 Routes survive refresh/history, reject mismatched membership and retain unsaved-navigation guards.
 Timeline conversation creation remains unavailable. Global Settings returns to the previous home route.
+QQBot creation opens its dedicated editor; conversation creation binds a group/friend immediately, without a draft composer.
 Creation, inheritance and deletion follow [chat/context](chat-context.md#personas-and-sessions).
 
 The fixed chat header contains the sidebar toggle, title and session settings; the composer owns the concrete model menu with Harness and Reasoning on/off controls. Reasoning selects generation mode with session defaults and automatic-adjustment feedback owned by [chat/context](chat-context.md#personas-and-sessions).

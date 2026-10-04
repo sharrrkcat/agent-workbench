@@ -9,12 +9,13 @@ from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint, S
 from sqlmodel import Field, SQLModel
 
 from ai_workbench.core.time import utc_now
+from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 
 class SessionRecord(SQLModel, table=True):
     __table_args__ = (
-        CheckConstraint("kind IN ('ordinary', 'workspace')", name="ck_session_kind"),
-        CheckConstraint("(kind = 'ordinary' AND project_id IS NULL) OR (kind = 'workspace' AND project_id IS NOT NULL)", name="ck_session_project"),
+        CheckConstraint("kind IN ('ordinary', 'workspace', 'qqbot')", name="ck_session_kind"),
+        CheckConstraint("(kind = 'ordinary' AND project_id IS NULL) OR (kind IN ('workspace', 'qqbot') AND project_id IS NOT NULL)", name="ck_session_project"),
     )
     session_id: str = Field(primary_key=True)
     kind: str
@@ -31,7 +32,7 @@ class SessionRecord(SQLModel, table=True):
 
 class ProjectRecord(SQLModel, table=True):
     __tablename__ = "projects"
-    __table_args__ = (CheckConstraint("kind IN ('workspace', 'timeline')", name="ck_project_kind"),)
+    __table_args__ = (CheckConstraint("kind IN ('workspace', 'timeline', 'qqbot')", name="ck_project_kind"),)
     id: str = Field(primary_key=True)
     kind: str
     name: str

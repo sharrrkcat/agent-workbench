@@ -12,7 +12,7 @@ def eligible_history():
     parts = func.json_each(MessageRecord.parts_json).table_valued("value")
     errors = select(literal(1)).select_from(parts).where(func.json_extract(parts.c.value, "$.type") == "error")
     return and_(MessageRecord.role.in_(("system", "user", "assistant", "tool")), ~errors.exists(), *(
-        _false_json(f"$.{key}") for key in ("event_type", "incomplete", "streaming")))
+        _false_json(f"$.{key}") for key in ("event_type", "incomplete", "streaming", "qq_internal")))
 
 
 def _false_json(path):

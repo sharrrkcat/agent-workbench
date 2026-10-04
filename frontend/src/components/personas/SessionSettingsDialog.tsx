@@ -27,6 +27,7 @@ export function SessionSettingsDialog(props: {
   onClose: () => void;
   onManagePersonas: () => void;
 }) {
+  if (props.session.kind === 'qqbot') return null;
   return props.session.kind === 'workspace'
     ? <WorkspaceSessionSettingsDialog {...props} session={props.session} />
     : <OrdinarySessionSettingsDialog {...props} session={props.session} />;

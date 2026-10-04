@@ -135,8 +135,10 @@ export function PersonaField({ label, personas, value, onChange, invalid = false
 export function ContextFields({
   value,
   onChange,
+  showAttachments = true,
 }: {
   value: ContextPolicy;
+  showAttachments?: boolean;
   onChange: (value: ContextPolicy) => void;
 }) {
   const { t } = useTranslation('personas');
@@ -180,7 +182,7 @@ export function ContextFields({
           <FieldDescription>{t('maxCharsDescription')}</FieldDescription>
         </Field>
       </FieldGroup>
-      <Field orientation="horizontal">
+      {showAttachments ? <Field orientation="horizontal">
         <Switch
           checked={value.include_attachments === 'explicit'}
           onCheckedChange={(enabled) =>
@@ -188,7 +190,7 @@ export function ContextFields({
           }
         />
         <FieldLabel>{t('includeAttachments')}</FieldLabel>
-      </Field>
+      </Field> : null}
     </>
   );
 }

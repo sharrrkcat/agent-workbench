@@ -24,6 +24,17 @@ class ProjectService:
             self.chat.persona(project.cogita_persona_id)
             self.chat.validate_tools(project.tools_allowed)
             self.chat.validate_bindings("knowledge", project.knowledge_base_ids)
+        elif project.kind == "qqbot":
+            if project.agent_persona_id:
+                self.chat.agent_persona(project.agent_persona_id)
+            if project.model_profile_id:
+                profile = self.chat.model_manager.profile(project.model_profile_id, "llm")
+                if not profile.source or profile.source.type != "provider":
+                    raise ChatError("QQ_EXTERNAL_MODEL_REQUIRED", "Choose an external LLM profile.", 422)
+            elif project.connection_enabled:
+                raise ChatError("MODEL_NOT_CONFIGURED", "Choose an external LLM before connecting.", 422)
+            if any(p.kind == "qqbot" and p.id != project.id and p.bot_account == project.bot_account for p in self.projects.list()):
+                raise ChatError("QQ_ACCOUNT_IN_USE", "This bot account already has a Project.", 409)
         else:
             for persona_id, collection in ((project.character_persona_id, "character"), (project.user_persona_id, "roleplay_user")):
                 if self.chat.persona(persona_id).collection != collection:
@@ -37,6 +48,9 @@ class ProjectService:
 
     def update(self, project_id: str, values: dict) -> Project:
         current = self.get(project_id)
+        if current.kind == "qqbot" and values.get("bot_account", current.bot_account) != current.bot_account and any(
+                session.project_id == project_id for session in self.chat.sessions.list_sessions()):
+            raise ChatError("QQ_ACCOUNT_BOUND", "Delete the bound Sessions before changing the bot account.", 409)
         if {"id", "kind", "created_at", "updated_at"}.intersection(values):
             raise ChatError("PROJECT_IDENTITY_IMMUTABLE", "Project identity and type cannot be changed.", 422)
         candidate = project_adapter.validate_python({**current.model_dump(), **values, "updated_at": utc_now()})
@@ -45,12 +59,13 @@ class ProjectService:
 
     def for_resource(self, project_id: str, kind: str) -> Project:
         project = self.get(project_id)
-        if (project.kind == "workspace") != (kind == "knowledge"):
+        if project.kind == "qqbot" or (project.kind == "workspace") != (kind == "knowledge"):
             raise ChatError("PROJECT_RESOURCE_FORBIDDEN", "This resource is not supported by the Project type.", 422)
         return project
 
     def sessions(self, project_id: str):
-        self.chat.workspace(project_id)
+        if self.get(project_id).kind != "qqbot":
+            self.chat.workspace(project_id)
         return [session for session in self.chat.sessions.list_sessions() if session.project_id == project_id]
 
     def assert_idle(self, project_id: str) -> None:

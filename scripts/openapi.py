@@ -34,6 +34,7 @@ OPAQUE_SCHEMA_PATHS: dict[str, str] = {
     "components/schemas/RunStepResponse/properties/metadata": "Step-specific public diagnostics.",
     "components/schemas/OrdinarySessionResponse/properties/title_generation_metadata": "Auxiliary-title outcome diagnostics.",
     "components/schemas/WorkspaceSessionResponse/properties/title_generation_metadata": "Auxiliary-title outcome diagnostics.",
+    "components/schemas/QQSessionResponse/properties/title_generation_metadata": "Auxiliary-title outcome diagnostics.",
     "components/schemas/ToolCallPart/properties/arguments": "Arguments validated by the selected tool schema.",
     "components/schemas/ToolCatalogItem/properties/parameters": "The tool's Draft 2020-12 argument schema.",
     "components/schemas/ToolResultPart/properties/data": "Finite JSON result of the selected built-in tool.",

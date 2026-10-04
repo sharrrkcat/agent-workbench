@@ -313,6 +313,7 @@ class HarnessAgentLoop:
                                 {"tool_name": call.function.name, "tool_call_id": call.id})
         context = ToolExecutionContext(repo_root=self.repo_root, network_policy=self.network_policy,
                                        knowledge_service=self.knowledge_service, session_id=session.session_id,
+                                       run_id=run.run_id, tool_call_id=call.id,
                                        knowledge_base_ids=config.knowledge_base_ids,
                                        harness_settings=HarnessSettings(searxng_base_url=state.searxng_base_url))
         remaining = budget.check()
@@ -327,7 +328,7 @@ class HarnessAgentLoop:
         except ToolExecutionError as exc:
             outcome = ToolOutcome(status="error", data=exc.details or None, error_code=exc.code, error_message=exc.message)
         self._record_result(session, run, state, call, outcome, step_id=step.step_id)
-        if outcome.error_code == "TOOL_RUN_TIMEOUT":
+        if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and outcome.status != "success"):
             state.pending_calls.pop(0)
             raise ToolExecutionError(outcome.error_code, outcome.error_message)
 
@@ -341,7 +342,8 @@ class HarnessAgentLoop:
                                     truncated=bool((outcome.data or {}).get("truncated")))
         message = self.messages.add_message(session.session_id, role="tool", parts=[part], run_id=run.run_id,
                                             parent_message_id=run.metadata.get("input_message_id"),
-                                            metadata={"tool": call.function.name, "tool_call_id": call.id})
+                                            metadata={"tool": call.function.name, "tool_call_id": call.id,
+                                                      **({"qq_internal": True} if session.kind == "qqbot" else {})})
         self.events.emit("tool_result_created", session_id=session.session_id, run_id=run.run_id, message_id=message.message_id,
                          payload={"message": message.model_dump(mode="json"), "status": outcome.status,
                                   "tool_name": call.function.name, "tool_call_id": call.id})

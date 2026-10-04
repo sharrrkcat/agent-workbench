@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Boxes, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
+import { Bot, Boxes, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem,
   SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, useSidebar } from '@/components/ui/sidebar';
@@ -52,7 +52,7 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
   const active = currentProjectId === project.id;
   useEffect(() => { if (active) setExpanded(true); }, [active]);
   useEffect(() => {
-    if (!expanded || project.kind !== 'workspace') return;
+    if (!expanded || project.kind === 'timeline') return;
     let live = true;
     setLoading(true); setError('');
     void reloadSessions(project.id).catch((reason) => { if (live) setError(errorText(reason)); })
@@ -76,17 +76,17 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
     if (!useCogitaStore.getState().sessions.some((session) => session.session_id === id)) onSessionDeleted(id);
     setDeleting(null);
   }
-  const Icon = project.kind === 'workspace' ? Compass : Boxes;
+  const Icon = project.kind === 'qqbot' ? Bot : project.kind === 'workspace' ? Compass : Boxes;
   return <SidebarMenuItem data-project-id={project.id}>
     <Collapsible open={expanded} onOpenChange={setExpanded}>
       <div className="group/project-heading relative flex items-center">
         <CollapsibleTrigger render={<SidebarMenuButton type="button"
-          className={cn('project-select', project.kind === 'workspace' &&
+          className={cn('project-select', project.kind !== 'timeline' &&
             'group-has-data-[sidebar=menu-action]/menu-item:pr-14 pointer-coarse:group-has-data-[sidebar=menu-action]/menu-item:pr-22')}
           isActive={active} title={project.name} disabled={deleting === project.id} />}>
           <Icon data-icon="inline-start" /><span>{project.name}</span>
         </CollapsibleTrigger>
-        {project.kind === 'workspace' ? <SidebarMenuAction type="button" aria-label={t('newProjectSession', { name: project.name })}
+        {project.kind !== 'timeline' ? <SidebarMenuAction type="button" aria-label={t('newProjectSession', { name: project.name })}
           title={t('newSession')} className="right-7 opacity-0 group-hover/project-heading:opacity-100 group-has-[:focus-visible]/project-heading:opacity-100 pointer-coarse:right-11 pointer-coarse:opacity-100"
           onClick={async () => { if (await onCreateSession(project.id)) { setExpanded(true); setOpenMobile(false); } }}>
           <MessageSquarePlus />
@@ -99,7 +99,7 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
           </DropdownMenuGroup></DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {project.kind === 'workspace' ? <CollapsibleContent>
+      {project.kind !== 'timeline' ? <CollapsibleContent>
         <SidebarMenuSub className="mr-0 translate-x-0 pr-0">
           {sessions.map((session) => {
             const title = session.title.trim() || t('newSession');
@@ -121,7 +121,7 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
             </SidebarMenuSubItem>;
           })}
           {(loading && !sessions.length) || error ? <SidebarMenuSubItem><ResourceLoading error={error} retry={() => setReload((n) => n + 1)} /></SidebarMenuSubItem> : null}
-          {!loading && !error && !sessions.length ? <SidebarMenuSubItem><p className="model-empty px-2">{t('noProjectSessions')}</p></SidebarMenuSubItem> : null}
+          {!loading && !error && !sessions.length ? <SidebarMenuSubItem><p className="model-empty px-2">{t(project.kind === 'qqbot' ? 'qq.emptyConversations' : 'noProjectSessions')}</p></SidebarMenuSubItem> : null}
         </SidebarMenuSub>
       </CollapsibleContent> : <CollapsibleContent><p className="model-empty px-2 py-2">{t('timelineCreationOnly')}</p></CollapsibleContent>}
     </Collapsible>

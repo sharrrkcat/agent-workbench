@@ -238,14 +238,14 @@ Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
   -Form @{ model = 'dlss5-nr'; image = Get-Item './input.png'; style = 'natural'; preset = '3'; intensity = '1.0'; auto_mask = 'false' } -OutFile processed.png
 ```
 
-### DLSS NR image processing
+### QQBot Projects
 
-In Models → Local Runtime, install the bundled DLSS NR component after the base runtime. It creates processors/dlss5-nr and an unloaded DLSS 5 NR profile; place nvngx_dlssnr.dll in that directory manually, then enable the profile's external visibility. Installation is offline; resources are retained on uninstall. [Models](docs/contracts/models.md#dlss-nr-image-processing) owns controls and limits.
-
-```powershell
-Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
-  -Form @{ model = 'dlss5-nr'; image = Get-Item './input.png'; style = 'natural'; preset = '3'; intensity = '1.0'; auto_mask = 'false' } -OutFile processed.png
-```
+Choose New QQBot, enter an independently installed NapCat OneBot v11 WebSocket endpoint and bot account,
+select an external LLM, then enable the connection. Bind each group/friend manually through New session.
+Group keywords use a five-second quiet window; private messages always trigger. Sessions show read-only records, delivery/run details and pause/resume/stop controls. Only the QQ send tool
+publishes replies. [Chat/context](docs/contracts/chat-context.md#qqbot-conversations) owns settings;
+[QQ boundaries](docs/FUTURE_QQ_INTEGRATION.md) owns exclusions and outstanding live acceptance.
+Bilingual desktop/touch verification: `npm run test:browser -- qqbot.spec.ts` after building frontend assets.
 
 ## HTTP contract
 

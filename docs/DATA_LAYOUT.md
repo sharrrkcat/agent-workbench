@@ -1,14 +1,13 @@
 # Local data layout
 
-Alembic revision 0028_context_budget adds nullable model_profiles.context_window_tokens for
-provider LLMs without modifying model files, attachments or installed runtimes.
+Alembic records application schema changes without modifying model files, attachments or installed runtimes.
 
 SQLite records are disposable test state. Files have separate ownership and
 are never removed by schema revisions.
 
 | Path | Contents and owner |
 | --- | --- |
-| data/cogita.db | Application test state: Personas, sessions/messages/runs, settings, models/providers, Knowledge/Worldbook, runtime jobs |
+| data/cogita.db | Application test state: Personas, Projects, sessions/messages/runs, QQ bindings/queues/deliveries, settings, models/providers, resources and runtime jobs |
 | data/attachments/ | Uploaded files and Persona avatars; explicit orphan cleanup |
 | data/tmp/voice-references/ | Model-service temporary reference audio; no database records |
 | data/tmp/asr-inputs/ | Request-scoped transcription uploads; no database records |
@@ -28,7 +27,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0027_context_snapshots`; there are 26 current business tables.
+Alembic head is `0031_qq_delivery_echo`; there are 30 current business tables.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -230,3 +229,11 @@ overrides, Projects, run snapshots and run configuration summaries, plus run con
 Only obsolete JSON fields are removed; limits are retained without mapping old modes.
 Messages, pending approvals, other configuration and all files survive. Repeated upgrades
 preserve newly saved limits, including zero.
+
+Revision `0027_context_snapshots` adds private per-model-step input snapshots; `0028_context_budget`
+adds nullable provider LLM context windows. `0029_bounded_history` adds conversation ordering indexes and history versions.
+Revision `0030_qqbot` extends Project/Session kind constraints and adds qq_bindings, qq_messages,
+qq_batches and qq_deliveries, with indexed deduplication, batch reservation, queue and receipt lookups.
+Revision `0031_qq_delivery_echo` adds the observed-echo flag and external receipt index to QQ deliveries.
+QQ access tokens remain unencrypted in private Project configuration and are omitted from public reads.
+All existing records and file directories survive these revisions; no data conversion or compatibility tables are added.
