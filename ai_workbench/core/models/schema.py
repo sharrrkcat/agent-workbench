@@ -27,6 +27,8 @@ class StrictModel(BaseModel):
 
 class ExternalConnection(StrictModel):
     base_url: str
+    allow_unindexed_complete_tool_call: bool = Field(default=False, strict=True,
+        description="Accept a single complete terminal streaming tool call without an index. Disabled by default.")
     api_key: str = Field(default="", description="PATCH omission retains the key; an empty string clears it.", json_schema_extra={"writeOnly": True})
     timeout_seconds: float = Field(default=60, gt=0, le=3600)
     concurrency: int = Field(default=1, ge=1, le=64)

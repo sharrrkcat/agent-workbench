@@ -61,6 +61,7 @@ class QQBotInput(ProjectInput):
     group_reply_mode: Literal["keyword"] = "keyword"
     keywords: list[str] = Field(default_factory=list, max_length=128)
     batch_message_limit: int = Field(default=20, ge=1, le=200, strict=True)
+    reply_message_limit: int = Field(default=4, ge=1, le=20, strict=True)
 
     @field_validator("websocket_url")
     @classmethod

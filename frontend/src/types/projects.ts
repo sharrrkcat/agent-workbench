@@ -28,6 +28,7 @@ export type QQBotInput = ProjectSettings & {
   kind: 'qqbot'; bot_account: string; websocket_url: string; access_token?: string;
   connection_enabled: boolean; agent_persona_id: string | null; system_prompt: string;
   reasoning: boolean; group_reply_mode: 'keyword'; keywords: string[]; batch_message_limit: number;
+  reply_message_limit: number;
 };
 export type QQBotProject = Omit<QQBotInput, 'access_token'> & ProjectIdentity & { has_access_token: boolean };
 export type ProjectInput = WorkspaceInput | TimelineInput | QQBotInput;

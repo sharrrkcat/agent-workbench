@@ -1,6 +1,7 @@
 import { useSettingsView } from '../SettingsView';
 import { Input } from '@/components/ui/input';
-import { FieldGroup, Field, FieldLabel, FieldSet } from '@/components/ui/field';
+import { FieldGroup, Field, FieldLabel, FieldSet, FieldDescription } from '@/components/ui/field';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Save } from 'lucide-react';
@@ -117,6 +118,20 @@ export function ProviderEditor({
                     ),
                   )}
                 </FieldGroup>
+                <Field>
+                  <Field orientation="horizontal">
+                    <Switch id="provider-unindexed-tool-call" disabled={busy}
+                      aria-describedby="provider-unindexed-tool-call-help"
+                      checked={provider.value.connection.allow_unindexed_complete_tool_call}
+                      onCheckedChange={(value) => patchConnection({ allow_unindexed_complete_tool_call: value })} />
+                    <FieldLabel htmlFor="provider-unindexed-tool-call">
+                      {t('connection.allow_unindexed_complete_tool_call')}
+                    </FieldLabel>
+                  </Field>
+                  <FieldDescription id="provider-unindexed-tool-call-help">
+                    {t('connection.unindexedToolCallHelp')}
+                  </FieldDescription>
+                </Field>
               </FieldSet>
             </div>
             <DialogFooter>

@@ -32,6 +32,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(dialog.getByRole('switch', { name: labels.qq.enabled, exact: true })).not.toBeChecked();
         await dialog.getByLabel(labels.qq.keywords, { exact: true }).fill('BOT\nhello');
         await dialog.getByLabel(labels.qq.batchLimit, { exact: true }).fill('3');
+        await expect(dialog.getByLabel(labels.qq.replyLimit, { exact: true })).toHaveValue('4');
+        await dialog.getByLabel(labels.qq.replyLimit, { exact: true }).fill('3');
         await expect(dialog.getByRole('tab', { name: labels.knowledge, exact: true })).toHaveCount(0);
         const created = page.waitForResponse((r) => r.url().endsWith('/api/projects') && r.request().method() === 'POST');
         await dialog.getByRole('button', { name: labels.createProject, exact: true }).click();
@@ -42,13 +44,16 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect(project.has_access_token).toBe(true);
         expect(project.access_token).toBeUndefined();
         expect(project.keywords).toEqual(['bot', 'hello']);
+        expect(project.reply_message_limit).toBe(3);
         await expect(dialog).toBeHidden();
         await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`));
         await expect(page.getByLabel(labels.qq.token, { exact: true })).toHaveValue('');
         await page.getByLabel(labels.projectPrompt, { exact: true }).fill('Project prompt');
+        await page.getByLabel(labels.qq.replyLimit, { exact: true }).fill('2');
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
         expect((await json(request.get(`/api/projects/${projectId}`))).has_access_token).toBe(true);
+        expect((await json(request.get(`/api/projects/${projectId}`))).reply_message_limit).toBe(2);
         await page.getByRole('button', { name: labels.qq.clearToken, exact: true }).click();
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
@@ -178,6 +183,46 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect(errors).toEqual([]);
       } finally {
         if (projectId) await json(request.delete(`/api/projects/${projectId}`));
+      }
+    });
+
+    test('reply limit completes normally and missing reply pauses with a clear error', async ({ page, request }, info) => {
+      const labels = words(locale, 'personas');
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      await request.post('/__test__/session');
+      await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
+      const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
+      const project = await json(request.post('/api/projects', { data: {
+        kind: 'qqbot', name: 'QQ reply policy', context_policy: {}, bot_account: String(Date.now()),
+        websocket_url: 'ws://127.0.0.1:3001', model_profile_id: model.id, keywords: ['bot'], reply_message_limit: 2,
+      } }));
+      try {
+        const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { title: 'QQ reply policy', target_kind: 'group', target_id: '7788' } }));
+        await page.goto(`/projects/${project.id}?session=${session.session_id}`);
+        await expect(page.getByRole('heading', { name: session.title, exact: true })).toBeVisible();
+        const limited = await json(request.post(`/__test__/qq/${session.session_id}/reply/limit`));
+        await expect(page.locator('[data-qq-delivery]')).toHaveCount(2);
+        await expect(page.locator('[data-qq-reply-limit]')).toHaveText(labels.qq.replyLimitReached.replace('{{sent}}', '2').replace('{{limit}}', '2'));
+        await expect(page.getByRole('button', { name: labels.qq.pause, exact: true })).toBeVisible();
+        const limitedRun = await json(request.get(`/api/runs/${limited.run_id}`));
+        expect(limitedRun.status).toBe('DONE');
+        expect(limitedRun.metadata.qq_reply).toEqual({ sent_count: 2, message_limit: 2, limit_reached: true });
+        await page.screenshot({ path: info.outputPath('qq-reply-limit.png') });
+
+        const missing = await json(request.post(`/__test__/qq/${session.session_id}/reply/missing`));
+        await expect(page.getByRole('button', { name: labels.qq.resume, exact: true })).toBeVisible();
+        await expect(page.getByRole('status').filter({ hasText: labels.qq.status.QQ_REPLY_REQUIRED })).toBeVisible();
+        await expect(page.locator('.reply-error')).toContainText(labels.qq.status.QQ_REPLY_REQUIRED);
+        await expect(page.locator('[data-qq-delivery]')).toHaveCount(2);
+        const missingRun = await json(request.get(`/api/runs/${missing.run_id}`));
+        expect(missingRun.status).toBe('FAILED');
+        expect(missingRun.error_code).toBe('QQ_REPLY_REQUIRED');
+        expect(missingRun.metadata.qq_reply.sent_count).toBe(0);
+        await page.screenshot({ path: info.outputPath('qq-missing-reply.png') });
+        expect(errors).toEqual([]);
+      } finally {
+        await json(request.delete(`/api/projects/${project.id}`));
       }
     });
   });

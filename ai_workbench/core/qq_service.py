@@ -130,7 +130,7 @@ class QQService:
             result = await self.state.chat_runner.run(session_id=batch.session_id, text=batch.text,
                 input_message_id=user.message_id, on_run_created=run_created)
             batch.run_id = result.run_id
-            batch.status = ("done" if self.store.has_sent(result.run_id) else "no_reply") if result.success else (
+            batch.status = "done" if result.success else (
                 "cancelled" if result.error_code == "RUN_CANCELLED" else "failed")
             batch.error_code = result.error_code
             if not result.success:

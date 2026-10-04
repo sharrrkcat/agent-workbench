@@ -21,7 +21,7 @@ MessageResponse = public_model("QQMessageResponse", QQMessage, omit={"references
     "disposition": (Literal["pending", "batched", "skipped"], ...),
 })
 BatchResponse = public_model("QQBatchResponse", QQBatch, fields={"id": (int, ...),
-    "status": (Literal["queued", "running", "done", "no_reply", "failed", "cancelled", "interrupted"], ...),
+    "status": (Literal["queued", "running", "done", "failed", "cancelled", "interrupted"], ...),
 })
 DeliveryResponse = public_model("QQDeliveryResponse", QQDelivery, fields={"id": (int, ...),
     "status": (Literal["pending", "sending", "sent", "failed", "unknown"], ...),

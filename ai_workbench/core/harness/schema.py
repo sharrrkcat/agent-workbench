@@ -97,6 +97,7 @@ class HarnessState(BaseModel):
     awaiting_approval: str | None = None
     approval_step_id: str | None = None
     rounds: int = Field(default=0, ge=0)
+    qq_sent_count: int = Field(default=0, ge=0)
     active_seconds: float = Field(default=0.0, ge=0)
     last_result: ToolOutcome | None = None
 

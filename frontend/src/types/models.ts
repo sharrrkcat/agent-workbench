@@ -130,6 +130,7 @@ export type ModelProfile = ModelInput & { id: string; created_at: string; update
 
 export type ExternalConnection = {
   base_url: string;
+  allow_unindexed_complete_tool_call: boolean;
   api_key?: string;
   timeout_seconds: number;
   concurrency: number;

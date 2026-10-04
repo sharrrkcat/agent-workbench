@@ -96,7 +96,9 @@ class ChatRunner:
         run = self.runs.create_run(
             kind="chat", persona_id=config.persona_id, session_id=session_id,
             metadata={"input_message_id": user.message_id,
-                      "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed)},
+                      "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed),
+                      **({"qq_reply": {"sent_count": 0, "message_limit": config.qq_reply_message_limit,
+                                       "limit_reached": False}} if session.kind == "qqbot" else {})},
             config_snapshot=config.model_dump(mode="json"),
         )
         if on_run_created:

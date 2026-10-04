@@ -13,8 +13,8 @@ Steps have stable order, optional parent ids, timing, compact messages and struc
 Both locales label stable kinds, never implementation progress strings.
 
 The optional Pet foundation selects session statuses/steps/progress without a UI, separate stream or polling.
-QQ uses chat runs and existing inspection/cancellation; its durable batches and delivery states belong to
-[Harness/tools](harness-tools.md#qq-delivery-and-queues), separately from internal model prose and run outcomes.
+QQ uses existing chat runs, inspection and cancellation; [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns batches and delivery. Public metadata.qq_reply retains sent_count, message_limit and limit_reached during execution and termination, including partial sends before failure/cancellation.
+Only normal completion at the send limit sets limit_reached=true. Ending without a confirmed reply fails with QQ_REPLY_REQUIRED before DONE.
 
 ChatRunner persists messages, runs, steps and events. Run/message metadata contains public ids, counts, timings, warnings
 and source refs, never prompts, full history/context, vectors, binaries or keys. Model resolution includes

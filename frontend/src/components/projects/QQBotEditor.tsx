@@ -24,7 +24,7 @@ export function qqInput(project?: QQBotProject): QQBotInput {
   }
   return { kind: 'qqbot', name: '', bot_account: '', websocket_url: 'ws://127.0.0.1:3001',
     connection_enabled: false, agent_persona_id: null, system_prompt: '', model_profile_id: null,
-    temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20,
+    temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20, reply_message_limit: 4,
     context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'none' } };
 }
 
@@ -108,6 +108,7 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
       <Field><FieldLabel>{t('qq.replyMode')}</FieldLabel><Badge variant="secondary" className="self-start">{t('qq.keywordMode')}</Badge><FieldDescription>{t('qq.triggerHint')}</FieldDescription></Field>
       <Field><FieldLabel htmlFor={id + '-keywords'}>{t('qq.keywords')}</FieldLabel><Textarea id={id + '-keywords'} rows={3} value={keywords} onChange={(e) => { setKeywords(e.target.value); update({ keywords: e.target.value.split('\n').map((v) => v.trim()).filter(Boolean) }); }} /></Field>
       <Field><FieldLabel htmlFor={id + '-limit'}>{t('qq.batchLimit')}</FieldLabel><Input id={id + '-limit'} type="number" required min={1} max={200} value={draft.batch_message_limit} onChange={(e) => update({ batch_message_limit: Number(e.target.value) })} /></Field>
+      <Field><FieldLabel htmlFor={id + '-reply-limit'}>{t('qq.replyLimit')}</FieldLabel><Input id={id + '-reply-limit'} type="number" required min={1} max={20} step={1} value={draft.reply_message_limit} onChange={(e) => update({ reply_message_limit: Number(e.target.value) })} /><FieldDescription>{t('qq.replyLimitHint')}</FieldDescription></Field>
       <Field orientation="horizontal"><Switch id={id + '-reasoning'} checked={draft.reasoning} onCheckedChange={(reasoning) => update({ reasoning })} /><FieldLabel htmlFor={id + '-reasoning'}>{t('qq.reasoning')}</FieldLabel></Field>
       <ContextFields showAttachments={false} value={draft.context_policy} onChange={(context_policy) => update({ context_policy: { ...context_policy, include_attachments: 'none' } })} />
       <GenerationFields value={{ temperature: draft.temperature }} onChange={(v) => update({ temperature: v.temperature ?? null })} />

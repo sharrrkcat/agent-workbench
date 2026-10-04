@@ -94,11 +94,6 @@ class QQStore:
             return db.exec(select(QQDelivery).where(QQDelivery.run_id == run_id,
                 QQDelivery.tool_call_id == call_id)).first()
 
-    def has_sent(self, run_id):
-        with Session(self.engine) as db:
-            return db.exec(select(QQDelivery.id).where(QQDelivery.run_id == run_id,
-                QQDelivery.status == "sent").limit(1)).first() is not None
-
     def reconcile_echo(self, session_id, external_id):
         with Session(self.engine) as db:
             db.exec(update(QQDelivery).where(QQDelivery.session_id == session_id,

@@ -76,8 +76,17 @@ are ignored without resetting debounce. Bot echoes never enter batches; known ex
 QQ runs always enable Harness with only qq_send_message; it is absent from the general catalog/default selections,
 rejects ordinary/Workspace allowlists and direct calls, and requires server-owned session, run and tool-call ids.
 Its destination comes solely from the immutable Session binding. One invocation sends one plain-text OneBot segment;
-CQ-looking content remains literal. Multiple invocations use normal Harness limits. Unsupported tools fail the run,
-without ordinary-chat fallback. Final model prose remains internal; a successful run without sends becomes no_reply.
+CQ-looking content remains literal. Each batch's first model call uses tool_choice=required; subsequent calls use auto.
+Unsupported tools fail without ordinary-chat fallback. Final model prose remains internal. A model ending without
+a confirmed qq_send_message fails the run and batch with QQ_REPLY_REQUIRED and pauses the Session; the request
+is not retried or downgraded if a provider rejects or ignores the tool choice.
+
+The Project reply_message_limit defaults to 4 (strict integer, 1..20), distinct from the incoming batch limit.
+Execution snapshots it with the configuration. Only successful qq_send_message results increment the run's
+private qq_sent_count; failed/unknown sends, validation errors and other tools do not count. Reaching the limit
+completes the run and batch without pausing or another model call. Remaining calls already emitted by the model
+receive rejected results with QQ_REPLY_LIMIT_REACHED and skipped steps, without creating delivery intents.
+Cancellation, delivery errors and existing Harness limits retain precedence. Counts reset for each new batch.
 
 Every expired debounce window creates an immutable SQLite FIFO batch, including during inference or pause.
 Messages are reserved once. Execution is serialized across each Project, loading only the next unpaused Session's batch.
@@ -103,6 +112,7 @@ One run can execute eight tool-producing rounds, followed by a final model
 answer. A further tool round fails with `TOOL_LOOP_LIMIT`. Each tool has a
 30-second timeout; the harness has five minutes of cumulative active time.
 Waiting for approval consumes no active time and holds no model lease.
+QQ's send limit can complete a run earlier and does not increase these shared limits.
 
 Each model round, including after approval, applies the shared
 [chat token budget](chat-context.md#configuration-snapshots-and-context) to its final request.

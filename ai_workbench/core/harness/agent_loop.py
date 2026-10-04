@@ -160,6 +160,17 @@ class HarnessAgentLoop:
                     await self._execute_one(session, config, run, state, call, arguments, budget)
                     state.pending_calls.pop(0)
                     self._save_state(run.run_id, state)
+                    if session.kind == "qqbot" and state.qq_sent_count >= config.qq_reply_message_limit:
+                        self._check_cancelled(run.run_id)
+                        budget.check()
+                        for remaining in state.pending_calls:
+                            self._record_result(session, run, state, remaining, ToolOutcome(
+                                status="rejected", error_code="QQ_REPLY_LIMIT_REACHED",
+                                error_message="The reply message limit for this QQ batch has been reached."))
+                        state.pending_calls = []
+                        self._update_qq_reply(run.run_id, config, state, limit_reached=True)
+                        self._complete(run.run_id)
+                        return RunResult(success=True, run_id=run.run_id)
                 if state.direct:
                     outcome = state.last_result
                     if outcome is None:
@@ -203,6 +214,7 @@ class HarnessAgentLoop:
                                                      max_image_bytes=state.max_image_bytes)
         request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],
                               tools=tools, stream=profile.request_options.streaming, reasoning=state.reasoning,
+                              **({"tool_choice": "required" if state.rounds == 0 else "auto"} if session.kind == "qqbot" else {}),
                               **config.generation.model_dump(exclude_none=True))
         self.model_manager.validate_chat(profile, request)
         resolution = {"model_profile_id": profile.id, "alias": profile.alias,
@@ -224,6 +236,8 @@ class HarnessAgentLoop:
             self._check_cancelled(run.run_id)
             budget.check()
             self._validate_calls(calls, state)
+            if not calls and session.kind == "qqbot" and state.qq_sent_count == 0:
+                raise ToolExecutionError("QQ_REPLY_REQUIRED", "The model ended without sending a QQ reply.")
             if calls and state.rounds >= MAX_TOOL_ROUNDS:
                 raise ToolExecutionError("TOOL_LOOP_LIMIT", "Tool loop reached the maximum of 8 rounds.")
         except (Exception, asyncio.CancelledError):
@@ -327,10 +341,18 @@ class HarnessAgentLoop:
                                   error_message="Harness execution exceeded 5 minutes." if total else "Tool execution timed out.")
         except ToolExecutionError as exc:
             outcome = ToolOutcome(status="error", data=exc.details or None, error_code=exc.code, error_message=exc.message)
+        if session.kind == "qqbot" and call.function.name == "qq_send_message" and outcome.status == "success":
+            state.qq_sent_count += 1
+            self._update_qq_reply(run.run_id, config, state)
         self._record_result(session, run, state, call, outcome, step_id=step.step_id)
         if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and outcome.status != "success"):
             state.pending_calls.pop(0)
             raise ToolExecutionError(outcome.error_code, outcome.error_message)
+
+    def _update_qq_reply(self, run_id, config, state, *, limit_reached=False) -> None:
+        self.runs.update_metadata(run_id, {**self.runs.get_run(run_id).metadata,
+            "qq_reply": {"sent_count": state.qq_sent_count, "message_limit": config.qq_reply_message_limit,
+                         "limit_reached": limit_reached}})
 
     def _record_result(self, session, run, state, call, outcome: ToolOutcome, *, step_id=None) -> None:
         if step_id is None:

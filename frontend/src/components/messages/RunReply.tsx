@@ -32,7 +32,8 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
   const error = run.error_message || run.error || '';
   const contextErrors: Record<string, string> = { CONTEXT_WINDOW_REQUIRED: 'contextErrors.required',
     CONTEXT_WINDOW_EXCEEDED: 'contextErrors.exceeded', CONTEXT_COUNT_FAILED: 'contextErrors.countFailed' };
-  const errorKey = contextErrors[run.error_code ?? ''] ?? imageErrorKey(run.error_code, error);
+  const errorKey = run.error_code === 'QQ_REPLY_REQUIRED' ? 'personas:qq.status.QQ_REPLY_REQUIRED'
+    : contextErrors[run.error_code ?? ''] ?? imageErrorKey(run.error_code, error);
   const status = (
     {
       PENDING: 'queued',

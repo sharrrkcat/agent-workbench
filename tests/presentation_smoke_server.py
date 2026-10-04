@@ -63,7 +63,13 @@ class PresentationOpenAI(ToolOpenAI):
             command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
-        if "qq-fixture" in command:
+        if "qq-limit-fixture" in command:
+            calls = [{"index": index, **tool_call("qq_send_message", {"text": f"Limited QQ reply {index + 1}"}, f"call_{index}")}
+                     for index in range(21)]
+            stream = FixtureStream([{"tool_calls": calls}], "tool_calls", delay=.01)
+        elif "qq-missing-fixture" in command:
+            stream = FixtureStream([{"content": "This reply was never sent to QQ"}], delay=.01)
+        elif "qq-fixture" in command:
             chunks = [{"tool_calls": [{"index": 0, **tool_call("qq_send_message", {"text": "Confirmed QQ reply"})}]}] if not outputs else [{"content": "Internal QQ prose"}]
             stream = FixtureStream(chunks, "tool_calls" if not outputs else "stop", delay=.01)
         elif command in {"context-usage", "context-no-usage"}:

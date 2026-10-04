@@ -141,8 +141,8 @@ class FakeConnection:
         return {"message_id": 1000 + len(self.calls)}
 
 
-def configure_execution(client, state, **values):
-    model = configure_model(client, request_options={"streaming": False})
+def configure_execution(client, state, *, streaming=False, **values):
+    model = configure_model(client, request_options={"streaming": streaming})
     p = project(client, model_profile_id=model["id"], connection_enabled=True, keywords=["bot"], **values)
     session = child(client, p)
     connection = FakeConnection()
@@ -234,16 +234,36 @@ def test_restart_preserves_queue_and_debounce_without_replaying(qq_client):
     assert connection.calls == [] and upstream.calls == []
 
 
-def test_no_send_is_internal_and_retained_as_no_reply(qq_client):
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("content", ["Private final answer", "", None])
+def test_missing_reply_fails_and_pauses_without_replaying(qq_client, streaming, content):
     client, state, upstream = qq_client
-    p, session, connection = configure_execution(client, state)
-    upstream.turns = [completion(content="Private final answer")]
+    p, session, connection = configure_execution(client, state, streaming=streaming)
+    upstream.turns = [completion(content=content)]
     ingest(client, state, p, event(1), 1)
     batch = freeze(state, session, 6)
+    ingest(client, state, p, event(2), 7)
+    queued = freeze(state, session, 12)
     client.portal.call(state.qq.execute, batch)
-    assert state.qq.store.get(QQBatch, batch.id).status == "no_reply"
+    batch = state.qq.store.get(QQBatch, batch.id)
+    run = state.runs.get_run(batch.run_id)
+    code = "PROVIDER_PROTOCOL_ERROR" if content is None and not streaming else "QQ_REPLY_REQUIRED"
+    assert batch.status == "failed" and batch.error_code == code
+    assert run.status == "FAILED" and run.error_code == code
+    assert run.metadata["qq_reply"] == {"sent_count": 0, "message_limit": 4, "limit_reached": False}
+    assert all(row.status != "running" for row in state.runs.list_steps(run.run_id))
+    assert not any(row.type == "run_completed" and row.run_id == run.run_id for row in state.events.list_events())
+    assert len(upstream.calls) == 1 and upstream.calls[0]["tool_choice"] == "required"
     assert connection.calls == []
-    assert not state.qq.store.get(QQBinding, session["session_id"]).paused
+    binding = state.qq.store.get(QQBinding, session["session_id"])
+    assert binding.paused and binding.pause_reason == code
+    assert state.qq.store.next_batch(p["id"]) is None
+    if content:
+        messages = state.messages.list_messages(session["session_id"])
+        assert any(m.metadata.get("qq_internal") and content in json.dumps(m.parts) for m in messages)
+        assert content not in json.dumps(ContextBuilder(state.messages).build(session["session_id"], "next").messages)
+    ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
+    assert state.qq.store.next_batch(p["id"]).id == queued.id
 
 
 def test_onebot_websocket_identity_and_plain_text_roundtrip():
@@ -349,6 +369,8 @@ def test_stop_during_send_keeps_confirmed_reply_and_queued_windows(qq_client):
         state.qq.control(sid, "stop")
         await asyncio.wait_for(task, 5)
         assert state.qq.store.get(QQBatch, batch.id).status == "cancelled"
+        run = state.runs.get_run(state.qq.store.get(QQBatch, batch.id).run_id)
+        assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False}
         records = state.qq.store.page(QQDelivery, sid)["items"]
         assert [row["status"] for row in records] == ["unknown", "sent"]
         assert state.qq.store.get(QQBinding, sid).paused
@@ -356,13 +378,13 @@ def test_stop_during_send_keeps_confirmed_reply_and_queued_windows(qq_client):
         queued = state.qq.store.next_batch(p["id"])
         assert queued.id == batch.id + 1
         connection.call = original
-        upstream.turns = [completion(content="No send")]
+        upstream.turns = [completion(tool_call("qq_send_message", {"text": "next batch"})), completion(content="")]
         await state.qq.execute(queued)
         assert state.qq.store.next_batch(p["id"]).id == batch.id + 2
     client.portal.call(scenario)
     context = json.dumps(ContextBuilder(state.messages).build(sid, "next", ContextPolicy()).messages)
     assert "confirmed" in context and "uncertain" not in context
-    assert len(connection.calls) == 2
+    assert len(connection.calls) == 3
 
 
 def test_unsupported_tools_fail_without_ordinary_chat(qq_client, monkeypatch):

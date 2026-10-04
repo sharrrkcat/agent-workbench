@@ -65,6 +65,8 @@ def test_multi_call_round_and_stream_fragments(harness_client, streaming):
     response = send(client, session)
     assert response["success"] and response["run"]["status"] == "DONE"
     assert response["data"] == "final answer"
+    assert all("tool_choice" not in request for request in upstream.calls)
+    assert "qq_reply" not in response["run"]["metadata"]
     tool_results = results(response)
     assert [part["tool_call_id"] for part in tool_results] == ["call_1", "call_2"]
     assert [part["data"]["value"] for part in tool_results] == ["5Lit5paH", "hi"]

@@ -113,6 +113,8 @@
     }
   },
   "connection": {
+    "allow_unindexed_complete_tool_call": "Accept complete tool calls without an index",
+    "unindexedToolCallHelp": "Off by default. For third-party streams that omit the index on a single complete tool call. Does not support unindexed multiple calls or argument fragments.",
     "timeout_seconds": "Request timeout (seconds)",
     "concurrency": "Concurrent requests",
     "queue_size": "Queue capacity",

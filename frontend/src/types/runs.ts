@@ -54,7 +54,9 @@ export type Run = {
   error_code?: string | null;
   error_message?: string | null;
   error?: string | null;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    qq_reply?: { sent_count: number; message_limit: number; limit_reached: boolean };
+  };
   created_at: string;
   updated_at: string;
   steps?: RunStep[];

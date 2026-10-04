@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import httpx
 from httpx_sse import aconnect_sse, SSEError
 from ai_workbench.core.models.errors import ModelError
+from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.models.adapter import ChatInputCapture
 from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTiming
 from ai_workbench.core.models.schema import (
@@ -27,6 +28,7 @@ def transport_error(exc: Exception) -> ModelError:
 
 class OpenAIAdapter:
     def __init__(self, provider: ExternalConnection, transport: httpx.AsyncBaseTransport | None = None):
+        self.allow_unindexed_complete_tool_call = provider.allow_unindexed_complete_tool_call
         self.client = httpx.AsyncClient(
             base_url=provider.base_url + "/",
             headers={"Authorization": f"Bearer {provider.api_key}"} if provider.api_key else {},
@@ -95,6 +97,7 @@ class OpenAIAdapter:
 
     async def chat_stream(self, profile: ModelProfile, request: ChatRequest, *, capture: ChatInputCapture | None = None) -> AsyncIterator[ChatChunk]:
         finished = False
+        seen_tool_delta = False
         tool_ids: dict[int, str] = {}
         tool_names: dict[int, str] = {}
         payload = self._payload(profile, request)
@@ -126,6 +129,22 @@ class OpenAIAdapter:
                     delta_data = dict(choice["delta"])
                     if delta_data.pop("refusal", None):
                         raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
+                    calls = delta_data.get("tool_calls")
+                    if (self.allow_unindexed_complete_tool_call and not seen_tool_delta
+                            and choice.get("finish_reason") == "tool_calls"
+                            and isinstance(calls, list) and len(calls) == 1
+                            and isinstance(calls[0], dict) and "index" not in calls[0]):
+                        call = calls[0]
+                        function = call.get("function")
+                        if (isinstance(call.get("id"), str) and call["id"]
+                                and call.get("type") == "function" and isinstance(function, dict)
+                                and isinstance(function.get("name"), str) and function["name"]
+                                and isinstance(function.get("arguments"), str)
+                                and isinstance(strict_json_loads(function["arguments"]), dict)):
+                            # Observed on elysia.h-e.top: a complete terminal call omits index.
+                            # Disable this opt-in once the upstream reliably supplies standard indices.
+                            delta_data["tool_calls"] = [{**call, "index": 0}]
+                    seen_tool_delta = seen_tool_delta or bool(calls)
                     delta = ChatDelta.model_validate(delta_data)
                     for tool in delta.tool_calls or []:
                         if tool.id:

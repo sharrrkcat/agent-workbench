@@ -5,6 +5,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
+import { Marker, MarkerContent } from '@/components/ui/marker';
 import { InputGroupButton } from '@/components/ui/input-group';
 import { MessageScrollerButton, MessageScrollerItem, MessageScrollerProvider, useMessageScroller } from '@/components/ui/message-scroller';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
@@ -93,6 +94,10 @@ function QQConversation({ session }: { session: QQSession }) {
                 {item.deliveries.length ? <div className="mt-2 flex flex-col gap-1.5" data-qq-deliveries>
                   {item.deliveries.map((delivery) => <QQOutgoing key={delivery.id} delivery={delivery} personaId={item.reply.run.persona_id} />)}
                 </div> : null}
+                {item.reply.run.metadata?.qq_reply?.limit_reached ? <Marker className="mt-2" data-qq-reply-limit>
+                  <MarkerContent>{t('qq.replyLimitReached', { sent: item.reply.run.metadata.qq_reply.sent_count,
+                    limit: item.reply.run.metadata.qq_reply.message_limit })}</MarkerContent>
+                </Marker> : null}
               </>}
             </MessageScrollerItem>)}
           </ConversationContent>

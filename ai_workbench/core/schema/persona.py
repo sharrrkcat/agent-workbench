@@ -94,6 +94,7 @@ class ResolvedChatConfig(StrictModel):
     harness_enabled: bool
     tools_allowed: list[str]
     knowledge_base_ids: list[str]
+    qq_reply_message_limit: int | None = Field(default=None, ge=1, le=20, strict=True)
 
     def public_summary(self) -> dict:
         return self.model_dump(mode="json", exclude={"system_prompt", "project_system_prompt", "user_persona_prompt"})

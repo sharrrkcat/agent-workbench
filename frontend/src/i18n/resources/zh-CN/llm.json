@@ -113,6 +113,8 @@
     }
   },
   "connection": {
+    "allow_unindexed_complete_tool_call": "兼容缺少索引的完整工具调用",
+    "unindexedToolCallHelp": "默认关闭。用于部分第三方接口的流式响应，仅接受缺少索引的单个完整工具调用，不支持缺少索引的多工具调用或参数分片。",
     "timeout_seconds": "请求超时（秒）",
     "concurrency": "并发请求数",
     "queue_size": "队列容量",

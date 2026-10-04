@@ -18,15 +18,17 @@ for (const locale of ['en', 'zh-CN']) {
         await add.click();
         const dialog = page.getByRole('dialog');
         const name = `External fixture ${locale} ${viewport.width}`;
-        await expect(dialog.getByRole('switch')).toHaveCount(0);
+        await expect(dialog.getByRole('switch', { name: labels.connection.allow_unindexed_complete_tool_call, exact: true })).not.toBeChecked();
         await dialog.getByLabel(labels.name, { exact: true }).fill(name);
         await dialog.getByLabel(labels.baseUrl, { exact: true }).fill('http://127.0.0.1:1234/v1');
         await dialog.getByLabel(labels.apiKey, { exact: true }).fill('fixture-secret');
+        await dialog.getByRole('switch', { name: labels.connection.allow_unindexed_complete_tool_call, exact: true }).check();
         await dialog.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(dialog).toHaveCount(0);
         let provider = (await (await request.get('/api/models/providers')).json()).find((item: { name: string }) => item.name === name);
         expect(provider.enabled).toBe(true);
         expect(provider.connection.has_api_key).toBe(true);
+        expect(provider.connection.allow_unindexed_complete_tool_call).toBe(true);
         expect(provider.connection).not.toHaveProperty('api_key');
         const card = page.getByRole('group', { name, exact: true });
         const toggle = card.getByRole('switch', { name: labels.providerEnabled.replace('{{name}}', name), exact: true });
@@ -60,7 +62,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.unroute(providerRoute);
 
         await card.getByRole('button', { name: labels.edit, exact: true }).click();
-        await expect(dialog.getByRole('switch')).toHaveCount(0);
+        await expect(dialog.getByRole('switch', { name: labels.connection.allow_unindexed_complete_tool_call, exact: true })).toBeChecked();
         await expect(dialog.getByLabel(labels.apiKey, { exact: true })).toHaveValue('');
         await expect(dialog.getByLabel(labels.apiKey, { exact: true })).toHaveAttribute('placeholder', labels.keySet);
         await dialog.getByLabel(labels.connection.timeout_seconds, { exact: true }).fill('90');
@@ -74,6 +76,21 @@ for (const locale of ['en', 'zh-CN']) {
         expect(provider.enabled).toBe(false);
         expect(provider.connection.has_api_key).toBe(true);
         expect(provider.connection.timeout_seconds).toBe(90);
+        expect(provider.connection.allow_unindexed_complete_tool_call).toBe(true);
+
+        await card.getByRole('button', { name: labels.edit, exact: true }).click();
+        const compatibility = dialog.getByRole('switch', { name: labels.connection.allow_unindexed_complete_tool_call, exact: true });
+        await compatibility.uncheck();
+        await page.route(providerRoute, (route) => route.fulfill({ status: 409, json: { error: { code: 'MODEL_BUSY', message: 'Fixture provider is busy' } } }), { times: 1 });
+        await dialog.getByRole('button', { name: labels.save, exact: true }).click();
+        await expect(dialog.getByRole('alert')).toContainText('MODEL_BUSY');
+        expect((await (await request.get(`/api/models/providers/${provider.id}`)).json()).connection.allow_unindexed_complete_tool_call).toBe(true);
+        await dialog.getByRole('button', { name: labels.save, exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        await card.getByRole('button', { name: labels.edit, exact: true }).click();
+        await expect(compatibility).not.toBeChecked();
+        await dialog.getByRole('button', { name: labels.save, exact: true }).click();
+        await expect(dialog).toHaveCount(0);
 
         await page.route(providerRoute, (route) => route.fulfill({ status: 409, json: {
           error: { code: 'MODEL_BUSY', message: 'Fixture provider is busy' },

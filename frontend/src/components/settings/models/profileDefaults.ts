@@ -117,6 +117,7 @@ export const newProvider = (): Omit<ProviderInput, 'enabled'> => ({
   name: '',
   connection: {
     base_url: 'http://127.0.0.1:1234/v1', timeout_seconds: 60,
+    allow_unindexed_complete_tool_call: false,
     concurrency: 1, queue_size: 32, queue_timeout_seconds: 30,
   },
 });

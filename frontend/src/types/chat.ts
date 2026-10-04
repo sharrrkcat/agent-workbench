@@ -53,6 +53,7 @@ export type WorkspaceSessionPatch = { title?: string; overrides?: WorkspaceOverr
 export type SessionPatch = OrdinarySessionPatch | WorkspaceSessionPatch;
 
 export type EffectiveChatConfig = {
+  qq_reply_message_limit: number | null;
   context_limits: { window_tokens: number | null; output_tokens: number | null };
   session_kind: 'ordinary' | 'workspace' | 'qqbot';
   project_id: string | null;
