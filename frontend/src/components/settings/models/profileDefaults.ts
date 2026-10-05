@@ -1,6 +1,13 @@
 import type { DirectoryInspection, ModelInput, ModelKind, ProviderInput, LocalEngine, LocalModelSource, ModelSource } from '../../../types/models';
 
-export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'tts', 'asr', 'processor', 'reranker'].includes(kind);
+export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'asr', 'processor', 'reranker'].includes(kind);
+
+export const grokVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'eve', 'sal', 'rex'];
+
+export function selectTTSArchitecture(parameters: ModelInput['parameters'], architecture: 'grok-voice-latest' | 'customize') {
+  return { ...parameters, architecture,
+    voice: architecture === 'customize' || grokVoices.includes(String(parameters.voice)) ? parameters.voice : 'alloy' };
+}
 
 export const processorDefaults = { task: 'image_processing', style: 'natural', preset: 3,
   intensity: 1, tone: 1, structure: 1, skin: -1, auto_mask: false, channel_order: 'auto' };
@@ -115,6 +122,8 @@ export function selectModelSource(value: ModelInput, source: ModelSource | null,
   if (sourceValue(source) === sourceValue(value.source)) return value;
   const parameters = value.kind === 'embedding'
     ? source?.type === 'local' ? { query_prompt_name: null, document_prompt_name: null } : {}
+    : value.kind === 'tts' ? { speed: value.parameters.speed ?? 1, response_format: value.parameters.response_format ?? 'mp3',
+        ...(source?.type === 'provider' ? { architecture: 'grok-voice-latest', voice: 'alloy' } : {}) }
     : value.parameters;
   const request_options = value.request_options ? { ...value.request_options,
     skip_tool_capability_check: false, skip_vision_capability_check: false,

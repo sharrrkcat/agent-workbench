@@ -118,7 +118,7 @@ def test_database_rejects_inconsistent_source_columns(tmp_path):
     invalid = [
         {'source_type': 'other'}, {'provider_profile_id': provider.id}, {'execution_options_json': '{}'},
         {'source_type': 'provider'}, {'source_type': 'provider', 'provider_profile_id': provider.id, 'lifecycle_json': '{}'},
-        {'source_type': 'provider', 'provider_profile_id': provider.id, 'kind': 'tts'},
+        {'source_type': 'provider', 'provider_profile_id': provider.id, 'kind': 'asr'},
         {'source_type': 'local', 'execution_options_json': '{}'},
         {'source_type': 'local', 'execution_options_json': '{}', 'lifecycle_json': '{}', 'provider_profile_id': provider.id},
         {'source_type': 'provider', 'provider_profile_id': provider.id, 'kind': 'reranker'},

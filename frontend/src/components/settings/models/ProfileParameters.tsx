@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
 import type { LocalEngine, ModelInput, VisionParameters } from '../../../types/models';
 
-import { ttsGenerationDefaults } from './profileDefaults';
+import { grokVoices, selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
 import { ASRParameters } from './ASRParameters';
 import { ProcessorParameters } from './ProcessorParameters';
 
@@ -82,6 +82,37 @@ export function ProfileParameters({
         </>
       ) : value.kind === 'tts' ? (
         <>
+          {value.source?.type === 'provider' ? (
+            <>
+              <Field>
+                <FieldLabel>{t('providerTTS.architecture')}</FieldLabel>
+                <Select value={String(value.parameters.architecture)}
+                  items={['grok-voice-latest', 'customize'].map((id) => ({ value: id, label: id === 'customize' ? 'Customize' : id }))}
+                  onValueChange={(next) => { if (next) onChange(selectTTSArchitecture(value.parameters, next as 'grok-voice-latest' | 'customize')); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>
+                    <SelectItem value="grok-voice-latest">grok-voice-latest</SelectItem>
+                    <SelectItem value="customize">Customize</SelectItem>
+                  </SelectGroup></SelectContent>
+                </Select>
+                <FieldDescription>{t('providerTTS.architectureHint')}</FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel>{t('providerTTS.voice')}</FieldLabel>
+                {value.parameters.architecture === 'customize' ? (
+                  <Input required maxLength={128} pattern=".*\S.*" value={String(value.parameters.voice ?? '')}
+                    onChange={(event) => patchParam('voice', event.currentTarget.value)} />
+                ) : (
+                  <Select value={String(value.parameters.voice)} items={grokVoices.map((id) => ({ value: id, label: id }))}
+                    onValueChange={(next) => { if (next) patchParam('voice', next); }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectGroup>{grokVoices.map((id) => <SelectItem key={id} value={id}>{id}</SelectItem>)}</SelectGroup></SelectContent>
+                  </Select>
+                )}
+                <FieldDescription>{t('providerTTS.voiceHint')}</FieldDescription>
+              </Field>
+            </>
+          ) : null}
           {engine === 'chatterbox' || engine === 'qwen3tts' ? (
             <Field>
               <FieldLabel>{t('params.seed')}</FieldLabel>

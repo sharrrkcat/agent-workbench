@@ -51,7 +51,8 @@ QQ_DELIVERY_ECHO_REVISION = "0031_qq_delivery_echo"
 QQ_FOLLOWUP_REVISION = "0032_qq_followup"
 QQ_HISTORY_DELETION_REVISION = "0033_qq_history_deletion"
 QQ_MEDIA_REVISION = "0034_qq_media"
-HEAD_REVISION = QQ_MEDIA_REVISION
+PROVIDER_TTS_REVISION = "0035_provider_tts"
+HEAD_REVISION = PROVIDER_TTS_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

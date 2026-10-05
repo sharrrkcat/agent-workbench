@@ -44,7 +44,7 @@ class VoiceItem(ApiModel):
     id: str
     model: str
     source: Literal["preset", "temporary"]
-    language: str | None = Field(description="Preset/architecture language, or null for Qwen references with no fixed synthesis language.")
+    language: str | None = Field(description="Preset/architecture language, or null for provider presets or Qwen references with no fixed synthesis language.")
     expires_at: ApiTimestamp | None = None
 
 

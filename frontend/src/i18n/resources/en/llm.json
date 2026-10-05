@@ -1,4 +1,10 @@
 {
+  "providerTTS": {
+    "architecture": "Voice architecture",
+    "architectureHint": "Defines voice choices. Enter the upstream model ID separately.",
+    "voice": "Default voice",
+    "voiceHint": "Requests may override this voice; omission uses the saved default."
+  },
   "title": "Models",
   "saved": "Saved",
   "refresh": "Refresh",

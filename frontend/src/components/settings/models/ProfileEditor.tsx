@@ -261,7 +261,7 @@ export function ProfileEditor({
                         ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr', 'processor'].includes(model.value.kind)
                           ? [{ value: 'local', label: t('localRuntime') }]
                           : []),
-                        ...(['llm', 'embedding'].includes(model.value.kind) && providers.length
+                        ...(['llm', 'embedding', 'tts'].includes(model.value.kind) && providers.length
                           ? providers.map((provider) => ({
                               value: `provider:${provider.id}`,
                               label: (
@@ -284,7 +284,7 @@ export function ProfileEditor({
                             <SelectItem value="local">{t('localRuntime')}</SelectItem>
                           </SelectGroup>
                         ) : null}
-                        {['llm', 'embedding'].includes(model.value.kind) && providers.length ? (
+                        {['llm', 'embedding', 'tts'].includes(model.value.kind) && providers.length ? (
                           <SelectGroup>
                             <SelectLabel>{t('providers')}</SelectLabel>
                             {providers.map((provider) => (

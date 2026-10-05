@@ -237,7 +237,23 @@ class ImageOutput(StrictModel):
 
 class SpeechOutputParameters(StrictModel):
     speed: float = Field(default=1.0, ge=0.25, le=4.0, strict=True, description="Speech rate multiplier; 1 is the original speed.")
-    response_format: Literal["mp3", "wav"] = Field(default="mp3", description="Complete 24 kHz mono audio file format.")
+    response_format: Literal["mp3", "wav"] = Field(default="mp3", description="Complete audio file format; local TTS produces 24 kHz mono audio.")
+
+
+GROK_VOICES = ("alloy", "echo", "fable", "onyx", "nova", "eve", "sal", "rex")
+
+
+class ProviderTTSParameters(SpeechOutputParameters):
+    architecture: Literal["grok-voice-latest", "customize"]
+    voice: str = Field(min_length=1, max_length=128, strict=True)
+
+    @model_validator(mode="after")
+    def valid_voice(self):
+        if not self.voice.strip():
+            raise ValueError("Voice must not be blank")
+        if self.architecture == "grok-voice-latest" and self.voice not in GROK_VOICES:
+            raise ValueError("Voice is not supported by grok-voice-latest")
+        return self
 
 
 class KokoroParameters(SpeechOutputParameters):
@@ -296,6 +312,8 @@ class ModelInput(StrictModel):
             if "source" not in values:
                 return {**values, "source": {"type": "local"}}
             source = values["source"]
+            if values.get("kind") == "tts" and (isinstance(source, ProviderSource) or isinstance(source, dict) and source.get("type") == "provider"):
+                return values
             if not isinstance(source, LocalSource) and not (isinstance(source, dict) and source.get("type") == "local"):
                 raise ValueError("This model kind requires Local Runtime")
         return values
@@ -308,6 +326,8 @@ class ModelInput(StrictModel):
         local_embedding = self.kind == "embedding" and (isinstance(self.source, LocalSource)
             or self.source is None and bool(self.parameters.keys() & LocalEmbeddingParameters.model_fields.keys()))
         parameters_schema = LocalEmbeddingParameters if local_embedding else PARAMETERS[self.kind]
+        if self.kind == "tts" and isinstance(self.source, ProviderSource):
+            parameters_schema = ProviderTTSParameters
         parsed = parameters_schema.model_validate(self.parameters)
         self.parameters = ({**SpeechOutputParameters().model_dump(), **parsed.model_dump(exclude_unset=True)}
             if self.kind == "tts" else parsed.model_dump(exclude_none=not local_embedding))
@@ -322,8 +342,8 @@ class ModelInput(StrictModel):
                 self.source.execution_options = TypeAdapter(options).validate_python(self.source.execution_options).model_dump(exclude_unset=True)
             else:
                 self.source.execution_options = engine_options(engine, self.source.execution_options).model_validate(self.source.execution_options).model_dump()
-        elif isinstance(self.source, ProviderSource) and self.kind not in {"llm", "embedding"}:
-            raise ValueError("Providers support only LLM and text embedding models")
+        elif isinstance(self.source, ProviderSource) and self.kind not in {"llm", "embedding", "tts"}:
+            raise ValueError("Providers support only LLM, text embedding and TTS models")
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
         if self.kind == "llm":
@@ -629,7 +649,7 @@ class TTSExtensions(StrictModel):
 class SpeechRequest(StrictModel):
     model: str = Field(min_length=1)
     input: str = Field(min_length=1, max_length=4096)
-    voice: str | None = Field(default=None, min_length=1, max_length=128)
+    voice: str | None = Field(default=None, min_length=1, max_length=128, description="Voice ID. Omission/null inherits provider TTS defaults; local TTS requires voice or reference_audio.")
     speed: float | None = Field(default=None, ge=0.25, le=4.0, strict=True)
     response_format: Literal["mp3", "wav"] | None = None
     stream_format: Literal["audio"] = "audio"
@@ -644,8 +664,8 @@ class SpeechRequest(StrictModel):
 
     @model_validator(mode="after")
     def valid_voice_source(self):
-        if (self.voice is None) == (self.tts.reference_audio is None):
-            raise ValueError("Provide exactly one of voice or tts.reference_audio")
+        if self.voice is not None and self.tts.reference_audio is not None:
+            raise ValueError("Provide only one of voice or tts.reference_audio")
         return self
 
 

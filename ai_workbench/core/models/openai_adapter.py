@@ -11,7 +11,7 @@ from ai_workbench.core.models.adapter import ChatInputCapture
 from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTiming
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult,
-    ModelProfile, ExternalConnection,
+    ModelProfile, ExternalConnection, AudioOutput,
 )
 
 
@@ -57,6 +57,34 @@ class OpenAIAdapter:
                 raise ValueError("invalid model id")
             return sorted(set(ids))
         except (ValueError, KeyError, TypeError) as exc:
+            raise transport_error(exc) from exc
+
+    async def speech(self, profile: ModelProfile, text: str, voice: str, speed: float,
+                     response_format: str, language: str | None) -> AudioOutput:
+        payload = dict(model=profile.model_ref, input=text, voice=voice, speed=speed, response_format=response_format)
+        try:
+            async with self.client.stream("POST", "audio/speech", json=payload) as response:
+                response.raise_for_status()
+                mime = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                allowed = {"mp3": {"audio/mpeg", "audio/mp3"}, "wav": {"audio/wav", "audio/x-wav", "audio/wave"}}
+                if mime not in allowed[response_format]:
+                    raise ValueError("Unexpected audio content type")
+                data = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(data) + len(chunk) > 32 * 1024 * 1024:
+                        raise ValueError("Audio response too large")
+                    data.extend(chunk)
+            if response_format == "wav":
+                valid = len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE"
+            else:
+                valid = (len(data) >= 10 and data[:3] == b"ID3") or (
+                    len(data) >= 4 and data[0] == 255 and data[1] & 0xE0 == 0xE0
+                    and data[1] & 0x06 == 0x02 and (data[1] >> 3) & 3 != 1
+                    and (data[2] >> 4) not in {0, 15} and (data[2] >> 2) & 3 != 3)
+            if not valid:
+                raise ValueError("Invalid audio signature")
+            return AudioOutput(data=bytes(data), response_format=response_format)
+        except (httpx.HTTPError, ValueError) as exc:
             raise transport_error(exc) from exc
 
     @staticmethod
@@ -187,9 +215,6 @@ class OpenAIAdapter:
 
     async def vision(self, profile, images):
         raise ModelError("MODEL_UNAVAILABLE", "Providers do not support standalone vision models.", 503)
-
-    async def speech(self, profile, text, voice, speed, response_format, language):
-        raise ModelError("MODEL_UNAVAILABLE", "Providers do not support speech synthesis.", 503)
 
     async def close(self) -> None:
         await self.client.aclose()

@@ -15,7 +15,7 @@ for (const locale of ['en', 'zh-CN']) {
     const reference = dialog.getByLabel(labels.modelRef, { exact: true });
     await expect(dialog.getByLabel(labels.directory.fields.architecture, { exact: true })).toHaveCount(0);
     await expect(dialog.getByLabel(labels.source, { exact: true }).locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
-    await expect(dialog.getByLabel(labels.source, { exact: true })).toBeDisabled();
+    await expect(dialog.getByLabel(labels.source, { exact: true })).toBeEnabled();
     await fillCombobox(reference, 'tts/fixture-qwen');
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('50');
     await expect(dialog.getByLabel(labels.params.temperature, { exact: true })).toHaveValue('0.9');
@@ -49,7 +49,7 @@ for (const locale of ['en', 'zh-CN']) {
     const row = page.locator('.models-panel > .settings-view:not([hidden]) .model-list .model-profile-card').filter({ hasText: alias });
     await row.getByRole('button', { name: labels.edit, exact: true }).click();
     await expect(dialog.getByRole('group', { name: labels.directory.information, exact: true })).toContainText('qwen3tts');
-    await expect(dialog.getByLabel(labels.source, { exact: true })).toBeDisabled();
+    await expect(dialog.getByLabel(labels.source, { exact: true })).toBeEnabled();
     await expect(dialog.getByLabel(labels.params.top_k, { exact: true })).toHaveValue('0');
     await expect(dialog.getByRole('switch', { name: labels.params.do_sample, exact: true })).not.toBeChecked();
     await expect(dialog.getByLabel(labels.params.max_new_tokens, { exact: true })).toHaveValue('512');

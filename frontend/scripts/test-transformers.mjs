@@ -39,7 +39,7 @@ const unchecked = updateModel(llama, { request_options: { ...llama.request_optio
 assert.deepEqual(applyDirectoryInspection(unchecked, { ...info, mmproj_ref: null }, false).request_options, unchecked.request_options);
 assert.deepEqual(selectModelSource(unchecked, { type: 'provider', provider_profile_id: 'external' }).request_options, original.request_options);
 assert.equal(newModel('embedding').request_options, null);
-assert.deepEqual(['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr'].filter(localOnly), ['reranker', 'image_embedding', 'vision', 'tts', 'asr']);
+assert.deepEqual(['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr'].filter(localOnly), ['reranker', 'image_embedding', 'vision', 'asr']);
 const external = selectModelSource(llama, { type: 'provider', provider_profile_id: 'external' });
 assert.equal(localEngine(external), null);
 assert.deepEqual(external.source, { type: 'provider', provider_profile_id: 'external' });

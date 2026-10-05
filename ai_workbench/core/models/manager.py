@@ -778,6 +778,11 @@ class ModelManager:
         profile = self._resolve(self.profiles.get(profile_id))
         if profile.kind != "tts":
             raise ModelError("MODEL_KIND_MISMATCH", "Voice discovery requires a tts profile.")
+        if isinstance(profile.source, ProviderSource):
+            from ai_workbench.core.models.schema import GROK_VOICES
+            return [{"id": voice, "model": profile.alias, "source": "preset", "language": None,
+                     "expires_at": None, "available": True} for voice in GROK_VOICES
+                    if profile.parameters["architecture"] == "grok-voice-latest"]
         if local_engine(profile) != "kokoro":
             return []
         path = None
@@ -793,6 +798,21 @@ class ModelManager:
         from ai_workbench.core.models.runtimes.schema import model_path
         from ai_workbench.workers.audio import validate_audio
         profile = self.profile(profile_id, "tts")
+        if isinstance(profile.source, ProviderSource):
+            from ai_workbench.core.models.schema import GROK_VOICES
+            if any(value is not None for value in (request.tts.language, request.tts.reference_audio, request.tts.model_options)):
+                raise ModelError("INVALID_REQUEST", "Provider TTS does not support tts extensions.")
+            voice = request.voice if request.voice is not None else profile.parameters["voice"]
+            if not voice.strip():
+                raise ModelError("INVALID_REQUEST", "Voice must not be blank.")
+            if profile.parameters["architecture"] == "grok-voice-latest" and voice not in GROK_VOICES:
+                raise ModelError("VOICE_UNAVAILABLE", "Voice ID is not supported by this model.", 404)
+            async with self._lease(profile) as adapter:
+                return await adapter.speech(profile, request.input, voice,
+                    request.speed if request.speed is not None else profile.parameters["speed"],
+                    request.response_format or profile.parameters["response_format"], None)
+        if request.voice is None and request.tts.reference_audio is None:
+            raise ModelError("INVALID_REQUEST", "Provide exactly one of voice or tts.reference_audio.")
         require_directory(profile)
         if local_engine(profile) in {"chatterbox", "qwen3tts"}:
             return await self._reference_speech(profile, request, credential)

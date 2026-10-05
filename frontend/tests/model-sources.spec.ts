@@ -111,15 +111,15 @@ for (const locale of ['en', 'zh-CN']) {
       await navigateModelSettings(page, selected as ModelKind);
       await page.getByRole('button', { name: labels.addModel, exact: true }).click();
       await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
-      if (['tts', 'image_embedding', 'vision', 'asr', 'reranker'].includes(selected)) {
+      if (['image_embedding', 'vision', 'asr', 'reranker'].includes(selected)) {
         await expect(source).toBeDisabled();
       } else {
         await source.click();
         await expect(page.getByRole('listbox')).toBeVisible();
         await expect(page.getByRole('option', { name: labels.localRuntime, exact: true })).toHaveCount(1);
         const providerGroup = page.getByRole('group', { name: labels.providers, exact: true });
-        await expect(providerGroup).toHaveCount(selected === 'embedding' ? 1 : 0);
-        if (selected === 'embedding') await expect.poll(() => providerGroup.getByRole('option').count()).toBeGreaterThan(0);
+        await expect(providerGroup).toHaveCount(['embedding', 'tts'].includes(selected) ? 1 : 0);
+        if (['embedding', 'tts'].includes(selected)) await expect.poll(() => providerGroup.getByRole('option').count()).toBeGreaterThan(0);
         await page.keyboard.press('Escape');
         await expect(source).toHaveAttribute('aria-expanded', 'false');
       }

@@ -242,3 +242,5 @@ Revision `0034_qq_media` adds ordered media spans, private acquisition sources, 
 QQ access tokens remain unencrypted in private Project configuration and are omitted from public reads.
 QQ references_json retains real mention positions and submitted name/self snapshots. Frozen batch text stays raw; the submitted user message stores the model-facing name/id projection. These JSON changes require no schema revision or historical backfill.
 All existing records and file directories survive these revisions; no data conversion or compatibility tables are added.
+
+Revision `0035_provider_tts` permits provider sources for TTS in ck_model_source. Architecture and default voice use existing parameters_json; existing rows and all model, attachment and runtime directories remain unchanged.

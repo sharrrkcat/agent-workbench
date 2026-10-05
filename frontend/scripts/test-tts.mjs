@@ -13,7 +13,7 @@ await i18n.init({ resources, lng: 'en', interpolation: { escapeValue: false } })
 const load = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { newModel, applyDirectoryInspection, localEngine, localSource, selectModelSource } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
+const { newModel, applyDirectoryInspection, localEngine, localSource, selectModelSource, selectTTSArchitecture, grokVoices } = (await load('../src/components/settings/models/profileDefaults.ts')).exports;
 const { ProfileParameters } = (await load('../src/components/settings/models/ProfileParameters.tsx')).exports;
 const { DirectoryInspectionPanel } = (await load('../src/components/settings/models/DirectoryInspection.tsx')).exports;
 const { SelectItem } = (await load('../src/components/ui/select.tsx')).exports;
@@ -87,3 +87,21 @@ assert.equal(requested, '/api/models/profiles/model%2Fid/voices');
 await modelsApi.inspectLocalDirectory('tts', 'tts/本地模型');
 assert.equal(new URL(requested, 'http://test').searchParams.get('model_ref'), 'tts/本地模型');
 console.log('TTS defaults, runtime binding, bilingual parameters and voice API passed.');
+
+const provider = selectModelSource(editedQwen, { type: 'provider', provider_profile_id: 'test-provider' });
+assert.deepEqual(provider.parameters, { speed: 0.8, response_format: 'mp3', architecture: 'grok-voice-latest', voice: 'alloy' });
+assert.equal(provider.model_ref, '');
+assert.equal(localEngine(provider), null);
+const customized = selectTTSArchitecture({ ...provider.parameters, voice: 'eve' }, 'customize');
+assert.equal(customized.voice, 'eve');
+assert.equal(selectTTSArchitecture({ ...customized, voice: 'manual' }, 'grok-voice-latest').voice, 'alloy');
+assert.equal(selectTTSArchitecture(customized, 'grok-voice-latest').voice, 'eve');
+assert.deepEqual(selectModelSource(provider, localSource()).parameters, { speed: 0.8, response_format: 'mp3' });
+assert.deepEqual(grokVoices, ['alloy', 'echo', 'fable', 'onyx', 'nova', 'eve', 'sal', 'rex']);
+for (const locale of ['en', 'zh-CN']) {
+  await i18n.changeLanguage(locale);
+  const t = i18n.getFixedT(locale, 'llm');
+  const markup = renderToStaticMarkup(React.createElement(ProfileParameters, { value: provider, onChange() {} }));
+  assert.ok(markup.includes(t('providerTTS.architecture')) && markup.includes(t('providerTTS.voice')));
+  assert.ok(!markup.includes(t('params.seed')));
+}

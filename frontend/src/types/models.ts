@@ -113,6 +113,13 @@ export type LocalModelSource = {
 };
 export type ModelSource = LocalModelSource | { type: 'provider'; provider_profile_id: string };
 
+export type ProviderTTSParameters = {
+  architecture: 'grok-voice-latest' | 'customize';
+  voice: string;
+  speed: number;
+  response_format: 'mp3' | 'wav';
+};
+
 export type ModelInput = {
   context_window_tokens?: number | null;
   alias: string;
