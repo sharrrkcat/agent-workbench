@@ -32,6 +32,8 @@ def system_faces():
 
 
 def media_label(media):
+    if media.status == "deleted":
+        return "[图片]"
     if media.kind == "face":
         face_id = media.source.face_id
         return system_faces().get(face_id, {}).get("name") or f"QQ face {face_id or '?'}"
@@ -39,6 +41,8 @@ def media_label(media):
 
 
 def model_media_label(media):
+    if media.status == "deleted":
+        return "[图片]"
     if media.kind == "face":
         name = system_faces().get(media.source.face_id, {}).get("name", "").lstrip("/")
         return f"[QQ表情：{name}]" if name else "[QQ表情]"

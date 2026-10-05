@@ -15,7 +15,8 @@ import { useModelEvents } from './hooks/useModelEvents';
 import type { LeaveGuard } from './components/settings/resources/ResourceUI';
 import { readSettingsRoute, settingsRouteUrl } from './components/settings/navigation';
 import { ProjectPage } from './components/projects/ProjectPage';
-import { isDraftRoute, newChatUrl, projectUrl, readProjectRoute } from './components/projects/navigation';
+import { QQResourcesPage } from './components/projects/QQResourcesPage';
+import { isDraftRoute, isResourcesRoute, newChatUrl, projectUrl, readProjectRoute } from './components/projects/navigation';
 import { useProjectsStore } from './store/useProjectsStore';
 import { ResourceLoading, errorText } from './components/settings/resources/ResourceUI';
 
@@ -263,9 +264,13 @@ export default function App() {
       ) : (
         <>
           <SessionSidebar onOpenSettings={() => navigate('/settings')} onNavigate={navigate}
+            resourcesProjectId={isResourcesRoute(location) ? projectRoute.projectId : null}
             onSelectSession={selectSession} onCreateSession={createSession} onSessionDeleted={sessionDeleted} onProjectDeleted={projectDeleted} />
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
-            {projectRoute.projectId && !projectRoute.sessionId && !isDraftRoute(location) ?
+            {projectRoute.projectId && isResourcesRoute(location) ?
+              <QQResourcesPage key={projectRoute.projectId} projectId={projectRoute.projectId} search={location.search}
+                onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} /> :
+            projectRoute.projectId && !projectRoute.sessionId && !isDraftRoute(location) ?
               <ProjectPage projectId={projectRoute.projectId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} onCreateSession={createSession} /> :
               currentSession?.kind === 'qqbot' && conversationReady ? <QQSessionView key={currentSession.session_id} session={currentSession} /> : <>
                 <ChatHeader onOpenSettings={(route) => void navigate(settingsRouteUrl(route))} />

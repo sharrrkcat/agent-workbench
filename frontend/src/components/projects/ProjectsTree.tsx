@@ -12,9 +12,10 @@ import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Project } from '../../types/projects';
 import type { SettingsNavigate } from '../settings/navigation';
 import { ResourceLoading, errorText } from '../settings/resources/ResourceUI';
-import { projectUrl } from './navigation';
+import { projectUrl, projectResourcesUrl } from './navigation';
 
 type TreeActions = {
+  resourcesProjectId: string | null;
   onNavigate: SettingsNavigate;
   onSelectSession: (id: string, projectId: string | null) => Promise<boolean>;
   onCreateSession: (projectId?: string | null) => Promise<boolean>;
@@ -34,7 +35,7 @@ export function ProjectsTree(props: TreeActions) {
   </SidebarGroup>;
 }
 
-function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, onSessionDeleted, onProjectDeleted }: TreeActions & { project: Project }) {
+function ProjectItem({ project, resourcesProjectId, onNavigate, onSelectSession, onCreateSession, onSessionDeleted, onProjectDeleted }: TreeActions & { project: Project }) {
   const { t } = useTranslation('personas');
   const { confirm, confirmation } = useConfirmDialog();
   const { setOpenMobile } = useSidebar();
@@ -101,6 +102,13 @@ function ProjectItem({ project, onNavigate, onSelectSession, onCreateSession, on
       </div>
       {project.kind !== 'timeline' ? <CollapsibleContent>
         <SidebarMenuSub className="mr-0 translate-x-0 pr-0">
+          {project.kind === 'qqbot' ? <SidebarMenuSubItem className={cn('session-item', resourcesProjectId === project.id && 'selected')}>
+            <SidebarMenuSubButton render={<button type="button" />} className="session-select w-full translate-x-0 pointer-coarse:min-h-11"
+              isActive={resourcesProjectId === project.id} aria-current={resourcesProjectId === project.id ? 'page' : undefined}
+              onClick={async () => { if (await onNavigate(projectResourcesUrl(project.id))) setOpenMobile(false); }}>
+              <span>{t('qq.resources.title')}</span>
+            </SidebarMenuSubButton>
+          </SidebarMenuSubItem> : null}
           {sessions.map((session) => {
             const title = session.title.trim() || t('newSession');
             const selected = (targetId ?? current?.session_id) === session.session_id;

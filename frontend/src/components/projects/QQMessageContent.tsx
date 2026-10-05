@@ -9,6 +9,7 @@ function QQImage({ segment, onPreview }: { segment: QQImageSegment; onPreview: (
   const { t } = useTranslation('personas');
   const name = segment.description || (segment.kind === 'face' ? segment.label : t(segment.kind === 'sticker' ? 'qq.sticker' : 'image'));
   const attachment = segment.attachment;
+  if (segment.status === 'deleted') return <span className="text-muted-foreground" data-qq-media-state="deleted">{t('qq.resources.imagePlaceholder')}</span>;
   if (segment.status !== 'ready' || !attachment) return <span className="text-muted-foreground" data-qq-media-state={segment.status === 'pending' ? 'pending' : 'failed'}>
     {t(segment.status === 'pending' ? 'qq.mediaPending' : 'qq.mediaFailed', { name })}
   </span>;
@@ -29,8 +30,11 @@ function QQImageButton({ attachment, name, kind, onPreview }: {
 }
 
 export function QQDeliveryContent({ delivery }: { delivery: QQDelivery }) {
+  const { t } = useTranslation('personas');
   const [open, setOpen] = useState(false);
   const attachment = delivery.attachment;
+  if (delivery.kind === 'generated_image' && delivery.status === 'sent' && delivery.asset_id === null)
+    return <div className="message text-muted-foreground" data-qq-media-state="deleted">{t('qq.resources.imagePlaceholder')}</div>;
   if (delivery.kind !== 'generated_image' || !attachment) return <div className="message">{delivery.text}</div>;
   const name = delivery.description || delivery.prompt || delivery.text;
   return <div className="message qq-message-content">

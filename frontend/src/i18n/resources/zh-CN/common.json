@@ -12,5 +12,10 @@
   "showSuggestions": "显示建议",
   "confirm": "确认",
   "confirmAction": "确认操作",
-  "noSuggestions": "暂无建议"
+  "noSuggestions": "暂无建议",
+  "pagination": {
+    "label": "分页",
+    "previous": "上一页",
+    "next": "下一页"
+  }
 }

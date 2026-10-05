@@ -27,7 +27,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0039_qq_icebreaker`; current tables follow the SQLModel schema.
+Alembic head is `0040_qq_resources`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -252,3 +252,5 @@ Revision `0037_qq_media_assets` replaces per-occurrence QQ attachments with shar
 Revision `0038_qq_image_generation` adds delivery kind, original prompt and an indexed nullable qq_media_assets reference. Existing deliveries remain text; no files or directories are modified. Generated image files use the attachment store. Only confirmed delivery commits a shared resource/reference, and its description records the original prompt; delivery-local prompts keep history stable after resource description changes. Incoming media and visible image deliveries both protect assets until their final reference is removed. Unreferenced staging files from interrupted processes remain eligible for explicit orphan cleanup.
 
 Revision `0039_qq_icebreaker` adds nullable qq_bindings.icebreaker_cooldown_until. Per-group observation state stays in memory and restarts after connection gaps; cooldown deadlines persist. Existing rows and all model, attachment and runtime directories are untouched. Repeated upgrades preserve recorded cooldowns.
+
+Revision `0040_qq_resources` adds qq_media_assets.is_favorite, description_manual and created_at. Existing disposable assets receive the upgrade timestamp as a column default; no original dates are inferred or backfilled. New assets use their actual insertion time. Favorite assets protect original/static attachment files even without chat references. Explicit resource deletion detaches occurrence/delivery references and leaves positional image placeholders; retained request snapshots still protect their files. No files or directories are changed by the revision, and repeated upgrades preserve new metadata.

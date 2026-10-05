@@ -13,6 +13,7 @@ from ai_workbench.core.qq_names import QQNames, model_batch_text
 from ai_workbench.core.qq_history import QQHistory
 from ai_workbench.core.qq_media import QQMediaService
 from ai_workbench.core.qq_descriptions import QQDescriptionService
+from ai_workbench.core.qq_resources import QQResources
 from ai_workbench.core.qq_generation import prepare_image
 from ai_workbench.core.qq_icebreaker import QQIcebreaker, ICEBREAKER_SETTINGS
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
@@ -28,6 +29,7 @@ class QQService:
         self.connections = {}
         self.media = QQMediaService(state, store, self.connections)
         self.descriptions = QQDescriptionService(store, state.model_manager)
+        self.resources = QQResources(state, store)
         self.names = QQNames(self.connections)
         self.tasks = {}
         self.workers = {}

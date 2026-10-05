@@ -68,6 +68,7 @@ qqbot-images.spec.ts covers the image-input switch, ordered inline pictures/stic
 context-detail.spec.ts covers lazy call selection, exact request views, stale reads, error retry, deletion and modal focus/scroll in both locales/viewports.
 image-generation.spec.ts covers provider-only sources, disabled Local Runtime, discovery/manual IDs, parameter defaults and CRUD in both locales/viewports.
 qqbot-generation.spec.ts covers provider-only Project generation selection/controls, save failure retention, image delivery previews/deletion, generation failure recovery and Stop in both locales/viewports. test_qq_image_generation.py covers generation, shared quotas/resources, text-only history, cancellation, timeout exemption and migration.
+qqbot-resources.spec.ts covers the global gallery, responsive Attachment grid, favorites, Sheet drafts, sorting/pagination, deletion placeholders and navigation races in both locales; test-qq-resources.mjs covers URL/pagination/API contracts.
 qqbot-icebreaker.spec.ts covers bilingual desktop/touch icebreaker settings, defaults, save failures and retained disabled controls. test_qq_icebreaker.py covers quiet-group timing, optional single replies, cancellation races, cooldown isolation and lifecycle recovery; test_qq_icebreaker_migration.py covers durable cooldown storage.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.

@@ -230,6 +230,41 @@
     "deleteReplyConfirm": "从当前会话和后续模型上下文中删除这条模型回复及其全部发送气泡？用户消息将保留，此操作不会撤回 QQ 消息。",
     "imageDescriptionModel": "读图模型（可选）",
     "noDescriptionModel": "不使用",
-    "imageDescriptionHint": "图片输入开启时，使用此外部模型异步描述本批选中的图片。描述由所有QQBot项目共享，并用于后续历史占位。"
+    "imageDescriptionHint": "图片输入开启时，使用此外部模型异步描述本批选中的图片。描述由所有QQBot项目共享，并用于后续历史占位。",
+    "resources": {
+      "title": "共享资源",
+      "filter": "筛选图片",
+      "all": "全部",
+      "favorites": "已收藏",
+      "unfavorited": "未收藏",
+      "sort": "图片排序",
+      "sortOptions": {
+        "created_at_desc": "最新添加优先",
+        "created_at_asc": "最早添加优先",
+        "size_desc": "从大到小",
+        "size_asc": "从小到大"
+      },
+      "count_one": "共 {{count}} 张图片",
+      "count_other": "共 {{count}} 张图片",
+      "empty": "当前筛选下没有图片。",
+      "noDescription": "暂无描述",
+      "edit": "编辑图片：{{name}}",
+      "details": "图片详情",
+      "editHint": "修改共享描述，供后续聊天使用。",
+      "description": "描述",
+      "added": "添加于 {{date}}",
+      "favorite": "收藏图片",
+      "unfavorite": "取消收藏",
+      "delete": "删除图片",
+      "reset": "重置",
+      "saved": "描述已保存。",
+      "deleted": "图片已删除。",
+      "deleteConfirm": "删除这张共享图片？所有 QQBot 聊天中引用它的位置都将显示为无描述的普通图片占位。此操作无法撤销。",
+      "orphanConfirm": "这张图片已没有聊天引用。取消收藏将同时从共享资源中删除它。是否继续？",
+      "previewUnavailable": "无法预览图片",
+      "imagePlaceholder": "[图片]",
+      "qqOnly": "共享资源仅在 QQBot Project 内可用。",
+      "page": "第 {{page}} 页"
+    }
   }
 }

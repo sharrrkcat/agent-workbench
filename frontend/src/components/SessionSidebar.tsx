@@ -31,7 +31,8 @@ import { projectUrl } from './projects/navigation';
 import type { ProjectKind } from '../types/projects';
 import type { SettingsNavigate } from './settings/navigation';
 
-export function SessionSidebar({ onOpenSettings, onNavigate, onSelectSession, onCreateSession, onSessionDeleted, onProjectDeleted }: {
+export function SessionSidebar({ resourcesProjectId, onOpenSettings, onNavigate, onSelectSession, onCreateSession, onSessionDeleted, onProjectDeleted }: {
+  resourcesProjectId: string | null;
   onOpenSettings: () => Promise<boolean>; onNavigate: SettingsNavigate;
   onSelectSession: (id: string, projectId: string | null) => Promise<boolean>;
   onCreateSession: (projectId?: string | null) => Promise<boolean>;
@@ -96,7 +97,7 @@ export function SessionSidebar({ onOpenSettings, onNavigate, onSelectSession, on
           </SidebarMenu>
         </SidebarHeader>
         <SidebarContent className="session-list overflow-x-hidden overscroll-contain">
-          <ProjectsTree onNavigate={onNavigate} onSelectSession={onSelectSession} onCreateSession={onCreateSession}
+          <ProjectsTree resourcesProjectId={resourcesProjectId} onNavigate={onNavigate} onSelectSession={onSelectSession} onCreateSession={onCreateSession}
             onSessionDeleted={onSessionDeleted} onProjectDeleted={onProjectDeleted} />
           <SidebarGroup>
             <div className="group/session-heading relative flex items-center">

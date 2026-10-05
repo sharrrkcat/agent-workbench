@@ -230,6 +230,41 @@
     "deleteReplyConfirm": "Delete this model reply and all its sent-message bubbles from this conversation and future model context? User messages will be kept. This will not recall messages in QQ.",
     "imageDescriptionModel": "Image description model (optional)",
     "noDescriptionModel": "Do not use",
-    "imageDescriptionHint": "When image input is on, describe selected images in the background using this external LLM. Descriptions are shared across QQBot projects and used in later history placeholders."
+    "imageDescriptionHint": "When image input is on, describe selected images in the background using this external LLM. Descriptions are shared across QQBot projects and used in later history placeholders.",
+    "resources": {
+      "title": "Shared resources",
+      "filter": "Filter images",
+      "all": "All",
+      "favorites": "Favorites",
+      "unfavorited": "Not favorited",
+      "sort": "Sort images",
+      "sortOptions": {
+        "created_at_desc": "Newest first",
+        "created_at_asc": "Oldest first",
+        "size_desc": "Largest first",
+        "size_asc": "Smallest first"
+      },
+      "count_one": "{{count}} image",
+      "count_other": "{{count}} images",
+      "empty": "No images in this view.",
+      "noDescription": "No description",
+      "edit": "Edit image: {{name}}",
+      "details": "Image details",
+      "editHint": "Edit the shared description used by later conversations.",
+      "description": "Description",
+      "added": "Added {{date}}",
+      "favorite": "Favorite image",
+      "unfavorite": "Unfavorite image",
+      "delete": "Delete image",
+      "reset": "Reset",
+      "saved": "Description saved.",
+      "deleted": "Image deleted.",
+      "deleteConfirm": "Delete this shared image? All QQBot conversations using it will show a plain image placeholder without its description. This cannot be undone.",
+      "orphanConfirm": "This image no longer has any chat references. Removing its favorite will delete it from shared resources. Continue?",
+      "previewUnavailable": "Preview unavailable",
+      "imagePlaceholder": "[Image]",
+      "qqOnly": "Shared resources are available inside QQBot Projects only.",
+      "page": "Page {{page}}"
+    }
   }
 }

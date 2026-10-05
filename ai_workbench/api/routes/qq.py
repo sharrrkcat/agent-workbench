@@ -1,8 +1,9 @@
 """QQ transcript, local deletion and explicit execution controls."""
-from typing import Literal
+from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query
+from pydantic import Field
 from ai_workbench.api.deps import get_state, RuntimeState
-from ai_workbench.api.schemas.common import ApiModel, public_model, error_responses
+from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, DeletedResponse, public_model, error_responses
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.qq_history import QQHistoryPruned
 from ai_workbench.core.schema.qq import QQTriggerKind, QQSegment, QQImageAttachment
@@ -62,6 +63,50 @@ class ConnectionStatus(ApiModel):
 
 class Control(ApiModel):
     action: Literal["pause", "resume", "stop"]
+
+
+class QQResourceResponse(ApiModel):
+    id: int
+    attachment: QQImageAttachment
+    description: str | None
+    is_favorite: bool
+    created_at: ApiTimestamp
+    has_references: bool
+
+
+class QQResourcePage(ApiModel):
+    items: list[QQResourceResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class QQResourcePatch(ApiModel):
+    description: str | None = None
+    is_favorite: bool = Field(default=False, strict=True)
+
+
+class QQResourceQuery(ApiModel):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=30, ge=1, le=100)
+    sort: Literal["created_at", "size"] = "created_at"
+    order: Literal["asc", "desc"] = "desc"
+    favorite: Literal["all", "favorites", "unfavorited"] = "all"
+
+
+@router.get("/resources", response_model=QQResourcePage, responses=error_responses(422))
+async def resources(query: Annotated[QQResourceQuery, Query()], state: RuntimeState = Depends(get_state)):
+    return state.qq.resources.page(**query.model_dump())
+
+
+@router.patch("/resources/{asset_id}", response_model=QQResourceResponse, responses=error_responses(404, 409, 422))
+async def update_resource(asset_id: int, payload: QQResourcePatch, state: RuntimeState = Depends(get_state)):
+    return state.qq.resources.update(asset_id, payload.model_dump(exclude_unset=True))
+
+
+@router.delete("/resources/{asset_id}", response_model=DeletedResponse, responses=error_responses(404, 409))
+async def delete_resource(asset_id: int, state: RuntimeState = Depends(get_state)):
+    return state.qq.resources.delete(asset_id)
 
 
 def binding(state, session_id):

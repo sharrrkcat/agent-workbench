@@ -43,7 +43,7 @@ class QQImageSegment(QQMediaSchema):
     asset_id: int | None = None
     description: str | None = None
     kind: Literal["image", "sticker", "face"]
-    status: Literal["pending", "ready", "failed"]
+    status: Literal["pending", "ready", "failed", "deleted"]
     label: str
     attachment: QQImageAttachment | None = None
     error_code: str | None = None

@@ -1,5 +1,5 @@
 """Durable QQ ingress, batching and delivery records."""
-from sqlalchemy import UniqueConstraint, ForeignKeyConstraint, Index, false
+from sqlalchemy import UniqueConstraint, ForeignKeyConstraint, Index, false, func
 from sqlmodel import SQLModel, Field
 from pydantic import PrivateAttr
 from ai_workbench.core.schema.qq import QQImageAttachment, QQMediaSource, participant_epochs
@@ -77,6 +77,9 @@ class QQMediaAsset(SQLModel, table=True):
     model_attachment_json: str | None = None
     description: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
+    is_favorite: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
+    description_manual: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
+    created_at: datetime = Field(default_factory=utc_now, sa_column_kwargs={"server_default": func.current_timestamp()})
 
     @property
     def attachment(self) -> QQImageAttachment:

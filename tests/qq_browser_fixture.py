@@ -7,7 +7,7 @@ import asyncio
 import time
 
 from PIL import Image
-from fastapi import Body
+from fastapi import Body, Query
 from ai_workbench.core.qq_media import QQMediaService
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.db.qq_models import QQMessage
@@ -25,13 +25,17 @@ def install_qq_fixture(app):
             data = BytesIO()
             animated = media.source.file == "fixture:animated"
             image = Image.new("RGB", (640, 480), "#4e8db0")
+            if media.source.file.startswith("fixture:resource:"):
+                number = int(media.source.file.rsplit(":", 1)[1])
+                image = Image.new("RGB", (320 + number * 4, 240 + number * 3), (40 + number * 3, 80, 160))
+                animated = number == 0
             if animated:
                 image.save(data, "GIF", save_all=True, append_images=[Image.new("RGB", image.size, "#be7656")], duration=300, loop=0)
             else:
                 image.save(data, "PNG")
             return data.getvalue()
         service.download = download
-        for row in state.qq.store.page(QQMessage, session_id, limit=100)["items"]:
+        for row in sorted(state.qq.store.page(QQMessage, session_id, limit=100)["items"], key=lambda item: item["id"]):
             for media in state.qq.store.message_media([row["id"]])[row["id"]]:
                 if media.status == "pending" and (include_old or media.source.file != "fixture:old"):
                     await service.acquire(media, state.sessions.get_session(session_id).project_id)
@@ -49,6 +53,27 @@ def install_qq_fixture(app):
         for asset_id in assets:
             state.qq.store.update_description(asset_id, description)
         return {"ok": True}
+
+    @app.post("/__test__/qq/{session_id}/resources")
+    async def resource_records(session_id: str, count: int = Query(31, ge=1, le=60)):
+        session = state.sessions.get_session(session_id)
+        project = state.projects.get(session.project_id)
+        for number in range(count + 1):
+            segment = ({"type": "face", "data": {"id": 0}} if number == count else
+                {"type": "image", "data": {"file": f"fixture:resource:{number}", "sub_type": 1 if number == 0 else 0}})
+            await state.qq.ingest(project.id, {"post_type": "message", "self_id": project.bot_account,
+                "message_type": "group", "group_id": session.target_id, "user_id": "9999",
+                "message_id": 10000 + number, "time": 1700000000 + number,
+                "sender": {"nickname": "Gallery participant"}, "message": [segment]}, now=number / 100)
+        await complete_media(session_id, include_old=True)
+        rows = sorted(state.qq.store.page(QQMessage, session_id, limit=100)["items"], key=lambda row: row["id"])
+        resources = []
+        for row in rows:
+            for media in state.qq.store.message_media([row["id"]])[row["id"]]:
+                if media.kind != "face" and media.asset_id is not None:
+                    state.qq.store.update_description(media.asset_id, f"Gallery image {len(resources) + 1}")
+                    resources.append({"asset_id": media.asset_id, "message_id": row["id"]})
+        return {"resources": resources}
 
     @app.post("/__test__/qq/{session_id}/media")
     async def media_records(session_id: str):

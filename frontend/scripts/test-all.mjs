@@ -30,6 +30,7 @@ for (const script of [
   'test-harness',
   'test-chat-presentation',
   'test-qq-conversation',
+  'test-qq-resources',
   'test-persona-identity',
   'test-llm-metrics',
   'test-context-detail',

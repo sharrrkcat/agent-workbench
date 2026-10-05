@@ -124,6 +124,9 @@ def build_qq_context(store, messages, session_id, text, policy, current_message_
             content, input_trace, input_chars = _input_content(store, batch.id, input_text, policy, source_id, max_image_bytes, historical=True)
             group = [(source_id, {"role": "user", "content": content})] if input_text else []
             for delivery in deliveries:
+                if delivery.kind == "generated_image" and delivery.asset_id is None:
+                    group.append((f"qq-delivery:{delivery.id}:result", {"role": "assistant", "content": "[图片]"}))
+                    continue
                 call_id = f"qq_history_{delivery.id}"
                 group.extend([
                     (f"qq-delivery:{delivery.id}:call", {"role": "assistant", "content": "", "tool_calls": [{

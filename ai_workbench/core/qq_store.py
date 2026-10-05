@@ -216,21 +216,22 @@ class QQStore:
         with Session(self.engine) as db:
             query = update(QQMediaAsset).where(QQMediaAsset.id == asset_id)
             if only_if_empty:
-                query = query.where(QQMediaAsset.description.is_(None) | (QQMediaAsset.description == ""))
+                query = query.where(QQMediaAsset.description_manual == False,
+                    QQMediaAsset.description.is_(None) | (QQMediaAsset.description == ""))
             changed = db.exec(query.values(description=description, updated_at=utc_now())).rowcount
-            sessions = self._asset_sessions(db, asset_id) if changed else set()
-            self._advance_history(db, sessions)
+            sessions = self.asset_sessions(db, asset_id) if changed else set()
+            self.advance_history(db, sessions)
             db.commit()
             return sessions
 
     @staticmethod
-    def _asset_sessions(db, asset_id):
+    def asset_sessions(db, asset_id):
         incoming = select(QQMessage.session_id).join(QQMedia, QQMedia.message_id == QQMessage.id).where(
             QQMedia.asset_id == asset_id, QQMessage.deleted == False)
         outgoing = select(QQDelivery.session_id).where(QQDelivery.asset_id == asset_id, QQDelivery.deleted == False)
         return set(db.exec(incoming).all()) | set(db.exec(outgoing).all())
 
-    def _advance_history(self, db, sessions):
+    def advance_history(self, db, sessions):
         if hasattr(self.sessions, "engine"):
             from ai_workbench.db.models import SessionRecord
             db.exec(update(SessionRecord).where(SessionRecord.session_id.in_(sessions))
@@ -244,10 +245,11 @@ class QQStore:
         asset = db.exec(select(QQMediaAsset).where(QQMediaAsset.sha256 == candidate.sha256)).first()
         if asset is None:
             asset = QQMediaAsset(**candidate.model_dump())
-        asset.description, asset.updated_at = prompt, utc_now()
+        if not asset.description_manual:
+            asset.description, asset.updated_at = prompt, utc_now()
         db.add(asset)
         db.flush()
-        self._advance_history(db, self._asset_sessions(db, asset.id) | {session_id})
+        self.advance_history(db, self.asset_sessions(db, asset.id) | {session_id})
         return asset.id
 
     def delivery_assets(self, asset_ids):
@@ -273,7 +275,8 @@ class QQStore:
             db.exec(delete(QQMedia).where(QQMedia.asset_id.in_(candidates),
                 QQMedia.message_id.in_(select(QQMessage.id).where(QQMessage.deleted == True))))
             db.exec(update(QQDelivery).where(QQDelivery.asset_id.in_(candidates), QQDelivery.deleted == True).values(asset_id=None))
-            assets = db.exec(select(QQMediaAsset).where(QQMediaAsset.id.in_(candidates), ~QQMediaAsset.id.in_(select(QQMedia.asset_id)
+            assets = db.exec(select(QQMediaAsset).where(QQMediaAsset.id.in_(candidates), QQMediaAsset.is_favorite == False,
+                ~QQMediaAsset.id.in_(select(QQMedia.asset_id)
                 .where(QQMedia.asset_id.is_not(None))), ~QQMediaAsset.id.in_(select(QQDelivery.asset_id)
                 .where(QQDelivery.asset_id.is_not(None))))).all()
             attachments = {json.loads(value)["id"] for asset in assets
@@ -305,6 +308,8 @@ class QQStore:
                 QQMessage.deleted == False, original.in_(names) | model.in_(names))).all()
             rows += db.exec(select(original, model).join(QQDelivery, QQDelivery.asset_id == QQMediaAsset.id).where(
                 QQDelivery.deleted == False, original.in_(names) | model.in_(names))).all()
+            rows += db.exec(select(original, model).where(QQMediaAsset.is_favorite == True,
+                original.in_(names) | model.in_(names))).all()
             return {value for row in rows for value in row if value in names}
 
     def save_references(self, rows):

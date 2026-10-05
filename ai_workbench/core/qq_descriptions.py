@@ -33,7 +33,7 @@ class QQDescriptionService:
         media_ids = [int(source.reference_id.removeprefix("qq-media:")) for source in trace.sources
             if source.kind == "attachment" and source.reference_id.startswith("qq-media:")]
         for asset in self.store.media_assets(media_ids)[:5]:
-            if not asset.description and asset.id not in self.tasks:
+            if not asset.description and not asset.description_manual and asset.id not in self.tasks:
                 task = asyncio.create_task(self.describe(profile_id, asset.id, max_image_bytes))
                 self.tasks[asset.id] = task
                 task.add_done_callback(lambda done, key=asset.id: self.finished(key, done))
@@ -52,7 +52,7 @@ class QQDescriptionService:
 
     async def describe(self, profile_id, asset_id, max_image_bytes):
         asset = self.store.get(QQMediaAsset, asset_id)
-        if asset is None or asset.description or asset.model_attachment is None:
+        if asset is None or asset.description or asset.description_manual or asset.model_attachment is None:
             return
         try:
             profile = self.model_manager.profile(profile_id, "llm")

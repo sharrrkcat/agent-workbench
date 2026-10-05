@@ -9,6 +9,7 @@ const toggleVariants = cva(
       variant: {
         default: 'bg-transparent',
         outline: 'border border-input bg-transparent hover:bg-muted',
+        favorite: 'border border-input bg-card aria-pressed:text-destructive',
       },
       size: {
         default: 'h-7 min-w-7 px-2 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5',

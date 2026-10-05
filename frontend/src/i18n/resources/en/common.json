@@ -12,5 +12,10 @@
   "showSuggestions": "Show suggestions",
   "confirm": "Confirm",
   "confirmAction": "Confirm action",
-  "noSuggestions": "No suggestions"
+  "noSuggestions": "No suggestions",
+  "pagination": {
+    "label": "Pagination",
+    "previous": "Previous",
+    "next": "Next"
+  }
 }
