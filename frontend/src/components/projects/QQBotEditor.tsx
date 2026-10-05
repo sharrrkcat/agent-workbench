@@ -14,7 +14,7 @@ import { useProjectsStore } from '../../store/useProjectsStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { qqApi } from '../../api/qq';
 import type { Project, QQBotProject, QQBotInput } from '../../types/projects';
-import { ContextFields, GenerationFields, ModelField } from '../personas/ConfigurationFields';
+import { ContextFields, GenerationFields, ModelField, ModelSelect } from '../personas/ConfigurationFields';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 
 export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput {
@@ -25,6 +25,7 @@ export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput 
   return { kind: 'qqbot', name: '', bot_account: '', websocket_url: 'ws://127.0.0.1:3001',
     connection_enabled: false, agent_persona_id: null, system_prompt: defaultPrompt, model_profile_id: null,
     temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20, reply_message_limit: 4, image_input_enabled: false,
+    image_description_model_profile_id: null,
     context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'none' } };
 }
 
@@ -112,6 +113,12 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
       <Field orientation="horizontal"><Switch id={id + '-reasoning'} checked={draft.reasoning} onCheckedChange={(reasoning) => update({ reasoning })} /><FieldLabel htmlFor={id + '-reasoning'}>{t('qq.reasoning')}</FieldLabel></Field>
       <Field orientation="horizontal"><Switch id={id + '-images'} checked={draft.image_input_enabled} onCheckedChange={(image_input_enabled) => update({ image_input_enabled })} aria-describedby={id + '-images-hint'} />
         <FieldContent><FieldLabel htmlFor={id + '-images'}>{t('qq.imageInputEnabled')}</FieldLabel><FieldDescription id={id + '-images-hint'}>{t('qq.imageInputHint')}</FieldDescription></FieldContent>
+      </Field>
+      <Field><FieldLabel>{t('qq.imageDescriptionModel')}</FieldLabel>
+        <ModelSelect profiles={profiles.filter((p) => p.source?.type === 'provider')}
+          value={draft.image_description_model_profile_id} label={t('qq.imageDescriptionModel')}
+          inheritLabel={t('qq.noDescriptionModel')} onChange={(value) => update({ image_description_model_profile_id: value || null })} />
+        <FieldDescription>{t('qq.imageDescriptionHint')}</FieldDescription>
       </Field>
       <ContextFields showAttachments={false} value={draft.context_policy} onChange={(context_policy) => update({ context_policy: { ...context_policy, include_attachments: 'none' } })} />
       <GenerationFields value={{ temperature: draft.temperature }} onChange={(v) => update({ temperature: v.temperature ?? null })} />

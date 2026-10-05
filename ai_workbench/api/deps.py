@@ -129,12 +129,12 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     if engine is None:
         from sqlmodel import create_engine, SQLModel
         from sqlalchemy.pool import StaticPool
-        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia
+        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia, QQMediaAsset
         qq_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia)])
+        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMediaAsset, QQMedia)])
     else:
         qq_engine = engine
-    qq_store = QQStore(qq_engine)
+    qq_store = QQStore(qq_engine, sessions)
     chat_runner = ChatRunner(
         sessions=sessions, messages=messages, runs=runs, events=events,
         model_manager=manager, app_settings=app_settings, utility_llm=utility_llm,

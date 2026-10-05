@@ -303,4 +303,5 @@ class ChatService:
             generation=GenerationParameters.model_validate(parameters), reasoning=project.reasoning,
             harness_enabled=True, tools_allowed=list(QQ_TOOLS) if session.target_kind == "group" else ["qq_send_message"], knowledge_base_ids=[],
             qq_reply_message_limit=project.reply_message_limit, qq_bot_account=project.bot_account,
-            qq_target_kind=session.target_kind, qq_target_id=session.target_id)
+            qq_target_kind=session.target_kind, qq_target_id=session.target_id,
+            qq_image_description_model_profile_id=project.image_description_model_profile_id)

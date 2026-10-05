@@ -27,7 +27,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0032_qq_followup`; there are 31 current business tables.
+Alembic head is `0037_qq_media_assets`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -246,3 +246,5 @@ All existing records and file directories survive these revisions; no data conve
 Revision `0035_provider_tts` permits provider sources for TTS in ck_model_source. Architecture and default voice use existing parameters_json; existing rows and all model, attachment and runtime directories remain unchanged.
 
 Revision `0036_image_generation` adds image_generation to ck_model_kind and permits only provider sources for it in ck_model_source. Existing profiles, providers, runtime records and all other rows survive unchanged; no model, attachment, runtime or other files are touched. Generated images have no database or filesystem storage owned by Cogita.
+
+Revision `0037_qq_media_assets` replaces per-occurrence QQ attachments with shared resources and a nullable description. It discards disposable QQ ingress, batches, deliveries, participants and their session messages/runs/events/snapshots, clears waiting runs and silence deadlines, and advances QQ history versions. Projects, Sessions, titles, bindings and pause choices remain, as do ordinary/Workspace conversations and model/provider/runtime settings. No old media records are converted. All files remain on disk; detached old files are eligible for explicit orphan cleanup. Repeating upgrade preserves newly recorded QQ history and shared assets.

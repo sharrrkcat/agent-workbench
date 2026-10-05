@@ -1,7 +1,10 @@
 """Durable QQ ingress, batching and delivery records."""
 from sqlalchemy import UniqueConstraint, Index, false
 from sqlmodel import SQLModel, Field
+from pydantic import PrivateAttr
 from ai_workbench.core.schema.qq import QQImageAttachment, QQMediaSource, participant_epochs
+from ai_workbench.core.time import utc_now
+from datetime import datetime
 
 
 class QQBinding(SQLModel, table=True):
@@ -64,6 +67,25 @@ class QQBatch(SQLModel, table=True):
         return participant_epochs.validate_json(self.participants_json)
 
 
+class QQMediaAsset(SQLModel, table=True):
+    __tablename__ = "qq_media_assets"
+    __table_args__ = (UniqueConstraint("sha256"), {"sqlite_autoincrement": True})
+    id: int | None = Field(default=None, primary_key=True)
+    sha256: str
+    attachment_json: str
+    model_attachment_json: str | None = None
+    description: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @property
+    def attachment(self) -> QQImageAttachment:
+        return QQImageAttachment.model_validate_json(self.attachment_json)
+
+    @property
+    def model_attachment(self) -> QQImageAttachment | None:
+        return QQImageAttachment.model_validate_json(self.model_attachment_json) if self.model_attachment_json else None
+
+
 class QQMedia(SQLModel, table=True):
     __tablename__ = "qq_media"
     __table_args__ = (UniqueConstraint("message_id", "segment_index"),
@@ -76,9 +98,9 @@ class QQMedia(SQLModel, table=True):
     kind: str
     source_json: str
     status: str = "pending"
-    attachment_json: str | None = None
-    model_attachment_json: str | None = None
+    asset_id: int | None = Field(default=None, foreign_key="qq_media_assets.id", index=True)
     error_code: str | None = None
+    _asset: QQMediaAsset | None = PrivateAttr(default=None)
 
     @property
     def source(self) -> QQMediaSource:
@@ -86,11 +108,15 @@ class QQMedia(SQLModel, table=True):
 
     @property
     def attachment(self) -> QQImageAttachment | None:
-        return QQImageAttachment.model_validate_json(self.attachment_json) if self.attachment_json else None
+        return self._asset.attachment if self._asset else None
 
     @property
     def model_attachment(self) -> QQImageAttachment | None:
-        return QQImageAttachment.model_validate_json(self.model_attachment_json) if self.model_attachment_json else None
+        return self._asset.model_attachment if self._asset else None
+
+    @property
+    def description(self) -> str | None:
+        return self._asset.description if self._asset else None
 
 
 class QQDelivery(SQLModel, table=True):

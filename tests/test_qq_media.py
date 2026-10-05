@@ -116,7 +116,7 @@ def test_image_setting_is_strict_and_the_only_model_switch(qq_client):
         assert config.context_policy.include_attachments == ("explicit" if enabled else "none")
 
 
-def test_saved_images_join_current_and_historical_model_requests(qq_client, monkeypatch, capsys):
+def test_saved_images_join_only_current_model_requests(qq_client, monkeypatch, capsys):
     client, state, upstream = qq_client
     static, animated = prepare_images(monkeypatch)
     p, session, _ = configure_execution(client, state)
@@ -149,7 +149,8 @@ def test_saved_images_join_current_and_historical_model_requests(qq_client, monk
     assert state.qq.store.get(QQBatch, second.id).status == "done"
     inputs = [m["content"] for m in upstream.calls[0]["messages"] if m["role"] == "user"]
     assert len(inputs) == 2
-    for content in inputs:
+    assert isinstance(inputs[0], str) and "[图片]" in inputs[0] and "[表情包]" in inputs[0]
+    for content in inputs[1:]:
         assert [s["type"] for s in content] == ["text", "image_url", "text", "image_url", "text"]
         assert content[0]["text"].endswith("bot A") and content[2]["text"] == " B " and content[4]["text"] == " C"
         assert content[3]["image_url"]["url"].startswith("data:image/png;base64,")
@@ -157,11 +158,10 @@ def test_saved_images_join_current_and_historical_model_requests(qq_client, monk
     step = next(s for s in run["steps"] if s.get("metadata", {}).get("context", {}).get("available"))
     detail = ok(client.get(f"/api/runs/{second.run_id}/steps/{step['step_id']}/context"))
     sources = [s for s in detail["sources"] if s["kind"] == "attachment"]
-    assert [s["part_index"] for s in sources] == [1, 3, 1, 3]
+    assert [s["part_index"] for s in sources] == [1, 3]
     assert "data:image" not in json.dumps(detail)
     trimmed = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(max_messages=2), None)
-    assert len([s for s in trimmed.trace.sources if s.kind == "attachment"]) == 2
-    assert {s.turn_id for s in trimmed.trace.sources if s.kind == "attachment"} == {second.input_message_id}
+    assert not any(s.kind == "attachment" for s in trimmed.trace.sources)
     assert ok(client.post("/api/data/attachments/scan-orphans"))["orphan_count"] == 0
     assert client.delete('/api/attachments/' + images[0]["attachment"]["id"]).status_code == 409
     if hasattr(state.messages, "engine"):
@@ -355,4 +355,4 @@ def test_pending_timeout_preserves_run_setting_and_captured_request(qq_client, m
     upstream.calls.clear()
     reply(upstream)
     execute_batch(client, state, p, session, 3)
-    assert any(isinstance(m["content"], list) for m in upstream.calls[0]["messages"])
+    assert all(isinstance(m["content"], str) for m in upstream.calls[0]["messages"])

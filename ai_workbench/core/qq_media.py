@@ -4,6 +4,7 @@ from dataclasses import replace
 from functools import lru_cache
 from io import BytesIO
 import json
+import hashlib
 import logging
 from pathlib import Path
 import re
@@ -16,6 +17,7 @@ from ai_workbench.core.attachments import delete_attachment_if_unreferenced, sav
 from ai_workbench.core.harness.network import fetch_bytes
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.schema.qq import QQImageAttachment
+from ai_workbench.db.qq_models import QQMediaAsset
 
 log = logging.getLogger(__name__)
 MEDIA_WAIT_SECONDS = 10
@@ -34,6 +36,14 @@ def media_label(media):
         face_id = media.source.face_id
         return system_faces().get(face_id, {}).get("name") or f"QQ face {face_id or '?'}"
     return "[表情包]" if media.kind == "sticker" else "[图片]"
+
+
+def model_media_label(media):
+    if media.kind == "face":
+        name = system_faces().get(media.source.face_id, {}).get("name", "").lstrip("/")
+        return f"[QQ表情：{name}]" if name else "[QQ表情]"
+    name = "表情包" if media.kind == "sticker" else "图片"
+    return f"[{name}：{media.description}]" if media.description else f"[{name}]"
 
 
 def media_url(media):
@@ -108,7 +118,7 @@ class QQMediaService:
         try:
             await asyncio.wait_for(wait(), MEDIA_WAIT_SECONDS)
         except asyncio.TimeoutError:
-            # Pending images remain visible and can join a later model request.
+            # Late images remain visible; history uses text placeholders.
             return
 
     async def download(self, media, project_id, settings):
@@ -134,7 +144,7 @@ class QQMediaService:
         raise ToolExecutionError("QQ_IMAGE_UNAVAILABLE", "No downloadable image resource is available.")
 
     def cleanup(self, attachment_ids):
-        for attachment_id in attachment_ids:
+        for attachment_id in set(attachment_ids) | self.store.release_unused_assets(attachment_ids):
             delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, self.state.messages,
                 persona_store=self.state.personas, knowledge_store=self.state.knowledge, run_store=self.state.runs,
                 qq_store=self.store)
@@ -144,6 +154,9 @@ class QQMediaService:
         try:
             settings = self.state.app_settings.get()
             data = await self.download(media, project_id, settings)
+            sha256 = hashlib.sha256(data).hexdigest()
+            if self.store.acquire_media(media, sha256):
+                return
             mime, suffix, width, height, model_data = await asyncio.to_thread(decode_image, data)
 
             def save(data, mime, suffix):
@@ -153,15 +166,16 @@ class QQMediaService:
                     **{key: saved[key] for key in ("name", "mime_type", "size", "uri")},
                     width=width, height=height).model_dump_json()
 
-            media.attachment_json = save(data, mime, suffix)
-            media.model_attachment_json = media.attachment_json
-            if model_data is not None:
-                if len(model_data) <= settings.max_image_size_mb * 1024 * 1024:
-                    media.model_attachment_json = save(model_data, "image/png", ".png")
-                else:
-                    media.model_attachment_json = None
-                    media.error_code = "QQ_IMAGE_TOO_LARGE"
-            media.status = "ready"
+            def create_asset():
+                original = save(data, mime, suffix)
+                model = original
+                if model_data is not None:
+                    model = (save(model_data, "image/png", ".png")
+                        if len(model_data) <= settings.max_image_size_mb * 1024 * 1024 else None)
+                return QQMediaAsset(sha256=sha256, attachment_json=original, model_attachment_json=model)
+
+            if self.store.acquire_media(media, sha256, create_asset):
+                created.clear()
         except (ValueError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning,
                 SyntaxError, EOFError) as exc:
             media.status, media.error_code = "failed", "QQ_IMAGE_INVALID"
@@ -171,10 +185,7 @@ class QQMediaService:
             log.warning("QQ image acquisition failed (%s)", media.error_code)
         finally:
             # Cancellation leaves the durable pending row for the next process.
-            if media.status != "pending":
-                if media.status == "failed":
-                    media.attachment_json = media.model_attachment_json = None
-                saved = self.store.finish_media(media)
-                if not saved or media.status == "failed":
-                    self.cleanup(created)
+            if media.status == "failed":
+                self.store.finish_media(media)
+            self.cleanup(created)
             self.changed.set()

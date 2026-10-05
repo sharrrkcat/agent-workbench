@@ -116,6 +116,7 @@ async def delete_session(session_id: str, state: RuntimeState = Depends(get_stat
 def delete_session_data(state: RuntimeState, session_id: str) -> None:
     attachments = state.qq.store.media_attachment_ids(session_id=session_id)
     state.qq.store.delete_session(session_id)
+    attachments.update(state.qq.store.release_unused_assets(attachments))
     state.sessions.set_waiting_run(session_id, None)
     attachments.update(state.messages.attachment_filenames(session_id=session_id))
     attachments.update(state.runs.context_attachment_ids(session_id=session_id))

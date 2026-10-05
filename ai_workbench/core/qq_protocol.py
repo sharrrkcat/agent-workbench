@@ -48,6 +48,42 @@ def _cq_segments(value):
     return result
 
 
+def _card_string(value):
+    return " ".join(value.split()) if isinstance(value, str) else ""
+
+
+def _card_text(kind, data):
+    if kind == "share":
+        label = "分享链接"
+        title, url = _card_string(data.get("title")), _card_string(data.get("url"))
+    else:
+        payload = data.get("data", data.get("content") if kind == "lightapp" else None)
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                return "[非文字消息]"
+        if not isinstance(payload, dict):
+            return "[非文字消息]"
+        meta = payload.get("meta")
+        meta = meta if isinstance(meta, dict) else {}
+        if kind == "lightapp" or _card_string(payload.get("app")).startswith("com.tencent.miniapp"):
+            label = "小程序"
+            detail = meta.get("detail_1")
+            detail = detail if isinstance(detail, dict) else {}
+            title = _card_string(payload.get("prompt")) or _card_string(detail.get("title"))
+            url = (_card_string(detail.get("qqdocurl")) or _card_string(detail.get("jumpUrl"))
+                or _card_string(detail.get("url")))
+        elif isinstance(meta.get("news"), dict):
+            label = "分享链接"
+            title = _card_string(meta["news"].get("title")) or _card_string(payload.get("prompt"))
+            url = _card_string(meta["news"].get("jumpUrl"))
+        else:
+            return "[非文字消息]"
+    summary = f"{title} ({url})" if title and url else title or url
+    return f"[{label}: {summary}]" if summary else f"[{label}]"
+
+
 def normalize(event):
     parsed = OneBotMessage.model_validate(event)
     segments = _cq_segments(parsed.message) if isinstance(parsed.message, str) else parsed.message
@@ -70,6 +106,8 @@ def normalize(event):
             value = str(data.get("id", ""))
             text.append("[引用:" + value + "]")
             refs.append({"type": "reply", "id": value})
+        elif kind in {"share", "json", "lightapp"}:
+            text.append(_card_text(kind, data))
         else:
             sticker = kind == "image" and (str(data.get("sub_type", "0")) != "0" or bool(data.get("emoji_id")))
             text.append("[表情包]" if sticker else placeholders.get(kind, "[非文字消息]"))

@@ -63,6 +63,7 @@ class QQBotInput(ProjectInput):
     access_token: str = Field(default="", max_length=4096, repr=False)
     connection_enabled: StrictBool = False
     image_input_enabled: StrictBool = False
+    image_description_model_profile_id: str | None = None
     agent_persona_id: str | None = None
     system_prompt: str = Field(default=QQ_DEFAULT_PROMPT, max_length=100000)
     reasoning: StrictBool = True

@@ -30,6 +30,7 @@ def ordered_segments(text, references_json, media, *, for_model=False):
 
 def public_segments(text, references_json, media):
     return [QQTextSegment(text=part) if isinstance(part, str) else QQImageSegment(
-        media_id=part.id, kind=part.kind, status=part.status, label=media_label(part),
+        media_id=part.id, asset_id=part.asset_id, description=part.description,
+        kind=part.kind, status=part.status, label=media_label(part),
         attachment=part.attachment, error_code=part.error_code)
         for part in ordered_segments(text, references_json, media)]

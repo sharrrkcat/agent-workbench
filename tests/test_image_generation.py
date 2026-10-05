@@ -243,13 +243,13 @@ def test_migration_preserves_existing_rows_files_and_rejects_local_sources(tmp_p
         file.parent.mkdir(parents=True)
         file.write_bytes(b"keep")
     try:
-        migrations.upgrade(engine)
+        migrations.upgrade(engine, migrations.IMAGE_GENERATION_REVISION)
         profile = profiles.create(ModelProfile(**PROFILE, source={"type": "provider", "provider_profile_id": provider.id}))
         profile = profiles.get(profile.id)
         for statement in ["source_type=NULL,provider_profile_id=NULL", "source_type='local',provider_profile_id=NULL,execution_options_json='{}',lifecycle_json='{}'"]:
             with pytest.raises(IntegrityError), engine.begin() as db:
                 db.exec_driver_sql(f"UPDATE model_profiles SET {statement} WHERE id=?", (profile.id,))
-        migrations.upgrade(engine)
+        migrations.upgrade(engine, migrations.IMAGE_GENERATION_REVISION)
         assert migrations.current_revision(engine) == migrations.IMAGE_GENERATION_REVISION
         assert profiles.get(previous.id) == previous and profiles.get(profile.id) == profile
         assert providers.get(provider.id) == provider

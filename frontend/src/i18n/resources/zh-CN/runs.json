@@ -107,7 +107,10 @@
       "no_bindings": "没有生效的知识库绑定",
       "no_results": "未检索到知识片段",
       "retrieval_failed": "知识检索失败",
-      "token_limit": "超出上下文 token 预算"
+      "token_limit": "超出上下文 token 预算",
+      "qq_history_image": "历史QQ图片使用文本占位",
+      "qq_system_face": "QQ系统表情使用名称占位",
+      "qq_image_limit": "超出本批QQ图片数量上限"
     },
     "empty": "空",
     "sourceInfo": "来源信息",

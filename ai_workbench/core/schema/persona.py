@@ -98,6 +98,7 @@ class ResolvedChatConfig(StrictModel):
     qq_bot_account: str | None = None
     qq_target_kind: Literal["group", "friend"] | None = None
     qq_target_id: str | None = None
+    qq_image_description_model_profile_id: str | None = None
 
     def public_summary(self) -> dict:
         return self.model_dump(mode="json", exclude={"system_prompt", "project_system_prompt", "user_persona_prompt",

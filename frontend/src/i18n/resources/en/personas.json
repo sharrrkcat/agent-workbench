@@ -144,7 +144,7 @@
   "newQQBot": "New QQBot",
   "qq": {
     "imageInputEnabled": "Send images to model",
-    "imageInputHint": "Chat history always saves and displays images. This switch only controls whether images are sent to the model.",
+    "imageInputHint": "Send up to 5 current-batch images, preferring pictures over stickers and recent items within each kind. History and QQ faces use text placeholders. All media remains visible here.",
     "sticker": "Sticker",
     "mediaPending": "[Loading {{name}}]",
     "mediaFailed": "[{{name}} unavailable]",
@@ -217,6 +217,9 @@
     "chattingIn": "Chatting in {{targetId}}",
     "deleteMessage": "Delete message",
     "deleteMessageConfirm": "Delete this message from this conversation and future model context? This will not recall the message in QQ. Other messages and their statuses will stay unchanged.",
-    "deleteReplyConfirm": "Delete this model reply and all its sent-message bubbles from this conversation and future model context? User messages will be kept. This will not recall messages in QQ."
+    "deleteReplyConfirm": "Delete this model reply and all its sent-message bubbles from this conversation and future model context? User messages will be kept. This will not recall messages in QQ.",
+    "imageDescriptionModel": "Image description model (optional)",
+    "noDescriptionModel": "Do not use",
+    "imageDescriptionHint": "When image input is on, describe selected images in the background using this external LLM. Descriptions are shared across QQBot projects and used in later history placeholders."
   }
 }

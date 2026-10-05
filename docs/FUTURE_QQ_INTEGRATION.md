@@ -72,7 +72,7 @@ project-relevant feasibility evidence requested for future work.
 
 Local fake-OneBot/fake-model verification covers bound ingestion, batching, Harness delivery,
 transport failures, pause/stop/resume and restart; browser fixtures cover English/Chinese desktop/touch workflows.
-Media fixtures cover ordering, original animations/static model frames, failures, delayed acquisition, history inclusion and deletion. A real NapCat round trip, including image URLs/system-face resources and a vision provider with explicitly designated test targets, remains unverified. Login
+Media fixtures cover shared resource references, picture-prioritized current-batch limits, named system faces, textual history, live descriptions, original animations/static frames, failures, delayed acquisition and deletion. A real NapCat round trip, including image URLs/system-face resources and a vision provider with explicitly designated test targets, remains unverified. Login
 and idle-memory evidence below cannot establish message delivery, external model behavior or a RAM guarantee.
 
 The Linux experiment did not exercise inference, first-use tokenizer cost, long histories,

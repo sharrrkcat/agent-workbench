@@ -78,6 +78,7 @@ class ChatRunner:
         client_message_id: str | None = None,
         persona_id: str | None = None,
         on_run_created: Callable[[str], None] | None = None,
+        on_context_ready: Callable[[ContextTrace], None] | None = None,
         resolved_config: ResolvedChatConfig | None = None,
     ) -> RunResult:
         session = self.sessions.get_session(session_id)
@@ -197,6 +198,9 @@ class ChatRunner:
             active_step_id = None
             if self._cancelled(run.run_id):
                 return self._cancel_result(run.run_id, session_id)
+
+            if on_context_ready is not None:
+                on_context_ready(context_trace)
 
             if use_harness:
                 result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context, trace=context_trace,

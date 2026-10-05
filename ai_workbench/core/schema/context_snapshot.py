@@ -96,7 +96,8 @@ class ContextExclusion(SnapshotModel):
     kind: SourceKind
     reason: Literal[
         "ineligible_history", "message_limit", "character_limit", "token_limit", "empty", "attachments_disabled",
-        "images_unsupported", "qq_image_unavailable", "file_text_disabled", "file_text_limit", "no_bindings", "no_results", "retrieval_failed",
+        "images_unsupported", "qq_image_unavailable", "qq_history_image", "qq_system_face", "qq_image_limit",
+        "file_text_disabled", "file_text_limit", "no_bindings", "no_results", "retrieval_failed",
     ]
     reference_id: str | None = None
     name: str | None = None

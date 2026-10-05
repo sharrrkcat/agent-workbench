@@ -226,9 +226,9 @@ def test_deletion_migration_keeps_existing_records_and_files(tmp_path):
     for path in files:
         path.parent.mkdir()
         path.write_bytes(b"keep")
-    migrations.upgrade(engine, "head")
-    migrations.upgrade(engine, "head")
-    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
+    migrations.upgrade(engine, migrations.QQ_MEDIA_REVISION)
+    migrations.upgrade(engine, migrations.QQ_MEDIA_REVISION)
+    assert migrations.current_revision(engine) == migrations.QQ_MEDIA_REVISION
     for table in ("qq_messages", "qq_deliveries"):
         assert "deleted" in {column["name"] for column in inspect(engine).get_columns(table)}
     with engine.connect() as db:

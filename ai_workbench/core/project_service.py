@@ -27,6 +27,10 @@ class ProjectService:
         elif project.kind == "qqbot":
             if project.agent_persona_id:
                 self.chat.agent_persona(project.agent_persona_id)
+            if project.image_description_model_profile_id is not None:
+                description_profile = self.chat.model_manager.profile(project.image_description_model_profile_id, "llm")
+                if not description_profile.source or description_profile.source.type != "provider":
+                    raise ChatError("QQ_EXTERNAL_MODEL_REQUIRED", "Choose an external LLM profile.", 422)
             if project.model_profile_id:
                 profile = self.chat.model_manager.profile(project.model_profile_id, "llm")
                 if not profile.source or profile.source.type != "provider":

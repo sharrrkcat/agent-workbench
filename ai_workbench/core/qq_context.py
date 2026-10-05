@@ -4,7 +4,7 @@ import json
 from ai_workbench.core.context import ContextBuildResult, message_text
 from ai_workbench.core.attachments import MAX_IMAGE_ATTACHMENT_BYTES, resolve_attachment_uri
 from ai_workbench.core.context_snapshot import snapshot_attachment
-from ai_workbench.core.qq_media import media_label
+from ai_workbench.core.qq_media import model_media_label
 from ai_workbench.core.qq_segments import ordered_segments
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 
@@ -31,7 +31,17 @@ def runtime_prompt(config, batch_id, sent_count, trigger_kind):
     )
 
 
-def _input_content(store, batch_id, text, policy, source_id, max_image_bytes):
+def _available_image(media, max_image_bytes):
+    attachment = media.model_attachment
+    if media.status != "ready" or attachment is None or attachment.size > max_image_bytes:
+        return False
+    try:
+        return resolve_attachment_uri(attachment.uri).is_file()
+    except OSError:
+        return False
+
+
+def _input_content(store, batch_id, text, policy, source_id, max_image_bytes, *, historical=False):
     trace = ContextTrace()
     if batch_id is None:
         return text, trace, len(text)
@@ -39,6 +49,14 @@ def _input_content(store, batch_id, text, policy, source_id, max_image_bytes):
     media = store.message_media([row.id for row in records])
     if not any(media.values()):
         return text, trace, len(text)
+    available, selected = set(), set()
+    if not historical and policy.include_attachments != "none":
+        candidates = [part for row in records for part in media[row.id]
+            if part.kind != "face" and _available_image(part, max_image_bytes)]
+        available = {part.id for part in candidates}
+        pictures = [part.id for part in candidates if part.kind == "image"][-5:]
+        stickers = [part.id for part in candidates if part.kind == "sticker"]
+        selected = set(pictures + (stickers[-(5 - len(pictures)):] if len(pictures) < 5 else []))
     parts = []
 
     def append_text(value):
@@ -53,24 +71,18 @@ def _input_content(store, batch_id, text, policy, source_id, max_image_bytes):
             if isinstance(part, str):
                 append_text(part)
                 continue
-            label = media_label(part)
-            if policy.include_attachments == "none":
+            label = model_media_label(part)
+            reason = ("qq_system_face" if part.kind == "face" else
+                "qq_history_image" if historical else
+                "attachments_disabled" if policy.include_attachments == "none" else
+                "qq_image_unavailable" if part.id not in available else
+                "qq_image_limit" if part.id not in selected else None)
+            if reason is not None:
                 append_text(label)
-                trace.exclusions.append(ContextExclusion(kind="attachment", reason="attachments_disabled",
+                trace.exclusions.append(ContextExclusion(kind="attachment", reason=reason,
                     reference_id=f"qq-media:{part.id}", name=label))
                 continue
             attachment = part.model_attachment
-            available = part.status == "ready" and attachment is not None and attachment.size <= max_image_bytes
-            if available:
-                try:
-                    available = resolve_attachment_uri(attachment.uri).is_file()
-                except OSError:
-                    available = False
-            if not available:
-                append_text(f"[图片不可用：{label}]")
-                trace.exclusions.append(ContextExclusion(kind="attachment", reason="qq_image_unavailable",
-                    reference_id=f"qq-media:{part.id}", name=label))
-                continue
             trace.sources.append(ContextSource(id=f"{source_id}:qq-media:{part.id}", kind="attachment",
                 parent_id=source_id, part_index=len(parts), reference_id=f"qq-media:{part.id}",
                 name=label, attachment=snapshot_attachment(attachment.model_dump())))
@@ -96,7 +108,7 @@ def build_qq_context(store, messages, session_id, text, policy, current_message_
                 trace.exclusions.append(ContextExclusion(kind="history", reason="message_limit", count=total - used))
                 break
             source_id = f"message:{batch.input_message_id}"
-            content, input_trace, input_chars = _input_content(store, batch.id, input_text, policy, source_id, max_image_bytes)
+            content, input_trace, input_chars = _input_content(store, batch.id, input_text, policy, source_id, max_image_bytes, historical=True)
             group = [(source_id, {"role": "user", "content": content})] if input_text else []
             for delivery in deliveries:
                 call_id = f"qq_history_{delivery.id}"

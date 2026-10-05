@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type APIResponse } from '@playwright/test';
+import { chooseOption } from './controls';
 
 const words = (locale: string, namespace: string) => JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'));
 async function json(response: Promise<APIResponse>) { const value = await response; expect(value.ok(), await value.text()).toBe(true); return value.json(); }
@@ -58,17 +59,37 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await request.post(`/__test__/qq/${sid}/media/complete`);
         await expect(old.locator('.qq-image-button')).toHaveCount(1);
         await expect(old.getByRole('button', { name: labels.qq.status.skipped, exact: true })).toBeAttached();
+        for (const description of ['共享图片描述', '更新后的图片描述']) {
+          await json(request.post(`/__test__/qq/${sid}/media/description`, { data: { description } }));
+          await expect(old.locator('img')).toHaveAttribute('alt', description);
+          await expect(mixed.locator('img').first()).toHaveAttribute('alt', description);
+          await expect(pure.locator('img')).toHaveAttribute('alt', description);
+        }
+        await pure.locator('.qq-image-button').click();
+        const describedPreview = page.getByRole('dialog', { name: '更新后的图片描述', exact: true });
+        await expect(describedPreview.locator('img')).toHaveAttribute('alt', '更新后的图片描述');
+        await page.keyboard.press('Escape');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         await page.goto(`/projects/${project.id}`);
         const toggle = page.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true });
         await expect(toggle).not.toBeChecked();
         await expect(page.getByText(labels.qq.imageInputHint, { exact: true })).toBeVisible();
         await toggle.click();
+        const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
+        const descriptionModel = page.getByLabel(labels.qq.imageDescriptionModel, { exact: true });
+        await expect(descriptionModel).toContainText(labels.qq.noDescriptionModel);
+        await chooseOption(descriptionModel, model.name);
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
         expect((await json(request.get(`/api/projects/${project.id}`))).image_input_enabled).toBe(true);
         await page.reload();
         await expect(toggle).toBeChecked();
+        await expect(descriptionModel).toContainText(model.name);
+        expect((await json(request.get(`/api/projects/${project.id}`))).image_description_model_profile_id).toBe(model.id);
+        await chooseOption(descriptionModel, labels.qq.noDescriptionModel);
+        await page.getByRole('button', { name: labels.save, exact: true }).click();
+        await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
+        expect((await json(request.get(`/api/projects/${project.id}`))).image_description_model_profile_id).toBeNull();
         expect(errors).toEqual([]);
       } finally {
         await request.delete(`/api/projects/${project.id}`);

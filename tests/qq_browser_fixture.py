@@ -6,6 +6,7 @@ from io import BytesIO
 import time
 
 from PIL import Image
+from fastapi import Body
 from ai_workbench.core.qq_media import QQMediaService
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.db.qq_models import QQMessage
@@ -37,6 +38,15 @@ def install_qq_fixture(app):
     @app.post("/__test__/qq/{session_id}/media/complete")
     async def media_complete(session_id: str):
         await complete_media(session_id, include_old=True)
+        return {"ok": True}
+
+    @app.post("/__test__/qq/{session_id}/media/description")
+    async def media_description(session_id: str, description: str = Body(embed=True)):
+        rows = state.qq.store.page(QQMessage, session_id, limit=100)["items"]
+        assets = {media.asset_id for items in state.qq.store.message_media([row["id"] for row in rows]).values()
+            for media in items if media.asset_id is not None and media.kind != "face"}
+        for asset_id in assets:
+            state.qq.store.update_description(asset_id, description)
         return {"ok": True}
 
     @app.post("/__test__/qq/{session_id}/media")

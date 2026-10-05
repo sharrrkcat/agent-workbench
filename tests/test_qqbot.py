@@ -427,10 +427,9 @@ def test_echo_migration_preserves_confirmed_delivery(tmp_path):
     with engine.begin() as db:
         db.execute(text("INSERT INTO qq_deliveries (session_id,run_id,tool_call_id,text,status,created_at) "
             "VALUES ('s','r','c','confirmed','sent',1)"))
-    migrations.upgrade(engine, "head")
-    with DbSession(engine) as db:
-        delivery = db.exec(select(QQDelivery)).one()
-        assert delivery.text == "confirmed" and delivery.status == "sent" and not delivery.echoed
+    migrations.upgrade(engine, migrations.QQ_DELIVERY_ECHO_REVISION)
+    with engine.connect() as db:
+        assert db.execute(text("SELECT text, status, echoed FROM qq_deliveries")).one() == ("confirmed", "sent", 0)
 
 
 def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, monkeypatch):

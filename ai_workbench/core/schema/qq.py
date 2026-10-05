@@ -39,6 +39,8 @@ class QQTextSegment(QQMediaSchema):
 class QQImageSegment(QQMediaSchema):
     type: Literal["image"] = "image"
     media_id: int
+    asset_id: int | None = None
+    description: str | None = None
     kind: Literal["image", "sticker", "face"]
     status: Literal["pending", "ready", "failed"]
     label: str

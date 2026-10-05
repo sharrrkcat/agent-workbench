@@ -11,6 +11,7 @@ from ai_workbench.core.qq_protocol import OneBotConnection, normalize
 from ai_workbench.core.qq_names import QQNames, model_batch_text
 from ai_workbench.core.qq_history import QQHistory
 from ai_workbench.core.qq_media import QQMediaService
+from ai_workbench.core.qq_descriptions import QQDescriptionService
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 log = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ class QQService:
         self.history = QQHistory(state, store)
         self.connections = {}
         self.media = QQMediaService(state, store, self.connections)
+        self.descriptions = QQDescriptionService(store, state.model_manager)
         self.names = QQNames(self.connections)
         self.tasks = {}
         self.workers = {}
@@ -46,6 +48,7 @@ class QQService:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await self.media.close()
+        await self.descriptions.close()
         await self.names.close()
 
     async def run(self):
@@ -157,7 +160,9 @@ class QQService:
             batch.input_message_id = user.message_id
             self.store.save(batch)
             result = await self.state.chat_runner.run(session_id=batch.session_id, text=text,
-                input_message_id=user.message_id, on_run_created=run_created, resolved_config=config)
+                input_message_id=user.message_id, on_run_created=run_created, resolved_config=config,
+                on_context_ready=lambda trace: self.descriptions.submit(config.qq_image_description_model_profile_id,
+                    trace, self.state.app_settings.get().max_image_size_mb * 1024 * 1024))
             batch.run_id = result.run_id
             batch.status = "done" if result.success else (
                 "cancelled" if result.error_code == "RUN_CANCELLED" else "failed")

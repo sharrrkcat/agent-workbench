@@ -144,7 +144,7 @@
   "newQQBot": "新建 QQBot",
   "qq": {
     "imageInputEnabled": "发送图片给模型",
-    "imageInputHint": "聊天记录始终保存并显示图片，此开关仅影响是否发送给模型。",
+    "imageInputHint": "每批最多发送5张图片，普通图片优先，同类保留最后出现的。历史图片和QQ表情使用文本占位；页面仍显示全部媒体。",
     "sticker": "表情包",
     "mediaPending": "[{{name}}加载中]",
     "mediaFailed": "[{{name}}不可用]",
@@ -217,6 +217,9 @@
     "chattingIn": "正在 {{targetId}} 中聊天",
     "deleteMessage": "删除消息",
     "deleteMessageConfirm": "从当前会话和后续模型上下文中删除这条消息？此操作不会撤回 QQ 消息，其他消息及其状态保持不变。",
-    "deleteReplyConfirm": "从当前会话和后续模型上下文中删除这条模型回复及其全部发送气泡？用户消息将保留，此操作不会撤回 QQ 消息。"
+    "deleteReplyConfirm": "从当前会话和后续模型上下文中删除这条模型回复及其全部发送气泡？用户消息将保留，此操作不会撤回 QQ 消息。",
+    "imageDescriptionModel": "读图模型（可选）",
+    "noDescriptionModel": "不使用",
+    "imageDescriptionHint": "图片输入开启时，使用此外部模型异步描述本批选中的图片。描述由所有QQBot项目共享，并用于后续历史占位。"
   }
 }

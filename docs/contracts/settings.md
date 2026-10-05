@@ -224,7 +224,7 @@ submit only changed overrides, lock Cogita identity and inherited Knowledge, and
 Project editors offer type-specific Configuration and Knowledge/Worldbook tabs; missing required Personas
 have management links. Context controls expose message/character limits and attachments, with no History selector.
 Creation defaults to unlimited session history, global model inheritance and, for Workspace, the default Agent, fixed Cogita Persona, Harness off and the explicit current tool catalog.
-New QQBot forms initialize their editable conversational prompt in the opening UI language. Language changes preserve the draft; clearing and saving retains an empty prompt. Editing existing Projects never reapplies the default.
+QQBot settings place an optional external image-description model selector beside image input, with an explicit Do not use choice. Image input permits at most five current-batch images, prioritizing pictures and recent occurrences; history uses current description placeholders. Descriptions and original display are independent of main model input; [Chat/context](chat-context.md#qqbot-conversations) owns selection, sharing and alt text. New QQBot forms initialize their editable conversational prompt in the opening UI language. Language changes preserve the draft; clearing and saving retains an empty prompt. Editing existing Projects never reapplies the default.
 Harness global settings own only searxng_base_url through `/api/tools/settings`.
 
 ToolsPanel shows catalog, risk, parameter schema, direct JSON calls, results and

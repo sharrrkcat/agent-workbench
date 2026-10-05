@@ -107,7 +107,10 @@
       "no_bindings": "No active Knowledge bindings",
       "no_results": "No Knowledge excerpts retrieved",
       "retrieval_failed": "Knowledge retrieval failed",
-      "token_limit": "Outside the context token budget"
+      "token_limit": "Outside the context token budget",
+      "qq_history_image": "Historical QQ image replaced with text",
+      "qq_system_face": "QQ system face represented by name",
+      "qq_image_limit": "QQ batch image limit reached"
     },
     "empty": "Empty",
     "sourceInfo": "Source information",
