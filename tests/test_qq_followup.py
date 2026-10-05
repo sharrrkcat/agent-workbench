@@ -320,7 +320,7 @@ def test_skip_stays_out_of_general_tools_and_public_snapshot_state(qq_client):
     assert client.patch(f"/api/sessions/{session['session_id']}", json={"tools_allowed": ["qq_skip_reply"]}).status_code == 422
     assert client.post("/api/tools/qq_skip_reply/call", json={"session_id": session["session_id"], "arguments": {}}).status_code == 400
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
-    assert schemas["QQBatchResponse"]["properties"]["trigger_kind"]["enum"] == ["keyword", "followup", "private"]
+    assert schemas["QQBatchResponse"]["properties"]["trigger_kind"]["enum"] == ["keyword", "followup", "private", "icebreaker"]
     assert "participants_json" not in schemas["QQBatchResponse"]["properties"]
     assert "window_kind" not in schemas["QQBindingResponse"]["properties"]
 

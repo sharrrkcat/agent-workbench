@@ -8,7 +8,7 @@ owns model execution and inspection. This note retains deployment evidence and u
 
 ## Supported boundary and deployment
 
-Cogita manages connections, bound-message recording, keyword/follow-up/private batches with explicit follow-up skip,
+Cogita manages connections, bound-message recording, keyword/follow-up/private batches and optional per-group icebreakers with explicit skip,
 external OpenAI-compatible inference through core/models, text delivery through
 qq_send_message and optional image generation/delivery through qq_generate_image with a shared reply limit. A separate Node.js agent service is unnecessary. Agent Persona identity
 and prompts are optional; Knowledge, Worldbook and Cogita Persona inheritance are excluded.
@@ -70,7 +70,7 @@ project-relevant feasibility evidence requested for future work.
 
 ## Outstanding acceptance
 
-Local fake-OneBot/fake-model verification covers bound ingestion, batching, Harness delivery,
+Local fake-OneBot/fake-model verification covers bound ingestion, batching, icebreaker timing/cancellation/cooldowns, Harness delivery,
 transport failures, pause/stop/resume and restart; browser fixtures cover English/Chinese desktop/touch workflows.
 Media fixtures cover shared resource references, picture-prioritized current-batch limits, named system faces, textual history, live descriptions, original animations/static frames, failures, delayed acquisition and deletion. A real NapCat round trip, including image URLs/system-face resources and a vision provider with explicitly designated test targets, remains unverified. Login
 and idle-memory evidence below cannot establish message delivery, external model behavior or a RAM guarantee.

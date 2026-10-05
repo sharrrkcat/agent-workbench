@@ -308,7 +308,7 @@ def test_migration_adds_image_delivery_without_touching_files(tmp_path):
         path.parent.mkdir(parents=True)
         path.write_bytes(b'keep')
     try:
-        migrations.upgrade(engine)
+        migrations.upgrade(engine, migrations.QQ_IMAGE_GENERATION_REVISION)
         with engine.connect() as db:
             assert db.exec_driver_sql('SELECT kind,prompt,asset_id,text FROM qq_deliveries').one() == ('text', None, None, 'text')
         assert migrations.current_revision(engine) == migrations.QQ_IMAGE_GENERATION_REVISION

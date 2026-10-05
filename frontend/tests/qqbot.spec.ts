@@ -32,6 +32,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(dialog.getByLabel(labels.defaultAgentPersona, { exact: true })).toContainText(labels.qq.noPersona);
         await expect(dialog.getByRole('switch', { name: labels.qq.enabled, exact: true })).not.toBeChecked();
         await expect(dialog.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true })).not.toBeChecked();
+        await expect(dialog.getByRole('switch', { name: labels.qq.icebreakerEnabled, exact: true })).not.toBeChecked();
+        await expect(dialog.getByLabel(labels.qq.icebreakerCold, { exact: true })).toHaveCount(0);
         await dialog.getByLabel(labels.qq.keywords, { exact: true }).fill('BOT\nhello');
         await dialog.getByLabel(labels.qq.batchLimit, { exact: true }).fill('3');
         await expect(dialog.getByLabel(labels.qq.replyLimit, { exact: true })).toHaveValue('4');

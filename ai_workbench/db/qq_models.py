@@ -18,6 +18,7 @@ class QQBinding(SQLModel, table=True):
     pause_reason: str = ""
     deadline: float | None = None
     window_kind: str = Field(default="keyword", sa_column_kwargs={"server_default": "keyword"})
+    icebreaker_cooldown_until: float | None = None
 
 
 class QQParticipant(SQLModel, table=True):

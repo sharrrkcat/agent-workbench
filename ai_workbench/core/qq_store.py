@@ -38,6 +38,7 @@ class QQStore:
                 return False
             db.add(message)
             db.flush()
+            message_id = message.id
             for item in media:
                 db.add(QQMedia(message_id=message.id, **item))
             current = db.get(QQBinding, binding.session_id)
@@ -61,27 +62,38 @@ class QQStore:
                     db.add(participant)
                     db.add(current)
             db.commit()
-            return True
+            return message_id
 
-    def freeze(self, session_id, limit, now):
+    def freeze(self, session_id, limit, now, *, icebreaker_first_id=None):
         with Session(self.engine) as db:
             binding = db.get(QQBinding, session_id)
-            if binding is None or binding.deadline is None or binding.deadline > now:
+            icebreaker = icebreaker_first_id is not None
+            if binding is None:
                 return None
-            rows = db.exec(select(QQMessage).where(QQMessage.session_id == session_id,
-                QQMessage.disposition == "pending", QQMessage.deleted == False).order_by(QQMessage.id.desc()).limit(limit)).all()
-            binding.deadline = None
-            db.add(binding)
-            participants = db.exec(select(QQParticipant).where(QQParticipant.session_id == session_id,
-                QQParticipant.in_window == True, QQParticipant.sender_id.in_({row.sender_id for row in rows}))).all()
-            db.exec(update(QQParticipant).where(QQParticipant.session_id == session_id,
-                QQParticipant.in_window == True).values(in_window=False))
+            if icebreaker:
+                if binding.paused or binding.deadline is not None:
+                    return None
+            elif binding.deadline is None or binding.deadline > now:
+                return None
+            query = select(QQMessage).where(QQMessage.session_id == session_id,
+                QQMessage.disposition == "pending", QQMessage.deleted == False)
+            if icebreaker:
+                query = query.where(QQMessage.id >= icebreaker_first_id, func.length(func.trim(QQMessage.text)) > 0)
+            rows = db.exec(query.order_by(QQMessage.id.desc()).limit(limit)).all()
+            participants = []
+            if not icebreaker:
+                binding.deadline = None
+                db.add(binding)
+                participants = db.exec(select(QQParticipant).where(QQParticipant.session_id == session_id,
+                    QQParticipant.in_window == True, QQParticipant.sender_id.in_({row.sender_id for row in rows}))).all()
+                db.exec(update(QQParticipant).where(QQParticipant.session_id == session_id,
+                    QQParticipant.in_window == True).values(in_window=False))
             if not rows:
                 db.commit()
                 return None
             rows.reverse()
             batch = QQBatch(session_id=session_id, project_id=binding.project_id, created_at=now,
-                trigger_kind="private" if binding.target_kind == "friend" else binding.window_kind,
+                trigger_kind="icebreaker" if icebreaker else "private" if binding.target_kind == "friend" else binding.window_kind,
                 participants_json=json.dumps({p.sender_id: p.keyword_message_id for p in participants}),
                 text="\n".join(f"[{m.timestamp}][{m.sender_name}]:{m.text}" for m in rows))
             db.add(batch)
@@ -95,6 +107,16 @@ class QQStore:
             db.commit()
             db.refresh(batch)
             return batch
+
+    def has_reply_work(self, session_id):
+        with Session(self.engine) as db:
+            return db.exec(select(QQBatch.id).where(QQBatch.session_id == session_id,
+                QQBatch.status.in_(("queued", "running")), QQBatch.trigger_kind != "icebreaker").limit(1)).first() is not None
+
+    def start_icebreaker_cooldown(self, session_id, until):
+        with Session(self.engine) as db:
+            db.exec(update(QQBinding).where(QQBinding.session_id == session_id).values(icebreaker_cooldown_until=until))
+            db.commit()
 
     def next_batch(self, project_id):
         with Session(self.engine) as db:
@@ -352,6 +374,12 @@ class QQStore:
 
     def recover(self):
         with Session(self.engine) as db:
+            # No observation survives a connection gap. Submitted sends still use normal recovery.
+            intent = select(QQDelivery.id).where(QQDelivery.run_id == QQBatch.run_id).exists()
+            db.exec(update(QQBatch).where(QQBatch.trigger_kind == "icebreaker",
+                QQBatch.status.in_(("queued", "running")), ~intent)
+                .values(status="cancelled", error_code="QQ_ICEBREAKER_CANCELLED"))
+            db.commit()
             for kind, statuses in ((QQBatch, ["running"]), (QQDelivery, ["pending", "sending"])):
                 # Process recovery in bounded pages, including interrupted send intents.
                 while True:

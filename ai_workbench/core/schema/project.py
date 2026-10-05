@@ -76,6 +76,10 @@ class QQBotInput(ProjectInput):
     keywords: list[str] = Field(default_factory=list, max_length=128)
     batch_message_limit: int = Field(default=20, ge=1, le=200, strict=True)
     reply_message_limit: int = Field(default=4, ge=1, le=20, strict=True)
+    icebreaker_enabled: StrictBool = False
+    icebreaker_cold_seconds: int = Field(default=7200, ge=1, strict=True)
+    icebreaker_wait_seconds: int = Field(default=120, ge=1, strict=True)
+    icebreaker_cooldown_seconds: int = Field(default=10800, ge=1, strict=True)
 
     @field_validator("websocket_url")
     @classmethod

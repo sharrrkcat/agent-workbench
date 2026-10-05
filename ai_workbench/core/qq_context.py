@@ -14,6 +14,13 @@ def runtime_prompt(config, batch_id, sent_count, trigger_kind):
     send_tools = "qq_send_message or qq_generate_image" if config.qq_image_generation_model_profile_id else "qq_send_message"
     if sent_count:
         policy = "This batch has a confirmed reply. You may finish or send another message within the limit. Skipping is not allowed. "
+    elif trigger_kind == "icebreaker":
+        policy = (
+            "This is an optional icebreaker after a quiet period with only one participant speaking. "
+            "Naturally acknowledge or continue their current topic in their language; do not announce a rescue or demand a response. "
+            f"Use {send_tools} for at most one brief reply when useful, or call qq_skip_reply with no arguments. "
+            "A skip ends this batch immediately. "
+        )
     elif trigger_kind == "followup":
         policy = (
             f"This is a follow-up batch. Start with a tool call: reply using {send_tools} when a response is useful, "

@@ -10,7 +10,8 @@ from ai_workbench.core.qq_segments import public_segments
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 router = APIRouter(prefix="/api/qq", tags=["qq"])
-BindingResponse = public_model("QQBindingResponse", QQBinding, omit={"window_kind"}, fields={
+_BINDING_INTERNAL = {"window_kind", "icebreaker_cooldown_until"}
+BindingResponse = public_model("QQBindingResponse", QQBinding, omit=_BINDING_INTERNAL, fields={
     "target_kind": (Literal["group", "friend"], ...), "history_version": (int, ...), "busy": (bool, ...)})
 
 
@@ -86,7 +87,7 @@ async def get_binding(session_id: str, state: RuntimeState = Depends(get_state))
 
 
 def binding_response(state, bound):
-    return {**bound.model_dump(exclude={"window_kind"}),
+    return {**bound.model_dump(exclude=_BINDING_INTERNAL),
         "history_version": state.sessions.get_session(bound.session_id).history_version,
         "busy": state.qq.history.busy(bound.session_id)}
 

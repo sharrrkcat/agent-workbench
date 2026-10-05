@@ -50,6 +50,7 @@ async def update_project(project_id: str, payload: dict, state: RuntimeState = D
     schema = {"workspace": WorkspaceProjectPatch, "timeline": TimelineProjectPatch, "qqbot": QQBotProjectPatch}[project.kind]
     values = schema.model_validate(payload).model_dump(exclude_unset=True)
     updated = state.project_service.update(project_id, values)
+    state.qq.project_updated(project, updated)
     _notify_sessions(state, project_id)
     return _public(updated)
 

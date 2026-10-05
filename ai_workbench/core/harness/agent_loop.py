@@ -343,7 +343,7 @@ class HarnessAgentLoop:
 
     def _allowed_tools(self, config, state):
         return [name for name in self.allowed_tools(config)
-                if name != "qq_skip_reply" or (state.qq_trigger_kind == "followup" and state.qq_sent_count == 0)]
+                if name != "qq_skip_reply" or (state.qq_trigger_kind in {"followup", "icebreaker"} and state.qq_sent_count == 0)]
 
     async def _execute_one(self, session, config, run, state, call, arguments, budget) -> None:
         step = self._start_step(run.run_id, "tool", call.function.name,

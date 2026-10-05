@@ -26,6 +26,7 @@ export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput 
   return { kind: 'qqbot', name: '', bot_account: '', websocket_url: 'ws://127.0.0.1:3001',
     connection_enabled: false, agent_persona_id: null, system_prompt: defaultPrompt, model_profile_id: null,
     temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20, reply_message_limit: 4, image_input_enabled: false,
+    icebreaker_enabled: false, icebreaker_cold_seconds: 7200, icebreaker_wait_seconds: 120, icebreaker_cooldown_seconds: 10800,
     image_description_model_profile_id: null,
     image_generation_model_profile_id: null, image_generation_options: { size: null, quality: null, style: null },
     context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'none' } };
@@ -110,6 +111,14 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
       <Field><FieldLabel htmlFor={id + '-prompt'}>{t('projectPrompt')}</FieldLabel><Textarea id={id + '-prompt'} rows={4} maxLength={100000} value={draft.system_prompt} onChange={(e) => update({ system_prompt: e.target.value })} /></Field>
       <Field><FieldLabel>{t('qq.replyMode')}</FieldLabel><Badge variant="secondary" className="self-start">{t('qq.keywordMode')}</Badge><FieldDescription>{t('qq.triggerHint')}</FieldDescription></Field>
       <Field><FieldLabel htmlFor={id + '-keywords'}>{t('qq.keywords')}</FieldLabel><Textarea id={id + '-keywords'} rows={3} value={keywords} onChange={(e) => { setKeywords(e.target.value); update({ keywords: e.target.value.split('\n').map((v) => v.trim()).filter(Boolean) }); }} /></Field>
+      <Field orientation="horizontal"><Switch id={id + '-icebreaker'} checked={draft.icebreaker_enabled} onCheckedChange={(icebreaker_enabled) => update({ icebreaker_enabled })} aria-describedby={id + '-icebreaker-hint'} />
+        <FieldContent><FieldLabel htmlFor={id + '-icebreaker'}>{t('qq.icebreakerEnabled')}</FieldLabel><FieldDescription id={id + '-icebreaker-hint'}>{t('qq.icebreakerHint')}</FieldDescription></FieldContent>
+      </Field>
+      {draft.icebreaker_enabled ? <FieldGroup>
+        <Field><FieldLabel htmlFor={id + '-cold'}>{t('qq.icebreakerCold')}</FieldLabel><Input id={id + '-cold'} type="number" required min={1} step={1} value={draft.icebreaker_cold_seconds} onChange={(e) => update({ icebreaker_cold_seconds: Number(e.target.value) })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-wait'}>{t('qq.icebreakerWait')}</FieldLabel><Input id={id + '-wait'} type="number" required min={1} step={1} value={draft.icebreaker_wait_seconds} onChange={(e) => update({ icebreaker_wait_seconds: Number(e.target.value) })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-cooldown'}>{t('qq.icebreakerCooldown')}</FieldLabel><Input id={id + '-cooldown'} type="number" required min={1} step={1} value={draft.icebreaker_cooldown_seconds} onChange={(e) => update({ icebreaker_cooldown_seconds: Number(e.target.value) })} /><FieldDescription>{t('qq.icebreakerTimingHint')}</FieldDescription></Field>
+      </FieldGroup> : null}
       <Field><FieldLabel htmlFor={id + '-limit'}>{t('qq.batchLimit')}</FieldLabel><Input id={id + '-limit'} type="number" required min={1} max={200} value={draft.batch_message_limit} onChange={(e) => update({ batch_message_limit: Number(e.target.value) })} /></Field>
       <Field><FieldLabel htmlFor={id + '-reply-limit'}>{t('qq.replyLimit')}</FieldLabel><Input id={id + '-reply-limit'} type="number" required min={1} max={20} step={1} value={draft.reply_message_limit} onChange={(e) => update({ reply_message_limit: Number(e.target.value) })} /><FieldDescription>{t('qq.replyLimitHint')}</FieldDescription></Field>
       <Field orientation="horizontal"><Switch id={id + '-reasoning'} checked={draft.reasoning} onCheckedChange={(reasoning) => update({ reasoning })} /><FieldLabel htmlFor={id + '-reasoning'}>{t('qq.reasoning')}</FieldLabel></Field>

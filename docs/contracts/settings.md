@@ -225,13 +225,13 @@ Project editors offer type-specific Configuration and Knowledge/Worldbook tabs; 
 have management links. Context controls expose message/character limits and attachments, with no History selector.
 Creation defaults to unlimited session history, global model inheritance and, for Workspace, the default Agent, fixed Cogita Persona, Harness off and the explicit current tool catalog.
 QQBot settings place an optional external image-description model selector beside image input, with an explicit Do not use choice. Image input permits at most five current-batch images, prioritizing pictures and recent occurrences; history uses current description placeholders. Descriptions and original display are independent of main model input; [Chat/context](chat-context.md#qqbot-conversations) owns selection, sharing and alt text. New QQBot forms initialize their editable conversational prompt in the opening UI language. Language changes preserve the draft; clearing and saving retains an empty prompt. Editing existing Projects never reapplies the default. QQBot image generation has a separate provider-only image_generation model selector with Disabled as the default. Selecting a model shows size/quality/style overrides, each supporting model defaults. Disabling generation retains the saved controls. The helper explains one image per invocation, the shared confirmed-send limit and Provider timeout for long generation. Generated images use existing picture previews and delivery controls; no separate generation page is provided.
+QQBot settings include a default-off group icebreaker switch beside reply triggers. Enabling it reveals three positive integer fields in seconds: cold silence, observation wait and cooldown. Disabling hides the fields while retaining values. Bilingual helpers explain per-group cooldown, sliding observation, cancellation before sending and the optional single reply; [Chat/context](chat-context.md#qqbot-conversations) owns defaults and trigger rules. Failed saves retain the draft.
 Harness global settings own only searxng_base_url through `/api/tools/settings`.
 
 ToolsPanel shows catalog, risk, parameter schema, direct JSON calls, results and
 approval controls shared with RunPanel. Catalog and call/results use two columns
 on wide screens and stack on narrow screens; search settings form a separate section.
-Search configuration is snapshotted for
-a run; edits never change a pending call's destination. [Harness/tools](harness-tools.md)
+Search configuration is snapshotted for a run; edits never change a pending call's destination. [Harness/tools](harness-tools.md)
 owns the runtime workflow and permissions.
 
 Knowledge settings own chunk/retrieval/context controls and unified reranker

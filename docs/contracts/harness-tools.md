@@ -42,7 +42,7 @@ model loop. Invalid direct requests fail before creating a run.
 | base64_encode / base64_decode | value | Automatic |
 | qq_send_message | text (1..4000 characters, nonblank) | Automatic, QQBot model runs only |
 | qq_generate_image | prompt (1..32000 characters, nonblank) | Automatic, configured QQBot model runs only |
-| qq_skip_reply | Empty object | Automatic, unanswered QQ group follow-up runs only |
+| qq_skip_reply | Empty object | Automatic, unanswered QQ group follow-up/icebreaker runs only |
 
 File paths are relative to the application root and restricted to `data/knowledge`
 and `data/attachments`. Absolute paths, traversal, Windows alternate streams
@@ -75,13 +75,13 @@ account mismatch and connection failure without exposing tokens. Wire messages a
 Malformed bound messages are ignored with a content-free diagnostic. Duplicate external ids within a bound conversation
 are ignored without resetting debounce. Bot echoes never enter batches; known external ids mark confirmed delivery records echoed.
 
-QQ runs always enable Harness. Batches expose qq_send_message and, when configured, qq_generate_image; unanswered follow-up batches also expose qq_skip_reply.
+QQ runs always enable Harness. Batches expose qq_send_message and, when configured, qq_generate_image; unanswered follow-up and icebreaker batches also expose qq_skip_reply.
 QQ tools are absent from the general catalog/default selections, reject ordinary/Workspace allowlists and direct calls,
 and require server-owned session, active batch/run and tool-call ids. The destination comes solely from the immutable Session binding.
 One text send delivers one plain-text OneBot segment; CQ-looking content remains literal. One image call generates and immediately sends one separate OneBot image segment with base64 bytes, using only the immutable destination binding.
 Every batch's first model call uses tool_choice=required; subsequent calls use auto. Model requests and queued execution share the same tool permissions.
 Each call appends one qq_runtime system block: snapshotted target/bot identity, batch id/trigger kind and live confirmed-send count/limit.
-It distinguishes mandatory replies from optional follow-ups, excludes historical sends from the count and treats transcript names/text as data. Project prompts remain separate.
+It distinguishes mandatory replies, optional follow-ups and optional quiet-group icebreakers, excludes historical sends from the count and treats transcript names/text as data. Icebreakers naturally continue the topic without announcing a rescue or demanding engagement. Project prompts remain separate.
 Successful qq_skip_reply immediately completes the run/batch without sending, another model call or a pause, recording metadata.qq_reply.skipped=true.
 Skip expires only submitted participants whose current keyword epoch matches this batch's snapshot; newer keywords are protected.
 Existing windows and queued batches remain valid. Each confirmed follow-up send renews only this batch's submitted participants to max(current expiry, confirmation time + 45 seconds), even after expiry; later failures retain that renewal. Keyword/private sends do not renew eligibility.
@@ -94,6 +94,7 @@ Execution snapshots it with the configuration. Only confirmed qq_send_message/qq
 private qq_sent_count; failed/unknown sends, validation errors and other tools do not count. Reaching the limit
 completes the run and batch without pausing or another model call. Remaining calls already emitted by the model
 receive rejected results with QQ_REPLY_LIMIT_REACHED and skipped steps, without creating delivery intents.
+Icebreaker execution overrides its run snapshot's reply limit to 1, shared by text and generated images. Skipping changes no participant eligibility; normal follow-up skip and renewal rules remain unchanged. Cooldown starts after context preparation when entering model inference. Queue/preparation cancellation consumes no cooldown; skips, later cancellation and failures retain it.
 Cancellation, delivery errors and existing Harness limits retain precedence. Counts reset for each new batch.
 
 Every expired debounce window creates a SQLite FIFO batch with fixed trigger policy, including during inference or pause.
@@ -111,9 +112,12 @@ Delivery errors terminate the current run and pause the Session before another s
 Main reply-model failures also pause. `/api/qq/sessions/{id}/control` pause prevents new execution while ingestion/batching continue;
 stop additionally cancels active work. Resume requires idle state and selects untouched queued batches only.
 Failed, cancelled and interrupted batches never replay. Disabling a connection stops ingress/dispatch and blocks later sends.
-Restart retains queues, window membership/policy and absolute participant expiries, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
+Restart retains ordinary queues, window membership/policy and absolute participant expiries, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
 Existing run reconciliation remains authoritative. QQ history has no editing, retry or direct-send API.
+Icebreaker observations are process-local and run on the existing supervisor. Pause, disablement, disconnect, restart or changes to icebreaker/connection settings discard observations and cancel unsent icebreakers. Resuming starts a fresh silence baseline; persisted cooldown deadlines survive. Restart cancels queued/running icebreakers with no delivery intent instead of replaying them; submitted sends retain normal interrupted/unknown recovery.
+A second speaker or ordinary reply trigger cancels an icebreaker during queueing, media/member waits, context preparation, inference or image generation. The sending entry point rechecks eligibility before its durable intent and OneBot submission, with no intervening await. Once submitted, the message is not cancelled or retracted by new activity. Automatic invalidation records QQ_ICEBREAKER_CANCELLED on the batch without automatically pausing the Session; actual model/delivery errors retain normal failure handling. Explicit pause/stop still pauses.
 Local [history deletion](chat-context.md#qqbot-conversations) excludes removed inputs before dispatch and cancels empty queued batches without changing participant eligibility or replaying work.
+Deleting observed inputs uses only remaining visible messages; deleting all cancels the observation. History deletion never rewinds activity or cooldown clocks.
 Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
 
 Local fake-OneBot/fake-model tests cover transport, participant windows, skip/renewal races, batching, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,

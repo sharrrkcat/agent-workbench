@@ -14,7 +14,7 @@ Both locales label stable kinds, never implementation progress strings.
 
 The optional Pet foundation selects session statuses/steps/progress without a UI, separate stream or polling.
 QQ uses existing chat runs, inspection and cancellation; [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns batches and delivery. Public metadata.qq_reply retains sent_count, message_limit, limit_reached and skipped during execution and termination, including partial sends before failure/cancellation.
-Only normal completion at the send limit sets limit_reached=true. A legitimate follow-up skip completes with skipped=true and no delivery; ending without a confirmed reply or allowed skip fails with QQ_REPLY_REQUIRED before DONE.
+Only normal completion at the send limit sets limit_reached=true. A legitimate follow-up/icebreaker skip completes with skipped=true and no delivery; ending without a confirmed reply or allowed skip fails with QQ_REPLY_REQUIRED before DONE. Icebreaker snapshots and metadata use message_limit=1. Automatic pre-send invalidation cancels work without automatically pausing the QQ Session; its batch records QQ_ICEBREAKER_CANCELLED.
 
 ChatRunner persists messages, runs, steps and events. Run/message metadata contains public ids, counts, timings, warnings
 and source refs, never prompts, full history/context, vectors, binaries or keys. Model resolution includes

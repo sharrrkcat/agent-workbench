@@ -220,6 +220,8 @@ const editorLoader = createModuleLoader({
 try {
   const { QQBotEditor, qqInput } = (await editorLoader('../src/components/projects/QQBotEditor.tsx')).exports;
   assert.equal(qqInput().image_input_enabled, false);
+  assert.equal(qqInput().icebreaker_enabled, false);
+  assert.deepEqual([qqInput().icebreaker_cold_seconds, qqInput().icebreaker_wait_seconds, qqInput().icebreaker_cooldown_seconds], [7200, 120, 10800]);
   assert.equal(qqInput({ ...qqInput(), image_input_enabled: true }).image_input_enabled, true);
   const children = (node) => Array.isArray(node) ? node.flatMap(children) : React.isValidElement(node)
     ? [node, ...children(node.props.children)] : [];
@@ -235,6 +237,15 @@ try {
     assert.equal(imageSwitch().props.checked, false);
     imageSwitch().props.onCheckedChange(true);
     assert.equal(imageSwitch().props.checked, true);
+    const icebreakerSwitch = () => children(renderEditor()).find((node) => node.props.id === 'qq-editor-icebreaker');
+    const waitField = () => children(renderEditor()).find((node) => node.props.id === 'qq-editor-wait');
+    assert.equal(waitField(), undefined);
+    icebreakerSwitch().props.onCheckedChange(true);
+    waitField().props.onChange({ target: { value: '7' } });
+    icebreakerSwitch().props.onCheckedChange(false);
+    assert.equal(waitField(), undefined);
+    icebreakerSwitch().props.onCheckedChange(true);
+    assert.equal(waitField().props.value, 7);
     assert.equal(promptField().props.value, prompts[locale]);
     editorLocale = locale === 'en' ? 'zh-CN' : 'en';
     assert.equal(promptField().props.value, prompts[locale], 'A locale switch preserves the opening default');

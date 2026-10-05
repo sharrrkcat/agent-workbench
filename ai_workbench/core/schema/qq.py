@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 QQ_SEND_TOOLS = ("qq_send_message", "qq_generate_image")
 QQ_TOOLS = (*QQ_SEND_TOOLS, "qq_skip_reply")
-QQTriggerKind = Literal["keyword", "followup", "private"]
+QQTriggerKind = Literal["keyword", "followup", "private", "icebreaker"]
 participant_epochs = TypeAdapter(dict[str, int], config=ConfigDict(strict=True))
 
 

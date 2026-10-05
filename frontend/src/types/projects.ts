@@ -29,6 +29,8 @@ export type QQBotInput = ProjectSettings & {
   connection_enabled: boolean; agent_persona_id: string | null; system_prompt: string;
   reasoning: boolean; group_reply_mode: 'keyword'; keywords: string[]; batch_message_limit: number;
   reply_message_limit: number; image_input_enabled: boolean;
+  icebreaker_enabled: boolean; icebreaker_cold_seconds: number;
+  icebreaker_wait_seconds: number; icebreaker_cooldown_seconds: number;
   image_description_model_profile_id: string | null;
   image_generation_model_profile_id: string | null;
   image_generation_options: {
