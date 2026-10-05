@@ -30,6 +30,12 @@ export type QQBotInput = ProjectSettings & {
   reasoning: boolean; group_reply_mode: 'keyword'; keywords: string[]; batch_message_limit: number;
   reply_message_limit: number; image_input_enabled: boolean;
   image_description_model_profile_id: string | null;
+  image_generation_model_profile_id: string | null;
+  image_generation_options: {
+    size: string | null;
+    quality: 'auto' | 'low' | 'medium' | 'high' | 'standard' | 'hd' | null;
+    style: 'natural' | 'vivid' | null;
+  };
 };
 export type QQBotProject = Omit<QQBotInput, 'access_token'> & ProjectIdentity & { has_access_token: boolean };
 export type ProjectInput = WorkspaceInput | TimelineInput | QQBotInput;

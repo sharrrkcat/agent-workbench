@@ -123,13 +123,16 @@ class LocalEmbeddingParameters(StrictModel):
         description="A directory-declared prompt name; null follows native document prompt selection.")
 
 
-class ImageGenerationOptions(StrictModel):
-    n: int | None = Field(default=None, ge=1, le=10, strict=True,
-        description="Number of images. Omitted/null options inherit the profile; unset profile options use provider defaults.")
+class ImageGenerationControls(StrictModel):
     size: str | None = Field(default=None, pattern=r"^(auto|[1-9][0-9]*x[1-9][0-9]*)$", max_length=32, strict=True,
         description="auto or WIDTHxHEIGHT. Supported dimensions depend on the provider/model.")
     quality: Literal["auto", "low", "medium", "high", "standard", "hd"] | None = None
     style: Literal["natural", "vivid"] | None = None
+
+
+class ImageGenerationOptions(ImageGenerationControls):
+    n: int | None = Field(default=None, ge=1, le=10, strict=True,
+        description="Number of images. Omitted/null options inherit the profile; unset profile options use provider defaults.")
     response_format: Literal["url", "b64_json"] | None = None
 
 

@@ -27,6 +27,7 @@ from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
+from ai_workbench.core.schema.qq import QQ_SEND_TOOLS
 
 
 MAX_TOOL_ROUNDS = 8
@@ -351,11 +352,17 @@ class HarnessAgentLoop:
                                        knowledge_service=self.knowledge_service, session_id=session.session_id,
                                        run_id=run.run_id, tool_call_id=call.id,
                                        knowledge_base_ids=config.knowledge_base_ids,
-                                       harness_settings=HarnessSettings(searxng_base_url=state.searxng_base_url))
+                                       harness_settings=HarnessSettings(searxng_base_url=state.searxng_base_url),
+                                       qq_image_generation_model_profile_id=config.qq_image_generation_model_profile_id,
+                                       qq_image_generation_options=config.qq_image_generation_options)
         remaining = budget.check()
+        image_tool = session.kind == "qqbot" and call.function.name == "qq_generate_image"
+        started = time.monotonic()
         try:
-            data = await asyncio.wait_for(self.registry.execute(call.function.name, arguments, context),
-                                          timeout=min(TOOL_TIMEOUT_SECONDS, remaining))
+            execution = self.registry.execute(call.function.name, arguments, context)
+            # Image providers own their queue/request timeout; download and delivery are also bounded.
+            data = await execution if image_tool else await asyncio.wait_for(execution,
+                timeout=min(TOOL_TIMEOUT_SECONDS, remaining))
             outcome = ToolOutcome(status="success", data=data)
         except asyncio.TimeoutError:
             total = remaining <= TOOL_TIMEOUT_SECONDS or budget.remaining() <= 0
@@ -363,14 +370,18 @@ class HarnessAgentLoop:
                                   error_message="Harness execution exceeded 5 minutes." if total else "Tool execution timed out.")
         except ToolExecutionError as exc:
             outcome = ToolOutcome(status="error", data=exc.details or None, error_code=exc.code, error_message=exc.message)
-        if session.kind == "qqbot" and call.function.name == "qq_send_message" and outcome.status == "success":
+        finally:
+            if image_tool:
+                budget.started += time.monotonic() - started
+        if session.kind == "qqbot" and call.function.name in QQ_SEND_TOOLS and outcome.status == "success":
             state.qq_sent_count += 1
             self._update_qq_reply(run.run_id, config, state)
         if session.kind == "qqbot" and call.function.name == "qq_skip_reply" and outcome.status == "success":
             state.qq_skipped = True
             self._update_qq_reply(run.run_id, config, state)
         self._record_result(session, run, state, call, outcome, step_id=step.step_id)
-        if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and outcome.status != "success"):
+        recoverable_image_error = image_tool and outcome.error_code == "QQ_IMAGE_GENERATION_FAILED"
+        if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and outcome.status != "success" and not recoverable_image_error):
             state.pending_calls.pop(0)
             raise ToolExecutionError(outcome.error_code, outcome.error_message)
 

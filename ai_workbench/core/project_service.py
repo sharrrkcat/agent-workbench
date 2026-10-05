@@ -27,6 +27,8 @@ class ProjectService:
         elif project.kind == "qqbot":
             if project.agent_persona_id:
                 self.chat.agent_persona(project.agent_persona_id)
+            if project.image_generation_model_profile_id is not None:
+                self.chat.model_manager.profile(project.image_generation_model_profile_id, "image_generation")
             if project.image_description_model_profile_id is not None:
                 description_profile = self.chat.model_manager.profile(project.image_description_model_profile_id, "llm")
                 if not description_profile.source or description_profile.source.type != "provider":
@@ -57,6 +59,9 @@ class ProjectService:
             raise ChatError("QQ_ACCOUNT_BOUND", "Delete the bound Sessions before changing the bot account.", 409)
         if {"id", "kind", "created_at", "updated_at"}.intersection(values):
             raise ChatError("PROJECT_IDENTITY_IMMUTABLE", "Project identity and type cannot be changed.", 422)
+        if current.kind == "qqbot" and isinstance(values.get("image_generation_options"), dict):
+            values = {**values, "image_generation_options": {
+                **current.image_generation_options.model_dump(), **values["image_generation_options"]}}
         candidate = project_adapter.validate_python({**current.model_dump(), **values, "updated_at": utc_now()})
         self.validate(candidate)
         return self.projects.save(candidate)

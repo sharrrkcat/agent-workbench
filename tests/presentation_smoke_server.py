@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
+from io import BytesIO
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import httpx
+from PIL import Image
 import uvicorn
 from fastapi import Body
 from fastapi.testclient import TestClient
@@ -52,6 +55,16 @@ class FixtureStream(httpx.AsyncByteStream):
 
 class PresentationOpenAI(ToolOpenAI):
     async def handle(self, request):
+        if request.url.path.endswith("/images/generations"):
+            payload = json.loads(request.content)
+            if payload['prompt'] == 'hold-image':
+                await asyncio.Event().wait()
+            await asyncio.sleep(.8)
+            if payload['prompt'] == 'fail-image':
+                return httpx.Response(500, json={'error': {'message': 'Fixture image generation failed'}})
+            output = BytesIO()
+            Image.new('RGB', (640, 480), '#4e8db0').save(output, 'PNG')
+            return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(output.getvalue()).decode()}]})
         if not request.url.path.endswith("/chat/completions"):
             return await super().handle(request)
         data = json.loads(request.content)
@@ -63,7 +76,12 @@ class PresentationOpenAI(ToolOpenAI):
             command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
-        if "qq-limit-fixture" in command:
+        if "qq-image-" in command:
+            prompt = 'hold-image' if 'qq-image-hold-fixture' in command else 'fail-image' if 'qq-image-failure-fixture' in command else 'Browser generated image'
+            chunks = [{'tool_calls': [{'index': 0, **tool_call('qq_generate_image', {'prompt': prompt})}]}] if not outputs else [
+                {'tool_calls': [{'index': 0, **tool_call('qq_send_message', {'text': 'Image generation failed; here is a text reply.'}, 'text_reply')}]}]
+            stream = FixtureStream(chunks, 'tool_calls', delay=.01)
+        elif "qq-limit-fixture" in command:
             calls = [{"index": index, **tool_call("qq_send_message", {"text": f"Limited QQ reply {index + 1}"}, f"call_{index}")}
                      for index in range(21)]
             stream = FixtureStream([{"tool_calls": calls}], "tool_calls", delay=.01)

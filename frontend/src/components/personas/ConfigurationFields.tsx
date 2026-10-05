@@ -37,7 +37,7 @@ export function PersonaAvatar({ name, attachmentId }: { name: string; attachment
   );
 }
 
-type ModelSelectProps = { profiles: ModelProfile[]; value: string | null; onChange: (id: string) => void; inheritLabel?: string; label?: string };
+type ModelSelectProps = { profiles: ModelProfile[]; value: string | null; onChange: (id: string) => void; inheritLabel?: string; label?: string; kind?: ModelProfile['kind'] };
 
 export function ModelSelect({
   profiles,
@@ -47,9 +47,10 @@ export function ModelSelect({
   className,
   inheritLabel,
   label,
+  kind = 'llm',
 }: ModelSelectProps & { disabled?: boolean; className?: string }) {
   const { t } = useTranslation('personas');
-  const options = profiles.filter((p) => p.kind === 'llm');
+  const options = profiles.filter((p) => p.kind === kind);
   const selected = options.find((p) => p.id === value);
   const available = options.some((p) => p.enabled);
   const emptyLabel = inheritLabel || t(available ? 'selectModel' : 'noModels');

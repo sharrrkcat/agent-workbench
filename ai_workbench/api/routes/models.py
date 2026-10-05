@@ -160,9 +160,12 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
     references.extend(state.chat_service.saved_model_id(s) for s in state.sessions.list_sessions())
     references.extend(project.model_profile_id for project in state.projects.list())
     references.extend(project.image_description_model_profile_id for project in state.projects.list() if project.kind == "qqbot")
+    references.extend(project.image_generation_model_profile_id for project in state.projects.list() if project.kind == "qqbot")
     references.extend(state.runs.get_config_snapshot(r.run_id).get("model_profile_id")
         for r in state.runs.unfinished_runs())
     references.extend(state.runs.get_config_snapshot(r.run_id).get("qq_image_description_model_profile_id")
+        for r in state.runs.unfinished_runs())
+    references.extend(state.runs.get_config_snapshot(r.run_id).get("qq_image_generation_model_profile_id")
         for r in state.runs.unfinished_runs())
     references.extend(b.embedding_model_profile_id for b in state.knowledge.list_knowledge_bases())
     if profile_id in references:

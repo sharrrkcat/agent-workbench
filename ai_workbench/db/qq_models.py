@@ -1,5 +1,5 @@
 """Durable QQ ingress, batching and delivery records."""
-from sqlalchemy import UniqueConstraint, Index, false
+from sqlalchemy import UniqueConstraint, ForeignKeyConstraint, Index, false
 from sqlmodel import SQLModel, Field
 from pydantic import PrivateAttr
 from ai_workbench.core.schema.qq import QQImageAttachment, QQMediaSource, participant_epochs
@@ -122,7 +122,8 @@ class QQMedia(SQLModel, table=True):
 class QQDelivery(SQLModel, table=True):
     __tablename__ = "qq_deliveries"
     __table_args__ = (UniqueConstraint("run_id", "tool_call_id"),
-        Index("ix_qq_delivery_external", "session_id", "external_id"))
+        Index("ix_qq_delivery_external", "session_id", "external_id"),
+        ForeignKeyConstraint(["asset_id"], ["qq_media_assets.id"], name="fk_qq_delivery_asset"))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)
     run_id: str = Field(index=True)
@@ -134,3 +135,6 @@ class QQDelivery(SQLModel, table=True):
     created_at: float
     echoed: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
     deleted: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
+    kind: str = Field(default="text", sa_column_kwargs={"server_default": "text"})
+    prompt: str | None = None
+    asset_id: int | None = Field(default=None, index=True)

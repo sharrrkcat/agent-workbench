@@ -16,6 +16,7 @@ import { qqApi } from '../../api/qq';
 import type { Project, QQBotProject, QQBotInput } from '../../types/projects';
 import { ContextFields, GenerationFields, ModelField, ModelSelect } from '../personas/ConfigurationFields';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
+import { QQImageGenerationFields } from './QQImageGenerationFields';
 
 export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput {
   if (project) {
@@ -26,6 +27,7 @@ export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput 
     connection_enabled: false, agent_persona_id: null, system_prompt: defaultPrompt, model_profile_id: null,
     temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20, reply_message_limit: 4, image_input_enabled: false,
     image_description_model_profile_id: null,
+    image_generation_model_profile_id: null, image_generation_options: { size: null, quality: null, style: null },
     context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'none' } };
 }
 
@@ -120,6 +122,7 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
           inheritLabel={t('qq.noDescriptionModel')} onChange={(value) => update({ image_description_model_profile_id: value || null })} />
         <FieldDescription>{t('qq.imageDescriptionHint')}</FieldDescription>
       </Field>
+      <QQImageGenerationFields value={draft} onChange={update} />
       <ContextFields showAttachments={false} value={draft.context_policy} onChange={(context_policy) => update({ context_policy: { ...context_policy, include_attachments: 'none' } })} />
       <GenerationFields value={{ temperature: draft.temperature }} onChange={(v) => update({ temperature: v.temperature ?? null })} />
       <Field><FieldDescription>{t('qq.harnessHint')}</FieldDescription></Field>

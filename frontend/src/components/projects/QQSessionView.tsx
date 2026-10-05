@@ -30,7 +30,7 @@ import { useCogitaStore } from '../../store/useCogitaStore';
 import { terminal } from '../../store/cogita/mergeState';
 import { buildQQConversation } from './qqConversation';
 import { useQQConversation } from './useQQConversation';
-import { QQMessageContent } from './QQMessageContent';
+import { QQMessageContent, QQDeliveryContent } from './QQMessageContent';
 
 export function QQSessionView({ session }: { session: QQSession }) {
   return <MessageScrollerProvider autoScroll scrollEdgeThreshold={32}>
@@ -165,7 +165,7 @@ function QQOutgoing({ delivery, personaId, deleteAction }: { delivery: QQDeliver
   return <div data-qq-delivery={delivery.id}>
     <MessageFrame role="assistant" name={identity.name} createdAt={new Date(delivery.created_at * 1000).toISOString()} showIdentity={false} showTime={false}>
       <div className="flex min-w-0 items-center gap-1" data-qq-bubble-row>
-        <Bubble variant="secondary"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><div className="message">{delivery.text}</div></BubbleContent></Bubble>
+        <Bubble variant="secondary"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><QQDeliveryContent delivery={delivery} /></BubbleContent></Bubble>
         <QQStatus status={delivery.status} detail={detail} />
         <QQDeleteButton action={deleteAction} />
       </div>

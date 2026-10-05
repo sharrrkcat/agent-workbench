@@ -41,6 +41,7 @@ model loop. Invalid direct requests fail before creating a run.
 | knowledge_search | query, knowledge_base_ids?, top_k?, max_context_chars? | Automatic |
 | base64_encode / base64_decode | value | Automatic |
 | qq_send_message | text (1..4000 characters, nonblank) | Automatic, QQBot model runs only |
+| qq_generate_image | prompt (1..32000 characters, nonblank) | Automatic, configured QQBot model runs only |
 | qq_skip_reply | Empty object | Automatic, unanswered QQ group follow-up runs only |
 
 File paths are relative to the application root and restricted to `data/knowledge`
@@ -74,10 +75,10 @@ account mismatch and connection failure without exposing tokens. Wire messages a
 Malformed bound messages are ignored with a content-free diagnostic. Duplicate external ids within a bound conversation
 are ignored without resetting debounce. Bot echoes never enter batches; known external ids mark confirmed delivery records echoed.
 
-QQ runs always enable Harness. Keyword/private batches expose only qq_send_message; unanswered follow-up batches also expose qq_skip_reply.
-Both tools are absent from the general catalog/default selections, reject ordinary/Workspace allowlists and direct calls,
+QQ runs always enable Harness. Batches expose qq_send_message and, when configured, qq_generate_image; unanswered follow-up batches also expose qq_skip_reply.
+QQ tools are absent from the general catalog/default selections, reject ordinary/Workspace allowlists and direct calls,
 and require server-owned session, active batch/run and tool-call ids. The destination comes solely from the immutable Session binding.
-One send invocation delivers one plain-text OneBot segment; CQ-looking content remains literal.
+One text send delivers one plain-text OneBot segment; CQ-looking content remains literal. One image call generates and immediately sends one separate OneBot image segment with base64 bytes, using only the immutable destination binding.
 Every batch's first model call uses tool_choice=required; subsequent calls use auto. Model requests and queued execution share the same tool permissions.
 Each call appends one qq_runtime system block: snapshotted target/bot identity, batch id/trigger kind and live confirmed-send count/limit.
 It distinguishes mandatory replies from optional follow-ups, excludes historical sends from the count and treats transcript names/text as data. Project prompts remain separate.
@@ -89,7 +90,7 @@ Unsupported tools fail without ordinary-chat fallback. Final model prose remains
 or a legitimate skip fails the run/batch with QQ_REPLY_REQUIRED and pauses the Session. Provider rejection/ignored tool choice is not retried or downgraded.
 
 The Project reply_message_limit defaults to 4 (strict integer, 1..20), distinct from the incoming batch limit.
-Execution snapshots it with the configuration. Only successful qq_send_message results increment the run's
+Execution snapshots it with the configuration. Only confirmed qq_send_message/qq_generate_image results increment the run's
 private qq_sent_count; failed/unknown sends, validation errors and other tools do not count. Reaching the limit
 completes the run and batch without pausing or another model call. Remaining calls already emitted by the model
 receive rejected results with QQ_REPLY_LIMIT_REACHED and skipped steps, without creating delivery intents.
@@ -101,11 +102,13 @@ Project configuration resolves when execution starts, before asynchronous media 
 After deduplicated ingress, four background media acquisitions run independently of the WebSocket reader and preserve stored segment order. They use reported HTTP(S) URLs, then get_image for a downloadable URL when needed; remote filesystem paths are never read locally. Public-network policy, download byte limits and image decoding guard this boundary. QFace 1.4.1 supplies the bundled system-face mapping with its MIT notice; unknown IDs remain labeled unavailable.
 QQ media occurrences reference shared qq_media_assets, unique by SHA-256 of original PNG/JPEG/WebP/GIF bytes across all QQBot Projects. Resource rows own the original attachment, optional first-frame PNG for GIF/animated WebP/APNG, description and update time. Static images reuse their attachment. An existing resource is attached before decoding; new resources are saved and referenced atomically so competing downloads retain one copy. Ordinary chat attachments do not share this deduplication. With image input enabled, a batch waits at most ten extra seconds for pending pictures/stickers, excluding system faces. Unavailable resources become positional text placeholders; late completion updates display but never sends historical images. Pending acquisition resumes after restart. Deletion releases a resource after its final message reference, protecting files still referenced by other messages or model snapshots; late results cannot recreate deleted records and IDs are not reused.
 QQDescriptionService sends each selected undescribed asset independently through core/models, using only a fixed Chinese description prompt and its static image, with non-streaming output, reasoning off, max_tokens=64, temperature=0 and no tools. Plain text is normalized to one line and at most 20 Unicode characters; empty/structured/tool output is ignored. Concurrent batches share in-flight asset tasks and normal ModelManager admission/timeout limits. Main replies never await descriptions, though shared providers retain their configured concurrency. Writes fill only still-existing, undescribed resources; changes are visible to later contexts. Failure leaves the description empty without pausing chat or borrowing another model; later selected occurrences may retry. Shutdown cancels these in-memory tasks; there is no persistent description queue or history-wide backfill.
+qq_generate_image calls ModelManager.generate_images with n=1 and snapshotted Project size/quality/style overrides. Unset controls and response format inherit the selected image profile. URL results use the existing public-network download policy; URL/base64 images use attachment byte limits and QQ image decoding. Files are staged before dispatch. Only confirmed sends create/reuse a shared SHA-256 asset, linking it with the delivery and historical message in the confirmation transaction; its description becomes the full original prompt, including when an asset already exists. Provider revised_prompt is ignored. Unreferenced staged files are cleaned after normal completion, failure or cancellation; crash leftovers use explicit orphan cleanup.
+Generation, download and preparation failures return QQ_IMAGE_GENERATION_FAILED to the model without consuming a reply slot or pausing, so the model may send text or invoke generation again. There is no automatic retry. Missing mandatory replies and normal loop limits still fail. A sending failure or uncertain receipt retains the existing terminal delivery policy; restart never regenerates or resends. Project execution remains serial while generation awaits its provider, with ingestion and Stop available.
 Delivery intents persist before dispatch, unique by run/tool-call id, with pending/sending/sent/failed/unknown states.
 Successful confirmation and its historical assistant message commit atomically; later failures preserve earlier sends.
 OneBot rejection is failed; disconnect, timeout, cancellation during sending or an invalid receipt is unknown.
 Delivery errors terminate the current run and pause the Session before another send. No automatic resend or regeneration occurs.
-Generation failures also pause. `/api/qq/sessions/{id}/control` pause prevents new execution while ingestion/batching continue;
+Main reply-model failures also pause. `/api/qq/sessions/{id}/control` pause prevents new execution while ingestion/batching continue;
 stop additionally cancels active work. Resume requires idle state and selects untouched queued batches only.
 Failed, cancelled and interrupted batches never replay. Disabling a connection stops ingress/dispatch and blocks later sends.
 Restart retains queues, window membership/policy and absolute participant expiries, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
@@ -121,7 +124,7 @@ reconnect backfill, real media/model round trips, manual sends, memory/resources
 
 One run can execute eight tool-producing rounds, followed by a final model
 answer. A further tool round fails with `TOOL_LOOP_LIMIT`. Each tool has a
-30-second timeout; the harness has five minutes of cumulative active time.
+30-second timeout; the harness has five minutes of cumulative active time. The QQ image-generation tool is exempt from both counters: provider queue/request, download and OneBot delivery retain their own timeouts and cancellation, while other model/tool work keeps the shared budgets.
 Waiting for approval consumes no active time and holds no model lease.
 QQ's send limit can complete a run earlier and does not increase these shared limits.
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ai_workbench.core.json_data import validate_json_data
-from ai_workbench.core.models.schema import ToolCall
+from ai_workbench.core.models.schema import ToolCall, ImageGenerationControls
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 from ai_workbench.core.schema.qq import QQTriggerKind
@@ -58,6 +58,8 @@ class ToolExecutionContext:
     tool_call_id: str | None = None
     knowledge_base_ids: list[str] | None = None
     harness_settings: HarnessSettings | None = None
+    qq_image_generation_model_profile_id: str | None = None
+    qq_image_generation_options: ImageGenerationControls | None = None
 
 
 class ToolCallInput(BaseModel):

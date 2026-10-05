@@ -243,9 +243,9 @@ Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
 Choose New QQBot, enter an independently installed NapCat OneBot v11 WebSocket endpoint and bot account,
 select an external LLM, then enable the connection. Bind each group/friend manually through New session.
 Group keywords (including configured @QQ ids) grant 60-second follow-up eligibility; participants extend a five-second quiet window. Follow-up batches may explicitly skip; private messages require replies. Sessions show delivery/skip/run details, pause/resume/stop and idle local deletion to clean future context without recalling QQ messages. Only the QQ send tool
-publishes replies. [Chat/context](docs/contracts/chat-context.md#qqbot-conversations) owns settings;
+publishes text; optional qq_generate_image sends one image and shares the reply limit. Select an external image generation model in Project settings, with optional size/quality/style overrides. Long generation uses the Provider request timeout; increase it there when needed. [Chat/context](docs/contracts/chat-context.md#qqbot-conversations) owns settings;
 [QQ boundaries](docs/FUTURE_QQ_INTEGRATION.md) owns exclusions and outstanding live acceptance.
-Bilingual desktop/touch verification: `npm run test:browser -- qqbot.spec.ts` after building frontend assets.
+Bilingual desktop/touch verification: `npm run test:browser -- qqbot.spec.ts qqbot-generation.spec.ts` after building frontend assets.
 
 ## HTTP contract
 

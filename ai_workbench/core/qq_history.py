@@ -31,6 +31,8 @@ class QQHistory:
         self.state.qq.assert_idle(session_id)
         change = QQHistoryPruned(history_version=self.state.sessions.get_session(session_id).history_version + 1)
         attachments = self.store.media_attachment_ids(message_id=message_id) if message_id is not None else set()
+        if delivery_id is not None or run_id is not None:
+            attachments.update(self.store.delivery_attachment_ids(delivery_id=delivery_id, run_id=run_id))
         if run_id is not None:
             attachments.update(self.state.runs.context_attachment_ids({run_id}))
         updated = None

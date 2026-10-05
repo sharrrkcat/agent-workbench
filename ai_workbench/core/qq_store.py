@@ -196,18 +196,50 @@ class QQStore:
             if only_if_empty:
                 query = query.where(QQMediaAsset.description.is_(None) | (QQMediaAsset.description == ""))
             changed = db.exec(query.values(description=description, updated_at=utc_now())).rowcount
-            sessions = set(db.exec(select(QQMessage.session_id).join(QQMedia, QQMedia.message_id == QQMessage.id)
-                .where(QQMedia.asset_id == asset_id, QQMessage.deleted == False)).all()) if changed else set()
-            if hasattr(self.sessions, "engine"):
-                from ai_workbench.db.models import SessionRecord
-                db.exec(update(SessionRecord).where(SessionRecord.session_id.in_(sessions))
-                    .values(history_version=SessionRecord.history_version + 1))
+            sessions = self._asset_sessions(db, asset_id) if changed else set()
+            self._advance_history(db, sessions)
             db.commit()
-            if not hasattr(self.sessions, "engine"):
-                for session_id in sessions:
-                    current = self.sessions.get_session(session_id)
-                    self.sessions.update_session(session_id, {"history_version": current.history_version + 1})
             return sessions
+
+    @staticmethod
+    def _asset_sessions(db, asset_id):
+        incoming = select(QQMessage.session_id).join(QQMedia, QQMedia.message_id == QQMessage.id).where(
+            QQMedia.asset_id == asset_id, QQMessage.deleted == False)
+        outgoing = select(QQDelivery.session_id).where(QQDelivery.asset_id == asset_id, QQDelivery.deleted == False)
+        return set(db.exec(incoming).all()) | set(db.exec(outgoing).all())
+
+    def _advance_history(self, db, sessions):
+        if hasattr(self.sessions, "engine"):
+            from ai_workbench.db.models import SessionRecord
+            db.exec(update(SessionRecord).where(SessionRecord.session_id.in_(sessions))
+                .values(history_version=SessionRecord.history_version + 1))
+        else:
+            for session_id in sessions:
+                current = self.sessions.get_session(session_id)
+                self.sessions.update_session(session_id, {"history_version": current.history_version + 1})
+
+    def confirm_generated_asset(self, db, candidate, prompt, session_id):
+        asset = db.exec(select(QQMediaAsset).where(QQMediaAsset.sha256 == candidate.sha256)).first()
+        if asset is None:
+            asset = QQMediaAsset(**candidate.model_dump())
+        asset.description, asset.updated_at = prompt, utc_now()
+        db.add(asset)
+        db.flush()
+        self._advance_history(db, self._asset_sessions(db, asset.id) | {session_id})
+        return asset.id
+
+    def delivery_assets(self, asset_ids):
+        with Session(self.engine) as db:
+            return {row.id: row for row in db.exec(select(QQMediaAsset).where(QQMediaAsset.id.in_(asset_ids))).all()}
+
+    def delivery_attachment_ids(self, *, session_id=None, delivery_id=None, run_id=None):
+        with Session(self.engine) as db:
+            query = select(QQMediaAsset.attachment_json, QQMediaAsset.model_attachment_json).join(QQDelivery,
+                QQDelivery.asset_id == QQMediaAsset.id)
+            for field, value in ((QQDelivery.session_id, session_id), (QQDelivery.id, delivery_id), (QQDelivery.run_id, run_id)):
+                if value is not None:
+                    query = query.where(field == value)
+            return {json.loads(value)["id"] for row in db.exec(query) for value in row if value}
 
     def release_unused_assets(self, attachment_ids):
         if not attachment_ids:
@@ -218,8 +250,10 @@ class QQStore:
                 | func.json_extract(QQMediaAsset.model_attachment_json, "$.id").in_(attachment_ids))
             db.exec(delete(QQMedia).where(QQMedia.asset_id.in_(candidates),
                 QQMedia.message_id.in_(select(QQMessage.id).where(QQMessage.deleted == True))))
+            db.exec(update(QQDelivery).where(QQDelivery.asset_id.in_(candidates), QQDelivery.deleted == True).values(asset_id=None))
             assets = db.exec(select(QQMediaAsset).where(QQMediaAsset.id.in_(candidates), ~QQMediaAsset.id.in_(select(QQMedia.asset_id)
-                .where(QQMedia.asset_id.is_not(None))))).all()
+                .where(QQMedia.asset_id.is_not(None))), ~QQMediaAsset.id.in_(select(QQDelivery.asset_id)
+                .where(QQDelivery.asset_id.is_not(None))))).all()
             attachments = {json.loads(value)["id"] for asset in assets
                 for value in (asset.attachment_json, asset.model_attachment_json) if value}
             for asset in assets:
@@ -235,7 +269,10 @@ class QQStore:
                 query = query.where(QQMessage.session_id == session_id)
             if message_id is not None:
                 query = query.where(QQMessage.id == message_id)
-            return {json.loads(value)["id"] for row in db.exec(query) for value in row if value}
+            result = {json.loads(value)["id"] for row in db.exec(query) for value in row if value}
+        if message_id is None:
+            result.update(self.delivery_attachment_ids(session_id=session_id))
+        return result
 
     def referenced_attachments(self, names):
         with Session(self.engine) as db:
@@ -244,6 +281,8 @@ class QQStore:
             rows = db.exec(select(original, model).join(QQMedia, QQMedia.asset_id == QQMediaAsset.id)
                 .join(QQMessage, QQMedia.message_id == QQMessage.id).where(
                 QQMessage.deleted == False, original.in_(names) | model.in_(names))).all()
+            rows += db.exec(select(original, model).join(QQDelivery, QQDelivery.asset_id == QQMediaAsset.id).where(
+                QQDelivery.deleted == False, original.in_(names) | model.in_(names))).all()
             return {value for row in rows for value in row if value in names}
 
     def save_references(self, rows):

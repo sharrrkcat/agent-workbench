@@ -5,7 +5,7 @@ from ai_workbench.api.deps import get_state, RuntimeState
 from ai_workbench.api.schemas.common import ApiModel, public_model, error_responses
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.qq_history import QQHistoryPruned
-from ai_workbench.core.schema.qq import QQTriggerKind, QQSegment
+from ai_workbench.core.schema.qq import QQTriggerKind, QQSegment, QQImageAttachment
 from ai_workbench.core.qq_segments import public_segments
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
@@ -31,6 +31,8 @@ BatchResponse = public_model("QQBatchResponse", QQBatch, omit={"participants_jso
 })
 DeliveryResponse = public_model("QQDeliveryResponse", QQDelivery, omit={"deleted"}, fields={"id": (int, ...),
     "status": (Literal["pending", "sending", "sent", "failed", "unknown"], ...),
+    "kind": (Literal["text", "generated_image"], ...),
+    "attachment": (QQImageAttachment | None, ...), "description": (str | None, ...),
 })
 
 
@@ -130,7 +132,13 @@ async def batches(session_id: str, before: int | None = Query(None, ge=1), limit
 async def deliveries(session_id: str, before: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
                state: RuntimeState = Depends(get_state)):
     binding(state, session_id)
-    return transcript_page(state, QQDelivery, session_id, before, limit)
+    page = transcript_page(state, QQDelivery, session_id, before, limit)
+    assets = state.qq.store.delivery_assets({row["asset_id"] for row in page["items"] if row["asset_id"] is not None})
+    for row in page["items"]:
+        asset = assets.get(row["asset_id"])
+        row["attachment"] = asset.attachment.model_dump() if asset is not None else None
+        row["description"] = asset.description if asset is not None else None
+    return page
 
 
 @router.delete("/sessions/{session_id}/messages/{message_id}", response_model=QQHistoryPruned,

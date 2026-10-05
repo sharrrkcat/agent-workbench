@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pydantic import Field, field_serializer, field_validator
 
-from ai_workbench.core.models.schema import GenerationParameters, StrictModel
+from ai_workbench.core.models.schema import GenerationParameters, StrictModel, ImageGenerationControls
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.time import isoformat_utc, utc_now
@@ -99,6 +99,8 @@ class ResolvedChatConfig(StrictModel):
     qq_target_kind: Literal["group", "friend"] | None = None
     qq_target_id: str | None = None
     qq_image_description_model_profile_id: str | None = None
+    qq_image_generation_model_profile_id: str | None = None
+    qq_image_generation_options: ImageGenerationControls = Field(default_factory=ImageGenerationControls)
 
     def public_summary(self) -> dict:
         return self.model_dump(mode="json", exclude={"system_prompt", "project_system_prompt", "user_persona_prompt",

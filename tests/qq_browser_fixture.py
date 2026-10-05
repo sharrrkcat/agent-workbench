@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from typing import Literal
 from io import BytesIO
+import asyncio
 import time
 
 from PIL import Image
@@ -84,15 +85,17 @@ def install_qq_fixture(app):
             return {"message_id": receipt}
         state.projects.save(project.model_copy(update={"connection_enabled": True}))
         state.qq.connections[project.id] = SimpleNamespace(ready=True, call=send)
+        state.qq.workers[project.id] = asyncio.current_task()
         try:
             await state.qq.execute(batch)
         finally:
             state.projects.save(project)
             state.qq.connections.pop(project.id)
+            state.qq.workers.pop(project.id)
         return {"batch_id": batch.id, "run_id": batch.run_id}
 
     @app.post("/__test__/qq/{session_id}/reply/{mode}")
-    async def reply(session_id: str, mode: Literal["limit", "missing", "skip"]):
+    async def reply(session_id: str, mode: Literal["limit", "missing", "skip", "image-generated", "image-failure", "image-hold"]):
         session = state.sessions.get_session(session_id)
         project = state.projects.get(session.project_id)
         now = time.time()

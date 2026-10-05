@@ -4,7 +4,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
-QQ_TOOLS = ("qq_send_message", "qq_skip_reply")
+QQ_SEND_TOOLS = ("qq_send_message", "qq_generate_image")
+QQ_TOOLS = (*QQ_SEND_TOOLS, "qq_skip_reply")
 QQTriggerKind = Literal["keyword", "followup", "private"]
 participant_epochs = TypeAdapter(dict[str, int], config=ConfigDict(strict=True))
 

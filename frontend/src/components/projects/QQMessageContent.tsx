@@ -2,22 +2,41 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { API_BASE_URL, resolveAttachmentUrlFromBase } from '../../api/url';
-import type { QQImageSegment, QQSegment } from '../../api/qq';
+import type { QQImageSegment, QQSegment, QQDelivery } from '../../api/qq';
 import { ImagePreview } from '../messages/ImagePreview';
 
 function QQImage({ segment, onPreview }: { segment: QQImageSegment; onPreview: (mediaId: number) => void }) {
   const { t } = useTranslation('personas');
-  const [failed, setFailed] = useState(false);
   const name = segment.description || (segment.kind === 'face' ? segment.label : t(segment.kind === 'sticker' ? 'qq.sticker' : 'image'));
   const attachment = segment.attachment;
-  if (segment.status !== 'ready' || !attachment || failed) return <span className="text-muted-foreground" data-qq-media-state={segment.status === 'pending' ? 'pending' : 'failed'}>
+  if (segment.status !== 'ready' || !attachment) return <span className="text-muted-foreground" data-qq-media-state={segment.status === 'pending' ? 'pending' : 'failed'}>
     {t(segment.status === 'pending' ? 'qq.mediaPending' : 'qq.mediaFailed', { name })}
   </span>;
+  return <QQImageButton attachment={attachment} name={name} kind={segment.kind} onPreview={() => onPreview(segment.media_id)} />;
+}
+
+function QQImageButton({ attachment, name, kind, onPreview }: {
+  attachment: NonNullable<QQImageSegment['attachment']>; name: string; kind: QQImageSegment['kind']; onPreview: () => void;
+}) {
+  const { t } = useTranslation('personas');
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="text-muted-foreground" data-qq-media-state="failed">{t('qq.mediaFailed', { name })}</span>;
   const src = resolveAttachmentUrlFromBase(API_BASE_URL, attachment.uri);
-  return <Button type="button" variant="ghost" className="qq-image-button" data-qq-media-kind={segment.kind}
-    aria-label={t('previewImage', { name })} onClick={() => onPreview(segment.media_id)}>
+  return <Button type="button" variant="ghost" className="qq-image-button" data-qq-media-kind={kind}
+    aria-label={t('previewImage', { name })} onClick={onPreview}>
     <img src={src} alt={name} width={attachment.width} height={attachment.height} loading="lazy" onError={() => setFailed(true)} />
   </Button>;
+}
+
+export function QQDeliveryContent({ delivery }: { delivery: QQDelivery }) {
+  const [open, setOpen] = useState(false);
+  const attachment = delivery.attachment;
+  if (delivery.kind !== 'generated_image' || !attachment) return <div className="message">{delivery.text}</div>;
+  const name = delivery.description || delivery.prompt || delivery.text;
+  return <div className="message qq-message-content">
+    <QQImageButton key={attachment.id} attachment={attachment} name={name} kind="image" onPreview={() => setOpen(true)} />
+    <ImagePreview image={open ? { src: resolveAttachmentUrlFromBase(API_BASE_URL, attachment.uri), name } : null} onClose={() => setOpen(false)} />
+  </div>;
 }
 
 export function QQMessageContent({ segments }: { segments: QQSegment[] }) {

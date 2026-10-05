@@ -1,5 +1,6 @@
 """Project-scoped OneBot connections and durable FIFO execution."""
 import asyncio
+import base64
 import logging
 import time
 from websockets.exceptions import InvalidStatus, WebSocketException
@@ -12,6 +13,7 @@ from ai_workbench.core.qq_names import QQNames, model_batch_text
 from ai_workbench.core.qq_history import QQHistory
 from ai_workbench.core.qq_media import QQMediaService
 from ai_workbench.core.qq_descriptions import QQDescriptionService
+from ai_workbench.core.qq_generation import prepare_image
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 log = logging.getLogger(__name__)
@@ -36,6 +38,11 @@ class QQService:
         state.tool_registry.register(ToolSpec("qq_skip_reply", "End this follow-up batch without replying. Available only before sending a reply.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             lambda args, context: self.skip(context), "safe", False, False))
+        state.tool_registry.register(ToolSpec("qq_generate_image",
+            "Generate and immediately send one image to the current QQ conversation. A successful send uses one reply slot. "
+            "Only supply a drawing prompt; size, quality and style come from Project settings. Generation may take a while.",
+            {"type": "object", "properties": {"prompt": {"type": "string", "minLength": 1, "maxLength": 32000, "pattern": r"\S"}},
+             "required": ["prompt"], "additionalProperties": False}, lambda args, context: self.generate_image(args, context), "network", False, False))
 
     def start(self):
         self.supervisor = asyncio.create_task(self.run())
@@ -197,16 +204,39 @@ class QQService:
         return {"status": "skipped"}
 
     async def send(self, arguments, context):
-        session, batch = self.tool_batch(context)
         if not arguments["text"].strip():
             raise ToolExecutionError("TOOL_INVALID_ARGUMENTS", "Message cannot be blank.")
+        return await self.deliver(arguments["text"], context)
+
+    async def generate_image(self, arguments, context):
+        self.tool_batch(context)
+        if context.qq_image_generation_model_profile_id is None:
+            raise ToolExecutionError("TOOL_NOT_ALLOWED", "Image generation is disabled for this QQBot run.")
         existing = self.store.delivery(context.run_id, context.tool_call_id)
         if existing:
-            if existing.status == "sent":
-                return {"delivery_id": existing.id, "message_id": existing.external_id, "status": "sent"}
+            return self.delivery_receipt(existing)
+        prepared = await prepare_image(self.state, arguments["prompt"], context)
+        try:
+            return await self.deliver(f"[生成的图片:{arguments['prompt']}]", context,
+                prompt=arguments["prompt"], image=prepared)
+        finally:
+            self.media.cleanup(prepared.attachment_ids)
+
+    @staticmethod
+    def delivery_receipt(delivery):
+        if delivery.status != "sent":
             raise ToolExecutionError("QQ_DELIVERY_NOT_REPLAYABLE", "A previous send must not be replayed.")
+        return {"delivery_id": delivery.id, "message_id": delivery.external_id, "status": "sent",
+            **({"content": delivery.text} if delivery.kind == "generated_image" else {})}
+
+    async def deliver(self, text, context, *, prompt=None, image=None):
+        session, batch = self.tool_batch(context)
+        existing = self.store.delivery(context.run_id, context.tool_call_id)
+        if existing:
+            return self.delivery_receipt(existing)
         delivery = self.store.save(QQDelivery(session_id=session.session_id, run_id=context.run_id,
-            tool_call_id=context.tool_call_id, text=arguments["text"], created_at=time.time()))
+            tool_call_id=context.tool_call_id, text=text, created_at=time.time(),
+            kind="generated_image" if image is not None else "text", prompt=prompt))
         connection = self.connections.get(session.project_id)
         try:
             if connection is None or not connection.ready:
@@ -217,13 +247,18 @@ class QQService:
             self.store.save(delivery)
             action = "send_group_msg" if session.target_kind == "group" else "send_private_msg"
             target = "group_id" if session.target_kind == "group" else "user_id"
+            segment = ({"type": "image", "data": {"file": "base64://" + base64.b64encode(image.data).decode("ascii")}}
+                if image is not None else {"type": "text", "data": {"text": text}})
             result = await connection.call(action, {target: int(session.target_id),
-                "message": [{"type": "text", "data": {"text": arguments["text"]}}]})
+                "message": [segment]})
             if not isinstance(result.get("message_id"), (str, int)):
                 raise ValueError("Missing message id")
             delivery.external_id, delivery.status = str(result["message_id"]), "sent"
             # Persist confirmation and its historical reply in one SQLite transaction.
             with DbSession(self.store.engine) as db:
+                db.connection().exec_driver_sql("BEGIN IMMEDIATE")
+                if image is not None:
+                    delivery.asset_id = self.store.confirm_generated_asset(db, image.asset, prompt, session.session_id)
                 transaction = {"transaction": db} if getattr(self.state.messages, "engine", None) is not None else {}
                 message = self.state.messages.add_message(session.session_id, role="assistant", content=delivery.text,
                     speaker_id=self.state.runs.get_run(context.run_id).persona_id, run_id=context.run_id,
@@ -234,7 +269,7 @@ class QQService:
                 db.refresh(delivery)
             self.state.events.emit("message_completed", session_id=session.session_id, run_id=context.run_id,
                 message_id=message.message_id, payload={"message": message.model_dump(mode="json")})
-            return {"delivery_id": delivery.id, "message_id": delivery.external_id, "status": "sent"}
+            return self.delivery_receipt(delivery)
         except ToolExecutionError as exc:
             delivery.status, delivery.error_code = "failed", exc.code
             self.store.save(delivery)

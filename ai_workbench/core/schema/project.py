@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pydantic import Field, StrictBool, TypeAdapter, field_serializer, field_validator
 
-from ai_workbench.core.models.schema import StrictModel
+from ai_workbench.core.models.schema import StrictModel, ImageGenerationControls
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.core.session import ChatSettings
@@ -52,7 +52,10 @@ class TimelineInput(ProjectInput):
 QQ_DEFAULT_PROMPT = (
     "Participate naturally in the current QQ conversation. Stay on the latest topic and reply briefly in the other "
     "participants' language. Usually finish in one message; add another only when necessary. Follow the selected "
-    "persona when present; otherwise be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others."
+    "persona when present; otherwise be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others. "
+    "Send text with qq_send_message. When an image is useful and qq_generate_image is available, call it with only a "
+    "drawing prompt; it generates and sends one image automatically, using one reply slot. Do not send its link or "
+    "repeat a delivery announcement. If image generation fails, you may reply with text or try another prompt."
 )
 
 
@@ -64,6 +67,8 @@ class QQBotInput(ProjectInput):
     connection_enabled: StrictBool = False
     image_input_enabled: StrictBool = False
     image_description_model_profile_id: str | None = None
+    image_generation_model_profile_id: str | None = None
+    image_generation_options: ImageGenerationControls = Field(default_factory=ImageGenerationControls)
     agent_persona_id: str | None = None
     system_prompt: str = Field(default=QQ_DEFAULT_PROMPT, max_length=100000)
     reasoning: StrictBool = True

@@ -94,6 +94,8 @@ class ChatService:
             session.overrides.persona_id or self.workspace(session.project_id).agent_persona_id)
 
     def saved_model_id(self, session: Session) -> str | None:
+        if session.kind == "qqbot":
+            return None
         return session.model_profile_id if session.kind == "ordinary" else session.overrides.model_profile_id
 
     def validate_session(self, session: Session) -> None:
@@ -259,7 +261,9 @@ class ChatService:
 
     def tools_for_run(self, config: ResolvedChatConfig) -> list[str]:
         if config.session_kind == "qqbot":
-            return list(QQ_TOOLS) if config.qq_target_kind == "group" else ["qq_send_message"]
+            return [name for name in QQ_TOOLS
+                if (name != "qq_skip_reply" or config.qq_target_kind == "group")
+                and (name != "qq_generate_image" or config.qq_image_generation_model_profile_id is not None)]
         if config.project_id is None:
             return config.tools_allowed
         allowed = self.workspace(config.project_id).tools_allowed
@@ -301,7 +305,11 @@ class ChatService:
                 "include_attachments": "explicit" if project.image_input_enabled else "none"}), context_limits=limits,
             model_profile_id=project.model_profile_id, model_source="project",
             generation=GenerationParameters.model_validate(parameters), reasoning=project.reasoning,
-            harness_enabled=True, tools_allowed=list(QQ_TOOLS) if session.target_kind == "group" else ["qq_send_message"], knowledge_base_ids=[],
+            harness_enabled=True, tools_allowed=[name for name in QQ_TOOLS
+                if (name != "qq_skip_reply" or session.target_kind == "group")
+                and (name != "qq_generate_image" or project.image_generation_model_profile_id is not None)], knowledge_base_ids=[],
             qq_reply_message_limit=project.reply_message_limit, qq_bot_account=project.bot_account,
             qq_target_kind=session.target_kind, qq_target_id=session.target_id,
-            qq_image_description_model_profile_id=project.image_description_model_profile_id)
+            qq_image_description_model_profile_id=project.image_description_model_profile_id,
+            qq_image_generation_model_profile_id=project.image_generation_model_profile_id,
+            qq_image_generation_options=project.image_generation_options)
