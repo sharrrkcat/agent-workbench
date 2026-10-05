@@ -101,6 +101,7 @@
       "empty": "Empty content",
       "attachments_disabled": "Attachments excluded by context policy",
       "images_unsupported": "Images omitted because the model does not support them",
+      "qq_image_unavailable": "QQ image was pending, unavailable or too large for this request",
       "file_text_disabled": "File text disabled; only its marker was sent",
       "file_text_limit": "File text limited by the attachment budget",
       "no_bindings": "No active Knowledge bindings",

@@ -5,7 +5,8 @@ from ai_workbench.api.deps import get_state, RuntimeState
 from ai_workbench.api.schemas.common import ApiModel, public_model, error_responses
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.qq_history import QQHistoryPruned
-from ai_workbench.core.schema.qq import QQTriggerKind
+from ai_workbench.core.schema.qq import QQTriggerKind, QQSegment
+from ai_workbench.core.qq_segments import public_segments
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 router = APIRouter(prefix="/api/qq", tags=["qq"])
@@ -21,7 +22,7 @@ class QQReference(ApiModel):
 
 
 MessageResponse = public_model("QQMessageResponse", QQMessage, omit={"references_json", "deleted"}, fields={
-    "id": (int, ...), "references": (list[QQReference], ...),
+    "id": (int, ...), "references": (list[QQReference], ...), "segments": (list[QQSegment], ...),
     "disposition": (Literal["pending", "batched", "skipped"], ...),
 })
 BatchResponse = public_model("QQBatchResponse", QQBatch, omit={"participants_json"}, fields={"id": (int, ...),
@@ -106,8 +107,11 @@ async def messages(session_id: str, before: int | None = Query(None, ge=1), limi
              state: RuntimeState = Depends(get_state)):
     bound = binding(state, session_id)
     page = transcript_page(state, QQMessage, session_id, before, limit)
+    original_text = {row["id"]: row["text"] for row in page["items"]}
+    media = state.qq.store.message_media(list(original_text))
     await state.qq.names.project(bound, state.projects.get(bound.project_id).bot_account, page["items"])
     for row in page["items"]:
+        row["segments"] = public_segments(original_text[row["id"]], row["references_json"], media[row["id"]])
         row.pop("references_json")
     return page
 

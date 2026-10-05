@@ -597,7 +597,7 @@ def language_for_filename(name: str | None) -> str:
     }.get(suffix, "text")
 
 
-def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None) -> bool:
+def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store: Any, session_id: str | None = None, *, persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None, qq_store: Any = None) -> bool:
     if not isinstance(attachment, dict) or not isinstance(attachment.get("uri"), str):
         return False
     try:
@@ -606,7 +606,7 @@ def delete_attachment_if_unreferenced(attachment: dict[str, Any], message_store:
         return False
     try:
         referenced = referenced_attachment_filenames(message_store, {path.name}, persona_store=persona_store,
-                                                    knowledge_store=knowledge_store, run_store=run_store)
+                                                    knowledge_store=knowledge_store, run_store=run_store, qq_store=qq_store)
     except Exception:
         return False
     if path.name in referenced:
@@ -860,9 +860,9 @@ def message_attachment_filenames(message):
 
 
 def referenced_attachment_filenames(message_store: Any, filenames: set[str], *,
-                                   persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None) -> set[str]:
+                                   persona_store: Any = None, knowledge_store: Any = None, run_store: Any = None, qq_store: Any = None) -> set[str]:
     referenced: set[str] = set()
-    for store in (message_store, persona_store, knowledge_store, run_store):
+    for store in (message_store, persona_store, knowledge_store, run_store, qq_store):
         if store is not None and filenames - referenced:
             referenced.update(store.referenced_attachments(filenames - referenced))
     return referenced

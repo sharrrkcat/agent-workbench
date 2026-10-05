@@ -2,6 +2,10 @@
 import json
 
 from ai_workbench.core.context import ContextBuildResult, message_text
+from ai_workbench.core.attachments import MAX_IMAGE_ATTACHMENT_BYTES, resolve_attachment_uri
+from ai_workbench.core.context_snapshot import snapshot_attachment
+from ai_workbench.core.qq_media import media_label
+from ai_workbench.core.qq_segments import ordered_segments
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 
 
@@ -27,9 +31,60 @@ def runtime_prompt(config, batch_id, sent_count, trigger_kind):
     )
 
 
-def build_qq_context(store, messages, session_id, text, policy, current_message_id):
+def _input_content(store, batch_id, text, policy, source_id, max_image_bytes):
+    trace = ContextTrace()
+    if batch_id is None:
+        return text, trace, len(text)
+    records = store.batch_messages(batch_id)
+    media = store.message_media([row.id for row in records])
+    if not any(media.values()):
+        return text, trace, len(text)
+    parts = []
+
+    def append_text(value):
+        if parts and parts[-1]["type"] == "text":
+            parts[-1]["text"] += value
+        elif value:
+            parts.append({"type": "text", "text": value})
+
+    for index, row in enumerate(records):
+        append_text(("\n" if index else "") + f"[{row.timestamp}][{row.sender_name}（QQ:{row.sender_id}）]:")
+        for part in ordered_segments(row.text, row.references_json, media[row.id], for_model=True):
+            if isinstance(part, str):
+                append_text(part)
+                continue
+            label = media_label(part)
+            if policy.include_attachments == "none":
+                append_text(label)
+                trace.exclusions.append(ContextExclusion(kind="attachment", reason="attachments_disabled",
+                    reference_id=f"qq-media:{part.id}", name=label))
+                continue
+            attachment = part.model_attachment
+            available = part.status == "ready" and attachment is not None and attachment.size <= max_image_bytes
+            if available:
+                try:
+                    available = resolve_attachment_uri(attachment.uri).is_file()
+                except OSError:
+                    available = False
+            if not available:
+                append_text(f"[图片不可用：{label}]")
+                trace.exclusions.append(ContextExclusion(kind="attachment", reason="qq_image_unavailable",
+                    reference_id=f"qq-media:{part.id}", name=label))
+                continue
+            trace.sources.append(ContextSource(id=f"{source_id}:qq-media:{part.id}", kind="attachment",
+                parent_id=source_id, part_index=len(parts), reference_id=f"qq-media:{part.id}",
+                name=label, attachment=snapshot_attachment(attachment.model_dump())))
+            parts.append({"type": "attachment_image", "attachment_id": attachment.id})
+    chars = sum(len(part["text"]) for part in parts if part["type"] == "text")
+    return parts if trace.sources else "".join(part["text"] for part in parts), trace, chars
+
+
+def build_qq_context(store, messages, session_id, text, policy, current_message_id, *, max_image_bytes=MAX_IMAGE_ATTACHMENT_BYTES):
     trace, groups, used = ContextTrace(), [], 0
-    remaining = None if policy.max_chars is None else max(0, policy.max_chars - len(text))
+    current_id = f"message:{current_message_id}"
+    batch_id = messages.get_message(current_message_id).metadata.get("qq_batch_id") if current_message_id else None
+    current, current_trace, current_chars = _input_content(store, batch_id, text, policy, current_id, max_image_bytes)
+    remaining = None if policy.max_chars is None else max(0, policy.max_chars - current_chars)
     if policy.max_messages != 0:
         total = store.history_message_count(session_id, current_message_id)
         for batch, deliveries in store.iter_history(session_id, current_message_id):
@@ -40,7 +95,9 @@ def build_qq_context(store, messages, session_id, text, policy, current_message_
             if policy.max_messages is not None and used + count > policy.max_messages:
                 trace.exclusions.append(ContextExclusion(kind="history", reason="message_limit", count=total - used))
                 break
-            group = [(f"message:{batch.input_message_id}", {"role": "user", "content": input_text})] if input_text else []
+            source_id = f"message:{batch.input_message_id}"
+            content, input_trace, input_chars = _input_content(store, batch.id, input_text, policy, source_id, max_image_bytes)
+            group = [(source_id, {"role": "user", "content": content})] if input_text else []
             for delivery in deliveries:
                 call_id = f"qq_history_{delivery.id}"
                 group.extend([
@@ -51,23 +108,29 @@ def build_qq_context(store, messages, session_id, text, policy, current_message_
                         "content": json.dumps({"status": "sent", "delivery_id": delivery.id,
                             "message_id": delivery.external_id}, ensure_ascii=False)}),
                 ])
-            length = len(input_text) + sum(len(json.dumps(item, ensure_ascii=False)) for _, item in group if item["role"] != "user")
+            length = input_chars + sum(len(json.dumps(item, ensure_ascii=False)) for _, item in group if item["role"] != "user")
             if remaining is not None:
                 if length > remaining:
                     trace.exclusions.append(ContextExclusion(kind="history", reason="character_limit", count=total - used))
                     break
                 remaining -= length
             used += count
-            groups.append((batch.input_message_id, group))
+            groups.append((batch.input_message_id, group, input_trace))
     projected = []
-    for turn_id, group in reversed(groups):
+    for turn_id, group, input_trace in reversed(groups):
         for source_id, item in group:
             trace.sources.append(ContextSource(id=source_id, kind="history", message_index=len(projected),
                 reference_id=turn_id, turn_id=turn_id, role=item["role"], field="message"))
+            if item["role"] == "user":
+                trace.sources.extend(source.model_copy(update={"message_index": len(projected), "turn_id": turn_id})
+                    for source in input_trace.sources)
+                trace.exclusions.extend(input_trace.exclusions)
             projected.append(item)
-    trace.sources.append(ContextSource(id=f"message:{current_message_id}", kind="current_input",
-        message_index=len(projected), reference_id=current_message_id, role="user"))
-    projected.append({"role": "user", "content": text})
+    trace.sources.append(ContextSource(id=current_id, kind="current_input",
+        message_index=len(projected), reference_id=current_message_id, role="user", field="message"))
+    trace.sources.extend(source.model_copy(update={"message_index": len(projected)}) for source in current_trace.sources)
+    trace.exclusions.extend(current_trace.exclusions)
+    projected.append({"role": "user", "content": current})
     warnings = (["Current message exceeds the history character budget; current input is retained."]
-                if policy.max_chars is not None and len(text) > policy.max_chars else [])
+                if policy.max_chars is not None and current_chars > policy.max_chars else [])
     return ContextBuildResult(messages=projected, trace=trace, warnings=warnings)

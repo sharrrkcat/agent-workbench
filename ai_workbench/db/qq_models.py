@@ -1,7 +1,7 @@
 """Durable QQ ingress, batching and delivery records."""
 from sqlalchemy import UniqueConstraint, Index, false
 from sqlmodel import SQLModel, Field
-from ai_workbench.core.schema.qq import participant_epochs
+from ai_workbench.core.schema.qq import QQImageAttachment, QQMediaSource, participant_epochs
 
 
 class QQBinding(SQLModel, table=True):
@@ -62,6 +62,35 @@ class QQBatch(SQLModel, table=True):
     @property
     def participants(self) -> dict[str, int]:
         return participant_epochs.validate_json(self.participants_json)
+
+
+class QQMedia(SQLModel, table=True):
+    __tablename__ = "qq_media"
+    __table_args__ = (UniqueConstraint("message_id", "segment_index"),
+        Index("ix_qq_media_pending", "status", "id"), {"sqlite_autoincrement": True})
+    id: int | None = Field(default=None, primary_key=True)
+    message_id: int = Field(index=True)
+    segment_index: int
+    text_start: int
+    text_end: int
+    kind: str
+    source_json: str
+    status: str = "pending"
+    attachment_json: str | None = None
+    model_attachment_json: str | None = None
+    error_code: str | None = None
+
+    @property
+    def source(self) -> QQMediaSource:
+        return QQMediaSource.model_validate_json(self.source_json)
+
+    @property
+    def attachment(self) -> QQImageAttachment | None:
+        return QQImageAttachment.model_validate_json(self.attachment_json) if self.attachment_json else None
+
+    @property
+    def model_attachment(self) -> QQImageAttachment | None:
+        return QQImageAttachment.model_validate_json(self.model_attachment_json) if self.model_attachment_json else None
 
 
 class QQDelivery(SQLModel, table=True):

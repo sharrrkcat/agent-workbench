@@ -143,6 +143,11 @@
   "maxCharsDescription": "New sessions default to 100,000 characters. Leaving both limits blank may increase memory use with long histories.",
   "newQQBot": "New QQBot",
   "qq": {
+    "imageInputEnabled": "Send images to model",
+    "imageInputHint": "Chat history always saves and displays images. This switch only controls whether images are sent to the model.",
+    "sticker": "Sticker",
+    "mediaPending": "[Loading {{name}}]",
+    "mediaFailed": "[{{name}} unavailable]",
     "account": "Bot QQ account",
     "defaultPrompt": "Participate naturally in the current QQ conversation. Stay on the latest topic and reply briefly in the other participants' language. Usually finish in one message; add another only when necessary. Follow the selected persona when present; otherwise be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others.",
     "botSelf": "Bot account",

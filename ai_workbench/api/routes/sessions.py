@@ -114,9 +114,10 @@ async def delete_session(session_id: str, state: RuntimeState = Depends(get_stat
 
 
 def delete_session_data(state: RuntimeState, session_id: str) -> None:
+    attachments = state.qq.store.media_attachment_ids(session_id=session_id)
     state.qq.store.delete_session(session_id)
     state.sessions.set_waiting_run(session_id, None)
-    attachments = set(state.messages.attachment_filenames(session_id=session_id))
+    attachments.update(state.messages.attachment_filenames(session_id=session_id))
     attachments.update(state.runs.context_attachment_ids(session_id=session_id))
     state.run_events.delete_session(session_id)
     state.runs.delete_session(session_id)
@@ -125,7 +126,7 @@ def delete_session_data(state: RuntimeState, session_id: str) -> None:
         state.knowledge.delete_session_bindings(session_id)
     for attachment_id in attachments:
         delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, state.messages,
-            persona_store=state.personas, knowledge_store=state.knowledge, run_store=state.runs)
+            persona_store=state.personas, knowledge_store=state.knowledge, run_store=state.runs, qq_store=state.qq.store)
     state.sessions.delete_session(session_id)
 
 

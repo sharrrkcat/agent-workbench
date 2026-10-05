@@ -30,6 +30,9 @@ class QQHistory:
         self.state.chat_service.assert_idle(session_id)
         self.state.qq.assert_idle(session_id)
         change = QQHistoryPruned(history_version=self.state.sessions.get_session(session_id).history_version + 1)
+        attachments = self.store.media_attachment_ids(message_id=message_id) if message_id is not None else set()
+        if run_id is not None:
+            attachments.update(self.state.runs.context_attachment_ids({run_id}))
         updated = None
         with Session(self.store.engine) as db:
             if message_id is not None:
@@ -74,6 +77,7 @@ class QQHistory:
                 db.commit()
                 history.prune(session_id, change, updated)
         self.state.events.emit("history_pruned", session_id=session_id, payload=change.model_dump())
+        self.state.qq.media.cleanup(attachments)
         return change
 
     @staticmethod

@@ -20,7 +20,7 @@ def sqlite_database_path(database_url: str | None = None) -> Path | None:
     return Path(value).resolve()
 
 
-def storage_stats(message_store: Any, database_url: str | None = None, *, persona_store=None, knowledge_store=None, run_store=None) -> dict[str, Any]:
+def storage_stats(message_store: Any, database_url: str | None = None, *, persona_store=None, knowledge_store=None, run_store=None, qq_store=None) -> dict[str, Any]:
     warnings: list[str] = []
     db_path = sqlite_database_path(database_url)
     db_size = 0
@@ -33,7 +33,7 @@ def storage_stats(message_store: Any, database_url: str | None = None, *, person
             warnings.append(f"database size unavailable: {exc}")
 
     try:
-        scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store, include_details=False)
+        scan = scan_orphan_attachments(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store, qq_store=qq_store, include_details=False)
         attachment_count = scan["attachment_count"]
         attachment_size = scan["attachment_total_size_bytes"]
         orphan_count = scan["orphan_count"]
@@ -66,19 +66,19 @@ def storage_stats(message_store: Any, database_url: str | None = None, *, person
     return payload
 
 
-def _scanned_files(message_store, *, persona_store, knowledge_store, run_store):
+def _scanned_files(message_store, *, persona_store, knowledge_store, run_store, qq_store):
     files = iter(_attachment_files(attachments_root()))
     while batch := list(islice(files, 128)):
         referenced = referenced_attachment_filenames(message_store, {path.name for path in batch},
-            persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
+            persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store, qq_store=qq_store)
         for path in batch:
             yield path, path.name not in referenced
 
 
-def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None,
+def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None, qq_store=None,
                            include_details: bool = True) -> dict[str, Any]:
     result = {"attachment_count": 0, "attachment_total_size_bytes": 0, "orphan_count": 0, "orphan_size_bytes": 0, "orphans": []}
-    for path, orphan in _scanned_files(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store):
+    for path, orphan in _scanned_files(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store, qq_store=qq_store):
         size = _safe_size(path)
         result["attachment_count"] += 1
         result["attachment_total_size_bytes"] += size
@@ -90,12 +90,12 @@ def scan_orphan_attachments(message_store: Any, *, persona_store=None, knowledge
     return result
 
 
-def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None) -> dict[str, Any]:
+def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowledge_store=None, run_store=None, qq_store=None) -> dict[str, Any]:
     root = attachments_root().resolve()
     deleted_count = 0
     deleted_size = 0
     errors: list[dict[str, str]] = []
-    for path, orphan in _scanned_files(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store):
+    for path, orphan in _scanned_files(message_store, persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store, qq_store=qq_store):
         if not orphan:
             continue
         try:
@@ -108,7 +108,7 @@ def cleanup_orphan_attachments(message_store: Any, *, persona_store=None, knowle
                 continue
             size = path.stat().st_size
             removed = delete_attachment_if_unreferenced({"uri": "local://attachments/" + path.name}, message_store,
-                persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store)
+                persona_store=persona_store, knowledge_store=knowledge_store, run_store=run_store, qq_store=qq_store)
             if removed:
                 deleted_count += 1
                 deleted_size += size

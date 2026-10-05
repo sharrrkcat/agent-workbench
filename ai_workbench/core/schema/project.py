@@ -62,6 +62,7 @@ class QQBotInput(ProjectInput):
     websocket_url: str = Field(max_length=2048)
     access_token: str = Field(default="", max_length=4096, repr=False)
     connection_enabled: StrictBool = False
+    image_input_enabled: StrictBool = False
     agent_persona_id: str | None = None
     system_prompt: str = Field(default=QQ_DEFAULT_PROMPT, max_length=100000)
     reasoning: StrictBool = True

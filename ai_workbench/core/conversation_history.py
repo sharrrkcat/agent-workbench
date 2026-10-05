@@ -48,7 +48,7 @@ class MemoryHistoryStore:
 
 
 class ConversationHistory:
-    def __init__(self, *, store, sessions, messages, runs, events, chat_service, personas) -> None:
+    def __init__(self, *, store, sessions, messages, runs, events, chat_service, personas, qq_store=None) -> None:
         self.store = store
         self.sessions = sessions
         self.messages = messages
@@ -56,6 +56,7 @@ class ConversationHistory:
         self.events = events
         self.chat_service = chat_service
         self.personas = personas
+        self.qq_store = qq_store
 
     def delete_reply(self, run_id: str) -> HistoryPruned:
         run = self.runs.get_run(run_id)
@@ -105,7 +106,7 @@ class ConversationHistory:
         for attachment in original:
             if attachment["id"] not in retained_ids:
                 delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas,
-                                                 knowledge_store=self.chat_service.knowledge, run_store=self.runs)
+                                                 knowledge_store=self.chat_service.knowledge, run_store=self.runs, qq_store=self.qq_store)
         self.events.emit("message_updated", session_id=message.session_id, message_id=message_id,
                          payload={"message": updated.model_dump(mode="json")})
         return updated, change
@@ -133,5 +134,5 @@ class ConversationHistory:
         self.events.emit("history_pruned", session_id=session_id, payload=change.model_dump())
         for attachment_id in snapshot_attachments | attachments:
             delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, self.messages,
-                persona_store=self.personas, knowledge_store=self.chat_service.knowledge, run_store=self.runs)
+                persona_store=self.personas, knowledge_store=self.chat_service.knowledge, run_store=self.runs, qq_store=self.qq_store)
         return change

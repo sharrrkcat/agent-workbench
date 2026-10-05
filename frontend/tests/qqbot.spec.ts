@@ -31,6 +31,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(dialog.getByLabel(labels.model, { exact: true })).toContainText(model.name);
         await expect(dialog.getByLabel(labels.defaultAgentPersona, { exact: true })).toContainText(labels.qq.noPersona);
         await expect(dialog.getByRole('switch', { name: labels.qq.enabled, exact: true })).not.toBeChecked();
+        await expect(dialog.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true })).not.toBeChecked();
         await dialog.getByLabel(labels.qq.keywords, { exact: true }).fill('BOT\nhello');
         await dialog.getByLabel(labels.qq.batchLimit, { exact: true }).fill('3');
         await expect(dialog.getByLabel(labels.qq.replyLimit, { exact: true })).toHaveValue('4');
@@ -46,6 +47,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect(project.access_token).toBeUndefined();
         expect(project.keywords).toEqual(['bot', 'hello']);
         expect(project.reply_message_limit).toBe(3);
+        expect(project.image_input_enabled).toBe(false);
         expect(project.system_prompt).toBe(labels.qq.defaultPrompt);
         await expect(dialog).toBeHidden();
         await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`));
@@ -103,7 +105,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.getByRole('button', { name: chat.loadEarlier, exact: true }).click();
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(65);
         await expect(page.getByRole('button', { name: chat.loadEarlier, exact: true })).toHaveCount(0);
-        await expect(page.getByText('Record 1[图片]', { exact: true })).toBeAttached();
+        await expect(page.getByText('Record 1', { exact: true })).toBeAttached();
+        await expect(page.locator('[data-qq-media-state="pending"]')).toHaveCount(65);
         await expect(page.locator('.message-row.user [data-slot="message-avatar"]')).toHaveCount(1);
         await page.getByRole('button', { name: chat.scrollToEnd, exact: true }).click();
         await expect(page.locator('.message-row.user time')).toHaveCount(1);
@@ -145,7 +148,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           const body = await response.json();
           for (const row of body.items) {
             if (row.external_id === '64') { row.sender_id = '8888'; row.sender_name = 'Second participant'; }
-            if (row.external_id === '65') { row.disposition = 'pending'; row.text = 'QQ long message\n' + '长文本 / long text '.repeat(30); }
+            if (row.external_id === '65') { row.disposition = 'pending'; row.text = 'QQ long message\n' + '长文本 / long text '.repeat(30); row.segments = [{ type: 'text', text: row.text }]; }
           }
           await route.fulfill({ response, json: body });
         });

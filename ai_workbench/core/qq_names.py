@@ -34,18 +34,22 @@ class QQReference(BaseModel):
 references_adapter = TypeAdapter(list[QQReference])
 
 
+def mention_label(ref, *, for_model=False):
+    label = "@全体成员" if ref.id == "all" else "@" + (ref.name or ref.id)
+    if for_model and ref.id != "all":
+        if ref.name:
+            label += f"（QQ:{ref.id}{'，你' if ref.is_self else ''}）"
+        elif ref.is_self:
+            label += "（你）"
+    return label
+
+
 def render_mentions(text, references, *, for_model=False):
     parts, offset = [], 0
     for ref in references:
         if ref.type != "at" or ref.start is None or ref.end is None:
             continue
-        label = "@全体成员" if ref.id == "all" else "@" + (ref.name or ref.id)
-        if for_model and ref.id != "all":
-            if ref.name:
-                label += f"（QQ:{ref.id}{'，你' if ref.is_self else ''}）"
-            elif ref.is_self:
-                label += "（你）"
-        parts.extend((text[offset:ref.start], label))
+        parts.extend((text[offset:ref.start], mention_label(ref, for_model=for_model)))
         offset = ref.end
     return "".join([*parts, text[offset:]])
 

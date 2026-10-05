@@ -51,7 +51,7 @@ def copy_required_files(root: Path, output: Path) -> None:
         source = root / filename
         shutil.copy2(source, output / filename)
 
-    for dirname in ["ai_workbench", "alembic", "docs"]:
+    for dirname in ["ai_workbench", "alembic", "docs", "third_party"]:
         copy_tree(root / dirname, output / dirname)
 
     scripts_dir = output / "scripts"

@@ -13,8 +13,8 @@ external OpenAI-compatible inference through core/models, and text delivery thro
 qq_send_message. A separate Node.js agent service is unnecessary. Agent Persona identity
 and prompts are optional; Knowledge, Worldbook and Cogita Persona inheritance are excluded.
 
-QQ/NapCat installation, login management, reconnect history backfill, media understanding,
-manual sends and memory integration remain unimplemented. Linux Local Runtime support is
+QQ history saves and displays ordered images, stickers and system faces; optional model image input follows the Project switch. QQ/NapCat installation, login management, reconnect history backfill,
+manual/image sends and memory integration remain unimplemented. Linux Local Runtime support is
 outside this integration. Future Worldbook/memory work requires explicit bot/conversation
 isolation and a separate injection design; it is not a prerequisite for current QQBot execution.
 
@@ -72,7 +72,7 @@ project-relevant feasibility evidence requested for future work.
 
 Local fake-OneBot/fake-model verification covers bound ingestion, batching, Harness delivery,
 transport failures, pause/stop/resume and restart; browser fixtures cover English/Chinese desktop/touch workflows.
-A real NapCat round trip with explicitly designated test targets remains unverified. Login
+Media fixtures cover ordering, original animations/static model frames, failures, delayed acquisition, history inclusion and deletion. A real NapCat round trip, including image URLs/system-face resources and a vision provider with explicitly designated test targets, remains unverified. Login
 and idle-memory evidence below cannot establish message delivery, external model behavior or a RAM guarantee.
 
 The Linux experiment did not exercise inference, first-use tokenizer cost, long histories,

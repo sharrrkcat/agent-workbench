@@ -193,7 +193,7 @@ on their model step immediately before transport dispatch. Preparation failures 
 failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
 do not record context. Reads never reconstruct missing inputs from current configuration or history.
 Snapshots preserve the outbound body, source positions, exclusions, model identity, capture time and
-context policy. Images use attachment-store references instead of binary data URLs. Source excerpts
+context policy. Images use attachment-store references instead of binary data URLs. QQ image sources preserve each message/part position and static model attachment; disabled/unavailable images record attachments_disabled/qq_image_unavailable exclusions. Late media completion leaves captured inputs unchanged. Source excerpts
 and Unicode character counts are resolved on the backend; usage stays in `metadata.llm`.
 Step `metadata.context` exposes availability, message/tool/image counts and a strict budget: configured
 and effective window_tokens, input_budget_tokens, pre-call input_tokens, counting=native|estimated,

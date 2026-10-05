@@ -104,10 +104,10 @@ def test_removed_display_fields_and_fonts_leave_current_settings_and_resources(t
 
 def test_portable_package_copies_maintained_guide_and_excludes_local_data(tmp_path, monkeypatch):
     root = tmp_path / "source"
-    for name in ("ai_workbench", "alembic", "docs", "scripts", "frontend/dist/assets", "data/models"):
+    for name in ("ai_workbench", "alembic", "docs", "scripts", "third_party/qface", "frontend/dist/assets", "data/models"):
         (root / name).mkdir(parents=True)
     for name in ("pyproject.toml", "uv.lock", "README.md", "README_RUN.md", "alembic.ini", ".env.example",
-                 "ai_workbench/__init__.py", "scripts/run_app.py", "frontend/dist/index.html", "docs/example.md"):
+                 "ai_workbench/__init__.py", "scripts/run_app.py", "frontend/dist/index.html", "docs/example.md", "third_party/qface/LICENSE"):
         (root / name).write_text(name, encoding="utf-8")
     (root / "data/models/weights").write_text("weights", encoding="utf-8")
     (root / ".env").write_text("private", encoding="utf-8")
@@ -122,6 +122,7 @@ def test_portable_package_copies_maintained_guide_and_excludes_local_data(tmp_pa
     assert (output / "ai_workbench/__init__.py").is_file()
     assert (output / "README_RUN.md").read_bytes() == (root / "README_RUN.md").read_bytes()
     assert (output / "docs/example.md").is_file()
+    assert (output / "third_party/qface/LICENSE").read_bytes() == (root / "third_party/qface/LICENSE").read_bytes()
     assert (output / "alembic.ini").is_file()
     assert not (output / ".env").exists()
     assert sorted(p.name for p in (output / "data").iterdir()) == [".gitkeep"]

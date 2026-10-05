@@ -2,12 +2,66 @@
 
 from types import SimpleNamespace
 from typing import Literal
+from io import BytesIO
 import time
+
+from PIL import Image
+from ai_workbench.core.qq_media import QQMediaService
+from ai_workbench.core.harness.schema import ToolExecutionError
+from ai_workbench.db.qq_models import QQMessage
 
 
 def install_qq_fixture(app):
     state = app.state.runtime_state
     state.qq.start = lambda: None
+
+    async def complete_media(session_id, *, include_old):
+        service = QQMediaService(state, state.qq.store, {})
+        async def download(media, project_id, settings):
+            if media.source.file == "fixture:failed":
+                raise ToolExecutionError("QQ_IMAGE_UNAVAILABLE", "Fixture unavailable")
+            data = BytesIO()
+            animated = media.source.file == "fixture:animated"
+            image = Image.new("RGB", (640, 480), "#4e8db0")
+            if animated:
+                image.save(data, "GIF", save_all=True, append_images=[Image.new("RGB", image.size, "#be7656")], duration=300, loop=0)
+            else:
+                image.save(data, "PNG")
+            return data.getvalue()
+        service.download = download
+        for row in state.qq.store.page(QQMessage, session_id, limit=100)["items"]:
+            for media in state.qq.store.message_media([row["id"]])[row["id"]]:
+                if media.status == "pending" and (include_old or media.source.file != "fixture:old"):
+                    await service.acquire(media, state.sessions.get_session(session_id).project_id)
+
+    @app.post("/__test__/qq/{session_id}/media/complete")
+    async def media_complete(session_id: str):
+        await complete_media(session_id, include_old=True)
+        return {"ok": True}
+
+    @app.post("/__test__/qq/{session_id}/media")
+    async def media_records(session_id: str):
+        session = state.sessions.get_session(session_id)
+        project = state.projects.get(session.project_id)
+        def text(value):
+            return {"type": "text", "data": {"text": value}}
+        def image(file, **values):
+            return {"type": "image", "data": {"file": file, **values}}
+        contents = {
+            1: [text("Older "), image("fixture:old"), text(" end")],
+            57: [text("Before "), image("fixture:image"), text(" between "), image("fixture:animated", sub_type=1), text(" after")],
+            58: [image("fixture:animated", sub_type=1)],
+            59: [text("Face "), {"type": "face", "data": {"id": 0}}, text(" end")],
+            60: [text("Failed "), image("fixture:failed"), text(" end")],
+        }
+        for number in range(1, 61):
+            await state.qq.ingest(project.id, {"post_type": "message", "self_id": project.bot_account,
+                "message_type": "group", "group_id": session.target_id, "user_id": "9999",
+                "message_id": number, "time": 1700000000 + number, "sender": {"nickname": "QQ participant"},
+                "message": contents.get(number, [text(f"Record {number} bot")])}, now=number / 100)
+        state.qq.store.freeze(session_id, 3, 10)
+        await complete_media(session_id, include_old=False)
+        return {"ids": {row["external_id"]: row["id"] for row in state.qq.store.page(QQMessage, session_id, limit=100)["items"]}}
 
     async def execute(session, batch):
         project = state.projects.get(session.project_id)

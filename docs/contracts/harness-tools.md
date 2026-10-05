@@ -97,7 +97,9 @@ Cancellation, delivery errors and existing Harness limits retain precedence. Cou
 
 Every expired debounce window creates a SQLite FIFO batch with fixed trigger policy, including during inference or pause.
 Messages are reserved once. Execution is serialized across each Project, loading only the next unpaused Session's batch.
-Project configuration resolves when execution starts, before asynchronous member lookup, then follows the existing immutable run snapshot.
+Project configuration resolves when execution starts, before asynchronous media waits/member lookup, then follows the immutable run snapshot.
+After deduplicated ingress, four background media acquisitions run independently of the WebSocket reader and preserve stored segment order. They use reported HTTP(S) URLs, then get_image for a downloadable URL when needed; remote filesystem paths are never read locally. Public-network policy, download byte limits and image decoding guard this boundary. QFace 1.4.1 supplies the bundled system-face mapping with its MIT notice; unknown IDs remain labeled unavailable.
+Original PNG/JPEG/WebP/GIF bytes enter the attachment store; GIF and animated WebP/APNG also produce a first-frame PNG for the model. Static images reuse their attachment. Failed acquisition preserves an in-place marker and other content continues. With image input enabled, a batch waits at most ten extra seconds for its pending images. Remaining pending/failed/oversized model images become unavailable labels; later completion can affect later batches but never captured requests. Pending rows resume acquisition after restart. Deletion excludes late results and cleans unreferenced originals/derivatives; media IDs are not reused.
 Delivery intents persist before dispatch, unique by run/tool-call id, with pending/sending/sent/failed/unknown states.
 Successful confirmation and its historical assistant message commit atomically; later failures preserve earlier sends.
 OneBot rejection is failed; disconnect, timeout, cancellation during sending or an invalid receipt is unknown.
@@ -111,7 +113,7 @@ Local [history deletion](chat-context.md#qqbot-conversations) excludes removed i
 Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
 
 Local fake-OneBot/fake-model tests cover transport, participant windows, skip/renewal races, batching, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,
-reconnect backfill, media understanding, manual sends, memory/resources and Linux Local Runtime remain outside current acceptance;
+reconnect backfill, real media/model round trips, manual sends, memory/resources and Linux Local Runtime remain outside current acceptance;
 [QQ integration boundaries](../FUTURE_QQ_INTEGRATION.md) retains deployment evidence and outstanding live verification.
 
 ## Loop, approval and cancellation

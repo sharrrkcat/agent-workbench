@@ -1,4 +1,4 @@
-"""OneBot v11 text transport. QQ/NapCat remains an external program."""
+"""OneBot v11 transport and ordered ingress. QQ/NapCat remains external."""
 import asyncio
 import json
 import re
@@ -7,6 +7,7 @@ from uuid import uuid4
 from websockets.asyncio.client import connect
 from pydantic import BaseModel, Field, StrictInt, StrictStr, ConfigDict
 from ai_workbench.core.harness.schema import ToolExecutionError
+from ai_workbench.core.schema.qq import QQMediaSource
 
 
 class OneBotSegment(BaseModel):
@@ -50,10 +51,10 @@ def _cq_segments(value):
 def normalize(event):
     parsed = OneBotMessage.model_validate(event)
     segments = _cq_segments(parsed.message) if isinstance(parsed.message, str) else parsed.message
-    text, keywords, refs, offset = [], [], [], 0
+    text, keywords, refs, media, offset = [], [], [], [], 0
     placeholders = {"image": "[图片]", "face": "[表情包]", "mface": "[表情包]",
         "record": "[语音]", "video": "[视频]", "file": "[文件]", "forward": "[转发消息]"}
-    for segment in segments:
+    for index, segment in enumerate(segments):
         kind, data = segment.type, segment.data
         if kind == "text":
             value = str(data.get("text", ""))
@@ -70,14 +71,21 @@ def normalize(event):
             text.append("[引用:" + value + "]")
             refs.append({"type": "reply", "id": value})
         else:
-            sticker = kind == "image" and str(data.get("sub_type", "0")) != "0"
+            sticker = kind == "image" and (str(data.get("sub_type", "0")) != "0" or bool(data.get("emoji_id")))
             text.append("[表情包]" if sticker else placeholders.get(kind, "[非文字消息]"))
+            if kind in {"image", "face", "mface"}:
+                source = QQMediaSource(url=str(data.get("url") or ""), file=str(data.get("file") or ""),
+                    face_id=str(data.get("id", "")) if kind == "face" else "",
+                    emoji_id=str(data.get("emoji_id") or ""))
+                media.append(dict(segment_index=index, text_start=offset, text_end=offset + len(text[-1]),
+                    kind="face" if kind == "face" else "sticker" if sticker or kind == "mface" else "image",
+                    source_json=source.model_dump_json()))
         offset += len(text[-1])
     sender_id = str(parsed.user_id)
     return dict(external_id=str(parsed.message_id), sender_id=sender_id,
         sender_name=parsed.sender.card or parsed.sender.nickname or sender_id,
         timestamp=datetime.fromtimestamp(parsed.time, timezone.utc).isoformat(),
-        text="".join(text), references_json=json.dumps(refs, ensure_ascii=False)), "".join(keywords).casefold()
+        text="".join(text), references_json=json.dumps(refs, ensure_ascii=False)), "".join(keywords).casefold(), media
 
 
 class OneBotConnection:

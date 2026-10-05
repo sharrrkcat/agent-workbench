@@ -4,7 +4,7 @@ import { toolsApi } from '../../api/tools';
 import type { ToolRunResponse } from '../../types/tools';
 import { terminal } from '../../store/cogita/mergeState';
 import { errorText } from '../settings/resources/ResourceUI';
-import { emptyQQRows, olderQQRows, refreshQQRows, QQHistoryChanged } from './qqConversation';
+import { emptyQQRows, olderQQRows, refreshQQRows, QQHistoryChanged, unsettledQQMessage } from './qqConversation';
 
 export function useQQConversation(sessionId: string) {
   const [data, setData] = useState(() => ({ messages: emptyQQRows<QQMessage>(), batches: emptyQQRows<QQBatch>(),
@@ -32,7 +32,7 @@ export function useQQConversation(sessionId: string) {
       const [nextBinding, messages, batches, deliveries] = await Promise.all([
         qqApi.binding(sessionId),
         older ? olderQQRows(saved.messages, (before) => qqApi.messages(sessionId, before))
-          : refreshQQRows(saved.messages, (before) => qqApi.messages(sessionId, before), (row) => row.disposition === 'pending'),
+          : refreshQQRows(saved.messages, (before) => qqApi.messages(sessionId, before), unsettledQQMessage),
         older ? olderQQRows(saved.batches, (before) => qqApi.batches(sessionId, before))
           : refreshQQRows(saved.batches, (before) => qqApi.batches(sessionId, before), (row) => ['queued', 'running'].includes(row.status)),
         older ? olderQQRows(saved.deliveries, (before) => qqApi.deliveries(sessionId, before))

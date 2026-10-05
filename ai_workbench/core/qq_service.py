@@ -10,6 +10,7 @@ from ai_workbench.core.harness.schema import ToolSpec, ToolExecutionError
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
 from ai_workbench.core.qq_names import QQNames, model_batch_text
 from ai_workbench.core.qq_history import QQHistory
+from ai_workbench.core.qq_media import QQMediaService
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 log = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class QQService:
         self.store = store
         self.history = QQHistory(state, store)
         self.connections = {}
+        self.media = QQMediaService(state, store, self.connections)
         self.names = QQNames(self.connections)
         self.tasks = {}
         self.workers = {}
@@ -43,10 +45,12 @@ class QQService:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.media.close()
         await self.names.close()
 
     async def run(self):
         while True:
+            self.media.tick()
             all_projects = [p for p in self.state.projects.list() if p.kind == "qqbot"]
             self.names.retain_projects({p.id for p in all_projects})
             projects = {p.id: p for p in all_projects if p.connection_enabled}
@@ -110,7 +114,7 @@ class QQService:
             self.store.reconcile_echo(binding.session_id, str(event.get("message_id")))
             return
         try:
-            values, keyword_text = normalize(event)
+            values, keyword_text, media = normalize(event)
         except ValidationError:
             log.warning("Ignored malformed OneBot message for a bound conversation")
             return
@@ -118,7 +122,7 @@ class QQService:
         # Synchronous transactions run without yielding: expiry wins at the exact deadline.
         self.store.freeze(binding.session_id, project.batch_message_limit, now)
         if self.store.ingest(binding, QQMessage(session_id=binding.session_id, **values),
-                keyword=any(k in keyword_text for k in project.keywords), now=now):
+                keyword=any(k in keyword_text for k in project.keywords), now=now, media=media):
             self.names.observe(binding, values["sender_id"], values["sender_name"])
 
     async def execute(self, batch):
@@ -139,6 +143,8 @@ class QQService:
             self.store.save(batch)
         try:
             config = self.state.chat_service.resolve(self.state.sessions.get_session(batch.session_id))
+            if config.context_policy.include_attachments == "explicit":
+                await self.media.wait_batch(batch.id)
             records = self.store.batch_messages(batch.id)
             rows = await self.names.project(binding, config.qq_bot_account,
                 [row.model_dump() for row in records], freeze=True, for_model=True)

@@ -228,9 +228,11 @@ def test_deletion_migration_keeps_existing_records_and_files(tmp_path):
         path.write_bytes(b"keep")
     migrations.upgrade(engine, "head")
     migrations.upgrade(engine, "head")
-    assert migrations.current_revision(engine) == migrations.QQ_HISTORY_DELETION_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     for table in ("qq_messages", "qq_deliveries"):
         assert "deleted" in {column["name"] for column in inspect(engine).get_columns(table)}
     with engine.connect() as db:
         assert db.execute(text("SELECT text, disposition, deleted FROM qq_messages")).one() == ("keep", "batched", 0)
+        assert db.execute(text("SELECT COUNT(*) FROM qq_media")).scalar_one() == 0
+    assert {index["name"] for index in inspect(engine).get_indexes("qq_media")} == {"ix_qq_media_message_id", "ix_qq_media_pending"}
     assert all(path.read_bytes() == b"keep" for path in files)

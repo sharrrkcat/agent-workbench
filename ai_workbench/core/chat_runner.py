@@ -339,7 +339,8 @@ class ChatRunner:
             attachments = []
         attachment_trace = ContextTrace()
         current_text = _with_current_attachments(text, attachments, self.app_settings.get(), attachment_trace)
-        result = (build_qq_context(self.qq_store, self.messages, session.session_id, current_text, policy, current_message_id)
+        result = (build_qq_context(self.qq_store, self.messages, session.session_id, current_text, policy, current_message_id,
+                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024)
                   if session.kind == "qqbot" else self.context_builder.build(
                       session.session_id, current_text, policy, current_message_id=current_message_id))
         messages = list(result.messages)

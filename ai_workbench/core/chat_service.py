@@ -297,7 +297,8 @@ class ChatService:
             avatar_attachment_id=persona.avatar_attachment_id if persona else None,
             system_prompt=persona.system_prompt if persona else "",
             project_system_prompt=project.system_prompt,
-            user_persona_id="", user_persona_prompt="", context_policy=project.context_policy, context_limits=limits,
+            user_persona_id="", user_persona_prompt="", context_policy=project.context_policy.model_copy(update={
+                "include_attachments": "explicit" if project.image_input_enabled else "none"}), context_limits=limits,
             model_profile_id=project.model_profile_id, model_source="project",
             generation=GenerationParameters.model_validate(parameters), reasoning=project.reasoning,
             harness_enabled=True, tools_allowed=list(QQ_TOOLS) if session.target_kind == "group" else ["qq_send_message"], knowledge_base_ids=[],

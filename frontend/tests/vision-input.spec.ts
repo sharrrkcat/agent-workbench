@@ -222,6 +222,9 @@ test('partial upload failure preserves successes and late results stay in their 
   await picker.setInputFiles([file('good.png'), file('failed.png')]);
   await expect(page.locator('.upload-ready')).toHaveCount(1);
   await expect(page.locator('.upload-error')).toHaveCount(1);
+  await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeDisabled();
+  await page.locator('.upload-error').getByRole('button', { name: 'Remove failed.png', exact: true }).click();
+  await expect(page.locator('.upload-ready')).toHaveCount(1);
   await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeEnabled();
   await picker.setInputFiles(file('late.png'));
   await inFlight;

@@ -1,0 +1,1102 @@
+{
+  "0": {
+    "name": "/惊讶",
+    "static": false
+  },
+  "1": {
+    "name": "/撇嘴",
+    "static": false
+  },
+  "2": {
+    "name": "/色",
+    "static": false
+  },
+  "3": {
+    "name": "/发呆",
+    "static": false
+  },
+  "4": {
+    "name": "/得意",
+    "static": false
+  },
+  "5": {
+    "name": "/流泪",
+    "static": false
+  },
+  "6": {
+    "name": "/害羞",
+    "static": false
+  },
+  "7": {
+    "name": "/闭嘴",
+    "static": false
+  },
+  "8": {
+    "name": "/睡",
+    "static": false
+  },
+  "9": {
+    "name": "/大哭",
+    "static": false
+  },
+  "10": {
+    "name": "/尴尬",
+    "static": false
+  },
+  "11": {
+    "name": "/发怒",
+    "static": false
+  },
+  "12": {
+    "name": "/调皮",
+    "static": false
+  },
+  "13": {
+    "name": "/呲牙",
+    "static": false
+  },
+  "14": {
+    "name": "/微笑",
+    "static": false
+  },
+  "15": {
+    "name": "/难过",
+    "static": true
+  },
+  "16": {
+    "name": "/酷",
+    "static": false
+  },
+  "18": {
+    "name": "/抓狂",
+    "static": false
+  },
+  "19": {
+    "name": "/吐",
+    "static": false
+  },
+  "20": {
+    "name": "/偷笑",
+    "static": false
+  },
+  "21": {
+    "name": "/可爱",
+    "static": false
+  },
+  "22": {
+    "name": "/白眼",
+    "static": false
+  },
+  "23": {
+    "name": "/傲慢",
+    "static": false
+  },
+  "24": {
+    "name": "/饥饿",
+    "static": false
+  },
+  "25": {
+    "name": "/困",
+    "static": false
+  },
+  "26": {
+    "name": "/惊恐",
+    "static": false
+  },
+  "27": {
+    "name": "/流汗",
+    "static": false
+  },
+  "28": {
+    "name": "/憨笑",
+    "static": false
+  },
+  "29": {
+    "name": "/悠闲",
+    "static": false
+  },
+  "30": {
+    "name": "/奋斗",
+    "static": false
+  },
+  "31": {
+    "name": "/咒骂",
+    "static": false
+  },
+  "32": {
+    "name": "/疑问",
+    "static": false
+  },
+  "33": {
+    "name": "/嘘",
+    "static": false
+  },
+  "34": {
+    "name": "/晕",
+    "static": false
+  },
+  "35": {
+    "name": "/折磨",
+    "static": false
+  },
+  "36": {
+    "name": "/衰",
+    "static": true
+  },
+  "37": {
+    "name": "/骷髅",
+    "static": true
+  },
+  "38": {
+    "name": "/敲打",
+    "static": false
+  },
+  "39": {
+    "name": "/再见",
+    "static": false
+  },
+  "41": {
+    "name": "/发抖",
+    "static": true
+  },
+  "42": {
+    "name": "/爱情",
+    "static": false
+  },
+  "43": {
+    "name": "/跳跳",
+    "static": false
+  },
+  "46": {
+    "name": "/猪头",
+    "static": true
+  },
+  "49": {
+    "name": "/拥抱",
+    "static": false
+  },
+  "53": {
+    "name": "/蛋糕",
+    "static": false
+  },
+  "54": {
+    "name": "/闪电",
+    "static": true
+  },
+  "55": {
+    "name": "/炸弹",
+    "static": true
+  },
+  "56": {
+    "name": "/刀",
+    "static": false
+  },
+  "57": {
+    "name": "/足球",
+    "static": false
+  },
+  "59": {
+    "name": "/便便",
+    "static": false
+  },
+  "60": {
+    "name": "/咖啡",
+    "static": false
+  },
+  "61": {
+    "name": "/饭",
+    "static": true
+  },
+  "63": {
+    "name": "/玫瑰",
+    "static": true
+  },
+  "64": {
+    "name": "/凋谢",
+    "static": true
+  },
+  "66": {
+    "name": "/爱心",
+    "static": true
+  },
+  "67": {
+    "name": "/心碎",
+    "static": false
+  },
+  "69": {
+    "name": "/礼物",
+    "static": true
+  },
+  "74": {
+    "name": "/太阳",
+    "static": true
+  },
+  "75": {
+    "name": "/月亮",
+    "static": true
+  },
+  "76": {
+    "name": "/赞",
+    "static": false
+  },
+  "77": {
+    "name": "/踩",
+    "static": false
+  },
+  "78": {
+    "name": "/握手",
+    "static": false
+  },
+  "79": {
+    "name": "/胜利",
+    "static": false
+  },
+  "85": {
+    "name": "/飞吻",
+    "static": true
+  },
+  "86": {
+    "name": "/怄火",
+    "static": false
+  },
+  "89": {
+    "name": "/西瓜",
+    "static": true
+  },
+  "96": {
+    "name": "/冷汗",
+    "static": false
+  },
+  "97": {
+    "name": "/擦汗",
+    "static": false
+  },
+  "98": {
+    "name": "/抠鼻",
+    "static": false
+  },
+  "99": {
+    "name": "/鼓掌",
+    "static": false
+  },
+  "100": {
+    "name": "/糗大了",
+    "static": false
+  },
+  "101": {
+    "name": "/坏笑",
+    "static": false
+  },
+  "102": {
+    "name": "/左哼哼",
+    "static": false
+  },
+  "103": {
+    "name": "/右哼哼",
+    "static": false
+  },
+  "104": {
+    "name": "/哈欠",
+    "static": false
+  },
+  "105": {
+    "name": "/鄙视",
+    "static": false
+  },
+  "106": {
+    "name": "/委屈",
+    "static": false
+  },
+  "107": {
+    "name": "/快哭了",
+    "static": false
+  },
+  "108": {
+    "name": "/阴险",
+    "static": false
+  },
+  "109": {
+    "name": "/左亲亲",
+    "static": false
+  },
+  "110": {
+    "name": "/吓",
+    "static": false
+  },
+  "111": {
+    "name": "/可怜",
+    "static": false
+  },
+  "112": {
+    "name": "/菜刀",
+    "static": false
+  },
+  "113": {
+    "name": "/啤酒",
+    "static": false
+  },
+  "114": {
+    "name": "/篮球",
+    "static": false
+  },
+  "115": {
+    "name": "/乒乓",
+    "static": false
+  },
+  "116": {
+    "name": "/示爱",
+    "static": false
+  },
+  "117": {
+    "name": "/瓢虫",
+    "static": false
+  },
+  "118": {
+    "name": "/抱拳",
+    "static": false
+  },
+  "119": {
+    "name": "/勾引",
+    "static": false
+  },
+  "120": {
+    "name": "/拳头",
+    "static": false
+  },
+  "121": {
+    "name": "/差劲",
+    "static": false
+  },
+  "122": {
+    "name": "/爱你",
+    "static": false
+  },
+  "123": {
+    "name": "/NO",
+    "static": false
+  },
+  "124": {
+    "name": "/OK",
+    "static": true
+  },
+  "125": {
+    "name": "/转圈",
+    "static": false
+  },
+  "126": {
+    "name": "/磕头",
+    "static": false
+  },
+  "127": {
+    "name": "/回头",
+    "static": false
+  },
+  "128": {
+    "name": "/跳绳",
+    "static": false
+  },
+  "129": {
+    "name": "/挥手",
+    "static": false
+  },
+  "130": {
+    "name": "/激动",
+    "static": false
+  },
+  "131": {
+    "name": "/街舞",
+    "static": false
+  },
+  "132": {
+    "name": "/献吻",
+    "static": false
+  },
+  "133": {
+    "name": "/左太极",
+    "static": false
+  },
+  "134": {
+    "name": "/右太极",
+    "static": false
+  },
+  "136": {
+    "name": "/双喜",
+    "static": true
+  },
+  "137": {
+    "name": "/鞭炮",
+    "static": true
+  },
+  "138": {
+    "name": "/灯笼",
+    "static": true
+  },
+  "140": {
+    "name": "/K歌",
+    "static": true
+  },
+  "144": {
+    "name": "/喝彩",
+    "static": true
+  },
+  "145": {
+    "name": "/祈祷",
+    "static": true
+  },
+  "146": {
+    "name": "/爆筋",
+    "static": true
+  },
+  "147": {
+    "name": "/棒棒糖",
+    "static": true
+  },
+  "148": {
+    "name": "/喝奶",
+    "static": true
+  },
+  "151": {
+    "name": "/飞机",
+    "static": true
+  },
+  "158": {
+    "name": "/钞票",
+    "static": true
+  },
+  "168": {
+    "name": "/药",
+    "static": true
+  },
+  "169": {
+    "name": "/手枪",
+    "static": true
+  },
+  "171": {
+    "name": "/茶",
+    "static": false
+  },
+  "172": {
+    "name": "/眨眼睛",
+    "static": false
+  },
+  "173": {
+    "name": "/泪奔",
+    "static": false
+  },
+  "174": {
+    "name": "/无奈",
+    "static": false
+  },
+  "175": {
+    "name": "/卖萌",
+    "static": false
+  },
+  "176": {
+    "name": "/小纠结",
+    "static": false
+  },
+  "177": {
+    "name": "/喷血",
+    "static": false
+  },
+  "178": {
+    "name": "/斜眼笑",
+    "static": false
+  },
+  "179": {
+    "name": "/doge",
+    "static": false
+  },
+  "180": {
+    "name": "/惊喜",
+    "static": false
+  },
+  "181": {
+    "name": "/骚扰",
+    "static": false
+  },
+  "182": {
+    "name": "/笑哭",
+    "static": false
+  },
+  "183": {
+    "name": "/我最美",
+    "static": false
+  },
+  "184": {
+    "name": "/河蟹",
+    "static": false
+  },
+  "185": {
+    "name": "/羊驼",
+    "static": false
+  },
+  "187": {
+    "name": "/幽灵",
+    "static": false
+  },
+  "188": {
+    "name": "/蛋",
+    "static": false
+  },
+  "190": {
+    "name": "/菊花",
+    "static": false
+  },
+  "192": {
+    "name": "/红包",
+    "static": false
+  },
+  "193": {
+    "name": "/大笑",
+    "static": true
+  },
+  "194": {
+    "name": "/不开心",
+    "static": false
+  },
+  "197": {
+    "name": "/冷漠",
+    "static": false
+  },
+  "198": {
+    "name": "/呃",
+    "static": false
+  },
+  "199": {
+    "name": "/好棒",
+    "static": false
+  },
+  "200": {
+    "name": "/拜托",
+    "static": false
+  },
+  "201": {
+    "name": "/点赞",
+    "static": false
+  },
+  "202": {
+    "name": "/无聊",
+    "static": false
+  },
+  "203": {
+    "name": "/托脸",
+    "static": false
+  },
+  "204": {
+    "name": "/吃",
+    "static": false
+  },
+  "205": {
+    "name": "/送花",
+    "static": false
+  },
+  "206": {
+    "name": "/害怕",
+    "static": false
+  },
+  "207": {
+    "name": "/花痴",
+    "static": false
+  },
+  "208": {
+    "name": "/小样儿",
+    "static": false
+  },
+  "210": {
+    "name": "/飙泪",
+    "static": false
+  },
+  "211": {
+    "name": "/我不看",
+    "static": false
+  },
+  "212": {
+    "name": "/托腮",
+    "static": false
+  },
+  "214": {
+    "name": "/啵啵",
+    "static": false
+  },
+  "215": {
+    "name": "/糊脸",
+    "static": false
+  },
+  "216": {
+    "name": "/拍头",
+    "static": false
+  },
+  "217": {
+    "name": "/扯一扯",
+    "static": false
+  },
+  "218": {
+    "name": "/舔一舔",
+    "static": false
+  },
+  "219": {
+    "name": "/蹭一蹭",
+    "static": false
+  },
+  "220": {
+    "name": "/拽炸天",
+    "static": false
+  },
+  "221": {
+    "name": "/顶呱呱",
+    "static": false
+  },
+  "222": {
+    "name": "/抱抱",
+    "static": false
+  },
+  "223": {
+    "name": "/暴击",
+    "static": false
+  },
+  "224": {
+    "name": "/开枪",
+    "static": false
+  },
+  "225": {
+    "name": "/撩一撩",
+    "static": false
+  },
+  "226": {
+    "name": "/拍桌",
+    "static": false
+  },
+  "227": {
+    "name": "/拍手",
+    "static": false
+  },
+  "228": {
+    "name": "/恭喜",
+    "static": false
+  },
+  "229": {
+    "name": "/干杯",
+    "static": false
+  },
+  "230": {
+    "name": "/嘲讽",
+    "static": false
+  },
+  "231": {
+    "name": "/哼",
+    "static": false
+  },
+  "232": {
+    "name": "/佛系",
+    "static": false
+  },
+  "233": {
+    "name": "/掐一掐",
+    "static": false
+  },
+  "234": {
+    "name": "/惊呆",
+    "static": false
+  },
+  "235": {
+    "name": "/颤抖",
+    "static": false
+  },
+  "236": {
+    "name": "/啃头",
+    "static": false
+  },
+  "237": {
+    "name": "/偷看",
+    "static": false
+  },
+  "238": {
+    "name": "/扇脸",
+    "static": false
+  },
+  "239": {
+    "name": "/原谅",
+    "static": false
+  },
+  "240": {
+    "name": "/喷脸",
+    "static": false
+  },
+  "241": {
+    "name": "/生日快乐",
+    "static": false
+  },
+  "242": {
+    "name": "/头撞击",
+    "static": false
+  },
+  "243": {
+    "name": "/甩头",
+    "static": false
+  },
+  "244": {
+    "name": "/扔狗",
+    "static": false
+  },
+  "245": {
+    "name": "/加油必胜",
+    "static": false
+  },
+  "246": {
+    "name": "/加油抱抱",
+    "static": false
+  },
+  "247": {
+    "name": "/口罩护体",
+    "static": true
+  },
+  "260": {
+    "name": "/搬砖中",
+    "static": true
+  },
+  "261": {
+    "name": "/忙到飞起",
+    "static": false
+  },
+  "262": {
+    "name": "/脑阔疼",
+    "static": false
+  },
+  "263": {
+    "name": "/沧桑",
+    "static": false
+  },
+  "264": {
+    "name": "/捂脸",
+    "static": false
+  },
+  "265": {
+    "name": "/辣眼睛",
+    "static": false
+  },
+  "266": {
+    "name": "/哦哟",
+    "static": false
+  },
+  "267": {
+    "name": "/头秃",
+    "static": false
+  },
+  "268": {
+    "name": "/问号脸",
+    "static": false
+  },
+  "269": {
+    "name": "/暗中观察",
+    "static": false
+  },
+  "270": {
+    "name": "/emm",
+    "static": false
+  },
+  "271": {
+    "name": "/吃瓜",
+    "static": false
+  },
+  "272": {
+    "name": "/呵呵哒",
+    "static": false
+  },
+  "273": {
+    "name": "/我酸了",
+    "static": true
+  },
+  "274": {
+    "name": "/太南了",
+    "static": true
+  },
+  "276": {
+    "name": "/辣椒酱",
+    "static": true
+  },
+  "277": {
+    "name": "/汪汪",
+    "static": true
+  },
+  "278": {
+    "name": "/汗",
+    "static": false
+  },
+  "279": {
+    "name": "/打脸",
+    "static": false
+  },
+  "280": {
+    "name": "/击掌",
+    "static": false
+  },
+  "281": {
+    "name": "/无眼笑",
+    "static": false
+  },
+  "282": {
+    "name": "/敬礼",
+    "static": false
+  },
+  "283": {
+    "name": "/狂笑",
+    "static": false
+  },
+  "284": {
+    "name": "/面无表情",
+    "static": false
+  },
+  "285": {
+    "name": "/摸鱼",
+    "static": false
+  },
+  "286": {
+    "name": "/魔鬼笑",
+    "static": false
+  },
+  "287": {
+    "name": "/哦",
+    "static": false
+  },
+  "288": {
+    "name": "/请",
+    "static": false
+  },
+  "289": {
+    "name": "/睁眼",
+    "static": false
+  },
+  "290": {
+    "name": "/敲开心",
+    "static": false
+  },
+  "291": {
+    "name": "/震惊",
+    "static": false
+  },
+  "292": {
+    "name": "/让我康康",
+    "static": false
+  },
+  "293": {
+    "name": "/摸锦鲤",
+    "static": false
+  },
+  "294": {
+    "name": "/期待",
+    "static": false
+  },
+  "295": {
+    "name": "/拿到红包",
+    "static": false
+  },
+  "296": {
+    "name": "/真好",
+    "static": false
+  },
+  "297": {
+    "name": "/拜谢",
+    "static": false
+  },
+  "298": {
+    "name": "/元宝",
+    "static": false
+  },
+  "299": {
+    "name": "/牛啊",
+    "static": false
+  },
+  "300": {
+    "name": "/胖三斤",
+    "static": false
+  },
+  "301": {
+    "name": "/好闪",
+    "static": false
+  },
+  "302": {
+    "name": "/左拜年",
+    "static": false
+  },
+  "303": {
+    "name": "/右拜年",
+    "static": false
+  },
+  "304": {
+    "name": "/红包包",
+    "static": false
+  },
+  "305": {
+    "name": "/右亲亲",
+    "static": false
+  },
+  "306": {
+    "name": "/牛气冲天",
+    "static": true
+  },
+  "307": {
+    "name": "/喵喵",
+    "static": true
+  },
+  "308": {
+    "name": "/求红包",
+    "static": false
+  },
+  "309": {
+    "name": "/谢红包",
+    "static": false
+  },
+  "310": {
+    "name": "/新年烟花",
+    "static": false
+  },
+  "311": {
+    "name": "/打call",
+    "static": false
+  },
+  "312": {
+    "name": "/变形",
+    "static": false
+  },
+  "313": {
+    "name": "/嗑到了",
+    "static": false
+  },
+  "314": {
+    "name": "/仔细分析",
+    "static": false
+  },
+  "315": {
+    "name": "/加油",
+    "static": false
+  },
+  "316": {
+    "name": "/我没事",
+    "static": false
+  },
+  "317": {
+    "name": "/菜狗",
+    "static": false
+  },
+  "318": {
+    "name": "/崇拜",
+    "static": false
+  },
+  "319": {
+    "name": "/比心",
+    "static": false
+  },
+  "320": {
+    "name": "/庆祝",
+    "static": false
+  },
+  "321": {
+    "name": "/老色痞",
+    "static": false
+  },
+  "322": {
+    "name": "/拒绝",
+    "static": false
+  },
+  "323": {
+    "name": "/嫌弃",
+    "static": false
+  },
+  "324": {
+    "name": "/吃糖",
+    "static": false
+  },
+  "325": {
+    "name": "/惊吓",
+    "static": false
+  },
+  "326": {
+    "name": "/生气",
+    "static": false
+  },
+  "327": {
+    "name": "/加一",
+    "static": false
+  },
+  "328": {
+    "name": "/错号",
+    "static": false
+  },
+  "329": {
+    "name": "/对号",
+    "static": false
+  },
+  "330": {
+    "name": "/完成",
+    "static": false
+  },
+  "331": {
+    "name": "/明白",
+    "static": false
+  },
+  "332": {
+    "name": "/举牌牌",
+    "static": false
+  },
+  "333": {
+    "name": "/烟花",
+    "static": true
+  },
+  "334": {
+    "name": "/虎虎生威",
+    "static": true
+  },
+  "336": {
+    "name": "/豹富",
+    "static": true
+  },
+  "337": {
+    "name": "/花朵脸",
+    "static": false
+  },
+  "338": {
+    "name": "/我想开了",
+    "static": false
+  },
+  "339": {
+    "name": "/舔屏",
+    "static": false
+  },
+  "340": {
+    "name": "/热化了",
+    "static": false
+  },
+  "341": {
+    "name": "/打招呼",
+    "static": false
+  },
+  "342": {
+    "name": "/酸Q",
+    "static": false
+  },
+  "343": {
+    "name": "/我方了",
+    "static": false
+  },
+  "344": {
+    "name": "/大怨种",
+    "static": false
+  },
+  "345": {
+    "name": "/红包多多",
+    "static": false
+  },
+  "346": {
+    "name": "/你真棒棒",
+    "static": false
+  },
+  "347": {
+    "name": "/大展宏兔",
+    "static": true
+  },
+  "348": {
+    "name": "/福萝卜",
+    "static": true
+  }
+}

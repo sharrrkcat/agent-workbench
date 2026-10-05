@@ -143,6 +143,11 @@
   "maxCharsDescription": "新会话默认最多 100,000 字符。两项限制均留空时，长历史可能增加内存占用。",
   "newQQBot": "新建 QQBot",
   "qq": {
+    "imageInputEnabled": "发送图片给模型",
+    "imageInputHint": "聊天记录始终保存并显示图片，此开关仅影响是否发送给模型。",
+    "sticker": "表情包",
+    "mediaPending": "[{{name}}加载中]",
+    "mediaFailed": "[{{name}}不可用]",
     "account": "机器人 QQ 号",
     "defaultPrompt": "自然参与当前 QQ 对话，围绕最新话题，用对方的语言简短回应。通常一条消息说完，确有必要才补充。有人设时遵循人设，否则保持友善自然。避免复读、无关补话和替他人发言。",
     "botSelf": "机器人本人",

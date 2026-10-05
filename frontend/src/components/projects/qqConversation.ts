@@ -5,6 +5,8 @@ import { buildReply, type Reply } from '../messages/turns';
 export type QQRows<T> = QQPage<T> & { initialized: boolean };
 export const emptyQQRows = <T>(): QQRows<T> => ({ items: [], next_cursor: null, initialized: false, history_version: 0 });
 export class QQHistoryChanged extends Error {}
+export const unsettledQQMessage = (row: QQMessage) => row.disposition === 'pending'
+  || row.segments.some((segment) => segment.type === 'image' && segment.status === 'pending');
 
 // Follow the newest edge until it overlaps our saved window, including bursts larger than one page.
 export async function refreshQQRows<T extends { id: number }>(current: QQRows<T>,

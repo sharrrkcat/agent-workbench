@@ -2,7 +2,7 @@
 import json
 from sqlmodel import Session, select, delete
 from sqlalchemy import update, func
-from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant
+from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia
 
 
 class QQStore:
@@ -29,13 +29,15 @@ class QQStore:
         with Session(self.engine) as db:
             return db.exec(select(QQBinding).where(QQBinding.project_id == project_id)).all()
 
-    def ingest(self, binding, message, *, keyword, now):
+    def ingest(self, binding, message, *, keyword, now, media=()):
         with Session(self.engine) as db:
             if db.exec(select(QQMessage.id).where(QQMessage.session_id == binding.session_id,
                     QQMessage.external_id == message.external_id)).first() is not None:
                 return False
             db.add(message)
             db.flush()
+            for item in media:
+                db.add(QQMedia(message_id=message.id, **item))
             current = db.get(QQBinding, binding.session_id)
             if current.target_kind == "friend":
                 current.window_kind = "private"
@@ -130,6 +132,51 @@ class QQStore:
             return db.exec(select(QQMessage).where(QQMessage.batch_id == batch_id, QQMessage.deleted == False)
                 .order_by(QQMessage.id)).all()
 
+    def message_media(self, message_ids):
+        with Session(self.engine) as db:
+            rows = db.exec(select(QQMedia).where(QQMedia.message_id.in_(message_ids))
+                .order_by(QQMedia.message_id, QQMedia.segment_index)).all()
+            result = {key: [] for key in message_ids}
+            for row in rows:
+                result[row.message_id].append(row)
+            return result
+
+    def pending_media(self, *, exclude=(), limit=4, batch_id=None):
+        with Session(self.engine) as db:
+            query = select(QQMedia, QQBinding.project_id).join(QQMessage, QQMedia.message_id == QQMessage.id)
+            query = query.join(QQBinding, QQMessage.session_id == QQBinding.session_id).where(
+                QQMedia.status == "pending", QQMessage.deleted == False, QQMedia.id.not_in(exclude))
+            if batch_id is not None:
+                query = query.where(QQMessage.batch_id == batch_id)
+            return db.exec(query.order_by(QQMedia.id).limit(limit)).all()
+
+    def finish_media(self, media):
+        # A download never recreates a deleted message or Session.
+        with Session(self.engine) as db:
+            visible = select(QQMessage.id).where(QQMessage.deleted == False)
+            result = db.exec(update(QQMedia).where(QQMedia.id == media.id, QQMedia.message_id.in_(visible))
+                .values(**media.model_dump(include={"status", "attachment_json", "model_attachment_json", "error_code"})))
+            db.commit()
+            return result.rowcount == 1
+
+    def media_attachment_ids(self, *, session_id=None, message_id=None):
+        with Session(self.engine) as db:
+            query = select(QQMedia.attachment_json, QQMedia.model_attachment_json).join(QQMessage,
+                QQMedia.message_id == QQMessage.id)
+            if session_id is not None:
+                query = query.where(QQMessage.session_id == session_id)
+            if message_id is not None:
+                query = query.where(QQMessage.id == message_id)
+            return {json.loads(value)["id"] for row in db.exec(query) for value in row if value}
+
+    def referenced_attachments(self, names):
+        with Session(self.engine) as db:
+            original = func.json_extract(QQMedia.attachment_json, "$.id")
+            model = func.json_extract(QQMedia.model_attachment_json, "$.id")
+            rows = db.exec(select(original, model).join(QQMessage, QQMedia.message_id == QQMessage.id).where(
+                QQMessage.deleted == False, original.in_(names) | model.in_(names))).all()
+            return {value for row in rows for value in row if value in names}
+
     def save_references(self, rows):
         with Session(self.engine) as db:
             for row in rows:
@@ -218,6 +265,7 @@ class QQStore:
 
     def delete_session(self, session_id):
         with Session(self.engine) as db:
+            db.exec(delete(QQMedia).where(QQMedia.message_id.in_(select(QQMessage.id).where(QQMessage.session_id == session_id))))
             for kind in (QQDelivery, QQBatch, QQMessage, QQParticipant, QQBinding):
                 db.exec(delete(kind).where(kind.session_id == session_id))
             db.commit()

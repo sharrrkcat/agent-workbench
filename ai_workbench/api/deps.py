@@ -129,9 +129,9 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     if engine is None:
         from sqlmodel import create_engine, SQLModel
         from sqlalchemy.pool import StaticPool
-        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant
+        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia
         qq_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant)])
+        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia)])
     else:
         qq_engine = engine
     qq_store = QQStore(qq_engine)
@@ -145,7 +145,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     runtime = CogitaRuntime(chat_runner=chat_runner, active_runs=active_runs)
     history = ConversationHistory(
         store=MemoryHistoryStore(sessions, messages, runs, run_events) if use_memory else SqlHistoryStore(engine),
-        sessions=sessions, messages=messages, runs=runs, events=events, chat_service=chat_service, personas=personas,
+        sessions=sessions, messages=messages, runs=runs, events=events, chat_service=chat_service, personas=personas, qq_store=qq_store,
     )
     state = RuntimeState(
         sessions=sessions, messages=messages, runs=runs, run_events=run_events, events=events,

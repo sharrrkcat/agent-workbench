@@ -101,6 +101,7 @@
       "empty": "内容为空",
       "attachments_disabled": "上下文策略不包含附件",
       "images_unsupported": "模型不支持图片，本次未发送",
+      "qq_image_unavailable": "QQ 图片尚未就绪、不可用或超出本次请求的大小限制",
       "file_text_disabled": "文件文本已关闭，仅发送文件标记",
       "file_text_limit": "文件文本受附件预算限制",
       "no_bindings": "没有生效的知识库绑定",

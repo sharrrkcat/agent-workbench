@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createModuleLoader, mockModule, sourceUrl } from './module-loader.mjs';
 
 const load = createModuleLoader();
-const { emptyQQRows, refreshQQRows, olderQQRows, buildQQConversation, QQHistoryChanged } = (await load('../src/components/projects/qqConversation.ts')).exports;
+const { emptyQQRows, refreshQQRows, olderQQRows, buildQQConversation, QQHistoryChanged, unsettledQQMessage } = (await load('../src/components/projects/qqConversation.ts')).exports;
 let rows = Array.from({ length: 65 }, (_, n) => ({ id: n + 1, disposition: 'pending' }));
 let pageVersion = 0;
 const calls = [];
@@ -45,7 +45,7 @@ await assert.rejects(refreshQQRows({ ...window, history_version: 0 }, async (bef
 }, unsettled), QQHistoryChanged, 'A mixed-version page sequence cannot resurrect deleted records');
 
 const at = (second) => new Date(Date.parse('2026-10-04T00:00:00Z') + second * 1000).toISOString();
-const incoming = (id, sender, second = id) => ({ id, sender_id: sender, sender_name: 'Same display name', timestamp: at(second), text: `Input ${id}`, disposition: 'batched', batch_id: 1 });
+const incoming = (id, sender, second = id) => ({ id, sender_id: sender, sender_name: 'Same display name', timestamp: at(second), text: `Input ${id}`, segments: [{ type: 'text', text: `Input ${id}` }], disposition: 'batched', batch_id: 1 });
 const run = { run_id: 'run', created_at: at(4), kind: 'chat', status: 'DONE' };
 const batches = [{ id: 1, run_id: 'run' }];
 const deliveries = ['pending', 'sending', 'sent', 'failed', 'unknown'].map((status, id) => ({ id, run_id: 'run', status, text: `Reply ${id}` }));
@@ -72,6 +72,17 @@ assert.deepEqual(grouping(fixedWindow.slice(1)), [true, false]);
 assert.deepEqual(grouping(fixedWindow), [true, false, true], 'Prepending history recomputes the group start');
 assert.deepEqual(grouping([incoming(1, 'a', 0), incoming(2, 'b', 1), incoming(3, 'a', 2)]), [true, true, true]);
 console.log('QQ conversation history, statuses, grouping and run projection passed');
+
+for (const disposition of ['batched', 'skipped']) {
+  const saved = { ...emptyQQRows(), initialized: true, items: [incoming(60, 'a'), { ...incoming(1, 'a'), disposition, segments: [{ type: 'image', status: 'pending' }] }] };
+  const calls = [];
+  const refreshed = await refreshQQRows(saved, async (before) => {
+    calls.push(before);
+    return { items: before ? [{ ...saved.items[1], segments: [{ type: 'image', status: 'ready' }] }] : [saved.items[0]], next_cursor: before ? null : 60, history_version: 0 };
+  }, unsettledQQMessage);
+  assert.deepEqual(calls, [undefined, 2]);
+  assert.equal(refreshed.items[1].segments[0].status, 'ready', 'Settled old messages still refresh pending images');
+}
 
 // Exercise asynchronous lifecycle and caching through the real hook with controlled API promises.
 let slots = [], cursor = 0, cleanup, timer;
@@ -208,6 +219,8 @@ const editorLoader = createModuleLoader({
 });
 try {
   const { QQBotEditor, qqInput } = (await editorLoader('../src/components/projects/QQBotEditor.tsx')).exports;
+  assert.equal(qqInput().image_input_enabled, false);
+  assert.equal(qqInput({ ...qqInput(), image_input_enabled: true }).image_input_enabled, true);
   const children = (node) => Array.isArray(node) ? node.flatMap(children) : React.isValidElement(node)
     ? [node, ...children(node.props.children)] : [];
   const renderEditor = () => {
@@ -218,6 +231,10 @@ try {
   for (const locale of ['en', 'zh-CN']) {
     editorLocale = locale;
     renderEditor(); await new Promise(setImmediate);
+    const imageSwitch = () => children(renderEditor()).find((node) => node.props.id === 'qq-editor-images');
+    assert.equal(imageSwitch().props.checked, false);
+    imageSwitch().props.onCheckedChange(true);
+    assert.equal(imageSwitch().props.checked, true);
     assert.equal(promptField().props.value, prompts[locale]);
     editorLocale = locale === 'en' ? 'zh-CN' : 'en';
     assert.equal(promptField().props.value, prompts[locale], 'A locale switch preserves the opening default');

@@ -320,7 +320,7 @@ def test_exact_deadline_references_media_and_pagination(qq_client):
     data["message"] = "[CQ:at,qq=7777][CQ:reply,id=bot][CQ:image,url=https://bot.test/a]literal &#91;ok&#93;"
     ingest(client, state, p, data, 8)
     assert state.qq.store.get(QQBinding, sid).deadline == 10
-    normalized, keyword_text = normalize(data)
+    normalized, keyword_text, media = normalize(data)
     assert normalized["text"] == "@7777[引用:bot][图片]literal [ok]"
     assert keyword_text == "@7777literal [ok]"
     ingest(client, state, p, {**event(5), "message": [{"data": {}}]}, 9)

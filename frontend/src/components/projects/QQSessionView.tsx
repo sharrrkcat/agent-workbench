@@ -30,6 +30,7 @@ import { useCogitaStore } from '../../store/useCogitaStore';
 import { terminal } from '../../store/cogita/mergeState';
 import { buildQQConversation } from './qqConversation';
 import { useQQConversation } from './useQQConversation';
+import { QQMessageContent } from './QQMessageContent';
 
 export function QQSessionView({ session }: { session: QQSession }) {
   return <MessageScrollerProvider autoScroll scrollEdgeThreshold={32}>
@@ -151,7 +152,7 @@ function QQIncoming({ message, showIdentity, deleteAction }: { message: QQMessag
     <div className="flex min-w-0 items-center justify-end gap-1" data-qq-bubble-row data-qq-incoming={message.id}>
       <QQDeleteButton action={deleteAction} />
       <QQStatus status={message.disposition} detail={references.join(' · ')} />
-      <Bubble variant="secondary" align="end"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><div className="message">{message.text}</div></BubbleContent></Bubble>
+      <Bubble variant="secondary" align="end"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><QQMessageContent segments={message.segments} /></BubbleContent></Bubble>
     </div>
   </MessageFrame>;
 }
