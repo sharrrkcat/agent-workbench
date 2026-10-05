@@ -16,6 +16,7 @@ import type { LocalEngine, ModelInput, VisionParameters } from '../../../types/m
 import { grokVoices, selectTTSArchitecture, ttsGenerationDefaults } from './profileDefaults';
 import { ASRParameters } from './ASRParameters';
 import { ProcessorParameters } from './ProcessorParameters';
+import { ImageGenerationParameters } from './ImageGenerationParameters';
 
 export function ProfileParameters({
   value,
@@ -27,6 +28,7 @@ export function ProfileParameters({
   onChange: (parameters: ModelInput['parameters']) => void;
 }) {
   const { t } = useTranslation('llm');
+  if (value.kind === 'image_generation') return <ImageGenerationParameters parameters={value.parameters} onChange={onChange} />;
   if (value.kind === 'processor') return <ProcessorParameters parameters={value.parameters} onChange={onChange} />;
   if (value.kind === 'asr') return <ASRParameters parameters={value.parameters} onChange={onChange} />;
   if (value.kind === 'reranker' || value.kind === 'embedding' && value.source?.type === 'local') return null;

@@ -23,6 +23,7 @@ from ai_workbench.core.models.schema import (
     ImagePart, LocalSource, ProviderSource, ModelProfile, ModelStatus, ExternalConnection, SpeechRequest,
     ImageEmbeddingRequest, SiglipResult, SiglipTowers, Tower, VisionRequest, VisionResult,
     ASRParameters, TranscriptionRequest, TranscriptionResult, ImageProcessRequest, ImageOutput, StreamOptions,
+    ImageGenerationRequest, ImageGenerationResult,
 )
 from ai_workbench.workers.common import WorkerError
 from ai_workbench.workers.timing import current_trace, tracing
@@ -748,6 +749,12 @@ class ModelManager:
         images = await asyncio.to_thread(prepare_tagging_images, profile.id, request.images, thresholds, limit)
         async with self._lease(profile) as adapter:
             return await adapter.vision(profile, images, thresholds)
+
+    async def generate_images(self, profile_id: str, request: ImageGenerationRequest) -> ImageGenerationResult:
+        profile = self.profile(profile_id, "image_generation")
+        options = {**profile.parameters, **request.model_dump(exclude_none=True, exclude={"model", "prompt"})}
+        async with self._lease(profile) as adapter:
+            return await adapter.generate_images(profile, request.prompt, options)
 
     async def process_image(self, profile_id: str, data: bytes, request: ImageProcessRequest) -> ImageOutput:
         from ai_workbench.core.models.processing import prepare_process_image

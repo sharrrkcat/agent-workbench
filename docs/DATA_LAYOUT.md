@@ -244,3 +244,5 @@ QQ references_json retains real mention positions and submitted name/self snapsh
 All existing records and file directories survive these revisions; no data conversion or compatibility tables are added.
 
 Revision `0035_provider_tts` permits provider sources for TTS in ck_model_source. Architecture and default voice use existing parameters_json; existing rows and all model, attachment and runtime directories remain unchanged.
+
+Revision `0036_image_generation` adds image_generation to ck_model_kind and permits only provider sources for it in ck_model_source. Existing profiles, providers, runtime records and all other rows survive unchanged; no model, attachment, runtime or other files are touched. Generated images have no database or filesystem storage owned by Cogita.

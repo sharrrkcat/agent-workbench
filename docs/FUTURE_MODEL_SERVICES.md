@@ -32,16 +32,9 @@ model hashing, a second profile store or an extension registry. Public failures 
 
 ## Image generation
 
-Current vision, image_embedding and processor kinds consume images. DLSS NR static processing is implemented under [Models](contracts/models.md#dlss-nr-image-processing); image generation remains unimplemented. A future image service requires a separate decision about generation
-operations, profile capabilities and supported managed backend, followed by
-strict schemas and a ModelManager adapter. Heavy execution stays outside the
-API process. Reuse runtime supervision and external service guards where they
-fit, without restoring the removed internal diffusers implementation.
-
-An eventual `/v1/images/generations` must define bounded inputs/outputs, artifact
-ownership/retention, cancellation, lifecycle, observability and error behavior
-before implementation. Model weights remain manually managed under the current
-product boundary. This note adds no route, runtime variant or model kind.
+Provider-only text-to-image is implemented under [Models](contracts/models.md#provider-image-generation), including `/v1/images/generations` and model settings. Local generation, edits/variations, streaming, provider-specific parameters, usage collection, chat integration and a generation page remain outside this release.
+A future local service requires a separate managed-engine and lifecycle decision, strict schemas and a ModelManager adapter. Heavy inference stays outside the API process; reuse runtime supervision without restoring the removed internal diffusers implementation. Model weights remain manually managed.
+Future artifact storage or editing must define ownership/retention and cancellation before implementation. These notes add no local engine, image storage, route or capability.
 
 ## Voice cloning and text analysis
 

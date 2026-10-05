@@ -16,10 +16,10 @@ for (const locale of ['en', 'zh-CN']) {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
-      test('all kinds show cards, local suggestions and persistent enable switches', async ({ page, request }, info) => {
+      test('local kinds show cards, local suggestions and persistent enable switches', async ({ page, request }, info) => {
         test.setTimeout(90000);
         const profiles: ModelProfile[] = [];
-        for (const kind of modelKinds) {
+        for (const kind of modelKinds.filter((kind) => kind !== 'image_generation')) {
           const response = await request.post('/api/models/profiles', { data: {
             ...newModel(kind), name: `${kind} ${'LongModelName'.repeat(5)} ${locale} ${width}`,
             alias: `profile-card-${kind}-${locale.toLowerCase()}-${width}`,

@@ -1,4 +1,4 @@
-export const modelKinds = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor'] as const;
+export const modelKinds = ['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor', 'image_generation'] as const;
 export type ModelKind = (typeof modelKinds)[number];
 export type LocalEngine = 'llama-server' | 'transformers' | 'kokoro' | 'wd14' | 'chatterbox' | 'qwen3tts' | 'siglip2' | 'sentence-transformers' | 'cross-encoder' | 'whisper' | 'dlss5nr';
 export type ComponentId = 'dlss5nr';

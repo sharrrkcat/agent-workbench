@@ -37,6 +37,7 @@ test_runtime_dependencies.py covers normalized identity, version paths, recovera
 test_runtime_smoke_cli.py covers installation-only modes and device defaults.
 test_provider_runtime.py covers strict sources, provider ownership, maintenance isolation,
 configuration reset, installation/job preservation and the shared lock/wheel audit.
+test_image_generation.py covers provider-only profiles, migration, generation schemas/API, response limits, queues and cancellation; scripts/smoke_image_generation.py owns explicit live URL/base64 acceptance with isolated profiles.
 test_provider_inference.py covers optional discovery and request status. scripts/build_runtime_wheels.py
 reproduces upstream patches; scripts/check_qwen_rope.py checks checkpoint buffer restoration.
 test_dlss_processor.py/test_dlss_runtime.py cover component lifecycle/bootstrap, processor schemas, uploads, alpha/orientation and worker cancellation/reload. scripts/smoke_dlss_runtime.py covers real D3D12 acceptance and optional component lifecycle.

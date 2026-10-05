@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
 
 import httpx
@@ -11,7 +12,7 @@ from ai_workbench.core.models.adapter import ChatInputCapture
 from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTiming
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatDelta, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult,
-    ModelProfile, ExternalConnection, AudioOutput,
+    ModelProfile, ExternalConnection, AudioOutput, GeneratedImage, ImageGenerationResult,
 )
 
 
@@ -57,6 +58,35 @@ class OpenAIAdapter:
                 raise ValueError("invalid model id")
             return sorted(set(ids))
         except (ValueError, KeyError, TypeError) as exc:
+            raise transport_error(exc) from exc
+
+    async def generate_images(self, profile: ModelProfile, prompt: str, options: dict) -> ImageGenerationResult:
+        payload = dict(options, model=profile.model_ref, prompt=prompt)
+        try:
+            async with self.client.stream("POST", "images/generations", json=payload) as response:
+                response.raise_for_status()
+                data = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(data) + len(chunk) > 64 * 1024 * 1024:
+                        raise ValueError("Image generation response too large")
+                    data.extend(chunk)
+            value = strict_json_loads(data)
+            if not isinstance(value, dict) or "error" in value or not isinstance(value.get("data"), list):
+                raise ValueError("Invalid image generation response")
+            if not 1 <= len(value["data"]) <= options["n"]:
+                raise ValueError("Invalid image count")
+            images = []
+            for item in value["data"]:
+                if not isinstance(item, dict):
+                    raise ValueError("Invalid generated image")
+                # Upstream metadata is not part of the public image result.
+                image = GeneratedImage.model_validate({key: item[key] for key in GeneratedImage.model_fields if key in item})
+                requested_format = options.get("response_format")
+                if requested_format is not None and getattr(image, requested_format) is None:
+                    raise ValueError("Unexpected image response format")
+                images.append(image)
+            return ImageGenerationResult(created=int(time.time()), data=images)
+        except (httpx.HTTPError, ValueError) as exc:
             raise transport_error(exc) from exc
 
     async def speech(self, profile: ModelProfile, text: str, voice: str, speed: float,

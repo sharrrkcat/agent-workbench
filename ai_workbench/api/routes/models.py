@@ -213,6 +213,8 @@ async def inspect_model(kind: ModelKind, model_ref: str,
                         query_prompt_name: str | None = None, document_prompt_name: str | None = None,
                         state: RuntimeState = Depends(get_state)):
     import asyncio
+    if kind == "image_generation":
+        raise ModelError("UNSUPPORTED_CAPABILITY", "Image generation requires an external provider, not a local directory.", 422)
     if kind == "embedding":
         return await asyncio.to_thread(inspect_text_embedding, state.repo_root, model_ref,
             {"query_prompt_name": query_prompt_name, "document_prompt_name": document_prompt_name})

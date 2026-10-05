@@ -25,7 +25,7 @@ from ai_workbench.api.schemas.inference import (ChatCompletion, EmbeddingRespons
     TranscriptionUpload, TranscriptionTextResponse, TranscriptionVerboseResponse, ImageProcessUpload)
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.http import guard, read_body, read_request
-from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, ImageProcessRequest, ModelKind, RerankRequest, SpeechRequest, TranscriptionRequest, VisionRequest
+from ai_workbench.core.models.schema import ChatRequest, EmbeddingRequest, ImageEmbeddingRequest, ImageProcessRequest, ModelKind, RerankRequest, SpeechRequest, TranscriptionRequest, VisionRequest, ImageGenerationRequest, ImageGenerationResult
 from ai_workbench.core.models.voice_references import credential_id
 from ai_workbench.workers.tts_catalog import FORMATS
 
@@ -56,6 +56,17 @@ async def rerank(request: Request, state: RuntimeState = Depends(get_state)):
     order = sorted(range(len(result.scores)), key=lambda index: -result.scores[index])[:payload.top_n]
     return {"model": profile.alias, "results": [{"index": index, "relevance_score": result.scores[index],
         **({"document": {"text": payload.documents[index]}} if payload.return_documents else {})} for index in order]}
+
+
+@router.post("/images/generations", response_model=ImageGenerationResult, response_model_exclude_none=True,
+             openapi_extra=request_body(ImageGenerationRequest), summary="Generate images through an OpenAI-compatible provider",
+             responses=error_responses(400, 401, 403, 404, 413, 422, 429, 499, 502, 503, 504))
+async def generate_images(request: Request, state: RuntimeState = Depends(get_state)):
+    settings = state.model_settings.get()
+    guard(request, settings)
+    payload = await read_request(request, settings, ImageGenerationRequest)
+    profile = state.model_manager.external_profile(payload.model, "image_generation")
+    return await inference_until_disconnect(request, state.model_manager.generate_images(profile.id, payload))
 
 
 @router.post("/images/process", response_class=Response,

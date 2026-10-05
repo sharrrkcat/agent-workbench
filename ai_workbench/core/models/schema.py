@@ -14,7 +14,7 @@ from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTimin
 from ai_workbench.workers.common import MAX_NORMALIZED_REQUEST_MB
 from ai_workbench.workers.model_catalog import DirectoryInformation
 
-ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts", "asr", "processor"]
+ModelKind = Literal["llm", "embedding", "reranker", "image_embedding", "vision", "tts", "asr", "processor", "image_generation"]
 EmbeddingPurpose = Literal["query", "document"]
 EmbeddingSimilarity = Literal["cosine", "dot"]
 Tower = Literal["image", "text"]
@@ -121,6 +121,57 @@ class LocalEmbeddingParameters(StrictModel):
         description="A directory-declared prompt name; null selects the automatic retrieval prompt.")
     document_prompt_name: str | None = Field(default=None, min_length=1, strict=True,
         description="A directory-declared prompt name; null follows native document prompt selection.")
+
+
+class ImageGenerationOptions(StrictModel):
+    n: int | None = Field(default=None, ge=1, le=10, strict=True,
+        description="Number of images. Omitted/null options inherit the profile; unset profile options use provider defaults.")
+    size: str | None = Field(default=None, pattern=r"^(auto|[1-9][0-9]*x[1-9][0-9]*)$", max_length=32, strict=True,
+        description="auto or WIDTHxHEIGHT. Supported dimensions depend on the provider/model.")
+    quality: Literal["auto", "low", "medium", "high", "standard", "hd"] | None = None
+    style: Literal["natural", "vivid"] | None = None
+    response_format: Literal["url", "b64_json"] | None = None
+
+
+class ImageGenerationParameters(ImageGenerationOptions):
+    n: int = Field(default=1, ge=1, le=10, strict=True)
+
+
+class ImageGenerationRequest(ImageGenerationOptions):
+    model: str = Field(min_length=1, strict=True)
+    prompt: str = Field(min_length=1, max_length=32000, strict=True)
+
+    @field_validator("prompt")
+    @classmethod
+    def nonblank_prompt(cls, value):
+        if not value.strip():
+            raise ValueError("Prompt must not be blank")
+        return value
+
+
+class GeneratedImage(StrictModel):
+    url: str | None = Field(default=None, min_length=1, strict=True)
+    b64_json: str | None = Field(default=None, min_length=1, strict=True)
+    revised_prompt: str | None = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def valid_image(self):
+        import base64
+        from urllib.parse import urlsplit
+        if (self.url is None) == (self.b64_json is None):
+            raise ValueError("An image requires exactly one URL or base64 payload")
+        if self.url is not None:
+            url = urlsplit(self.url)
+            if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password:
+                raise ValueError("Image URL must be an absolute HTTP(S) URL without credentials")
+        elif not base64.b64decode(self.b64_json, validate=True):
+            raise ValueError("Image payload must not be empty")
+        return self
+
+
+class ImageGenerationResult(StrictModel):
+    created: int = Field(ge=0, strict=True, description="Service completion time as Unix seconds.")
+    data: list[GeneratedImage] = Field(min_length=1, max_length=10)
 
 
 class RerankParameters(StrictModel):
@@ -288,7 +339,7 @@ class TTSParameters(RootModel):
 
 PARAMETERS = {"llm": GenerationParameters, "embedding": EmbeddingParameters, "reranker": RerankParameters,
               "image_embedding": ImageEmbeddingParameters, "vision": VisionParameters, "tts": TTSParameters,
-              "asr": ASRParameters, "processor": ProcessorParameters}
+              "asr": ASRParameters, "processor": ProcessorParameters, "image_generation": ImageGenerationParameters}
 
 
 class ModelInput(StrictModel):
@@ -326,6 +377,8 @@ class ModelInput(StrictModel):
         local_embedding = self.kind == "embedding" and (isinstance(self.source, LocalSource)
             or self.source is None and bool(self.parameters.keys() & LocalEmbeddingParameters.model_fields.keys()))
         parameters_schema = LocalEmbeddingParameters if local_embedding else PARAMETERS[self.kind]
+        if self.kind == "image_generation" and not isinstance(self.source, ProviderSource):
+            raise ValueError("Image generation requires an external provider")
         if self.kind == "tts" and isinstance(self.source, ProviderSource):
             parameters_schema = ProviderTTSParameters
         parsed = parameters_schema.model_validate(self.parameters)
@@ -342,8 +395,8 @@ class ModelInput(StrictModel):
                 self.source.execution_options = TypeAdapter(options).validate_python(self.source.execution_options).model_dump(exclude_unset=True)
             else:
                 self.source.execution_options = engine_options(engine, self.source.execution_options).model_validate(self.source.execution_options).model_dump()
-        elif isinstance(self.source, ProviderSource) and self.kind not in {"llm", "embedding", "tts"}:
-            raise ValueError("Providers support only LLM, text embedding and TTS models")
+        elif isinstance(self.source, ProviderSource) and self.kind not in {"llm", "embedding", "tts", "image_generation"}:
+            raise ValueError("Providers support only LLM, text embedding, TTS and image generation models")
         if not self.name.strip() or not self.model_ref.strip():
             raise ValueError("Name and model_ref must not be empty")
         if self.kind == "llm":

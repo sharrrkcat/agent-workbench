@@ -21,7 +21,8 @@ export const newModel = (kind: ModelKind): ModelInput => ({
   alias: '',
   kind,
   model_ref: '',
-  source: kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
+  source: kind === 'image_generation' ? null
+    : kind === 'image_embedding' || kind === 'embedding' || kind === 'reranker' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4, max_batch_size: 1 } }
     : kind === 'processor' ? { ...localSource(), execution_options: { device: 'd3d12', gpu_index: 0 } }
     : kind === 'asr' ? { ...localSource(), execution_options: { device: 'cuda', intraop_threads: 4 } }
     : kind === 'llm' ? { ...localSource(), execution_options: { context_size: 4096 } } : localSource(),
@@ -35,7 +36,8 @@ export const newModel = (kind: ModelKind): ModelInput => ({
     : kind === 'image_embedding' ? { unload_other_tower_on_call: true }
     : kind === 'embedding' ? { query_prompt_name: null, document_prompt_name: null }
     : kind === 'asr' ? { language: 'auto', prompt: '', temperature: 0, response_format: 'json' }
-    : kind === 'processor' ? { ...processorDefaults } : {},
+    : kind === 'processor' ? { ...processorDefaults }
+    : kind === 'image_generation' ? { n: 1 } : {},
 });
 
 export const ttsGenerationDefaults = {

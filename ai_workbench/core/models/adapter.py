@@ -5,7 +5,7 @@ from typing import Protocol
 
 from ai_workbench.core.models.schema import (
     ChatChunk, ChatRequest, ChatResult, EmbeddingPurpose, EmbeddingResult, ModelProfile,
-    ModelStatus, RerankResult, SiglipResult, Tower, VisionResult, AudioOutput, ASRParameters, TranscriptionResult, ImageOutput,
+    ModelStatus, RerankResult, SiglipResult, Tower, VisionResult, AudioOutput, ASRParameters, TranscriptionResult, ImageOutput, ImageGenerationResult,
 )
 
 
@@ -26,6 +26,7 @@ class InferenceAdapter(Protocol):
 
 class ProviderAdapter(InferenceAdapter, Protocol):
     async def models(self) -> list[str]: ...
+    async def generate_images(self, profile: ModelProfile, prompt: str, options: dict) -> ImageGenerationResult: ...
 
 
 class LocalAdapter(InferenceAdapter, Protocol):

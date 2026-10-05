@@ -4,7 +4,7 @@ from pydantic import Field, RootModel
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.core.models.schema import (
-    ASRParameters, EmbeddingParameters, LocalEmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ModelInput,
+    ASRParameters, EmbeddingParameters, LocalEmbeddingParameters, GenerationParameters, ImageEmbeddingParameters, ImageGenerationParameters, ModelInput,
     ModelKind, ModelSettings, ProviderInput, ProviderProfile, ProviderSource, Lifecycle, ExternalConnection, RerankParameters, VisionParameters, TTSParameters, ProviderTTSParameters, ProcessorParameters, ChatRequestOptions,
 )
 from ai_workbench.core.models.runtimes.schema import (
@@ -19,7 +19,7 @@ class EmptyExecutionOptions(ApiModel):
 
 LlmExecutionOptions = EmptyExecutionOptions | LlamaCPUOptions | LlamaCUDAOptions | TransformersOptions
 ExecutionOptions = LlmExecutionOptions | OnnxCPUOptions | SiglipOptions | EmbeddingOptions | RerankerOptions | DLSSOptions
-Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters | ProviderTTSParameters | ASRParameters | ProcessorParameters
+Parameters = GenerationParameters | EmbeddingParameters | LocalEmbeddingParameters | RerankParameters | ImageEmbeddingParameters | VisionParameters | TTSParameters | ProviderTTSParameters | ASRParameters | ProcessorParameters | ImageGenerationParameters
 ModelFields = public_model("ModelFields", ModelInput, omit={"parameters", "source"})
 
 
@@ -113,7 +113,13 @@ class ProcessorModel(ModelFields):
     source: LocalProcessorSource = Field(default_factory=lambda: LocalProcessorSource(type="local"))
 
 
-class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel | ASRModel | ProcessorModel,
+class ImageGenerationModel(ModelFields):
+    kind: Literal["image_generation"]
+    parameters: ImageGenerationParameters = Field(default_factory=ImageGenerationParameters)
+    source: ProviderSource
+
+
+class ModelCreate(RootModel[Annotated[LlmModel | EmbeddingModel | RerankerModel | ImageEmbeddingModel | VisionModel | TTSModel | ASRModel | ProcessorModel | ImageGenerationModel,
                                     Field(discriminator="kind")]]):
     """Only LLM, text embedding and reranker profiles permit unbound sources.
 
@@ -159,7 +165,11 @@ class ProcessorProfile(ProcessorModel, ProfileIdentity):
     pass
 
 
-ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile | TTSProfile | ASRProfile | ProcessorProfile,
+class ImageGenerationProfile(ImageGenerationModel, ProfileIdentity):
+    pass
+
+
+ModelProfileResponse = Annotated[LlmProfile | EmbeddingProfile | RerankerProfile | ImageEmbeddingProfile | VisionProfile | TTSProfile | ASRProfile | ProcessorProfile | ImageGenerationProfile,
                                  Field(discriminator="kind")]
 ModelPatch = patch_model("ModelPatch", ModelInput, fields={
     "parameters": (Parameters, Field(default_factory=lambda: None, description="Replaces parameters; must match the saved model kind.")),

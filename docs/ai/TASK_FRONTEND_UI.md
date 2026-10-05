@@ -53,7 +53,7 @@ composer growth, disclosure position and breakpoint/short viewport behavior.
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
 independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
 chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning previews, message alignment and images.
-settings-layout.spec.ts covers all 21 grouped pages, collapsed menus, direct links, history, resource
+settings-layout.spec.ts covers all 22 grouped pages, collapsed menus, direct links, history, resource
 leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, shared navigation and responsive scroll regions.
 chat-drafts.spec.ts covers unsaved settings, shared creation entries, attachment promotion/retry,
 empty startup and last-session deletion; test-chat-drafts.mjs covers first-send state and races.
@@ -66,9 +66,10 @@ test-persona-identity.mjs covers list/event races and deleted identities. projec
 inherited resources, sparse overrides, guarded history and scoped deletion; test-projects.mjs covers selection/deletion races.
 qqbot-images.spec.ts covers the image-input switch, ordered inline pictures/stickers, animated previews, separate bubbles and older pending-media refresh in both locales/viewports. qqbot.spec.ts covers QQ Project creation, token settings, binding, sender grouping, history, delivery/skip states and usage/context inspection. Composer cases cover Project model/reasoning edits, failed/delayed saves, controls and responsive hints. qqbot-delete.spec.ts covers local bubble/reply deletion, confirmations, unchanged statuses, busy/failure feedback and version reconciliation in both locales/viewports.
 context-detail.spec.ts covers lazy call selection, exact request views, stale reads, error retry, deletion and modal focus/scroll in both locales/viewports.
+image-generation.spec.ts covers provider-only sources, disabled Local Runtime, discovery/manual IDs, parameter defaults and CRUD in both locales/viewports.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
-model-profiles.spec.ts covers all eight card layouts, enable saves/failures, source-required drafts and local suggestion states in both locales/viewports.
+model-profiles.spec.ts covers local card layouts, enable saves/failures, source-required drafts and local suggestion states in both locales/viewports.
 test-wd14.mjs and wd14.spec.ts cover WD14 source/CPU defaults, inventory/manual references,
 threshold validation/round trips and lifecycle controls in both locales and desktop/touch viewports.
 test-siglip.mjs and siglip.spec.ts cover directory information, stale responses, preserved drafts, the unload-other-tower switch,

@@ -56,7 +56,8 @@
     "vision": "视觉",
     "tts": "语音合成",
     "asr": "语音识别",
-    "processor": "处理器"
+    "processor": "处理器",
+    "image_generation": "图片生成"
   },
   "states": {
     "unknown": "未检查",
@@ -554,5 +555,28 @@
   "contextWindowCreateHelp": "新建模型时必填。选择来源时，空值自动填入：本地运行时为 4096，外部提供商为 258000；已有值保持不变。",
   "contextWindowLocalHelp": "窗口包含输入和输出；实际容量受运行实例和模型上限限制。",
   "contextWindowProviderHelp": "聊天前必须填写。窗口包含输入和输出；外部模型的输入计数为估算。",
-  "outputReserveHelp": "最大输出留空时，预留窗口的四分之一，最多 4,096 token。"
+  "outputReserveHelp": "最大输出留空时，预留窗口的四分之一，最多 4,096 token。",
+  "imageGeneration": {
+    "providerOnly": "本版图片生成仅支持外部 provider。",
+    "n": "图片数量",
+    "size": "图片尺寸",
+    "sizeHelp": "填写 auto 或 宽x高，例如 1024x1024。",
+    "quality": "图片质量",
+    "style": "图片风格",
+    "response_format": "图片返回格式",
+    "providerDefault": "Provider 默认值",
+    "optionsHelp": "可选参数留空时使用 provider 默认值，具体支持范围由模型决定。图片 URL 可能过期，API 调用方负责保存结果。",
+    "values": {
+      "auto": "自动",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "standard": "标准",
+      "hd": "高清",
+      "natural": "自然",
+      "vivid": "鲜明",
+      "url": "URL",
+      "b64_json": "Base64"
+    }
+  }
 }

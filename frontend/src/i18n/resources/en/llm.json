@@ -56,7 +56,8 @@
     "vision": "Vision",
     "tts": "Text to Speech",
     "asr": "Speech to Text",
-    "processor": "Processor"
+    "processor": "Processor",
+    "image_generation": "Image Generation"
   },
   "states": {
     "unknown": "Unchecked",
@@ -554,5 +555,28 @@
   "contextWindowCreateHelp": "Required when creating a model. Empty windows default to 4096 for Local Runtime or 258000 for a provider when selecting a source; existing values are preserved.",
   "contextWindowLocalHelp": "Includes input and output; actual capacity is bounded by the running instance and model.",
   "contextWindowProviderHelp": "Required before chatting. Includes input and output; provider input counts are estimates.",
-  "outputReserveHelp": "An empty maximum output reserves one quarter of the window, up to 4,096 tokens."
+  "outputReserveHelp": "An empty maximum output reserves one quarter of the window, up to 4,096 tokens.",
+  "imageGeneration": {
+    "providerOnly": "Image generation supports external providers only in this release.",
+    "n": "Image count",
+    "size": "Image size",
+    "sizeHelp": "Use auto or WIDTHxHEIGHT, for example 1024x1024.",
+    "quality": "Image quality",
+    "style": "Image style",
+    "response_format": "Image response format",
+    "providerDefault": "Provider default",
+    "optionsHelp": "Leave optional settings unset to use provider defaults. Supported options vary by model. Image URLs may expire; API callers own saving the results.",
+    "values": {
+      "auto": "Auto",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "standard": "Standard",
+      "hd": "HD",
+      "natural": "Natural",
+      "vivid": "Vivid",
+      "url": "URL",
+      "b64_json": "Base64"
+    }
+  }
 }

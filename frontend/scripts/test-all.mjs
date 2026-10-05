@@ -19,6 +19,7 @@ for (const script of [
   'test-model-stream',
   'test-runtime-maintenance',
   'test-tts',
+  'test-image-generation',
   'test-wd14',
   'test-siglip',
   'test-text-embeddings',

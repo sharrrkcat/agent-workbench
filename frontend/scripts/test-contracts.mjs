@@ -28,7 +28,7 @@ const { settingsSections, settingsGroups, readSettingsRoute, settingsRouteUrl, s
 ).exports;
 assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools']);
 const settingsPages = settingsGroups.flatMap((group) => group.menus.flatMap((menu) => menu.pages));
-assert.equal(settingsPages.length, 21);
+assert.equal(settingsPages.length, 22);
 for (const route of settingsPages)
   assert.deepEqual(readSettingsRoute(new URL(settingsRouteUrl(route), 'http://localhost').search), route);
 for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities', '?tab=pet'])
@@ -42,7 +42,7 @@ for (const view of ['settings', 'profiles', 'service', 'unknown'])
 const executionMenus = settingsGroups.find((group) => group.id === 'execution').menus;
 assert.deepEqual(executionMenus.map((menu) => menu.id), ['models', 'providersRuntime', 'tools']);
 assert.deepEqual(executionMenus[0].pages.map((page) => page.view),
-  ['dashboard', 'llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor']);
+  ['dashboard', 'llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor', 'image_generation']);
 assert.deepEqual(executionMenus[1].pages.map((page) => page.view), ['providers', 'localRuntime']);
 for (const locale of ['en', 'zh-CN']) {
   const t = i18n.getFixedT(locale, 'settings');

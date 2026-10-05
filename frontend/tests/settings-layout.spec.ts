@@ -74,7 +74,7 @@ for (const locale of ['en', 'zh-CN']) {
         const pages = [
           ['general', ''],
           ['models', 'dashboard'],
-          ...['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor'].map((kind) => ['models', kind]),
+          ...['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor', 'image_generation'].map((kind) => ['models', kind]),
           ['models', 'providers'],
           ['models', 'localRuntime'],
           ['personas', 'user'],
@@ -137,9 +137,9 @@ for (const locale of ['en', 'zh-CN']) {
           settings.sidebarGroups.roleplay,
         ]);
         await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(8);
-        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(21);
+        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(22);
         for (const [section, count] of [
-          ['models', 9],
+          ['models', 10],
           ['providersRuntime', 2],
           ['knowledge', 2],
           ['worldbook', 2],

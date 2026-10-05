@@ -40,29 +40,23 @@ Choose default chat and optional auxiliary models in **Models > Dashboard**. New
 | asr | data/models/asr | Native Whisper, Windows CUDA or CPU |
 
 Inventory references are directories relative to data/models, such as `llms/example`. GGUF needs one main model or complete numbered shard group and at most one `mmproj*.gguf` in that directory; multiple candidates require separate directories.
-A detected GGUF projector enables Vision when selecting a new directory; disabling Vision skips its loading. Main/projector files and TTS/WD14 architecture are read-only information. Transformers Vision remains selectable.
-Chat accepts static PNG/JPEG/WebP through file selection, paste and drag/drop; selected historical images support follow-ups.
-Local `/v1` images require inline data URLs and detail=auto. The configurable complete-request budget defaults to 128 MiB; bundled GGUF also has a native 100 MiB ceiling.
-Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
+A detected GGUF projector enables Vision when selecting a new directory; disabling Vision skips its loading. Main/projector files and TTS/WD14 architecture are read-only information. Transformers Vision remains selectable. Chat accepts static PNG/JPEG/WebP through file selection, paste and drag/drop; selected historical images support follow-ups.
+Local `/v1` images require inline data URLs and detail=auto. The configurable complete-request budget defaults to 128 MiB; bundled GGUF also has a native 100 MiB ceiling. Provider image URLs/options pass through. Kokoro uses the [ONNX speech layout](#offline-kokoro-speech).
 
 The [runtime catalog](docs/contracts/models.md#managed-catalog-and-installation) owns engine/dependency details. Capable engines default to CUDA, Kokoro/WD14 to CPU; GGUF supports automatic/manual GPU layers and requires confirmed positive offload.
-Local Runtime manages installation/repair/uninstall, jobs/logs and cache prune/clean; storage deduplicates hard links and reports exclusive recovery estimates. Model weights are never downloaded.
-Local health/load/unload and provider request status follow [Models](docs/contracts/models.md#lifecycle-and-status). Source-only worker updates reuse installation after reload/restart; Repair rebuilds dependencies.
+Local Runtime manages installation/repair/uninstall, jobs/logs and cache prune/clean; storage deduplicates hard links and reports exclusive recovery estimates. Model weights are never downloaded. Local health/load/unload and provider request status follow [Models](docs/contracts/models.md#lifecycle-and-status). Source-only worker updates reuse installation after reload/restart; Repair rebuilds dependencies.
 
 ## Chat and tools
 
 Personas share identity, avatar and prompt. Cogita/Agent Personas bind Knowledge; roleplay User/Character Personas bind Worldbook. Ordinary sessions select one Agent, initially Cogita, and always use the singleton Cogita Persona.
 New Workspace and New Timeline create immutable Project types in the sidebar tree. Workspace sessions inherit editable Project defaults and Knowledge, with explicit overrides; model selection resolves session > Project > global. Ordinary sessions keep their own settings.
 
-Chat supports Cogita Persona background and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval. Timeline supports Project settings, roleplay Persona selection and Worldbook bindings; its internal conversations/context are deferred.
-Embedding changes require reindexing; unavailable optional reranking intentionally preserves RRF order.
+Chat supports Cogita Persona background and Knowledge text/file/attachment sources, chunking and vector/keyword retrieval. Timeline supports Project settings, roleplay Persona selection and Worldbook bindings; its internal conversations/context are deferred. Embedding changes require reindexing; unavailable optional reranking intentionally preserves RRF order.
 
-Harness defaults off; enable it and choose tools in session settings to permit native model calls. Workspace tools are capped by their Project, including pending approvals. New ordinary sessions
-select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search, fetch_url, knowledge_search, base64_encode and base64_decode. File/network calls require approval
+Harness defaults off; enable it and choose tools in session settings to permit native model calls. Workspace tools are capped by their Project, including pending approvals. New ordinary sessions select all current tools; toggling Harness preserves choices. Built-ins are read_file, web_search, fetch_url, knowledge_search, base64_encode and base64_decode. File/network calls require approval
 every time; waiting survives restart, blocks other input and resumes through approval, rejection or cancellation.
 
-Direct calls use **Settings > Tools** or a registered slash tool. Enabled `/base64_encode hello` returns `aGVsbG8=` without a model summary/title. Multi-parameter tools need JSON, such as `/read_file
-{"path":"data/knowledge/note.txt"}`. Unknown `/...`, `@...` and `:...` prefixes are ordinary text; results render as data. [Harness/tools](docs/contracts/harness-tools.md) owns limits and APIs.
+Direct calls use **Settings > Tools** or a registered slash tool. Enabled `/base64_encode hello` returns `aGVsbG8=` without a model summary/title. Multi-parameter tools need JSON, such as `/read_file {"path":"data/knowledge/note.txt"}`. Unknown `/...`, `@...` and `:...` prefixes are ordinary text; results render as data. [Harness/tools](docs/contracts/harness-tools.md) owns limits and APIs.
 
 Each run has one reply, collapsed processing history and final answer. Expand its time row for reasoning/commands, then commands for arguments/results. **Show full processing history** opens active
 processing by default; completed processing stays collapsed and approvals visible. Completed/waiting replies show LLM usage, first response, total time and generation speed; **Usage details** expands individual model calls.
@@ -99,10 +93,16 @@ curl -N http://127.0.0.1:8765/v1/chat/completions \
 ```
 
 Chat accepts the documented OpenAI subset, including n=1, tools, user image_url and backend-supported response_format values. Embeddings accept strings/string arrays, float/base64, dimensions and purpose=query|document (default document). Unsupported fields/capabilities and unavailable models fail explicitly.
-Chat JSON returns usage when provided; `cogita.include_metrics` additionally returns server-side timing and native/estimated generation speed. Unknown measurements stay null.
-SSE sends one empty-choices statistics tail before `[DONE]`; usage and metrics flags are independent. Timings exclude client rendering; total reply time includes tool/approval waits, generation speed does not.
-[Models](docs/contracts/models.md#external-inference-api) owns request rules; [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior. Other reranker architectures and image
-generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
+Chat JSON returns usage when provided; `cogita.include_metrics` additionally returns server-side timing and native/estimated generation speed. Unknown measurements stay null. SSE sends one empty-choices statistics tail before `[DONE]`; usage and metrics flags are independent. Timings exclude client rendering; total reply time includes tool/approval waits, generation speed does not.
+[Models](docs/contracts/models.md#external-inference-api) owns request rules; [runs/streaming](docs/contracts/runs-streaming.md#external-sse) owns SSE behavior. Other reranker architectures and local image generation remain [future design records](docs/FUTURE_MODEL_SERVICES.md).
+
+### Provider image generation
+
+In Models > Image Generation, choose an external provider and enter its model ID. Local Runtime is disabled. Configure optional defaults and enable External API visibility; callers use the profile alias.
+```shell
+curl http://127.0.0.1:8765/v1/images/generations -H "Authorization: Bearer YOUR_LOCAL_KEY" -H "Content-Type: application/json" -d '{"model":"image-model","prompt":"A blue ceramic cup on a white background","n":1,"response_format":"url"}'
+```
+Use `curl.exe` on Windows. `b64_json` returns inline base64 instead; [Models](docs/contracts/models.md#provider-image-generation) owns optional size/quality/style and limits. Responses are not stored, and provider URLs may expire. Local generation, editing and a generation page are not included. Bilingual desktop/touch checks: `npm run test:browser -- image-generation.spec.ts` in frontend. Explicit live acceptance: `uv run python -m scripts.smoke_image_generation --provider-id ID --model-ref MODEL` generates two billable images, checks decoding in memory and saves a sanitized report under build/image-generation-smoke, using read-only saved provider settings and isolated profiles.
 
 ### Offline text embeddings
 

@@ -196,6 +196,6 @@ def test_migration_preserves_rows_and_directories(tmp_path):
         assert profiles.get(remote.id) == remote
         assert all(file.read_bytes() == b"keep" for file in files)
         with engine.connect() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == migrations.PROVIDER_TTS_REVISION
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == migrations.HEAD_REVISION
     finally:
         engine.dispose()

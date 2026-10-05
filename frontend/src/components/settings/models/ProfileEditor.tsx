@@ -258,10 +258,8 @@ export function ProfileEditor({
                         );
                       }}
                       items={[
-                        ...(['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr', 'processor'].includes(model.value.kind)
-                          ? [{ value: 'local', label: t('localRuntime') }]
-                          : []),
-                        ...(['llm', 'embedding', 'tts'].includes(model.value.kind) && providers.length
+                        { value: 'local', label: t('localRuntime') },
+                        ...(['llm', 'embedding', 'tts', 'image_generation'].includes(model.value.kind) && providers.length
                           ? providers.map((provider) => ({
                               value: `provider:${provider.id}`,
                               label: (
@@ -278,13 +276,11 @@ export function ProfileEditor({
                         <SelectValue placeholder={t('selectModelSource')} />
                       </SelectTrigger>
                       <SelectContent>
-                        {['llm', 'tts', 'vision', 'image_embedding', 'embedding', 'reranker', 'asr', 'processor'].includes(model.value.kind) ? (
-                          <SelectGroup>
-                            <SelectLabel>{t('localSourceGroup')}</SelectLabel>
-                            <SelectItem value="local">{t('localRuntime')}</SelectItem>
-                          </SelectGroup>
-                        ) : null}
-                        {['llm', 'embedding', 'tts'].includes(model.value.kind) && providers.length ? (
+                        <SelectGroup>
+                          <SelectLabel>{t('localSourceGroup')}</SelectLabel>
+                          <SelectItem value="local" disabled={model.value.kind === 'image_generation'}>{t('localRuntime')}</SelectItem>
+                        </SelectGroup>
+                        {['llm', 'embedding', 'tts', 'image_generation'].includes(model.value.kind) && providers.length ? (
                           <SelectGroup>
                             <SelectLabel>{t('providers')}</SelectLabel>
                             {providers.map((provider) => (
@@ -297,6 +293,7 @@ export function ProfileEditor({
                         ) : null}
                       </SelectContent>
                     </Select>
+                    {model.value.kind === 'image_generation' ? <FieldDescription>{t('imageGeneration.providerOnly')}</FieldDescription> : null}
                   </Field>
                   <Field>
                     <FieldLabel>{t('modelRef')}</FieldLabel>
