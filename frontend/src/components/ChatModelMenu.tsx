@@ -9,8 +9,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
+import { useProjectsStore } from '../store/useProjectsStore';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
-import type { SessionPatch } from '../types/chat';
+import type { OrdinarySessionPatch } from '../types/chat';
+import { errorText } from './settings/resources/ResourceUI';
 import { HarnessSettingsSheet } from './personas/HarnessSettingsSheet';
 
 export function ChatModelMenu({ disabled, onBusyChange }: {
@@ -29,7 +31,8 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
   const [busy, setBusy] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const target = session ?? draft;
-  const options = profiles.filter((profile) => profile.kind === 'llm');
+  const isQQ = target?.kind === 'qqbot';
+  const options = profiles.filter((profile) => profile.kind === 'llm' && (!isQQ || profile.source?.type === 'provider'));
   const selected = options.find((profile) => profile.id === configuration?.model_profile_id);
   const emptyLabel = t(options.some((profile) => profile.enabled) ? 'selectModel' : 'noModels');
   const label = selected ? selected.name + (selected.enabled ? '' : ` (${t('disabled')})`)
@@ -45,20 +48,33 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
       && !providers.some((provider) => profile.source?.type === 'provider' && provider.id === profile.source.provider_profile_id)) },
   ].filter((group) => group.models.length);
 
-  async function save(patch: SessionPatch) {
+  async function save(patch: Pick<OrdinarySessionPatch, 'model_profile_id' | 'reasoning' | 'harness_enabled'>) {
     if (disabled || busy) return;
+    if (isQQ) useCogitaStore.getState().setError(null);
     setBusy(true);
     onBusyChange(true);
-    await updateSession(patch);
-    if (useCogitaStore.getState().sessionEpoch !== sessionEpoch) return;
-    setBusy(false);
-    onBusyChange(false);
+    try {
+      if (target?.kind === 'qqbot') {
+        await useProjectsStore.getState().patch(target.project_id, patch);
+        if (useCogitaStore.getState().sessionEpoch === sessionEpoch)
+          await useCogitaStore.getState().reloadSessions(target.project_id);
+      } else {
+        await updateSession(target?.kind === 'workspace' ? { overrides: patch } : patch);
+      }
+    } catch (error) {
+      if (useCogitaStore.getState().sessionEpoch === sessionEpoch) useCogitaStore.getState().setError(errorText(error));
+    } finally {
+      if (useCogitaStore.getState().sessionEpoch === sessionEpoch) {
+        setBusy(false);
+        onBusyChange(false);
+      }
+    }
   }
 
   return <>
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger render={<InputGroupButton ref={triggerRef} size="sm" variant="outline"
-        className="chat-model-select h-7 max-w-30 min-w-0 rounded-full sm:max-w-40"
+        className="chat-model-select h-7 max-w-30 min-w-0 shrink rounded-full sm:max-w-40"
         aria-label={t('model')} title={label} disabled={disabled || busy} />}>
         <span className="truncate">{label}</span><ChevronDown data-icon="inline-end" />
       </DropdownMenuTrigger>
@@ -67,8 +83,7 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
         finalFocus={editing ? false : triggerRef}>
         <DropdownMenuGroup aria-label={t('model')} aria-labelledby={undefined}>
           <DropdownMenuRadioGroup value={configuration?.model_profile_id ?? ''} onValueChange={(model_profile_id) => {
-            if (model_profile_id !== configuration?.model_profile_id) void save(target?.kind === 'workspace'
-              ? { overrides: { model_profile_id } } : { model_profile_id });
+            if (model_profile_id !== configuration?.model_profile_id) void save({ model_profile_id });
           }}>
             {groups.map((group) => <Fragment key={group.id}>
               <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
@@ -82,11 +97,10 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <div className="flex items-center">
+          {!isQQ ? <div className="flex items-center">
             <DropdownMenuCheckboxItem className="min-w-0 flex-1" checked={configuration?.harness_enabled ?? false}
               indicator={t(configuration?.harness_enabled ? 'harnessOn' : 'harnessOff')}
-              disabled={disabled || busy} onCheckedChange={(harness_enabled) => void save(target?.kind === 'workspace'
-                ? { overrides: { harness_enabled } } : { harness_enabled })}>
+              disabled={disabled || busy} onCheckedChange={(harness_enabled) => void save({ harness_enabled })}>
               {t('harness')}
             </DropdownMenuCheckboxItem>
             <DropdownMenuItem className="size-7 shrink-0 justify-center p-0 pointer-coarse:size-11"
@@ -94,17 +108,16 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
               onClick={() => { setOpen(false); setEditing(true); }}>
               <Settings2 />
             </DropdownMenuItem>
-          </div>
+          </div> : null}
           <DropdownMenuCheckboxItem checked={configuration?.reasoning ?? true}
             indicator={t(configuration?.reasoning === false ? 'reasoningOff' : 'reasoningOn')}
-            disabled={disabled || busy} onCheckedChange={(reasoning) => void save(target?.kind === 'workspace'
-              ? { overrides: { reasoning } } : { reasoning })}>
+            disabled={disabled || busy} onCheckedChange={(reasoning) => void save({ reasoning })}>
             {t('reasoning')}
           </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-    {editing && target ? <HarnessSettingsSheet session={target} onClose={() => setEditing(false)}
+    {editing && target && !isQQ ? <HarnessSettingsSheet session={target} onClose={() => setEditing(false)}
       finalFocus={triggerRef} onBusyChange={onBusyChange} /> : null}
   </>;
 }

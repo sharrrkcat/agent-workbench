@@ -242,7 +242,7 @@ Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
 
 Choose New QQBot, enter an independently installed NapCat OneBot v11 WebSocket endpoint and bot account,
 select an external LLM, then enable the connection. Bind each group/friend manually through New session.
-Group keywords (including configured @QQ ids) grant 60-second follow-up eligibility; participants extend a five-second quiet window. Follow-up batches may explicitly skip; private messages require replies. Sessions show read-only records, delivery/skip/run details and pause/resume/stop controls. Only the QQ send tool
+Group keywords (including configured @QQ ids) grant 60-second follow-up eligibility; participants extend a five-second quiet window. Follow-up batches may explicitly skip; private messages require replies. Sessions show delivery/skip/run details, pause/resume/stop and idle local deletion to clean future context without recalling QQ messages. Only the QQ send tool
 publishes replies. [Chat/context](docs/contracts/chat-context.md#qqbot-conversations) owns settings;
 [QQ boundaries](docs/FUTURE_QQ_INTEGRATION.md) owns exclusions and outstanding live acceptance.
 Bilingual desktop/touch verification: `npm run test:browser -- qqbot.spec.ts` after building frontend assets.
@@ -283,7 +283,7 @@ Review package/hash changes and dependency-source annotations, then repeat the c
 ## Verification
 
 ```powershell
-uv run pytest -q # Only when backend code changes
+uv run pytest -n 8 -q # Only when backend code changes
 uv run python -m compileall -q ai_workbench
 uv run python scripts/openapi.py check
 uv run python scripts/check_docs_size.py
@@ -299,7 +299,7 @@ git diff --check
 Build the bundled component with `uv run python scripts/build_dlss_component.py` (MSVC/Windows SDK; optional --vs-root). The archive/worker/notices ship in source checkouts and portable packages; installation needs no compilation or network.
 DLSS D3D12: `uv run python -m scripts.smoke_dlss_runtime`. Add `--component-lifecycle` when component artifacts/install behavior change, and `--image ./input.png` for a representative image alongside UHD. Reuse the verified base, supply NR manually and stop Cogita first. Reports/samples: build/dlss-smoke. Acceptance leaves the component installed and default profile unloaded. Bilingual desktop/touch: `npm run test:browser -- dlss.spec.ts` in frontend.
 
-Backend tests use temporary roots, mock providers and loopback HTTP/SSE/WS; frontend tests cover domain payloads, settings, translation, streams/events and workflows. Installation/real-model/browser acceptance remains separate.
+Backend tests use temporary roots, mock providers and loopback HTTP/SSE/WS across 8 workers; frontend tests cover domain payloads, settings, translation, streams/events and workflows. Installation/real-model/browser acceptance remains separate.
 
 After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts, grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
 Use `-- app-layout.spec.ts settings-layout.spec.ts` for focused layout checks. Install Chromium with `npx playwright install chromium`; the isolated server uses port 18767 (COGITA_BROWSER_PORT overrides it), with artifacts in frontend/test-results.

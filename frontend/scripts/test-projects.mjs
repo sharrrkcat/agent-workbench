@@ -128,6 +128,34 @@ assert.ok(!projects.getState().projects.some((project) => project.id === 'a'));
 assert.ok(!store.getState().sessions.some((session) => session.project_id === 'a'));
 assert.equal(store.getState().currentSession, null);
 
+reset();
+const staleList = deferred();
+api.list = () => staleList.promise;
+const beforePatch = projects.getState().reload();
+const patches = [];
+api.update = async (id, values) => {
+  patches.push({ id, values });
+  return { ...project(id, 'qqbot'), reasoning: false, system_prompt: 'Retained prompt', has_access_token: true };
+};
+await projects.getState().patch('a', { reasoning: false });
+staleList.resolve([project('a'), project('b')]);
+await beforePatch;
+assert.deepEqual(patches, [{ id: 'a', values: { reasoning: false } }]);
+assert.equal(projects.getState().projects.find((item) => item.id === 'a').reasoning, false,
+  'A stale list cannot replace the confirmed Project patch');
+assert.equal(projects.getState().projects.find((item) => item.id === 'a').has_access_token, true);
+const confirmed = projects.getState().projects;
+api.update = async () => { throw new Error('Project save failed'); };
+await assert.rejects(projects.getState().patch('a', { reasoning: true }), /Project save failed/);
+assert.equal(projects.getState().projects, confirmed, 'A rejected patch preserves confirmed settings');
+const latePatch = deferred();
+api.update = () => latePatch.promise;
+const savingRemoved = projects.getState().patch('a', { reasoning: true });
+await projects.getState().remove('a');
+latePatch.resolve({ ...project('a', 'qqbot'), reasoning: true });
+await savingRemoved;
+assert.ok(!projects.getState().projects.some((item) => item.id === 'a'), 'A late patch cannot restore a removed Project');
+
 const requests = [];
 globalThis.fetch = async (url, options) => {
   requests.push({ url, method: options?.method, body: options?.body ? JSON.parse(options.body) : null });

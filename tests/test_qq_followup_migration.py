@@ -15,7 +15,7 @@ def test_followup_schema_and_repeated_upgrade_preserve_runtime_state(tmp_path):
         path.parent.mkdir()
         path.write_bytes(b"unchanged")
     migrations.upgrade(engine, "head")
-    assert migrations.current_revision(engine) == migrations.QQ_FOLLOWUP_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     assert {c["name"] for c in inspect(engine).get_columns("qq_participants")} == {
         "session_id", "sender_id", "keyword_message_id", "expires_at", "in_window"}
     store = QQStore(engine)

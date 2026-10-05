@@ -26,8 +26,10 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "openapi-spec-validator>=0.7.2,<0.8",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "-n 8"

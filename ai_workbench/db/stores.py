@@ -237,8 +237,8 @@ class SqlHistoryStore:
     def __init__(self, engine) -> None:
         self.engine = engine
 
-    def prune(self, session_id, change, updated: MessageSchema | None = None) -> None:
-        with DbSession(self.engine) as db:
+    def prune(self, session_id, change, updated: MessageSchema | None = None, *, transaction=None) -> None:
+        with nullcontext(transaction) if transaction is not None else DbSession(self.engine) as db:
             session = db.get(SessionRecord, session_id)
             if session is None:
                 raise KeyError(session_id)
@@ -266,7 +266,8 @@ class SqlHistoryStore:
             session.updated_at = utc_now()
             session.history_version += 1
             db.add(session)
-            db.commit()
+            if transaction is None:
+                db.commit()
 
 
 class SqlRunStore:

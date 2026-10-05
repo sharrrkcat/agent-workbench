@@ -6,16 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
-import { ReplyActions } from './ReplyActions';
+import { ReplyActions, type ReplyDeleteAction } from './ReplyActions';
 import { terminal } from '../../store/cogita/mergeState';
 import { buildReplyMetrics } from './aggregateReplyMetrics';
 import type { Reply } from './turns';
 
-export function ReplyMetrics({ reply, readOnly = false }: { reply: Reply; readOnly?: boolean }) {
+export function ReplyMetrics({ reply, readOnly = false, deleteAction }: { reply: Reply; readOnly?: boolean; deleteAction?: ReplyDeleteAction }) {
   const { t, i18n } = useTranslation('runs');
   const [open, setOpen] = useState(false);
   const metrics = buildReplyMetrics(reply);
-  if (!metrics) return terminal(reply.run.status) || reply.run.status === 'WAITING_FOR_USER' ? <ReplyActions reply={reply} readOnly={readOnly} /> : null;
+  if (!metrics) return terminal(reply.run.status) || reply.run.status === 'WAITING_FOR_USER' ? <ReplyActions reply={reply} readOnly={readOnly} deleteAction={deleteAction} /> : null;
   const number = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 2 });
   const count = (value: number | null | undefined) => value == null ? '—' : number.format(value);
   const duration = (value: number | null | undefined) => value == null ? '—' : `${number.format(value / 1000)}s`;
@@ -109,6 +109,6 @@ export function ReplyMetrics({ reply, readOnly = false }: { reply: Reply; readOn
     </Dialog>
   );
   return <div className="reply-footer" data-usage-open={open}>
-    <ReplyActions reply={reply} summary={summary} usage={usage} readOnly={readOnly} />
+    <ReplyActions reply={reply} summary={summary} usage={usage} readOnly={readOnly} deleteAction={deleteAction} />
   </div>;
 }

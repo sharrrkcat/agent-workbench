@@ -29,7 +29,8 @@ class QQParticipant(SQLModel, table=True):
 class QQMessage(SQLModel, table=True):
     __tablename__ = "qq_messages"
     __table_args__ = (UniqueConstraint("session_id", "external_id"),
-        Index("ix_qq_message_pending", "session_id", "disposition", "id"))
+        Index("ix_qq_message_pending", "session_id", "disposition", "id"),
+        Index("ix_qq_message_batch", "batch_id", "deleted", "id"))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)
     external_id: str
@@ -40,6 +41,7 @@ class QQMessage(SQLModel, table=True):
     references_json: str = "[]"
     disposition: str = "pending"
     batch_id: int | None = None
+    deleted: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
 
 
 class QQBatch(SQLModel, table=True):
@@ -76,3 +78,4 @@ class QQDelivery(SQLModel, table=True):
     error_code: str | None = None
     created_at: float
     echoed: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
+    deleted: bool = Field(default=False, sa_column_kwargs={"server_default": false()})

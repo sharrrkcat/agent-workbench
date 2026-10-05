@@ -95,7 +95,7 @@ completes the run and batch without pausing or another model call. Remaining cal
 receive rejected results with QQ_REPLY_LIMIT_REACHED and skipped steps, without creating delivery intents.
 Cancellation, delivery errors and existing Harness limits retain precedence. Counts reset for each new batch.
 
-Every expired debounce window creates an immutable SQLite FIFO batch, including during inference or pause.
+Every expired debounce window creates a SQLite FIFO batch with fixed trigger policy, including during inference or pause.
 Messages are reserved once. Execution is serialized across each Project, loading only the next unpaused Session's batch.
 Project configuration resolves when execution starts, before asynchronous member lookup, then follows the existing immutable run snapshot.
 Delivery intents persist before dispatch, unique by run/tool-call id, with pending/sending/sent/failed/unknown states.
@@ -107,6 +107,7 @@ stop additionally cancels active work. Resume requires idle state and selects un
 Failed, cancelled and interrupted batches never replay. Disabling a connection stops ingress/dispatch and blocks later sends.
 Restart retains queues, window membership/policy and absolute participant expiries, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
 Existing run reconciliation remains authoritative. QQ history has no editing, retry or direct-send API.
+Local [history deletion](chat-context.md#qqbot-conversations) excludes removed inputs before dispatch and cancels empty queued batches without changing participant eligibility or replaying work.
 Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
 
 Local fake-OneBot/fake-model tests cover transport, participant windows, skip/renewal races, batching, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,

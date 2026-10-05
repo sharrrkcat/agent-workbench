@@ -8,7 +8,8 @@ from pydantic import ValidationError
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolSpec, ToolExecutionError
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
-from ai_workbench.core.qq_names import QQNames
+from ai_workbench.core.qq_names import QQNames, model_batch_text
+from ai_workbench.core.qq_history import QQHistory
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 log = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ class QQService:
     def __init__(self, state, store):
         self.state = state
         self.store = store
+        self.history = QQHistory(state, store)
         self.connections = {}
         self.names = QQNames(self.connections)
         self.tasks = {}
@@ -120,6 +122,11 @@ class QQService:
             self.names.observe(binding, values["sender_id"], values["sender_name"])
 
     async def execute(self, batch):
+        # A queued batch may have been emptied after the supervisor selected it.
+        current = self.store.get(QQBatch, batch.id)
+        if current is None or current.status != "queued":
+            return
+        batch.text = current.text
         binding = self.store.get(QQBinding, batch.session_id)
         if binding is None or binding.paused:
             return
@@ -132,10 +139,13 @@ class QQService:
             self.store.save(batch)
         try:
             config = self.state.chat_service.resolve(self.state.sessions.get_session(batch.session_id))
+            records = self.store.batch_messages(batch.id)
             rows = await self.names.project(binding, config.qq_bot_account,
-                [row.model_dump() for row in self.store.batch_messages(batch.id)], freeze=True, for_model=True)
+                [row.model_dump() for row in records], freeze=True, for_model=True)
             self.store.save_references(rows)
-            text = "\n".join(f"[{row['timestamp']}][{row['sender_name']}（QQ:{row['sender_id']}）]:{row['text']}" for row in rows)
+            for record, row in zip(records, rows):
+                record.references_json = row["references_json"]
+            text = model_batch_text(records)
             user = self.state.messages.add_message(batch.session_id, role="user", content=text,
                 metadata={"input_source": "qq", "qq_batch_id": batch.id, "qq_trigger_kind": batch.trigger_kind})
             batch.input_message_id = user.message_id

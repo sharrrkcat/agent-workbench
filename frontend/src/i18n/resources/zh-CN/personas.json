@@ -209,7 +209,9 @@
       "QQ_ACCOUNT_MISMATCH": "账号不匹配",
       "QQ_DELIVERY_UNKNOWN": "发送结果未知"
     },
-    "readOnly": "QQ 会话仅供查看，请在 QQ 中发送消息。",
-    "readOnlyShort": "仅供查看"
+    "chattingIn": "正在 {{targetId}} 中聊天",
+    "deleteMessage": "删除消息",
+    "deleteMessageConfirm": "从当前会话和后续模型上下文中删除这条消息？此操作不会撤回 QQ 消息，其他消息及其状态保持不变。",
+    "deleteReplyConfirm": "从当前会话和后续模型上下文中删除这条模型回复及其全部发送气泡？用户消息将保留，此操作不会撤回 QQ 消息。"
   }
 }

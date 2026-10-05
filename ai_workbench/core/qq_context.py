@@ -33,12 +33,14 @@ def build_qq_context(store, messages, session_id, text, policy, current_message_
     if policy.max_messages != 0:
         total = store.history_message_count(session_id, current_message_id)
         for batch, deliveries in store.iter_history(session_id, current_message_id):
-            count = 1 + len(deliveries)
+            input_text = message_text(messages.get_message(batch.input_message_id), include_attachments=False)
+            count = bool(input_text) + len(deliveries)
+            if not count:
+                continue
             if policy.max_messages is not None and used + count > policy.max_messages:
                 trace.exclusions.append(ContextExclusion(kind="history", reason="message_limit", count=total - used))
                 break
-            input_text = message_text(messages.get_message(batch.input_message_id), include_attachments=False)
-            group = [(f"message:{batch.input_message_id}", {"role": "user", "content": input_text})]
+            group = [(f"message:{batch.input_message_id}", {"role": "user", "content": input_text})] if input_text else []
             for delivery in deliveries:
                 call_id = f"qq_history_{delivery.id}"
                 group.extend([
@@ -49,7 +51,7 @@ def build_qq_context(store, messages, session_id, text, policy, current_message_
                         "content": json.dumps({"status": "sent", "delivery_id": delivery.id,
                             "message_id": delivery.external_id}, ensure_ascii=False)}),
                 ])
-            length = len(input_text) + sum(len(json.dumps(item, ensure_ascii=False)) for _, item in group[1:])
+            length = len(input_text) + sum(len(json.dumps(item, ensure_ascii=False)) for _, item in group if item["role"] != "user")
             if remaining is not None:
                 if length > remaining:
                     trace.exclusions.append(ContextExclusion(kind="history", reason="character_limit", count=total - used))

@@ -10,7 +10,11 @@ import { messageText } from './messageContent';
 import type { Reply } from './turns';
 import { ReplyContext } from './ReplyContext';
 
-export function ReplyActions({ reply, usage, summary, readOnly = false }: { reply: Reply; usage?: ReactNode; summary?: ReactNode; readOnly?: boolean }) {
+export type ReplyDeleteAction = { onDelete: () => void; disabled: boolean };
+
+export function ReplyActions({ reply, usage, summary, readOnly = false, deleteAction }: {
+  reply: Reply; usage?: ReactNode; summary?: ReactNode; readOnly?: boolean; deleteAction?: ReplyDeleteAction;
+}) {
   const ended = terminal(reply.run.status);
   const { confirm, confirmation } = useConfirmDialog();
   const { t } = useTranslation('runs');
@@ -76,14 +80,15 @@ export function ReplyActions({ reply, usage, summary, readOnly = false }: { repl
       ) : null}
       <ReplyContext reply={reply} />
       {usage}
-      {!readOnly && ended ? <Tooltip>
+      {(!readOnly || deleteAction) && ended ? <Tooltip>
         <TooltipTrigger
           render={
             <Button
               type="button"
-              disabled={busy}
+              disabled={deleteAction ? deleteAction.disabled : busy}
               aria-label={t('deleteReply')}
               onClick={async () => {
+                if (deleteAction) { deleteAction.onDelete(); return; }
                 if (await confirm(t('deleteReplyConfirm'), { destructive: true }))
                   void remove(reply.run.run_id);
               }}

@@ -209,7 +209,9 @@
       "QQ_ACCOUNT_MISMATCH": "Account mismatch",
       "QQ_DELIVERY_UNKNOWN": "Delivery result unknown"
     },
-    "readOnly": "QQ conversation is read-only. Send messages in QQ.",
-    "readOnlyShort": "Read-only"
+    "chattingIn": "Chatting in {{targetId}}",
+    "deleteMessage": "Delete message",
+    "deleteMessageConfirm": "Delete this message from this conversation and future model context? This will not recall the message in QQ. Other messages and their statuses will stay unchanged.",
+    "deleteReplyConfirm": "Delete this model reply and all its sent-message bubbles from this conversation and future model context? User messages will be kept. This will not recall messages in QQ."
   }
 }

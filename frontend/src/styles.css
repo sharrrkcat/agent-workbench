@@ -439,9 +439,12 @@
   .message-row.user .message-actions { align-self: flex-end; }
 
   @media (hover: hover) and (pointer: fine) {
+    .qq-delete,
     .message-row.user .message-actions,
     .message-row .reply-metrics,
     .message-row .message-meta time { opacity: 0; pointer-events: none; transition: opacity 180ms ease-out; }
+    [data-qq-bubble-row]:hover .qq-delete,
+    [data-qq-bubble-row]:focus-within .qq-delete,
     .message-row.user:hover .message-actions,
     .message-row:hover .reply-metrics,
     .message-row:hover .message-meta time,
@@ -454,6 +457,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .qq-delete,
     .message-row.user .message-actions,
     .message-row .reply-metrics,
     .message-row .message-meta time { transition: none; }

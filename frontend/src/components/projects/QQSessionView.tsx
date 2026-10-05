@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, Clock, CircleHelp, CircleX, LoaderCircle, SkipForward, Plus, ArrowUp } from 'lucide-react';
+import { Check, CheckCheck, Clock, CircleHelp, CircleX, LoaderCircle, SkipForward, Pause, Play, Square, Trash2 } from 'lucide-react';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -9,7 +10,8 @@ import { Marker, MarkerContent } from '@/components/ui/marker';
 import { InputGroupButton } from '@/components/ui/input-group';
 import { MessageScrollerButton, MessageScrollerItem, MessageScrollerProvider, useMessageScroller } from '@/components/ui/message-scroller';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
-import type { QQMessage, QQDelivery } from '../../api/qq';
+import type { QQMessage, QQDelivery, QQDeleteTarget } from '../../api/qq';
+import type { ReplyDeleteAction } from '../messages/ReplyActions';
 import type { QQSession } from '../../types/chat';
 import type { Run } from '../../types/runs';
 import { Feedback, ResourceLoading } from '../settings/resources/ResourceUI';
@@ -20,6 +22,7 @@ import { ConversationScroller, ConversationViewport, ConversationContent } from 
 import { ComposerSurface, ComposerTextarea, ComposerToolbar } from '../ComposerSurface';
 import { ContextWindowMeter } from '../ContextWindowMeter';
 import { ChatModelMenu } from '../ChatModelMenu';
+import { ErrorBanner } from '../ErrorBanner';
 import { useComposerLayout } from '../../hooks/useComposerLayout';
 import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
 import { useModelsStore } from '../../store/useModelsStore';
@@ -37,6 +40,12 @@ export function QQSessionView({ session }: { session: QQSession }) {
 function QQConversation({ session }: { session: QQSession }) {
   const { t } = useTranslation(['personas', 'chat']);
   const data = useQQConversation(session.session_id);
+  const { confirm, confirmation } = useConfirmDialog();
+  const deletionDisabled = !data.binding || data.binding.busy || data.deleting || data.controlling;
+  async function remove(target: QQDeleteTarget) {
+    if (await confirm(t(target.kind === 'reply' ? 'qq.deleteReplyConfirm' : 'qq.deleteMessageConfirm'), { destructive: true }))
+      await data.remove(target);
+  }
   const { scrollToMessage } = useMessageScroller();
   const viewport = useRef<HTMLDivElement>(null);
   const showFullProcessing = useCogitaStore((state) => state.settings?.show_full_processing === true);
@@ -63,13 +72,8 @@ function QQConversation({ session }: { session: QQSession }) {
   return <>
     <header className="topbar"><SidebarTrigger className="sidebar-toggle" />
       <h1 className="chat-title flex-1" title={session.title}>{session.title || `${t('qq.' + session.target_kind)} ${session.target_id}`}</h1>
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground hidden sm:inline">{session.target_id}</span>
-        <Button variant="ghost" size="sm" disabled={data.controlling || !data.binding}
-          onClick={() => void data.control(data.binding?.paused ? 'resume' : 'pause')}>{t(data.binding?.paused ? 'qq.resume' : 'qq.pause')}</Button>
-        <Button variant="ghost" size="sm" disabled={data.controlling || !data.binding} onClick={() => void data.control('stop')}>{t('qq.stop')}</Button>
-      </div>
     </header>
+    <ErrorBanner />
     {data.error || data.binding?.paused ? <div className="px-4 py-2 text-sm">
       <Feedback error={data.error} />
       {data.error && !data.loading ? <Button variant="ghost" size="sm" onClick={() => void data.refresh()}>{t('retry')}</Button> : null}
@@ -89,13 +93,16 @@ function QQConversation({ session }: { session: QQSession }) {
             {items.map((item) => <MessageScrollerItem key={item.id} messageId={item.id} data-qq-item
               data-qq-continuation={item.kind === 'incoming' && !item.showIdentity ? '' : undefined}
               scrollAnchor={item.kind === 'incoming'}>
-              {item.kind === 'incoming' ? <QQIncoming message={item.message} showIdentity={item.showIdentity} /> : <>
-                <RunReply reply={item.reply} readOnly showFullProcessing={showFullProcessing} />
+              {item.kind === 'incoming' ? <QQIncoming message={item.message} showIdentity={item.showIdentity}
+                deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'message', id: item.message.id }) }} /> : <>
+                <RunReply reply={item.reply} readOnly showFullProcessing={showFullProcessing}
+                  deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'reply', id: item.reply.run.run_id }) }} />
                 {item.reply.run.metadata?.qq_reply?.skipped ? <Marker className="mt-2" data-qq-reply-skipped>
                   <MarkerContent>{t('qq.replySkipped')}</MarkerContent>
                 </Marker> : null}
                 {item.deliveries.length ? <div className="mt-2 flex flex-col gap-1.5" data-qq-deliveries>
-                  {item.deliveries.map((delivery) => <QQOutgoing key={delivery.id} delivery={delivery} personaId={item.reply.run.persona_id} />)}
+                  {item.deliveries.map((delivery) => <QQOutgoing key={delivery.id} delivery={delivery} personaId={item.reply.run.persona_id}
+                    deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'delivery', id: delivery.id }) }} />)}
                 </div> : null}
                 {item.reply.run.metadata?.qq_reply?.limit_reached ? <Marker className="mt-2" data-qq-reply-limit>
                   <MarkerContent>{t('qq.replyLimitReached', { sent: item.reply.run.metadata.qq_reply.sent_count,
@@ -108,7 +115,9 @@ function QQConversation({ session }: { session: QQSession }) {
         <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')} />
       </ConversationScroller>
     </MessageNumbersContext.Provider>
-    <div className="chat-bottom"><QQComposer session={session} runs={Object.values(data.runs).map((value) => value.run)} /></div>
+    <div className="chat-bottom"><QQComposer session={session} runs={Object.values(data.runs).map((value) => value.run)}
+      paused={data.binding?.paused === true} controlling={data.controlling || data.deleting || !data.binding} onControl={data.control} /></div>
+    {confirmation}
   </>;
 }
 
@@ -124,50 +133,70 @@ function QQStatus({ status, detail }: { status: QQMessage['disposition'] | QQDel
   </TooltipTrigger><TooltipContent>{label}{detail ? ` · ${detail}` : ''}</TooltipContent></Tooltip>;
 }
 
-function QQIncoming({ message, showIdentity }: { message: QQMessage; showIdentity: boolean }) {
+function QQDeleteButton({ action }: { action: ReplyDeleteAction }) {
+  const { t } = useTranslation('personas');
+  return <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" className="qq-delete shrink-0"
+    aria-label={t('qq.deleteMessage')} disabled={action.disabled} onClick={action.onDelete} data-qq-delete />}>
+    <Trash2 />
+  </TooltipTrigger><TooltipContent side="bottom" collisionAvoidance={{ side: 'none', align: 'shift' }}>{t('qq.deleteMessage')}</TooltipContent></Tooltip>;
+}
+
+function QQIncoming({ message, showIdentity, deleteAction }: { message: QQMessage; showIdentity: boolean; deleteAction: ReplyDeleteAction }) {
   const { t } = useTranslation('personas');
   const references = message.references.map((ref) => ref.type === 'reply'
     ? `${t('qq.externalId')}: ${ref.id}`
     : ref.id === 'all' ? t('qq.everyone') : `@${ref.name ?? ref.id} (QQ: ${ref.id})${ref.is_self ? ` · ${t('qq.botSelf')}` : ''}`);
   return <MessageFrame role="user" name={message.sender_name || message.sender_id} createdAt={message.timestamp}
     messageId={`qq-message-${message.id}`} showIdentity={showIdentity} showTime={showIdentity} textAvatar>
-    <div className="flex min-w-0 items-center justify-end gap-1" data-qq-incoming={message.id}>
+    <div className="flex min-w-0 items-center justify-end gap-1" data-qq-bubble-row data-qq-incoming={message.id}>
+      <QQDeleteButton action={deleteAction} />
       <QQStatus status={message.disposition} detail={references.join(' · ')} />
       <Bubble variant="secondary" align="end"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><div className="message">{message.text}</div></BubbleContent></Bubble>
     </div>
   </MessageFrame>;
 }
 
-function QQOutgoing({ delivery, personaId }: { delivery: QQDelivery; personaId: string | null }) {
+function QQOutgoing({ delivery, personaId, deleteAction }: { delivery: QQDelivery; personaId: string | null; deleteAction: ReplyDeleteAction }) {
   const { t } = useTranslation('personas');
   const identity = usePersonaIdentity()(personaId);
   const detail = [delivery.error_code ? t('qq.status.' + delivery.error_code, { defaultValue: delivery.error_code }) : '',
     delivery.external_id ? `${t('qq.externalId')}: ${delivery.external_id}` : ''].filter(Boolean).join(' · ');
   return <div data-qq-delivery={delivery.id}>
     <MessageFrame role="assistant" name={identity.name} createdAt={new Date(delivery.created_at * 1000).toISOString()} showIdentity={false} showTime={false}>
-      <div className="flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1" data-qq-bubble-row>
         <Bubble variant="secondary"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><div className="message">{delivery.text}</div></BubbleContent></Bubble>
         <QQStatus status={delivery.status} detail={detail} />
+        <QQDeleteButton action={deleteAction} />
       </div>
     </MessageFrame>
   </div>;
 }
 
-function QQComposer({ session, runs }: { session: QQSession; runs: Run[] }) {
+function QQComposer({ session, runs, paused, controlling, onControl }: {
+  session: QQSession; runs: Run[]; paused: boolean; controlling: boolean;
+  onControl: (action: 'pause' | 'resume' | 'stop') => Promise<void>;
+}) {
   const { t } = useTranslation(['personas', 'chat']);
-  const fullPlaceholder = t('qq.readOnly');
-  const { composerRef, textareaRef, measureRef, actionsRef, expanded, textHeight, placeholder } =
-    useComposerLayout('', fullPlaceholder, t('qq.readOnlyShort'));
+  const fullPlaceholder = t('qq.chattingIn', { targetId: session.target_id });
+  const { composerRef, textareaRef, measureRef, actionsRef, leadingActionsRef, expanded, textHeight, placeholder } =
+    useComposerLayout('', fullPlaceholder, fullPlaceholder, true);
   const profile = useModelsStore((state) => state.profiles.find((item) => item.id === session.effective.model_profile_id));
   return <div className="composer-wrap" onDragOver={(event) => event.preventDefault()} onDrop={(event) => event.preventDefault()}>
     <ComposerSurface ref={composerRef} expanded={expanded} textHeight={textHeight}>
       <ComposerTextarea ref={textareaRef} expanded={expanded} disabled value="" rows={1} placeholder={placeholder} aria-label={fullPlaceholder} />
       <ComposerToolbar>
-        <InputGroupButton disabled variant="outline" size="icon-sm" className="rounded-full" aria-label={t('attach')}><Plus /></InputGroupButton>
-        <div ref={actionsRef} className="ml-auto flex items-center gap-2">
+        <div ref={leadingActionsRef} className="flex shrink-0 items-center gap-2">
+          <InputGroupButton disabled={controlling} variant="outline" size="sm" className="rounded-full"
+            onClick={() => void onControl(paused ? 'resume' : 'pause')}>
+            {paused ? <Play data-icon="inline-start" /> : <Pause data-icon="inline-start" />}{t(paused ? 'qq.resume' : 'qq.pause')}
+          </InputGroupButton>
+          <InputGroupButton disabled={controlling} variant="outline" size="sm" className="rounded-full" onClick={() => void onControl('stop')}>
+            <Square data-icon="inline-start" />{t('qq.stop')}
+          </InputGroupButton>
+        </div>
+        <div ref={actionsRef} className="ml-auto flex min-w-0 items-center gap-2">
           <ContextWindowMeter profile={profile} runs={runs} generating={runs.some((run) => !terminal(run.status))} />
-          <ChatModelMenu disabled onBusyChange={() => {}} />
-          <InputGroupButton disabled size="icon-sm" className="rounded-full" aria-label={t('send')}><ArrowUp /></InputGroupButton>
+          <ChatModelMenu disabled={false} onBusyChange={() => {}} />
         </div>
       </ComposerToolbar>
     </ComposerSurface>

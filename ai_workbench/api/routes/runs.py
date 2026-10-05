@@ -7,6 +7,7 @@ from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.schemas.common import error_responses
 from ai_workbench.api.schemas.chat import RunResponse, RunStepResponse, RunEventResponse, RunCancellation, HistoryResult
 from ai_workbench.core.conversation_history import HistoryPruned
+from ai_workbench.core.qq_history import QQHistoryPruned
 from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.messages import _result_payload
 from ai_workbench.core.schema.run import RunStatus
@@ -26,9 +27,15 @@ def get_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
         raise_error(404, "RUN_NOT_FOUND", f"Run not found: {run_id}")
 
 
-@router.delete("/api/runs/{run_id}", response_model=HistoryPruned, response_model_exclude_unset=True,
+@router.delete("/api/runs/{run_id}", response_model=QQHistoryPruned | HistoryPruned, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 409))
 async def delete_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    try:
+        run = state.runs.get_run(run_id)
+    except KeyError:
+        raise_error(404, "RUN_NOT_FOUND", f"Run not found: {run_id}")
+    if state.sessions.get_session(run.session_id).kind == "qqbot":
+        return state.qq.history.delete(run.session_id, run_id=run_id).model_dump()
     return state.history.delete_reply(run_id).model_dump()
 
 

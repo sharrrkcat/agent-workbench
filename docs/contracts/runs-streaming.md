@@ -108,7 +108,7 @@ unsaved streaming drafts recover at completion.
 | run_step_created/updated | Stable step progress |
 | tool_call_created/tool_result_created | Persisted tool messages |
 | approval_requested/resolved | Current public run and call identity |
-| history_pruned | deleted_message_ids/deleted_run_ids for the session |
+| history_pruned | deleted_message_ids/deleted_run_ids for the session; QQ also returns deleted_qq_message_ids, deleted_qq_delivery_ids and history_version |
 | model_status | Global model profile id and status |
 | runtime_job_updated/runtime_status | Global runtime progress/status |
 

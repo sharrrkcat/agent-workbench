@@ -65,7 +65,7 @@ class QQStore:
             if binding is None or binding.deadline is None or binding.deadline > now:
                 return None
             rows = db.exec(select(QQMessage).where(QQMessage.session_id == session_id,
-                QQMessage.disposition == "pending").order_by(QQMessage.id.desc()).limit(limit)).all()
+                QQMessage.disposition == "pending", QQMessage.deleted == False).order_by(QQMessage.id.desc()).limit(limit)).all()
             binding.deadline = None
             db.add(binding)
             participants = db.exec(select(QQParticipant).where(QQParticipant.session_id == session_id,
@@ -83,7 +83,7 @@ class QQStore:
             db.add(batch)
             db.flush()
             db.exec(update(QQMessage).where(QQMessage.session_id == session_id,
-                QQMessage.disposition == "pending", QQMessage.id < rows[0].id).values(disposition="skipped"))
+                QQMessage.disposition == "pending", QQMessage.deleted == False, QQMessage.id < rows[0].id).values(disposition="skipped"))
             for row in rows:
                 row.disposition = "batched"
                 row.batch_id = batch.id
@@ -107,10 +107,12 @@ class QQStore:
     def page(self, kind, session_id, before=None, limit=50):
         with Session(self.engine) as db:
             query = select(kind).where(kind.session_id == session_id)
+            if kind in (QQMessage, QQDelivery):
+                query = query.where(kind.deleted == False)
             if before is not None:
                 query = query.where(kind.id < before)
             rows = db.exec(query.order_by(kind.id.desc()).limit(limit + 1)).all()
-            return {"items": [r.model_dump() for r in rows[:limit]],
+            return {"items": [r.model_dump(exclude={"deleted"}) for r in rows[:limit]],
                 "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
 
     def delivery(self, run_id, call_id):
@@ -125,7 +127,8 @@ class QQStore:
 
     def batch_messages(self, batch_id):
         with Session(self.engine) as db:
-            return db.exec(select(QQMessage).where(QQMessage.batch_id == batch_id).order_by(QQMessage.id)).all()
+            return db.exec(select(QQMessage).where(QQMessage.batch_id == batch_id, QQMessage.deleted == False)
+                .order_by(QQMessage.id)).all()
 
     def save_references(self, rows):
         with Session(self.engine) as db:
@@ -143,9 +146,10 @@ class QQStore:
     def history_message_count(self, session_id, current_message_id):
         conditions = self._history_filter(session_id, current_message_id)
         with Session(self.engine) as db:
-            batches = db.exec(select(func.count()).select_from(QQBatch).where(*conditions)).one()
+            visible_input = select(QQMessage.id).where(QQMessage.batch_id == QQBatch.id, QQMessage.deleted == False).exists()
+            batches = db.exec(select(func.count()).select_from(QQBatch).where(*conditions, visible_input)).one()
             deliveries = db.exec(select(func.count()).select_from(QQDelivery).join(QQBatch, QQBatch.run_id == QQDelivery.run_id)
-                .where(*conditions, QQDelivery.status == "sent")).one()
+                .where(*conditions, QQDelivery.status == "sent", QQDelivery.deleted == False)).one()
             return batches + deliveries
 
     def iter_history(self, session_id, current_message_id):
@@ -162,7 +166,8 @@ class QQStore:
             for batch in batches:
                 with Session(self.engine) as db:
                     deliveries = db.exec(select(QQDelivery).where(QQDelivery.run_id == batch.run_id,
-                        QQDelivery.session_id == session_id, QQDelivery.status == "sent").order_by(QQDelivery.id)).all()
+                        QQDelivery.session_id == session_id, QQDelivery.status == "sent", QQDelivery.deleted == False)
+                        .order_by(QQDelivery.id)).all()
                 yield batch, deliveries
             before = batches[-1].id
 
@@ -195,7 +200,10 @@ class QQStore:
             for kind, statuses in ((QQBatch, ["running"]), (QQDelivery, ["pending", "sending"])):
                 # Process recovery in bounded pages, including interrupted send intents.
                 while True:
-                    rows = db.exec(select(kind).where(kind.status.in_(statuses)).limit(100)).all()
+                    query = select(kind).where(kind.status.in_(statuses))
+                    if kind is QQDelivery:
+                        query = query.where(kind.deleted == False)
+                    rows = db.exec(query.limit(100)).all()
                     if not rows:
                         break
                     for row in rows:

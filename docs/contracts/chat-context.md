@@ -1,8 +1,6 @@
 # Chat and context contract
 
-Chat uses explicit Persona data, ContextBuilder and ChatRunner. Ordinary input has no intent router. Registered `/tool_name` inputs use the direct executor;
-all other prefixes remain text. [Harness/tools](harness-tools.md) owns direct
-syntax, allowlists, bounded loops and approvals.
+Chat uses explicit Personas, ContextBuilder and ChatRunner. Registered `/tool_name` inputs use the [direct executor](harness-tools.md); all other input is ordinary text.
 
 ## Personas and sessions
 
@@ -182,9 +180,7 @@ Worldbook/entry PATCH objects before committing, including regex/name/content. E
 /api/worldbooks/{id}/entries and /api/worldbook-entries/{id}; ordering uses /api/worldbooks/{id}/entries/reorder.
 POST /api/worldbooks/match-test returns counts, triggers, recursion and bounded previews.
 
-[Knowledge](knowledge.md) owns indexing, hybrid retrieval, RRF and optional
-rerank. Its context injection uses the run's resolved bindings. File context
-and image handling follow the attachment rules below.
+[Knowledge](knowledge.md) owns retrieval and injection using the run's resolved bindings; attachment rules below own file/image context.
 
 ## QQBot conversations
 
@@ -205,14 +201,18 @@ Real at segments retain code-point positions, ids, names and self flags in refer
 Display reads and batch submission share asynchronous name projection outside the socket reader. Same-conversation observed sender names take precedence; missing group names use get_group_member_info (card then nickname), private names use get_stranger_info, and self may use verified login information.
 The per-Project cache holds at most 1024 conversation/member entries for 600 seconds, or 60 seconds after failure. Shared queries allow four concurrent calls; each page/batch waits at most two seconds. Failure/offline preserves ids without pausing. Submission freezes reference names and input text; later renames do not rewrite them. Name projection never affects triggers.
 QQ history projects confirmed deliveries as native assistant qq_send_message calls with matching receipts and stable delivery-derived ids, without duplicate prose. Earlier sends survive failed/cancelled runs. Skipping a reply retains its submitted input but excludes the skip tool from history; unsubmitted/truncated inputs, internal prose and failed/unknown sends are excluded.
-Input batches and their confirmed sends are selected/pruned together. max_messages counts saved inputs/sends, not expanded protocol messages; character/token budgets include expanded tool data. Historical pairs are never executed. [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns execution/recovery.
-`/api/qq/projects/{id}/status` reads connection state; `/api/qq/sessions/{id}` reads binding/pause state. Its `/messages`, `/batches` and `/deliveries` use newest-first integer before cursors, default 50/max 100; `/control` accepts pause|resume|stop. Batches expose trigger_kind=keyword|followup|private; participant epochs/window internals stay private.
-The bilingual read-only conversation shares ordinary chat layout, scrolling, composer surfaces and model replies (processing, usage and context detail).
+Remaining input batches and confirmed sends are selected/pruned together. max_messages counts nonempty saved inputs/sends, not expanded protocol messages; character/token budgets include expanded tool data. Historical pairs are never executed. [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns execution/recovery.
+`/api/qq/projects/{id}/status` reads connection state; `/api/qq/sessions/{id}` reads binding/pause state, busy and history_version. Its `/messages`, `/batches` and `/deliveries` return history_version and newest-first integer before cursors, default 50/max 100; `/control` accepts pause|resume|stop. Batches expose trigger_kind=keyword|followup|private; participant epochs/window internals stay private.
 Right-side secondary bubbles group consecutive sender IDs within 120 seconds of the group start, interrupted by a different sender or model reply. Only the first row has an avatar, name and time; continuations have no header and a 6px gap. Outside icons retain each message's pending/batched/skipped state and stored timestamps are unchanged.
-Each run appears once on the left with its original time and delivery states; batch inputs are not duplicated. Delivery bubbles have no headers or times, with 6px gaps and 8px after the model action area. Older records load into the same conversation without transcript tabs or pagination controls.
-The composer disables input/uploads/configuration, retaining model/context display. The header retains pause/resume/stop; only idle whole-session/Project deletion is allowed.
-Project settings edit the reply limit separately from input batching; changes affect later-starting batches. Both locales show limit completion, legitimate skips without delivery bubbles, and missing-reply failures/pauses.
-Ordinary send, direct tools, editing, individual deletion and regeneration remain rejected and hidden.
+Each run appears once on the left with processing, usage/context detail, original time and delivery states; batch inputs are not duplicated. Delivery bubbles have no headers or times, with 6px gaps and 8px after the model action area. Older records load into the same conversation without tabs or pagination controls. Both locales show reply-limit completion, legitimate skips without delivery bubbles and missing-reply failures/pauses.
+The composer keeps input disabled and shows a localized "Chatting in {targetId}" hint for groups and friends, without a Persona name. The header shows the title without a separate target number or run controls.
+Outlined icon/text pause/resume and stop buttons replace attachment/send controls on the left; context usage and the model menu remain on the right. The hint shares their row when it fits and expands above the toolbar otherwise, measured against both control groups without hiding the hint.
+The model menu selects external-provider LLMs and toggles reasoning by patching only that Project field. All bound Sessions inherit Project setting changes for later-starting batches; active runs retain their snapshots. Harness remains mandatory with no toggle/settings entry. Pending saves block duplicate configuration edits but not Stop; failures preserve confirmed settings with visible feedback, and late responses preserve subsequent navigation. Session/Project deletion requires idle state.
+DELETE `/api/qq/sessions/{id}/messages/{message_id}` or `/deliveries/{delivery_id}` removes only that local bubble and its future context contribution. All history deletions require an idle run/batch; running Sessions return SESSION_BUSY (409), missing or mismatched records return 404. Ordinary send, direct tools, editing and regeneration remain rejected and hidden.
+Incoming deletion rebuilds raw batch text and saved input from remaining records with original timestamps and frozen mentions. Empty queued batches are cancelled; empty submitted inputs are omitted while remaining delivery pairs survive. Delivery deletion also removes its saved assistant message and both historical protocol records. Deleted ingress/receipt identities remain private for deduplication; status, participant eligibility, other messages and historical send counts are unchanged.
+DELETE `/api/runs/{id}` removes a QQ reply, all its delivery bubbles, messages, steps, events and private state, clearing its batch run reference while preserving inputs. SQLite deletion, input updates and history_version commit together. Deletion never recalls QQ messages, sends, regenerates or resumes execution. Retained replies and recorded request snapshots are not rewritten.
+Incoming rows place delete/status/bubble from left to right; delivery rows place bubble/status/delete. Bubble delete buttons appear on row hover/focus with reserved space and the existing 180ms/reduced-motion rules; touch keeps them visible. The model action group has a permanent delete action. Every deletion confirms its scope; busy/pending mutations disable deletion, and failure retains the records with visible feedback.
+QQ polling reconciles changed history versions across the loaded range and invalidates completed-run caches. Pre-deletion or mixed-version responses cannot restore removed records; session navigation isolates late responses.
 
 ## Messages and attachments
 
@@ -257,7 +257,6 @@ Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete
 
 The frontend renders parts as content without execution/routing; edit/retry uses original text. MessageActions owns controls,
 MessageParts owns presentation, ChatAttachments owns cards/URLs, and [runs/streaming](runs-streaming.md) owns stream merging.
-Metadata holds counts, source refs and warnings, never full part bodies, prompts or secrets.
 
 User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Agent identity; user rows use current Cogita Persona identity. User headers place time before the name; assistant headers place it after the name.
 Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps, user action buttons and reply usage metrics appear on message hover or keyboard focus,

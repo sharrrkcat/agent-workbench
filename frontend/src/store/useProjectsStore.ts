@@ -8,6 +8,7 @@ type ProjectsState = {
   reload: () => Promise<void>;
   load: (id: string) => Promise<Project>;
   save: (values: ProjectInput, id?: string) => Promise<Project>;
+  patch: (id: string, values: ProjectPatch) => Promise<Project>;
   remove: (id: string) => Promise<void>;
 };
 
@@ -29,10 +30,16 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     return project;
   },
   save: async (values, id) => {
-    const version = get().version;
     const { kind: _kind, ...patch } = values;
-    const project = id ? await projectsApi.update(id, patch as ProjectPatch) : await projectsApi.create(values);
-    if (!id || get().version === version || get().projects.some((item) => item.id === id))
+    if (id) return get().patch(id, patch);
+    const project = await projectsApi.create(values);
+    set((state) => ({ projects: upsert(state.projects, project), version: state.version + 1 }));
+    return project;
+  },
+  patch: async (id, values) => {
+    const version = get().version;
+    const project = await projectsApi.update(id, values);
+    if (get().version === version || get().projects.some((item) => item.id === id))
       set((state) => ({ projects: upsert(state.projects, project), version: state.version + 1 }));
     return project;
   },

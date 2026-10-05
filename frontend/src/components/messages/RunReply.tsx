@@ -12,13 +12,16 @@ import { MessageFrame } from './MessageFrame';
 import { MessageParts } from './MessageParts';
 import { RunApproval } from './RunApproval';
 import { ReplyMetrics } from './ReplyMetrics';
+import type { ReplyDeleteAction } from './ReplyActions';
 import { ToolGroup } from './ToolGroup';
 import { ReasoningPreview } from './ReasoningPreview';
 import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
 import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
 
-export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = false }: { reply: Reply; messageNumber?: number; showFullProcessing: boolean; readOnly?: boolean }) {
+export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = false, deleteAction }: {
+  reply: Reply; messageNumber?: number; showFullProcessing: boolean; readOnly?: boolean; deleteAction?: ReplyDeleteAction;
+}) {
   const { t } = useTranslation(['runs', 'personas']);
   const { run, process, answer, answerParts } = reply;
   const ended = terminal(run.status);
@@ -124,7 +127,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
           {answer?.metadata?.streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
         </div>
       ) : null}
-      {ended || run.status === 'WAITING_FOR_USER' ? <ReplyMetrics reply={reply} readOnly={readOnly} /> : null}
+      {ended || run.status === 'WAITING_FOR_USER' ? <ReplyMetrics reply={reply} readOnly={readOnly} deleteAction={deleteAction} /> : null}
     </MessageFrame>
   );
 }

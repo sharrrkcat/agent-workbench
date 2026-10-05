@@ -4,13 +4,14 @@ import { readFileSync } from 'node:fs';
 import { createModuleLoader, mockModule, sourceUrl } from './module-loader.mjs';
 
 const load = createModuleLoader();
-const { emptyQQRows, refreshQQRows, olderQQRows, buildQQConversation } = (await load('../src/components/projects/qqConversation.ts')).exports;
+const { emptyQQRows, refreshQQRows, olderQQRows, buildQQConversation, QQHistoryChanged } = (await load('../src/components/projects/qqConversation.ts')).exports;
 let rows = Array.from({ length: 65 }, (_, n) => ({ id: n + 1, disposition: 'pending' }));
+let pageVersion = 0;
 const calls = [];
 const fetchPage = async (before) => {
   calls.push(before);
   const selected = rows.filter((row) => !before || row.id < before).sort((a, b) => b.id - a.id);
-  return { items: selected.slice(0, 50), next_cursor: selected.length > 50 ? selected[49].id : null };
+  return { items: selected.slice(0, 50), next_cursor: selected.length > 50 ? selected[49].id : null, history_version: pageVersion };
 };
 const unsettled = (row) => row.disposition === 'pending';
 let window = await refreshQQRows(emptyQQRows(), fetchPage, unsettled);
@@ -26,11 +27,22 @@ assert.equal(window.items.length, 175, 'A burst spanning several pages must not 
 assert.equal(window.items.find((row) => row.id === 1).disposition, 'batched', 'Loaded old pending records update');
 assert.equal(window.next_cursor, null);
 assert.equal(new Set(window.items.map((row) => row.id)).size, 175);
-const empty = await refreshQQRows(emptyQQRows(), async () => ({ items: [], next_cursor: null }), unsettled);
+const empty = await refreshQQRows(emptyQQRows(), async () => ({ items: [], next_cursor: null, history_version: 0 }), unsettled);
 const populated = await refreshQQRows(empty, fetchPage, unsettled);
 assert.equal(populated.next_cursor, 126, 'An initially empty session can acquire older history');
 await assert.rejects(refreshQQRows(window, async () => { throw new Error('offline'); }, unsettled), /offline/);
 assert.equal(window.items.length, 175, 'A failed refresh leaves the saved window intact');
+rows = rows.filter((row) => ![1, 40, 174].includes(row.id)); pageVersion++;
+window = await refreshQQRows(window, fetchPage, unsettled);
+assert.equal(window.items.length, 172, 'A changed version removes deleted records throughout the loaded range');
+assert.equal(window.next_cursor, null);
+assert.equal(window.items.find((row) => row.id === 41).disposition, 'batched');
+await assert.rejects(olderQQRows({ ...window, next_cursor: 40, history_version: 0 }, fetchPage), QQHistoryChanged);
+await assert.rejects(refreshQQRows({ ...window, history_version: 0 }, async (before) => {
+  const page = await fetchPage(before);
+  if (before) page.history_version++;
+  return page;
+}, unsettled), QQHistoryChanged, 'A mixed-version page sequence cannot resurrect deleted records');
 
 const at = (second) => new Date(Date.parse('2026-10-04T00:00:00Z') + second * 1000).toISOString();
 const incoming = (id, sender, second = id) => ({ id, sender_id: sender, sender_name: 'Same display name', timestamp: at(second), text: `Input ${id}`, disposition: 'batched', batch_id: 1 });
@@ -66,13 +78,17 @@ let slots = [], cursor = 0, cleanup, timer;
 const intervals = { setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval };
 globalThis.setInterval = (callback) => { timer = callback; return 1; };
 globalThis.clearInterval = () => {};
-let runReads = 0, runStatus = 'RUNNING', bindingRead = async () => ({ paused: false }), failMessages = false;
+let runReads = 0, runStatus = 'RUNNING', historyVersion = 0, failMessages = false;
+let messageRows = [incoming(1, 'a')], deliveryRows = [], batchRows = [{ id: 1, run_id: 'run', status: 'running' }];
+const bindingValue = (paused = false) => ({ paused, busy: runStatus === 'RUNNING', history_version: historyVersion });
+let bindingRead = async () => bindingValue(), removeRead;
 const api = {
   binding: () => bindingRead(),
-  messages: async () => { if (failMessages) throw new Error('offline'); return { items: [incoming(1, 'a')], next_cursor: null }; },
-  batches: async () => ({ items: [{ id: 1, run_id: 'run', status: 'running' }], next_cursor: null }),
-  deliveries: async () => ({ items: [], next_cursor: null }),
-  control: async () => ({ paused: true }),
+  messages: async () => { if (failMessages) throw new Error('offline'); return { items: messageRows, next_cursor: null, history_version: historyVersion }; },
+  batches: async () => ({ items: batchRows, next_cursor: null, history_version: historyVersion }),
+  deliveries: async () => ({ items: deliveryRows, next_cursor: null, history_version: historyVersion }),
+  control: async () => bindingValue(true),
+  remove: (...args) => removeRead(...args),
 };
 const hookLoader = createModuleLoader({
   react: mockModule({ ...React,
@@ -107,19 +123,54 @@ try {
   assert.equal(render().messages.items.length, 1);
   failMessages = false; await render().refresh();
   assert.equal(render().error, '');
+
+  messageRows = [incoming(2, 'a'), incoming(1, 'a')];
+  deliveryRows = [{ ...deliveries[2], id: 10 }, { ...deliveries[2], id: 11 }];
+  await render().refresh();
+  removeRead = async () => { throw new Error('SESSION_BUSY'); };
+  await render().remove({ kind: 'message', id: 1 });
+  assert.equal(render().messages.items.length, 2, 'Failed deletion preserves messages');
+  await settle();
+  removeRead = async (_id, target) => {
+    if (target.kind === 'message') messageRows = messageRows.filter((row) => row.id !== target.id);
+    if (target.kind === 'delivery') deliveryRows = deliveryRows.filter((row) => row.id !== target.id);
+    if (target.kind === 'reply') { batchRows = [{ id: 1, run_id: null, status: 'done' }]; deliveryRows = []; }
+    return { deleted_message_ids: [], deleted_run_ids: target.kind === 'reply' ? ['run'] : [],
+      deleted_qq_message_ids: target.kind === 'message' ? [target.id] : [],
+      deleted_qq_delivery_ids: target.kind === 'delivery' ? [target.id] : target.kind === 'reply' ? [11] : [],
+      history_version: ++historyVersion };
+  };
+  let resolveBeforeDeletion;
+  const beforeDeletion = bindingValue();
+  bindingRead = () => new Promise((resolve) => { resolveBeforeDeletion = resolve; });
+  const oldPoll = render().refresh();
+  await render().remove({ kind: 'message', id: 1 });
+  resolveBeforeDeletion(beforeDeletion); await oldPoll;
+  assert.deepEqual(render().messages.items.map((row) => row.id), [2], 'A pre-delete poll cannot restore the removed bubble');
+  assert.equal(render().messages.items[0].disposition, 'batched');
+  bindingRead = async () => bindingValue(); await render().refresh();
+  await render().remove({ kind: 'delivery', id: 10 }); await settle();
+  assert.deepEqual(render().deliveries.items.map((row) => row.id), [11]);
+  assert.equal(render().deliveries.items[0].status, 'sent');
+  assert.ok(render().runs.run, 'Deleting a delivery keeps the model reply');
+  await render().remove({ kind: 'reply', id: 'run' }); await settle();
+  assert.equal(render().deliveries.items.length, 0);
+  assert.equal(Object.keys(render().runs).length, 0);
+  assert.equal(render().batches.items[0].run_id, null);
+  assert.equal(render().messages.items.length, 1, 'Deleting a reply preserves its remaining input');
   let resolveRead;
   bindingRead = () => new Promise((resolve) => { resolveRead = resolve; });
   const inflight = render().refresh();
   await render().control('pause');
   assert.equal(render().binding.paused, true);
-  resolveRead({ paused: false }); await inflight;
+  resolveRead(bindingValue()); await inflight;
   assert.equal(render().binding.paused, true, 'A pre-control poll cannot overwrite the control response');
   const oldRead = render().refresh();
   const resolveOld = resolveRead;
   cleanup();
-  slots = []; bindingRead = async () => ({ paused: true });
+  slots = []; bindingRead = async () => bindingValue(true);
   render('other'); await settle();
-  resolveOld({ paused: false }); await oldRead;
+  resolveOld(bindingValue()); await oldRead;
   assert.equal(render('other').binding.paused, true, 'Unmounted session responses do not affect the next session');
   assert.equal(typeof timer, 'function');
   cleanup();

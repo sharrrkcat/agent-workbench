@@ -50,6 +50,15 @@ def render_mentions(text, references, *, for_model=False):
     return "".join([*parts, text[offset:]])
 
 
+def model_batch_text(rows):
+    """Render stored ingress using only the mention names frozen at submission."""
+    return "\n".join(
+        f"[{row.timestamp}][{row.sender_name}（QQ:{row.sender_id}）]:"
+        + render_mentions(row.text, references_adapter.validate_json(row.references_json), for_model=True)
+        for row in rows
+    )
+
+
 class QQNames:
     def __init__(self, connections):
         self.connections = connections

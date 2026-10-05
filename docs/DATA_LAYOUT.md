@@ -237,6 +237,7 @@ qq_batches and qq_deliveries, with indexed deduplication, batch reservation, que
 Revision `0031_qq_delivery_echo` adds the observed-echo flag and external receipt index to QQ deliveries.
 Revision `0032_qq_followup` adds qq_participants (Session/sender key, keyword epoch, absolute expiry and window membership),
 binding window policy and batch trigger/participant snapshots. Schema defaults keep existing batches mandatory; no prior eligibility is reconstructed. No files are changed.
+Revision `0033_qq_history_deletion` adds private deleted flags to QQ ingress/deliveries and a batch/message index. Existing records default to visible; no content conversion or file changes occur. Local deletion retains transport identities, rebuilds affected input projections and excludes removed records from transcript/context reads.
 QQ access tokens remain unencrypted in private Project configuration and are omitted from public reads.
 QQ references_json retains real mention positions and submitted name/self snapshots. Frozen batch text stays raw; the submitted user message stores the model-facing name/id projection. These JSON changes require no schema revision or historical backfill.
 All existing records and file directories survive these revisions; no data conversion or compatibility tables are added.
