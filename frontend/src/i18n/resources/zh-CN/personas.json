@@ -144,7 +144,7 @@
   "newQQBot": "新建 QQBot",
   "qq": {
     "imageInputEnabled": "发送图片给模型",
-    "imageInputHint": "每批最多发送5张图片，普通图片优先，同类保留最后出现的。历史图片和QQ表情使用文本占位；页面仍显示全部媒体。",
+    "imageInputHint": "每批最多发送 5 张图片给模型。",
     "sticker": "表情包",
     "mediaPending": "[{{name}}加载中]",
     "mediaFailed": "[{{name}}不可用]",
@@ -152,7 +152,7 @@
     "defaultPrompt": "自然参与当前 QQ 对话，围绕最新话题，用对方的语言简短回应。通常一条消息说完，确有必要才补充。有人设时遵循人设，否则保持友善自然。避免复读、无关补话和替他人发言。文字通过 qq_send_message 发送。需要图片且 qq_generate_image 可用时，只传入绘图 prompt；工具会自动生成并发送一张图片，占用一条回复额度。不必另发图片链接或重复说明已发送。图片生成失败后，可以改发文字或换一个 prompt 再试。",
     "imageGenerationModel": "图片生成模型",
     "noImageGeneration": "禁用",
-    "imageGenerationHint": "选择外部图片生成模型。每次生成并发送一张图片，发送成功占用一条回复额度。工具按顺序等待，长时间生成沿用 Provider 的请求超时；尺寸、质量和风格未设置时使用模型默认值。",
+    "imageGenerationHint": "每次生成并发送一张图片。",
     "modelDefaults": "使用模型默认值",
     "botSelf": "机器人本人",
     "everyone": "全体成员",
@@ -161,27 +161,22 @@
     "tokenSaved": "已保存 Token",
     "clearToken": "移除已保存的 Token",
     "externalId": "QQ 消息 ID",
-    "tokenHint": "不修改则保留已保存的 Token；编辑后清空则移除。",
+    "tokenHint": "不修改则保留，清空则移除。",
     "enabled": "连接 QQ",
     "noPersona": "不绑定 Agent Persona",
-    "personaHint": "仅使用 Agent 的身份和提示词，不继承知识库。",
-    "replyMode": "群聊回复模式",
-    "keywordMode": "关键词",
     "icebreakerEnabled": "群聊冷场破冰",
-    "icebreakerHint": "群聊冷清后，若只有一人发言，观察一段时间再考虑接话。此人每次补充都会重新计时；发送前有其他成员加入则取消。Bot 可选择跳过，或最多发送一条文字或生成图片。各群独立冷却，关键词回复不受影响。",
+    "icebreakerHint": "群聊冷清后，只有一人发言时尝试接话。",
     "icebreakerCold": "冷清时长（秒）",
     "icebreakerWait": "观察等待（秒）",
     "icebreakerCooldown": "破冰冷却（秒）",
-    "icebreakerTimingHint": "默认分别为 7200 秒（2 小时）、120 秒和 10800 秒（3 小时）。冷却从开始模型推理时计算，之后跳过、失败或取消也保留冷却。暂停、断线或修改这些设置后重新观察冷清时长，已有冷却会保留。",
-    "triggerHint": "每行一个关键词，忽略英文大小写；可填写 @QQ号 匹配真实提及。关键词必回复，并开启 60 秒跟话资格。参与人每次发言顺延 5 秒静默窗口；跟话可跳过，成功回复至少续期至确认发送后 45 秒。好友消息始终触发并回复。",
+    "triggerHint": "每行一个关键词，支持 @QQ号。",
     "keywords": "触发关键词",
     "batchLimit": "每批消息数量",
-    "replyLimit": "每批次最多回复条数",
-    "replyLimitHint": "可设为 1～20 条，由文字和生成图片共享。达到上限后结束发送，不暂停会话。修改对后续开始执行的批次生效。",
+    "replyLimit": "每批回复上限",
+    "replyLimitHint": "文字与生成图片共享额度。",
     "replyLimitReached": "已达到本批次发送上限（{{sent}}/{{limit}}）",
     "replySkipped": "本批跳过回复",
     "reasoning": "推理",
-    "harnessHint": "已启用 Harness。关键词和好友消息必须发送回复；跟话批次可使用跳过工具结束。模型正文不会发送到 QQ。",
     "bindConversation": "绑定 QQ 会话",
     "sessionTitle": "会话标题（可选）",
     "targetKind": "会话类型",
@@ -230,7 +225,7 @@
     "deleteReplyConfirm": "从当前会话和后续模型上下文中删除这条模型回复及其全部发送气泡？用户消息将保留，此操作不会撤回 QQ 消息。",
     "imageDescriptionModel": "读图模型（可选）",
     "noDescriptionModel": "不使用",
-    "imageDescriptionHint": "图片输入开启时，使用此外部模型异步描述本批选中的图片。描述由所有QQBot项目共享，并用于后续历史占位。",
+    "imageDescriptionHint": "开启图片输入时，生成描述供后续历史使用。",
     "resources": {
       "title": "共享资源",
       "filter": "筛选图片",
@@ -265,6 +260,20 @@
       "imagePlaceholder": "[图片]",
       "qqOnly": "共享资源仅在 QQBot Project 内可用。",
       "page": "第 {{page}} 页"
-    }
+    },
+    "tabs": {
+      "connection": "连接",
+      "reply": "回复",
+      "images": "图片"
+    },
+    "sections": {
+      "model": "模型与人设",
+      "rules": "回复规则",
+      "context": "上下文",
+      "imageInput": "图片输入",
+      "imageGeneration": "图片生成"
+    },
+    "imageSizeHint": "auto 或 宽x高，如 1024x1024。",
+    "contextHint": "留空不限；历史条数为 0 时不使用历史。"
   }
 }

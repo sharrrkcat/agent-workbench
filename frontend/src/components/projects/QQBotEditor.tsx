@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Field, FieldContent, FieldGroup, FieldLabel, FieldSet, FieldDescription } from '@/components/ui/field';
+import { Field, FieldContent, FieldGroup, FieldLabel, FieldSet, FieldLegend, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useModelsStore } from '../../store/useModelsStore';
 import { usePersonasStore } from '../../store/usePersonasStore';
@@ -48,6 +53,7 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [connection, setConnection] = useState('disabled');
+  const [tab, setTab] = useState('connection');
   const personas = usePersonasStore((s) => s.personas);
   const profiles = useModelsStore((s) => s.profiles);
   const live = useRef(true);
@@ -78,6 +84,19 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
     return () => { active = false; clearInterval(timer); };
   }, [project?.id]);
   const update = (values: Partial<QQBotInput>) => setDraft((current) => ({ ...current, ...values }));
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    // Validate mounted panels together, then reveal the first invalid control before native reporting.
+    const invalid = event.currentTarget.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:invalid, textarea:invalid');
+    if (invalid) {
+      const panel = invalid.closest<HTMLElement>('[data-qq-settings-tab]');
+      flushSync(() => setTab(panel?.dataset.qqSettingsTab ?? 'connection'));
+      invalid.focus();
+      invalid.reportValidity();
+      return;
+    }
+    void save();
+  }
   async function save() {
     if (status.current.busy) return;
     status.current.busy = true; setBusy(true); setError(''); setNotice('');
@@ -92,50 +111,89 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
     finally { status.current.busy = false; if (live.current) setBusy(false); }
   }
   if (loading) return <ResourceLoading error={error} retry={() => setReload((n) => n + 1)} />;
-  return <form className={dialog ? 'settings-dialog-form' : 'flex min-w-0 flex-col gap-5'} onSubmit={(e) => { e.preventDefault(); void save(); }}>
+  return <Tabs value={tab} onValueChange={setTab} render={<form noValidate
+    className={cn('qq-settings', dialog ? 'settings-dialog-form' : 'flex min-w-0 flex-col gap-5')} onSubmit={submit} />}>
     <Feedback error={error} notice={notice} />
-    <div className={dialog ? 'settings-dialog-body' : 'min-w-0'}><FieldSet disabled={busy}><FieldGroup>
-      <Field><FieldLabel htmlFor={id + '-name'}>{t('projectName')}</FieldLabel><Input id={id + '-name'} required maxLength={128} value={draft.name} onChange={(e) => update({ name: e.target.value })} /></Field>
-      <Field><FieldLabel htmlFor={id + '-account'}>{t('qq.account')}</FieldLabel><Input id={id + '-account'} required inputMode="numeric" pattern="[1-9][0-9]{0,19}" value={draft.bot_account} onChange={(e) => update({ bot_account: e.target.value })} /></Field>
-      <Field><FieldLabel htmlFor={id + '-url'}>{t('qq.url')}</FieldLabel><Input id={id + '-url'} required value={draft.websocket_url} onChange={(e) => update({ websocket_url: e.target.value })} /></Field>
-      <Field><FieldLabel htmlFor={id + '-token'}>{t('qq.token')}</FieldLabel><Input id={id + '-token'} type="password" autoComplete="new-password" value={draft.access_token ?? ''} placeholder={project?.has_access_token && draft.access_token === undefined ? t('qq.tokenSaved') : ''} onChange={(e) => update({ access_token: e.target.value })} /><FieldDescription>{t('qq.tokenHint')}</FieldDescription>
-        {project?.has_access_token ? <Button type="button" variant="outline" className="self-start" disabled={draft.access_token === ''} onClick={() => update({ access_token: '' })}>{t('qq.clearToken')}</Button> : null}
-      </Field>
-      <Field orientation="horizontal"><Switch id={id + '-enabled'} checked={draft.connection_enabled} onCheckedChange={(connection_enabled) => update({ connection_enabled })} /><FieldLabel htmlFor={id + '-enabled'}>{t('qq.enabled')}</FieldLabel><Badge variant="secondary">{t('qq.status.' + connection, { defaultValue: connection })}</Badge></Field>
-      <ModelField profiles={profiles.filter((p) => p.source?.type === 'provider')} value={draft.model_profile_id} inheritLabel={t('selectModel')} onChange={(value) => update({ model_profile_id: value || null })} />
-      <Field><FieldLabel htmlFor={id + '-persona'}>{t('defaultAgentPersona')}</FieldLabel>
-        <Select value={draft.agent_persona_id ?? ''} onValueChange={(value) => update({ agent_persona_id: value || null })} items={[{ value: '', label: t('qq.noPersona') }, ...personas.filter((p) => p.collection === 'agent').map((p) => ({ value: p.id, label: p.name }))]}>
-          <SelectTrigger id={id + '-persona'}><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="">{t('qq.noPersona')}</SelectItem>{personas.filter((p) => p.collection === 'agent').map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectGroup></SelectContent>
-        </Select><FieldDescription>{t('qq.personaHint')}</FieldDescription>
-      </Field>
-      <Field><FieldLabel htmlFor={id + '-prompt'}>{t('projectPrompt')}</FieldLabel><Textarea id={id + '-prompt'} rows={4} maxLength={100000} value={draft.system_prompt} onChange={(e) => update({ system_prompt: e.target.value })} /></Field>
-      <Field><FieldLabel>{t('qq.replyMode')}</FieldLabel><Badge variant="secondary" className="self-start">{t('qq.keywordMode')}</Badge><FieldDescription>{t('qq.triggerHint')}</FieldDescription></Field>
-      <Field><FieldLabel htmlFor={id + '-keywords'}>{t('qq.keywords')}</FieldLabel><Textarea id={id + '-keywords'} rows={3} value={keywords} onChange={(e) => { setKeywords(e.target.value); update({ keywords: e.target.value.split('\n').map((v) => v.trim()).filter(Boolean) }); }} /></Field>
-      <Field orientation="horizontal"><Switch id={id + '-icebreaker'} checked={draft.icebreaker_enabled} onCheckedChange={(icebreaker_enabled) => update({ icebreaker_enabled })} aria-describedby={id + '-icebreaker-hint'} />
-        <FieldContent><FieldLabel htmlFor={id + '-icebreaker'}>{t('qq.icebreakerEnabled')}</FieldLabel><FieldDescription id={id + '-icebreaker-hint'}>{t('qq.icebreakerHint')}</FieldDescription></FieldContent>
-      </Field>
-      {draft.icebreaker_enabled ? <FieldGroup>
-        <Field><FieldLabel htmlFor={id + '-cold'}>{t('qq.icebreakerCold')}</FieldLabel><Input id={id + '-cold'} type="number" required min={1} step={1} value={draft.icebreaker_cold_seconds} onChange={(e) => update({ icebreaker_cold_seconds: Number(e.target.value) })} /></Field>
-        <Field><FieldLabel htmlFor={id + '-wait'}>{t('qq.icebreakerWait')}</FieldLabel><Input id={id + '-wait'} type="number" required min={1} step={1} value={draft.icebreaker_wait_seconds} onChange={(e) => update({ icebreaker_wait_seconds: Number(e.target.value) })} /></Field>
-        <Field><FieldLabel htmlFor={id + '-cooldown'}>{t('qq.icebreakerCooldown')}</FieldLabel><Input id={id + '-cooldown'} type="number" required min={1} step={1} value={draft.icebreaker_cooldown_seconds} onChange={(e) => update({ icebreaker_cooldown_seconds: Number(e.target.value) })} /><FieldDescription>{t('qq.icebreakerTimingHint')}</FieldDescription></Field>
-      </FieldGroup> : null}
-      <Field><FieldLabel htmlFor={id + '-limit'}>{t('qq.batchLimit')}</FieldLabel><Input id={id + '-limit'} type="number" required min={1} max={200} value={draft.batch_message_limit} onChange={(e) => update({ batch_message_limit: Number(e.target.value) })} /></Field>
-      <Field><FieldLabel htmlFor={id + '-reply-limit'}>{t('qq.replyLimit')}</FieldLabel><Input id={id + '-reply-limit'} type="number" required min={1} max={20} step={1} value={draft.reply_message_limit} onChange={(e) => update({ reply_message_limit: Number(e.target.value) })} /><FieldDescription>{t('qq.replyLimitHint')}</FieldDescription></Field>
-      <Field orientation="horizontal"><Switch id={id + '-reasoning'} checked={draft.reasoning} onCheckedChange={(reasoning) => update({ reasoning })} /><FieldLabel htmlFor={id + '-reasoning'}>{t('qq.reasoning')}</FieldLabel></Field>
-      <Field orientation="horizontal"><Switch id={id + '-images'} checked={draft.image_input_enabled} onCheckedChange={(image_input_enabled) => update({ image_input_enabled })} aria-describedby={id + '-images-hint'} />
-        <FieldContent><FieldLabel htmlFor={id + '-images'}>{t('qq.imageInputEnabled')}</FieldLabel><FieldDescription id={id + '-images-hint'}>{t('qq.imageInputHint')}</FieldDescription></FieldContent>
-      </Field>
-      <Field><FieldLabel>{t('qq.imageDescriptionModel')}</FieldLabel>
-        <ModelSelect profiles={profiles.filter((p) => p.source?.type === 'provider')}
-          value={draft.image_description_model_profile_id} label={t('qq.imageDescriptionModel')}
-          inheritLabel={t('qq.noDescriptionModel')} onChange={(value) => update({ image_description_model_profile_id: value || null })} />
-        <FieldDescription>{t('qq.imageDescriptionHint')}</FieldDescription>
-      </Field>
-      <QQImageGenerationFields value={draft} onChange={update} />
-      <ContextFields showAttachments={false} value={draft.context_policy} onChange={(context_policy) => update({ context_policy: { ...context_policy, include_attachments: 'none' } })} />
-      <GenerationFields value={{ temperature: draft.temperature }} onChange={(v) => update({ temperature: v.temperature ?? null })} />
-      <Field><FieldDescription>{t('qq.harnessHint')}</FieldDescription></Field>
-    </FieldGroup></FieldSet></div>
+    <TabsList className="shrink-0" aria-label={t('projectSettings')} activateOnFocus={false}>
+      <TabsTrigger value="connection">{t('qq.tabs.connection')}</TabsTrigger>
+      <TabsTrigger value="reply">{t('qq.tabs.reply')}</TabsTrigger>
+      <TabsTrigger value="images">{t('qq.tabs.images')}</TabsTrigger>
+    </TabsList>
+    <div className={dialog ? 'settings-dialog-body' : 'min-w-0'}><FieldSet disabled={busy}>
+      <TabsContent value="connection" keepMounted data-qq-settings-tab="connection">
+        <FieldGroup className="grid qq-settings-grid">
+        <Field><FieldLabel htmlFor={id + '-name'}>{t('projectName')}</FieldLabel><Input id={id + '-name'} required maxLength={128} value={draft.name} onChange={(e) => update({ name: e.target.value })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-account'}>{t('qq.account')}</FieldLabel><Input id={id + '-account'} required inputMode="numeric" pattern="[1-9][0-9]{0,19}" value={draft.bot_account} onChange={(e) => update({ bot_account: e.target.value })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-url'}>{t('qq.url')}</FieldLabel><Input id={id + '-url'} required value={draft.websocket_url} onChange={(e) => update({ websocket_url: e.target.value })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-token'}>{t('qq.token')}</FieldLabel>
+          <InputGroup>
+            <InputGroupInput id={id + '-token'} type="password" autoComplete="new-password" value={draft.access_token ?? ''}
+              placeholder={project?.has_access_token && draft.access_token === undefined ? t('qq.tokenSaved') : ''}
+              onChange={(e) => update({ access_token: e.target.value })} />
+            {project?.has_access_token ? <InputGroupAddon align="inline-end" className="has-[>button]:mr-0">
+              <InputGroupButton size="icon-xs" aria-label={t('qq.clearToken')} title={t('qq.clearToken')}
+                disabled={busy || draft.access_token === ''} onClick={() => update({ access_token: '' })}><X aria-hidden="true" /></InputGroupButton>
+            </InputGroupAddon> : null}
+          </InputGroup>
+          <FieldDescription>{t('qq.tokenHint')}</FieldDescription>
+        </Field>
+        </FieldGroup>
+        <Field orientation="horizontal"><Switch id={id + '-enabled'} checked={draft.connection_enabled} onCheckedChange={(connection_enabled) => update({ connection_enabled })} /><FieldLabel htmlFor={id + '-enabled'}>{t('qq.enabled')}</FieldLabel><Badge variant="secondary">{t('qq.status.' + connection, { defaultValue: connection })}</Badge></Field>
+      </TabsContent>
+      <TabsContent value="reply" keepMounted data-qq-settings-tab="reply">
+        <FieldSet><FieldLegend>{t('qq.sections.model')}</FieldLegend><FieldGroup>
+        <FieldGroup className="grid qq-settings-grid">
+        <ModelField profiles={profiles.filter((p) => p.source?.type === 'provider')} value={draft.model_profile_id} inheritLabel={t('selectModel')} onChange={(value) => update({ model_profile_id: value || null })} />
+        <Field><FieldLabel htmlFor={id + '-persona'}>{t('defaultAgentPersona')}</FieldLabel>
+          <Select value={draft.agent_persona_id ?? ''} onValueChange={(value) => update({ agent_persona_id: value || null })} items={[{ value: '', label: t('qq.noPersona') }, ...personas.filter((p) => p.collection === 'agent').map((p) => ({ value: p.id, label: p.name }))]}>
+            <SelectTrigger id={id + '-persona'}><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="">{t('qq.noPersona')}</SelectItem>{personas.filter((p) => p.collection === 'agent').map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectGroup></SelectContent>
+          </Select>
+        </Field>
+        </FieldGroup>
+        <Field><FieldLabel htmlFor={id + '-prompt'}>{t('projectPrompt')}</FieldLabel><Textarea className="field-sizing-fixed" id={id + '-prompt'} rows={4} maxLength={100000} value={draft.system_prompt} onChange={(e) => update({ system_prompt: e.target.value })} /></Field>
+        <FieldGroup className="grid qq-settings-grid items-center">
+          <GenerationFields value={{ temperature: draft.temperature }} onChange={(v) => update({ temperature: v.temperature ?? null })} />
+          <Field orientation="horizontal"><Switch id={id + '-reasoning'} checked={draft.reasoning} onCheckedChange={(reasoning) => update({ reasoning })} /><FieldLabel htmlFor={id + '-reasoning'}>{t('qq.reasoning')}</FieldLabel></Field>
+        </FieldGroup>
+        </FieldGroup></FieldSet>
+        <FieldSet><FieldLegend>{t('qq.sections.rules')}</FieldLegend><FieldGroup>
+        <Field><FieldLabel htmlFor={id + '-keywords'}>{t('qq.keywords')}</FieldLabel><Textarea className="field-sizing-fixed" id={id + '-keywords'} rows={3} value={keywords} onChange={(e) => { setKeywords(e.target.value); update({ keywords: e.target.value.split('\n').map((v) => v.trim()).filter(Boolean) }); }} /><FieldDescription>{t('qq.triggerHint')}</FieldDescription></Field>
+        <FieldGroup className="grid qq-settings-grid">
+          <Field><FieldLabel htmlFor={id + '-limit'}>{t('qq.batchLimit')}</FieldLabel><Input id={id + '-limit'} type="number" required min={1} max={200} value={draft.batch_message_limit} onChange={(e) => update({ batch_message_limit: Number(e.target.value) })} /></Field>
+          <Field><FieldLabel htmlFor={id + '-reply-limit'}>{t('qq.replyLimit')}</FieldLabel><Input id={id + '-reply-limit'} type="number" required min={1} max={20} step={1} value={draft.reply_message_limit} onChange={(e) => update({ reply_message_limit: Number(e.target.value) })} /><FieldDescription>{t('qq.replyLimitHint')}</FieldDescription></Field>
+        </FieldGroup>
+        <Field orientation="horizontal"><Switch id={id + '-icebreaker'} checked={draft.icebreaker_enabled} onCheckedChange={(icebreaker_enabled) => update({ icebreaker_enabled })} aria-describedby={id + '-icebreaker-hint'} />
+          <FieldContent><FieldLabel htmlFor={id + '-icebreaker'}>{t('qq.icebreakerEnabled')}</FieldLabel><FieldDescription id={id + '-icebreaker-hint'}>{t('qq.icebreakerHint')}</FieldDescription></FieldContent>
+        </Field>
+        {draft.icebreaker_enabled ? <FieldGroup className="grid qq-settings-grid qq-settings-grid-three">
+          <Field><FieldLabel htmlFor={id + '-cold'}>{t('qq.icebreakerCold')}</FieldLabel><Input id={id + '-cold'} type="number" required min={1} step={1} value={draft.icebreaker_cold_seconds} onChange={(e) => update({ icebreaker_cold_seconds: Number(e.target.value) })} /></Field>
+          <Field><FieldLabel htmlFor={id + '-wait'}>{t('qq.icebreakerWait')}</FieldLabel><Input id={id + '-wait'} type="number" required min={1} step={1} value={draft.icebreaker_wait_seconds} onChange={(e) => update({ icebreaker_wait_seconds: Number(e.target.value) })} /></Field>
+          <Field><FieldLabel htmlFor={id + '-cooldown'}>{t('qq.icebreakerCooldown')}</FieldLabel><Input id={id + '-cooldown'} type="number" required min={1} step={1} value={draft.icebreaker_cooldown_seconds} onChange={(e) => update({ icebreaker_cooldown_seconds: Number(e.target.value) })} /></Field>
+        </FieldGroup> : null}
+        </FieldGroup></FieldSet>
+        <FieldSet aria-describedby={id + '-context-hint'}><FieldLegend>{t('qq.sections.context')}</FieldLegend>
+          <ContextFields showAttachments={false} showDescriptions={false} className="grid qq-settings-grid" value={draft.context_policy}
+            onChange={(context_policy) => update({ context_policy: { ...context_policy, include_attachments: 'none' } })} />
+          <Field><FieldDescription id={id + '-context-hint'}>{t('qq.contextHint')}</FieldDescription></Field>
+        </FieldSet>
+      </TabsContent>
+      <TabsContent value="images" keepMounted data-qq-settings-tab="images">
+        <FieldSet><FieldLegend>{t('qq.sections.imageInput')}</FieldLegend><FieldGroup className="grid qq-settings-grid">
+        <Field orientation="horizontal"><Switch id={id + '-images'} checked={draft.image_input_enabled} onCheckedChange={(image_input_enabled) => update({ image_input_enabled })} aria-describedby={id + '-images-hint'} />
+          <FieldContent><FieldLabel htmlFor={id + '-images'}>{t('qq.imageInputEnabled')}</FieldLabel><FieldDescription id={id + '-images-hint'}>{t('qq.imageInputHint')}</FieldDescription></FieldContent>
+        </Field>
+        <Field><FieldLabel>{t('qq.imageDescriptionModel')}</FieldLabel>
+          <ModelSelect profiles={profiles.filter((p) => p.source?.type === 'provider')}
+            value={draft.image_description_model_profile_id} label={t('qq.imageDescriptionModel')}
+            inheritLabel={t('qq.noDescriptionModel')} onChange={(value) => update({ image_description_model_profile_id: value || null })} />
+          <FieldDescription>{t('qq.imageDescriptionHint')}</FieldDescription>
+        </Field>
+        </FieldGroup></FieldSet>
+        <FieldSet><FieldLegend>{t('qq.sections.imageGeneration')}</FieldLegend><FieldGroup>
+          <QQImageGenerationFields value={draft} onChange={update} />
+        </FieldGroup></FieldSet>
+      </TabsContent>
+    </FieldSet></div>
     <div className="settings-form-actions"><Button type="submit" disabled={busy || (!!project && !dirty)}>{t(project ? 'save' : 'createProject')}</Button></div>{confirmation}
-  </form>;
+  </Tabs>;
 }

@@ -816,6 +816,17 @@
   .settings-dialog-form { display: flex; flex-direction: column; min-height: 0; gap: 1rem; overflow: hidden; }
   .settings-dialog-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.125rem 0.375rem 0.5rem 0.125rem; }
   .settings-dialog-body [data-slot="tabs-content"]:not([hidden]) { display: flex; flex-direction: column; gap: 1.25rem; }
+  .qq-settings { width: 100%; max-width: 48rem; container: qq-settings / inline-size; }
+  .qq-settings [data-slot="field-set"], .qq-settings [data-slot="field"] { min-width: 0; }
+  .qq-settings [data-slot="tabs-content"]:not([hidden]) { display: flex; flex-direction: column; gap: 1.5rem; }
+  .qq-settings [data-slot="tabs-content"][hidden] { display: none; }
+  .qq-settings-grid { grid-template-columns: minmax(0, 1fr); }
+  @container qq-settings (min-width: 32rem) {
+    .qq-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @container qq-settings (min-width: 40rem) {
+    .qq-settings-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   .resource-advanced > [data-slot="collapsible-content"],
   .runtime-download-settings > [data-slot="collapsible-content"] { padding-top: 1rem; }
   .resource-advanced > [data-slot="collapsible-content"]:not([hidden]) { display: flex; flex-direction: column; gap: 1.25rem; }

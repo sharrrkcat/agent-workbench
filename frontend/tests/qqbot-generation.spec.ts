@@ -25,6 +25,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
         const sid = session.session_id;
         await page.goto(`/projects/${project.id}`);
+        await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         const selector = page.getByLabel(labels.qq.imageGenerationModel, { exact: true });
         await expect(selector).toContainText(labels.qq.noImageGeneration);
         await selector.click();
@@ -45,6 +46,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
         await page.reload();
+        await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await expect(selector).toContainText(model.name);
         await expect(size).toHaveValue('512x512');
         expect((await json(request.get(`/api/projects/${project.id}`))).image_generation_options).toEqual({ size: '512x512', quality: 'high', style: 'vivid' });
@@ -77,6 +79,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect((await json(request.get(`/api/qq/sessions/${sid}/deliveries`))).items).toHaveLength(1);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         await page.goto(`/projects/${project.id}`);
+        await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await chooseOption(selector, labels.qq.noImageGeneration);
         await expect(size).toHaveCount(0);
         await page.getByRole('button', { name: labels.save, exact: true }).click();

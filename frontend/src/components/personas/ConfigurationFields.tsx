@@ -138,15 +138,19 @@ export function ContextFields({
   value,
   onChange,
   showAttachments = true,
+  showDescriptions = true,
+  className,
 }: {
   value: ContextPolicy;
   showAttachments?: boolean;
+  showDescriptions?: boolean;
+  className?: string;
   onChange: (value: ContextPolicy) => void;
 }) {
   const { t } = useTranslation('personas');
   return (
     <>
-      <FieldGroup className="grid gap-4 sm:grid-cols-2">
+      <FieldGroup className={className ?? 'grid gap-4 sm:grid-cols-2'}>
         <Field>
           <FieldLabel>{t('maxMessages')}</FieldLabel>
           <Input
@@ -163,7 +167,7 @@ export function ContextFields({
               })
             }
           />
-          <FieldDescription>{t('maxMessagesDescription')}</FieldDescription>
+          {showDescriptions ? <FieldDescription>{t('maxMessagesDescription')}</FieldDescription> : null}
         </Field>
         <Field>
           <FieldLabel>{t('maxChars')}</FieldLabel>
@@ -181,7 +185,7 @@ export function ContextFields({
               })
             }
           />
-          <FieldDescription>{t('maxCharsDescription')}</FieldDescription>
+          {showDescriptions ? <FieldDescription>{t('maxCharsDescription')}</FieldDescription> : null}
         </Field>
       </FieldGroup>
       {showAttachments ? <Field orientation="horizontal">

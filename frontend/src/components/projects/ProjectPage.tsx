@@ -21,8 +21,8 @@ export function ProjectPage({ projectId, onNavigate, onLeaveGuardChange, onCreat
     <header className="settings-header">
       <SidebarTrigger />
       <div className="settings-heading min-w-0"><h1 className="truncate">{project?.name || t('projectSettings')}</h1></div>
-      {project ? <Badge variant="secondary">{t('projectKinds.' + project.kind)}</Badge> : null}
-      {project && project.kind !== 'timeline' ? <Button variant="outline" onClick={() => void onCreateSession(project.id)}>
+      {project && project.kind !== 'qqbot' ? <Badge variant="secondary">{t('projectKinds.' + project.kind)}</Badge> : null}
+      {project?.kind === 'workspace' ? <Button variant="outline" onClick={() => void onCreateSession(project.id)}>
         <MessageSquarePlus data-icon="inline-start" />{t('newSession')}
       </Button> : null}
     </header>

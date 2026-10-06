@@ -144,7 +144,7 @@
   "newQQBot": "New QQBot",
   "qq": {
     "imageInputEnabled": "Send images to model",
-    "imageInputHint": "Send up to 5 current-batch images, preferring pictures over stickers and recent items within each kind. History and QQ faces use text placeholders. All media remains visible here.",
+    "imageInputHint": "Send up to 5 images from the current batch.",
     "sticker": "Sticker",
     "mediaPending": "[Loading {{name}}]",
     "mediaFailed": "[{{name}} unavailable]",
@@ -152,7 +152,7 @@
     "defaultPrompt": "Participate naturally in the current QQ conversation. Stay on the latest topic and reply briefly in the other participants' language. Usually finish in one message; add another only when necessary. Follow the selected persona when present; otherwise be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others. Send text with qq_send_message. When an image is useful and qq_generate_image is available, call it with only a drawing prompt; it generates and sends one image automatically, using one reply slot. Do not send its link or repeat a delivery announcement. If image generation fails, you may reply with text or try another prompt.",
     "imageGenerationModel": "Image generation model",
     "noImageGeneration": "Disabled",
-    "imageGenerationHint": "Choose an external image generation model. Each call generates and sends one image, using one reply slot after delivery. Calls wait in order; long generation uses the Provider request timeout. Size, quality and style inherit model defaults when unset.",
+    "imageGenerationHint": "Generate and send one image per call.",
     "modelDefaults": "Use model default",
     "botSelf": "Bot account",
     "everyone": "Everyone",
@@ -161,27 +161,22 @@
     "tokenSaved": "Token saved",
     "clearToken": "Remove saved token",
     "externalId": "QQ message ID",
-    "tokenHint": "Leave untouched to keep the saved token. Clearing an edited field removes it.",
+    "tokenHint": "Keep untouched to retain the saved token; clear to remove it.",
     "enabled": "Connect to QQ",
     "noPersona": "No Agent Persona",
-    "personaHint": "Only the Agent identity and prompt are used. Knowledge is excluded.",
-    "replyMode": "Group reply mode",
-    "keywordMode": "Keywords",
     "icebreakerEnabled": "Break the silence in groups",
-    "icebreakerHint": "After a quiet period, consider replying when only one person speaks. Each new message from that person restarts the wait; another participant cancels the attempt until sending begins. The bot may skip, or send at most one text or generated image. Each group has its own cooldown; keyword replies remain available.",
+    "icebreakerHint": "Consider a reply when one person speaks after a quiet period.",
     "icebreakerCold": "Quiet period (seconds)",
     "icebreakerWait": "Observation wait (seconds)",
     "icebreakerCooldown": "Icebreaker cooldown (seconds)",
-    "icebreakerTimingHint": "Defaults: 7200 seconds (2 hours), 120 seconds, and 10800 seconds (3 hours). Cooldown starts when model inference begins, even if the attempt later skips, fails or is cancelled. Pausing, disconnecting or changing these settings restarts quiet observation; an existing cooldown is retained.",
-    "triggerHint": "One keyword per line, case-insensitive; use @QQ-number to match actual mentions. Keywords require a reply and grant 60 seconds of follow-up eligibility. Each participant message extends the silence window by 5 seconds. Follow-ups may be skipped; confirmed replies extend eligibility to at least 45 seconds after confirmation. Friend messages always trigger and require a reply.",
+    "triggerHint": "One keyword per line; use @QQ-number for mentions.",
     "keywords": "Trigger keywords",
     "batchLimit": "Messages per batch",
-    "replyLimit": "Maximum replies per batch",
-    "replyLimitHint": "1–20 messages, shared by text and generated images. Sending stops at this limit without pausing the conversation. Changes apply to batches that start later.",
+    "replyLimit": "Replies per batch",
+    "replyLimitHint": "Shared by text and generated images.",
     "replyLimitReached": "Reply limit reached for this batch ({{sent}}/{{limit}})",
     "replySkipped": "Reply skipped for this batch",
     "reasoning": "Reasoning",
-    "harnessHint": "Harness is enabled. Keywords and friend messages require a sent reply; follow-up batches may use the skip tool to finish. Model prose is not sent to QQ.",
     "bindConversation": "Bind QQ conversation",
     "sessionTitle": "Session title (optional)",
     "targetKind": "Conversation type",
@@ -230,7 +225,7 @@
     "deleteReplyConfirm": "Delete this model reply and all its sent-message bubbles from this conversation and future model context? User messages will be kept. This will not recall messages in QQ.",
     "imageDescriptionModel": "Image description model (optional)",
     "noDescriptionModel": "Do not use",
-    "imageDescriptionHint": "When image input is on, describe selected images in the background using this external LLM. Descriptions are shared across QQBot projects and used in later history placeholders.",
+    "imageDescriptionHint": "Describe images for later history when image input is on.",
     "resources": {
       "title": "Shared resources",
       "filter": "Filter images",
@@ -265,6 +260,20 @@
       "imagePlaceholder": "[Image]",
       "qqOnly": "Shared resources are available inside QQBot Projects only.",
       "page": "Page {{page}}"
-    }
+    },
+    "tabs": {
+      "connection": "Connection",
+      "reply": "Replies",
+      "images": "Images"
+    },
+    "sections": {
+      "model": "Model & persona",
+      "rules": "Reply rules",
+      "context": "Context",
+      "imageInput": "Image input",
+      "imageGeneration": "Image generation"
+    },
+    "imageSizeHint": "auto or widthxheight, e.g. 1024x1024.",
+    "contextHint": "Blank means unlimited; 0 messages excludes history."
   }
 }

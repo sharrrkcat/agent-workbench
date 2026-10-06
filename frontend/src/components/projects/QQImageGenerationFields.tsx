@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Field, FieldLabel, FieldDescription } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
 import { useModelsStore } from '../../store/useModelsStore';
@@ -21,18 +21,18 @@ export function QQImageGenerationFields({ value, onChange }: {
   const providers = useModelsStore((s) => s.providers);
   const options = value.image_generation_options;
   return <>
-    <Field><FieldLabel>{t('qq.imageGenerationModel')}</FieldLabel>
+    <Field className="max-w-sm"><FieldLabel>{t('qq.imageGenerationModel')}</FieldLabel>
       <ModelSelect kind="image_generation" profiles={profiles.filter((p) => p.source?.type === 'provider').map((p) => ({
         ...p, enabled: p.enabled && providers.some((provider) => p.source?.type === 'provider' && provider.id === p.source.provider_profile_id && provider.enabled),
       }))} value={value.image_generation_model_profile_id} label={t('qq.imageGenerationModel')}
         inheritLabel={t('qq.noImageGeneration')} onChange={(model) => onChange({ image_generation_model_profile_id: model || null })} />
       <FieldDescription>{t('qq.imageGenerationHint')}</FieldDescription>
     </Field>
-    {value.image_generation_model_profile_id ? <>
+    {value.image_generation_model_profile_id ? <FieldGroup className="grid qq-settings-grid qq-settings-grid-three">
       <Field><FieldLabel htmlFor={id + '-size'}>{t('llm:imageGeneration.size')}</FieldLabel>
         <Input id={id + '-size'} value={options.size ?? ''} maxLength={32} pattern="auto|[1-9][0-9]*x[1-9][0-9]*"
           placeholder={t('qq.modelDefaults')} onChange={(event) => onChange({ image_generation_options: { ...options, size: event.target.value || null } })} />
-        <FieldDescription>{t('llm:imageGeneration.sizeHelp')}</FieldDescription>
+        <FieldDescription>{t('qq.imageSizeHint')}</FieldDescription>
       </Field>
       {(Object.keys(choices) as (keyof typeof choices)[]).map((key) => {
         const items = [{ value: '', label: t('qq.modelDefaults') },
@@ -46,6 +46,6 @@ export function QQImageGenerationFields({ value, onChange }: {
           </Select>
         </Field>;
       })}
-    </> : null}
+    </FieldGroup> : null}
   </>;
 }

@@ -71,6 +71,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.keyboard.press('Escape');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         await page.goto(`/projects/${project.id}`);
+        await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         const toggle = page.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true });
         await expect(toggle).not.toBeChecked();
         await expect(page.getByText(labels.qq.imageInputHint, { exact: true })).toBeVisible();
@@ -83,6 +84,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
         expect((await json(request.get(`/api/projects/${project.id}`))).image_input_enabled).toBe(true);
         await page.reload();
+        await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await expect(toggle).toBeChecked();
         await expect(descriptionModel).toContainText(model.name);
         expect((await json(request.get(`/api/projects/${project.id}`))).image_description_model_profile_id).toBe(model.id);

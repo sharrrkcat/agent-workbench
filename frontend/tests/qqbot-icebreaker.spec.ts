@@ -18,6 +18,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const url = `/api/projects/${project.id}`;
       try {
         await page.goto(`/projects/${project.id}`);
+        await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         const enabled = page.getByRole('switch', { name: labels.qq.icebreakerEnabled, exact: true });
         const cold = page.getByLabel(labels.qq.icebreakerCold, { exact: true });
         const wait = page.getByLabel(labels.qq.icebreakerWait, { exact: true });
@@ -48,6 +49,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await save.click();
         await expect(save).toBeDisabled();
         await page.reload();
+        await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await expect(enabled).toBeChecked();
         await expect(cold).toHaveValue('60');
         await expect(wait).toHaveValue('7');
@@ -57,6 +59,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await save.click();
         await expect(save).toBeDisabled();
         await page.reload();
+        await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await expect(enabled).not.toBeChecked();
         const saved = await json(request.get(url));
         expect(saved.icebreaker_enabled).toBe(false);

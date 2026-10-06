@@ -27,11 +27,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await dialog.getByLabel(labels.projectName, { exact: true }).fill('QQ browser');
         await dialog.getByLabel(labels.qq.account, { exact: true }).fill(account);
         await dialog.getByLabel(labels.qq.token, { exact: true }).fill('fixture-secret');
+        await expect(dialog.getByRole('switch', { name: labels.qq.enabled, exact: true })).not.toBeChecked();
+        await dialog.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await chooseOption(dialog.getByLabel(labels.model, { exact: true }), model.name);
         await expect(dialog.getByLabel(labels.model, { exact: true })).toContainText(model.name);
         await expect(dialog.getByLabel(labels.defaultAgentPersona, { exact: true })).toContainText(labels.qq.noPersona);
-        await expect(dialog.getByRole('switch', { name: labels.qq.enabled, exact: true })).not.toBeChecked();
-        await expect(dialog.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true })).not.toBeChecked();
         await expect(dialog.getByRole('switch', { name: labels.qq.icebreakerEnabled, exact: true })).not.toBeChecked();
         await expect(dialog.getByLabel(labels.qq.icebreakerCold, { exact: true })).toHaveCount(0);
         await dialog.getByLabel(labels.qq.keywords, { exact: true }).fill('BOT\nhello');
@@ -39,6 +39,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(dialog.getByLabel(labels.qq.replyLimit, { exact: true })).toHaveValue('4');
         await dialog.getByLabel(labels.qq.replyLimit, { exact: true }).fill('3');
         await expect(dialog.getByRole('tab', { name: labels.knowledge, exact: true })).toHaveCount(0);
+        await dialog.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
+        await expect(dialog.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true })).not.toBeChecked();
         const created = page.waitForResponse((r) => r.url().endsWith('/api/projects') && r.request().method() === 'POST');
         await dialog.getByRole('button', { name: labels.createProject, exact: true }).click();
         const project = await (await created).json();
@@ -54,6 +56,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(dialog).toBeHidden();
         await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`));
         await expect(page.getByLabel(labels.qq.token, { exact: true })).toHaveValue('');
+        await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await page.getByLabel(labels.projectPrompt, { exact: true }).fill('Project prompt');
         await page.getByLabel(labels.qq.replyLimit, { exact: true }).fill('2');
         await page.getByRole('button', { name: labels.save, exact: true }).click();
@@ -65,6 +68,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
         expect((await json(request.get(`/api/projects/${projectId}`))).system_prompt).toBe('');
+        await page.getByRole('tab', { name: labels.qq.tabs.connection, exact: true }).click();
         await page.getByRole('button', { name: labels.qq.clearToken, exact: true }).click();
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
@@ -272,6 +276,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await openSidebar(page);
         await page.getByRole('button', { name: labels.projectActions.replace('{{name}}', project.name), exact: true }).click();
         await page.getByRole('menuitem', { name: labels.projectSettings, exact: true }).click();
+        await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await expect(page.getByLabel(labels.model, { exact: true })).toContainText(longName);
         await expect(page.getByRole('switch', { name: labels.qq.reasoning, exact: true })).not.toBeChecked();
         await openSidebar(page);
