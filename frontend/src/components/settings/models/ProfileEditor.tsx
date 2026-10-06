@@ -29,7 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
 import { useModelsStore } from '../../../store/useModelsStore';
 import { modelKinds } from '../../../types/models';
-import type { DirectoryInspection, LocalEmbeddingParameters, LocalEngine, LocalModelSource, ModelInput } from '../../../types/models';
+import type { DirectoryInspection, LocalEmbeddingParameters, LocalEngine, LocalModelSource, ModelInput, ModelProfile } from '../../../types/models';
 
 import type { ModelFeedbackProps } from './types';
 import {
@@ -39,6 +39,7 @@ import {
   localSource,
   selectModelSource,
   selectModelReference,
+  selectModelKind,
   sourceValue,
   updateModel,
 } from './profileDefaults';
@@ -60,13 +61,21 @@ export function ProfileEditor({
   run,
   busy,
   feedback,
+  allowKindSelection = false,
+  visible = true,
+  finalFocus,
+  onCreated,
 }: ModelFeedbackProps & {
   model: ProfileDraft | null;
   setModel: Dispatch<SetStateAction<ProfileDraft | null>>;
+  allowKindSelection?: boolean;
+  visible?: boolean;
+  finalFocus?: React.ComponentProps<typeof DialogContent>['finalFocus'];
+  onCreated?: (profile: ModelProfile) => void | Promise<void>;
 }) {
   const { t } = useTranslation('llm');
   const formId = useId();
-  const activeView = useSettingsView();
+  const activeView = useSettingsView() && visible;
   const { providers, profiles } = useModelsStore();
   const local = model?.value.source?.type === 'local' ? model.value.source : null;
   const directory = model && local && model.directory?.ref === model.value.model_ref
@@ -168,7 +177,7 @@ export function ProfileEditor({
           })();
       }}
     >
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl" finalFocus={finalFocus}>
         <DialogHeader>
           <DialogTitle>{model?.id ? t('editModel') : t('addModel')}</DialogTitle>
         </DialogHeader>
@@ -177,11 +186,12 @@ export function ProfileEditor({
             className="settings-dialog-form"
             onSubmit={(e) => {
               e.preventDefault();
+              let created: ModelProfile | undefined;
               void run(async () => {
                 if (model.id) await modelsApi.patchModelProfile(model.id, model.value);
-                else await modelsApi.createModelProfile(model.value);
+                else created = await modelsApi.createModelProfile(model.value);
                 setModel(null);
-              });
+              }).then(() => { if (created) return onCreated?.(created); });
             }}
           >
             <div className="settings-dialog-body">
@@ -189,6 +199,21 @@ export function ProfileEditor({
               <FieldSet disabled={busy} className="block">
                 <FieldGroup className="model-form">
                 <FieldGroup className="grid gap-4 sm:grid-cols-2">
+                  {allowKindSelection ? <Field className="sm:col-span-2">
+                    <FieldLabel>{t('kind')}</FieldLabel>
+                    <Select value={model.value.kind} disabled={busy || !!model.id}
+                      items={modelKinds.map((kind) => ({ value: kind, label: t('kinds.' + kind) }))}
+                      onValueChange={(kind) => {
+                        if (!kind) return;
+                        setModel((draft) => !draft || draft.id || draft.value.kind === kind ? draft
+                          : { value: selectModelKind(draft.value, kind) });
+                      }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectGroup>
+                        {modelKinds.map((kind) => <SelectItem key={kind} value={kind}>{t('kinds.' + kind)}</SelectItem>)}
+                      </SelectGroup></SelectContent>
+                    </Select>
+                  </Field> : null}
                   <Field>
                     <FieldLabel>{t('name')}</FieldLabel>
                     <Input
@@ -206,7 +231,7 @@ export function ProfileEditor({
                       onChange={(e) => patchModel({ alias: e.target.value })}
                     />
                   </Field>
-                  <Field>
+                  {!allowKindSelection ? <Field>
                     <FieldLabel>{t('kind')}</FieldLabel>
                     <Select
                       value={model.value.kind}
@@ -226,7 +251,7 @@ export function ProfileEditor({
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </Field>
+                  </Field> : null}
                   <Field>
                     <FieldLabel>{t('source')}</FieldLabel>
                     <Select

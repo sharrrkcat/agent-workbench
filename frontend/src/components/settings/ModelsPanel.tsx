@@ -15,7 +15,7 @@ import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../api/models';
 import { useModelsStore } from '../../store/useModelsStore';
-import { modelKinds } from '../../types/models';
+import { modelKinds, type ModelKind } from '../../types/models';
 
 import { ProfilesTab } from './models/ProfilesTab';
 import { ProvidersTab } from './models/ProvidersTab';
@@ -26,7 +26,9 @@ import { SettingsView } from './SettingsView';
 import { settingsRouteUrl, type ModelView, type SettingsNavigate } from './navigation';
 import { Feedback, useSettingsLeaveGuard } from './resources/ResourceUI';
 
-export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate: SettingsNavigate }) {
+export function ModelsPanel({ view, onNavigate, listOnlyKind, onOpenEditor }: {
+  view: ModelView; onNavigate: SettingsNavigate; listOnlyKind: ModelKind | null; onOpenEditor: () => void;
+}) {
   const { t } = useTranslation('llm');
   const { profiles, settings, reloadRuntimes, loading, error: loadError, reload } = useModelsStore();
   const { busy, error, notice, run, setError } = useModelFeedback(reload);
@@ -142,6 +144,8 @@ export function ModelsPanel({ view, onNavigate }: { view: ModelView; onNavigate:
           <ProfilesTab
             {...editorProps}
             kind={kind}
+            editorVisible={listOnlyKind !== kind}
+            onOpenEditor={onOpenEditor}
             onOpenLocalRuntime={() =>
               void onNavigate(settingsRouteUrl({ section: 'models', view: 'localRuntime' }))
             }

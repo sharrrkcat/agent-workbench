@@ -11,7 +11,11 @@ import {
   Wrench,
   Boxes,
   LayoutDashboard,
+  Plus,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
+import { useModelsStore } from '../store/useModelsStore';
 import { useTranslation } from 'react-i18next';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
@@ -24,6 +28,7 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
+  SidebarMenuAction,
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
@@ -56,13 +61,21 @@ export function SettingsSidebar({
   route,
   onNavigate,
   returnTo = '/',
+  onAddModel,
+  modelsExpansion,
 }: {
   route: SettingsRoute;
   onNavigate: SettingsNavigate;
   returnTo?: string;
+  onAddModel: (trigger: HTMLElement | null) => void;
+  modelsExpansion: number;
 }) {
   const { t } = useTranslation('settings');
-  const { setOpenMobile } = useSidebar();
+  const { setOpenMobile, isMobile } = useSidebar();
+  const profiles = useModelsStore((state) => state.profiles);
+  const loading = useModelsStore((state) => state.loading);
+  const [modelsOpen, setModelsOpen] = useState(false);
+  useEffect(() => { if (modelsExpansion) setModelsOpen(true); }, [modelsExpansion]);
   async function navigate(url: string) {
     if (await onNavigate(url)) setOpenMobile(false);
   }
@@ -108,25 +121,40 @@ export function SettingsSidebar({
                         pageItem(menu.pages[0])
                       ) : (
                         <SidebarMenuItem>
-                          <Collapsible defaultOpen={false}>
+                          <Collapsible defaultOpen={false}
+                            {...(menu.id === 'models' ? { open: modelsOpen, onOpenChange: setModelsOpen } : {})}>
+                            <div className="group/settings-menu-heading relative">
                             <CollapsibleTrigger
                               render={
                                 <SidebarMenuButton
                                   type="button"
                                   data-settings-menu={menu.id}
+                                  className={menu.id === 'models'
+                                    ? 'group-has-data-[sidebar=menu-action]/menu-item:pr-14 pointer-coarse:group-has-data-[sidebar=menu-action]/menu-item:pr-22' : undefined}
                                 />
                               }
                             >
                               <Icon data-icon="inline-start" />
-                              <span>{t(menu.label)}</span>
+                              <span className="truncate">{t(menu.label)}</span>
                               <ChevronRight
                                 data-icon="inline-end"
-                                className="ml-auto transition-transform group-aria-expanded/menu-button:rotate-90"
+                                className={cn('ml-auto transition-transform group-aria-expanded/menu-button:rotate-90',
+                                  menu.id === 'models' && 'absolute right-2 pointer-coarse:right-3.5')}
                               />
                             </CollapsibleTrigger>
+                            {menu.id === 'models' ? <SidebarMenuAction type="button"
+                              aria-label={t('llm:addAnyModel')} title={t('llm:addAnyModel')} disabled={loading}
+                              className="right-7 opacity-0 group-hover/settings-menu-heading:opacity-100 group-has-[:focus-visible]/settings-menu-heading:opacity-100 pointer-coarse:right-11 pointer-coarse:opacity-100"
+                              onClick={(event) => {
+                                const trigger = isMobile ? null : event.currentTarget;
+                                setOpenMobile(false);
+                                onAddModel(trigger);
+                              }}><Plus /></SidebarMenuAction> : null}
+                            </div>
                             <CollapsibleContent keepMounted>
                               <SidebarMenu className="ml-3.5 w-auto gap-1 border-l border-sidebar-border pl-2.5">
-                                {menu.pages.map(pageItem)}
+                                {menu.pages.filter((page) => menu.id !== 'models' || page.section !== 'models'
+                                  || page.view === 'dashboard' || profiles.some((profile) => profile.kind === page.view)).map(pageItem)}
                               </SidebarMenu>
                             </CollapsibleContent>
                           </Collapsible>

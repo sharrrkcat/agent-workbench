@@ -1,4 +1,3 @@
-import type { ModelKind } from '../src/types/models';
 import { navigateModelSettings, chooseOption, fillCombobox } from './controls';
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
@@ -108,7 +107,7 @@ for (const locale of ['en', 'zh-CN']) {
     await page.keyboard.press('Escape');
     await dialog.getByRole('button', { name: labels.close, exact: true }).click();
     for (const selected of ['embedding', 'tts', 'reranker', 'image_embedding', 'vision', 'asr']) {
-      await navigateModelSettings(page, selected as ModelKind);
+      await page.goto(`/settings?tab=models&view=${selected}`);
       await page.getByRole('button', { name: labels.addModel, exact: true }).click();
       await expect(source.locator('[data-slot="select-value"]')).toHaveText(labels.localRuntime);
       if (['image_embedding', 'vision', 'asr', 'reranker'].includes(selected)) {

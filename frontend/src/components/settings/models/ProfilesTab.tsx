@@ -26,7 +26,9 @@ export function ProfilesTab({
   feedback,
   setError,
   onOpenLocalRuntime,
-}: ModelFeedbackProps & { kind: ModelKind; onOpenLocalRuntime: () => void }) {
+  editorVisible,
+  onOpenEditor,
+}: ModelFeedbackProps & { kind: ModelKind; onOpenLocalRuntime: () => void; editorVisible: boolean; onOpenEditor: () => void }) {
   const { t } = useTranslation('llm');
   const activeView = useSettingsView();
   const { profiles, providers, statuses, setStatus, loading, reload } = useModelsStore();
@@ -70,6 +72,7 @@ export function ProfilesTab({
             disabled={disabled}
             onClick={() => {
               setError('');
+              onOpenEditor();
               setModel({ value: newModel(kind) });
             }}
             type="button"
@@ -203,6 +206,7 @@ export function ProfilesTab({
                             onClick={() => {
                               const { id, created_at: _c, updated_at: _u, ...value } = p;
                               setError('');
+                              onOpenEditor();
                               setModel({ id, value });
                             }}
                           />
@@ -224,6 +228,7 @@ export function ProfilesTab({
                             onClick={() => {
                               const { id: _id, created_at: _c, updated_at: _u, ...value } = p;
                               setError('');
+                              onOpenEditor();
                               setModel({
                                 value: { ...value, alias: p.alias + '-copy', name: p.name + ' ' + t('copy') },
                               });
@@ -313,6 +318,7 @@ export function ProfilesTab({
         </DialogContent>
       </Dialog>
       <ProfileEditor
+        visible={editorVisible}
         model={model}
         setModel={setModel}
         run={run}

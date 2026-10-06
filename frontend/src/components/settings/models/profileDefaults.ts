@@ -40,6 +40,11 @@ export const newModel = (kind: ModelKind): ModelInput => ({
     : kind === 'image_generation' ? { n: 1 } : {},
 });
 
+export function selectModelKind(value: ModelInput, kind: ModelKind): ModelInput {
+  if (value.kind === kind) return value;
+  return { ...newModel(kind), name: value.name, alias: value.alias, external_enabled: value.external_enabled };
+}
+
 export const ttsGenerationDefaults = {
   kokoro: {},
   chatterbox: { seed: null, exaggeration: 0.5, cfg_weight: 0.5, temperature: 0.8, repetition_penalty: 1.2, min_p: 0.05, top_p: 1 },

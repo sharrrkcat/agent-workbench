@@ -14,6 +14,7 @@
   "service": "对外 API",
   "kind": "模型种类",
   "addModel": "添加模型",
+  "addAnyModel": "添加任意类型模型",
   "editModel": "编辑模型",
   "name": "名称",
   "alias": "公开别名",

@@ -106,7 +106,7 @@ and closed pages leave keyboard navigation. Active pages use aria-current.
 | --- | --- |
 | General, Tools | Single page; no `view` |
 | Personas | Cogita Persona `user`, Agent Personas `agent`, User Personas `roleplay_user`, Character Personas `character` |
-| Models | Dashboard `dashboard`; LLM `llm`, Text Embedding `embedding`, Reranker `reranker`, Image Embedding `image_embedding`, Vision `vision`, Text to Speech `tts`, Speech to Text `asr`, Processor `processor` |
+| Models | Dashboard `dashboard`; LLM `llm`, Text Embedding `embedding`, Reranker `reranker`, Image Embedding `image_embedding`, Vision `vision`, Text to Speech `tts`, Speech to Text `asr`, Processor `processor`, Image Generation `image_generation` |
 | Providers & Runtime | Model Providers `providers`, Local Runtime `localRuntime` (both remain under `tab=models`) |
 | Knowledge, Worldbook | Resources `list`, Global settings `settings` |
 
@@ -154,7 +154,8 @@ The default initializes new sessions; changing it preserves existing selections.
 settings select concrete LLMs without a Global default option. [Models](models.md) owns profile
 parameters; [chat/context](chat-context.md#auxiliary-tasks-and-titles) owns titles.
 
-Models contains Dashboard followed by all nine model kinds. Dashboard stacks Default models above External API; only enabled LLMs appear in the default chat/auxiliary selectors. Each kind page owns its filtered card list and independent editor draft; adding or copying stays in that kind, which is read-only in the editor. There is no list kind selector.
+Models contains Dashboard followed by kinds with saved profiles, including disabled, unloaded and unavailable profiles. Dashboard and the collapsible Models heading remain when all kinds are empty. Filtering affects navigation only: empty-kind URLs and their Add model shortcuts remain usable, including after deleting the last profile. Dashboard stacks Default models above External API; only enabled LLMs appear in the default chat/auxiliary selectors. Each kind page owns its filtered card list and independent editor draft; its Add model, edit and copy actions keep the kind read-only. There is no list kind selector.
+The Models heading places an Add model icon before its collapse arrow, with Project-style header hover/keyboard focus and visible touch targets. Adding does not toggle expansion. It opens a shared editor from any settings page, with all nine kinds selectable at the top; the initial kind is the current model page or LLM elsewhere. Changing kind preserves name, alias and external visibility, resetting source, reference, parameters and inspection to that kind's defaults. Image generation still requires explicit provider selection. Failed saves retain the draft; busy saves block close and departure. Successful creation refreshes the list, expands Models and navigates through the existing leave guard to the new kind. Rejecting departure preserves the created model and current settings draft. The destination shows the list while retaining previous category drafts for subsequent navigation. Mobile creation closes the sidebar; cancelling returns focus to the sidebar toggle. Other cancellation returns focus to the heading action. Accepted navigation closes the shared creation editor.
 Providers & Runtime contains Model Providers for external connections and Local Runtime for runtime cards, Storage & cache, collapsed download settings and task history with a log dialog. Both menus share model state and the busy navigation guard. Forms retain drafts across their subpages, with inactive overlays hidden. Removed profiles/service views follow the normal Dashboard default, without redirects. LLM/text embedding/TTS offer Local Runtime and configured providers; image generation requires a provider, while other kinds use Local Runtime only. Disabled providers are marked. New forms default to Local Runtime except image generation, which requires explicit provider selection. Existing unbound profiles show Unconfigured; editing/copying requires selecting a source before saving, without changing the nullable backend contract. Detected Kokoro/WD14 use CPU, DLSS NR uses D3D12, and other engines use CUDA. Unresolved
 LLM/TTS/WD14 directories expose no guessed engine options. Local editors expose directory suggestions, execution options and release policy. Vision shows detected WD14/backbone information, read-only Tags,
 general/character thresholds (0.35/0.85), CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and fractions round-trip, while blank fields
@@ -238,9 +239,7 @@ Knowledge settings own chunk/retrieval/context controls and unified reranker
 selection. KB records select unified embedding profiles. Model paths, connection
 timeouts, preprocessing instructions, dimensions, batching and normalization
 belong to Models. [Knowledge](knowledge.md) owns index invalidation and retrieval.
-Worldbook settings stay at `/api/worldbook/settings`; its matching/context
-rules are owned by chat/context. There are no independent per-kind model pages,
-extension configuration objects or old General inference-service settings.
+Worldbook settings stay at `/api/worldbook/settings`; chat/context owns matching and context rules.
 
 Knowledge and Worldbook default to resource lists, with a separate Global settings
 sidebar page and inline details. Refreshing a resource page returns to its list.

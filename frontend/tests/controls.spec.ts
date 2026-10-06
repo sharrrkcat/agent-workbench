@@ -91,6 +91,9 @@ for (const locale of ['en', 'zh-CN']) {
         await toggle.press('Space');
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await toggle.press('Tab');
+        const addAnyModel = group.getByRole('button', { name: llm.addAnyModel, exact: true });
+        await expect(addAnyModel).toBeFocused();
+        await addAnyModel.press('Tab');
         await expect(dashboard).toBeFocused();
         await dashboard.press('Tab');
         await expect(llmPage).toBeFocused();
@@ -492,7 +495,8 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await sent;
   await expect(name).toBeDisabled();
-  await expect(dialog.getByRole('switch')).toHaveCount(0);
+  await expect(dialog.getByRole('switch', { name: 'Enabled', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('switch', { name: 'Accept complete tool calls without an index', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.keyboard.press('Escape');
   await expect(dialog).toBeVisible();

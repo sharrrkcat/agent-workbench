@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { chooseOption, fillCombobox, navigateModelSettings } from './controls';
+import { chooseOption, fillCombobox } from './controls';
 
 for (const locale of ['en', 'zh-CN']) {
   const labels = JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/llm.json`, import.meta.url), 'utf8'));
@@ -16,8 +16,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.route(`**/api/models/providers/${provider.id}/models`, (route) => route.fulfill(discovery
           ? { json: { models: ['discovered-image'] } }
           : { status: 502, json: { error: { code: 'PROVIDER_ERROR', message: 'Discovery unavailable' } } }));
-        await page.goto('/settings?tab=models&view=dashboard');
-        await navigateModelSettings(page, 'image_generation');
+        await page.goto('/settings?tab=models&view=image_generation');
         await expect(page).toHaveURL(/view=image_generation/);
         await page.getByRole('button', { name: labels.addModel, exact: true }).click();
         const dialog = page.getByRole('dialog');

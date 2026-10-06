@@ -61,7 +61,7 @@ for (const locale of ['en', 'zh-CN']) {
           const menu = sidebar.getByRole('list', { name: settings[section], exact: true });
           const toggle = menu.getByRole('button', { name: settings[section], exact: true });
           await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-          await expect(menu.getByRole('button')).toHaveCount(1);
+          await expect(menu.getByRole('button')).toHaveCount(section === 'models' ? 2 : 1);
           await toggle.click();
           await expect(toggle).toHaveAttribute('aria-expanded', 'true');
           await toggle.press('Enter');
@@ -71,10 +71,12 @@ for (const locale of ['en', 'zh-CN']) {
         expect(await page.evaluate(() => history.length)).toBe(historyLength);
         await page.screenshot({ path: info.outputPath('collapsed-sidebar.png'), animations: 'disabled' });
         const modelProfiles = await (await request.get('/api/models/profiles')).json();
+        const populatedKinds = new Set(modelProfiles.map((profile: { kind: string }) => profile.kind));
         const pages = [
           ['general', ''],
           ['models', 'dashboard'],
-          ...['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor', 'image_generation'].map((kind) => ['models', kind]),
+          ...['llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor', 'image_generation']
+            .filter((kind) => populatedKinds.has(kind)).map((kind) => ['models', kind]),
           ['models', 'providers'],
           ['models', 'localRuntime'],
           ['personas', 'user'],
@@ -137,9 +139,9 @@ for (const locale of ['en', 'zh-CN']) {
           settings.sidebarGroups.roleplay,
         ]);
         await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(8);
-        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(22);
+        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(13 + populatedKinds.size);
         for (const [section, count] of [
-          ['models', 10],
+          ['models', 1 + populatedKinds.size],
           ['providersRuntime', 2],
           ['knowledge', 2],
           ['worldbook', 2],

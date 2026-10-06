@@ -53,7 +53,7 @@ composer growth, disclosure position and breakpoint/short viewport behavior.
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
 independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
 chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning previews, message alignment and images.
-settings-layout.spec.ts covers all 22 grouped pages, collapsed menus, direct links, history, resource
+settings-layout.spec.ts covers populated grouped pages, collapsed menus, direct links, history, resource
 leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, shared navigation and responsive scroll regions.
 chat-drafts.spec.ts covers unsaved settings, shared creation entries, attachment promotion/retry,
 empty startup and last-session deletion; test-chat-drafts.mjs covers first-send state and races.
@@ -74,6 +74,7 @@ qqbot-settings-layout.spec.ts covers shared creation/settings tabs, container gr
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
 model-profiles.spec.ts covers local card layouts, enable saves/failures, source-required drafts and local suggestion states in both locales/viewports.
+model-creation.spec.ts covers the Models heading action, empty-kind filtering, all-kind creation, failed/busy saves, type-switch races, retained drafts and guarded navigation in both locales/viewports.
 test-wd14.mjs and wd14.spec.ts cover WD14 source/CPU defaults, inventory/manual references,
 threshold validation/round trips and lifecycle controls in both locales and desktop/touch viewports.
 test-siglip.mjs and siglip.spec.ts cover directory information, stale responses, preserved drafts, the unload-other-tower switch,
