@@ -33,9 +33,9 @@ export function QQDeliveryContent({ delivery }: { delivery: QQDelivery }) {
   const { t } = useTranslation('personas');
   const [open, setOpen] = useState(false);
   const attachment = delivery.attachment;
-  if (delivery.kind === 'generated_image' && delivery.status === 'sent' && delivery.asset_id === null)
+  if (delivery.kind !== 'text' && delivery.status === 'sent' && delivery.asset_id === null)
     return <div className="message text-muted-foreground" data-qq-media-state="deleted">{t('qq.resources.imagePlaceholder')}</div>;
-  if (delivery.kind !== 'generated_image' || !attachment) return <div className="message">{delivery.text}</div>;
+  if (delivery.kind === 'text' || !attachment) return <div className="message">{delivery.text}</div>;
   const name = delivery.description || delivery.prompt || delivery.text;
   return <div className="message qq-message-content">
     <QQImageButton key={attachment.id} attachment={attachment} name={name} kind="image" onPreview={() => setOpen(true)} />

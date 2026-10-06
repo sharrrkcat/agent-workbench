@@ -38,10 +38,10 @@ def setup(qq_client, clock, **values):
     return p, session, connection
 
 
-def queued(qq_client, clock, **values):
+def queued(qq_client, clock, *, text="A quiet thought", **values):
     client, state, _ = qq_client
     p, session, connection = setup(qq_client, clock, **values)
-    ingest(client, state, p, event(1, "A quiet thought"), 11)
+    ingest(client, state, p, event(1, text), 11)
     batch = tick(qq_client, session, clock, 16)
     assert batch.trigger_kind == "icebreaker"
     return p, session, connection, batch
@@ -330,7 +330,7 @@ def test_failure_after_model_start_retains_cooldown_and_existing_pause(qq_client
 
 def test_generated_image_shares_the_one_reply_limit(qq_client, clock, image_provider, isolated_attachments):
     _, state, upstream = qq_client
-    _, session, connection, batch = queued(qq_client, clock, image_generation_model_profile_id=image_provider.profile["id"])
+    _, session, connection, batch = queued(qq_client, clock, text="画一张图", image_generation_model_profile_id=image_provider.profile["id"])
     upstream.turns = [completion(draw(), tool_call("qq_send_message", {"text": "extra"}, "extra"))]
     batch, run = execute(qq_client, batch)
     assert batch.status == "done" and run.metadata["qq_reply"]["sent_count"] == 1
@@ -341,7 +341,7 @@ def test_generated_image_shares_the_one_reply_limit(qq_client, clock, image_prov
 
 def test_other_speaker_cancels_image_generation_and_releases_assets(qq_client, clock, image_provider, isolated_attachments):
     client, state, upstream = qq_client
-    p, session, connection, batch = queued(qq_client, clock, image_generation_model_profile_id=image_provider.profile["id"])
+    p, session, connection, batch = queued(qq_client, clock, text="画一张图", image_generation_model_profile_id=image_provider.profile["id"])
     upstream.turns = [completion(draw())]
     async def scenario():
         reached = asyncio.Event()
@@ -364,7 +364,7 @@ def test_other_speaker_cancels_image_generation_and_releases_assets(qq_client, c
 def test_last_send_check_cancels_before_intent_and_cleans_prepared_images(
         qq_client, clock, image_provider, isolated_attachments, monkeypatch, image):
     client, state, upstream = qq_client
-    p, session, connection, batch = queued(qq_client, clock, image_generation_model_profile_id=image_provider.profile["id"])
+    p, session, connection, batch = queued(qq_client, clock, text="画一张图", image_generation_model_profile_id=image_provider.profile["id"])
     upstream.turns = [completion(draw() if image else tool_call("qq_send_message", {"text": "stale"}))]
     original = state.qq.deliver
     async def before_send(*args, **kwargs):

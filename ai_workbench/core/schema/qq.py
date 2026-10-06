@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
-QQ_SEND_TOOLS = ("qq_send_message", "qq_generate_image")
+QQ_SEND_TOOLS = ("qq_send_message", "qq_send_image", "qq_generate_image")
 QQ_TOOLS = (*QQ_SEND_TOOLS, "qq_skip_reply")
 QQTriggerKind = Literal["keyword", "followup", "private", "icebreaker"]
 participant_epochs = TypeAdapter(dict[str, int], config=ConfigDict(strict=True))
@@ -12,6 +12,14 @@ participant_epochs = TypeAdapter(dict[str, int], config=ConfigDict(strict=True))
 
 class QQMediaSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class QQSendImageArguments(QQMediaSchema):
+    asset_id: int = Field(gt=0)
+
+
+class QQImageCandidate(QQSendImageArguments):
+    description: str = Field(min_length=1)
 
 
 class QQMediaSource(QQMediaSchema):

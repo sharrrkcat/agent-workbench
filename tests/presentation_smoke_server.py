@@ -76,7 +76,12 @@ class PresentationOpenAI(ToolOpenAI):
             command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
-        if "qq-image-" in command:
+        if "qq-resource-image-fixture" in command:
+            runtime = next(item['content'] for item in history if item['role'] == 'system' and 'Favorite image candidates: ' in item['content'])
+            candidate = json.loads(runtime.split('Favorite image candidates: ', 1)[1].split('\n', 1)[0])[0]
+            stream = FixtureStream([{'tool_calls': [{'index': 0, **tool_call('qq_send_image', {'asset_id': candidate['asset_id']})}]}],
+                'tool_calls', delay=.01)
+        elif "qq-image-" in command:
             prompt = 'hold-image' if 'qq-image-hold-fixture' in command else 'fail-image' if 'qq-image-failure-fixture' in command else 'Browser generated image'
             chunks = [{'tool_calls': [{'index': 0, **tool_call('qq_generate_image', {'prompt': prompt})}]}] if not outputs else [
                 {'tool_calls': [{'index': 0, **tool_call('qq_send_message', {'text': 'Image generation failed; here is a text reply.'}, 'text_reply')}]}]

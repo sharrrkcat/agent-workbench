@@ -261,9 +261,10 @@ class ChatService:
 
     def tools_for_run(self, config: ResolvedChatConfig) -> list[str]:
         if config.session_kind == "qqbot":
-            return [name for name in QQ_TOOLS
+            return [name for name in config.tools_allowed
                 if (name != "qq_skip_reply" or config.qq_target_kind == "group")
-                and (name != "qq_generate_image" or config.qq_image_generation_model_profile_id is not None)]
+                and (name != "qq_send_image" or config.qq_image_candidates)
+                and (name != "qq_generate_image" or config.qq_image_generation_allowed)]
         if config.project_id is None:
             return config.tools_allowed
         allowed = self.workspace(config.project_id).tools_allowed
@@ -307,6 +308,7 @@ class ChatService:
             generation=GenerationParameters.model_validate(parameters), reasoning=project.reasoning,
             harness_enabled=True, tools_allowed=[name for name in QQ_TOOLS
                 if (name != "qq_skip_reply" or session.target_kind == "group")
+                and name != "qq_send_image"
                 and (name != "qq_generate_image" or project.image_generation_model_profile_id is not None)], knowledge_base_ids=[],
             qq_reply_message_limit=project.reply_message_limit, qq_bot_account=project.bot_account,
             qq_target_kind=session.target_kind, qq_target_id=session.target_id,

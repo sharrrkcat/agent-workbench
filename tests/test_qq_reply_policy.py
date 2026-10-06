@@ -12,8 +12,8 @@ from tests.test_qqbot import qq_client, child, configure_execution, event, freez
 from tests.tool_fixtures import completion, ok, tool_call
 
 
-def execute_batch(client, state, p, session, number=1, *, private=False):
-    ingest(client, state, p, event(number, kind="private" if private else "group"), number * 10)
+def execute_batch(client, state, p, session, number=1, *, private=False, text="bot"):
+    ingest(client, state, p, event(number, text, kind="private" if private else "group"), number * 10)
     batch = freeze(state, session, number * 10 + 5)
     client.portal.call(state.qq.execute, batch)
     batch = state.qq.store.get(QQBatch, batch.id)

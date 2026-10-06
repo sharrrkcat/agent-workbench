@@ -6,7 +6,7 @@ export type QQSegment = { type: 'text'; text: string } | QQImageSegment;
 export type QQMessage = { id: number; external_id: string; sender_id: string; sender_name: string; timestamp: string; text: string; segments: QQSegment[]; disposition: 'pending' | 'batched' | 'skipped'; batch_id: number | null; references: { type: 'at' | 'reply'; id: string; name: string | null; is_self: boolean }[] };
 export type QQBatch = { id: number; status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'; trigger_kind: 'keyword' | 'followup' | 'private' | 'icebreaker'; text: string; created_at: number; run_id: string | null; error_code: string | null };
 export type QQDelivery = { id: number; run_id: string; text: string; status: 'pending' | 'sending' | 'sent' | 'failed' | 'unknown'; external_id: string | null; echoed: boolean; error_code: string | null; created_at: number;
-  kind: 'text' | 'generated_image'; prompt: string | null; asset_id: number | null; description: string | null; attachment: QQImageSegment['attachment'] };
+  kind: 'text' | 'generated_image' | 'resource_image'; prompt: string | null; asset_id: number | null; description: string | null; attachment: QQImageSegment['attachment'] };
 export type QQPage<T> = { items: T[]; next_cursor: number | null; history_version: number };
 export type QQHistoryPruned = { deleted_message_ids: string[]; deleted_run_ids: string[]; deleted_qq_message_ids: number[]; deleted_qq_delivery_ids: number[]; history_version: number };
 export type QQDeleteTarget = { kind: 'message' | 'delivery'; id: number } | { kind: 'reply'; id: string };

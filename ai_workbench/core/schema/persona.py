@@ -9,6 +9,7 @@ from pydantic import Field, field_serializer, field_validator
 from ai_workbench.core.models.schema import GenerationParameters, StrictModel, ImageGenerationControls
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.context_budget import ContextLimits
+from ai_workbench.core.schema.qq import QQImageCandidate
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
@@ -101,10 +102,12 @@ class ResolvedChatConfig(StrictModel):
     qq_image_description_model_profile_id: str | None = None
     qq_image_generation_model_profile_id: str | None = None
     qq_image_generation_options: ImageGenerationControls = Field(default_factory=ImageGenerationControls)
+    qq_image_generation_allowed: bool = False
+    qq_image_candidates: list[QQImageCandidate] = Field(default_factory=list)
 
     def public_summary(self) -> dict:
         return self.model_dump(mode="json", exclude={"system_prompt", "project_system_prompt", "user_persona_prompt",
-            "qq_bot_account", "qq_target_kind", "qq_target_id"})
+            "qq_bot_account", "qq_target_kind", "qq_target_id", "qq_image_generation_allowed", "qq_image_candidates"})
 
 
 def seed_personas() -> list[Persona]:

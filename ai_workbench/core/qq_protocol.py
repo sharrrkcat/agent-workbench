@@ -87,7 +87,7 @@ def _card_text(kind, data):
 def normalize(event):
     parsed = OneBotMessage.model_validate(event)
     segments = _cq_segments(parsed.message) if isinstance(parsed.message, str) else parsed.message
-    text, keywords, refs, media, offset = [], [], [], [], 0
+    text, keywords, body, refs, media, offset = [], [], [], [], [], 0
     bot_id = str(event.get("self_id"))
     bot_mention = re.compile(r"@" + re.escape(bot_id) + r"(?![0-9])")
     literal, addresses_bot = [], False
@@ -102,6 +102,7 @@ def normalize(event):
             value = str(data.get("text", ""))
             text.append(value)
             keywords.append(value)
+            body.append(value)
             literal.append(value)
         elif kind == "at":
             value = str(data.get("qq", ""))
@@ -132,7 +133,8 @@ def normalize(event):
     return dict(external_id=str(parsed.message_id), sender_id=sender_id,
         sender_name=parsed.sender.card or parsed.sender.nickname or sender_id,
         timestamp=datetime.fromtimestamp(parsed.time, timezone.utc).isoformat(),
-        text="".join(text), references_json=json.dumps(refs, ensure_ascii=False)), "".join(keywords).casefold(), media, addresses_bot
+        text="".join(text), references_json=json.dumps(refs, ensure_ascii=False),
+        image_generation_keyword=any(word in "".join(body) for word in ("生成", "画"))), "".join(keywords).casefold(), media, addresses_bot
 
 
 class OneBotConnection:

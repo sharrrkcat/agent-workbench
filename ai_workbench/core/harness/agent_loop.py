@@ -354,7 +354,9 @@ class HarnessAgentLoop:
                                        knowledge_base_ids=config.knowledge_base_ids,
                                        harness_settings=HarnessSettings(searxng_base_url=state.searxng_base_url),
                                        qq_image_generation_model_profile_id=config.qq_image_generation_model_profile_id,
-                                       qq_image_generation_options=config.qq_image_generation_options)
+                                       qq_image_generation_options=config.qq_image_generation_options,
+                                       qq_image_generation_allowed=config.qq_image_generation_allowed,
+                                       qq_image_candidates=config.qq_image_candidates)
         remaining = budget.check()
         image_tool = session.kind == "qqbot" and call.function.name == "qq_generate_image"
         started = time.monotonic()
@@ -380,7 +382,8 @@ class HarnessAgentLoop:
             state.qq_skipped = True
             self._update_qq_reply(run.run_id, config, state)
         self._record_result(session, run, state, call, outcome, step_id=step.step_id)
-        recoverable_image_error = image_tool and outcome.error_code == "QQ_IMAGE_GENERATION_FAILED"
+        recoverable_image_error = (image_tool and outcome.error_code == "QQ_IMAGE_GENERATION_FAILED") or (
+            call.function.name == "qq_send_image" and outcome.error_code in {"QQ_IMAGE_RESOURCE_UNAVAILABLE", "TOOL_INVALID_ARGUMENTS"})
         if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and outcome.status != "success" and not recoverable_image_error):
             state.pending_calls.pop(0)
             raise ToolExecutionError(outcome.error_code, outcome.error_message)

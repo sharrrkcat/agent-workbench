@@ -10,11 +10,11 @@ owns model execution and inspection. This note retains deployment evidence and u
 
 Cogita manages connections, bound-message recording, keyword/follow-up/private batches and optional per-group icebreakers with explicit skip,
 external OpenAI-compatible inference through core/models, text delivery through
-qq_send_message and optional image generation/delivery through qq_generate_image with a shared reply limit. A separate Node.js agent service is unnecessary. Agent Persona identity
+qq_send_message, favorite images through qq_send_image and keyword-gated image generation/delivery through qq_generate_image with a shared reply limit. A separate Node.js agent service is unnecessary. Agent Persona identity
 and prompts are optional; Knowledge, Worldbook and Cogita Persona inheritance are excluded.
 
 QQ history saves and displays ordered images, stickers and system faces; optional model image input follows the Project switch. QQ/NapCat installation, login management, reconnect history backfill,
-manual sends, sending existing resources and memory integration remain unimplemented. Generated-image delivery is covered by simulated providers/OneBot and bilingual browser workflows; real Provider-to-NapCat image delivery remains unverified. Linux Local Runtime support is
+manual sends, candidate search and memory integration remain unimplemented. Generated-image delivery is covered by simulated providers/OneBot and bilingual browser workflows; real Provider-to-NapCat image delivery, original-animation presentation in NapCat and real-model adherence to restrained image frequency remain unverified. Linux Local Runtime support is
 outside this integration. Future Worldbook/memory work requires explicit bot/conversation
 isolation and a separate injection design; it is not a prerequisite for current QQBot execution.
 

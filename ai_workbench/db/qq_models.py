@@ -46,6 +46,7 @@ class QQMessage(SQLModel, table=True):
     disposition: str = "pending"
     batch_id: int | None = None
     deleted: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
+    image_generation_keyword: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
 
 
 class QQBatch(SQLModel, table=True):

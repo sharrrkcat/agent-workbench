@@ -23,7 +23,7 @@ class QQReference(ApiModel):
     is_self: bool = False
 
 
-MessageResponse = public_model("QQMessageResponse", QQMessage, omit={"references_json", "deleted"}, fields={
+MessageResponse = public_model("QQMessageResponse", QQMessage, omit={"references_json", "deleted", "image_generation_keyword"}, fields={
     "id": (int, ...), "references": (list[QQReference], ...), "segments": (list[QQSegment], ...),
     "disposition": (Literal["pending", "batched", "skipped"], ...),
 })
@@ -33,7 +33,7 @@ BatchResponse = public_model("QQBatchResponse", QQBatch, omit={"participants_jso
 })
 DeliveryResponse = public_model("QQDeliveryResponse", QQDelivery, omit={"deleted"}, fields={"id": (int, ...),
     "status": (Literal["pending", "sending", "sent", "failed", "unknown"], ...),
-    "kind": (Literal["text", "generated_image"], ...),
+    "kind": (Literal["text", "generated_image", "resource_image"], ...),
     "attachment": (QQImageAttachment | None, ...), "description": (str | None, ...),
 })
 

@@ -35,7 +35,7 @@ def reply(upstream, text="reply"):
     upstream.turns = [completion(tool_call("qq_send_message", {"text": text})), completion(content="Internal end")]
 
 
-def followup(qq_client, clock, *, streaming=False, **values):
+def followup(qq_client, clock, *, streaming=False, text="a follow-up", **values):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, streaming=streaming, **values)
     ingest(client, state, p, event(1), 0)
@@ -43,7 +43,7 @@ def followup(qq_client, clock, *, streaming=False, **values):
     reply(upstream)
     initial, run = execute(qq_client, freeze(state, session, 5))
     assert initial.status == "done" and run.status == "DONE"
-    ingest(client, state, p, event(2, "a follow-up"), 10)
+    ingest(client, state, p, event(2, text), 10)
     clock[0] = 16
     upstream.calls.clear()
     return p, session, connection, freeze(state, session, 15)

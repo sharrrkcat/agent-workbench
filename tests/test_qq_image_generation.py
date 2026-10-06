@@ -112,7 +112,7 @@ def test_generate_send_store_and_text_only_history(qq_client, image_provider, mo
     connection.call = send
     prompt = "A red bird\n枝头的一只红鸟"
     upstream.turns = [completion(draw(prompt))]
-    _, run = execute_batch(client, state, p, session, private=private)
+    _, run = execute_batch(client, state, p, session, private=private, text="bot 画一张图")
     assert run.status == "DONE", run.error_message
     assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 1, "limit_reached": True, "skipped": False}
     assert len(upstream.calls) == len(image_provider.calls) == len(connection.calls) == 1
@@ -139,7 +139,7 @@ def test_mixed_limit_rejects_generation_before_it_starts(qq_client, image_provid
         image_generation_model_profile_id=image_provider.profile["id"])
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "Hello"}, "text"), draw(),
         draw("Must not generate", "excess"), tool_call("qq_send_message", {"text": "excess"}, "excess_text"))]
-    _, run = execute_batch(client, state, p, session)
+    _, run = execute_batch(client, state, p, session, text="bot 画一张图")
     assert run.status == "DONE" and run.metadata["qq_reply"]["sent_count"] == 2
     assert len(image_provider.calls) == 1 and len(connection.calls) == 2
     assert [d["kind"] for d in deliveries(client, session)] == ["generated_image", "text"]
@@ -149,7 +149,7 @@ def test_mixed_limit_rejects_generation_before_it_starts(qq_client, image_provid
 
 def test_image_followup_renews_participant_and_removes_skip(qq_client, image_provider, clock):
     client, state, upstream = qq_client
-    p, session, connection, batch = followup(qq_client, clock,
+    p, session, connection, batch = followup(qq_client, clock, text="生成一张图",
         image_generation_model_profile_id=image_provider.profile['id'])
     clock[0] = 100
     upstream.turns = [completion(draw(), tool_call('qq_skip_reply', '{}', 'skip')), completion(content='done')]
@@ -164,7 +164,7 @@ def test_failed_image_still_requires_mandatory_reply(qq_client, image_provider):
     p, session, connection = configure_execution(client, state, image_generation_model_profile_id=image_provider.profile['id'])
     image_provider.response = {'error': {'message': 'Generation failed'}}
     upstream.turns = [completion(draw()), completion(content='No tool reply')]
-    _, run = execute_batch(client, state, p, session)
+    _, run = execute_batch(client, state, p, session, text="bot 画一张图")
     assert run.error_code == 'QQ_REPLY_REQUIRED' and run.metadata['qq_reply']['sent_count'] == 0
     assert connection.calls == [] and state.qq.store.get(QQBinding, session['session_id']).paused
 
@@ -186,7 +186,7 @@ def test_generation_failure_returns_to_model_without_delivery(qq_client, image_p
     else:
         image_provider.response = {"data": [{"url": "http://127.0.0.1/private.png"}]}
     upstream.turns = [completion(draw()), completion(tool_call("qq_send_message", {"text": "Could not draw"}, "text"))]
-    _, run = execute_batch(client, state, p, session)
+    _, run = execute_batch(client, state, p, session, text="bot 画一张图")
     assert run.status == "DONE" and run.metadata["qq_reply"]["sent_count"] == 1
     result = json.loads(upstream.calls[1]["messages"][-1]["content"])
     assert result["error_code"] == "QQ_IMAGE_GENERATION_FAILED"
@@ -203,7 +203,7 @@ def test_delivery_failure_pauses_and_discards_staged_image(qq_client, image_prov
         image_generation_model_profile_id=image_provider.profile["id"])
     connection.failure = failure
     upstream.turns = [completion(draw()), completion(tool_call("qq_send_message", {"text": "Must not send"}))]
-    _, run = execute_batch(client, state, p, session)
+    _, run = execute_batch(client, state, p, session, text="bot 画一张图")
     assert run.status == "FAILED" and run.metadata['qq_reply']['sent_count'] == 0
     assert state.qq.store.get(QQBinding, session['session_id']).paused
     delivery, = deliveries(client, session)
@@ -228,7 +228,7 @@ def test_wait_excludes_generation_from_harness_budget_and_freezes_settings(qq_cl
     image_provider.before_return = wait
     monkeypatch.setattr(agent_loop, 'TOOL_TIMEOUT_SECONDS', .01)
     upstream.turns = [completion(draw()), completion(draw('Second image', 'second')), completion(content='done')]
-    _, run = execute_batch(client, state, p, session)
+    _, run = execute_batch(client, state, p, session, text="bot 画一张图")
     assert run.status == 'DONE' and run.metadata['qq_reply']['sent_count'] == 2
     assert [call['size'] for call in image_provider.calls] == ['512x512', '512x512']
     assert len(connection.calls) == 2
@@ -247,7 +247,7 @@ def test_stop_cancels_generation_without_sending_and_keeps_new_batches(qq_client
             finally:
                 cancelled.set()
         image_provider.before_return = wait
-        await state.qq.ingest(p['id'], event(1), now=0)
+        await state.qq.ingest(p['id'], event(1, 'bot 画一张图'), now=0)
         batch = freeze(state, session, 5)
         task = asyncio.create_task(state.qq.execute(batch))
         state.qq.workers[p['id']] = task
@@ -269,11 +269,11 @@ def test_deduplication_keeps_each_prompt_and_releases_last_reference(qq_client, 
     p, session, connection = configure_execution(client, state, reply_message_limit=1,
         image_generation_model_profile_id=image_provider.profile['id'])
     upstream.turns = [completion(draw('First prompt'))]
-    _, first = execute_batch(client, state, p, session)
+    _, first = execute_batch(client, state, p, session, text="bot 画一张图")
     first_delivery, = deliveries(client, session)
     path = resolve_attachment_uri(first_delivery['attachment']['uri'])
     upstream.turns = [completion(draw('Second prompt'))]
-    _, second = execute_batch(client, state, p, session, 2)
+    _, second = execute_batch(client, state, p, session, 2, text="bot 画一张图")
     second_delivery = deliveries(client, session)[0]
     assert len(assets(state)) == 1 and len(attachment_files()) == 1
     assert first_delivery['asset_id'] == second_delivery['asset_id']

@@ -9,6 +9,7 @@ from websockets.exceptions import InvalidStatus, WebSocketException
 from sqlmodel import Session as DbSession
 from pydantic import ValidationError
 from ai_workbench.core.chat_service import ChatError
+from ai_workbench.core.attachments import resolve_attachment_uri
 from ai_workbench.core.harness.schema import ToolSpec, ToolExecutionError
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
 from ai_workbench.core.qq_names import QQNames, model_batch_text, references_adapter
@@ -19,7 +20,8 @@ from ai_workbench.core.qq_resources import QQResources
 from ai_workbench.core.qq_generation import prepare_image
 from ai_workbench.core.qq_icebreaker import QQIcebreaker, ICEBREAKER_SETTINGS
 from ai_workbench.core.schema.project import QQBotProject
-from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
+from ai_workbench.core.schema.qq import QQSendImageArguments, QQ_TOOLS
+from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQMediaAsset
 
 log = logging.getLogger(__name__)
 
@@ -57,8 +59,15 @@ class QQService:
         state.tool_registry.register(ToolSpec("qq_skip_reply", "End this optional follow-up or icebreaker batch without replying. Available only before sending a reply.",
             {"type": "object", "properties": {}, "additionalProperties": False},
             lambda args, context: self.skip(context), "safe", False, False))
+        state.tool_registry.register(ToolSpec("qq_send_image",
+            "Send one favorite image from the current candidates to this QQ conversation. Prefer text; most replies need no image. "
+            "Use a fitting emotional reaction sparingly, at most one image per reply; matching a tag is not a reason to send. "
+            "Do not routinely illustrate replies, send unsolicited images consecutively, or repeat a delivery announcement. "
+            "A confirmed image uses one reply slot.", QQSendImageArguments.model_json_schema(),
+            lambda args, context: self.send_image(args, context), "network", False, False))
         state.tool_registry.register(ToolSpec("qq_generate_image",
             "Generate and immediately send one image to the current QQ conversation. A successful send uses one reply slot. "
+            "Use only for an explicit request to create a new picture. Discussing animation, scenes, generating text, or declining images is not such a request. "
             "Only supply a drawing prompt; size, quality and style come from Project settings. Generation may take a while.",
             {"type": "object", "properties": {"prompt": {"type": "string", "minLength": 1, "maxLength": 32000, "pattern": r"\S"}},
              "required": ["prompt"], "additionalProperties": False}, lambda args, context: self.generate_image(args, context), "network", False, False))
@@ -278,11 +287,18 @@ class QQService:
                 await self.wait_ingress(batch.session_id)
                 self.check_icebreaker(batch)
             config = self.state.chat_service.resolve(self.state.sessions.get_session(batch.session_id))
+            config = config.model_copy(update={"qq_image_candidates": self.resources.image_candidates()})
             if attempt is not None:
                 config = config.model_copy(update={"qq_reply_message_limit": 1})
             if config.context_policy.include_attachments == "explicit":
                 await self.media.wait_batch(batch.id)
             records = self.store.batch_messages(batch.id)
+            config = config.model_copy(update={
+                "qq_image_generation_allowed": config.qq_image_generation_model_profile_id is not None
+                    and any(row.image_generation_keyword for row in records),
+                "tools_allowed": [name for name in QQ_TOOLS if name != "qq_skip_reply" or binding.target_kind == "group"],
+            })
+            config = config.model_copy(update={"tools_allowed": self.state.chat_service.tools_for_run(config)})
             rows = await self.names.project(binding, config.qq_bot_account,
                 [row.model_dump() for row in records], freeze=True, for_model=True)
             self.store.save_references(rows)
@@ -353,9 +369,19 @@ class QQService:
             raise ToolExecutionError("TOOL_INVALID_ARGUMENTS", "Message cannot be blank.")
         return await self.deliver(arguments["text"], context)
 
+    async def send_image(self, arguments, context):
+        self.tool_batch(context)
+        try:
+            asset_id = QQSendImageArguments.model_validate(arguments).asset_id
+        except ValidationError as exc:
+            raise ToolExecutionError("TOOL_INVALID_ARGUMENTS", "asset_id must be a positive integer.") from exc
+        if not any(candidate.asset_id == asset_id for candidate in context.qq_image_candidates):
+            raise ToolExecutionError("QQ_IMAGE_RESOURCE_UNAVAILABLE", "Choose an image from this batch's favorite candidates; no image was sent.")
+        return await self.deliver("", context, resource_id=asset_id)
+
     async def generate_image(self, arguments, context):
         self.tool_batch(context)
-        if context.qq_image_generation_model_profile_id is None:
+        if not context.qq_image_generation_allowed or context.qq_image_generation_model_profile_id is None:
             raise ToolExecutionError("TOOL_NOT_ALLOWED", "Image generation is disabled for this QQBot run.")
         existing = self.store.delivery(context.run_id, context.tool_call_id)
         if existing:
@@ -372,20 +398,32 @@ class QQService:
         if delivery.status != "sent":
             raise ToolExecutionError("QQ_DELIVERY_NOT_REPLAYABLE", "A previous send must not be replayed.")
         return {"delivery_id": delivery.id, "message_id": delivery.external_id, "status": "sent",
-            **({"content": delivery.text} if delivery.kind == "generated_image" else {})}
+            **({"content": delivery.text} if delivery.kind != "text" else {})}
 
-    async def deliver(self, text, context, *, prompt=None, image=None):
+    async def deliver(self, text, context, *, prompt=None, image=None, resource_id=None):
         session, batch = self.tool_batch(context)
         existing = self.store.delivery(context.run_id, context.tool_call_id)
         if existing:
             return self.delivery_receipt(existing)
         if batch.trigger_kind == "icebreaker":
             await self.wait_ingress(session.session_id)
+        data = image.data if image is not None else None
+        if resource_id is not None:
+            asset = self.store.get(QQMediaAsset, resource_id)
+            if asset is None or not asset.is_favorite or not (asset.description or "").strip():
+                raise ToolExecutionError("QQ_IMAGE_RESOURCE_UNAVAILABLE", "The favorite image is no longer available; no image was sent.")
+            try:
+                data = resolve_attachment_uri(asset.attachment.uri).read_bytes()
+            except (OSError, ValueError) as exc:
+                raise ToolExecutionError("QQ_IMAGE_RESOURCE_UNAVAILABLE", "Could not read the favorite image; no image was sent.") from exc
+            text = f"[图片:{asset.description}]"
+        if batch.trigger_kind == "icebreaker":
             # No await separates this check, the durable intent and OneBot submission.
             self.check_icebreaker(batch).dispatched = True
         delivery = self.store.save(QQDelivery(session_id=session.session_id, run_id=context.run_id,
             tool_call_id=context.tool_call_id, text=text, created_at=time.time(),
-            kind="generated_image" if image is not None else "text", prompt=prompt))
+            kind="resource_image" if resource_id is not None else "generated_image" if image is not None else "text",
+            prompt=prompt, asset_id=resource_id))
         connection = self.connections.get(session.project_id)
         try:
             if connection is None or not connection.ready:
@@ -396,8 +434,8 @@ class QQService:
             self.store.save(delivery)
             action = "send_group_msg" if session.target_kind == "group" else "send_private_msg"
             target = "group_id" if session.target_kind == "group" else "user_id"
-            segment = ({"type": "image", "data": {"file": "base64://" + base64.b64encode(image.data).decode("ascii")}}
-                if image is not None else {"type": "text", "data": {"text": text}})
+            segment = ({"type": "image", "data": {"file": "base64://" + base64.b64encode(data).decode("ascii")}}
+                if data is not None else {"type": "text", "data": {"text": text}})
             result = await connection.call(action, {target: int(session.target_id),
                 "message": [segment]})
             if not isinstance(result.get("message_id"), (str, int)):

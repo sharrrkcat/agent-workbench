@@ -3,6 +3,7 @@ from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from ai_workbench.core.chat_service import ChatError
+from ai_workbench.core.schema.qq import QQImageCandidate
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.qq_models import QQMedia, QQMediaAsset, QQMessage, QQDelivery
 
@@ -17,8 +18,7 @@ def incoming_reference(*, pictures_only=False):
 
 def outgoing_reference():
     return select(QQDelivery.id).where(QQDelivery.asset_id == QQMediaAsset.id,
-        QQDelivery.deleted == False, QQDelivery.kind == "generated_image",
-        QQDelivery.status == "sent").correlate(QQMediaAsset).exists()
+        QQDelivery.deleted == False, QQDelivery.kind.in_(("generated_image", "resource_image"))).correlate(QQMediaAsset).exists()
 
 
 def gallery_resource():
@@ -33,6 +33,14 @@ def public_resource(asset, has_references):
 class QQResources:
     def __init__(self, state, store):
         self.state, self.store = state, store
+
+    def image_candidates(self):
+        with Session(self.store.engine) as db:
+            rows = db.exec(select(QQMediaAsset.id, QQMediaAsset.description).where(
+                QQMediaAsset.is_favorite == True, QQMediaAsset.description.is_not(None))
+                .order_by(QQMediaAsset.id)).all()
+            return [QQImageCandidate(asset_id=asset_id, description=description)
+                for asset_id, description in rows if description.strip()]
 
     def page(self, page, page_size, sort, order, favorite):
         condition = gallery_resource()

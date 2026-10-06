@@ -58,6 +58,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 1280, 390]) {
         await cards.first().locator('[data-slot="attachment-trigger"]').click();
         const sheet = page.getByRole('dialog', { name: text.details, exact: true });
         const input = sheet.getByRole('textbox', { name: text.description, exact: true });
+        await expect(sheet.getByText(text.editHint, { exact: true })).toBeVisible();
         await expect(input).toBeFocused();
         await input.fill('A manually edited expression\n保留两行描述');
         await sheet.getByRole('button', { name: text.unfavorite, exact: true }).click();

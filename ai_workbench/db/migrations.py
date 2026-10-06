@@ -58,7 +58,8 @@ QQ_IMAGE_GENERATION_REVISION = "0038_qq_image_generation"
 QQ_ICEBREAKER_REVISION = "0039_qq_icebreaker"
 QQ_RESOURCES_REVISION = "0040_qq_resources"
 QQ_TRIGGER_GRANTS_REVISION = "0041_qq_trigger_grants"
-HEAD_REVISION = QQ_TRIGGER_GRANTS_REVISION
+QQ_IMAGE_TOOLS_REVISION = "0042_qq_image_tools"
+HEAD_REVISION = QQ_IMAGE_TOOLS_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

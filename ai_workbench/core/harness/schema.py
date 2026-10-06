@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -9,7 +9,7 @@ from ai_workbench.core.json_data import validate_json_data
 from ai_workbench.core.models.schema import ToolCall, ImageGenerationControls
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
-from ai_workbench.core.schema.qq import QQTriggerKind
+from ai_workbench.core.schema.qq import QQTriggerKind, QQImageCandidate
 
 if TYPE_CHECKING:
     from ai_workbench.core.harness.settings import HarnessSettings
@@ -60,6 +60,8 @@ class ToolExecutionContext:
     harness_settings: HarnessSettings | None = None
     qq_image_generation_model_profile_id: str | None = None
     qq_image_generation_options: ImageGenerationControls | None = None
+    qq_image_generation_allowed: bool = False
+    qq_image_candidates: list[QQImageCandidate] = field(default_factory=list)
 
 
 class ToolCallInput(BaseModel):

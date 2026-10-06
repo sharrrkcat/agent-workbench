@@ -172,7 +172,7 @@ def test_deleted_generated_images_do_not_inject_original_prompts(qq_client, imag
     p, session, _ = configure_execution(client, state, reply_message_limit=1,
         image_generation_model_profile_id=image_provider.profile["id"])
     upstream.turns = [completion(draw("secret drawing prompt"))]
-    _, run = execute_batch(client, state, p, session)
+    _, run = execute_batch(client, state, p, session, text="bot 画一张图")
     assert run.status == "DONE"
     image = gallery(client)["items"][0]
     ok(client.delete(f"/api/qq/resources/{image['id']}"))

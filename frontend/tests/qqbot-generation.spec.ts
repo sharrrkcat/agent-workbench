@@ -26,6 +26,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         const sid = session.session_id;
         await page.goto(`/projects/${project.id}`);
         await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
+        await expect(page.getByText(labels.qq.imageGenerationHint, { exact: true })).toBeVisible();
         const selector = page.getByLabel(labels.qq.imageGenerationModel, { exact: true });
         await expect(selector).toContainText(labels.qq.noImageGeneration);
         await selector.click();

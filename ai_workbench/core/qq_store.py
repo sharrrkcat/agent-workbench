@@ -156,7 +156,7 @@ class QQStore:
             if before is not None:
                 query = query.where(kind.id < before)
             rows = db.exec(query.order_by(kind.id.desc()).limit(limit + 1)).all()
-            return {"items": [r.model_dump(exclude={"deleted"}) for r in rows[:limit]],
+            return {"items": [r.model_dump(exclude={"deleted", "image_generation_keyword"}) for r in rows[:limit]],
                 "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
 
     def delivery(self, run_id, call_id):

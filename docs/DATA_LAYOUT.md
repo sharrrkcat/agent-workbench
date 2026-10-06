@@ -27,7 +27,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0041_qq_trigger_grants`; current tables follow the SQLModel schema.
+Alembic head is `0042_qq_image_tools`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -249,10 +249,12 @@ Revision `0036_image_generation` adds image_generation to ck_model_kind and perm
 
 Revision `0037_qq_media_assets` replaces per-occurrence QQ attachments with shared resources and a nullable description. It discards disposable QQ ingress, batches, deliveries, participants and their session messages/runs/events/snapshots, clears waiting runs and silence deadlines, and advances QQ history versions. Projects, Sessions, titles, bindings and pause choices remain, as do ordinary/Workspace conversations and model/provider/runtime settings. No old media records are converted. All files remain on disk; detached old files are eligible for explicit orphan cleanup. Repeating upgrade preserves newly recorded QQ history and shared assets.
 
-Revision `0038_qq_image_generation` adds delivery kind, original prompt and an indexed nullable qq_media_assets reference. Existing deliveries remain text; no files or directories are modified. Generated image files use the attachment store. Only confirmed delivery commits a shared resource/reference, and its description records the original prompt; delivery-local prompts keep history stable after resource description changes. Incoming media and visible image deliveries both protect assets until their final reference is removed. Unreferenced staging files from interrupted processes remain eligible for explicit orphan cleanup.
+Revision `0038_qq_image_generation` adds delivery kind, original prompt and an indexed nullable qq_media_assets reference. Existing deliveries remain text; no files or directories are modified. Generated image files use the attachment store. Only confirmed delivery commits a shared resource/reference, and its description records the original prompt; delivery-local prompts keep history stable after resource description changes. Incoming media and visible image deliveries, including in-flight resource_image intents, protect assets until their final reference is removed. Unreferenced staging files from interrupted processes remain eligible for explicit orphan cleanup.
 
 Revision `0039_qq_icebreaker` adds nullable qq_bindings.icebreaker_cooldown_until. Per-group observation state stays in memory and restarts after connection gaps; cooldown deadlines persist. Existing rows and all model, attachment and runtime directories are untouched. Repeated upgrades preserve recorded cooldowns.
 
 Revision `0040_qq_resources` adds qq_media_assets.is_favorite, description_manual and created_at. Existing disposable assets receive the upgrade timestamp as a column default; no original dates are inferred or backfilled. New assets use their actual insertion time. Favorite assets protect original/static attachment files even without chat references. Explicit resource deletion detaches occurrence/delivery references and leaves positional image placeholders; retained request snapshots still protect their files. No files or directories are changed by the revision, and repeated upgrades preserve new metadata.
 
 Revision `0041_qq_trigger_grants` renames qq_participants.keyword_message_id to grant_message_id, shared by keyword and confirmed-icebreaker grants. Existing epoch values, expiry deadlines and window membership are preserved without reconstructing eligibility. Batch participant snapshots retain their private sender-to-message-id shape. No model, attachment, runtime or other directories are changed.
+
+Revision `0042_qq_image_tools` adds the private qq_messages.image_generation_keyword boolean, default false. It records literal generation keywords from real incoming text segments; existing display text is not interpreted or backfilled. Batch generation permission and favorite candidate text live in private run configuration snapshots. resource_image deliveries use the existing kind, asset_id and text columns, with prompt null and a send-time description marker. No model, attachment, runtime or other directories are changed.
