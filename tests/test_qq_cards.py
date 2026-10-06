@@ -46,7 +46,7 @@ def wire_message(segments, wire):
 @pytest.mark.parametrize("wire", ["objects", "json-strings", "cq"])
 @pytest.mark.parametrize("card,expected", CARDS)
 def test_card_formats_preserve_text_and_do_not_supply_keywords(wire, card, expected):
-    values, keywords, media = normalize({**event(), "message": wire_message([card], wire)})
+    values, keywords, media, _ = normalize({**event(), "message": wire_message([card], wire)})
     assert values["text"] == expected
     assert keywords == "" and media == []
     assert json.loads(values["references_json"]) == []
@@ -84,7 +84,7 @@ def test_card_formats_preserve_text_and_do_not_supply_keywords(wire, card, expec
     ("lightapp", {"content": "{broken"}, "[非文字消息]"),
 ])
 def test_partial_unknown_and_malformed_cards_preserve_adjacent_text(kind, data, expected):
-    values, keywords, media = normalize({**event(), "message": [
+    values, keywords, media, _ = normalize({**event(), "message": [
         {"type": "text", "data": {"text": "Before"}}, {"type": kind, "data": data},
         {"type": "text", "data": {"text": "After"}}]})
     assert values["text"] == "Before" + expected + "After"
@@ -105,7 +105,7 @@ def test_cards_keep_mention_and_media_spans_without_interpreting_literal_markers
         {"type": "face", "data": {"id": "0"}},
         {"type": "text", "data": {"text": "END"}},
     ], wire)
-    values, keywords, media = normalize({**event(), "message": message})
+    values, keywords, media, _ = normalize({**event(), "message": message})
     assert values["text"] == prefix + "@42[图片]" + mini + "[引用:original][表情包]END"
     assert keywords == "😀@42end"
     refs = json.loads(values["references_json"])

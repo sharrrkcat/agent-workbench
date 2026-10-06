@@ -25,7 +25,7 @@ class QQParticipant(SQLModel, table=True):
     __tablename__ = "qq_participants"
     session_id: str = Field(primary_key=True)
     sender_id: str = Field(primary_key=True)
-    keyword_message_id: int
+    grant_message_id: int
     expires_at: float
     in_window: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
 

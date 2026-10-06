@@ -31,7 +31,7 @@ class QQStore:
         with Session(self.engine) as db:
             return db.exec(select(QQBinding).where(QQBinding.project_id == project_id)).all()
 
-    def ingest(self, binding, message, *, keyword, now, media=()):
+    def record_ingress(self, binding, message, *, media=()):
         with Session(self.engine) as db:
             if db.exec(select(QQMessage.id).where(QQMessage.session_id == binding.session_id,
                     QQMessage.external_id == message.external_id)).first() is not None:
@@ -41,20 +41,34 @@ class QQStore:
             message_id = message.id
             for item in media:
                 db.add(QQMedia(message_id=message.id, **item))
-            current = db.get(QQBinding, binding.session_id)
+            db.commit()
+            db.refresh(message)
+            return message_id
+
+    def activate_ingress(self, message_id, *, keyword, now, eligibility_before=None):
+        with Session(self.engine) as db:
+            message = db.get(QQMessage, message_id)
+            if message is None or message.deleted:
+                return False
+            current = db.get(QQBinding, message.session_id)
+            if current is None:
+                return False
             if current.target_kind == "friend":
                 current.window_kind = "private"
                 current.deadline = now + 5
                 db.add(current)
             else:
-                participant = db.get(QQParticipant, (binding.session_id, message.sender_id))
+                participant = db.get(QQParticipant, (message.session_id, message.sender_id))
                 if keyword:
                     if participant is None:
-                        participant = QQParticipant(session_id=binding.session_id, sender_id=message.sender_id,
-                            keyword_message_id=message.id, expires_at=now + 60)
-                    participant.keyword_message_id = message.id
-                    participant.expires_at = now + 60
-                if participant is not None and (keyword or participant.in_window or participant.expires_at > now):
+                        participant = QQParticipant(session_id=message.session_id, sender_id=message.sender_id,
+                            grant_message_id=message.id, expires_at=now + 60)
+                    participant.grant_message_id = max(participant.grant_message_id, message.id)
+                    participant.expires_at = max(participant.expires_at, now + 60)
+                expires_at = participant.expires_at if participant is not None else float("-inf")
+                if eligibility_before is not None and participant is not None and participant.grant_message_id == eligibility_before[0]:
+                    expires_at = min(expires_at, eligibility_before[1])
+                if participant is not None and (keyword or participant.in_window or expires_at > now):
                     if keyword or current.deadline is None:
                         current.window_kind = "keyword" if keyword else "followup"
                     participant.in_window = True
@@ -62,9 +76,9 @@ class QQStore:
                     db.add(participant)
                     db.add(current)
             db.commit()
-            return message_id
+            return True
 
-    def freeze(self, session_id, limit, now, *, icebreaker_first_id=None):
+    def freeze(self, session_id, limit, now, *, icebreaker_first_id=None, before_message_id=None):
         with Session(self.engine) as db:
             binding = db.get(QQBinding, session_id)
             icebreaker = icebreaker_first_id is not None
@@ -77,6 +91,8 @@ class QQStore:
                 return None
             query = select(QQMessage).where(QQMessage.session_id == session_id,
                 QQMessage.disposition == "pending", QQMessage.deleted == False)
+            if before_message_id is not None:
+                query = query.where(QQMessage.id < before_message_id)
             if icebreaker:
                 query = query.where(QQMessage.id >= icebreaker_first_id, func.length(func.trim(QQMessage.text)) > 0)
             rows = db.exec(query.order_by(QQMessage.id.desc()).limit(limit)).all()
@@ -92,9 +108,11 @@ class QQStore:
                 db.commit()
                 return None
             rows.reverse()
+            grants = ({rows[-1].sender_id: rows[-1].id} if icebreaker else
+                {p.sender_id: p.grant_message_id for p in participants})
             batch = QQBatch(session_id=session_id, project_id=binding.project_id, created_at=now,
                 trigger_kind="icebreaker" if icebreaker else "private" if binding.target_kind == "friend" else binding.window_kind,
-                participants_json=json.dumps({p.sender_id: p.keyword_message_id for p in participants}),
+                participants_json=json.dumps(grants),
                 text="\n".join(f"[{m.timestamp}][{m.sender_name}]:{m.text}" for m in rows))
             db.add(batch)
             db.flush()
@@ -366,15 +384,32 @@ class QQStore:
 
     @staticmethod
     def renew_participants(db, batch, now):
+        before = {}
         if batch.trigger_kind == "followup":
+            participants = db.exec(select(QQParticipant).where(QQParticipant.session_id == batch.session_id,
+                QQParticipant.sender_id.in_(batch.participants))).all()
+            before = {p.sender_id: (p.grant_message_id, p.expires_at) for p in participants}
             db.exec(update(QQParticipant).where(QQParticipant.session_id == batch.session_id,
                 QQParticipant.sender_id.in_(batch.participants)).values(expires_at=func.max(QQParticipant.expires_at, now + 45)))
+        elif batch.trigger_kind == "icebreaker":
+            for sender_id, grant_id in batch.participants.items():
+                participant = db.get(QQParticipant, (batch.session_id, sender_id))
+                expires_at = participant.expires_at if participant is not None else float("-inf")
+                if participant is None:
+                    participant = QQParticipant(session_id=batch.session_id, sender_id=sender_id,
+                        grant_message_id=grant_id, expires_at=now + 60)
+                else:
+                    participant.grant_message_id = max(participant.grant_message_id, grant_id)
+                    participant.expires_at = max(participant.expires_at, now + 60)
+                before[sender_id] = (participant.grant_message_id, expires_at)
+                db.add(participant)
+        return before
 
     def skip_participants(self, batch, now):
         with Session(self.engine) as db:
-            for sender_id, keyword_id in batch.participants.items():
+            for sender_id, grant_id in batch.participants.items():
                 db.exec(update(QQParticipant).where(QQParticipant.session_id == batch.session_id,
-                    QQParticipant.sender_id == sender_id, QQParticipant.keyword_message_id == keyword_id).values(expires_at=now))
+                    QQParticipant.sender_id == sender_id, QQParticipant.grant_message_id == grant_id).values(expires_at=now))
             db.commit()
 
     def recover(self):

@@ -88,20 +88,28 @@ def normalize(event):
     parsed = OneBotMessage.model_validate(event)
     segments = _cq_segments(parsed.message) if isinstance(parsed.message, str) else parsed.message
     text, keywords, refs, media, offset = [], [], [], [], 0
+    bot_id = str(event.get("self_id"))
+    bot_mention = re.compile(r"@" + re.escape(bot_id) + r"(?![0-9])")
+    literal, addresses_bot = [], False
     placeholders = {"image": "[图片]", "face": "[表情包]", "mface": "[表情包]",
         "record": "[语音]", "video": "[视频]", "file": "[文件]", "forward": "[转发消息]"}
     for index, segment in enumerate(segments):
         kind, data = segment.type, segment.data
+        if kind != "text" and literal:
+            addresses_bot |= bot_mention.search("".join(literal)) is not None
+            literal.clear()
         if kind == "text":
             value = str(data.get("text", ""))
             text.append(value)
             keywords.append(value)
+            literal.append(value)
         elif kind == "at":
             value = str(data.get("qq", ""))
             text.append("@" + value)
             keywords.append(text[-1])
+            addresses_bot |= value == bot_id
             refs.append({"type": "at", "id": value, "start": offset, "end": offset + len(text[-1]),
-                         "name": None, "is_self": value == str(event.get("self_id")), "frozen": False})
+                         "name": None, "is_self": value == bot_id, "frozen": False})
         elif kind == "reply":
             value = str(data.get("id", ""))
             text.append("[引用:" + value + "]")
@@ -120,10 +128,11 @@ def normalize(event):
                     source_json=source.model_dump_json()))
         offset += len(text[-1])
     sender_id = str(parsed.user_id)
+    addresses_bot |= bot_mention.search("".join(literal)) is not None
     return dict(external_id=str(parsed.message_id), sender_id=sender_id,
         sender_name=parsed.sender.card or parsed.sender.nickname or sender_id,
         timestamp=datetime.fromtimestamp(parsed.time, timezone.utc).isoformat(),
-        text="".join(text), references_json=json.dumps(refs, ensure_ascii=False)), "".join(keywords).casefold(), media
+        text="".join(text), references_json=json.dumps(refs, ensure_ascii=False)), "".join(keywords).casefold(), media, addresses_bot
 
 
 class OneBotConnection:

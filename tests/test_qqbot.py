@@ -143,7 +143,7 @@ class FakeConnection:
 
 def configure_execution(client, state, *, streaming=False, **values):
     model = configure_model(client, request_options={"streaming": streaming})
-    p = project(client, model_profile_id=model["id"], connection_enabled=True, keywords=["bot"], **values)
+    p = project(client, model_profile_id=model["id"], connection_enabled=True, **{"keywords": ["bot"], **values})
     session = child(client, p)
     connection = FakeConnection()
     state.qq.connections[p["id"]] = connection
@@ -320,7 +320,7 @@ def test_exact_deadline_references_media_and_pagination(qq_client):
     data["message"] = "[CQ:at,qq=7777][CQ:reply,id=bot][CQ:image,url=https://bot.test/a]literal &#91;ok&#93;"
     ingest(client, state, p, data, 8)
     assert state.qq.store.get(QQBinding, sid).deadline == 10
-    normalized, keyword_text, media = normalize(data)
+    normalized, keyword_text, media, _ = normalize(data)
     assert normalized["text"] == "@7777[引用:bot][图片]literal [ok]"
     assert keyword_text == "@7777literal [ok]"
     ingest(client, state, p, {**event(5), "message": [{"data": {}}]}, 9)
@@ -463,7 +463,7 @@ def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, mo
         assert state.qq.store.get(QQBinding, session["session_id"]).deadline == deadline
         restored = state.qq.store.get(QQParticipant, (session["session_id"], "9999"))
         assert restored.expires_at == participant.expires_at and restored.in_window
-        assert restored.keyword_message_id == participant.keyword_message_id
+        assert restored.grant_message_id == participant.grant_message_id
         assert state.qq.store.get(QQBatch, queued.id).participants == queued.participants
         assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == "unknown"
         assert state.qq.store.next_batch(p["id"]) is None

@@ -127,7 +127,7 @@ def test_keyword_promotes_window_before_truncation_and_snapshots_only_submitted_
     freeze(state, session, 5)
     ingest(client, state, p, event(2, "follow-up"), 10)
     ingest(client, state, p, event(3, "BOT", sender="8888"), 11)
-    keyword_id = participant(state, session, "8888").keyword_message_id
+    keyword_id = participant(state, session, "8888").grant_message_id
     ingest(client, state, p, event(4, "continuation", sender="8888"), 12)
     ingest(client, state, p, event(5, "bystander", sender="7777"), 13)
     batch = freeze(state, session, 17, limit=2)
@@ -138,7 +138,7 @@ def test_keyword_promotes_window_before_truncation_and_snapshots_only_submitted_
     assert participant(state, session, "8888").expires_at == 71
     # A duplicate cannot renew eligibility, join a window, or change keyword epochs.
     ingest(client, state, p, event(3, "bot", sender="8888"), 20)
-    assert participant(state, session, "8888").keyword_message_id == keyword_id
+    assert participant(state, session, "8888").grant_message_id == keyword_id
     assert participant(state, session, "8888").expires_at == 71
     assert state.qq.store.get(QQBinding, session["session_id"]).deadline is None
 
@@ -255,7 +255,7 @@ def test_skip_preserves_new_keywords_pending_windows_and_queued_batches(qq_clien
     assert participant(state, session).expires_at == 115
     # A newer keyword is independent of the pending old follow-up decision.
     ingest(client, state, p, event(6, "bot new topic"), 71)
-    new_epoch = participant(state, session).keyword_message_id
+    new_epoch = participant(state, session).grant_message_id
     assert new_epoch != third.participants["9999"]
     clock[0] = 72
     upstream.turns = [completion(tool_call("qq_skip_reply", "{}"))]

@@ -1,13 +1,15 @@
 """Quiet-group observation, optional replies and cancellation before dispatch."""
 import asyncio
+import json
 
 import pytest
 from sqlmodel import Session, select
 
 from ai_workbench.core.qq_icebreaker import QQIcebreaker
+from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQParticipant
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
-from tests.test_qq_followup import clock, execute, reply
+from tests.test_qq_followup import clock, execute, reply, participant, followup
 from tests.test_qq_image_generation import image_provider, draw, assets, attachment_files
 from tests.test_qq_media import isolated_attachments
 from tests.tool_fixtures import completion, ok, tool_call
@@ -81,7 +83,8 @@ def test_cold_threshold_is_strict_and_supplements_restart_wait(qq_client, clock)
         ingest(client, state, p, event(number, f"thought {number}"), when)
     assert tick(qq_client, session, clock, 32.99) is None
     batch = tick(qq_client, session, clock, 33)
-    assert batch.trigger_kind == "icebreaker" and batch.participants == {}
+    assert batch.trigger_kind == "icebreaker"
+    assert batch.participants == {"9999": state.qq.store.batch_messages(batch.id)[-1].id}
     assert [m.external_id for m in state.qq.store.batch_messages(batch.id)] == ["3", "4"]
     assert binding(state, session).icebreaker_cooldown_until is None
     ingest(client, state, p, event(5, "after freezing"), 34)
@@ -141,7 +144,7 @@ def test_keyword_and_existing_followup_take_priority(qq_client, clock):
 
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("skip", [False, True])
-def test_optional_single_reply_and_cooldown_do_not_grant_eligibility(qq_client, clock, streaming, skip):
+def test_only_confirmed_icebreaker_replies_grant_eligibility(qq_client, clock, streaming, skip):
     client, state, upstream = qq_client
     p, session, connection, batch = queued(qq_client, clock, streaming=streaming)
     upstream.turns = [completion(tool_call("qq_skip_reply", "{}")) if skip else completion(
@@ -156,9 +159,19 @@ def test_optional_single_reply_and_cooldown_do_not_grant_eligibility(qq_client, 
     assert "optional icebreaker" in str(upstream.calls[0]["messages"])
     assert binding(state, session).icebreaker_cooldown_until == 46
     with Session(state.qq.store.engine) as db:
-        assert db.exec(select(QQParticipant)).all() == []
+        participants = db.exec(select(QQParticipant)).all()
+    assert len(participants) == (0 if skip else 1)
+    if not skip:
+        assert participants[0].expires_at == 76
+        assert participants[0].grant_message_id == batch.participants["9999"]
     ingest(client, state, p, event(2, "during cooldown"), 30)
-    assert tick(qq_client, session, clock, 35) is None
+    followup = tick(qq_client, session, clock, 35)
+    if skip:
+        assert followup is None
+    else:
+        assert followup.trigger_kind == "followup"
+        upstream.turns = [completion(tool_call("qq_skip_reply", "{}"))]
+        execute(qq_client, followup)
     # Expiring a cooldown alone cannot create a batch.
     assert tick(qq_client, session, clock, 47) is None
     ingest(client, state, p, event(3, "a new quiet conversation"), 48)
@@ -323,6 +336,7 @@ def test_generated_image_shares_the_one_reply_limit(qq_client, clock, image_prov
     assert batch.status == "done" and run.metadata["qq_reply"]["sent_count"] == 1
     assert len(connection.calls) == len(image_provider.calls) == 1
     assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["kind"] == "generated_image"
+    assert participant(state, session).expires_at == 76
 
 
 def test_other_speaker_cancels_image_generation_and_releases_assets(qq_client, clock, image_provider, isolated_attachments):
@@ -362,3 +376,151 @@ def test_last_send_check_cancels_before_intent_and_cleans_prepared_images(
     assert not binding(state, session).paused and binding(state, session).icebreaker_cooldown_until == 46
     assert connection.calls == [] and assets(state) == [] and attachment_files() == []
     assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+
+
+@pytest.mark.parametrize("arrival,eligible", [(75.99, True), (76, False)])
+def test_confirmed_icebreaker_grant_has_an_exact_sixty_second_boundary(qq_client, clock, arrival, eligible):
+    client, state, upstream = qq_client
+    p, session, _, batch = queued(qq_client, clock)
+    reply(upstream)
+    execute(qq_client, batch)
+    ok(client.patch(f"/api/projects/{p['id']}", json={"icebreaker_enabled": False}))
+    ingest(client, state, p, event(2, "a different person", sender="8888"), 17)
+    assert freeze(state, session, 22) is None
+    ingest(client, state, p, event(3, "the original speaker continues"), arrival)
+    followup = freeze(state, session, arrival + 5)
+    assert (followup is not None) == eligible
+    if eligible:
+        assert followup.trigger_kind == "followup" and set(followup.participants) == {"9999"}
+
+
+def test_icebreaker_followup_renews_and_skip_ends_the_grant(qq_client, clock):
+    client, state, upstream = qq_client
+    p, session, _, batch = queued(qq_client, clock)
+    reply(upstream)
+    execute(qq_client, batch)
+    ingest(client, state, p, event(2, "continue during cooldown"), 30)
+    followup = tick(qq_client, session, clock, 35)
+    assert followup.trigger_kind == "followup"
+    clock[0] = 70
+    reply(upstream)
+    execute(qq_client, followup)
+    assert participant(state, session).expires_at == 115
+    ingest(client, state, p, event(3, "one more thought"), 100)
+    followup = tick(qq_client, session, clock, 105)
+    upstream.turns = [completion(tool_call("qq_skip_reply", "{}"))]
+    execute(qq_client, followup)
+    assert participant(state, session).expires_at == 105
+    ingest(client, state, p, event(4, "after the skip"), 106)
+    assert binding(state, session).deadline is None
+
+
+@pytest.mark.parametrize("failure,status", [
+    (TimeoutError(), "unknown"),
+    (ToolExecutionError("QQ_ACTION_FAILED", "rejected"), "failed"),
+])
+def test_unconfirmed_icebreaker_send_does_not_grant_eligibility(qq_client, clock, failure, status):
+    _, state, upstream = qq_client
+    _, session, connection, batch = queued(qq_client, clock)
+    connection.failure = failure
+    reply(upstream)
+    execute(qq_client, batch)
+    assert participant(state, session) is None
+    assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == status
+
+
+def test_icebreaker_confirmation_preserves_a_newer_keyword_epoch(qq_client, clock):
+    _, state, upstream = qq_client
+    p, session, connection, batch = queued(qq_client, clock)
+    original = connection.call
+    async def confirm(action, params):
+        clock[0] = 20
+        await state.qq.ingest(p["id"], event(2, "@12345"), now=20)
+        clock[0] = 30
+        return await original(action, params)
+    connection.call = confirm
+    reply(upstream)
+    execute(qq_client, batch)
+    grant = participant(state, session)
+    assert grant.grant_message_id > batch.participants["9999"]
+    assert grant.expires_at == 90 and binding(state, session).deadline == 25
+    stale = QQBatch(session_id=session["session_id"], project_id=p["id"], text="old decision", created_at=16,
+        trigger_kind="followup", participants_json=json.dumps(batch.participants))
+    state.qq.store.skip_participants(stale, 31)
+    assert participant(state, session).expires_at == 90
+
+
+def test_repeated_receipts_and_recovery_do_not_extend_icebreaker_grants(qq_client, clock, monkeypatch):
+    client, state, upstream = qq_client
+    p, session, connection, batch = queued(qq_client, clock)
+    original = state.qq.send
+    async def repeated(arguments, context):
+        receipt = await original(arguments, context)
+        clock[0] = 40
+        assert await original(arguments, context) == receipt
+        return receipt
+    monkeypatch.setattr(state.qq, "send", repeated)
+    reply(upstream)
+    execute(qq_client, batch)
+    assert len(connection.calls) == 1 and participant(state, session).expires_at == 76
+    ingest(client, state, p, {**event(1001, "echo", sender="12345"), "post_type": "message_sent"}, 50)
+    state.qq.store.recover()
+    assert participant(state, session).expires_at == 76
+    assert participant(state, session).grant_message_id == batch.participants["9999"]
+
+
+def test_icebreaker_waits_for_prior_nickname_decision_before_sending(qq_client, clock, monkeypatch):
+    client, state, upstream = qq_client
+    p, session, connection, batch = queued(qq_client, clock, keywords=["buddy"])
+    reply(upstream)
+    original = state.qq.deliver
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def lookup(action, params):
+            assert action == "get_group_member_info"
+            entered.set()
+            await release.wait()
+            return {"user_id": params["user_id"], "card": "Buddy"}
+        connection.call = lookup
+        async def before_send(text, context, **options):
+            await state.qq.ingest(p["id"], {**event(2), "message": "[CQ:at,qq=7777]"}, now=17)
+            return await original(text, context, **options)
+        monkeypatch.setattr(state.qq, "deliver", before_send)
+        task = asyncio.create_task(state.qq.execute(batch))
+        await asyncio.wait_for(entered.wait(), 2)
+        assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+        release.set()
+        await asyncio.wait_for(task, 2)
+        current = state.qq.store.get(QQBatch, batch.id)
+        assert current.error_code == "QQ_ICEBREAKER_CANCELLED"
+        assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+        assert participant(state, session).expires_at == 77  # Only the incoming nickname granted eligibility.
+    client.portal.call(scenario)
+
+
+@pytest.mark.parametrize("icebreaker", [False, True])
+def test_deferred_arrivals_cannot_use_a_later_send_to_gain_eligibility(qq_client, clock, icebreaker):
+    client, state, upstream = qq_client
+    p, session, connection, batch = queued(qq_client, clock) if icebreaker else followup(qq_client, clock)
+    reply(upstream)
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def call(action, params):
+            if action == "get_group_member_info":
+                entered.set()
+                await release.wait()
+                return {"user_id": params["user_id"], "card": "Unrelated member"}
+            clock[0] = 70
+            await state.qq.ingest(p["id"], {**event(9), "message": "[CQ:at,qq=7777]"}, now=70)
+            await asyncio.wait_for(entered.wait(), 1)
+            clock[0] = 71
+            return {"message_id": 1099}
+        connection.call = call
+        await state.qq.execute(batch)
+        assert participant(state, session).expires_at == (131 if icebreaker else 116)
+        release.set()
+        await state.qq.wait_ingress(session["session_id"])
+        assert binding(state, session).deadline is None
+        await state.qq.ingest(p["id"], event(10, "received after confirmation"), now=72)
+        assert freeze(state, session, 77).trigger_kind == "followup"
+    client.portal.call(scenario)

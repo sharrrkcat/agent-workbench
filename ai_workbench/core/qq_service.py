@@ -3,22 +3,36 @@ import asyncio
 import base64
 import logging
 import time
+from collections import deque
+from dataclasses import dataclass
 from websockets.exceptions import InvalidStatus, WebSocketException
 from sqlmodel import Session as DbSession
 from pydantic import ValidationError
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolSpec, ToolExecutionError
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
-from ai_workbench.core.qq_names import QQNames, model_batch_text
+from ai_workbench.core.qq_names import QQNames, model_batch_text, references_adapter
 from ai_workbench.core.qq_history import QQHistory
 from ai_workbench.core.qq_media import QQMediaService
 from ai_workbench.core.qq_descriptions import QQDescriptionService
 from ai_workbench.core.qq_resources import QQResources
 from ai_workbench.core.qq_generation import prepare_image
 from ai_workbench.core.qq_icebreaker import QQIcebreaker, ICEBREAKER_SETTINGS
+from ai_workbench.core.schema.project import QQBotProject
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class PendingIngress:
+    project: QQBotProject
+    binding: QQBinding
+    message: QQMessage
+    received_at: float
+    keyword: bool | None
+    task: asyncio.Task | None = None
+    eligibility_before: tuple[int, float] | None = None
 
 
 class QQService:
@@ -33,6 +47,7 @@ class QQService:
         self.names = QQNames(self.connections)
         self.tasks = {}
         self.workers = {}
+        self.pending_ingress: dict[str, deque[PendingIngress]] = {}
         self.supervisor = None
         self.store.recover()
         self.icebreaker = QQIcebreaker(store)
@@ -54,7 +69,7 @@ class QQService:
     async def close(self):
         for session_id in list(self.icebreaker.groups):
             self.icebreaker.reset_session(session_id)
-        tasks = [*self.tasks.values(), *self.workers.values()]
+        tasks = [*self.tasks.values(), *self.workers.values(), *self.discard_ingress()]
         if self.supervisor:
             tasks.append(self.supervisor)
         for task in tasks:
@@ -113,6 +128,7 @@ class QQService:
                 connection.status = "QQ_CONNECTION_FAILED"
             finally:
                 self.icebreaker.reset_project(connection.project.id)
+                await asyncio.gather(*self.discard_ingress(connection.project.id), return_exceptions=True)
             connection.ready = False
             await asyncio.sleep(3)
 
@@ -133,7 +149,7 @@ class QQService:
             self.store.reconcile_echo(binding.session_id, str(event.get("message_id")))
             return
         try:
-            values, keyword_text, media = normalize(event)
+            values, keyword_text, media, addresses_bot = normalize(event)
         except ValidationError:
             log.warning("Ignored malformed OneBot message for a bound conversation")
             return
@@ -142,27 +158,94 @@ class QQService:
         now = time.time() if now is None else now
         # Synchronous transactions run without yielding: expiry wins at the exact deadline.
         self.tick_binding(project, binding, now)
-        message_id = self.store.ingest(binding, QQMessage(session_id=binding.session_id, **values),
-            keyword=any(k in keyword_text for k in project.keywords), now=now, media=media)
-        if message_id:
-            self.names.observe(binding, values["sender_id"], values["sender_name"])
-            if project.icebreaker_enabled:
-                current = self.store.get(QQBinding, binding.session_id)
-                self.icebreaker.observe(project, current, self.connected(project.id), message_id, values["sender_id"], now)
+        message = QQMessage(session_id=binding.session_id, **values)
+        message_id = self.store.record_ingress(binding, message, media=media)
+        if not message_id:
+            return
+        self.names.observe(binding, message.sender_id, message.sender_name)
+        references = references_adapter.validate_json(message.references_json)
+        keyword = addresses_bot or any(word in keyword_text for word in project.keywords)
+        group = self.icebreaker.groups.get(binding.session_id)
+        if group is not None and (keyword or (group.sender_id is not None and group.sender_id != message.sender_id)):
+            self.icebreaker.cancel(group)
+        if not keyword and binding.target_kind == "group" and project.keywords:
+            keyword = self.names.cached_trigger(binding, references, project.keywords)
+        entry = PendingIngress(project, binding, message, now, keyword)
+        self.pending_ingress.setdefault(binding.session_id, deque()).append(entry)
+        if keyword is None:
+            entry.task = asyncio.create_task(self.resolve_ingress(entry))
+        self.flush_ingress(binding.session_id)
+
+    async def resolve_ingress(self, entry):
+        entry.keyword = await self.names.resolve_trigger(entry.binding, entry.project.bot_account,
+            entry.message.model_dump(), entry.project.keywords)
+        self.flush_ingress(entry.binding.session_id)
+
+    def flush_ingress(self, session_id):
+        queue = self.pending_ingress.get(session_id)
+        if queue is None:
+            return
+        while queue and queue[0].keyword is not None:
+            entry = queue[0]
+            binding = self.store.get(QQBinding, session_id)
+            if binding is not None:
+                project = self.state.projects.get(binding.project_id)
+                self.tick_binding(project, binding, entry.received_at)
+                if self.store.activate_ingress(entry.message.id, keyword=entry.keyword, now=entry.received_at,
+                        eligibility_before=entry.eligibility_before):
+                    if project.icebreaker_enabled:
+                        current = self.store.get(QQBinding, session_id)
+                        self.icebreaker.observe(project, current, self.connected(project.id),
+                            entry.message.id, entry.message.sender_id, entry.received_at)
+            queue.popleft()
+        if not queue:
+            del self.pending_ingress[session_id]
+
+    async def wait_ingress(self, session_id):
+        while queue := self.pending_ingress.get(session_id):
+            await asyncio.shield(queue[0].task)
+
+    def preserve_ingress_eligibility(self, session_id, before):
+        # A later confirmation cannot qualify an earlier, still-unclassified arrival.
+        for entry in self.pending_ingress.get(session_id, ()):
+            limit = before.get(entry.message.sender_id)
+            if limit is not None:
+                previous = entry.eligibility_before
+                if previous is not None and previous[0] == limit[0]:
+                    limit = (limit[0], min(limit[1], previous[1]))
+                entry.eligibility_before = limit
+
+    def discard_ingress(self, project_id=None):
+        tasks = []
+        for session_id, queue in list(self.pending_ingress.items()):
+            if project_id is None or queue[0].project.id == project_id:
+                del self.pending_ingress[session_id]
+                for entry in queue:
+                    if entry.task is not None:
+                        entry.task.cancel()
+                        tasks.append(entry.task)
+        return tasks
 
     def connected(self, project_id):
         connection = self.connections.get(project_id)
         return connection is not None and connection.ready
 
     def tick_binding(self, project, binding, now):
-        self.store.freeze(binding.session_id, project.batch_message_limit, now)
+        queue = self.pending_ingress.get(binding.session_id)
+        before_id = queue[0].message.id if queue else None
+        if queue:
+            now = min(now, queue[0].received_at)
+        self.store.freeze(binding.session_id, project.batch_message_limit, now, before_message_id=before_id)
         if project.icebreaker_enabled or binding.session_id in self.icebreaker.groups:
             current = self.store.get(QQBinding, binding.session_id)
-            self.icebreaker.tick(project, current, self.connected(project.id), now)
+            self.icebreaker.tick(project, current, self.connected(project.id), now, before_message_id=before_id)
 
     def project_updated(self, previous, current):
         if current.kind == "qqbot" and any(getattr(previous, field) != getattr(current, field) for field in ICEBREAKER_SETTINGS):
             self.icebreaker.reset_project(current.id)
+            if any(getattr(previous, field) != getattr(current, field)
+                    for field in ("connection_enabled", "websocket_url", "access_token", "bot_account")):
+                self.discard_ingress(current.id)
             for binding in self.store.bindings(current.id):
                 self.icebreaker.sync(current, binding, self.connected(current.id), time.time())
 
@@ -192,6 +275,7 @@ class QQService:
             self.store.save(batch)
         try:
             if attempt is not None:
+                await self.wait_ingress(batch.session_id)
                 self.check_icebreaker(batch)
             config = self.state.chat_service.resolve(self.state.sessions.get_session(batch.session_id))
             if attempt is not None:
@@ -296,6 +380,7 @@ class QQService:
         if existing:
             return self.delivery_receipt(existing)
         if batch.trigger_kind == "icebreaker":
+            await self.wait_ingress(session.session_id)
             # No await separates this check, the durable intent and OneBot submission.
             self.check_icebreaker(batch).dispatched = True
         delivery = self.store.save(QQDelivery(session_id=session.session_id, run_id=context.run_id,
@@ -328,9 +413,10 @@ class QQService:
                     speaker_id=self.state.runs.get_run(context.run_id).persona_id, run_id=context.run_id,
                     metadata={"qq_delivery_id": delivery.id, "qq_external_id": delivery.external_id}, **transaction)
                 db.add(delivery)
-                self.store.renew_participants(db, batch, time.time())
+                before = self.store.renew_participants(db, batch, time.time())
                 db.commit()
                 db.refresh(delivery)
+            self.preserve_ingress_eligibility(session.session_id, before)
             self.icebreaker.confirmed_send(session.session_id, time.time())
             self.state.events.emit("message_completed", session_id=session.session_id, run_id=context.run_id,
                 message_id=message.message_id, payload={"message": message.model_dump(mode="json")})

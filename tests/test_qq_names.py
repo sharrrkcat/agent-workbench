@@ -97,7 +97,7 @@ def test_settings_are_snapshotted_before_name_lookup(qq_client):
 
 
 def test_raw_text_and_unlocated_historical_mentions_are_not_guessed():
-    value, keywords, media = normalize(event(1, "@12345 [CQ:at,qq=12345]"))
+    value, keywords, media, _ = normalize(event(1, "@12345 [CQ:at,qq=12345]"))
     assert not json.loads(value["references_json"])  # A OneBot text segment is literal.
     refs = references_adapter.validate_python([{"type": "at", "id": "12345"}])
     assert render_mentions("@12345", refs, for_model=True) == "@12345"
@@ -152,7 +152,7 @@ def test_lookup_timeout_concurrency_and_negative_cache(monkeypatch):
         connection = SimpleNamespace(ready=True, call=lookup, login_name="Self")
         names = QQNames({"p": connection})
         binding = SimpleNamespace(project_id="p", session_id="s", target_kind="group", target_id="77")
-        values, _, media = normalize({**event(), "message": "".join(f"[CQ:at,qq={n}]" for n in range(1, 21))})
+        values, _, media, _ = normalize({**event(), "message": "".join(f"[CQ:at,qq={n}]" for n in range(1, 21))})
         row = await names.project(binding, "1", [dict(values)], for_model=True)
         await asyncio.gather(*list(names.inflight.values()))
         assert peak == 4 and calls == 4 and active == 0
@@ -221,4 +221,4 @@ def test_unusable_lookup_retains_ids_and_never_pauses(qq_client, response):
         assert row["text"] == "@12345" and row["references"][0]["is_self"]
     assert len(calls) == 1
     binding = state.qq.store.get(QQBinding, session["session_id"])
-    assert not binding.paused and binding.deadline is None  # Mentions never trigger replies.
+    assert not binding.paused and binding.deadline == 5  # The built-in self mention works without a name.

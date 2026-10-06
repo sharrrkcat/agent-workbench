@@ -84,7 +84,7 @@ class QQIcebreaker:
         if group is None:
             return
         previous = group.last_activity
-        group.last_activity = now
+        group.last_activity = max(previous, now)
         if binding.deadline is not None or self.store.has_reply_work(binding.session_id):
             self.cancel(group)
         elif group.batch_id is not None or group.deadline is not None:
@@ -98,7 +98,7 @@ class QQIcebreaker:
             group.first_message_id = message_id
             group.deadline = now + project.icebreaker_wait_seconds
 
-    def tick(self, project, binding, ready, now):
+    def tick(self, project, binding, ready, now, *, before_message_id=None):
         group = self.sync(project, binding, ready, now)
         if group is None:
             return
@@ -113,7 +113,7 @@ class QQIcebreaker:
             self.cancel(group)
             return
         batch = self.store.freeze(binding.session_id, project.batch_message_limit, now,
-            icebreaker_first_id=group.first_message_id)
+            icebreaker_first_id=group.first_message_id, before_message_id=before_message_id)
         group.deadline = None
         if batch is None:
             self.cancel(group)

@@ -196,7 +196,7 @@ def test_resources_migration_preserves_files_and_repeated_upgrades(tmp_path):
         path.write_bytes(b"retained")
     migrations.upgrade(engine)
     migrations.upgrade(engine)
-    assert migrations.current_revision(engine) == migrations.QQ_RESOURCES_REVISION
+    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
     with engine.begin() as db:
         db.exec_driver_sql("INSERT INTO qq_media_assets (sha256, attachment_json, updated_at) VALUES ('new', '{}', CURRENT_TIMESTAMP)")
         assert db.exec_driver_sql("SELECT description FROM qq_media_assets WHERE id = 12").scalar_one() == 'existing'

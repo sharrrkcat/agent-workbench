@@ -19,6 +19,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       try {
         await page.goto(`/projects/${project.id}`);
         await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
+        await expect(page.getByText(labels.qq.triggerHint, { exact: true })).toBeVisible();
+        await expect(page.getByText(labels.qq.icebreakerHint, { exact: true })).toBeVisible();
         const enabled = page.getByRole('switch', { name: labels.qq.icebreakerEnabled, exact: true });
         const cold = page.getByLabel(labels.qq.icebreakerCold, { exact: true });
         const wait = page.getByLabel(labels.qq.icebreakerWait, { exact: true });

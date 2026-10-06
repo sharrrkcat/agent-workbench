@@ -132,6 +132,24 @@ class QQNames:
             task.add_done_callback(lambda _: self.inflight.pop(key, None))
         return await asyncio.shield(task)
 
+    def cached_trigger(self, binding, references, keywords):
+        missing = False
+        for ref in references:
+            if ref.type != "at" or not re.fullmatch(r"[1-9][0-9]{0,19}", ref.id):
+                continue
+            cached = self._cached(binding.project_id, (binding.session_id, ref.id))
+            if cached is None:
+                missing = True
+            elif cached[1] and any(word in ("@" + cached[1]).casefold() for word in keywords):
+                return True
+        return None if missing else False
+
+    async def resolve_trigger(self, binding, bot_account, row, keywords):
+        projected, = await self.project(binding, bot_account, [row])
+        return any(word in ("@" + ref["name"]).casefold()
+            for ref in projected["references"] if ref["type"] == "at" and ref["name"]
+            for word in keywords)
+
     async def project(self, binding, bot_account, rows, *, freeze=False, for_model=False):
         references = [references_adapter.validate_json(row["references_json"]) for row in rows]
         ids = iter(dict.fromkeys(ref.id for refs in references for ref in refs

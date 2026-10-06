@@ -87,7 +87,7 @@ def test_protocol_positions_are_not_placeholder_searches(cq):
             {"type": "text", "data": {"text": "A"}}, {"type": "image", "data": {"url": "https://images.test/a?x=1,2"}},
             {"type": "text", "data": {"text": "B"}}, {"type": "face", "data": {"id": 0}},
             {"type": "mface", "data": {"emoji_id": "abcd"}}]
-    values, keywords, media = normalize({**event(), "message": message})
+    values, keywords, media, _ = normalize({**event(), "message": message})
     refs = json.loads(values["references_json"])
     refs[0]["name"] = "Long member name"
     segments = public_segments(values["text"], json.dumps(refs), [QQMedia(id=i + 1, message_id=1, **item) for i, item in enumerate(media)])

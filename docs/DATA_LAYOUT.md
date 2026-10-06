@@ -27,7 +27,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0040_qq_resources`; current tables follow the SQLModel schema.
+Alembic head is `0041_qq_trigger_grants`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -254,3 +254,5 @@ Revision `0038_qq_image_generation` adds delivery kind, original prompt and an i
 Revision `0039_qq_icebreaker` adds nullable qq_bindings.icebreaker_cooldown_until. Per-group observation state stays in memory and restarts after connection gaps; cooldown deadlines persist. Existing rows and all model, attachment and runtime directories are untouched. Repeated upgrades preserve recorded cooldowns.
 
 Revision `0040_qq_resources` adds qq_media_assets.is_favorite, description_manual and created_at. Existing disposable assets receive the upgrade timestamp as a column default; no original dates are inferred or backfilled. New assets use their actual insertion time. Favorite assets protect original/static attachment files even without chat references. Explicit resource deletion detaches occurrence/delivery references and leaves positional image placeholders; retained request snapshots still protect their files. No files or directories are changed by the revision, and repeated upgrades preserve new metadata.
+
+Revision `0041_qq_trigger_grants` renames qq_participants.keyword_message_id to grant_message_id, shared by keyword and confirmed-icebreaker grants. Existing epoch values, expiry deadlines and window membership are preserved without reconstructing eligibility. Batch participant snapshots retain their private sender-to-message-id shape. No model, attachment, runtime or other directories are changed.
