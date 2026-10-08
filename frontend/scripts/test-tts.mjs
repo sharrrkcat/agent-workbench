@@ -97,7 +97,15 @@ assert.equal(customized.voice, 'eve');
 assert.equal(selectTTSArchitecture({ ...customized, voice: 'manual' }, 'grok-voice-latest').voice, 'alloy');
 assert.equal(selectTTSArchitecture(customized, 'grok-voice-latest').voice, 'eve');
 assert.deepEqual(selectModelSource(provider, localSource()).parameters, { speed: 0.8, response_format: 'mp3' });
-assert.deepEqual(grokVoices, ['alloy', 'echo', 'fable', 'onyx', 'nova', 'eve', 'sal', 'rex']);
+assert.deepEqual(grokVoices, [
+  'alloy', 'echo', 'fable', 'onyx', 'nova', 'eve', 'sal', 'rex',
+  'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith',
+  'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa',
+  'sirius', 'lumen', 'castor', 'naksh', 'atlas', 'aurora', 'liora', 'ara', 'leo',
+]);
+for (const voice of grokVoices) {
+  assert.equal(selectTTSArchitecture({ ...customized, voice }, 'grok-voice-latest').voice, voice);
+}
 for (const locale of ['en', 'zh-CN']) {
   await i18n.changeLanguage(locale);
   const t = i18n.getFixedT(locale, 'llm');

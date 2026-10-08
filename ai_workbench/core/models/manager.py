@@ -807,8 +807,9 @@ class ModelManager:
         profile = self.profile(profile_id, "tts")
         if isinstance(profile.source, ProviderSource):
             from ai_workbench.core.models.schema import GROK_VOICES
-            if any(value is not None for value in (request.tts.language, request.tts.reference_audio, request.tts.model_options)):
-                raise ModelError("INVALID_REQUEST", "Provider TTS does not support tts extensions.")
+            from ai_workbench.core.models.tts_languages import PROVIDER_TTS_LANGUAGES
+            if request.tts.reference_audio is not None or request.tts.model_options is not None:
+                raise ModelError("INVALID_REQUEST", "Provider TTS does not support reference audio or model_options.")
             voice = request.voice if request.voice is not None else profile.parameters["voice"]
             if not voice.strip():
                 raise ModelError("INVALID_REQUEST", "Voice must not be blank.")
@@ -817,7 +818,8 @@ class ModelManager:
             async with self._lease(profile) as adapter:
                 return await adapter.speech(profile, request.input, voice,
                     request.speed if request.speed is not None else profile.parameters["speed"],
-                    request.response_format or profile.parameters["response_format"], None)
+                    request.response_format or profile.parameters["response_format"],
+                    PROVIDER_TTS_LANGUAGES[request.tts.language or "auto"])
         if request.voice is None and request.tts.reference_audio is None:
             raise ModelError("INVALID_REQUEST", "Provide exactly one of voice or tts.reference_audio.")
         require_directory(profile)
@@ -827,7 +829,8 @@ class ModelManager:
             raise ModelError("INVALID_REQUEST", "Reference audio and model_options require Chatterbox or Qwen3-TTS Base.")
         if request.voice not in VOICE_IDS:
             raise ModelError("VOICE_UNAVAILABLE", "Voice ID is not supported by this model.", 404)
-        if request.tts.language is not None and request.tts.language != LANGUAGES[request.voice[0]]:
+        language = LANGUAGES[request.voice[0]] if request.tts.language in {None, "auto"} else request.tts.language
+        if language != LANGUAGES[request.voice[0]]:
             raise ModelError("INVALID_REQUEST", "Language does not match the selected voice.")
         if isinstance(profile.source, LocalSource) and self.runtime_supervisor:
             try:
@@ -839,7 +842,7 @@ class ModelManager:
         response_format = request.response_format or profile.parameters["response_format"]
         speed = request.speed if request.speed is not None else profile.parameters["speed"]
         async with self._lease(profile) as adapter:
-            result = await adapter.speech(profile, request.input, request.voice, speed, response_format, request.tts.language)
+            result = await adapter.speech(profile, request.input, request.voice, speed, response_format, language)
             try:
                 if result.response_format != response_format:
                     raise ValueError("Unexpected audio format")
@@ -956,7 +959,10 @@ class ModelManager:
         credential = self._voice_credential(credential)
         architecture = local_engine(profile)
         languages = QWEN3TTS_LANGUAGES if architecture == "qwen3tts" else {"en-US"}
-        if request.tts.language is not None and request.tts.language not in languages:
+        language = request.tts.language or "auto"
+        if architecture == "chatterbox" and language == "auto":
+            language = "en-US"
+        if language not in languages:
             raise ModelError("INVALID_REQUEST", "The selected TTS architecture does not support this language.")
         reference = request.tts.reference_audio
         if reference is not None and "reference_text" in reference.model_fields_set and architecture != "qwen3tts":
@@ -986,7 +992,7 @@ class ModelManager:
             speed = request.speed if request.speed is not None else profile.parameters["speed"]
             response_format = request.response_format or profile.parameters["response_format"]
             async with self._lease(profile, on_admit=admitted) as adapter:
-                result = await adapter.speech(profile, request.input, request.voice, speed, response_format, request.tts.language,
+                result = await adapter.speech(profile, request.input, request.voice, speed, response_format, language,
                     reference=entry.path.name, reference_text=entry.reference_text, model_options=options)
                 try:
                     if result.response_format != response_format:

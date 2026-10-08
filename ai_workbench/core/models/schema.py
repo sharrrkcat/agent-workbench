@@ -11,6 +11,7 @@ from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.models.runtimes.schema import RuntimeStatus
 from ai_workbench.core.models.llm_metrics import LLMUsage, NativeGenerationTiming
+from ai_workbench.core.models.tts_languages import TTSLanguage, TTS_LANGUAGE_DESCRIPTION
 from ai_workbench.workers.common import MAX_NORMALIZED_REQUEST_MB
 from ai_workbench.workers.model_catalog import DirectoryInformation
 
@@ -294,7 +295,12 @@ class SpeechOutputParameters(StrictModel):
     response_format: Literal["mp3", "wav"] = Field(default="mp3", description="Complete audio file format; local TTS produces 24 kHz mono audio.")
 
 
-GROK_VOICES = ("alloy", "echo", "fable", "onyx", "nova", "eve", "sal", "rex")
+GROK_VOICES = (
+    "alloy", "echo", "fable", "onyx", "nova", "eve", "sal", "rex",
+    "carina", "zagan", "helix", "orion", "luna", "iris", "altair", "zenith",
+    "perseus", "helios", "lux", "kepler", "rigel", "cosmo", "celeste", "ursa",
+    "sirius", "lumen", "castor", "naksh", "atlas", "aurora", "liora", "ara", "leo",
+)
 
 
 class ProviderTTSParameters(SpeechOutputParameters):
@@ -695,8 +701,7 @@ AUDIO_REQUEST_OPTIONS = {"chatterbox": ChatterboxRequestOptions, "qwen3tts": Qwe
 
 
 class TTSExtensions(StrictModel):
-    language: Literal["auto", "en-US", "en-GB", "ja-JP", "zh-CN", "es-ES", "fr-FR", "hi-IN", "it-IT", "pt-BR", "de-DE", "ko-KR", "ru-RU"] | None = Field(default=None,
-        description="Kokoro: must match the preset. Chatterbox: en-US only. Qwen: ten languages, excluding hi-IN; en-US/en-GB both select English without an accent guarantee. Qwen omission/null/auto selects Auto.")
+    language: TTSLanguage | None = Field(default=None, description=TTS_LANGUAGE_DESCRIPTION)
     model_options: ChatterboxRequestOptions | Qwen3TTSRequestOptions | None = Field(default=None,
         description="Overrides validated against the selected model architecture before queue admission. Kokoro rejects this field when non-null. Omitted/null option values inherit profile defaults.")
     reference_audio: ReferenceAudio | None = None

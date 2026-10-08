@@ -91,7 +91,8 @@ class OpenAIAdapter:
 
     async def speech(self, profile: ModelProfile, text: str, voice: str, speed: float,
                      response_format: str, language: str | None) -> AudioOutput:
-        payload = dict(model=profile.model_ref, input=text, voice=voice, speed=speed, response_format=response_format)
+        payload = dict(model=profile.model_ref, input=text, voice=voice, speed=speed,
+                       response_format=response_format, language=language)
         try:
             async with self.client.stream("POST", "audio/speech", json=payload) as response:
                 response.raise_for_status()

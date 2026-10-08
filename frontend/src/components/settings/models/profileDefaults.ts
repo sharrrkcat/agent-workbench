@@ -2,7 +2,12 @@ import type { DirectoryInspection, ModelInput, ModelKind, ProviderInput, LocalEn
 
 export const localOnly = (kind: ModelKind) => ['image_embedding', 'vision', 'asr', 'processor', 'reranker'].includes(kind);
 
-export const grokVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'eve', 'sal', 'rex'];
+export const grokVoices = [
+  'alloy', 'echo', 'fable', 'onyx', 'nova', 'eve', 'sal', 'rex',
+  'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith',
+  'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa',
+  'sirius', 'lumen', 'castor', 'naksh', 'atlas', 'aurora', 'liora', 'ara', 'leo',
+];
 
 export function selectTTSArchitecture(parameters: ModelInput['parameters'], architecture: 'grok-voice-latest' | 'customize') {
   return { ...parameters, architecture,

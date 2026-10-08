@@ -15,6 +15,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.schema import GROK_VOICES, ModelInput, ModelProfile, ProviderProfile, SpeechRequest
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore
+from ai_workbench.core.models.tts_languages import PROVIDER_TTS_LANGUAGES, TTS_LANGUAGE_ALIASES
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from tests.test_provider_inference import make_manager
@@ -69,14 +70,14 @@ def test_api_defaults_overrides_discovery_and_visibility(api):
     voices = client.get("/v1/audio/voices?model=speech", headers=HEADERS).json()["data"]
     assert [item["id"] for item in voices] == list(GROK_VOICES)
     assert all(item["source"] == "preset" and item["language"] is None for item in voices)
-    assert len(client.get(path + "/voices").json()) == 8
+    assert len(client.get(path + "/voices").json()) == 33
     assert not calls
     for patch, voice, fmt, speed in [({}, "alloy", "mp3", 1), ({"voice": None}, "alloy", "mp3", 1),
             ({"voice": "eve", "response_format": "wav", "speed": 1.2}, "eve", "wav", 1.2)]:
         response = client.post("/v1/audio/speech", headers=HEADERS, json={"model": "speech", "input": "Hello", **patch})
         assert response.status_code == 200, response.text
         assert response.content == audio(fmt)
-        assert calls[-1] == dict(model="upstream-id", input="Hello", voice=voice, speed=speed, response_format=fmt)
+        assert calls[-1] == dict(model="upstream-id", input="Hello", voice=voice, speed=speed, response_format=fmt, language="auto")
     assert client.get(path).json()["parameters"] == profile["parameters"]
     assert client.patch(path, json={"source": None}).status_code == 422
     assert client.patch(path, json={"name": "Renamed"}).json()["parameters"] == profile["parameters"]
@@ -97,13 +98,49 @@ def test_api_defaults_overrides_discovery_and_visibility(api):
     assert client.get("/v1/audio/voices?model=speech", headers=HEADERS).status_code == 404
 
 
-@pytest.mark.parametrize("patch", [{"voice": "unknown"}, {"voice": " "}, {"tts": {"language": "en-US"}},
+@pytest.mark.parametrize("patch", [{"voice": "unknown"}, {"voice": " "}, {"tts": {"language": "en-CA"}},
     {"tts": {"model_options": {"seed": 0}}}, {"tts": {"reference_audio": {"format": "wav", "data_base64": "AAAA"}}}])
 def test_unsupported_inputs_never_reach_provider(api, patch):
     client, _, _, calls = api
     response = client.post("/v1/audio/speech", headers=HEADERS, json={"model": "speech", "input": "Hi", **patch})
     assert response.status_code in {400, 404}
     assert not calls
+
+
+def test_all_grok_voices_save_and_reach_upstream(api):
+    client, profile, _, calls = api
+    assert len(GROK_VOICES) == len(set(GROK_VOICES)) == 33
+    for voice in GROK_VOICES:
+        response = client.patch(f"/api/models/profiles/{profile['id']}", json={"parameters": {**PARAMS, "voice": voice}})
+        assert response.status_code == 200, response.text
+        assert response.json()["parameters"]["voice"] == voice
+        response = client.post("/v1/audio/speech", headers=HEADERS, json={"model": "speech", "input": "Hi", "voice": voice})
+        assert response.status_code == 200, response.text
+        assert calls[-1]["voice"] == voice
+
+
+@pytest.mark.parametrize("architecture", ["grok-voice-latest", "customize"])
+def test_provider_language_mapping_and_request_isolation(api, architecture):
+    client, profile, _, calls = api
+    path = f"/api/models/profiles/{profile['id']}"
+    saved = client.patch(path, json={"parameters": {**PARAMS, "architecture": architecture}}).json()
+    assert len(set(PROVIDER_TTS_LANGUAGES.values())) == 21  # Twenty languages plus auto.
+    cases = [(value, native) for value, native in PROVIDER_TTS_LANGUAGES.items()]
+    cases += [(alias, PROVIDER_TTS_LANGUAGES[canonical]) for alias, canonical in TTS_LANGUAGE_ALIASES.items()]
+    cases += [(" ZH_cn ", "zh"), ("EN_gb", "en"), ("pT_pT", "pt-PT"), ("ES_mx", "es-MX"), (None, "auto")]
+    for language, expected in cases:
+        response = client.post("/v1/audio/speech", headers=HEADERS,
+            json={"model": "speech", "input": "Hi", "tts": {"language": language}})
+        assert response.status_code == 200, response.text
+        assert calls[-1]["language"] == expected
+        assert "tts" not in calls[-1]
+    assert client.get(path).json()["parameters"] == saved["parameters"]
+    original = {"model": "speech", "input": "Hi", "tts": {"language": "zh"}}
+    request = SpeechRequest.model_validate(original)
+    snapshot = request.model_dump()
+    client.portal.call(client.app.state.runtime_state.model_manager.speech, profile["id"], request)
+    assert calls[-1]["language"] == "zh"
+    assert original["tts"]["language"] == "zh" and request.model_dump() == snapshot
 
 
 @pytest.mark.parametrize("parameters", [{}, {"voice": "alloy"}, {**PARAMS, "voice": "unknown"},

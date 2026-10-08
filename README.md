@@ -65,7 +65,7 @@ Cancellation/failure preserves incomplete output/statistics. Delete/retry affect
 ## External API
 
 In **Models > Dashboard > External API**, configure a key, enable the service and mark model profiles externally visible; requests use public aliases.
-External TTS models select an existing Provider, an upstream model ID and the grok-voice-latest or Customize voice architecture. Grok provides eight fixed voices; Customize accepts a manual default voice ID. `/v1/audio/speech` requests may omit voice to use that default or override it. Providers return complete MP3/WAV audio; local reference-audio extensions do not apply. The service defaults disabled and loopback-only, shares ModelManager without chat/Knowledge writes, and forwards tool definitions/calls without executing tools.
+External TTS models select an existing Provider, an upstream model ID and the grok-voice-latest or Customize voice architecture. Grok provides 33 fixed voices; Customize accepts a manual default voice ID. `/v1/audio/speech` requests may omit voice to use that default or override it. Providers return complete MP3/WAV audio; local reference-audio extensions do not apply. All TTS sources accept project language tags and explicit aliases through tts.language, e.g. {"tts":{"language":"ZH_cn"}} normalizes to zh-CN and reaches providers as language=zh. Omission/null/auto uses the model's automatic/default language; unsupported local languages still fail. See [Models](docs/contracts/models.md#provider-tts) and OpenAPI for the accepted codes. The service defaults disabled and loopback-only, shares ModelManager without chat/Knowledge writes, and forwards tool definitions/calls without executing tools.
 
 The examples below are PowerShell. Set the key and aliases to your configuration:
 

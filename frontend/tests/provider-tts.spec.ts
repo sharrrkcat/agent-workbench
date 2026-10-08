@@ -22,11 +22,14 @@ for (const locale of ['en', 'zh-CN']) {
         const architecture = dialog.getByLabel(labels.providerTTS.architecture, { exact: true });
         const voice = () => dialog.getByLabel(labels.providerTTS.voice, { exact: true });
         await expect(voice()).toContainText('alloy');
-        await chooseOption(voice(), 'eve');
+        await voice().click();
+        await expect(page.getByRole('option')).toHaveCount(33);
+        await expect(page.getByRole('listbox')).toBeVisible();
+        await page.getByRole('option', { name: 'leo', exact: true }).click();
         const reference = dialog.getByLabel(labels.modelRef, { exact: true });
         await fillCombobox(reference, `speech-${locale.toLowerCase()}-${width}`);
         await chooseOption(architecture, 'Customize');
-        await expect(voice()).toHaveValue('eve');
+        await expect(voice()).toHaveValue('leo');
         await voice().fill('custom-voice');
         await chooseOption(architecture, 'grok-voice-latest');
         await expect(voice()).toContainText('alloy');
@@ -43,6 +46,19 @@ for (const locale of ['en', 'zh-CN']) {
         await page.locator('.model-profile-card').filter({ has: page.getByText(profile.alias, { exact: true }) }).getByRole('button', { name: labels.edit, exact: true }).click();
         await expect(voice()).toHaveValue('custom-voice');
         await expect(dialog.getByLabel(labels.params.speed, { exact: true })).toHaveValue('1.2');
+        await chooseOption(architecture, 'grok-voice-latest');
+        await chooseOption(voice(), 'liora');
+        await dialog.getByRole('button', { name: labels.save, exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        expect((await (await request.get(`/api/models/profiles/${profile.id}`)).json()).parameters)
+          .toEqual({ architecture: 'grok-voice-latest', voice: 'liora', speed: 1.2, response_format: 'wav' });
+        await page.locator('.model-profile-card').filter({ has: page.getByText(profile.alias, { exact: true }) })
+          .getByRole('button', { name: labels.edit, exact: true }).click();
+        await expect(voice()).toContainText('liora');
+        await chooseOption(architecture, 'Customize');
+        await expect(voice()).toHaveValue('liora');
+        await chooseOption(architecture, 'grok-voice-latest');
+        await expect(voice()).toContainText('liora');
         await page.screenshot({ path: info.outputPath('provider-tts.png') });
         const overflow = await dialog.evaluate((element) => element.scrollWidth > element.clientWidth + 1);
         expect(overflow).toBe(false);
