@@ -24,6 +24,7 @@ Agent/Action/Capability/Command and YAML architecture must not return.
 - Reranker remains a model kind and a RAG operation. Keeping RRF order when
   reranking is unavailable is intentional retrieval behavior.
 - No model downloads or restored extension registries. Image generation uses external providers only.
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 
 ## Engineering
 

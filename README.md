@@ -26,7 +26,7 @@ In **Settings**, the **Models** menu contains Dashboard and one page per model k
 1. **Local Runtime:** install the shared Windows x64 release once. Place model directories manually under data/models and select a directory in the model profile. Directory information determines its engine and architecture; release policy defaults to manual.
 2. **Model Providers:** add an OpenAI-compatible URL, optional key and queue/timeout settings, then select it and enter the model ID in a profile. Optional discovery supplies suggestions; unavailable or incomplete lists do not block manual IDs.
 
-Profiles have eight kinds, internal UUIDs, public aliases, capabilities and parameters. LLM/text embedding allow local/provider/unbound sources; rerankers allow local/unbound. TTS, WD14, image embedding, ASR and processor require Local Runtime. Safe incomplete or ambiguous directories remain saveable drafts but cannot load.
+Profiles have eight kinds, internal UUIDs, public aliases, capabilities and parameters. LLM/text embedding allow local/provider/unbound sources; rerankers allow local/unbound. TTS supports Local Runtime or an external provider; WD14, image embedding, ASR and processor require Local Runtime. Safe incomplete or ambiguous directories remain saveable drafts but cannot load.
 Choose default chat and optional auxiliary models in **Models > Dashboard**. New sessions select the default or first enabled LLM; changing defaults preserves sessions. Titles use only the auxiliary model and remain unchanged when it is missing or fails.
 
 | Kind | Local inventory root | Local execution |
@@ -210,7 +210,7 @@ Invoke-RestMethod "$apiBase/audio/voice-references/$($voice.voice_id)" -Method D
 
 Temporary IDs bind to the key/profile, start with 30 minutes and gain at least 15 remaining minutes on admission.
 Listing does not renew them. For one request, omit voice and send `tts.reference_audio={format,data_base64}`.
-`tts.language` accepts only en-US; `tts.model_options` overrides defaults. See [reference limits](docs/contracts/models.md#audio-tts-and-temporary-references).
+`tts.language` accepts en-US or auto; `tts.model_options` overrides defaults. See [reference limits](docs/contracts/models.md#audio-tts-and-temporary-references).
 
 ### Offline Qwen3-TTS Base Speech
 
@@ -250,12 +250,11 @@ Bilingual desktop/touch verification: `npm run test:browser -- qqbot.spec.ts qqb
 ## HTTP contract
 
 OpenAPI 3.1 describes `/api` and `/v1` at [/openapi.json](http://127.0.0.1:8765/openapi.json), with interactive [/docs](http://127.0.0.1:8765/docs) and [/redoc](http://127.0.0.1:8765/redoc).
+
+TTS clients such as Voxia use authenticated `GET /v1/audio/capabilities` (optional `model` alias filter) for contract version 1 model, voice, language, parameter and reference capabilities. Enable the external service, configure its API key and expose the desired TTS profiles before connecting. This discovery does not load models or call online providers; see the [model contract](docs/contracts/models.md#external-inference-api).
 [Models](docs/contracts/models.md#external-inference-api) owns response validation and sanitization; [runs/streaming](docs/contracts/runs-streaming.md) owns WebSockets.
 
-```powershell
-uv run python scripts/openapi.py check
-uv run python scripts/openapi.py export --output build/openapi.json
-```
+Export with `uv run python scripts/openapi.py export --output build/openapi.json`; the verification commands below include the contract check.
 
 Both commands use temporary directories/memory stores without real database/model/service access. Routes/Pydantic generate deterministic UTF-8 exports; frontend clients retain their types.
 Checks enforce route/schema coverage, response validation, unique operationIds and scoped JSON exceptions. Tests validate JSON/SSE; domain validators own cross-field/saved-state rules.
@@ -300,6 +299,8 @@ Build the bundled component with `uv run python scripts/build_dlss_component.py`
 DLSS D3D12: `uv run python -m scripts.smoke_dlss_runtime`. Add `--component-lifecycle` when component artifacts/install behavior change, and `--image ./input.png` for a representative image alongside UHD. Reuse the verified base, supply NR manually and stop Cogita first. Reports/samples: build/dlss-smoke. Acceptance leaves the component installed and default profile unloaded. Bilingual desktop/touch: `npm run test:browser -- dlss.spec.ts` in frontend.
 
 Backend tests use temporary roots, mock providers and loopback HTTP/SSE/WS across 8 workers; frontend tests cover domain payloads, settings, translation, streams/events and workflows. Installation/real-model/browser acceptance remains separate.
+
+Cross-client TTS acceptance: `uv run python -m scripts.serve_tts_acceptance --output build/tts-client-acceptance` serves isolated in-memory Cogita on loopback port 18765 with a mock supplier, aliases accept-catalog/accept-custom and test key isolated-voxia-acceptance-key. Add `--saved-profile ID` only for explicit live acceptance: it reads the saved supplier configuration in read-only mode and forwards billable speech requests without changing production settings. The caller owns its test library and audio files; the server records sanitized requests and checks that the saved supplier stayed unchanged.
 
 After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts, grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
 Use `-- app-layout.spec.ts settings-layout.spec.ts` for focused layout checks. Install Chromium with `npx playwright install chromium`; the isolated server uses port 18767 (COGITA_BROWSER_PORT overrides it), with artifacts in frontend/test-results.
@@ -346,5 +347,3 @@ Whisper CUDA: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whispe
 Focused base CPU: `uv run python -m scripts.smoke_asr_runtime --model-ref asr/whisper-base --audio ./long.wav --device cpu`. CPU checks the first six seconds. Both reuse installation; reports go to build/asr-smoke. CUDA covers the 30-second boundary, all response formats, tail/segment completeness, repeated inference, cancellation/reload and cleanup.
 
 For Windows CUDA with an existing GGUF, run `uv run --no-sync python -m scripts.smoke_cuda_runtime --model-ref llms/<existing-directory>`. It requires --model-ref unless --install-only is explicit; it exercises auto/manual load, chat, streaming and unload with temporary model profiles, and verifies all three loaded CUDA DLLs come from Torch with no native-directory copies. The b10809 CUDA 12.4 build uses the shared CUDA 12.8 libraries; older installations require Repair. Runtime installation/jobs remain persisted. Stop Cogita before real-model checks and record hardware/runtime/model; deterministic tests do not establish runtime compatibility. `uv run python -m scripts.smoke_llm_runtime --engine transformers` checks CPU/CUDA, streaming, tools and cancellation; use --engine llama-server for GGUF. Add --context-budget to compare native input counts with actual prompt_tokens for text, images, tool definitions/transcripts and reasoning in both response modes using the resident model; reports use context-budget-report.json. Add --reasoning for focused on/off native-template, request-payload and real-output acceptance in streaming/non-streaming modes; it reuses installation and writes reasoning-report.json. Add --vision for image-only/multiple images, historical follow-up, stream and cancellation checks. GGUF vision automatically resolves the projector in the model directory; Qwen3.5-0.8B files are the validated reference. Image answers check fixture colors/order; reports go to build/llm-smoke. smoke_model_loading writes build/model-loading-smoke and defaults to LLM CPU/CUDA/Kokoro CPU; Audio CPU needs --backend chatterbox-cpu or --backend qwen3tts-cpu.
-
-Read [AI context](docs/AI_CONTEXT.md), the owning contract and relevant source/tests before changes; [Documentation maintenance](docs/ai/DOCS_MAINTENANCE.md) owns English-only documentation and plan completion.

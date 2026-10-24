@@ -779,6 +779,10 @@ class ModelManager:
             async with self.asr_inputs.stage(data, audio_format) as reference:
                 return await adapter.transcribe(profile, reference, options)
 
+    def tts_capabilities(self, model: str | None = None):
+        from ai_workbench.core.models.tts_capabilities import capability_catalog
+        return capability_catalog(self, model)
+
     def voice_list(self, profile_id: str) -> list[dict]:
         from ai_workbench.workers.tts_catalog import voices
         from ai_workbench.core.models.runtimes.schema import model_path

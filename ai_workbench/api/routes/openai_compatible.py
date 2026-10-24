@@ -7,6 +7,7 @@ import struct
 import time
 from contextlib import aclosing
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
+from ai_workbench.core.models.tts_capabilities import TTSCapabilityCatalog
 from uuid import uuid4
 from typing import Literal
 from pathlib import Path
@@ -144,6 +145,15 @@ def embedding_data(vectors, encoding_format):
             return base64.b64encode(struct.pack("<" + "f" * len(vector), *vector)).decode("ascii")
         return vector
     return [{"object": "embedding", "index": index, "embedding": encode(vector)} for index, vector in enumerate(vectors)]
+
+
+@router.get("/audio/capabilities", response_model=TTSCapabilityCatalog,
+            responses=error_responses(401, 403, 404, 503),
+            summary="Inspect public TTS capabilities without loading models (Cogita extension)")
+async def audio_capabilities(request: Request, model: str | None = None,
+                             state: RuntimeState = Depends(get_state)):
+    guard(request, state.model_settings.get())
+    return await asyncio.to_thread(state.model_manager.tts_capabilities, model)
 
 
 @router.get("/audio/voices", response_model=VoiceList, responses=error_responses(400, 401, 403, 404, 503),

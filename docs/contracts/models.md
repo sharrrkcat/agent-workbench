@@ -266,6 +266,8 @@ References bind to the key, profile/reference, local source, engine, execution o
 
 The service defaults disabled and requires loopback clients plus one key via `Authorization: Bearer <key>` or `x-api-key`; conflicts fail. Address checks ignore forwarded headers; the launcher binds loopback.
 
+`GET /v1/audio/capabilities?model=<alias>` is the read-only TTS client contract (`object=list`, `contract_version=1`, `data`, `issues`). Omit model for all enabled public TTS profiles. Each descriptor supplies its public alias, availability, opaque binding fingerprint, languages/Auto, named voice selection/default/catalog, cloning reference/text rules, limits, formats and typed parameter defaults/bounds/wire targets. Definitions come from the inference schemas and resolved local engine, not a client architecture whitelist. Unrestricted voice languages expand to the model languages; Customize has an empty catalog with `selection=custom`. Invalid individual profiles produce scoped issues without hiding healthy models. Discovery never loads models or contacts providers; online availability means configuration readiness, not upstream health. Binding fingerprints exclude credentials, names, lifecycle and generation defaults; clients freeze capabilities/defaults separately and recheck the selected descriptor before synthesis.
+
 | Endpoint | Supported operation |
 | --- | --- |
 | GET `/v1/models`; POST `/v1/chat/completions` | Enabled public aliases (optional kind filter, no load); non-streaming/SSE chat |
@@ -273,12 +275,12 @@ The service defaults disabled and requires loopback clients plus one key via `Au
 | POST `/v1/images/generations` | Provider text-to-image; URL or base64 results |
 | POST `/v1/images/process`, `/v1/images/tags`, `/v1/images/embeddings` | Static DLSS NR PNG processing, WD14 tags, SigLIP vectors (Cogita extensions) |
 | POST `/v1/audio/speech`, `/v1/audio/transcriptions` | Complete MP3/WAV TTS; local WAV/MP3 ASR with optional segments |
+| GET `/v1/audio/capabilities` | Versioned TTS capabilities, defaults and voice selection for external clients |
 | GET `/v1/audio/voices`; POST `/v1/audio/voice-references`; DELETE `/v1/audio/voice-references/{voice_id}` | Discover presets/temporary voices, upload Chatterbox/Qwen references, delete unused references (Cogita extensions) |
 
 Discovery reports owned_by=cogita. Public aliases must be enabled, visible and match endpoint kind/request options; stateless calls create no session/message/run/attachment/Knowledge rows.
-Content-Length/received bytes obey max_request_mb (default 32 MiB, range 1..100); strict schemas reject unsupported fields without echoing values. Responses include X-Request-Id; logs record outcome/time without keys, prompts,
-content or raw provider errors. Voice discovery accepts optional model/source=preset|temporary and returns id, model, source, language (null for Qwen/provider presets) and expires_at (null for presets). Only enabled
-public TTS profiles, provider presets, valid local preset files and the current key's unexpired references appear.
+HTTP bodies obey max_request_mb (default 32 MiB, range 1..100). Strict schemas reject unsupported fields without echoing values; responses include X-Request-Id, and logs omit keys, content and raw provider errors.
+Voice discovery filters by model/source=preset|temporary and returns id/model/source/language/expires_at. Language is null for Qwen/provider voices; expiry is null for presets. Results include only enabled public profiles, valid local presets and the current key's unexpired references.
 
 Local chat, WD14 tagging, SigLIP image/text embedding and reranking share max_normalized_request_mb (default 128 MiB, range 1..1024). ModelManager snapshots it per preparation and checks complete UTF-8 JSON, including defaults/history, before normalization and after each image expansion, before queue admission. Oversized requests return 413 REQUEST_TOO_LARGE; tagging/SigLIP/rerank HTTP prechecks use the smaller of the HTTP and normalized budgets.
 Both in-app and public calls use this setting, including when the external service is disabled. Python worker transports support the full 1024 MiB range without reload on settings changes. Bundled llama-server b10809 retains its native 100 MiB ceiling, so raising the setting cannot permit larger GGUF requests. Audio, decoded-pixel and attachment limits are independent.
@@ -295,6 +297,4 @@ ChatRequest and /v1 accept strict nullable reasoning: true enables native reason
 `/v1` forwards literal content/reasoning without interpreting <think> markers. ChatRunner/Harness normalize reasoning for the UI.
 
 Text embeddings accept string/nonempty string arrays, float/base64 (little-endian float32), optional dimensions and purpose=query|document (default document). Local dimensions must be omitted or native (otherwise 422); processing matches Knowledge and disconnects cancel inference.
-Other reranker architectures and local image generation remain [future services](../FUTURE_MODEL_SERVICES.md).
-
 OpenAPI 3.1 covers management and `/v1`; [check/export commands](../../README.md#http-contract) verify schemas and JSON/SSE/audio responses. Reads omit keys, manifest hashes and log paths; invalid results become sanitized 500 INTERNAL_ERROR. Omission/null and timestamp precision survive.

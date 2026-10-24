@@ -19,6 +19,7 @@ Qwen3-TTS Base use temporary references or one-request audio. Qwen accepts optio
 reference transcripts. Chat playback and live capture are deferred.
 Provider-only image generation serves stateless text-to-image through `/v1/images/generations`, returning URL/base64 results without storage or a generation page.
 Provider TTS uses OpenAI-compatible `/v1/audio/speech`, with 33 Grok presets or a custom voice ID and per-profile default voice. All TTS sources share request-only language tags/aliases with source-specific validation and translation.
+External TTS clients discover model/voice/language/parameter capabilities through `/v1/audio/capabilities` contract version 1, without loading models or querying upstream providers.
 Local ASR profiles use directory-configured Whisper for complete WAV/MP3 transcription through `/v1/audio/transcriptions`, with common generation controls and optional segment timestamps.
 Local processor profiles use an independently installed bundled DLSS NR component for static image processing through `/v1/images/process`, preserving oriented dimensions and alpha with Windows D3D12. NR resources remain manually supplied.
 Local WD14-family CPU workers tag 1..16 static inline images through `/v1/images/tags`.
