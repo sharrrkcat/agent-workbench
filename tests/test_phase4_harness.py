@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 from dataclasses import replace
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -10,6 +11,7 @@ from sqlalchemy import inspect, text
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core import chat_runner
 from ai_workbench.core.harness import agent_loop
 from ai_workbench.core.harness.schema import ToolSpec
 from ai_workbench.core.schema.context_policy import ContextPolicy
@@ -415,7 +417,14 @@ def test_settings_snapshot_and_strict_rest_json(harness_client):
 def test_waiting_time_is_excluded_and_approval_rounds_remain_bounded(harness_client, monkeypatch):
     client, upstream, _ = harness_client
     state = client.app.state.runtime_state
+    clock = [0.0]
+    timer = SimpleNamespace(monotonic=lambda: clock[0])
+    monkeypatch.setattr(agent_loop, "time", timer)
+    monkeypatch.setattr(chat_runner, "time", timer)
+    budget_type = agent_loop._Budget
+    monkeypatch.setattr(agent_loop, "_Budget", lambda spent: budget_type(spent, started=clock[0]))
     async def read(*_args):
+        clock[0] += .1
         return {"path": "data/knowledge/note.txt", "content": "read"}
     state.tool_registry._tools["read_file"] = replace(state.tool_registry.get("read_file"), handler=read)
     session, _, _ = configure(client, tools=["read_file"])
@@ -423,9 +432,10 @@ def test_waiting_time_is_excluded_and_approval_rounds_remain_bounded(harness_cli
     waiting = send(client, session)
     run_id = waiting["run"]["run_id"]
     monkeypatch.setattr(agent_loop, "ACTIVE_BUDGET_SECONDS", 1)
-    time.sleep(1.1)
+    clock[0] += 1.1
     approved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
     assert approved["run"]["status"] == "WAITING_FOR_USER"
+    assert state.runs.get_harness_state(run_id)["active_seconds"] == pytest.approx(.1)
     monkeypatch.setattr(agent_loop, "ACTIVE_BUDGET_SECONDS", 300)
     for _ in range(7):
         approved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))

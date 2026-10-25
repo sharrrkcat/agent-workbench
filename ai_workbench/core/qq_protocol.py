@@ -3,6 +3,7 @@ import asyncio
 import json
 import re
 from datetime import datetime, timezone
+from typing import Annotated
 from uuid import uuid4
 from websockets.asyncio.client import connect
 from pydantic import BaseModel, Field, StrictInt, StrictStr, ConfigDict
@@ -23,6 +24,16 @@ class OneBotSender(BaseModel):
 class OneBotUser(OneBotSender):
     model_config = ConfigDict(strict=True)
     user_id: StrictInt | StrictStr
+
+
+class OneBotReceipt(BaseModel):
+    message_id: StrictInt | Annotated[StrictStr, Field(min_length=1, pattern=r"^\S+$")]
+
+
+_SEND_ACK_TIMEOUT = re.compile(
+    r"^(?:Error:\s*)?Timeout:\s*NTEvent\s+serviceAndMethod:NodeIKernelMsgService/sendMsg\s+"
+    r"ListenerName:NodeIKernelMsgListener/onMsgInfoListUpdate(?:\s+EventRet:|\s*$)"
+)
 
 
 class OneBotMessage(BaseModel):
@@ -173,13 +184,23 @@ class OneBotConnection:
             if not isinstance(value, dict):
                 raise ValueError("Expected OneBot object")
             if value.get("echo") == echo:
-                return self.action_data(value)
+                return self.action_data(value, action="get_login_info")
         raise ConnectionError("OneBot disconnected before account verification")
 
     @staticmethod
-    def action_data(response):
+    def action_data(response, *, action):
         if response.get("status") != "ok" or response.get("retcode") != 0:
-            raise ToolExecutionError("QQ_ACTION_FAILED", "OneBot rejected the action.")
+            # NapCat can time out after delivery (NapNeko/NapCatQQ#1772, observed on 4.18.28).
+            # Remove this classification when supported adapters return a structured delivery outcome.
+            ack_timeout = action in {"send_group_msg", "send_private_msg"} and any(
+                isinstance(value, str) and _SEND_ACK_TIMEOUT.match(value.strip())
+                for value in (response.get("message"), response.get("wording")))
+            details = {"action": action, "retcode": response.get("retcode") if type(response.get("retcode")) is int else None,
+                "cause": "napcat_send_ack_timeout" if ack_timeout else "onebot_action_error"}
+            if ack_timeout:
+                raise ToolExecutionError("QQ_SEND_ACK_TIMEOUT",
+                    "NapCat send acknowledgement timed out; delivery may have succeeded. Check QQ before resuming.", details)
+            raise ToolExecutionError("QQ_ACTION_FAILED", "OneBot returned an action error.", details)
         data = response.get("data")
         if not isinstance(data, dict):
             raise ValueError("Expected OneBot action data")
@@ -198,7 +219,7 @@ class OneBotConnection:
             elif self.ready and value.get("post_type") in {"message", "message_sent"}:
                 await self.receive(value)
 
-    async def call(self, action, params):
+    async def call(self, action, params, *, timeout=20):
         if self.socket is None:
             raise ConnectionError("OneBot is disconnected")
         echo = str(uuid4())
@@ -206,7 +227,7 @@ class OneBotConnection:
         self.pending[echo] = future
         try:
             await self.socket.send(json.dumps({"action": action, "params": params, "echo": echo}))
-            response = await asyncio.wait_for(future, 20)
-            return self.action_data(response)
+            response = await asyncio.wait_for(future, timeout)
+            return self.action_data(response, action=action)
         finally:
             self.pending.pop(echo, None)

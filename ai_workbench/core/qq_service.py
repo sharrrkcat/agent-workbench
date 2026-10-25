@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.attachments import resolve_attachment_uri
 from ai_workbench.core.harness.schema import ToolSpec, ToolExecutionError
-from ai_workbench.core.qq_protocol import OneBotConnection, normalize
+from ai_workbench.core.qq_protocol import OneBotConnection, OneBotReceipt, normalize
 from ai_workbench.core.qq_names import QQNames, model_batch_text, references_adapter
 from ai_workbench.core.qq_history import QQHistory
 from ai_workbench.core.qq_media import QQMediaService
@@ -24,6 +24,8 @@ from ai_workbench.core.schema.qq import QQSendImageArguments, QQ_TOOLS
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQMediaAsset
 
 log = logging.getLogger(__name__)
+NAPCAT_SEND_TIMEOUT_MS = 60_000
+QQ_SEND_RESPONSE_TIMEOUT_SECONDS = 90
 
 
 @dataclass
@@ -50,6 +52,7 @@ class QQService:
         self.tasks = {}
         self.workers = {}
         self.pending_ingress: dict[str, deque[PendingIngress]] = {}
+        self.send_echoes: dict[str, deque[str]] = {}
         self.supervisor = None
         self.store.recover()
         self.icebreaker = QQIcebreaker(store)
@@ -155,7 +158,14 @@ class QQService:
         if binding is None:
             return
         if own:
-            self.store.reconcile_echo(binding.session_id, str(event.get("message_id")))
+            try:
+                external_id = str(OneBotReceipt.model_validate(event).message_id)
+            except ValidationError:
+                log.warning("Ignored OneBot self message without a valid message id")
+                return
+            if (echoes := self.send_echoes.get(binding.session_id)) is not None:
+                echoes.append(external_id)
+            self.store.reconcile_echo(binding.session_id, external_id)
             return
         try:
             values, keyword_text, media, addresses_bot = normalize(event)
@@ -438,15 +448,15 @@ class QQService:
                 raise ToolExecutionError("QQ_DISABLED", "QQ connection is disabled.")
             delivery.status = "sending"
             self.store.save(delivery)
+            echoes = self.send_echoes[session.session_id] = deque(maxlen=128)
             action = "send_group_msg" if session.target_kind == "group" else "send_private_msg"
             target = "group_id" if session.target_kind == "group" else "user_id"
             segment = ({"type": "image", "data": {"file": "base64://" + base64.b64encode(data).decode("ascii")}}
                 if data is not None else {"type": "text", "data": {"text": text}})
             result = await connection.call(action, {target: int(session.target_id),
-                "message": [segment]})
-            if not isinstance(result.get("message_id"), (str, int)):
-                raise ValueError("Missing message id")
-            delivery.external_id, delivery.status = str(result["message_id"]), "sent"
+                "message": [segment], "timeout": NAPCAT_SEND_TIMEOUT_MS}, timeout=QQ_SEND_RESPONSE_TIMEOUT_SECONDS)
+            delivery.external_id = str(OneBotReceipt.model_validate(result).message_id)
+            delivery.status, delivery.echoed = "sent", delivery.external_id in echoes
             # Persist confirmation and its historical reply in one SQLite transaction.
             with DbSession(self.store.engine) as db:
                 db.connection().exec_driver_sql("BEGIN IMMEDIATE")
@@ -466,7 +476,8 @@ class QQService:
                 message_id=message.message_id, payload={"message": message.model_dump(mode="json")})
             return self.delivery_receipt(delivery)
         except ToolExecutionError as exc:
-            delivery.status, delivery.error_code = "failed", exc.code
+            delivery.status = "unknown" if exc.code == "QQ_SEND_ACK_TIMEOUT" else "failed"
+            delivery.error_code = exc.code
             self.store.save(delivery)
             self.store.pause(session.session_id, exc.code)
             raise
@@ -477,6 +488,8 @@ class QQService:
             if isinstance(exc, asyncio.CancelledError):
                 raise
             raise ToolExecutionError(delivery.error_code, "QQ send result is unknown; automatic resend is disabled.") from exc
+        finally:
+            self.send_echoes.pop(session.session_id, None)
 
     def create_session(self, project_id, values):
         if self.state.projects.get(project_id).kind != "qqbot":

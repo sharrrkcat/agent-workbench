@@ -102,7 +102,7 @@ def install_qq_fixture(app):
     async def execute(session, batch):
         project = state.projects.get(session.project_id)
         receipt = 9000
-        async def send(action, params):
+        async def send(action, params, *, timeout=20):
             nonlocal receipt
             if action == "get_group_member_info":
                 return {"user_id": params["user_id"], "card": "QQ bot" if str(params["user_id"]) == project.bot_account else "Mentioned member"}

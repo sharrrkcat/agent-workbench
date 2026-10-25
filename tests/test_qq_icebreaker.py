@@ -244,9 +244,9 @@ def test_send_boundary_does_not_retract_or_cancel_a_submitted_message(qq_client,
     client, state, upstream = qq_client
     p, session, connection, batch = queued(qq_client, clock)
     original = connection.call
-    async def while_sending(action, params):
+    async def while_sending(action, params, *, timeout=20):
         await state.qq.ingest(p["id"], event(2, "another person", sender="8888"), now=17)
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = while_sending
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "already submitted"}))]
     assert execute(qq_client, batch)[0].status == "done"
@@ -433,11 +433,11 @@ def test_icebreaker_confirmation_preserves_a_newer_keyword_epoch(qq_client, cloc
     _, state, upstream = qq_client
     p, session, connection, batch = queued(qq_client, clock)
     original = connection.call
-    async def confirm(action, params):
+    async def confirm(action, params, *, timeout=20):
         clock[0] = 20
         await state.qq.ingest(p["id"], event(2, "@12345"), now=20)
         clock[0] = 30
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = confirm
     reply(upstream)
     execute(qq_client, batch)
@@ -505,7 +505,7 @@ def test_deferred_arrivals_cannot_use_a_later_send_to_gain_eligibility(qq_client
     reply(upstream)
     async def scenario():
         entered, release = asyncio.Event(), asyncio.Event()
-        async def call(action, params):
+        async def call(action, params, *, timeout=20):
             if action == "get_group_member_info":
                 entered.set()
                 await release.wait()

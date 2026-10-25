@@ -71,12 +71,12 @@ def test_partial_sends_survive_run_failure_in_history(qq_client, failure):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state)
     original = connection.call
-    async def send(action, params):
+    async def send(action, params, *, timeout=20):
         if connection.calls:
             if failure == "cancelled":
                 raise asyncio.CancelledError()
             raise TimeoutError() if failure == "unknown" else ToolExecutionError("QQ_ACTION_FAILED", "Rejected")
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = send
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "confirmed"}, "first"),
                                 tool_call("qq_send_message", {"text": "not confirmed"}, "second"), content="PRIVATE")]

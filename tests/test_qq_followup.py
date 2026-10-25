@@ -62,10 +62,10 @@ def test_example_timeline_batches_and_reply_clocks(qq_client, clock):
     assert set(first.participants) == {"9999"}
 
     original = connection.call
-    async def while_first_generates(action, params):
+    async def while_first_generates(action, params, *, timeout=20):
         await state.qq.ingest(p["id"], event(6, "A follow-up"), now=7)
         clock[0] = 8
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = while_first_generates
     reply(upstream)
     assert execute(qq_client, first)[0].status == "done"
@@ -270,7 +270,7 @@ def test_multiple_confirmations_renew_only_batch_speakers_and_survive_failure(qq
     # A different participant qualifies after this batch was frozen.
     ingest(client, state, p, event(3, "bot", sender="8888"), 20)
     original = connection.call
-    async def confirm_or_fail(action, params):
+    async def confirm_or_fail(action, params, *, timeout=20):
         if len(connection.calls) == 1:
             clock[0] = 40
         elif len(connection.calls) == 2:
@@ -279,7 +279,7 @@ def test_multiple_confirmations_renew_only_batch_speakers_and_survive_failure(qq
         else:
             assert participant(state, session).expires_at == 95
             raise TimeoutError()
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = confirm_or_fail
     upstream.turns = [completion(*(tool_call("qq_send_message", {"text": str(n)}, f"send{n}") for n in range(3)))]
     batch, run = execute(qq_client, batch)

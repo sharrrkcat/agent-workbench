@@ -105,10 +105,10 @@ def test_generate_send_store_and_text_only_history(qq_client, image_provider, mo
             return image_provider.image, url, "image/png"
         monkeypatch.setattr("ai_workbench.core.qq_generation.fetch_bytes", download)
     original = connection.call
-    async def send(action, params):
+    async def send(action, params, *, timeout=20):
         assert assets(state) == []
         assert params["message"] == [{"type": "image", "data": {"file": "base64://" + base64.b64encode(image_provider.image).decode()}}]
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = send
     prompt = "A red bird\n枝头的一只红鸟"
     upstream.turns = [completion(draw(prompt))]
@@ -117,6 +117,7 @@ def test_generate_send_store_and_text_only_history(qq_client, image_provider, mo
     assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 1, "limit_reached": True, "skipped": False}
     assert len(upstream.calls) == len(image_provider.calls) == len(connection.calls) == 1
     assert connection.calls[0][0] == ("send_private_msg" if private else "send_group_msg")
+    assert connection.calls[0][1]['timeout'] == 60000 and connection.timeouts == [90]
     assert image_provider.calls[0] == {"model": "embed", "prompt": prompt, "n": 1, "size": "1024x1024", "quality": "high", "style": "vivid"}
     delivery, = deliveries(client, session)
     asset, = assets(state)
@@ -196,7 +197,8 @@ def test_generation_failure_returns_to_model_without_delivery(qq_client, image_p
     assert not state.qq.store.get(QQBinding, session['session_id']).paused
 
 
-@pytest.mark.parametrize("failure,status", [(ToolExecutionError("QQ_ACTION_FAILED", "Rejected"), "failed"), (TimeoutError(), "unknown")])
+@pytest.mark.parametrize("failure,status", [(ToolExecutionError("QQ_ACTION_FAILED", "Rejected"), "failed"),
+    (ToolExecutionError("QQ_SEND_ACK_TIMEOUT", "Unconfirmed"), "unknown"), (TimeoutError(), "unknown")])
 def test_delivery_failure_pauses_and_discards_staged_image(qq_client, image_provider, failure, status):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state,

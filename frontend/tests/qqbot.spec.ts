@@ -166,7 +166,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           if (sent) body.items = [
             { ...sent, echoed },
             ...['pending', 'sending', 'failed', 'unknown'].map((status, index) => ({
-              ...sent, id: sent.id + index + 1, status, external_id: null, text: `Delivery ${status}`, error_code: status === 'failed' ? 'QQ_ACTION_FAILED' : null,
+              ...sent, id: sent.id + index + 1, status, external_id: null, text: `Delivery ${status}`,
+              error_code: status === 'failed' ? 'QQ_ACTION_FAILED' : status === 'unknown' ? 'QQ_SEND_ACK_TIMEOUT' : null,
             })),
           ];
           await route.fulfill({ response, json: body });
@@ -188,6 +189,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         for (const status of ['pending', 'sending', 'sent', 'failed', 'unknown']) {
           await expect(page.locator('[data-qq-delivery]').getByRole('button', { name: labels.qq.status[status], exact: true })).toHaveCount(1);
         }
+        await page.locator('[data-qq-delivery]').getByRole('button', { name: labels.qq.status.unknown, exact: true }).click();
+        const unknownTip = page.locator('[data-slot="tooltip-content"]').filter({ hasText: labels.qq.status.unknown });
+        await expect(unknownTip).toContainText(labels.qq.status.QQ_SEND_ACK_TIMEOUT);
+        await page.screenshot({ path: info.outputPath('qq-send-ack-timeout.png') });
+        await page.keyboard.press('Escape');
         echoed = true;
         await page.waitForResponse((response) => response.url().endsWith(`/qq/sessions/${session.session_id}/deliveries`));
         await expect(page.locator('[data-qq-delivery]')).toHaveCount(5);

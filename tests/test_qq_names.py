@@ -19,9 +19,9 @@ def test_mentions_share_display_and_frozen_model_identity(qq_client, cq):
     sid = session["session_id"]
     ingest(client, state, p, {**event(1, "context", sender="8888"), "sender": {"card": "小明"}}, 0)
     original, queries = connection.call, []
-    async def call(action, params):
+    async def call(action, params, *, timeout=20):
         if action.startswith("send_"):
-            return await original(action, params)
+            return await original(action, params, timeout=timeout)
         queries.append((action, params))
         return {"user_id": params["user_id"], "card": "哈基米" if params["user_id"] == 12345 else "小明", "nickname": "Nickname"}
     connection.call = call
@@ -78,9 +78,9 @@ def test_settings_are_snapshotted_before_name_lookup(qq_client):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, system_prompt="Initial project prompt", reply_message_limit=2)
     original = connection.call
-    async def lookup(action, params):
+    async def lookup(action, params, *, timeout=20):
         if action.startswith("send_"):
-            return await original(action, params)
+            return await original(action, params, timeout=timeout)
         state.project_service.update(p["id"], {"system_prompt": "Changed project prompt", "reply_message_limit": 1})
         return {"user_id": params["user_id"], "nickname": "Bot"}
     connection.call = lookup

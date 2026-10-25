@@ -358,16 +358,19 @@ class HarnessAgentLoop:
                                        qq_image_generation_allowed=config.qq_image_generation_allowed,
                                        qq_image_candidates=config.qq_image_candidates)
         remaining = budget.check()
-        image_tool = session.kind == "qqbot" and call.function.name == "qq_generate_image"
+        qq_send = session.kind == "qqbot" and call.function.name in QQ_SEND_TOOLS
+        image_tool = qq_send and call.function.name == "qq_generate_image"
+        tool_timeout = remaining if qq_send else min(TOOL_TIMEOUT_SECONDS, remaining)
         started = time.monotonic()
         try:
             execution = self.registry.execute(call.function.name, arguments, context)
             # Image providers own their queue/request timeout; download and delivery are also bounded.
+            # Other QQ sends use their response deadline while still consuming the run budget.
             data = await execution if image_tool else await asyncio.wait_for(execution,
-                timeout=min(TOOL_TIMEOUT_SECONDS, remaining))
+                timeout=tool_timeout)
             outcome = ToolOutcome(status="success", data=data)
         except asyncio.TimeoutError:
-            total = remaining <= TOOL_TIMEOUT_SECONDS or budget.remaining() <= 0
+            total = tool_timeout == remaining or budget.remaining() <= 0
             outcome = ToolOutcome(status="error", error_code="TOOL_RUN_TIMEOUT" if total else "TOOL_TIMEOUT",
                                   error_message="Harness execution exceeded 5 minutes." if total else "Tool execution timed out.")
         except ToolExecutionError as exc:
@@ -375,7 +378,7 @@ class HarnessAgentLoop:
         finally:
             if image_tool:
                 budget.started += time.monotonic() - started
-        if session.kind == "qqbot" and call.function.name in QQ_SEND_TOOLS and outcome.status == "success":
+        if qq_send and outcome.status == "success":
             state.qq_sent_count += 1
             self._update_qq_reply(run.run_id, config, state)
         if session.kind == "qqbot" and call.function.name == "qq_skip_reply" and outcome.status == "success":

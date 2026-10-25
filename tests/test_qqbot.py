@@ -134,8 +134,10 @@ class FakeConnection:
     ready = True
     def __init__(self, failure=None):
         self.calls, self.failure = [], failure
-    async def call(self, action, params):
+        self.timeouts = []
+    async def call(self, action, params, *, timeout=20):
         self.calls.append((action, params))
+        self.timeouts.append(timeout)
         if self.failure:
             raise self.failure
         return {"message_id": 1000 + len(self.calls)}
@@ -169,7 +171,8 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert batch.status == "done", batch.error_code
     assert len(connection.calls) == 2
     assert connection.calls[1] == ("send_group_msg", {"group_id": 7788,
-        "message": [{"type": "text", "data": {"text": "[CQ:at,qq=all]"}}]})
+        "message": [{"type": "text", "data": {"text": "[CQ:at,qq=all]"}}], "timeout": 60000})
+    assert connection.timeouts == [90, 90]
     assert [t["function"]["name"] for t in upstream.calls[0]["tools"]] == ["qq_send_message"]
     request = json.dumps(upstream.calls[0], ensure_ascii=False)
     assert "AGENT_PROMPT" in request and "PROJECT_PROMPT" in request and "PRIVATE_USER_PROMPT" not in request
@@ -194,7 +197,9 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
 
 
-@pytest.mark.parametrize("failure,status", [(ToolExecutionError("QQ_ACTION_FAILED", "Rejected"), "failed"), (TimeoutError(), "unknown")])
+@pytest.mark.parametrize("failure,status", [(ToolExecutionError("QQ_ACTION_FAILED", "Rejected"), "failed"),
+    (ToolExecutionError("QQ_SEND_ACK_TIMEOUT", "Unconfirmed"), "unknown"),
+    (ConnectionError("Disconnected during send"), "unknown"), (TimeoutError(), "unknown")])
 def test_failed_delivery_pauses_and_never_runs_second_tool(qq_client, failure, status):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state)
@@ -210,6 +215,7 @@ def test_failed_delivery_pauses_and_never_runs_second_tool(qq_client, failure, s
     assert state.qq.store.get(QQBatch, batch.id).status == "failed"
     assert state.qq.store.get(QQBinding, session["session_id"]).paused
     assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == status
+    assert state.qq.send_echoes == {}
     assert state.qq.store.next_batch(p["id"]) is None
     ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
     resumed = state.qq.store.next_batch(p["id"])
@@ -354,12 +360,12 @@ def test_stop_during_send_keeps_confirmed_reply_and_merges_queued_windows(qq_cli
     async def scenario():
         sending = asyncio.Event()
         original = connection.call
-        async def hold(action, params):
+        async def hold(action, params, *, timeout=20):
             if connection.calls:
                 connection.calls.append((action, params))
                 sending.set()
                 await asyncio.Event().wait()
-            return await original(action, params)
+            return await original(action, params, timeout=timeout)
         connection.call = hold
         await state.qq.ingest(p["id"], event(1), now=0)
         batch = freeze(state, session, 5)
@@ -383,6 +389,7 @@ def test_stop_during_send_keeps_confirmed_reply_and_merges_queued_windows(qq_cli
         assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False, "skipped": False}
         records = state.qq.store.page(QQDelivery, sid)["items"]
         assert [row["status"] for row in records] == ["unknown", "sent"]
+        assert state.qq.send_echoes == {}
         assert state.qq.store.get(QQBinding, sid).paused
         await state.qq.control(sid, "resume")
         queued = state.qq.store.next_batch(p["id"])

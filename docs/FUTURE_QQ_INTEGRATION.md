@@ -70,6 +70,8 @@ project-relevant feasibility evidence requested for future work.
 
 ## Outstanding acceptance
 
+The 60-second NapCat send timeout, 90-second response wait and unconfirmed native-timeout classification have simulated coverage only. Live acceptance must compare QQ receipt with the recorded outcome and check duplicate prevention. Self reports without a matching successful action response cannot establish delivery; increasing timeouts cannot repair an absent native success event.
+
 Local fake-OneBot/fake-model verification covers bound ingestion, batching, icebreaker timing/cancellation/cooldowns, Harness delivery,
 transport failures, pause/stop/resume and restart; browser fixtures cover English/Chinese desktop/touch workflows.
 Media fixtures cover shared resource references, picture-prioritized current-batch limits, named system faces, textual history, live descriptions, original animations/static frames, failures, delayed acquisition and deletion. A real NapCat round trip, including image URLs/system-face resources and a vision provider with explicitly designated test targets, remains unverified. Login

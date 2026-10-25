@@ -56,7 +56,8 @@ def test_original_animation_delivery_and_stable_text_history(qq_client, private,
     assert run.metadata['qq_reply']['sent_count'] == 1
     assert connection.calls == [('send_private_msg' if private else 'send_group_msg', {
         'user_id' if private else 'group_id': 9999 if private else 7788,
-        'message': [{'type': 'image', 'data': {'file': 'base64://' + base64.b64encode(data).decode()}}]})]
+        'message': [{'type': 'image', 'data': {'file': 'base64://' + base64.b64encode(data).decode()}}], 'timeout': 60000})]
+    assert connection.timeouts == [90]
     delivery, = deliveries(client, session)
     assert (delivery['kind'], delivery['asset_id'], delivery['prompt']) == ('resource_image', asset.id, None)
     assert delivery['attachment']['mime_type'] == ('image/gif' if format == 'GIF' else 'image/webp')
@@ -207,7 +208,7 @@ def test_stop_during_resource_send_protects_intent_and_restart_never_resends(qq_
     upstream.turns = [completion(send_image(asset.id))]
     async def scenario():
         sending = asyncio.Event()
-        async def hold(action, params):
+        async def hold(action, params, *, timeout=20):
             connection.calls.append((action, params))
             sending.set()
             await asyncio.Event().wait()
@@ -223,6 +224,7 @@ def test_stop_during_resource_send_protects_intent_and_restart_never_resends(qq_
         assert error.value.code == 'SESSION_BUSY'
         await state.qq.control(session['session_id'], 'stop')
         await asyncio.wait_for(task, 5)
+        assert state.qq.send_echoes == {}
         state.qq.store.recover()
         await state.qq.control(session['session_id'], 'resume')
         await state.qq.execute(batch)
@@ -247,7 +249,8 @@ def test_resource_renews_eligibility_and_obeys_optional_limits(qq_client, clock,
         assert 'qq_skip_reply' not in tool_names(upstream.calls[-1])
 
 
-@pytest.mark.parametrize('failure,status', [(ToolExecutionError('QQ_ACTION_FAILED', 'rejected'), 'failed'), (TimeoutError(), 'unknown')])
+@pytest.mark.parametrize('failure,status', [(ToolExecutionError('QQ_ACTION_FAILED', 'rejected'), 'failed'),
+    (ToolExecutionError('QQ_SEND_ACK_TIMEOUT', 'Unconfirmed'), 'unknown'), (TimeoutError(), 'unknown')])
 def test_delivery_failure_protects_resource_and_never_replays(qq_client, failure, status):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state)

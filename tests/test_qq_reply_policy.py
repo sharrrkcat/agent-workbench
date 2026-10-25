@@ -119,14 +119,14 @@ def test_running_limit_is_snapshotted_and_progress_retains_confirmed_count(qq_cl
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=2)
     original = connection.call
-    async def change_limit(action, params):
+    async def change_limit(action, params, *, timeout=20):
         run_id = state.qq.store.active_batch(session["session_id"]).run_id
         if not connection.calls:
             state.project_service.update(p["id"], {"reply_message_limit": 1})
         else:
             assert state.runs.get_run(run_id).metadata["qq_reply"] == {"sent_count": 1, "message_limit": 2, "limit_reached": False, "skipped": False}
             assert state.runs.get_harness_state(run_id)["qq_sent_count"] == 1
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = change_limit
     upstream.turns = [completion(tool_call("qq_send_message", {"text": str(n)}, f"call_{n}")) for n in range(2)]
     batch, run = execute_batch(client, state, p, session)
@@ -173,10 +173,10 @@ def test_partial_delivery_failure_preserves_count_and_stops(qq_client, failure, 
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=2)
     original = connection.call
-    async def fail_second(action, params):
+    async def fail_second(action, params, *, timeout=20):
         if connection.calls:
             connection.failure = failure
-        return await original(action, params)
+        return await original(action, params, timeout=timeout)
     connection.call = fail_second
     upstream.turns = [completion(*(tool_call("qq_send_message", {"text": str(n)}, f"call_{n}") for n in range(3)))]
     batch, run = execute_batch(client, state, p, session)
@@ -208,8 +208,8 @@ def test_cancellation_wins_over_reaching_limit(qq_client):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=1)
     original = connection.call
-    async def cancel_with_receipt(action, params):
-        receipt = await original(action, params)
+    async def cancel_with_receipt(action, params, *, timeout=20):
+        receipt = await original(action, params, timeout=timeout)
         run_id = state.qq.store.active_batch(session["session_id"]).run_id
         state.runs.update_status(run_id, RunStatus.RUNNING, cancel_requested=True)
         return receipt
