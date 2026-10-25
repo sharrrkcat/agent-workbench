@@ -6,7 +6,7 @@ export async function openSidebar(page: Page) {
   const trigger = page.locator('[data-sidebar="trigger"]');
   await expect(trigger).toBeVisible();
   if ((await trigger.getAttribute('aria-expanded')) === 'false') await trigger.click();
-  await expect(page.locator('.session-sidebar, .settings-sidebar')).toBeInViewport();
+  await expect(page.locator('.session-sidebar, .settings-sidebar, .farkle-sidebar')).toBeInViewport();
 }
 
 export async function navigateSettings(page: Page, section: string, name = section, group?: string) {

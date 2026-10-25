@@ -2,11 +2,15 @@
 
 This contract owns runs, steps, persistence and reconciliation; [Chat/context](chat-context.md) owns configuration snapshots/message content and [Harness/tools](harness-tools.md) owns tools/approvals.
 
+## Web access
+
+The production launcher defaults to all IPv4 interfaces (`0.0.0.0`); `--host 127.0.0.1` restricts access to the host. The browser opens a concrete loopback address locally. [Run guide](../../README_RUN.md) owns LAN addresses and firewall setup.
+Built frontend assets, `/api` and session/model WebSockets share the page origin and expose the same conversations/settings without login or device isolation. CORS remains scoped to local development origins; same-origin LAN access needs no extra CORS rule. The [external model API](models.md#external-inference-api) retains its independent loopback check.
+Frontend message, queue, upload and API-key IDs use cryptographic randomness available on HTTP LAN origins. Clipboard buttons require browser clipboard support, normally HTTPS or localhost; manual text selection/copy remains available on HTTP LAN pages.
+
 ## Run lifecycle
 
-Run.kind is chat or tool and stores its Agent persona_id (empty for QQ without an Agent). Statuses
-are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and
-INTERRUPTED. Terminal runs never return to running.
+Run.kind is chat or tool and stores its Agent persona_id (empty for QQ without an Agent). Statuses are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and INTERRUPTED. Terminal runs never return to running.
 
 RunStep.kind is context/model/save/approval/tool; statuses are pending/running/completed/failed/skipped.
 Steps have stable order, optional parent ids, timing, compact messages and structured errors.
@@ -16,17 +20,13 @@ The optional Pet foundation selects session statuses/steps/progress without a UI
 QQ uses existing chat runs, inspection and cancellation; [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns batches and delivery. Public metadata.qq_reply retains sent_count, message_limit, limit_reached and skipped during execution and termination, including partial sends before failure/cancellation.
 Only normal completion at the send limit sets limit_reached=true. A legitimate follow-up/icebreaker skip completes with skipped=true and no delivery; ending without a confirmed reply or allowed skip fails with QQ_REPLY_REQUIRED before DONE. Icebreaker snapshots and metadata use message_limit=1. Automatic pre-send invalidation cancels work without automatically pausing the QQ Session; its batch records QQ_ICEBREAKER_CANCELLED.
 
-ChatRunner persists messages, runs, steps and events. Run/message metadata contains public ids, counts, timings, warnings
-and source refs, never prompts, full history/context, vectors, binaries or keys. Model resolution includes
-source_type and provider_profile_id (null for local/unbound); local worker traces carry source_type=local.
-config_snapshot_json and harness_state_json are private and absent from public
-responses/events. The latter preserves pending tool execution through approval.
+ChatRunner persists messages, runs, steps and events. Run/message metadata contains public ids, counts, timings, warnings and source refs, never prompts, full history/context, vectors, binaries or keys.
+Model resolution includes source_type and provider_profile_id (null for local/unbound); local worker traces carry source_type=local.
+config_snapshot_json and harness_state_json are private and absent from public responses/events. The latter preserves pending tool execution through approval.
 
-session.waiting_run_id blocks new input/direct calls until explicit approval,
-rejection or cancellation. There is no implicit chat-resume path or resume kind.
-Valid pending approvals survive restart with their original configuration,
-remaining queue and active-time budget. Other unfinished runs become
-INTERRUPTED and are not replayed.
+session.waiting_run_id blocks new input/direct calls until explicit approval, rejection or cancellation. There is no implicit chat-resume path or resume kind.
+Valid pending approvals survive restart with their original configuration, remaining queue and active-time budget.
+Other unfinished runs become INTERRUPTED and are not replayed.
 
 Active/waiting cancellation uses one registry: record cancelled outstanding calls, settle open steps,
 clear continuation/waiting references and end CANCELLED. Interruptions carry explanatory errors/status;

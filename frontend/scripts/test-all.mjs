@@ -11,6 +11,7 @@ for (const script of [
   'test-session-settings',
   'test-session-actions',
   'test-playground',
+  'test-farkle',
   'test-history-window',
   'test-chat-drafts',
   'test-message-queue',

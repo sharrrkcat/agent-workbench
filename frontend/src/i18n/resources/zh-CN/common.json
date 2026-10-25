@@ -16,13 +16,57 @@
   "playground": {
     "title": "Playground",
     "farkle": "Farkle",
-    "whisper": "Whisper",
-    "comingSoon": "敬请期待",
-    "back": "返回 Playground"
+    "whisper": "Whisper"
   },
   "pagination": {
     "label": "分页",
     "previous": "上一页",
     "next": "下一页"
+  },
+  "farkle": {
+    "newGame": "新游戏",
+    "myDice": "我的骰子",
+    "shop": "商店",
+    "switchView": "切换视觉",
+    "exitGame": "退出游戏",
+    "balance": "商人骰子：{{count}}",
+    "quantity": "数量：{{count}}",
+    "shopPlaceholder": "商店即将开放。",
+    "table": "Farkle 桌板",
+    "renderError": "无法启动 3D 桌板，请刷新页面重试。",
+    "skins": {
+      "bone": "普通骨骰",
+      "devil": "恶魔头骰",
+      "heavenly": "天国骰",
+      "painted": "彩绘骰",
+      "lu_odd": "路奇乌木骰",
+      "tooth": "古旧牙齿骰"
+    },
+    "level": "对局等级",
+    "startGame": "开始游戏",
+    "bust": "本轮作废！",
+    "wildFace": "恶魔头",
+    "faceValue": "{{value}} 点",
+    "result": "对局结束",
+    "winner": "{{player}}获胜！",
+    "playAgain": "再来一局",
+    "scores": "分数",
+    "player": "己方",
+    "goal": "目标",
+    "opponent": "对手",
+    "round": "本轮",
+    "selected": "选定",
+    "hold": "拿住骰子",
+    "scoreContinue": "计分并再次掷出",
+    "pass": "跳过",
+    "levels": {
+      "beggars": "乞丐",
+      "wagoners": "车夫",
+      "masters": "大师",
+      "courtiers": "侍臣"
+    },
+    "holdDie": "{{player}} 方第 {{number}} 颗，{{skin}}，{{value}}：选中",
+    "releaseDie": "{{player}} 方第 {{number}} 颗，{{skin}}，{{value}}：取消选中",
+    "scoredDie": "{{player}} 方第 {{number}} 颗，{{skin}}，{{value}}：已暂存"
   }
 }

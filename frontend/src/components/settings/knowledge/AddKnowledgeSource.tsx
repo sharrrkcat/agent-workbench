@@ -1,4 +1,5 @@
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { randomId } from '@/lib/randomId';
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel, FieldSet } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
@@ -154,7 +155,7 @@ export function AddKnowledgeSource({
                   event.target.value = '';
                   setItems((current) => [
                     ...current,
-                    ...files.map((file) => ({ id: crypto.randomUUID(), file, status: 'queued' as const })),
+                    ...files.map((file) => ({ id: randomId(), file, status: 'queued' as const })),
                   ]);
                 }}
               />

@@ -85,10 +85,16 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL('/playground/farkle');
       await expect(page.getByRole('heading', { name: 'Farkle', exact: true })).toBeVisible();
-      await expect(page.getByText(common.playground.comingSoon, { exact: true })).toBeVisible();
+      await expect(page.locator('.farkle-table canvas')).toHaveCount(1);
+      await expect(page.locator('.session-sidebar')).toHaveCount(0);
       await page.screenshot({ path: info.outputPath('farkle.png') });
       await openSidebar(page);
-      await expect(entry).toHaveAttribute('aria-current', 'page');
+      const gameSidebar = page.locator('.farkle-sidebar');
+      await expect(gameSidebar.locator('.sidebar-header [data-sidebar="menu-button"]')).toHaveText([
+        common.farkle.newGame, common.farkle.myDice, common.farkle.shop, common.farkle.switchView,
+      ]);
+      await expect(gameSidebar.getByRole('button', { name: common.farkle.switchView, exact: true })).toBeDisabled();
+      await expect(gameSidebar.getByRole('button', { name: labels.settings, exact: true })).toHaveCount(0);
       if (width === 390) await page.keyboard.press('Escape');
       await page.goBack();
       await expect(page).toHaveURL('/playground');
@@ -97,11 +103,12 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await page.reload();
       await expect(page.getByRole('heading', { name: 'Farkle', exact: true })).toBeVisible();
       await openSidebar(page);
+      await gameSidebar.getByRole('button', { name: common.back, exact: true }).click();
+      await expect(page).toHaveURL('/playground');
+      await openSidebar(page);
       await sidebar.getByRole('button', { name: labels.settings, exact: true }).click();
       await expect(page).toHaveURL('/settings');
       await backToChat(page);
-      await expect(page).toHaveURL('/playground/farkle');
-      await page.getByRole('button', { name: common.playground.back, exact: true }).click();
       await expect(page).toHaveURL('/playground');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
       expect(sessionReads).toEqual([]);
@@ -163,7 +170,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
     });
 
     test('Settings and Project leave guards preserve rejected navigation', async ({ page, request }) => {
-      await page.goto('/playground/farkle');
+      await page.goto('/playground');
       await openSidebar(page);
       await page.locator('.session-sidebar').getByRole('button', { name: labels.settings, exact: true }).click();
       await navigateSettings(page, settings.knowledge, settings.resources.settings);
@@ -180,7 +187,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(chunk).toHaveValue(edited);
       await backToChat(page);
       await answerConfirmation(page, true, locale);
-      await expect(page).toHaveURL('/playground/farkle');
+      await expect(page).toHaveURL('/playground');
 
       const agents = await (await request.get('/api/personas?collection=agent')).json();
       const users = await (await request.get('/api/personas?collection=user')).json();

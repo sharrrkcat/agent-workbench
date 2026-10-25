@@ -264,7 +264,7 @@ References bind to the key, profile/reference, local source, engine, execution o
 
 ## External inference API
 
-The service defaults disabled and requires loopback clients plus one key via `Authorization: Bearer <key>` or `x-api-key`; conflicts fail. Address checks ignore forwarded headers; the launcher binds loopback.
+The service defaults disabled and requires loopback clients plus one key via `Authorization: Bearer <key>` or `x-api-key`; conflicts fail. Address checks ignore forwarded headers; this restriction is independent of the launcher's [web bind address](runs-streaming.md#web-access).
 
 `GET /v1/audio/capabilities?model=<alias>` is the read-only TTS client contract (`object=list`, `contract_version=1`, `data`, `issues`). Omit model for all enabled public TTS profiles. Each descriptor supplies its public alias, availability, opaque binding fingerprint, languages/Auto, named voice selection/default/catalog, cloning reference/text rules, limits, formats and typed parameter defaults/bounds/wire targets. Definitions come from the inference schemas and resolved local engine, not a client architecture whitelist. Unrestricted voice languages expand to the model languages; Customize has an empty catalog with `selection=custom`. Invalid individual profiles produce scoped issues without hiding healthy models. Discovery never loads models or contacts providers; online availability means configuration readiness, not upstream health. Binding fingerprints exclude credentials, names, lifecycle and generation defaults; clients freeze capabilities/defaults separately and recheck the selected descriptor before synthesis.
 

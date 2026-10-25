@@ -17,7 +17,7 @@ Pop-Location
 uv run python scripts/run_app.py --no-open
 ```
 
-Open <http://127.0.0.1:8765>; use `--port 8766` if occupied. Windows `start.bat` and Linux/macOS `bash start.sh` open the built app. For development, start the API with `--port 8000`, then run `npm run dev` in frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy. See the [run guide](README_RUN.md) for launchers and portable packaging.
+Open <http://127.0.0.1:8765>; LAN devices use `http://<computer-LAN-IP>:8765`. Use `--port 8766` if occupied or `--host 127.0.0.1` for local-only web access. Windows `start.bat` and Linux/macOS `bash start.sh` open the built app. For development, start the API with `--host 127.0.0.1 --port 8000`, then run `npm run dev` in frontend. Vite serves <http://127.0.0.1:5173> with its API/WebSocket proxy. See the [run guide](README_RUN.md) for launchers and portable packaging.
 
 ## Configure models
 

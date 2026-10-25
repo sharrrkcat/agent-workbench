@@ -7,7 +7,7 @@ plans describe ongoing work and do not turn proposed features into current capab
 
 ## Current product
 
-Cogita provides local chat and a single-key, loopback-only
+Cogita provides LAN-accessible chat and a single-key, loopback-only
 OpenAI-compatible model service. Internal and external inference share
 ModelManager. One Windows x64 local runtime installs shared Python dependencies
 and separate CPU/CUDA llama-server components. Models run in independent processes;

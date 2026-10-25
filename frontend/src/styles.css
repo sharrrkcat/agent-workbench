@@ -178,6 +178,84 @@
   }
 
   .workspace { container: chat-shell / inline-size; }
+  .farkle-table > canvas { display: block; position: absolute; inset: 0; }
+  .farkle-table { container: farkle / size; --farkle-gold: #f5e3a2; }
+  .farkle-face-icon {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    color: #f3d36a;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px #28170c);
+  }
+  .farkle-face-icon svg { width: 22px; height: 22px; fill: #352113; }
+  .farkle-face-icon span { display: block; font-size: 22px; line-height: 1; }
+  .farkle-hud {
+    position: absolute;
+    inset-inline: clamp(12px, 2.5cqw, 36px);
+    bottom: clamp(12px, 3cqh, 28px);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    pointer-events: none;
+  }
+  .farkle-score, .farkle-bust {
+    font-family: Georgia, 'Noto Serif SC', 'Songti SC', SimSun, serif;
+    font-size: clamp(14px, 2.2cqw, 28px);
+    line-height: 1.2;
+    text-shadow: 0 2px 2px #28170c;
+  }
+  .farkle-score {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.15fr;
+    width: clamp(144px, 40cqw, 430px);
+    color: #fff8e8;
+  }
+  .farkle-bust { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .farkle-score > div { display: grid; gap: 0.32em; padding-inline: 0.5em; }
+  .farkle-score-player { text-align: right; }
+  .farkle-score-goal {
+    border-inline: 1px solid color-mix(in srgb, var(--farkle-gold), transparent 65%);
+    text-align: center;
+  }
+  .farkle-score-heading { color: var(--farkle-gold); font-size: 1.12em; font-weight: bold; }
+  .farkle-score-total { font-size: 1.5em; }
+  .farkle-score-player .farkle-score-total { color: #10b9f0; }
+  .farkle-score-goal .farkle-score-total { color: var(--farkle-gold); }
+  .farkle-score-opponent .farkle-score-total { color: #e52424; }
+  .farkle-actions { display: flex; flex-direction: column; gap: 8px; width: clamp(144px, 20cqw, 208px); flex-shrink: 0; pointer-events: auto; }
+  .farkle-action-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .farkle-actions button > span { white-space: normal; }
+  .farkle-actions [data-slot='kbd'] { flex-shrink: 0; }
+  @media (pointer: fine) {
+    @container farkle (min-width: 641px) {
+      .farkle-score { width: clamp(144px, 30cqw, 320px); }
+      .farkle-score, .farkle-bust { font-size: clamp(14px, 1.65cqw, 21px); }
+    }
+  }
+  @container farkle (max-width: 640px) {
+    .farkle-hud { gap: 8px; }
+    .farkle-score { min-width: 0; }
+    .farkle-score, .farkle-bust { font-size: 12px; }
+    .farkle-score > div { padding-inline: 4px; }
+    .farkle-face-icon svg { width: 18px; height: 18px; }
+    .farkle-face-icon span { font-size: 18px; }
+  }
+  @container farkle (max-width: 360px) {
+    .farkle-score { width: auto; flex: 1; grid-template-columns: auto auto auto; }
+    .farkle-score > div { padding-inline: 2px; }
+    .farkle-score-heading { font-size: 1em; }
+    .farkle-actions { width: 112px; }
+  }
+  @container farkle (max-height: 440px) {
+    .farkle-score { width: 230px; }
+    .farkle-score, .farkle-bust { font-size: 13px; }
+    .farkle-hud { bottom: 10px; }
+  }
+  @media (pointer: coarse) {
+    .farkle-actions button { min-height: 44px; }
+    .farkle-action-hold { display: none; }
+  }
   .qq-conversation > * + * { margin-top: 1.5rem; }
   .qq-conversation > [data-qq-continuation] { margin-top: 6px; }
   .chat-scroll-container { container: conversation / inline-size; }

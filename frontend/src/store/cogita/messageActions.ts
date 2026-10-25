@@ -1,4 +1,5 @@
 import type { CogitaActions } from './state';
+import { randomId } from '../../lib/randomId';
 import { errorText, pruneHistoryState, runtimeResponseState, terminal } from './mergeState';
 import { emptyQueue } from './messageQueue';
 
@@ -20,7 +21,7 @@ export const createMessageActions: CogitaActions<
         get().runs.some((run) => !terminal(run.status)) || existingQueue?.submission ||
         (!queueItemId && existingQueue?.items.length)) return false;
     const knowledgeIds = draft?.knowledge_base_ids ?? get().pendingKnowledge?.ids;
-    const clientMessageId = crypto.randomUUID();
+    const clientMessageId = randomId();
     let accepted = false;
     let submitted = false;
     const reserve = () => {

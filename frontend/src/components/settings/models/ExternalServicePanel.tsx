@@ -1,4 +1,5 @@
 import { Switch } from '@/components/ui/switch';
+import { randomId } from '@/lib/randomId';
 import { Field, FieldLabel, FieldGroup, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from '@/components/ui/input-group';
@@ -89,7 +90,7 @@ export function ExternalServicePanel({ run, busy }: Pick<ModelFeedbackProps, 'ru
                     variant="ghost"
                     size="icon-sm"
                     aria-label={t('generateKey')}
-                    onClick={() => setApiKey(crypto.randomUUID() + crypto.randomUUID())}
+                    onClick={() => setApiKey(randomId() + randomId())}
                   />
                 }
               >

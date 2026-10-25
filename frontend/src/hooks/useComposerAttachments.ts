@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { chatApi } from '../api/chat';
+import { randomId } from '../lib/randomId';
 import { useCogitaStore } from '../store/useCogitaStore';
 import type { ComposerAttachment as Upload } from '../store/cogita/messageQueue';
 
@@ -33,7 +34,7 @@ export function useComposerAttachments(sessionEpoch: number) {
       const isImage = file.type.startsWith('image/');
       const preview = isImage && !edit ? URL.createObjectURL(file) : null;
       if (preview) previews.current.add(preview);
-      return { id: crypto.randomUUID(), name: file.name, size: file.size, mime_type: file.type,
+      return { id: randomId(), name: file.name, size: file.size, mime_type: file.type,
         type: isImage ? 'image' : 'file', preview, status: 'uploading' };
     });
     update((current) => [...current, ...batch]);

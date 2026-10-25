@@ -3,8 +3,9 @@ import os
 import sys
 
 import pytest
+from fastapi.testclient import TestClient
 
-from ai_workbench.api.main import _resolve_frontend_dist
+from ai_workbench.api.main import _resolve_frontend_dist, create_app
 from ai_workbench.core.attachments import attachments_root
 from ai_workbench.db.database import get_database_url, get_engine, init_db
 from scripts import audit_workspace, reset_data, run_app
@@ -59,18 +60,48 @@ def test_explicit_database_and_frontend_options_override_environment(tmp_path, m
     assert _resolve_frontend_dist(tmp_path / "explicit") == tmp_path / "explicit"
 
 
-def test_launcher_passes_cogita_frontend_to_preserved_python_entrypoint(tmp_path, monkeypatch):
+@pytest.mark.parametrize("arguments, host, browser_host", [
+    ([], "0.0.0.0", "127.0.0.1"),
+    (["--host", "0.0.0.0"], "0.0.0.0", "127.0.0.1"),
+    (["--host", "127.0.0.1"], "127.0.0.1", "127.0.0.1"),
+    (["--host", "localhost"], "localhost", "localhost"),
+])
+def test_launcher_binds_web_host_and_opens_concrete_browser_address(tmp_path, monkeypatch, arguments, host, browser_host):
     dist = tmp_path / "frontend/dist"
     dist.mkdir(parents=True)
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(run_app, "project_root", lambda: tmp_path)
-    monkeypatch.setattr(sys, "argv", ["run_app.py", "--no-open"])
+    monkeypatch.setattr(sys, "argv", ["run_app.py", "--open", "--port", "8766", *arguments])
     monkeypatch.setattr(run_app, "ensure_port_available", lambda host, port: None)
     monkeypatch.setenv("COGITA_FRONTEND_DIST", str(tmp_path / "previous"))
     calls = []
+    opened = []
+    monkeypatch.setattr(run_app, "open_later", opened.append)
     monkeypatch.setattr(run_app.uvicorn, "run", lambda app, **kwargs: calls.append((app, kwargs)))
     run_app.main()
     assert os.environ["COGITA_FRONTEND_DIST"] == str(dist)
     assert calls == [("ai_workbench.api.main:app", {
-        "host": "127.0.0.1", "port": 8765, "reload": False, "factory": False,
+        "host": host, "port": 8766, "reload": False, "factory": False,
     })]
+    assert opened == [f"http://{browser_host}:8766"]
+
+
+def test_lan_web_and_events_are_available_but_public_inference_remains_local(tmp_path):
+    dist = tmp_path / "frontend"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>Cogita</html>", encoding="utf-8")
+    (dist / "assets/app.js").write_text("export {};", encoding="utf-8")
+    app = create_app(root=tmp_path, use_memory=True, frontend_dist=dist)
+    origin = "http://192.168.1.10:8765"
+    with TestClient(app, base_url=origin, client=("192.168.1.20", 40000), headers={"Origin": origin}) as client:
+        for path in ("/", "/new", "/settings", "/assets/app.js", "/api/settings/general"):
+            assert client.get(path).status_code == 200
+        session = client.post("/api/sessions", json={"title": "LAN chat"}).json()
+        for path in ("/api/models/events", f"/api/ws/{session['session_id']}"):
+            with client.websocket_connect(path) as websocket:
+                websocket.send_json({"type": "ping"})
+                assert websocket.receive_json() == {"type": "pong"}
+        client.patch("/api/models/settings", json={"external_enabled": True, "external_api_key": "test-key"}).raise_for_status()
+        response = client.get("/v1/models", headers={"Authorization": "Bearer test-key"})
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "LOCALHOST_ONLY"

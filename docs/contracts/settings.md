@@ -1,28 +1,20 @@
 # Settings contract
 
-Settings have explicit domain owners and strict Pydantic inputs with extra=forbid. Unknown/removed fields return HTTP 422. The frontend keeps six
-domains and `/settings?tab=` values: general, models, personas, knowledge,
-worldbook, tools. Default/unknown tab selects General, including pet.
+Settings have explicit domain owners and strict Pydantic inputs with extra=forbid; unknown/removed fields return HTTP 422.
+The six `/settings?tab=` values are general, models, personas, knowledge, worldbook and tools. Default/unknown tab selects General, including pet.
 
-SettingsPage owns navigation and composition only. Domain panels own their
-forms; shared controls are independent of the page. Types and API clients use
-domain modules, with a single HTTP/error implementation. User-visible labels,
-states and feedback have matching English/Chinese resources. User content,
-prompts, ids, API fields and error codes retain their original values.
-
-Both locales display Cogita. Language uses browser key `cogita.locale`, defaulting to English when absent or invalid.
+SettingsPage owns navigation and composition; domain panels own forms, and shared controls are independent of the page.
+Types and API clients use domain modules with one HTTP/error implementation. UI labels, states and feedback have matching English/Chinese resources.
+User content, prompts, ids, API fields and error codes retain their original values. Both locales display Cogita.
+Language uses browser key `cogita.locale`, defaulting to English when absent or invalid.
 
 ## Frontend styling foundation
 
-Tailwind CSS 4 uses its Vite plugin. shadcn/ui uses Base UI and the Mira preset
+Tailwind CSS 4 uses its Vite plugin; shadcn/ui uses Base UI and the Mira preset
 `b1D0dv72` (`base-mira`, Neutral, Lucide, default menus and subtle accents).
-`frontend/src/styles.css` is the only application CSS entry, with preset tokens,
-base rules and scoped application layout, Markdown and media styles. Shared
-controls own their styling in their component classes. Preset light/dark tokens
-are retained, while the HTML root always selects dark and declares a dark
-color scheme. There is no theme setting or system-theme tracking. Inter Variable
-ships in the build; headings inherit the body font and Chinese uses system fallbacks.
-Fonts do not use external CDNs or the removed backend font settings.
+`frontend/src/styles.css` is the sole CSS entry for preset tokens, base rules and scoped layout/Markdown/media styles; shared controls own their component styles.
+Both preset palettes remain, but the HTML root always uses dark colors and color-scheme. Theme selection and system-theme tracking are unavailable.
+Inter Variable is bundled; headings inherit the body font except the Farkle score display and Bust notice, and Chinese uses system fallbacks. Fonts have no external CDN or backend settings.
 
 Shared controls are generated with shadcn CLI 4.21.0 and maintained in
 `frontend/src/components/ui/`. Callers compose Button, Field, Input, Textarea,
@@ -33,8 +25,7 @@ resource binding rules. Vite, TypeScript and the test module loader resolve
 
 Field labels/titles use explicit 12px medium text; descriptions, field errors and shared save/error Feedback use 12px regular text. Section legends stay 14px; touch inputs retain 16px text. Desktop controls retain Mira density. Coarse-pointer buttons, options and form
 actions have at least 44px targets, except the compact [chat tick rail](chat-context.md#messages-and-attachments); Checkbox/Switch keep compact marks with
-expanded targets and associated labels. Field labels/descriptions are connected
-to controls. Forms retain native required/range validation and existing blank,
+expanded targets and associated labels. Field labels/descriptions are connected to controls. Forms retain native required/range validation and existing blank,
 null and zero semantics. Hidden file inputs remain behind visible Buttons.
 Controlled Select preserves groups, disabled options, empty choices and missing
 selected records. Model references use editable Comboboxes for local directories or provider IDs;
@@ -78,10 +69,19 @@ Project sessions retain left indentation and share the Project's right action co
 Opening a Workspace draft expands its row. Timeline expands an unavailable-chat notice.
 Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace/QQBot session. `/new` and `/projects/{id}/new` open drafts, replaced with conversation locations on first send.
 Routes survive refresh/history, reject mismatched membership and retain unsaved-navigation guards.
-Playground follows New QQBot and stays selected at `/playground` and `/playground/farkle`. Its shared shell replaces the conversation with icon/name cards: enabled Farkle (dice), then disabled Whisper (audio waveform).
-The grid uses two columns at a content width of 640px, otherwise one. Farkle opens a Coming soon placeholder with Back to Playground; gameplay and Whisper transcription UI are unimplemented. Direct startup selects no session or draft.
+Playground follows New QQBot and stays selected at `/playground`. Its shared shell replaces the conversation with icon/name cards: enabled Farkle (dice), then disabled Whisper (audio waveform).
+The grid uses two columns at a content width of 640px, otherwise one. Farkle opens `/playground/farkle`; Whisper transcription UI is unimplemented. Direct startup selects no session or draft.
 Entering Playground discards ordinary composer text/attachments and unsaved chat drafts; session epochs prevent late responses from reopening chats. Saved sessions, queued messages and queue edits remain; dispatch stops until returning and reconciling. Submitted runs continue.
 Both routes support direct loading and guarded history. Repeated selection adds no history entry; accepted mobile navigation closes the drawer.
+Farkle uses SidebarProvider with New Game, My Dice, Shop and Switch View; the footer is Back to Playground when idle or Exit Game when playing. Exit clears both sides and cancels animations. The header keeps its title/toggle and Merchant Dice balance of 100; balance and Shop open the same placeholder. My Dice lists all six demo skins with one owned each; purchases are unimplemented.
+New Game selects Beggars (1500, default), Wagoners (2000), Masters (3000) or Courtiers (4000), resets both sides and immediately rolls B's six dice. The bottom-left transparent, borderless three-column score display uses local serif text, inner separators, Player/Goal/Opponent headings and Round/Selected rows. Player always means B and Opponent A, independent of camera view; totals are banked scores and Selected updates with selection. Bottom-right Hold die (E), Score and continue (F) and Pass (Q) use content-width buttons aligned on their right edges, with separate shadcn Kbd hints beside them; coarse-pointer layouts hide Hold and the hints. The sidebar has no separate Roll action.
+Natural single ones score 100 and fives 50. Three equal faces score 1000 for ones or face times 100 otherwise; each additional equal die through six doubles that score. Straights 1-5, 2-6 and 1-6 score 500, 750 and 1500. Only the devil skin's head (physical face 1) is wild: it substitutes within three-or-more equal faces or a straight, never a scoring single one/five. Other skins have no special rules. Each selection uses the highest-scoring partition covering every selected die without reuse; invalid selections show zero and block F/Q. No three-pair bonus or badge rules apply. Combinations cannot span stored batches or rolls.
+Dice retain face values and idle/selected/scored state, with independent hover on the turn owner's view. Settled rolls/views choose one random non-scored hover for fine pointers when viewing that side. WASD chooses the nearest eligible die in the requested screen direction (fixed index breaks ties; no candidate retains the target). Mouse movement transfers hover; E, Hold or direct activation toggles selection in place. Hover draws a gold ring and face icon (the head for a wild); selection overlays a blue lower half-ring for B or deep orange for A. Both rings have thicker bands with black outlines, including the half-ring ends. Touch directly toggles selection without hover or its icon; Hold is hidden on coarse-pointer layouts. Scored dice cannot be retrieved. Animations, dialogs, mobile drawers and text entry block game input; E/F/Q ignore key repeat.
+F requires a valid nonempty selection: the batch moves together over 280ms, becomes scored, adds its score to Round and clears Selected, then the remaining dice roll. Each batch occupies one right-aligned row, sorted left-to-right by physical face then fixed index; rows remain separate. Scoring all six preserves Round, clears that side's batches and rolls all six. Q accepts a valid selection or no selection (including Round zero): selected dice first complete the same storage animation, then Round plus Selected is banked into Total and both temporary scores clear.
+After every settled roll, only that roll's idle dice are checked for any scoring subset. None means Bust: Round becomes zero without changing Total, inputs lock, and the table center shows Bust! / 本轮作废！ for 1.2 seconds in the score-heading typography. Nonwinning Q and Bust automatically hand off over a 500ms camera transition, clear the incoming side's batches and roll all six of its dice. Both sides are manually operated. Switch View only changes the camera over 500ms, retaining the turn and selections; the other side's view disables dice and scoring actions.
+Only Q banking can win, at or above the target; an unbanked Round above the target can still Bust. Winning retains the winner's view, disables dice, game hotkeys, HUD buttons and Switch View, and opens a result dialog with the winner and both totals. Play again resets at the same level with B starting; New Game opens settings preselected to that level. Closing either dialog leaves the finished board frozen; New Game and Exit remain available. Restart/exit/departure cancel animations and pending Bust handoffs. All state is page-local and resets on refresh/departure; AI, badges, persistence and game APIs are unimplemented.
+One continuous wooden table fills the content below the header without visible edges, zone borders or slot outlines. The perspective camera stays at 85 degrees; settled views exclude the A/B divider and opposite dice. Widths of 768px and above frame the throw and right-hand storage, with mirrored row anchors near the center-line edge; rows extend left without changing dice scale or camera distance. Narrower views enlarge and center the throw and put every storage row beyond the right edge. Resizing/sidebar changes reframe the scene, including airborne dice; projected hit targets follow the dice, and offscreen dice leave focus/accessibility navigation. Desktop score width/type use a compact scale; narrow and touch layouts retain their existing score sizes. HUD spacing/type compress on narrow or short screens; touch actions retain 44px targets.
+The lazy Three.js scene reuses baked trajectories, rounded geometry, face correction and height-based shadows; geometry/materials are shared, rendering occurs only when invalidated/animating, and departure disposes resources. The original circular collision envelope remains; no rebaking, live physics, audio or production binary trajectory pipeline is included. Renderer failure displays localized feedback and leaves Back available.
 QQBot creation and Project settings share Connection (initial), Replies and Images tabs with one save action. Tab selection is local and resets on opening; dialog tabs and actions stay outside its scrolling body. All sections stay expanded; disabled icebreaker/generation options remain conditional. Panels stay mounted while hidden and leave focus/accessibility navigation; submission reveals the first invalid field before native validation feedback. Conversation creation binds a group/friend immediately.
 The QQ Project settings header contains only its name and sidebar toggle; conversation creation stays in the sidebar. The QQ editor is at most 48rem wide: container widths of 32rem use two columns, and 40rem use three for timing/image parameters. Prompt/keyword inputs keep four/three rows with internal scrolling. Token clearing is inline; hints cover only input syntax and essential semantics. Creation, inheritance and deletion follow [chat/context](chat-context.md#personas-and-sessions).
 

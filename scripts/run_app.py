@@ -12,7 +12,7 @@ from pathlib import Path
 import uvicorn
 
 
-DEFAULT_HOST = "127.0.0.1"
+DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8765
 
 
@@ -22,7 +22,7 @@ def project_root() -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Cogita in production web mode.")
-    parser.add_argument("--host", choices=("127.0.0.1", "localhost"), default=DEFAULT_HOST, help=f"Loopback bind host. Default: {DEFAULT_HOST}")
+    parser.add_argument("--host", choices=("0.0.0.0", "127.0.0.1", "localhost"), default=DEFAULT_HOST, help=f"Bind host. Default: {DEFAULT_HOST} (LAN access)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Bind port. Default: {DEFAULT_PORT}")
     parser.add_argument("--frontend-dist", default=None, help="Path to built frontend dist. Default: frontend/dist")
     parser.add_argument("--reload", action="store_true", help="Enable uvicorn reload for local development.")
@@ -74,7 +74,8 @@ def main() -> None:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
 
-    url = f"http://{args.host}:{args.port}"
+    browser_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
+    url = f"http://{browser_host}:{args.port}"
     if args.open_browser:
         open_later(url)
 

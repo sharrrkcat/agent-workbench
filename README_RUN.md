@@ -16,7 +16,16 @@ uv run python scripts/run_app.py --port 8766 --open
 ```
 
 For a source checkout, install dependencies and build the frontend using the
-[README](README.md) before starting. The official launcher binds loopback only.
+[README](README.md) before starting. The launcher defaults to `0.0.0.0:8765`,
+serving the built UI, `/api` and WebSockets on all IPv4 interfaces. Other LAN
+devices can open `http://<computer-LAN-IP>:8765`; `ipconfig` shows that address
+on Windows. Allow the selected TCP port through the host firewall if needed.
+The local browser still opens `127.0.0.1`, not the wildcard bind address.
+
+Use `--host 127.0.0.1` for local-only web access. The web interface shares the
+host's conversations and settings without login; use it on a trusted LAN.
+The separate `/v1` model API still rejects non-loopback clients, even with a valid key.
+See [web access](docs/contracts/runs-streaming.md#web-access) for browser limitations.
 
 ## Model setup
 

@@ -1,6 +1,6 @@
 import { QQSessionDialog } from "./components/projects/QQSessionDialog";
 import { QQSessionView } from "./components/projects/QQSessionView";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createWebSocketUrl } from './api/url';
 import { usePersonasStore } from './store/usePersonasStore';
 import { ChatHeader } from './components/ChatHeader';
@@ -21,6 +21,8 @@ import { readPlaygroundRoute } from './components/playground/navigation';
 import { isDraftRoute, isResourcesRoute, newChatUrl, projectUrl, readProjectRoute } from './components/projects/navigation';
 import { useProjectsStore } from './store/useProjectsStore';
 import { ResourceLoading, errorText } from './components/settings/resources/ResourceUI';
+
+const FarklePage = lazy(() => import('./components/playground/farkle/FarklePage'));
 
 type Location = { pathname: string; search: string; url: string; index: number };
 const readLocation = (): Location => ({
@@ -265,6 +267,10 @@ export default function App() {
     <SidebarProvider className="app-shell h-dvh min-h-0 overflow-hidden">
       {location.pathname === '/settings' ? (
         <SettingsPage search={location.search} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} returnTo={lastHome.current} />
+      ) : playgroundRoute === 'farkle' ? (
+        <Suspense fallback={<SidebarInset className="workspace min-h-0 min-w-0"><ResourceLoading /></SidebarInset>}>
+          <FarklePage onNavigate={navigate} />
+        </Suspense>
       ) : (
         <>
           <SessionSidebar onOpenSettings={() => navigate('/settings')} onNavigate={navigate}
@@ -272,7 +278,7 @@ export default function App() {
             resourcesProjectId={isResourcesRoute(location) ? projectRoute.projectId : null}
             onSelectSession={selectSession} onCreateSession={createSession} onSessionDeleted={sessionDeleted} onProjectDeleted={projectDeleted} />
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
-            {playgroundRoute ? <PlaygroundPage route={playgroundRoute} onNavigate={navigate} /> :
+            {playgroundRoute ? <PlaygroundPage onNavigate={navigate} /> :
             projectRoute.projectId && isResourcesRoute(location) ?
               <QQResourcesPage key={projectRoute.projectId} projectId={projectRoute.projectId} search={location.search}
                 onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} /> :

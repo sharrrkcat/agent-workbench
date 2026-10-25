@@ -1,4 +1,5 @@
 import { chatApi } from '../../api/chat';
+import { randomId } from '../../lib/randomId';
 import { runsApi } from '../../api/runs';
 import type { CogitaActions } from './state';
 import { emptyQueue, mergeQueueRuntime, type MessageQueue } from './messageQueue';
@@ -21,7 +22,7 @@ export const createQueueActions: CogitaActions<
           state.sessionLoad && state.sessionLoad.status !== 'ready' || (!content.trim() && !attachments.length)) return false;
       const queue = state.messageQueues[session.session_id] ?? emptyQueue(session.project_id, state.runs[state.runs.length - 1]);
       set({ composerDraftText: '', messageQueues: { ...state.messageQueues, [session.session_id]: {
-        ...queue, items: [...queue.items, { id: crypto.randomUUID(), content, attachments }],
+        ...queue, items: [...queue.items, { id: randomId(), content, attachments }],
       } } });
       return true;
     },

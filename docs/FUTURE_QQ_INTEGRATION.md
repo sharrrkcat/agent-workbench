@@ -22,7 +22,7 @@ NapCat Shell and SnowLuma both depend on an actual NTQQ client. Avoiding Docker 
 remove that process or its memory costs. Linux NapCat Shell can use Xvfb without a desktop.
 The production launcher supports --no-open; the backend serves static frontend assets and
 the browser runs on the accessing computer. Build frontend assets away from a small VPS.
-Keep management listeners on loopback with SSH access under the [Models contract](contracts/models.md).
+For VPS deployment, use `--host 127.0.0.1` and SSH forwarding for management access; the [run guide](../README_RUN.md) owns listener defaults.
 
 The earlier source review identified unbounded history/event retention at its tested revision.
 Current SQLite context/history reads are paginated and EventBus subscriber queues are bounded;

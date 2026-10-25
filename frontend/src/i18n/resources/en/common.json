@@ -16,13 +16,57 @@
   "playground": {
     "title": "Playground",
     "farkle": "Farkle",
-    "whisper": "Whisper",
-    "comingSoon": "Coming soon",
-    "back": "Back to Playground"
+    "whisper": "Whisper"
   },
   "pagination": {
     "label": "Pagination",
     "previous": "Previous",
     "next": "Next"
+  },
+  "farkle": {
+    "newGame": "New Game",
+    "myDice": "My Dice",
+    "shop": "Shop",
+    "switchView": "Switch View",
+    "exitGame": "Exit Game",
+    "balance": "Merchant Dice: {{count}}",
+    "quantity": "Quantity: {{count}}",
+    "shopPlaceholder": "The shop is coming soon.",
+    "table": "Farkle table",
+    "renderError": "The 3D table could not start. Reload the page to try again.",
+    "skins": {
+      "bone": "Bone",
+      "devil": "Devil",
+      "heavenly": "Heavenly",
+      "painted": "Painted",
+      "lu_odd": "Ebony",
+      "tooth": "Tooth"
+    },
+    "level": "Match level",
+    "startGame": "Start game",
+    "bust": "Bust!",
+    "wildFace": "Devil's head",
+    "faceValue": "{{value}} pips",
+    "result": "Game over",
+    "winner": "{{player}} wins!",
+    "playAgain": "Play again",
+    "scores": "Scores",
+    "player": "Player",
+    "goal": "Goal",
+    "opponent": "Opponent",
+    "round": "Round",
+    "selected": "Selected",
+    "hold": "Hold die",
+    "scoreContinue": "Score and continue",
+    "pass": "Pass",
+    "levels": {
+      "beggars": "Beggars",
+      "wagoners": "Wagoners",
+      "masters": "Masters",
+      "courtiers": "Courtiers"
+    },
+    "holdDie": "{{player}} die {{number}}, {{skin}}, {{value}}: hold",
+    "releaseDie": "{{player}} die {{number}}, {{skin}}, {{value}}: release",
+    "scoredDie": "{{player}} die {{number}}, {{skin}}, {{value}}: scored"
   }
 }
