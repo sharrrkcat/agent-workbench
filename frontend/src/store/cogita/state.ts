@@ -55,6 +55,7 @@ export type CogitaState = {
   startDraft: (projectId?: string | null) => Promise<void>;
   saveDraft: (patch: SessionPatch, knowledgeIds?: string[]) => void;
   activateLocation: (projectId: string | null, sessionId?: string | null) => Promise<void>;
+  deactivateConversation: () => void;
   forgetProject: (projectId: string) => void;
   deleteSession: (id: string) => Promise<void>;
   updateSession: (patch: SessionPatch) => Promise<boolean>;

@@ -69,18 +69,19 @@ is at most 18rem wide with viewport margins; Close/backdrop/Escape return focus 
 Drawers are titled Sessions or Settings. Accepted navigation/creation closes the drawer;
 rejected navigation keeps it open.
 
-The sidebar fixes its brand, New session/New Workspace/New Timeline/New QQBot actions and Settings footer.
-The scrolling tree contains Projects and ordinary sessions. Sessions has a header creation icon;
-Project names toggle expansion. Workspace/QQBot rows place creation before settings/delete actions,
+The sidebar fixes its brand, New session/New Workspace/New Timeline/New QQBot actions, Playground entry and Settings footer.
+The scrolling tree contains Projects and ordinary sessions. Sessions has a header creation icon; Project names toggle expansion. Workspace/QQBot rows place creation before settings/delete actions,
 without a separate arrow or internal creation row.
 Creation icons respond to their header-row hover or keyboard-visible focus; session actions respond only to their own row or open menu.
 Mouse focus does not retain hover feedback. Touch actions stay visible with 44px targets.
 Project sessions retain left indentation and share the Project's right action column; selections keep their own highlight.
 Opening a Workspace draft expands its row. Timeline expands an unavailable-chat notice.
-Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace/QQBot session.
-`/new` and `/projects/{id}/new` open drafts, replaced with conversation locations on first send.
+Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace/QQBot session. `/new` and `/projects/{id}/new` open drafts, replaced with conversation locations on first send.
 Routes survive refresh/history, reject mismatched membership and retain unsaved-navigation guards.
-Timeline conversation creation remains unavailable. Global Settings returns to the previous home route.
+Playground follows New QQBot and stays selected at `/playground` and `/playground/farkle`. Its shared shell replaces the conversation with icon/name cards: enabled Farkle (dice), then disabled Whisper (audio waveform).
+The grid uses two columns at a content width of 640px, otherwise one. Farkle opens a Coming soon placeholder with Back to Playground; gameplay and Whisper transcription UI are unimplemented. Direct startup selects no session or draft.
+Entering Playground discards ordinary composer text/attachments and unsaved chat drafts; session epochs prevent late responses from reopening chats. Saved sessions, queued messages and queue edits remain; dispatch stops until returning and reconciling. Submitted runs continue.
+Both routes support direct loading and guarded history. Repeated selection adds no history entry; accepted mobile navigation closes the drawer.
 QQBot creation and Project settings share Connection (initial), Replies and Images tabs with one save action. Tab selection is local and resets on opening; dialog tabs and actions stay outside its scrolling body. All sections stay expanded; disabled icebreaker/generation options remain conditional. Panels stay mounted while hidden and leave focus/accessibility navigation; submission reveals the first invalid field before native validation feedback. Conversation creation binds a group/friend immediately.
 The QQ Project settings header contains only its name and sidebar toggle; conversation creation stays in the sidebar. The QQ editor is at most 48rem wide: container widths of 32rem use two columns, and 40rem use three for timing/image parameters. Prompt/keyword inputs keep four/three rows with internal scrolling. Token clearing is inline; hints cover only input syntax and essential semantics. Creation, inheritance and deletion follow [chat/context](chat-context.md#personas-and-sessions).
 
@@ -111,7 +112,7 @@ and closed pages leave keyboard navigation. Active pages use aria-current.
 | Knowledge, Worldbook | Resources `list`, Global settings `settings` |
 
 Missing/unknown views select user for Personas, dashboard for Models or list for resources. Page changes push browser history;
-reselecting the effective current page adds no entry. Back to chat restores the previous ordinary/Project route.
+reselecting the effective current page adds no entry. Back to chat restores the previous ordinary/Project/Playground route.
 Refresh restores the domain/subpage; resource selection and detail Tabs are local.
 The fixed location header shares Home's primary-row height and toggle position. Content scrolls independently
 within 64rem; ordinary forms use 48rem. FieldSet/FieldGroup and separators organize forms, resource rows wrap,

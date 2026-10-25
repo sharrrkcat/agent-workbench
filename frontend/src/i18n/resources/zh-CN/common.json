@@ -13,6 +13,13 @@
   "confirm": "确认",
   "confirmAction": "确认操作",
   "noSuggestions": "暂无建议",
+  "playground": {
+    "title": "Playground",
+    "farkle": "Farkle",
+    "whisper": "Whisper",
+    "comingSoon": "敬请期待",
+    "back": "返回 Playground"
+  },
   "pagination": {
     "label": "分页",
     "previous": "上一页",

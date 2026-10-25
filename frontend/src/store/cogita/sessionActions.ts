@@ -33,6 +33,7 @@ export const createSessionActions: CogitaActions<
   | 'deleteSession'
   | 'updateSession'
   | 'activateLocation'
+  | 'deactivateConversation'
   | 'forgetProject'
   | 'setError'
 > = (set, get) => {
@@ -210,6 +211,8 @@ export const createSessionActions: CogitaActions<
       set((state) => ({ savingSessionIds: state.savingSessionIds.filter((id) => id !== session.session_id) }));
     }
   },
+
+  deactivateConversation: () => set((state) => conversation(state, null, null)),
 
   activateLocation: async (projectId, sessionId = null) => {
     if (projectId === null) {

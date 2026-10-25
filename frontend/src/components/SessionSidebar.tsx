@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot, Boxes, Compass, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
+import { Bot, Boxes, Compass, LayoutGrid, MessageSquarePlus, MoreHorizontal, Settings2, Trash2 } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { cn } from '@/lib/utils';
 import {
@@ -28,10 +28,12 @@ import { useCogitaStore } from '../store/useCogitaStore';
 import { NewProjectDialog } from './projects/NewProjectDialog';
 import { ProjectsTree } from './projects/ProjectsTree';
 import { projectUrl } from './projects/navigation';
+import { playgroundUrl } from './playground/navigation';
 import type { ProjectKind } from '../types/projects';
 import type { SettingsNavigate } from './settings/navigation';
 
-export function SessionSidebar({ resourcesProjectId, onOpenSettings, onNavigate, onSelectSession, onCreateSession, onSessionDeleted, onProjectDeleted }: {
+export function SessionSidebar({ playgroundActive, resourcesProjectId, onOpenSettings, onNavigate, onSelectSession, onCreateSession, onSessionDeleted, onProjectDeleted }: {
+  playgroundActive: boolean;
   resourcesProjectId: string | null;
   onOpenSettings: () => Promise<boolean>; onNavigate: SettingsNavigate;
   onSelectSession: (id: string, projectId: string | null) => Promise<boolean>;
@@ -92,6 +94,12 @@ export function SessionSidebar({ resourcesProjectId, onOpenSettings, onNavigate,
             <SidebarMenuItem>
               <SidebarMenuButton type="button" onClick={() => { setCreating('qqbot'); setOpenMobile(false); }}>
                 <Bot data-icon="inline-start" /><span>{t('newQQBot')}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" isActive={playgroundActive} aria-current={playgroundActive ? 'page' : undefined}
+                onClick={async () => { if (await onNavigate(playgroundUrl())) setOpenMobile(false); }}>
+                <LayoutGrid data-icon="inline-start" /><span>{t('common:playground.title')}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

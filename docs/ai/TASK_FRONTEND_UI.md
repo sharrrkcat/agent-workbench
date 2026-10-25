@@ -18,6 +18,7 @@ Paths below are under frontend/src:
   store/messageStream.ts handles deltas. store/useModelsStore.ts and
   hooks/useModelEvents.ts handle global events.
 - components/SessionSidebar.tsx and ChatHeader.tsx compose the home navigation.
+  components/playground/ owns the app cards, Farkle placeholder and local routes; App commits conversation departure.
   components/projects/ owns the Project tree, routes, editors and Workspace session overrides; store/useProjectsStore.ts owns Project reads/mutations.
   components/ChatView.tsx owns the session-scoped MessageScroller; components/messages/
   compose replies, disclosure anchors and approvals; ReplyContext.tsx owns lazy per-call input inspection. ChatInput.tsx owns the composer.
@@ -50,6 +51,7 @@ covers keyboard/labels, 44px targets, nested overlays and focus, retained drafts
 validation, busy locks, async navigation/history, attachments, IME and approvals.
 app-layout.spec.ts covers sidebar scrolling/menus, deletion, drawer focus, Markdown,
 composer growth, disclosure position and breakpoint/short viewport behavior.
+playground.spec.ts covers bilingual desktop/touch cards, app routes/history, leave guards, draft cleanup and queue return; test-playground.mjs covers startup and late-response isolation.
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
 independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
 chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning previews, message alignment and images.

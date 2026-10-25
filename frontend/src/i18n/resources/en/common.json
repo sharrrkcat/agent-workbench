@@ -13,6 +13,13 @@
   "confirm": "Confirm",
   "confirmAction": "Confirm action",
   "noSuggestions": "No suggestions",
+  "playground": {
+    "title": "Playground",
+    "farkle": "Farkle",
+    "whisper": "Whisper",
+    "comingSoon": "Coming soon",
+    "back": "Back to Playground"
+  },
   "pagination": {
     "label": "Pagination",
     "previous": "Previous",

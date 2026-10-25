@@ -10,6 +10,7 @@ for (const script of [
   'test-resource-management',
   'test-session-settings',
   'test-session-actions',
+  'test-playground',
   'test-history-window',
   'test-chat-drafts',
   'test-message-queue',

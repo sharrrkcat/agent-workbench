@@ -16,6 +16,8 @@ import type { LeaveGuard } from './components/settings/resources/ResourceUI';
 import { readSettingsRoute, settingsRouteUrl } from './components/settings/navigation';
 import { ProjectPage } from './components/projects/ProjectPage';
 import { QQResourcesPage } from './components/projects/QQResourcesPage';
+import { PlaygroundPage } from './components/playground/PlaygroundPage';
+import { readPlaygroundRoute } from './components/playground/navigation';
 import { isDraftRoute, isResourcesRoute, newChatUrl, projectUrl, readProjectRoute } from './components/projects/navigation';
 import { useProjectsStore } from './store/useProjectsStore';
 import { ResourceLoading, errorText } from './components/settings/resources/ResourceUI';
@@ -54,6 +56,7 @@ export default function App() {
   }, []);
   const commit = useCallback((next: Location) => {
     committed.current = next;
+    if (readPlaygroundRoute(next)) useCogitaStore.getState().deactivateConversation();
     if (next.pathname !== '/settings') lastHome.current = next.url;
     setLocation(next);
   }, []);
@@ -87,11 +90,11 @@ export default function App() {
     [commitUrl],
   );
   useEffect(() => {
-    void initialize(!readProjectRoute(committed.current).projectId && !isDraftRoute(committed.current));
+    void initialize(!readProjectRoute(committed.current).projectId && !isDraftRoute(committed.current) && !readPlaygroundRoute(committed.current));
     void useProjectsStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
   }, [initialize]);
   useLayoutEffect(() => {
-    if (!initialized || location.pathname === '/settings') return;
+    if (!initialized || location.pathname === '/settings' || readPlaygroundRoute(location)) return;
     const route = readProjectRoute(location);
     if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(route.projectId);
     else void activateLocation(route.projectId, route.sessionId);
@@ -253,6 +256,7 @@ export default function App() {
     };
   }, [commit]);
   const projectRoute = readProjectRoute(location);
+  const playgroundRoute = readPlaygroundRoute(location);
   const conversationReady = !!currentSession && currentSession.project_id === projectRoute.projectId &&
     (!projectRoute.projectId || isDraftRoute(location) || currentSession.session_id === projectRoute.sessionId);
   const draftReady = !!chatDraft && chatDraft.project_id === projectRoute.projectId &&
@@ -264,10 +268,12 @@ export default function App() {
       ) : (
         <>
           <SessionSidebar onOpenSettings={() => navigate('/settings')} onNavigate={navigate}
+            playgroundActive={playgroundRoute !== null}
             resourcesProjectId={isResourcesRoute(location) ? projectRoute.projectId : null}
             onSelectSession={selectSession} onCreateSession={createSession} onSessionDeleted={sessionDeleted} onProjectDeleted={projectDeleted} />
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
-            {projectRoute.projectId && isResourcesRoute(location) ?
+            {playgroundRoute ? <PlaygroundPage route={playgroundRoute} onNavigate={navigate} /> :
+            projectRoute.projectId && isResourcesRoute(location) ?
               <QQResourcesPage key={projectRoute.projectId} projectId={projectRoute.projectId} search={location.search}
                 onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} /> :
             projectRoute.projectId && !projectRoute.sessionId && !isDraftRoute(location) ?
