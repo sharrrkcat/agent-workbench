@@ -212,7 +212,9 @@ def test_failed_delivery_pauses_and_never_runs_second_tool(qq_client, failure, s
     assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == status
     assert state.qq.store.next_batch(p["id"]) is None
     ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
-    assert state.qq.store.next_batch(p["id"]).id == queued.id
+    resumed = state.qq.store.next_batch(p["id"])
+    assert resumed.id > queued.id and state.qq.store.get(QQBatch, queued.id) is None
+    assert [row.external_id for row in state.qq.store.batch_messages(resumed.id)] == ["2"]
 
 
 def test_restart_preserves_queue_and_debounce_without_replaying(qq_client):
@@ -264,7 +266,9 @@ def test_missing_reply_fails_and_pauses_without_replaying(qq_client, streaming, 
         assert any(m.metadata.get("qq_internal") and content in json.dumps(m.parts) for m in messages)
         assert content not in build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
-    assert state.qq.store.next_batch(p["id"]).id == queued.id
+    resumed = state.qq.store.next_batch(p["id"])
+    assert resumed.id > queued.id and state.qq.store.get(QQBatch, queued.id) is None
+    assert [row.external_id for row in state.qq.store.batch_messages(resumed.id)] == ["2"]
 
 
 def test_onebot_websocket_identity_and_plain_text_roundtrip():
@@ -341,7 +345,7 @@ def test_exact_deadline_references_media_and_pagination(qq_client):
     assert freeze(state, friend, 17).text.endswith("[语音]")
 
 
-def test_stop_during_send_keeps_confirmed_reply_and_queued_windows(qq_client):
+def test_stop_during_send_keeps_confirmed_reply_and_merges_queued_windows(qq_client):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state)
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "confirmed"}, "one"),
@@ -362,14 +366,17 @@ def test_stop_during_send_keeps_confirmed_reply_and_queued_windows(qq_client):
         task = asyncio.create_task(state.qq.execute(batch))
         state.qq.workers[p["id"]] = task
         await asyncio.wait_for(sending.wait(), 5)
-        state.qq.control(sid, "pause")
+        await state.qq.control(sid, "pause")
         for number, now in ((2, 7), (3, 13)):
             await state.qq.ingest(p["id"], event(number), now=now)
             freeze(state, session, now + 5)
         assert not task.done()
         with pytest.raises(ChatError, match="Stop the active QQ batch"):
             state.qq.assert_idle(sid)
-        state.qq.control(sid, "stop")
+        with pytest.raises(ChatError) as error:
+            await state.qq.control(sid, "resume")
+        assert error.value.code == "SESSION_BUSY"
+        await state.qq.control(sid, "stop")
         await asyncio.wait_for(task, 5)
         assert state.qq.store.get(QQBatch, batch.id).status == "cancelled"
         run = state.runs.get_run(state.qq.store.get(QQBatch, batch.id).run_id)
@@ -377,13 +384,14 @@ def test_stop_during_send_keeps_confirmed_reply_and_queued_windows(qq_client):
         records = state.qq.store.page(QQDelivery, sid)["items"]
         assert [row["status"] for row in records] == ["unknown", "sent"]
         assert state.qq.store.get(QQBinding, sid).paused
-        state.qq.control(sid, "resume")
+        await state.qq.control(sid, "resume")
         queued = state.qq.store.next_batch(p["id"])
-        assert queued.id == batch.id + 1
+        assert queued.id > batch.id + 2
+        assert [row.external_id for row in state.qq.store.batch_messages(queued.id)] == ["2", "3"]
         connection.call = original
         upstream.turns = [completion(tool_call("qq_send_message", {"text": "next batch"})), completion(content="")]
         await state.qq.execute(queued)
-        assert state.qq.store.next_batch(p["id"]).id == batch.id + 2
+        assert state.qq.store.next_batch(p["id"]) is None
     client.portal.call(scenario)
     context = build_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None).model_dump_json()
     assert "confirmed" in context and "uncertain" not in context
@@ -468,7 +476,10 @@ def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, mo
         assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == "unknown"
         assert state.qq.store.next_batch(p["id"]) is None
         ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
-        assert state.qq.store.next_batch(p["id"]).id == queued.id
+        resumed = state.qq.store.next_batch(p["id"])
+        assert resumed.id > queued.id and state.qq.store.get(QQBatch, queued.id) is None
+        assert [row.external_id for row in state.qq.store.batch_messages(resumed.id)] == ["2", "3"]
+        assert state.qq.store.get(QQBinding, session["session_id"]).deadline is None
 
 
 def test_authentication_failure_and_transport_reconnect(qq_client):

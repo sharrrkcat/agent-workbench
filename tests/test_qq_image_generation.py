@@ -255,7 +255,7 @@ def test_stop_cancels_generation_without_sending_and_keeps_new_batches(qq_client
         await state.qq.ingest(p['id'], event(2), now=7)
         queued = freeze(state, session, 12)
         assert state.qq.store.next_batch(p['id']).id == queued.id
-        state.qq.control(session['session_id'], 'stop')
+        await state.qq.control(session['session_id'], 'stop')
         await asyncio.wait_for(task, 5)
         assert cancelled.is_set()
         assert state.qq.store.get(QQBatch, batch.id).status == 'cancelled'

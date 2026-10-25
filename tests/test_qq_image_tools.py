@@ -221,10 +221,10 @@ def test_stop_during_resource_send_protects_intent_and_restart_never_resends(qq_
         with pytest.raises(ChatError) as error:
             state.qq.resources.delete(asset.id)
         assert error.value.code == 'SESSION_BUSY'
-        state.qq.control(session['session_id'], 'stop')
+        await state.qq.control(session['session_id'], 'stop')
         await asyncio.wait_for(task, 5)
         state.qq.store.recover()
-        state.qq.control(session['session_id'], 'resume')
+        await state.qq.control(session['session_id'], 'resume')
         await state.qq.execute(batch)
     client.portal.call(scenario)
     delivery, = deliveries(client, session)

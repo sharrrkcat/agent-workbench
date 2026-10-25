@@ -210,9 +210,15 @@ class QQService:
         if not queue:
             del self.pending_ingress[session_id]
 
-    async def wait_ingress(self, session_id):
+    async def wait_ingress(self, session_id, *, through_message_id=None):
         while queue := self.pending_ingress.get(session_id):
-            await asyncio.shield(queue[0].task)
+            if through_message_id is not None and queue[0].message.id > through_message_id:
+                break
+            task = queue[0].task
+            await asyncio.wait((task,))
+            # Connection changes discard and cancel decisions; cancellation of this caller still propagates.
+            if not task.cancelled():
+                task.result()
 
     def preserve_ingress_eligibility(self, session_id, before):
         # A later confirmation cannot qualify an earlier, still-unclassified arrival.
@@ -482,17 +488,34 @@ class QQService:
             target_kind=session.target_kind, target_id=session.target_id))
         return session
 
-    def control(self, session_id, action):
+    async def control(self, session_id, action):
         binding = self.store.get(QQBinding, session_id)
         if binding is None:
             raise ChatError("SESSION_NOT_FOUND", "QQ Session does not exist.", 404)
         if action == "resume":
+            self.state.chat_service.assert_idle(session_id)
             self.assert_idle(session_id)
+            if not binding.paused:
+                return binding
+            if queue := self.pending_ingress.get(session_id):
+                await self.wait_ingress(session_id, through_message_id=queue[-1].message.id)
+                binding = self.store.get(QQBinding, session_id)
+                if binding is None:
+                    raise ChatError("SESSION_NOT_FOUND", "QQ Session does not exist.", 404)
+                self.state.chat_service.assert_idle(session_id)
+                self.assert_idle(session_id)
+                if not binding.paused:
+                    return binding
         self.icebreaker.reset_session(session_id)
-        self.store.pause(session_id, "" if action == "resume" else "QQ_PAUSED")
         if action == "resume":
-            self.icebreaker.sync(self.state.projects.get(binding.project_id), self.store.get(QQBinding, session_id),
-                self.connected(binding.project_id), time.time())
+            project = self.state.projects.get(binding.project_id)
+            queue = self.pending_ingress.get(session_id)
+            now = time.time()
+            binding = self.store.resume(session_id, project.batch_message_limit, now,
+                before_message_id=queue[0].message.id if queue else None)
+            self.icebreaker.sync(project, binding, self.connected(binding.project_id), now)
+        else:
+            self.store.pause(session_id, "QQ_PAUSED")
         if action == "stop":
             task = self.workers.get(binding.project_id)
             # Cancel only the worker serving this Session.

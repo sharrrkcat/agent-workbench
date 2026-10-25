@@ -148,6 +148,59 @@ class QQStore:
         binding.pause_reason = reason
         self.save(binding)
 
+    def resume(self, session_id, limit, now, *, before_message_id=None):
+        with Session(self.engine) as db:
+            binding = db.get(QQBinding, session_id)
+            queued = select(QQBatch.id).where(QQBatch.session_id == session_id,
+                QQBatch.status == "queued", QQBatch.trigger_kind != "icebreaker",
+                QQBatch.input_message_id.is_(None), QQBatch.run_id.is_(None))
+            if binding.deadline is not None or db.exec(queued.limit(1)).first() is not None:
+                candidates = [QQMessage.session_id == session_id, QQMessage.deleted == False,
+                    (QQMessage.disposition == "pending") | ((QQMessage.disposition == "batched")
+                        & QQMessage.batch_id.in_(queued))]
+                if before_message_id is not None:
+                    candidates.append(QQMessage.id < before_message_id)
+                rows = list(reversed(db.exec(select(QQMessage).where(*candidates)
+                    .order_by(QQMessage.id.desc()).limit(limit)).all()))
+                if rows:
+                    keyword = (binding.deadline is not None and binding.window_kind == "keyword") or (
+                        db.exec(queued.where(QQBatch.trigger_kind == "keyword").limit(1)).first() is not None)
+                    sources = {batch.id: batch.participants for batch in db.exec(select(QQBatch).where(
+                        QQBatch.id.in_({row.batch_id for row in rows if row.batch_id is not None}))).all()}
+                    window = {p.sender_id: p.grant_message_id for p in db.exec(select(QQParticipant).where(
+                        QQParticipant.session_id == session_id, QQParticipant.in_window == True,
+                        QQParticipant.sender_id.in_({row.sender_id for row in rows if row.batch_id is None}))).all()}
+                    grants = {}
+                    for row in rows:
+                        grant = (window if row.batch_id is None else sources[row.batch_id]).get(row.sender_id)
+                        if grant is not None:
+                            grants[row.sender_id] = max(grants.get(row.sender_id, grant), grant)
+                    batch = QQBatch(session_id=session_id, project_id=binding.project_id, created_at=now,
+                        trigger_kind="private" if binding.target_kind == "friend" else "keyword" if keyword else "followup",
+                        participants_json=json.dumps(grants),
+                        text="\n".join(f"[{m.timestamp}][{m.sender_name}]:{m.text}" for m in rows))
+                    # Allocate before deleting old queues so an already selected batch ID cannot be reused.
+                    db.add(batch)
+                    db.flush()
+                    queued = queued.where(QQBatch.id != batch.id)
+                    db.exec(update(QQMessage).where(*candidates).values(disposition="skipped", batch_id=None)
+                        .execution_options(synchronize_session=False))
+                    db.exec(update(QQMessage).where(QQMessage.id.in_([row.id for row in rows]))
+                        .values(disposition="batched", batch_id=batch.id).execution_options(synchronize_session=False))
+                    # Deleted ingress identities remain for deduplication, without references to removed queues.
+                    db.exec(update(QQMessage).where(QQMessage.batch_id.in_(queued)).values(batch_id=None)
+                        .execution_options(synchronize_session=False))
+                    db.exec(delete(QQBatch).where(QQBatch.id.in_(queued)).execution_options(synchronize_session=False))
+                    self.advance_history(db, {session_id})
+                binding.deadline = None
+                db.exec(update(QQParticipant).where(QQParticipant.session_id == session_id,
+                    QQParticipant.in_window == True).values(in_window=False))
+            binding.paused, binding.pause_reason = False, ""
+            db.add(binding)
+            db.commit()
+            db.refresh(binding)
+            return binding
+
     def page(self, kind, session_id, before=None, limit=50):
         with Session(self.engine) as db:
             query = select(kind).where(kind.session_id == session_id)

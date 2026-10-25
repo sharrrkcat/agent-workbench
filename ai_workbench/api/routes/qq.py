@@ -145,9 +145,7 @@ def transcript_page(state, kind, session_id, before, limit):
 
 @router.post("/sessions/{session_id}/control", response_model=BindingResponse, responses=error_responses(404, 409))
 async def control(session_id: str, payload: Control, state: RuntimeState = Depends(get_state)):
-    if payload.action == "resume":
-        state.chat_service.assert_idle(session_id)
-    return binding_response(state, state.qq.control(session_id, payload.action))
+    return binding_response(state, await state.qq.control(session_id, payload.action))
 
 
 @router.get("/sessions/{session_id}/messages", response_model=MessagePage, responses=error_responses(404))

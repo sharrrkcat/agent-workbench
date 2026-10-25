@@ -22,7 +22,7 @@ export async function refreshQQRows<T extends { id: number }>(current: QQRows<T>
   };
   newest.push(...page.items);
   if (current.initialized && version !== current.history_version) {
-    // Replace the loaded range after deletion, including settled records far from the newest page.
+    // Replace the loaded range after history changes, including settled records far from the newest page.
     const oldest = current.items[current.items.length - 1]?.id;
     while (oldest !== undefined && page.next_cursor !== null && page.items[page.items.length - 1].id > oldest) {
       page = await read(page.next_cursor);

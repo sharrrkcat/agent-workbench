@@ -44,6 +44,35 @@ await assert.rejects(refreshQQRows({ ...window, history_version: 0 }, async (bef
   return page;
 }, unsettled), QQHistoryChanged, 'A mixed-version page sequence cannot resurrect deleted records');
 
+// Resume changes settled messages and replaces queues throughout the loaded history.
+let resumeVersion = 0;
+let resumeMessages = Array.from({ length: 120 }, (_, n) => ({ id: n + 1, batch_id: n + 1,
+  disposition: 'batched', segments: [] }));
+let resumeBatches = resumeMessages.map((row) => ({ id: row.batch_id, status: 'queued', run_id: null }));
+const resumePage = (items, before) => {
+  const selected = items.filter((row) => !before || row.id < before).sort((a, b) => b.id - a.id);
+  return { items: selected.slice(0, 50), next_cursor: selected.length > 50 ? selected[49].id : null, history_version: resumeVersion };
+};
+const fetchResumeMessages = async (before) => resumePage(resumeMessages, before);
+const fetchResumeBatches = async (before) => resumePage(resumeBatches, before);
+const queuedBatch = (row) => row.status === 'queued';
+let loadedMessages = await refreshQQRows(emptyQQRows(), fetchResumeMessages, unsettledQQMessage);
+let loadedBatches = await refreshQQRows(emptyQQRows(), fetchResumeBatches, queuedBatch);
+while (loadedMessages.next_cursor !== null) loadedMessages = await olderQQRows(loadedMessages, fetchResumeMessages);
+while (loadedBatches.next_cursor !== null) loadedBatches = await olderQQRows(loadedBatches, fetchResumeBatches);
+resumeMessages = resumeMessages.map((row) => ({ ...row,
+  disposition: row.id <= 100 ? 'skipped' : 'batched', batch_id: row.id <= 100 ? null : 121 }));
+resumeBatches = [{ id: 121, status: 'queued', run_id: null }];
+resumeVersion++;
+loadedMessages = await refreshQQRows(loadedMessages, fetchResumeMessages, unsettledQQMessage);
+loadedBatches = await refreshQQRows(loadedBatches, fetchResumeBatches, queuedBatch);
+assert.equal(loadedMessages.items.length, 120, 'Coalescing queues preserves every incoming bubble');
+assert.ok(loadedMessages.items.filter((row) => row.id <= 100).every((row) => row.disposition === 'skipped' && row.batch_id === null));
+assert.ok(loadedMessages.items.filter((row) => row.id > 100).every((row) => row.disposition === 'batched' && row.batch_id === 121));
+assert.deepEqual(loadedBatches.items, resumeBatches, 'Replaced queues disappear even beyond the newest page');
+assert.equal(loadedMessages.next_cursor, null);
+assert.equal(loadedBatches.next_cursor, null);
+
 const at = (second) => new Date(Date.parse('2026-10-04T00:00:00Z') + second * 1000).toISOString();
 const incoming = (id, sender, second = id) => ({ id, sender_id: sender, sender_name: 'Same display name', timestamp: at(second), text: `Input ${id}`, segments: [{ type: 'text', text: `Input ${id}` }], disposition: 'batched', batch_id: 1 });
 const run = { run_id: 'run', created_at: at(4), kind: 'chat', status: 'DONE' };
@@ -169,6 +198,19 @@ try {
   assert.equal(Object.keys(render().runs).length, 0);
   assert.equal(render().batches.items[0].run_id, null);
   assert.equal(render().messages.items.length, 1, 'Deleting a reply preserves its remaining input');
+  api.control = async (_id, action) => {
+    assert.equal(action, 'resume');
+    messageRows = messageRows.map((row) => ({ ...row, batch_id: 2 }));
+    batchRows = [{ id: 2, run_id: null, status: 'queued' }];
+    historyVersion++;
+    return bindingValue(false);
+  };
+  await render().control('resume'); await settle();
+  assert.equal(render().binding.paused, false);
+  assert.equal(render().messages.history_version, render().binding.history_version);
+  assert.equal(render().messages.items[0].batch_id, 2, 'Resume refreshes changed batch ownership');
+  assert.deepEqual(render().batches.items, batchRows);
+  api.control = async () => bindingValue(true);
   let resolveRead;
   bindingRead = () => new Promise((resolve) => { resolveRead = resolve; });
   const inflight = render().refresh();

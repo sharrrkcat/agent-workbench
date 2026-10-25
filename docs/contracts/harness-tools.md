@@ -100,7 +100,7 @@ Icebreaker execution overrides its run snapshot's reply limit to 1, shared by te
 Cancellation, delivery errors and existing Harness limits retain precedence. Counts reset for each new batch.
 
 Every expired debounce window creates a SQLite FIFO batch with fixed trigger policy, including during inference or pause.
-Messages are reserved once. Execution is serialized across each Project, loading only the next unpaused Session's batch.
+Messages belong to at most one batch at a time. Execution is serialized across each Project, loading only the next unpaused Session's batch.
 Project configuration resolves when execution starts, before asynchronous media waits/member lookup, then follows the immutable run snapshot.
 After deduplicated ingress, four background media acquisitions run independently of the WebSocket reader and preserve stored segment order. They use reported HTTP(S) URLs, then get_image for a downloadable URL when needed; remote filesystem paths are never read locally. Public-network policy, download byte limits and image decoding guard this boundary. QFace 1.4.1 supplies the bundled system-face mapping with its MIT notice; unknown IDs remain labeled unavailable.
 QQ media occurrences reference shared qq_media_assets, unique by SHA-256 of original PNG/JPEG/WebP/GIF bytes across all QQBot Projects. Resource rows own the original attachment, optional first-frame PNG for GIF/animated WebP/APNG, description, manual-description flag, favorite state and creation/update times. Static images reuse their attachment. An existing resource is attached before decoding; new resources are saved and referenced atomically so competing downloads retain one copy. Ordinary chat attachments do not share this deduplication. With image input enabled, a batch waits at most ten extra seconds for pending pictures/stickers, excluding system faces. Unavailable resources become positional text placeholders; late completion updates display but never sends historical images. Pending acquisition resumes after restart. History deletion releases a non-favorite resource after its final visible reference, protecting favorites and files referenced by other messages or model snapshots; late results cannot recreate deleted records and IDs are not reused.
@@ -115,7 +115,9 @@ Successful confirmation and its historical assistant message commit atomically; 
 OneBot rejection is failed; disconnect, timeout, cancellation during sending or an invalid receipt is unknown.
 Delivery errors terminate the current run and pause the Session before another send. No automatic resend or regeneration occurs.
 Main reply-model failures also pause. `/api/qq/sessions/{id}/control` pause prevents new execution while ingestion/batching continue;
-stop additionally cancels active work. Resume requires idle state and selects untouched queued batches only.
+stop additionally cancels active work. Manual resume requires idle state and coalesces backlog for every pause reason, including stop, failure and restart interruption. Repeating resume on an already unpaused idle Session leaves its queues and icebreaker observation unchanged.
+Resume waits for nickname decisions already pending when requested, using their existing lookup deadlines; later arrivals do not extend this wait. It then consumes the classified receipt-order prefix, leaving later unclassified inputs for normal batching. Connection changes still discard unfinished decisions without retriggering them.
+One SQLite transaction replaces untouched ordinary queued batches and the pending triggered window with at most one new batch, using the current input limit and [trigger/participant policy](chat-context.md#qqbot-conversations). It allocates the new batch before deleting replaced queue records, appends it to the Project FIFO, clears the consumed deadline/window membership and unpauses. No ordinary trigger means no recovery batch and pending group context stays available. The normal Project reply limit applies once to the merged batch.
 Failed, cancelled and interrupted batches never replay. Disabling a connection stops ingress/dispatch and blocks later sends.
 Restart retains ordinary queues, window membership/policy and absolute participant expiries, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
 Existing run reconciliation remains authoritative. QQ history has no editing, retry or direct-send API.
@@ -125,7 +127,7 @@ Local [history deletion](chat-context.md#qqbot-conversations) excludes removed i
 Deleting observed inputs uses only remaining visible messages; deleting all cancels the observation. History deletion never rewinds activity or cooldown clocks.
 Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
 
-Local fake-OneBot/fake-model tests cover transport, participant windows, skip/renewal races, batching, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,
+Local fake-OneBot/fake-model tests cover transport, participant windows, skip/renewal races, batching, manual backlog coalescing, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,
 reconnect backfill, real media/model round trips, manual sends, memory integration and Linux Local Runtime remain outside current acceptance;
 [QQ integration boundaries](../FUTURE_QQ_INTEGRATION.md) retains deployment evidence and outstanding live verification.
 
