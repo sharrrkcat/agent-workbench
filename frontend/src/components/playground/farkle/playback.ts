@@ -1,5 +1,5 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
-import type { FaceValue } from './state';
+import type { FaceValue } from './dice';
 
 export type Trajectory = { seed: number; n: number; sampleRate: number; frames: number[][][] };
 export const FACE_VALUES = [2, 5, 1, 6, 3, 4] as const;

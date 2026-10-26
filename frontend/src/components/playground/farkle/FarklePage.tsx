@@ -1,30 +1,66 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Coins, LogOut, Package, Plus, ShoppingBag, View } from 'lucide-react';
+import { ArrowLeft, Coins, LogOut, Minus, Package, Plus, ShoppingBag, View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Separator } from '@/components/ui/separator';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import type { SettingsNavigate } from '@/components/settings/navigation';
 import { playgroundUrl } from '../navigation';
 import { FarkleTable } from './FarkleTable';
-import { DICE_SKINS, faceCanvas } from './materials';
-import { gameReducer, initialGame, LEVELS, randomValues, type TargetScore } from './state';
+import { faceCanvas } from './materials';
+import { DICE_TYPES, drawDice, NORMAL_COUNT, OPPONENT_POOL, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
+import { inventoryPool, LEVELS, type TargetScore } from './economy';
+import { gameReducer, initialGame } from './state';
+import { useInventory } from './useInventory';
+import { rewardGroups } from './rewards';
+import { loadoutDice, loadoutSize, readLoadout, saveLoadout } from './loadout';
+import { DiceRow } from './DiceRow';
 
-type Modal = 'newGame' | 'myDice' | 'shop' | 'result';
+type Modal = 'newGame' | 'chooseDice' | 'myDice' | 'shop' | 'result';
 
 export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigate }) {
   const { t } = useTranslation('common');
   const { setOpenMobile, isMobile, openMobile } = useSidebar();
   const [state, dispatch] = useReducer(gameReducer, initialGame);
+  const { inventory, reward, error: storageError, retry } = useInventory(state.winner, state.target);
   const [modal, setModal] = useState<Modal | null>(null);
   const [ready, setReady] = useState(false);
   const [target, setTarget] = useState<TargetScore>(1500);
+  const [draft, setDraft] = useState<DiceCounts | null>(null);
+  const [loadoutError, setLoadoutError] = useState<'load' | 'save' | null>(null);
   const trigger = useRef<HTMLElement | null>(null);
   const sidebarTrigger = useRef<HTMLButtonElement>(null);
-  const previews = useMemo(() => DICE_SKINS.map((skin) => ({ skin, url: faceCanvas(skin, 1).toDataURL() })), []);
+  const modalTitle = useRef<HTMLHeadingElement>(null);
+  const previews = useMemo(() => DICE_TYPES.map((die) => ({ die, url: faceCanvas(die.id, die.id === 'devil' ? 1 : 5).toDataURL() })), []);
+  const startDisabled = !ready || !inventory || storageError !== null;
+  const owned = inventory ? inventoryPool(inventory) : null;
+  const selectedCount = draft ? loadoutSize(draft) : 0;
+  const groups = reward ? rewardGroups(reward) : [];
+  const storageAlert = storageError ? <Alert variant="destructive">
+    <AlertDescription>{t(storageError === 'load' ? 'farkle.inventoryLoadError' : 'farkle.inventorySaveError')}</AlertDescription>
+    <Button variant="outline" onClick={retry}>{t('farkle.retryStorage')}</Button>
+  </Alert> : null;
+
+  function prepareLoadout() {
+    if (!owned) return;
+    try { setDraft(readLoadout(window.localStorage, owned)); setLoadoutError(null); }
+    catch { setLoadoutError('load'); }
+  }
+
+  function startGame() {
+    if (startDisabled || !draft || selectedCount !== 6 || loadoutError === 'load') return;
+    try { saveLoadout(window.localStorage, draft); }
+    catch { setLoadoutError('save'); return; }
+    setLoadoutError(null);
+    const loadout = { B: loadoutDice(draft), A: drawDice(OPPONENT_POOL) };
+    dispatch({ type: 'start', target, loadout, values: rollValues(loadout.B) });
+    setModal(null);
+  }
 
   useEffect(() => {
     if (state.winner) {
@@ -33,9 +69,15 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
       setModal('result');
     }
   }, [state.winner, setOpenMobile]);
+  useEffect(() => { if (modal) modalTitle.current?.focus(); }, [modal]);
 
   function openModal(kind: Modal, source: HTMLElement) {
-    if (kind === 'newGame' && state.playing) setTarget(state.target);
+    if (kind === 'newGame' || kind === 'chooseDice') {
+      if (state.playing) setTarget(state.target);
+      setDraft(null);
+      setLoadoutError(null);
+      prepareLoadout();
+    }
     trigger.current = isMobile && source.closest('.farkle-sidebar') ? sidebarTrigger.current : source;
     setOpenMobile(false);
     setModal(kind);
@@ -63,7 +105,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
       </SidebarHeader>
       <SidebarContent />
       <SidebarFooter className="sidebar-footer shrink-0 p-3">
-        <SidebarMenu><SidebarMenuItem><SidebarMenuButton onClick={async () => {
+        <SidebarMenu><SidebarMenuItem><SidebarMenuButton disabled={storageError === 'save'} onClick={async () => {
           if (state.playing) { dispatch({ type: 'exit' }); setOpenMobile(false); }
           else if (await onNavigate(playgroundUrl())) setOpenMobile(false);
         }}>
@@ -75,38 +117,78 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
       <header className="topbar">
         <SidebarTrigger ref={sidebarTrigger} />
         <div className="settings-heading min-w-0"><h1 className="truncate">{t('playground.farkle')}</h1></div>
-        <Button variant="ghost" aria-label={t('farkle.balance', { count: 100 })} onClick={(event) => openModal('shop', event.currentTarget)}>
-          <Coins data-icon="inline-start" /><span>100</span>
+        <Button variant="ghost" aria-label={inventory ? t('farkle.balance', { count: inventory.merchant }) : t('farkle.myDice')}
+          onClick={(event) => openModal('shop', event.currentTarget)}>
+          <Coins data-icon="inline-start" /><span data-merchant-balance>{inventory?.merchant ?? '—'}</span>
         </Button>
       </header>
-      <FarkleTable state={state} dispatch={dispatch} onReady={setReady} blocked={modal !== null || (isMobile && openMobile)} />
+      {!modal && storageAlert ? <div className="p-3">{storageAlert}</div> : null}
+      <FarkleTable state={state} dispatch={dispatch} onReady={setReady} blocked={modal !== null || (isMobile && openMobile)}
+        onNewGame={(source) => openModal('newGame', source)} />
     </SidebarInset>
     <Dialog open={modal !== null} onOpenChange={(open) => { if (!open) setModal(null); }}>
-      <DialogContent finalFocus={() => trigger.current}>
-        <DialogHeader>
-          <DialogTitle>{modal ? t(`farkle.${modal}`) : ''}</DialogTitle>
+      <DialogContent initialFocus={() => modalTitle.current}
+        finalFocus={() => trigger.current?.isConnected ? trigger.current : sidebarTrigger.current}
+        className={modal === 'result' ? 'farkle-result' : undefined}>
+        {modal === 'result' ? <div className="farkle-result-summary">
+          <div className="farkle-score-heading" data-outcome={state.winner === 'B' ? 'win' : 'loss'}>
+            <DialogTitle ref={modalTitle} tabIndex={-1} style={{ font: 'inherit' }}>{t(state.winner === 'B' ? 'farkle.youWin' : 'farkle.youLost')}</DialogTitle>
+          </div>
+          <p className="farkle-score-total" data-result-score="B">{t('farkle.resultScore', { score: state.totals.B })}</p>
+        </div> : <DialogHeader>
+          <DialogTitle ref={modalTitle} tabIndex={-1}>{modal ? t(`farkle.${modal}`) : ''}</DialogTitle>
           {modal === 'shop' ? <DialogDescription>{t('farkle.shopPlaceholder')}</DialogDescription> : null}
-        </DialogHeader>
+        </DialogHeader>}
+        {storageAlert}
+        {(modal === 'newGame' || modal === 'chooseDice') && loadoutError ? <Alert variant="destructive">
+          <AlertDescription>{t(loadoutError === 'load' ? 'farkle.loadoutLoadError' : 'farkle.loadoutSaveError')}</AlertDescription>
+          <Button variant="outline" disabled={startDisabled}
+            onClick={loadoutError === 'load' ? prepareLoadout : startGame}>{t('farkle.retryStorage')}</Button>
+        </Alert> : null}
         {modal === 'result' && state.winner ? <>
-          <p>{t('farkle.winner', { player: t(state.winner === 'B' ? 'farkle.player' : 'farkle.opponent') })}</p>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-            <dt>{t('farkle.player')}</dt><dd className="text-right" data-result-score="B">{state.totals.B}</dd>
-            <dt>{t('farkle.opponent')}</dt><dd className="text-right" data-result-score="A">{state.totals.A}</dd>
-          </dl>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setTarget(state.target); setModal('newGame'); }}>{t('farkle.newGame')}</Button>
-            <Button disabled={!ready} onClick={() => {
-              dispatch({ type: 'start', target: state.target, values: randomValues() }); setModal(null);
-            }}>{t('farkle.playAgain')}</Button>
+          {reward ? <div className="flex min-h-0 flex-col gap-3 overflow-y-auto" data-rewards role="group" aria-label={t('farkle.rewards')}>
+            {groups.map((group, index) => <Fragment key={group.source}>
+              {index > 0 ? <Separator /> : null}
+              <ul className="flex shrink-0 flex-col gap-2" data-reward-group={group.source}>
+                {group.entries.map(({ type, count }) => <li key={type} className="flex items-center gap-3" data-reward-type={type}>
+                  <img className="size-8 shrink-0 rounded-md" src={previews.find(({ die }) => die.id === type)!.url} alt="" />
+                  <span className="min-w-0 flex-1">{t(`farkle.dice.${type}`)}</span>
+                  <span className="shrink-0" data-reward-count={count}>{group.source === 'regular' ? `+${count}`
+                    : t(group.source === 'firstWin' ? 'farkle.firstWinAmount' : 'farkle.convertedAmount', { count })}</span>
+                </li>)}
+              </ul>
+            </Fragment>)}
+          </div> : null}
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" onClick={(event) => openModal('newGame', event.currentTarget)}>{t('farkle.newGame')}</Button>
+            <Button disabled={startDisabled} onClick={(event) => openModal('chooseDice', event.currentTarget)}>{t('farkle.playAgain')}</Button>
           </DialogFooter>
         </> : null}
-        {modal === 'myDice' ? <ul className="flex min-h-0 flex-col gap-3 overflow-y-auto">
-          {previews.map(({ skin, url }) => <li key={skin.id} className="flex items-center gap-3">
-            <img className="size-10 rounded-md" src={url} alt="" />
-            <span className="flex-1">{t(`farkle.skins.${skin.id}`)}</span>
-            <span aria-label={t('farkle.quantity', { count: 1 })}>×1</span>
-          </li>)}
+        {modal === 'myDice' && inventory ? <ul className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          {previews.map(({ die, url }) => <DiceRow key={die.id} type={die.id} preview={url}
+            quantity={die.category === 'special' ? `${inventory.special[die.id]} / ${SPECIAL_LIMIT}`
+              : `×${die.id === 'normal' ? NORMAL_COUNT : inventory.merchant}`} />)}
         </ul> : null}
+        {modal === 'chooseDice' && owned && draft ? <>
+          <p className="shrink-0" data-loadout-total aria-live="polite">{t('farkle.diceSelected', { count: selectedCount })}</p>
+          <ul className="flex min-h-0 flex-col gap-3 overflow-y-auto" data-loadout>
+            {previews.filter(({ die }) => owned[die.id] > 0).map(({ die, url }) => <DiceRow key={die.id} type={die.id} preview={url}
+              quantity={`×${owned[die.id]}`} inlineQuantity>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button variant="outline" size="icon" aria-label={t('farkle.removeDie', { name: t(`farkle.dice.${die.id}`) })}
+                  disabled={draft[die.id] === 0} onClick={() => setDraft({ ...draft, [die.id]: draft[die.id] - 1 })}><Minus /></Button>
+                <span className="w-4 text-center tabular-nums" data-selected-count>{draft[die.id]}</span>
+                <Button variant="outline" size="icon" aria-label={t('farkle.addDie', { name: t(`farkle.dice.${die.id}`) })}
+                  disabled={selectedCount === 6 || draft[die.id] === owned[die.id]}
+                  onClick={() => setDraft({ ...draft, [die.id]: draft[die.id] + 1 })}><Plus /></Button>
+              </div>
+            </DiceRow>)}
+          </ul>
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" onClick={() => setModal('newGame')}>{t('back')}</Button>
+            <Button disabled={startDisabled || selectedCount !== 6 || loadoutError === 'load'} onClick={startGame}>{t('farkle.startGame')}</Button>
+          </DialogFooter>
+        </> : null}
         {modal === 'newGame' ? <>
           <Field>
             <FieldLabel id="farkle-level-label">{t('farkle.level')}</FieldLabel>
@@ -120,9 +202,10 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
               </ToggleGroupItem>)}
             </ToggleGroup>
           </Field>
-          <DialogFooter><Button disabled={!ready} onClick={() => {
-            dispatch({ type: 'start', target, values: randomValues() }); setModal(null);
-          }}>{t('farkle.startGame')}</Button></DialogFooter>
+          <DialogFooter><Button disabled={startDisabled || loadoutError === 'load'} onClick={() => {
+            if (!draft) prepareLoadout();
+            setModal('chooseDice');
+          }}>{t('farkle.chooseDice')}</Button></DialogFooter>
         </> : null}
       </DialogContent>
     </Dialog>

@@ -1,16 +1,10 @@
 import { evaluateDice } from './scoring';
+import type { DieType, FaceValue } from './dice';
+import type { TargetScore } from './economy';
 
-export const SKIN_IDS = ['bone', 'devil', 'heavenly', 'painted', 'lu_odd', 'tooth'] as const;
-export const LEVELS = [
-  { id: 'beggars', target: 1500 }, { id: 'wagoners', target: 2000 },
-  { id: 'masters', target: 3000 }, { id: 'courtiers', target: 4000 },
-] as const;
-export type TargetScore = typeof LEVELS[number]['target'];
-export type SkinId = typeof SKIN_IDS[number];
 export type PlayerId = 'A' | 'B';
-export type FaceValue = 1 | 2 | 3 | 4 | 5 | 6;
 export type GameDie = {
-  id: string; player: PlayerId; index: number; skin: SkinId;
+  id: string; player: PlayerId; index: number; type: DieType;
   value: FaceValue; status: 'idle' | 'selected' | 'scored';
 };
 export type GameCommand =
@@ -20,13 +14,13 @@ export type GameCommand =
   | { kind: 'view'; id: number; from: PlayerId; to: PlayerId; startTurn: boolean }
   | { kind: 'bust'; id: number };
 export type GameState = {
-  revision: number; playing: boolean; player: PlayerId; view: PlayerId; busy: boolean;
+  revision: number; turnId: number; playing: boolean; player: PlayerId; view: PlayerId; busy: boolean;
   target: TargetScore; hoverId: string | null; batches: Record<PlayerId, string[][]>;
   totals: Record<PlayerId, number>; rounds: Record<PlayerId, number>; winner: PlayerId | null;
   dice: GameDie[]; command: GameCommand | null;
 };
 export type GameAction =
-  | { type: 'start'; target: TargetScore; values: FaceValue[] }
+  | { type: 'start'; target: TargetScore; loadout: Record<PlayerId, DieType[]>; values: FaceValue[] }
   | { type: 'exit' }
   | { type: 'switch' }
   | { type: 'store' | 'pass' }
@@ -35,14 +29,10 @@ export type GameAction =
   | { type: 'complete'; id: number; hoverSample: number | null; values: FaceValue[] };
 
 export const initialGame: GameState = {
-  revision: 0, playing: false, player: 'B', view: 'B', busy: false, target: 1500,
+  revision: 0, turnId: 0, playing: false, player: 'B', view: 'B', busy: false, target: 1500,
   hoverId: null, batches: { A: [], B: [] }, dice: [], command: null,
   totals: { A: 0, B: 0 }, rounds: { A: 0, B: 0 }, winner: null,
 };
-
-export function randomValues(): FaceValue[] {
-  return Array.from({ length: 6 }, () => (Math.floor(Math.random() * 6) + 1) as FaceValue);
-}
 
 export function canPlay(state: GameState) {
   return state.playing && !state.busy && !state.winner && state.view === state.player;
@@ -70,7 +60,7 @@ function releaseDice(state: GameState): GameState {
 function handOff(state: GameState): GameState {
   const player = state.player === 'B' ? 'A' : 'B';
   const id = state.revision + 1;
-  return { ...state, revision: id, player, view: player, busy: true, hoverId: null,
+  return { ...state, revision: id, turnId: id, player, view: player, busy: true, hoverId: null,
     command: { kind: 'view', id, from: state.view, to: player, startTurn: true } };
 }
 
@@ -85,10 +75,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
   const id = state.revision + 1;
   if (action.type === 'start' || action.type === 'exit') {
     const playing = action.type === 'start';
-    const dice: GameDie[] = playing ? (['A', 'B'] as const).flatMap((player) => SKIN_IDS.map((skin, index) => ({
-      id: `${player}${index}`, player, index, skin, value: 1, status: 'idle',
+    const dice: GameDie[] = playing ? (['A', 'B'] as const).flatMap((player) => action.loadout[player].map((type, index) => ({
+      id: `${player}${index}`, player, index, type, value: 1, status: 'idle',
     }))) : [];
-    return { ...initialGame, revision: id, playing, busy: true, dice,
+    return { ...initialGame, revision: id, turnId: playing ? id : 0, playing, busy: true, dice,
       target: playing ? action.target : initialGame.target, batches: { A: [], B: [] },
       totals: { A: 0, B: 0 }, rounds: { A: 0, B: 0 },
       command: { kind: 'reset', id, values: playing ? action.values : null } };

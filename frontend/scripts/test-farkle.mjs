@@ -11,16 +11,17 @@ const { tableLayout, placeCamera } = (await load('../src/components/playground/f
 const rolls = JSON.parse(readFileSync(new URL('../src/components/playground/farkle/rolls.json', import.meta.url), 'utf8'));
 const { nextHoveredDie } = (await load('../src/components/playground/farkle/input.ts')).exports;
 const values = [1, 2, 3, 4, 5, 6];
+const loadout = { A: ['normal', 'devil', 'even', 'odd', 'weighted', 'merchant'], B: ['normal', 'devil', 'even', 'odd', 'weighted', 'merchant'] };
 const fives = [5, 5, 5, 5, 5, 5];
 const bustFaces = [2, 2, 3, 3, 4, 6];
 const finish = (state, faces = fives, hoverSample = 0) => gameReducer(state, {
   type: 'complete', id: state.command.id, hoverSample, values: faces,
 });
-const start = (target = 1500, faces = values) => finish(finish(gameReducer(initialGame, { type: 'start', target, values: faces })));
+const start = (target = 1500, faces = values) => finish(finish(gameReducer(initialGame, { type: 'start', target, loadout, values: faces })));
 const select = (state, ...ids) => ids.reduce((next, id) => gameReducer(next, { type: 'select', id }), state);
 const store = (state) => gameReducer(state, { type: 'store' });
 const pass = (state) => gameReducer(state, { type: 'pass' });
-const diceFor = (faces) => faces.map((value) => ({ value: value === 'wild' ? 1 : value, skin: value === 'wild' ? 'devil' : 'bone' }));
+const diceFor = (faces) => faces.map((value) => ({ value: value === 'wild' ? 1 : value, type: value === 'wild' ? 'devil' : 'normal' }));
 function score(faces, expected) {
   const dice = diceFor(faces), before = JSON.stringify(dice);
   for (const order of [dice, [...dice].reverse()]) {
@@ -55,11 +56,11 @@ assert.equal(evaluateDice(diceFor(['wild', 1])).hasScore, true, 'Natural one kee
 assert.equal(evaluateDice(diceFor(['wild', 2, 3, 4])).hasScore, false, 'A wildcard does not score as a single');
 assert.equal(evaluateDice(diceFor(bustFaces)).hasScore, false);
 assert.equal(evaluateDice(diceFor(['wild', 2, 2, 3, 4])).hasScore, true);
-assert.equal(isWild({ skin: 'devil', value: 2 }), false);
-assert.equal(isWild({ skin: 'heavenly', value: 1 }), false);
+assert.equal(isWild({ type: 'devil', value: 2 }), false);
+assert.equal(isWild({ type: 'even', value: 1 }), false);
 
 for (const target of [1500, 2000, 3000, 4000]) {
-  const reset = gameReducer(initialGame, { type: 'start', target, values });
+  const reset = gameReducer(initialGame, { type: 'start', target, loadout, values });
   const roll = finish(reset);
   assert.equal(roll.command.kind, 'roll', 'Starting immediately rolls the active side');
   assert.equal(roll.command.dice.length, 6);
@@ -120,6 +121,13 @@ assert.ok(game.dice.every((die) => die.status === 'idle'));
 game = finish(game);
 game = select(game, 'B0');
 const observing = finish(gameReducer(game, { type: 'switch' }));
+assert.equal(observing.turnId, game.turnId, 'Camera changes do not start another turn');
+assert.equal(game.turnId, start().turnId, 'Selections, storage and rerolls preserve the turn identity');
+const nextTurn = pass(start());
+assert.ok(nextTurn.turnId > game.turnId, 'Handoff changes the turn identity');
+const restarted = gameReducer(game, { type: 'start', target: 1500, loadout, values });
+assert.ok(restarted.turnId > game.turnId, 'Restarting B creates a fresh turn identity');
+assert.equal(gameReducer(game, { type: 'exit' }).turnId, 0);
 assert.equal(observing.player, 'B');
 assert.equal(observing.view, 'A');
 assert.equal(observing.hoverId, null);
@@ -217,7 +225,7 @@ assert.equal(game.totals.B, 1500);
 
 const phases = [storing, laterBust, firstBust, gameReducer(start(), { type: 'switch' }), finish(pass(start())), game];
 for (const previous of phases) for (const type of ['start', 'exit']) {
-  let reset = gameReducer(previous, type === 'start' ? { type, target: 4000, values } : { type });
+  let reset = gameReducer(previous, type === 'start' ? { type, target: 4000, loadout, values } : { type });
   assert.deepEqual(reset.totals, { A: 0, B: 0 });
   assert.deepEqual(reset.rounds, { A: 0, B: 0 });
   assert.deepEqual(reset.batches, { A: [], B: [] });
@@ -321,7 +329,12 @@ for (const [width, height] of [[1110, 844], [1366, 844], [390, 788], [844, 334],
 // Real scene scheduling/cleanup, replacing only the browser and GPU boundaries.
 const callbacks = new Map(); let sequence = 0, renders = 0, removed = 0, disposed = 0, completions = 0;
 globalThis.window = { devicePixelRatio: 1 };
-const context = new Proxy({}, { get: (_, key) => key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
+const uploadedTextures = [];
+const context = new Proxy({
+  createImageData: (width, height) => ({ data: new Uint8ClampedArray(width * height * 4) }),
+  putImageData: (data) => uploadedTextures.push(data.data),
+}, { get: (target, key) => target[key] ?? (key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}) });
+globalThis.Path2D = class { constructor(path) { this.path = path; } };
 globalThis.document = { createElement: () => ({ getContext: () => context }) };
 globalThis.requestAnimationFrame = (callback) => { callbacks.set(++sequence, callback); return sequence; };
 globalThis.cancelAnimationFrame = (id) => callbacks.delete(id);
@@ -333,14 +346,34 @@ class Renderer {
 }
 const sceneLoad = createModuleLoader({ three: mockModule({ ...THREE, WebGLRenderer: Renderer }) });
 const { DiceScene } = (await sceneLoad('../src/components/playground/farkle/scene.ts')).exports;
+const { tableMaterial, fitTableTexture } = (await load('../src/components/playground/farkle/tableMaterial.ts')).exports;
+const wood = tableMaterial(), secondWood = tableMaterial();
+assert.deepEqual(uploadedTextures[0], uploadedTextures[2], 'Wood color is deterministic');
+assert.deepEqual(uploadedTextures[1], uploadedTextures[3], 'Wood relief is deterministic');
+assert.ok(new Set(uploadedTextures[0]).size > 30, 'The table has color detail rather than a flat fill');
+assert.ok(new Set(uploadedTextures[1]).size > 20, 'The wood has subtle surface relief');
+const uvAt = (size, x, z) => {
+  fitTableTexture(wood, size);
+  const uv = new THREE.Vector2(x / size + 0.5, z / size + 0.5);
+  const color = uv.clone().applyMatrix3(wood.map.matrix);
+  assert.ok(color.distanceTo(uv.clone().applyMatrix3(wood.bumpMap.matrix)) < 1e-10, 'Color and relief stay aligned');
+  return color;
+};
+for (const [x, z] of [[0, 0], [-5.2, 8.3], [14.8, -19.4]]) {
+  assert.ok(uvAt(200, x, z).distanceTo(uvAt(383, x, z)) < 1e-10, 'Resizing never stretches or shifts world-space grain');
+}
+for (const material of [wood, secondWood]) { material.map.dispose(); material.bumpMap.dispose(); material.dispose(); }
+const textureDisposals = [];
+const disposeTexture = THREE.Texture.prototype.dispose;
+THREE.Texture.prototype.dispose = function () { textureDisposals.push(this); disposeTexture.call(this); };
 const scene = new DiceScene({ prepend() {} }, () => {});
 const draw = (time = performance.now()) => {
   const pending = [...callbacks.values()]; callbacks.clear();
   for (const callback of pending) callback(time);
 };
 scene.reset([
-  { id: 'one', skin: 'bone', origin: new THREE.Vector3(), position: new THREE.Vector3(0, 0.5, 0) },
-  { id: 'two', skin: 'devil', origin: new THREE.Vector3(), position: new THREE.Vector3(-1, 0.5, 0) },
+  { id: 'one', type: 'normal', origin: new THREE.Vector3(), position: new THREE.Vector3(0, 0.5, 0) },
+  { id: 'two', type: 'devil', origin: new THREE.Vector3(), position: new THREE.Vector3(-1, 0.5, 0) },
 ]);
 scene.resize(1000, 800, 200);
 draw();
@@ -364,6 +397,9 @@ scene.animate(() => false, () => completions++);
 scene.dispose();
 assert.equal(callbacks.size, 0);
 assert.equal(disposed, 1);
+assert.equal(textureDisposals.length, 27, 'Two dice types, the wooden table and shared shadow release their textures');
+assert.equal(new Set(textureDisposals).size, 27, 'Shared textures are disposed exactly once');
+THREE.Texture.prototype.dispose = disposeTexture;
 assert.equal(removed, 1);
 scene.invalidate();
 assert.equal(callbacks.size, 0, 'A disposed scene cannot schedule more frames');

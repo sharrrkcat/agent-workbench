@@ -7,16 +7,20 @@ import { initialPosition, placeCamera, tableLayout } from './layout';
 import { DiceScene, type HitBounds } from './scene';
 import { nextHoveredDie, type Direction } from './input';
 import { FarkleHud } from './FarkleHud';
+import { TurnNotice } from './TurnNotice';
 import type { Trajectory } from './playback';
-import { canPlay, randomValues, type GameAction, type GameState } from './state';
+import { canPlay, type GameAction, type GameState } from './state';
+import { rollValues } from './dice';
+import { DEVIL_HEAD_PATH } from './materials';
 import { isWild } from './scoring';
 import rolls from './rolls.json';
 
 const faceIcons = [Dice1, Dice2, Dice3, Dice4, Dice5, Dice6];
 const hoverQuery = '(hover: hover) and (pointer: fine)';
 
-export function FarkleTable({ state, dispatch, onReady, blocked }: {
+export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
   state: GameState; dispatch: Dispatch<GameAction>; onReady: (ready: boolean) => void; blocked: boolean;
+  onNewGame: (source: HTMLElement) => void;
 }) {
   const { t } = useTranslation('common');
   const container = useRef<HTMLDivElement>(null);
@@ -130,12 +134,13 @@ export function FarkleTable({ state, dispatch, onReady, blocked }: {
         clearTimeout(bustTimer);
         moves.clear();
         const complete = () => {
-          if (live) dispatch({ type: 'complete', id: command.id, values: randomValues(),
+          if (live) dispatch({ type: 'complete', id: command.id,
+            values: rollValues(next.dice.filter((die) => die.player === next.player).map((die) => die.type)),
             hoverSample: hoverEnabled.current ? Math.random() : null });
         };
         if (command.kind === 'reset') {
           moves.clear(); bounds.current.clear(); recent.length = 0;
-          scene.reset(next.dice.map((die) => ({ id: die.id, skin: die.skin,
+          scene.reset(next.dice.map((die) => ({ id: die.id, type: die.type,
             origin: layout.origins[die.player], position: initialPosition(die.index) })));
           frameCamera();
           complete();
@@ -193,9 +198,9 @@ export function FarkleTable({ state, dispatch, onReady, blocked }: {
         disabled={disabled || die.status === 'scored'}
         aria-label={t(die.status === 'scored' ? 'farkle.scoredDie' : die.status === 'selected' ? 'farkle.releaseDie' : 'farkle.holdDie', {
           player: die.player, number: die.index + 1,
-          value: isWild(die) ? t('farkle.wildFace') : t('farkle.faceValue', { value: die.value }), skin: t(`farkle.skins.${die.skin}`),
+          value: isWild(die) ? t('farkle.wildFace') : t('farkle.faceValue', { value: die.value }), name: t(`farkle.dice.${die.type}`),
         })}
-        data-die-id={die.id} data-value={die.value} data-state={die.status} data-hovered={hovered?.id === die.id}
+        data-die-id={die.id} data-die-type={die.type} data-value={die.value} data-state={die.status} data-hovered={hovered?.id === die.id}
         data-batch={state.batches[die.player].findIndex((batch) => batch.includes(die.id))}
         aria-pressed={die.status === 'selected'}
         onPointerMove={(event) => {
@@ -207,7 +212,8 @@ export function FarkleTable({ state, dispatch, onReady, blocked }: {
           dispatch({ type: 'select', id: die.id });
         }} />)}
       {hovered ? <div ref={faceIcon} className="farkle-face-icon" aria-hidden="true" data-face-value={isWild(hovered) ? 'wild' : hovered.value}>
-        {isWild(hovered) ? <span>😈</span> : <FaceIcon />}
+        {isWild(hovered) ? <svg viewBox="0 0 100 100" className="farkle-head-icon"><path d={DEVIL_HEAD_PATH} fillRule="evenodd" /></svg> : <FaceIcon />}
+        {hovered.type !== 'normal' ? <span className="farkle-die-name">{t(`farkle.dice.${hovered.type}`)}</span> : null}
       </div> : null}
       {state.command?.kind === 'bust' ? <div className="farkle-bust" role="status">
         <div className="farkle-score-heading">{t('farkle.bust')}</div>
@@ -215,6 +221,10 @@ export function FarkleTable({ state, dispatch, onReady, blocked }: {
       {state.playing ? <FarkleHud state={state} disabled={disabled}
         onHold={() => { if (state.hoverId) dispatch({ type: 'select', id: state.hoverId }); }}
         onStore={() => dispatch({ type: 'store' })} onPass={() => dispatch({ type: 'pass' })} /> : null}
+      <TurnNotice state={state} />
     </>}
+    {(!state.playing || state.winner) && !blocked ? <Button variant="ghost"
+      className="absolute inset-0 h-full w-full opacity-0 focus-visible:opacity-100" aria-label={t('farkle.newGame')}
+      data-table-new-game onClick={(event) => onNewGame(event.currentTarget)} /> : null}
   </div>;
 }

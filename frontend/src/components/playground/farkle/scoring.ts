@@ -1,9 +1,9 @@
 import type { GameDie } from './state';
 
-type ScoringDie = Pick<GameDie, 'value' | 'skin'>;
+type ScoringDie = Pick<GameDie, 'value' | 'type'>;
 
 export function isWild(die: ScoringDie) {
-  return die.skin === 'devil' && die.value === 1;
+  return die.type === 'devil' && die.value === 1;
 }
 
 function combinationScore(dice: readonly ScoringDie[]): number {

@@ -179,16 +179,27 @@
 
   .workspace { container: chat-shell / inline-size; }
   .farkle-table > canvas { display: block; position: absolute; inset: 0; }
-  .farkle-table { container: farkle / size; --farkle-gold: #f5e3a2; }
+  .farkle-table { container: farkle / size; }
+  .farkle-table, .farkle-result {
+    --farkle-gold: #f5e3a2;
+    --farkle-red: #e52424;
+    --farkle-text: #fff8e8;
+    --farkle-font: Georgia, 'Noto Serif SC', 'Songti SC', SimSun, serif;
+  }
   .farkle-face-icon {
     position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
     transform: translate(-50%, -50%);
     color: #f3d36a;
     pointer-events: none;
     filter: drop-shadow(0 1px 2px #28170c);
   }
-  .farkle-face-icon svg { width: 22px; height: 22px; fill: #352113; }
-  .farkle-face-icon span { display: block; font-size: 22px; line-height: 1; }
+  .farkle-face-icon svg { width: 22px; height: 22px; flex-shrink: 0; fill: #352113; }
+  .farkle-face-icon .farkle-head-icon { fill: currentColor; }
+  .farkle-die-name { font-size: 12px; line-height: 1.2; }
   .farkle-hud {
     position: absolute;
     inset-inline: clamp(12px, 2.5cqw, 36px);
@@ -199,19 +210,48 @@
     gap: 16px;
     pointer-events: none;
   }
-  .farkle-score, .farkle-bust {
-    font-family: Georgia, 'Noto Serif SC', 'Songti SC', SimSun, serif;
-    font-size: clamp(14px, 2.2cqw, 28px);
+  .farkle-score, .farkle-bust, .farkle-turn, .farkle-result-summary {
+    font-family: var(--farkle-font);
     line-height: 1.2;
     text-shadow: 0 2px 2px #28170c;
   }
+  .farkle-score, .farkle-turn { font-size: clamp(14px, 2.2cqw, 28px); }
+  .farkle-result-summary {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 8px;
+    text-align: center;
+    font-size: clamp(16px, 2.2vw, 21px);
+    color: var(--farkle-text);
+    padding-inline: 24px;
+  }
+  .farkle-result [data-outcome='loss'] { color: var(--farkle-red); }
+  .farkle-result-summary .farkle-score-heading { font-size: 1.6em; }
+  .farkle-result-summary .farkle-score-total { font-size: 1.1em; }
   .farkle-score {
     display: grid;
     grid-template-columns: 1fr 1fr 1.15fr;
     width: clamp(144px, 40cqw, 430px);
-    color: #fff8e8;
+    color: var(--farkle-text);
   }
   .farkle-bust { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .farkle-bust .farkle-score-heading { font-size: clamp(32px, 5cqw, 64px); }
+  .farkle-turn {
+    position: absolute;
+    top: clamp(12px, 3cqh, 28px);
+    inset-inline: 12px;
+    text-align: center;
+    pointer-events: none;
+  }
+  .farkle-turn[data-turn-notice='B'] { animation: farkle-your-turn 1800ms linear both; }
+  @keyframes farkle-your-turn {
+    0%, 100% { opacity: 0; }
+    11.111%, 77.778% { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .farkle-turn[data-turn-notice='B'] { animation: none; }
+  }
   .farkle-score > div { display: grid; gap: 0.32em; padding-inline: 0.5em; }
   .farkle-score-player { text-align: right; }
   .farkle-score-goal {
@@ -222,7 +262,7 @@
   .farkle-score-total { font-size: 1.5em; }
   .farkle-score-player .farkle-score-total { color: #10b9f0; }
   .farkle-score-goal .farkle-score-total { color: var(--farkle-gold); }
-  .farkle-score-opponent .farkle-score-total { color: #e52424; }
+  .farkle-score-opponent .farkle-score-total { color: var(--farkle-red); }
   .farkle-actions { display: flex; flex-direction: column; gap: 8px; width: clamp(144px, 20cqw, 208px); flex-shrink: 0; pointer-events: auto; }
   .farkle-action-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .farkle-actions button > span { white-space: normal; }
@@ -230,16 +270,16 @@
   @media (pointer: fine) {
     @container farkle (min-width: 641px) {
       .farkle-score { width: clamp(144px, 30cqw, 320px); }
-      .farkle-score, .farkle-bust { font-size: clamp(14px, 1.65cqw, 21px); }
+      .farkle-score, .farkle-turn { font-size: clamp(14px, 1.65cqw, 21px); }
     }
   }
   @container farkle (max-width: 640px) {
     .farkle-hud { gap: 8px; }
     .farkle-score { min-width: 0; }
-    .farkle-score, .farkle-bust { font-size: 12px; }
+    .farkle-score, .farkle-turn { font-size: 12px; }
     .farkle-score > div { padding-inline: 4px; }
     .farkle-face-icon svg { width: 18px; height: 18px; }
-    .farkle-face-icon span { font-size: 18px; }
+    .farkle-die-name { font-size: 11px; }
   }
   @container farkle (max-width: 360px) {
     .farkle-score { width: auto; flex: 1; grid-template-columns: auto auto auto; }
@@ -249,7 +289,7 @@
   }
   @container farkle (max-height: 440px) {
     .farkle-score { width: 230px; }
-    .farkle-score, .farkle-bust { font-size: 13px; }
+    .farkle-score, .farkle-turn { font-size: 13px; }
     .farkle-hud { bottom: 10px; }
   }
   @media (pointer: coarse) {

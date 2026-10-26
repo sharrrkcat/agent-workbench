@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { DICE_SKINS, shadowTexture, skinMaterials } from './materials';
+import { shadowTexture, diceMaterials } from './materials';
+import { fitTableTexture, tableMaterial } from './tableMaterial';
 import { RollPlayback, type Trajectory } from './playback';
-import type { FaceValue, PlayerId, SkinId } from './state';
+import type { PlayerId } from './state';
+import type { DieType, FaceValue } from './dice';
 
 type DieView = {
   root: THREE.Group; mesh: THREE.Mesh; shadow: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
@@ -28,9 +30,9 @@ export class DiceScene {
   private outlineMaterial = new THREE.MeshBasicMaterial({ color: '#000000', depthWrite: false });
   private hoverMaterial = new THREE.MeshBasicMaterial({ color: '#f3d36a', depthWrite: false });
   private selectedMaterial = new THREE.MeshBasicMaterial({ color: '#10b9f0', depthWrite: false });
-  private materials = new Map<SkinId, THREE.MeshStandardMaterial[]>();
+  private materials = new Map<DieType, THREE.MeshStandardMaterial[]>();
   private dice = new Map<string, DieView>();
-  private tableMaterial = new THREE.MeshStandardMaterial({ color: '#503520', roughness: 0.78, metalness: 0.03 });
+  private tableMaterial = tableMaterial();
   private dividerMaterial = new THREE.MeshStandardMaterial({ color: '#291a10', roughness: 0.55 });
   private table = new THREE.Mesh(new THREE.BoxGeometry(1, 0.3, 1), this.tableMaterial);
   private divider = new THREE.Mesh(new THREE.BoxGeometry(1, 0.045, 0.08), this.dividerMaterial);
@@ -59,11 +61,12 @@ export class DiceScene {
     this.width = width; this.height = height;
     this.renderer.setSize(width, height);
     this.table.scale.set(tableSize, 1, tableSize);
+    fitTableTexture(this.tableMaterial, tableSize);
     this.divider.scale.x = tableSize;
     this.invalidate();
   }
 
-  reset(dice: { id: string; skin: SkinId; origin: THREE.Vector3; position: THREE.Vector3 }[]) {
+  reset(dice: { id: string; type: DieType; origin: THREE.Vector3; position: THREE.Vector3 }[]) {
     this.cancel();
     for (const die of this.dice.values()) {
       this.scene.remove(die.root);
@@ -71,10 +74,10 @@ export class DiceScene {
     }
     this.dice.clear();
     for (const definition of dice) {
-      let material = this.materials.get(definition.skin);
+      let material = this.materials.get(definition.type);
       if (!material) {
-        material = skinMaterials(DICE_SKINS.find((skin) => skin.id === definition.skin)!);
-        this.materials.set(definition.skin, material);
+        material = diceMaterials(definition.type);
+        this.materials.set(definition.type, material);
       }
       const root = new THREE.Group();
       root.position.copy(definition.origin);
@@ -184,13 +187,15 @@ export class DiceScene {
     this.cancel();
     cancelAnimationFrame(this.frame);
     for (const die of this.dice.values()) die.shadow.material.dispose();
-    for (const material of this.materials.values()) for (const face of material) { face.map!.dispose(); face.dispose(); }
+    for (const material of this.materials.values()) for (const face of material) {
+      face.map!.dispose(); face.bumpMap!.dispose(); face.dispose();
+    }
     this.materials.clear(); this.dice.clear();
     this.geometry.dispose(); this.shadowGeometry.dispose(); this.shadowMap.dispose();
     this.hoverGeometry.dispose(); this.selectedGeometry.dispose();
     this.hoverOutlineGeometry.dispose(); this.selectedOutlineGeometry.dispose(); this.outlineMaterial.dispose();
     this.hoverMaterial.dispose(); this.selectedMaterial.dispose();
-    this.table.geometry.dispose(); this.tableMaterial.dispose();
+    this.table.geometry.dispose(); this.tableMaterial.map!.dispose(); this.tableMaterial.bumpMap!.dispose(); this.tableMaterial.dispose();
     this.divider.geometry.dispose(); this.dividerMaterial.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
