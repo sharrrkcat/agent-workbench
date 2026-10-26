@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { openSidebar } from './controls';
+import { DICE_TYPES } from '../src/components/playground/farkle/dice';
+
+type OpponentFrame = { at: number; player: string; phase: string; selected: string[]; hovered: string | null };
 
 for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
   const common = JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/common.json`, import.meta.url), 'utf8'));
@@ -15,6 +18,44 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
     const total = (page: Page, player: string) => page.locator(`.farkle-score-${player === 'B' ? 'player' : 'opponent'} .farkle-score-total`);
     const press = async (locator: Locator) => { if (touch) await locator.tap(); else await locator.click(); };
     const useFace = (page: Page, face: number) => page.evaluate((value) => { Math.random = () => (value - 0.5) / 6; }, face);
+    async function nextOpponentFaces(page: Page, faces: number[]) {
+      await page.evaluate(({ faces, definitions }) => {
+        const fallback = Math.random;
+        let index = 0;
+        Math.random = () => {
+          const board = document.querySelector('.farkle-table');
+          if (index < faces.length && board?.getAttribute('data-player') === 'A' && board.getAttribute('data-phase') === 'view') {
+            const type = document.querySelector(`[data-die-id="A${index}"]`)!.getAttribute('data-die-type');
+            const weights = definitions.find((die) => die.id === type)!.weights;
+            const face = faces[index++] - 1;
+            return (weights.slice(0, face).reduce((sum, weight) => sum + weight, 0) + weights[face] / 2)
+              / weights.reduce((sum, weight) => sum + weight, 0);
+          }
+          return fallback();
+        };
+      }, { faces, definitions: DICE_TYPES });
+    }
+    async function observeOpponent(page: Page) {
+      await page.evaluate(() => {
+        const frames: OpponentFrame[] = [];
+        (window as typeof window & { farkleFrames: OpponentFrame[] }).farkleFrames = frames;
+        const board = document.querySelector('.farkle-table')!;
+        let previous = '';
+        new MutationObserver(() => {
+          const player = board.getAttribute('data-player')!;
+          const phase = board.getAttribute('data-phase')!;
+          if (player !== 'A' && phase !== 'view') return;
+          const snapshot = {
+            player, phase,
+            selected: [...board.querySelectorAll('[data-state="selected"]')].map((node) => node.getAttribute('data-die-id')!),
+            hovered: board.querySelector('[data-hovered="true"]')?.getAttribute('data-die-id') ?? null,
+          };
+          const key = JSON.stringify(snapshot);
+          if (key !== previous) frames.push({ ...snapshot, at: performance.now() });
+          previous = key;
+        }).observe(board, { attributes: true, subtree: true, childList: true });
+      });
+    }
     async function menu(page: Page, label: string) {
       await openSidebar(page);
       await press(sidebar(page).getByRole('button', { name: label, exact: true }));
@@ -73,7 +114,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await page.evaluate((samples) => {
         const fallback = Math.random;
         Math.random = () => samples.length ? samples.shift()! : fallback();
-      }, Array(6).fill(0));
+      }, level === 'beggars' || level === 'wagoners' ? [0] : [0, 0]);
       await press(choice(page).getByRole('button', { name: words.startGame, exact: true }));
       await expect(table(page)).toHaveAttribute('data-phase', 'roll');
       await settled(page);
@@ -168,7 +209,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         weighted: ['66.7%', '6.7%', '6.7%', '6.7%', '6.7%', '6.7%'],
         devil: ['16.7%', '16.7%', '16.7%', '16.7%', '16.7%', '16.7%'],
       })) {
-        if (touch) await press(inventoryRow(type).getByRole('button'));
+        if (touch) {
+          await page.getByRole('dialog').getByRole('heading').tap();
+          await expect(page.locator('[data-dice-probabilities]')).toHaveCount(0);
+          await press(inventoryRow(type).getByRole('button'));
+        }
         else {
           await page.mouse.move(0, 0);
           await expect(page.locator('[data-dice-probabilities]')).toHaveCount(0);
@@ -246,22 +291,16 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       expect(styling.actual).toEqual(styling.expected);
       await expect(notice).toHaveCount(0);
       await settled(page);
-      await menu(page, words.switchView);
-      await settled(page);
+      await menu(page, words.myDice);
       await expect(notice).toHaveCount(0);
-      await menu(page, words.switchView);
-      await settled(page);
+      await page.keyboard.press('Escape');
+      await nextOpponentFaces(page, [3, 3, 3, 3, 5, 6]);
       await press(page.getByRole('button', { name: words.pass, exact: true }));
       await expect(notice).toHaveText(words.opponentTurn);
       await settled(page);
-      await menu(page, words.switchView);
-      await settled(page);
-      await expect(table(page)).toHaveAttribute('data-view', 'B');
+      await expect(table(page)).toHaveAttribute('data-view', 'A');
       await expect(notice).toHaveText(words.opponentTurn);
       await page.screenshot({ path: testInfo.outputPath('opponent-turn.png') });
-      await menu(page, words.switchView);
-      await settled(page);
-      await press(page.getByRole('button', { name: words.pass, exact: true }));
       await expect(notice).toHaveText(words.yourTurn);
       await expect(notice).toHaveCount(0);
       await menu(page, words.exitGame);
@@ -351,14 +390,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await settled(page);
       await expect(page.locator('[data-state="idle"]')).toHaveCount(6);
       await expect(page.locator('[data-batch="-1"]')).toHaveCount(6);
-      await menu(page, words.switchView);
-      await settled(page);
       await expect(table(page)).toHaveAttribute('data-player', 'B');
-      await expect(table(page)).toHaveAttribute('data-view', 'A');
-      await expect(die(page, 'A0')).toBeDisabled();
-      await expect(page.getByRole('button', { name: words.pass, exact: true })).toBeDisabled();
-      await menu(page, words.switchView);
-      await settled(page);
+      await expect(table(page)).toHaveAttribute('data-view', 'B');
       await expect(page.locator('[data-state="selected"]')).toHaveCount(0);
       await start(page);
       await menu(page, words.exitGame);
@@ -411,24 +444,17 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(table(page)).toHaveAttribute('data-player', 'A');
       await expect(total(page, 'B')).toHaveText('50');
     });
-    test('live scores, observation isolation and passes with or without a selection', async ({ page }, testInfo) => {
+    test('live scores, automatic opponent banking and passes with or without a selection', async ({ page }, testInfo) => {
       await start(page);
       await press(die(page, 'B0'));
       await expect(score(page, 'B', 'selected')).toHaveText('50');
-      await menu(page, words.switchView);
-      await settled(page);
-      await expect(score(page, 'B', 'selected')).toHaveText('50');
-      await expect(page.locator('[data-die-id]:enabled')).toHaveCount(0);
-      for (const key of ['e', 'f', 'q']) await page.keyboard.press(key);
-      await expect(table(page)).toHaveAttribute('data-player', 'B');
-      await menu(page, words.switchView);
-      await settled(page);
       await expect(die(page, 'B0')).toHaveAttribute('aria-pressed', 'true');
       await press(page.getByRole('button', { name: words.scoreContinue, exact: true }));
       await settled(page);
       await expect(score(page, 'B', 'round')).toHaveText('50');
       await expect(score(page, 'B', 'selected')).toHaveText('0');
       await press(die(page, 'B1'));
+      await nextOpponentFaces(page, [3, 3, 3, 3, 5, 6]);
       await press(page.getByRole('button', { name: words.pass, exact: true }));
       await settled(page);
       await expect(table(page)).toHaveAttribute('data-player', 'A');
@@ -436,15 +462,13 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(total(page, 'B')).toHaveText('100');
       await expect(score(page, 'B', 'round')).toHaveText('0');
       await expect(score(page, 'B', 'selected')).toHaveText('0');
-      for (const id of ['A0', 'A1', 'A2']) await press(die(page, id));
-      await expect(score(page, 'A', 'selected')).toHaveText('500');
+      await expect(page.locator('[data-die-id]:enabled')).toHaveCount(0);
+      await expect(page.locator('.farkle-actions button:enabled')).toHaveCount(0);
+      await expect(score(page, 'A', 'selected')).toHaveText('650');
       await page.screenshot({ path: testInfo.outputPath('opponent-selected.png') });
-      await press(page.getByRole('button', { name: words.scoreContinue, exact: true }));
+      await expect(table(page)).toHaveAttribute('data-player', 'B');
       await settled(page);
-      await expect(score(page, 'A', 'round')).toHaveText('500');
-      await press(page.getByRole('button', { name: words.pass, exact: true }));
-      await settled(page);
-      await expect(total(page, 'A')).toHaveText('500');
+      await expect(total(page, 'A')).toHaveText('650');
       await expect(table(page)).toHaveAttribute('data-player', 'B');
       await expect(page.locator('[data-state="idle"]')).toHaveCount(6);
       await expect(page.locator('[data-batch="-1"]')).toHaveCount(6);
@@ -510,7 +534,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(page.locator('.farkle-actions button:enabled')).toHaveCount(0);
       await expect(total(page, 'B')).toHaveText('8000');
       await openSidebar(page);
-      await expect(sidebar(page).getByRole('button', { name: words.switchView, exact: true })).toBeDisabled();
+      await expect(sidebar(page).locator('.sidebar-header [data-sidebar="menu-button"]')).toHaveText([words.newGame, words.myDice, words.shop]);
       await press(sidebar(page).getByRole('button', { name: words.newGame, exact: true }));
       await press(settings.getByRole('button', { name: words.chooseDice, exact: true }));
       await press(choice(page).getByRole('button', { name: words.startGame, exact: true }));
@@ -518,15 +542,32 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(total(page, 'B')).toHaveText('0');
       await expect(table(page)).toHaveAttribute('data-phase', 'idle');
     });
-    test('opponent wins with selected dice and replay retains the match level', async ({ page }, testInfo) => {
+    test('opponent uses visible thinking, hover, selection and confirmation before winning', async ({ page }, testInfo) => {
       await start(page, 'masters');
+      await observeOpponent(page);
       await press(page.getByRole('button', { name: words.pass, exact: true }));
       await settled(page);
-      for (let index = 0; index < 6; index++) await press(die(page, `A${index}`));
+      await expect(page.locator('[data-die-id]:enabled')).toHaveCount(0);
+      await expect(page.locator('.farkle-actions button:enabled')).toHaveCount(0);
+      for (const key of ['w', 'a', 's', 'd', 'e', 'f', 'q']) await page.keyboard.press(key);
+      await die(page, 'A0').evaluate((node: HTMLButtonElement) => node.click());
+      await expect(score(page, 'A', 'selected')).toHaveText('0');
+      await expect(page.locator('.farkle-face-icon')).toBeVisible();
       await expect(score(page, 'A', 'selected')).toHaveText('4000');
-      await press(page.getByRole('button', { name: words.pass, exact: true }));
+      await page.screenshot({ path: testInfo.outputPath('ai-selected.png') });
       const result = page.getByRole('dialog', { name: words.youLost, exact: true });
       await expect(result).toBeVisible();
+      const frames = await page.evaluate(() => (window as typeof window & { farkleFrames: OpponentFrame[] }).farkleFrames);
+      const thinking = frames.find((frame) => frame.phase === 'idle')!;
+      const firstHover = frames.find((frame) => frame.hovered)!;
+      expect(firstHover.at - thinking.at).toBeGreaterThanOrEqual(1450);
+      let prior = firstHover;
+      for (let count = 1; count <= 6; count++) {
+        const selected = frames.find((frame) => frame.phase === 'idle' && frame.selected.length === count)!;
+        expect(selected.at - prior.at).toBeGreaterThanOrEqual(525);
+        prior = selected;
+      }
+      expect(frames.find((frame) => frame.phase === 'store')!.at - prior.at).toBeGreaterThanOrEqual(850);
       await expect(result.getByRole('heading')).toHaveText(words.youLost);
       await expect(result.locator('[data-result-score="B"]')).toHaveText(words.resultScore.replace('{{score}}', '0'));
       await expect(result.locator('[data-result-score="A"]')).toHaveCount(0);
@@ -557,6 +598,128 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(page.locator('[data-die-type="devil"]')).toHaveCount(1);
       await expect(page.locator('[data-die-type="normal"]')).toHaveCount(5);
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogita.farkle.inventory')!))).toEqual(inventory);
+    });
+    test('opponent pauses before handing banking and bust turns back to the player', async ({ page }) => {
+      for (const { faces, banked } of [{ faces: [3, 3, 3, 3, 5, 6], banked: 650 }, { faces: [2, 2, 3, 3, 4, 6], banked: 0 }]) {
+        await start(page);
+        await nextOpponentFaces(page, faces);
+        await observeOpponent(page);
+        await press(page.getByRole('button', { name: words.pass, exact: true }));
+        await expect(table(page)).toHaveAttribute('data-player', 'A');
+        await expect(table(page)).toHaveAttribute('data-player', 'B');
+        const frames = await page.evaluate(() => (window as typeof window & { farkleFrames: OpponentFrame[] }).farkleFrames);
+        const pause = frames.find((frame) => frame.phase === 'turnEnd')!;
+        expect(pause.player).toBe('A');
+        expect(pause.selected).toEqual([]);
+        expect(frames.find((frame) => frame.player === 'B' && frame.phase === 'view')!.at - pause.at).toBeGreaterThanOrEqual(475);
+        if (!banked) expect(pause.at - frames.find((frame) => frame.phase === 'bust')!.at).toBeGreaterThanOrEqual(1150);
+        await expect(total(page, 'A')).toHaveText(String(banked));
+        await expect(score(page, 'A', 'round')).toHaveText('0');
+        await settled(page);
+      }
+    });
+    test('opponent pauses for overlays and background, and cancels old moves on restart and exit', async ({ page }) => {
+      await start(page, 'masters');
+      await press(page.getByRole('button', { name: words.pass, exact: true }));
+      await settled(page);
+      await menu(page, words.myDice);
+      await expect(page.getByRole('dialog', { name: words.myDice, exact: true })).toBeVisible();
+      await page.waitForTimeout(1800);
+      await expect(score(page, 'A', 'selected')).toHaveText('0');
+      await expect(total(page, 'A')).toHaveText('0');
+      // Simulate losing visibility immediately after one real AI selection.
+      await page.evaluate(() => {
+        const board = document.querySelector('.farkle-table')!;
+        const observer = new MutationObserver(() => {
+          if (board.getAttribute('data-player') !== 'A' || !board.querySelector('[data-state="selected"]')) return;
+          observer.disconnect();
+          Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        observer.observe(board, { attributes: true, subtree: true });
+      });
+      await page.keyboard.press('Escape');
+      await expect(page.locator('[data-state="selected"]')).toHaveCount(1);
+      const hover = await page.locator('[data-hovered="true"]').getAttribute('data-die-id');
+      await page.waitForTimeout(1000);
+      for (const key of ['e', 'f', 'q']) await page.keyboard.press(key);
+      await table(page).dispatchEvent('pointerdown', { pointerType: 'touch' });
+      await expect(page.locator('[data-state="selected"]')).toHaveCount(1);
+      await expect(page.locator('[data-hovered="true"]')).toHaveAttribute('data-die-id', hover!);
+      await expect(page.locator('.farkle-face-icon')).toBeVisible();
+      await expect(total(page, 'A')).toHaveText('0');
+      await menu(page, words.newGame);
+      await page.evaluate(() => {
+        Reflect.deleteProperty(document, 'hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await press(page.getByRole('dialog').getByRole('button', { name: words.chooseDice, exact: true }));
+      await press(choice(page).getByRole('button', { name: words.startGame, exact: true }));
+      await settled(page);
+      await page.waitForTimeout(1000);
+      await expect(table(page)).toHaveAttribute('data-player', 'B');
+      await expect(page.locator('[data-state="selected"]')).toHaveCount(0);
+      await expect(total(page, 'A')).toHaveText('0');
+      await expect(total(page, 'B')).toHaveText('0');
+      await press(page.getByRole('button', { name: words.pass, exact: true }));
+      await settled(page);
+      await menu(page, words.exitGame);
+      await page.waitForTimeout(1800);
+      await expect(page.locator('[data-die-id]')).toHaveCount(0);
+      await expect(page.locator('[data-turn-notice]')).toHaveCount(0);
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.inventory'))).toBeNull();
+    });
+    test('opponent calculation failure offers a retry of the current move', async ({ page }) => {
+      await page.evaluate(() => {
+        const NativeWorker = Worker;
+        let fail = true;
+        window.Worker = class extends NativeWorker {
+          constructor(url: string | URL, options?: WorkerOptions) {
+            super(url, options);
+            if (String(url).includes('ai.worker')) {
+              (window as typeof window & { farkleWorker: Worker }).farkleWorker = this;
+              if (fail) {
+                fail = false;
+                queueMicrotask(() => this.dispatchEvent(new ErrorEvent('error', { message: 'Test worker failure' })));
+              }
+            }
+          }
+        };
+      });
+      await start(page, 'masters');
+      await expect(page.getByRole('alert')).toHaveText(new RegExp(words.opponentError));
+      await press(page.getByRole('button', { name: words.pass, exact: true }));
+      await settled(page);
+      await page.waitForTimeout(1700);
+      await expect(score(page, 'A', 'selected')).toHaveText('0');
+      await expect(total(page, 'A')).toHaveText('0');
+      await press(page.getByRole('alert').getByRole('button', { name: words.retryOpponent, exact: true }));
+      await expect(page.getByRole('alert')).toHaveCount(0);
+      const result = page.getByRole('dialog', { name: words.youLost, exact: true });
+      await expect(result).toBeVisible();
+
+      await press(result.getByRole('button', { name: words.playAgain, exact: true }));
+      await press(choice(page).getByRole('button', { name: words.startGame, exact: true }));
+      await settled(page);
+      await page.evaluate(() => {
+        const board = document.querySelector('.farkle-table')!;
+        const observer = new MutationObserver(() => {
+          if (board.getAttribute('data-player') !== 'A' || !board.querySelector('[data-state="selected"]')) return;
+          observer.disconnect();
+          (window as typeof window & { farkleWorker: Worker }).farkleWorker
+            .dispatchEvent(new ErrorEvent('error', { message: 'Test failure after selection' }));
+        });
+        observer.observe(board, { attributes: true, subtree: true });
+      });
+      await press(page.getByRole('button', { name: words.pass, exact: true }));
+      await expect(page.getByRole('alert')).toHaveText(new RegExp(words.opponentError));
+      await expect(page.locator('[data-state="selected"]')).toHaveCount(1);
+      const retained = await page.locator('[data-state="selected"]').getAttribute('data-die-id');
+      await press(page.getByRole('alert').getByRole('button', { name: words.retryOpponent, exact: true }));
+      await expect(die(page, retained!)).toHaveAttribute('data-state', 'selected');
+      await expect(result).toBeVisible();
+      await expect(total(page, 'A')).toHaveText('4000');
     });
     test('bust loses an unbanked winning round and automatically hands off', async ({ page }, testInfo) => {
       await start(page);
@@ -725,9 +888,6 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       })));
       await page.reload();
       await start(page, 'masters');
-      await press(page.getByRole('button', { name: words.pass, exact: true }));
-      await settled(page);
-      for (let index = 0; index < 6; index++) await press(die(page, `A${index}`));
       await press(page.getByRole('button', { name: words.pass, exact: true }));
       const result = page.getByRole('dialog', { name: words.youLost, exact: true });
       await expect(result.locator('[data-reward-group]')).toHaveCount(1);

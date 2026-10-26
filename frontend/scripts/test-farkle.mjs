@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createModuleLoader, mockModule } from './module-loader.mjs';
 
 const load = createModuleLoader();
-const { initialGame, gameReducer, selection, canPlay } = (await load('../src/components/playground/farkle/state.ts')).exports;
+const { initialGame, gameReducer, selection, canPlay, canHumanPlay } = (await load('../src/components/playground/farkle/state.ts')).exports;
 const { evaluateDice, isWild } = (await load('../src/components/playground/farkle/scoring.ts')).exports;
 const { RollPlayback, FACE_NORMALS, FACE_VALUES } = (await load('../src/components/playground/farkle/playback.ts')).exports;
 const { tableLayout, placeCamera } = (await load('../src/components/playground/farkle/layout.ts')).exports;
@@ -18,9 +18,10 @@ const finish = (state, faces = fives, hoverSample = 0) => gameReducer(state, {
   type: 'complete', id: state.command.id, hoverSample, values: faces,
 });
 const start = (target = 1500, faces = values) => finish(finish(gameReducer(initialGame, { type: 'start', target, loadout, values: faces })));
-const select = (state, ...ids) => ids.reduce((next, id) => gameReducer(next, { type: 'select', id }), state);
-const store = (state) => gameReducer(state, { type: 'store' });
-const pass = (state) => gameReducer(state, { type: 'pass' });
+const input = (state, action) => gameReducer(state, { ...action, actor: state.player === 'A' ? 'ai' : 'human', revision: state.revision });
+const select = (state, ...ids) => ids.reduce((next, id) => input(next, { type: 'select', id }), state);
+const store = (state) => input(state, { type: 'store' });
+const pass = (state) => input(state, { type: 'pass' });
 const diceFor = (faces) => faces.map((value) => ({ value: value === 'wild' ? 1 : value, type: value === 'wild' ? 'devil' : 'normal' }));
 function score(faces, expected) {
   const dice = diceFor(faces), before = JSON.stringify(dice);
@@ -66,7 +67,7 @@ for (const target of [1500, 2000, 3000, 4000]) {
   assert.equal(roll.command.dice.length, 6);
   assert.equal(roll.target, target);
   assert.equal(roll.player, 'B');
-  assert.equal(roll.view, 'B');
+  assert.equal(roll.matchId, reset.revision);
   assert.equal(roll.busy, true);
   assert.equal(finish(roll).hoverId, 'B0');
   assert.equal(finish(roll, fives, null).hoverId, null, 'Touch has no automatic hover');
@@ -93,8 +94,8 @@ game = store(select(game, 'B0'));
 assert.equal(game.command.kind, 'store');
 assert.equal(game.dice[6].status, 'selected', 'Scored starts after the whole batch arrives');
 assert.equal(game.rounds.B, 0);
-for (const action of [{ type: 'switch' }, { type: 'select', id: 'B1' }, { type: 'store' }, { type: 'pass' }])
-  assert.equal(gameReducer(game, action), game);
+for (const action of [{ type: 'select', id: 'B1' }, { type: 'store' }, { type: 'pass' }])
+  assert.equal(input(game, action), game);
 const storing = game;
 game = finish(game);
 assert.equal(game.command.kind, 'roll');
@@ -107,7 +108,7 @@ assert.equal(gameReducer(game, { type: 'complete', id: storing.command.id, hover
 game = finish(game);
 assert.equal(game.hoverId, 'B1');
 assert.equal(select(game, 'B0'), game, 'Scored dice cannot be retrieved');
-assert.equal(gameReducer(game, { type: 'hover', id: 'B0' }), game);
+assert.equal(input(game, { type: 'hover', id: 'B0' }), game);
 game = finish(store(select(game, 'B3', 'B1', 'B2')));
 assert.deepEqual(game.batches.B, [['B0'], ['B1', 'B2', 'B3']], 'Each submission keeps a separate sorted row');
 assert.equal(game.rounds.B, 600);
@@ -120,30 +121,37 @@ assert.equal(game.rounds.B, 700);
 assert.ok(game.dice.every((die) => die.status === 'idle'));
 game = finish(game);
 game = select(game, 'B0');
-const observing = finish(gameReducer(game, { type: 'switch' }));
-assert.equal(observing.turnId, game.turnId, 'Camera changes do not start another turn');
 assert.equal(game.turnId, start().turnId, 'Selections, storage and rerolls preserve the turn identity');
 const nextTurn = pass(start());
 assert.ok(nextTurn.turnId > game.turnId, 'Handoff changes the turn identity');
 const restarted = gameReducer(game, { type: 'start', target: 1500, loadout, values });
 assert.ok(restarted.turnId > game.turnId, 'Restarting B creates a fresh turn identity');
+assert.ok(restarted.matchId > game.matchId, 'Restarting replaces the match identity');
 assert.equal(gameReducer(game, { type: 'exit' }).turnId, 0);
-assert.equal(observing.player, 'B');
-assert.equal(observing.view, 'A');
-assert.equal(observing.hoverId, null);
-assert.equal(canPlay(observing), false);
-assert.equal(selection(observing).score, 50);
-for (const action of [{ type: 'select', id: 'A0' }, { type: 'select', id: 'B0' }, { type: 'store' }, { type: 'pass' }])
-  assert.equal(gameReducer(observing, action), observing);
-game = finish(gameReducer(observing, { type: 'switch' }));
-assert.equal(game.view, 'B');
-assert.equal(selection(game).score, 50, 'Observation retains selection');
+assert.equal(gameReducer(game, { type: 'exit' }).matchId, 0);
+assert.equal(canHumanPlay(game), true);
+assert.equal(selection(game).score, 50);
+const opponent = finish(finish(pass(start())));
+assert.equal(opponent.player, 'A');
+assert.equal(opponent.hoverId, null, 'The AI owns its hover, including on fine pointers');
+assert.equal(canPlay(opponent), true);
+assert.equal(canHumanPlay(opponent), false);
+for (const action of [{ type: 'select', id: 'A0' }, { type: 'hover', id: 'A0' }, { type: 'hover', id: null }, { type: 'store' }, { type: 'pass' }]) {
+  assert.equal(gameReducer(opponent, { ...action, actor: 'human' }), opponent, 'Human input cannot operate A');
+  assert.equal(gameReducer(opponent, { ...action, actor: 'ai', revision: opponent.revision - 1 }), opponent, 'Stale AI actions cannot operate a later roll');
+}
+const opponentHover = input(opponent, { type: 'hover', id: 'A0' });
+assert.equal(opponentHover.hoverId, 'A0');
+assert.equal(gameReducer(opponentHover, { type: 'hover', id: null, actor: 'human' }), opponentHover, 'Touch cannot clear AI hover');
+assert.equal(select(opponentHover, 'A0').dice[0].status, 'selected');
+assert.equal(gameReducer(game, { type: 'pass', actor: 'ai', revision: game.revision }), game, 'AI input cannot operate B');
 game = finish(pass(game));
 assert.equal(game.totals.B, 750);
 assert.equal(game.rounds.B, 0);
 assert.equal(selection(game, 'B').score, 0);
 assert.equal(game.command.kind, 'view');
-assert.equal(game.command.startTurn, true);
+assert.equal(game.command.from, 'B');
+assert.equal(game.command.to, 'A');
 assert.equal(game.player, 'A');
 game = finish(game);
 assert.equal(game.command.kind, 'roll');
@@ -151,8 +159,12 @@ assert.equal(game.command.dice.length, 6);
 assert.deepEqual(game.batches.A, []);
 game = finish(game);
 game = pass(game);
-assert.equal(game.player, 'B', 'Empty zero-round pass also hands off');
+assert.equal(game.player, 'A', 'The outgoing opponent remains visible during its end-of-turn pause');
+assert.equal(game.command.kind, 'turnEnd');
 assert.equal(game.totals.A, 0);
+game = finish(game);
+assert.equal(game.player, 'B', 'Empty zero-round pass hands off after the pause');
+assert.equal(game.command.kind, 'view');
 game = finish(game);
 assert.equal(game.command.dice.length, 6);
 assert.deepEqual(game.batches.B, []);
@@ -175,6 +187,29 @@ game = finish(finish(finish(firstBust)));
 assert.equal(game.player, 'A');
 assert.equal(canPlay(game), true);
 assert.deepEqual(game.totals, { A: 0, B: 0 });
+
+const opponentBanked = finish(pass(select(opponent, 'A0')));
+assert.equal(opponentBanked.totals.A, 50, 'Banked points are visible before the camera moves');
+assert.equal(opponentBanked.rounds.A, 0);
+assert.equal(opponentBanked.player, 'A');
+assert.equal(opponentBanked.turnId, opponent.turnId, 'The player notice waits until the pause ends');
+assert.equal(opponentBanked.command.kind, 'turnEnd');
+assert.equal(canPlay(opponentBanked), false);
+assert.equal(selection(opponentBanked).score, 0);
+assert.equal(finish(opponentBanked).command.kind, 'view');
+assert.equal(finish(opponentBanked).command.to, 'B');
+const opponentBust = finish(finish(store(select(opponent, 'A0')), bustFaces), bustFaces);
+assert.equal(opponentBust.command.kind, 'bust');
+const opponentBusted = finish(opponentBust);
+assert.equal(opponentBusted.command.kind, 'turnEnd', 'Bust keeps its notice, then the opponent pause');
+assert.equal(opponentBusted.player, 'A');
+assert.equal(opponentBusted.rounds.A, 0);
+assert.equal(opponentBusted.totals.A, 0);
+assert.equal(finish(opponentBusted).command.to, 'B');
+for (const paused of [opponentBanked, opponentBusted]) {
+  for (const action of [{ type: 'select', id: 'A1' }, { type: 'hover', id: 'A1' }, { type: 'store' }, { type: 'pass' }])
+    assert.equal(input(paused, action), paused, 'No input can change the completed opponent turn');
+}
 
 // Even an unbanked round above the goal can be lost. Old scored dice cannot rescue the roll.
 game = start(1500, fives);
@@ -204,15 +239,14 @@ for (const player of ['B', 'A']) for (const target of [1500, 2000]) {
   assert.equal(game.winner, null, 'Selection alone cannot win');
   game = finish(pass(game));
   assert.equal(game.winner, player, 'Pass wins at or above the goal');
-  assert.equal(game.view, player);
   assert.equal(game.player, player);
   assert.equal(game.command, null);
   assert.equal(game.totals[player], 2000);
   assert.equal(game.rounds[player], 0);
   assert.equal(selection(game).score, 0);
   assert.equal(canPlay(game), false);
-  for (const action of [{ type: 'switch' }, { type: 'select', id: `${player}5` }, { type: 'hover', id: `${player}5` },
-    { type: 'store' }, { type: 'pass' }]) assert.equal(gameReducer(game, action), game);
+  for (const action of [{ type: 'select', id: `${player}5` }, { type: 'hover', id: `${player}5` },
+    { type: 'store' }, { type: 'pass' }]) assert.equal(input(game, action), game);
 }
 game = start(1500, fives);
 for (const ids of [['B0', 'B1', 'B2'], ['B3', 'B4', 'B5'], ['B0', 'B1', 'B2']])
@@ -223,14 +257,14 @@ game = pass(game);
 assert.equal(game.winner, 'B', 'An empty selection can bank the winning round');
 assert.equal(game.totals.B, 1500);
 
-const phases = [storing, laterBust, firstBust, gameReducer(start(), { type: 'switch' }), finish(pass(start())), game];
+const phases = [storing, laterBust, firstBust, opponentBanked, opponentBusted, pass(start()), finish(pass(start())), game];
 for (const previous of phases) for (const type of ['start', 'exit']) {
   let reset = gameReducer(previous, type === 'start' ? { type, target: 4000, loadout, values } : { type });
   assert.deepEqual(reset.totals, { A: 0, B: 0 });
   assert.deepEqual(reset.rounds, { A: 0, B: 0 });
   assert.deepEqual(reset.batches, { A: [], B: [] });
   assert.equal(reset.winner, null);
-  assert.equal(reset.view, 'B');
+  assert.equal(reset.player, 'B');
   if (previous.command) assert.equal(gameReducer(reset, {
     type: 'complete', id: previous.command.id, hoverSample: 0, values,
   }), reset, 'Previous animations and bust timers cannot complete after reset');

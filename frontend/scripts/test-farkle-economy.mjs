@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createModuleLoader } from './module-loader.mjs';
 
 const load = createModuleLoader();
-const { DICE_TYPES, drawDice, rollValues, OPPONENT_POOL } = (await load('../src/components/playground/farkle/dice.ts')).exports;
+const { DICE_TYPES, drawOpponentDice, difficultyFor, rollValues } = (await load('../src/components/playground/farkle/dice.ts')).exports;
 const { LEVELS, newInventory, inventoryPool, readInventory, saveInventory, awardDice, INVENTORY_KEY } =
   (await load('../src/components/playground/farkle/economy.ts')).exports;
 const { evaluateDice } = (await load('../src/components/playground/farkle/scoring.ts')).exports;
@@ -28,21 +28,40 @@ for (const die of DICE_TYPES) {
 assert.deepEqual(DICE_TYPES.find((die) => die.id === 'even').weights, [1, 4, 1, 4, 1, 4]);
 assert.deepEqual(DICE_TYPES.find((die) => die.id === 'odd').weights, [4, 1, 4, 1, 4, 1]);
 assert.deepEqual(DICE_TYPES.find((die) => die.id === 'weighted').weights, [10, 1, 1, 1, 1, 1]);
-assert.deepEqual(drawDice(inventoryPool(newInventory()), () => 0.999), Array(6).fill('normal'));
-const owned = newInventory(); owned.special.devil = 1; owned.merchant = 2;
-const before = structuredClone(owned);
-assert.deepEqual(drawDice(inventoryPool(owned), () => 0.999), ['merchant', 'merchant', 'devil', 'normal', 'normal', 'normal']);
-assert.deepEqual(owned, before, 'Drawing neither consumes inventory nor exceeds its copies');
-assert.deepEqual(OPPONENT_POOL, { normal: 6, even: 6, odd: 6, devil: 6, weighted: 6, merchant: 6 });
-for (let index = 0; index < 6; index++) {
-  const pool = { ...OPPONENT_POOL };
-  const dice = drawDice(pool, () => (index + 0.5) / 6);
-  assert.equal(dice[0], DICE_TYPES[index].id, 'Opponent samples all six kinds equally initially');
-  assert.equal(dice.length, 6);
-  assert.deepEqual(pool, OPPONENT_POOL);
+assert.equal(difficultyFor(1500), 0.15);
+assert.equal(difficultyFor(4000), 0.4);
+assert.equal(difficultyFor(20_000), 1);
+assert.deepEqual(drawOpponentDice(1500, () => 0), Array(6).fill('normal'));
+assert.deepEqual(drawOpponentDice(1500, () => 0.999), [...Array(5).fill('normal'), 'weighted']);
+assert.deepEqual(drawOpponentDice(4000, () => 0.999), [...Array(4).fill('normal'), 'weighted', 'devil']);
+for (const [target, min, max] of [[0, 0, 1], [1500, 0, 1], [2000, 0, 1], [2001, 1, 2], [4000, 1, 2],
+  [4001, 2, 3], [6000, 2, 3], [6001, 3, 4], [8000, 3, 4], [8001, 3, 5], [10000, 3, 5], [20000, 3, 5]]) {
+  for (let wanted = min; wanted <= max; wanted++) {
+    let first = true, sequence = 123;
+    const result = drawOpponentDice(target, () => {
+      if (first) { first = false; return (wanted - min + 0.5) / (max - min + 1); }
+      sequence = (sequence * 1664525 + 1013904223) >>> 0;
+      return sequence / 2 ** 32;
+    });
+    assert.equal(result.length, 6);
+    assert.equal(result.filter((type) => type !== 'normal').length, wanted);
+    for (const [type, limit] of [['weighted', 1], ['even', 3], ['odd', 3], ['devil', 3], ['merchant', 0]])
+      assert.ok(result.filter((candidate) => candidate === type).length <= limit, `${target}: ${type} cap`);
+  }
 }
-owned.merchant = 1_000_000_000;
-assert.deepEqual(drawDice(inventoryPool(owned), () => 0.5), Array(6).fill('merchant'), 'Large balances need no expanded pool');
+assert.deepEqual(drawOpponentDice(10000, () => 0.999), ['normal', 'weighted', 'devil', 'devil', 'devil', 'odd']);
+const firstTypeCounts = (target) => {
+  const counts = { even: 0, odd: 0, devil: 0, weighted: 0 };
+  for (let index = 0; index < 1000; index++) {
+    let first = true;
+    const dice = drawOpponentDice(target, () => { if (first) { first = false; return 0.75; } return (index + 0.5) / 1000; });
+    counts[dice.find((type) => type !== 'normal')]++;
+  }
+  return counts;
+};
+const lower = firstTypeCounts(2000), higher = firstTypeCounts(10000);
+assert.ok(higher.odd / higher.even > lower.odd / lower.even, 'Difficulty favors Odd over Even copies');
+assert.ok(higher.weighted / higher.even > lower.weighted / lower.even, 'Difficulty increases quality without selecting a fixed type');
 
 const full = () => ({ special: { even: 6, odd: 6, devil: 6, weighted: 6 }, merchant: 0, firstWins: [] });
 for (const level of LEVELS) {
@@ -99,9 +118,9 @@ let game = gameReducer(initialGame, { type: 'start', target: 4000, loadout, valu
 const types = game.dice.map(({ id, type }) => [id, type]);
 function finish() { game = gameReducer(game, { type: 'complete', id: game.command.id, values: [1, 1, 1, 1, 1, 1], hoverSample: 0 }); }
 finish(); finish();
-game = gameReducer(game, { type: 'select', id: 'B0' });
-game = gameReducer(game, { type: 'store' }); finish(); finish();
-game = gameReducer(game, { type: 'pass' }); finish(); finish();
+game = gameReducer(game, { type: 'select', id: 'B0', actor: 'human' });
+game = gameReducer(game, { type: 'store', actor: 'human' }); finish(); finish();
+game = gameReducer(game, { type: 'pass', actor: 'human' }); finish(); finish();
 assert.deepEqual(game.dice.map(({ id, type }) => [id, type]), types, 'Rerolls and handoffs keep both loadouts');
 
 let stored = null;

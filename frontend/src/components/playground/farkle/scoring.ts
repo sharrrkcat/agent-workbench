@@ -1,6 +1,6 @@
 import type { GameDie } from './state';
 
-type ScoringDie = Pick<GameDie, 'value' | 'type'>;
+export type ScoringDie = Pick<GameDie, 'value' | 'type'>;
 
 export function isWild(die: ScoringDie) {
   return die.type === 'devil' && die.value === 1;
@@ -22,8 +22,8 @@ function combinationScore(dice: readonly ScoringDie[]): number {
   return score;
 }
 
-/** Exact coverage scores selections; any scoring subset keeps a roll alive. */
-export function evaluateDice(dice: readonly ScoringDie[]) {
+/** Maximum exact-coverage score for every subset; invalid subsets stay -Infinity. */
+export function scoreSubsets(dice: readonly ScoringDie[]) {
   const size = 1 << dice.length;
   const groups = Array<number>(size).fill(0);
   const best = Array<number>(size).fill(-Infinity);
@@ -36,6 +36,13 @@ export function evaluateDice(dice: readonly ScoringDie[]) {
       if ((group & first) && groups[group]) best[mask] = Math.max(best[mask], groups[group] + best[mask ^ group]);
     }
   }
-  const valid = dice.length > 0 && best[size - 1] > 0;
-  return { valid, score: valid ? best[size - 1] : 0, hasScore: groups.some((score) => score > 0) };
+  return best;
+}
+
+/** Exact coverage scores selections; any scoring subset keeps a roll alive. */
+export function evaluateDice(dice: readonly ScoringDie[]) {
+  const scores = scoreSubsets(dice);
+  const score = scores[scores.length - 1];
+  const valid = dice.length > 0 && score > 0;
+  return { valid, score: valid ? score : 0, hasScore: scores.some((value) => value > 0) };
 }

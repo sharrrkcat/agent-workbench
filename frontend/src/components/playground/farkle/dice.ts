@@ -13,7 +13,7 @@ export type DiceCounts = Record<DieType, number>;
 export const SPECIAL_TYPES = DICE_TYPES.filter((die) => die.category === 'special');
 export const NORMAL_COUNT = 6;
 export const SPECIAL_LIMIT = 6;
-export const OPPONENT_POOL: DiceCounts = { normal: 6, even: 6, odd: 6, devil: 6, weighted: 6, merchant: 6 };
+export const difficultyFor = (target: number) => Math.min(1, Math.max(0, target / 10_000));
 
 function weightedIndex(weights: readonly number[], sample: number) {
   let ticket = sample * weights.reduce((sum, weight) => sum + weight, 0);
@@ -22,13 +22,21 @@ function weightedIndex(weights: readonly number[], sample: number) {
   return index;
 }
 
-export function drawDice(pool: DiceCounts, random = Math.random): DieType[] {
-  const remaining = DICE_TYPES.map(({ id }) => pool[id]);
-  return Array.from({ length: 6 }, () => {
-    const index = weightedIndex(remaining, random());
+export function drawOpponentDice(target: number, random = Math.random): DieType[] {
+  const difficulty = difficultyFor(target);
+  const range = difficulty <= 0.2 ? [0, 1] : difficulty <= 0.4 ? [1, 2]
+    : difficulty <= 0.6 ? [2, 3] : difficulty <= 0.8 ? [3, 4] : [3, 5];
+  const count = range[0] + Math.floor(random() * (range[1] - range[0] + 1));
+  const remaining = [3, 3, 3, 1];
+  // A mild quality bias preserves variety; actual rolls retain their published weights.
+  const quality = [1, 1 + difficulty, 1 + 2 * difficulty, 1 + 3 * difficulty];
+  const dice: DieType[] = Array(6 - count).fill('normal');
+  for (let copy = 0; copy < count; copy++) {
+    const index = weightedIndex(remaining.map((copies, index) => copies * quality[index]), random());
     remaining[index]--;
-    return DICE_TYPES[index].id;
-  });
+    dice.push(SPECIAL_TYPES[index].id);
+  }
+  return dice;
 }
 
 export function rollValues(types: readonly DieType[], random = Math.random): FaceValue[] {

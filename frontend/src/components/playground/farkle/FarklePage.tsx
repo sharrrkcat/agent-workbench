@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Coins, LogOut, Minus, Package, Plus, ShoppingBag, View } from 'lucide-react';
+import { ArrowLeft, Coins, LogOut, Minus, Package, Plus, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -13,13 +13,14 @@ import type { SettingsNavigate } from '@/components/settings/navigation';
 import { playgroundUrl } from '../navigation';
 import { FarkleTable } from './FarkleTable';
 import { faceCanvas } from './materials';
-import { DICE_TYPES, drawDice, NORMAL_COUNT, OPPONENT_POOL, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
+import { DICE_TYPES, drawOpponentDice, NORMAL_COUNT, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
 import { inventoryPool, LEVELS, type TargetScore } from './economy';
 import { gameReducer, initialGame } from './state';
 import { useInventory } from './useInventory';
 import { rewardGroups } from './rewards';
 import { loadoutDice, loadoutSize, readLoadout, saveLoadout } from './loadout';
 import { DiceRow } from './DiceRow';
+import { useOpponent } from './useOpponent';
 
 type Modal = 'newGame' | 'chooseDice' | 'myDice' | 'shop' | 'result';
 
@@ -33,6 +34,8 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
   const [target, setTarget] = useState<TargetScore>(1500);
   const [draft, setDraft] = useState<DiceCounts | null>(null);
   const [loadoutError, setLoadoutError] = useState<'load' | 'save' | null>(null);
+  const blocked = modal !== null || (isMobile && openMobile);
+  const opponent = useOpponent(state, dispatch, blocked || !ready);
   const trigger = useRef<HTMLElement | null>(null);
   const sidebarTrigger = useRef<HTMLButtonElement>(null);
   const modalTitle = useRef<HTMLHeadingElement>(null);
@@ -57,7 +60,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
     try { saveLoadout(window.localStorage, draft); }
     catch { setLoadoutError('save'); return; }
     setLoadoutError(null);
-    const loadout = { B: loadoutDice(draft), A: drawDice(OPPONENT_POOL) };
+    const loadout = { B: loadoutDice(draft), A: drawOpponentDice(target) };
     dispatch({ type: 'start', target, loadout, values: rollValues(loadout.B) });
     setModal(null);
   }
@@ -97,10 +100,6 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('shop', event.currentTarget)}>
             <ShoppingBag /><span>{t('farkle.shop')}</span>
           </SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton disabled={!ready || !state.playing || state.busy || !!state.winner}
-            onClick={() => { setOpenMobile(false); dispatch({ type: 'switch' }); }}>
-            <View /><span>{t('farkle.switchView')}</span>
-          </SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent />
@@ -123,7 +122,11 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
         </Button>
       </header>
       {!modal && storageAlert ? <div className="p-3">{storageAlert}</div> : null}
-      <FarkleTable state={state} dispatch={dispatch} onReady={setReady} blocked={modal !== null || (isMobile && openMobile)}
+      {state.playing && !state.winner && opponent.failed ? <div className="p-3"><Alert variant="destructive">
+        <AlertDescription>{t('farkle.opponentError')}</AlertDescription>
+        <AlertAction><Button variant="outline" onClick={opponent.retry}>{t('farkle.retryOpponent')}</Button></AlertAction>
+      </Alert></div> : null}
+      <FarkleTable state={state} dispatch={dispatch} onReady={setReady} blocked={blocked}
         onNewGame={(source) => openModal('newGame', source)} />
     </SidebarInset>
     <Dialog open={modal !== null} onOpenChange={(open) => { if (!open) setModal(null); }}>

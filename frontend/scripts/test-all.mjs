@@ -13,6 +13,7 @@ for (const script of [
   'test-playground',
   'test-farkle',
   'test-farkle-economy',
+  'test-farkle-ai',
   'test-history-window',
   'test-chat-drafts',
   'test-message-queue',
