@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { shadowTexture, diceMaterials } from './materials';
+import { APPEARANCE, shadowTexture, diceMaterials } from './materials';
+import { diceGeometry } from './geometry';
 import { fitTableTexture, tableMaterial } from './tableMaterial';
 import { RollPlayback, type Trajectory } from './playback';
 import type { PlayerId } from './state';
@@ -20,7 +20,7 @@ export class DiceScene {
   readonly camera = new THREE.PerspectiveCamera(24, 1, 0.1, 200);
   private scene = new THREE.Scene();
   private renderer: THREE.WebGLRenderer;
-  private geometry = new RoundedBoxGeometry(1, 1, 1, 4, 0.08);
+  private geometries = new Map<'rounded' | 'roundFaces', THREE.BufferGeometry>();
   private shadowGeometry = new THREE.PlaneGeometry(1.35, 1.35).rotateX(-Math.PI / 2);
   private shadowMap = shadowTexture();
   private hoverGeometry = new THREE.RingGeometry(0.82, 0.90, 64).rotateX(-Math.PI / 2);
@@ -81,7 +81,10 @@ export class DiceScene {
       }
       const root = new THREE.Group();
       root.position.copy(definition.origin);
-      const mesh = new THREE.Mesh(this.geometry, material);
+      const shape = APPEARANCE[definition.type].geometry ?? 'rounded';
+      let geometry = this.geometries.get(shape);
+      if (!geometry) { geometry = diceGeometry(shape); this.geometries.set(shape, geometry); }
+      const mesh = new THREE.Mesh(geometry, material);
       mesh.position.copy(definition.position);
       const shadow = new THREE.Mesh(this.shadowGeometry, new THREE.MeshBasicMaterial({
         map: this.shadowMap, transparent: true, depthWrite: false, opacity: 0.75,
@@ -188,10 +191,11 @@ export class DiceScene {
     cancelAnimationFrame(this.frame);
     for (const die of this.dice.values()) die.shadow.material.dispose();
     for (const material of this.materials.values()) for (const face of material) {
-      face.map!.dispose(); face.bumpMap!.dispose(); face.dispose();
+      face.map?.dispose(); face.bumpMap?.dispose(); face.dispose();
     }
     this.materials.clear(); this.dice.clear();
-    this.geometry.dispose(); this.shadowGeometry.dispose(); this.shadowMap.dispose();
+    for (const geometry of this.geometries.values()) geometry.dispose();
+    this.geometries.clear(); this.shadowGeometry.dispose(); this.shadowMap.dispose();
     this.hoverGeometry.dispose(); this.selectedGeometry.dispose();
     this.hoverOutlineGeometry.dispose(); this.selectedOutlineGeometry.dispose(); this.outlineMaterial.dispose();
     this.hoverMaterial.dispose(); this.selectedMaterial.dispose();

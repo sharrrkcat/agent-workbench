@@ -360,6 +360,31 @@ for (const [width, height] of [[1110, 844], [1366, 844], [390, 788], [844, 334],
   }
 }
 
+// Circular faces share the existing physical face normals and close without cracks.
+const { diceGeometry } = (await load('../src/components/playground/farkle/geometry.ts')).exports;
+const heavenly = diceGeometry('roundFaces');
+const geometryPositions = heavenly.getAttribute('position'), edges = new Map();
+assert.deepEqual(heavenly.boundingBox.min.toArray(), [-0.5, -0.5, -0.5]);
+assert.deepEqual(heavenly.boundingBox.max.toArray(), [0.5, 0.5, 0.5]);
+for (const [face, normal] of FACE_NORMALS.entries()) {
+  const cap = heavenly.groups.find(({ materialIndex }) => materialIndex === face);
+  assert.ok(cap, `Physical face ${FACE_VALUES[face]} has its own material group`);
+  for (let index = cap.start; index < cap.start + cap.count; index++) {
+    const point = new THREE.Vector3().fromBufferAttribute(geometryPositions, index);
+    assert.ok(Math.abs(point.dot(normal) - 0.5) < 1e-6, 'Scoring face is flat');
+    const distance = point.addScaledVector(normal, -0.5).length();
+    assert.ok(distance < 1e-6 || Math.abs(distance - 0.45) < 1e-6, 'Face perimeter is circular');
+  }
+}
+const vertexKey = (index) => new THREE.Vector3().fromBufferAttribute(geometryPositions, index).toArray()
+  .map((value) => Math.round(value * 1e6)).join(',');
+for (let index = 0; index < geometryPositions.count; index += 3) for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+  const key = [vertexKey(index + a), vertexKey(index + b)].sort().join('|');
+  edges.set(key, (edges.get(key) ?? 0) + 1);
+}
+assert.ok([...edges.values()].every((count) => count === 2), 'Every edge meets exactly two triangles, including curved patch seams');
+heavenly.dispose();
+
 // Real scene scheduling/cleanup, replacing only the browser and GPU boundaries.
 const callbacks = new Map(); let sequence = 0, renders = 0, removed = 0, disposed = 0, completions = 0;
 globalThis.window = { devicePixelRatio: 1 };
@@ -380,6 +405,19 @@ class Renderer {
 }
 const sceneLoad = createModuleLoader({ three: mockModule({ ...THREE, WebGLRenderer: Renderer }) });
 const { DiceScene } = (await sceneLoad('../src/components/playground/farkle/scene.ts')).exports;
+const { faceCanvas, diceMaterials, dicePreview } = (await load('../src/components/playground/farkle/materials.ts')).exports;
+const { DICE_TYPES } = (await load('../src/components/playground/farkle/dice.ts')).exports;
+const gameplayRandom = Math.random;
+try {
+  Math.random = () => { throw new Error('Dice appearance must not use gameplay randomness'); };
+  for (const { id } of DICE_TYPES) {
+    dicePreview(id);
+    for (const face of FACE_VALUES) faceCanvas(id, face);
+  }
+} finally { Math.random = gameplayRandom; }
+for (const { id } of DICE_TYPES) for (const material of diceMaterials(id)) {
+  material.map?.dispose(); material.bumpMap?.dispose(); material.dispose();
+}
 const { tableMaterial, fitTableTexture } = (await load('../src/components/playground/farkle/tableMaterial.ts')).exports;
 const wood = tableMaterial(), secondWood = tableMaterial();
 assert.deepEqual(uploadedTextures[0], uploadedTextures[2], 'Wood color is deterministic');
@@ -398,8 +436,11 @@ for (const [x, z] of [[0, 0], [-5.2, 8.3], [14.8, -19.4]]) {
 }
 for (const material of [wood, secondWood]) { material.map.dispose(); material.bumpMap.dispose(); material.dispose(); }
 const textureDisposals = [];
+const geometryDisposals = [];
 const disposeTexture = THREE.Texture.prototype.dispose;
+const disposeGeometry = THREE.BufferGeometry.prototype.dispose;
 THREE.Texture.prototype.dispose = function () { textureDisposals.push(this); disposeTexture.call(this); };
+THREE.BufferGeometry.prototype.dispose = function () { geometryDisposals.push(this); disposeGeometry.call(this); };
 const scene = new DiceScene({ prepend() {} }, () => {});
 const draw = (time = performance.now()) => {
   const pending = [...callbacks.values()]; callbacks.clear();
@@ -408,6 +449,9 @@ const draw = (time = performance.now()) => {
 scene.reset([
   { id: 'one', type: 'normal', origin: new THREE.Vector3(), position: new THREE.Vector3(0, 0.5, 0) },
   { id: 'two', type: 'devil', origin: new THREE.Vector3(), position: new THREE.Vector3(-1, 0.5, 0) },
+  { id: 'three', type: 'heavenly', origin: new THREE.Vector3(), position: new THREE.Vector3(1, 0.5, 0) },
+  { id: 'four', type: 'heavenly', origin: new THREE.Vector3(), position: new THREE.Vector3(2, 0.5, 0) },
+  { id: 'five', type: 'monk', origin: new THREE.Vector3(), position: new THREE.Vector3(3, 0.5, 0) },
 ]);
 scene.resize(1000, 800, 200);
 draw();
@@ -431,9 +475,12 @@ scene.animate(() => false, () => completions++);
 scene.dispose();
 assert.equal(callbacks.size, 0);
 assert.equal(disposed, 1);
-assert.equal(textureDisposals.length, 27, 'Two dice types, the wooden table and shared shadow release their textures');
-assert.equal(new Set(textureDisposals).size, 27, 'Shared textures are disposed exactly once');
+assert.equal(textureDisposals.length, 51, 'Four dice types, the wooden table and shared shadow release their textures');
+assert.equal(new Set(textureDisposals).size, 51, 'Shared textures are disposed exactly once');
+assert.equal(geometryDisposals.length, 9, 'Two shared dice shapes, shadow, four indicators, table and divider release their geometry');
+assert.equal(new Set(geometryDisposals).size, 9, 'Shared dice geometry is disposed exactly once');
 THREE.Texture.prototype.dispose = disposeTexture;
+THREE.BufferGeometry.prototype.dispose = disposeGeometry;
 assert.equal(removed, 1);
 scene.invalidate();
 assert.equal(callbacks.size, 0, 'A disposed scene cannot schedule more frames');

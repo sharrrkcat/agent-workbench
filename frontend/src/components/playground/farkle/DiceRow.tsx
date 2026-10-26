@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
@@ -9,6 +9,7 @@ export function DiceRow({ type, preview, quantity, inlineQuantity = false, child
 }) {
   const { t, i18n } = useTranslation('common');
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const descriptionId = useId();
   const { weights } = DICE_TYPES.find((die) => die.id === type)!;
   const sum = weights.reduce((total: number, weight) => total + weight, 0);
@@ -18,11 +19,18 @@ export function DiceRow({ type, preview, quantity, inlineQuantity = false, child
   }));
   const count = <span className="shrink-0" data-inventory-count>{quantity}</span>;
 
-  return <HoverCard open={open} onOpenChange={setOpen}>
-    <li className="flex items-center gap-2" data-inventory-type={type}>
+  return <HoverCard open={open} onOpenChange={(next, details) => {
+    // Focus/touch activation outlives the synthetic mouseleave from a tap.
+    if (!next && details.reason === 'trigger-hover' && document.activeElement === trigger.current) {
+      details.cancel();
+      return;
+    }
+    setOpen(next);
+  }}>
+    <li className="flex min-w-0 items-center gap-2" data-inventory-type={type}>
       <img className="size-10 shrink-0 rounded-md" src={preview} alt="" />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1">
-        <HoverCardTrigger delay={150} closeDelay={150} render={<Button variant="ghost"
+        <HoverCardTrigger delay={150} closeDelay={150} render={<Button ref={trigger} variant="ghost"
           className="h-auto max-w-full min-w-0 justify-start whitespace-normal text-left" aria-describedby={descriptionId}
           onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={() => setOpen(true)} />}>
           {t(`farkle.dice.${type}`)}

@@ -1,7 +1,8 @@
 import { DICE_TYPES, type DiceCounts, type DieType } from './dice';
 
 export const LOADOUT_KEY = 'cogita.farkle.loadout';
-export const defaultLoadout = (): DiceCounts => ({ normal: 6, even: 0, odd: 0, devil: 0, weighted: 0, merchant: 0 });
+export const defaultLoadout = (): DiceCounts =>
+  Object.fromEntries(DICE_TYPES.map(({ id }) => [id, id === 'normal' ? 6 : 0])) as DiceCounts;
 export const loadoutSize = (counts: DiceCounts) => DICE_TYPES.reduce((total, { id }) => total + counts[id], 0);
 export const loadoutDice = (counts: DiceCounts): DieType[] => DICE_TYPES.flatMap(({ id }) => Array<DieType>(counts[id]).fill(id));
 

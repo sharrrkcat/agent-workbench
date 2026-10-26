@@ -179,6 +179,14 @@
 
   .workspace { container: chat-shell / inline-size; }
   .farkle-table > canvas { display: block; position: absolute; inset: 0; }
+  .farkle-dice-list { container: farkle-dice-list / inline-size; }
+  .farkle-dice-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 24px; }
+  @container farkle-dice-list (min-width: 720px) {
+    .farkle-dice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @container farkle-dice-list (min-width: 1080px) {
+    .farkle-dice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   .farkle-table { container: farkle / size; }
   .farkle-table, .farkle-result {
     --farkle-gold: #f5e3a2;

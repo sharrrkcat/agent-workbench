@@ -4,6 +4,22 @@ export const DICE_TYPES = [
   { id: 'odd', category: 'special', weights: [4, 1, 4, 1, 4, 1] },
   { id: 'devil', category: 'special', weights: [1, 1, 1, 1, 1, 1] },
   { id: 'weighted', category: 'special', weights: [10, 1, 1, 1, 1, 1] },
+  { id: 'lucky', category: 'special', weights: [6, 1, 2, 3, 4, 6] },
+  { id: 'unlucky', category: 'special', weights: [1, 3, 2, 2, 2, 1] },
+  { id: 'favourable', category: 'special', weights: [6, 0, 1, 1, 6, 4] },
+  { id: 'pie', category: 'special', weights: [6, 1, 3, 3, 0, 0] },
+  { id: 'misfortune', category: 'special', weights: [1, 5, 5, 5, 5, 1] },
+  { id: 'monk', category: 'special', weights: [8, 8, 1, 1, 1, 1] },
+  { id: 'strip', category: 'special', weights: [4, 2, 2, 2, 3, 3] },
+  { id: 'unbalanced', category: 'special', weights: [3, 4, 1, 1, 2, 1] },
+  { id: 'shrinking', category: 'special', weights: [2, 1, 1, 1, 1, 3] },
+  { id: 'painted', category: 'special', weights: [3, 1, 1, 1, 7, 3] },
+  { id: 'heavenly', category: 'special', weights: [7, 2, 2, 2, 2, 4] },
+  { id: 'grimy', category: 'special', weights: [1, 5, 1, 1, 7, 1] },
+  { id: 'lu', category: 'special', weights: [3, 3, 3, 3, 3, 8] },
+  { id: 'ci', category: 'special', weights: [3, 3, 3, 3, 3, 8] },
+  { id: 'fer', category: 'special', weights: [3, 3, 3, 3, 3, 8] },
+  { id: 'aranka', category: 'special', weights: [6, 1, 6, 1, 6, 1] },
   { id: 'merchant', category: 'merchant', weights: [1, 1, 1, 1, 1, 1] },
 ] as const;
 export type DieType = typeof DICE_TYPES[number]['id'];
@@ -27,14 +43,13 @@ export function drawOpponentDice(target: number, random = Math.random): DieType[
   const range = difficulty <= 0.2 ? [0, 1] : difficulty <= 0.4 ? [1, 2]
     : difficulty <= 0.6 ? [2, 3] : difficulty <= 0.8 ? [3, 4] : [3, 5];
   const count = range[0] + Math.floor(random() * (range[1] - range[0] + 1));
-  const remaining = [3, 3, 3, 1];
-  // A mild quality bias preserves variety; actual rolls retain their published weights.
-  const quality = [1, 1 + difficulty, 1 + 2 * difficulty, 1 + 3 * difficulty];
+  const remaining = SPECIAL_TYPES.map(({ id }) => ({ id, copies: id === 'weighted' ? 1 : 3 }));
   const dice: DieType[] = Array(6 - count).fill('normal');
   for (let copy = 0; copy < count; copy++) {
-    const index = weightedIndex(remaining.map((copies, index) => copies * quality[index]), random());
-    remaining[index]--;
-    dice.push(SPECIAL_TYPES[index].id);
+    const candidates = remaining.filter(({ copies }) => copies > 0);
+    const selected = candidates[Math.floor(random() * candidates.length)];
+    selected.copies--;
+    dice.push(selected.id);
   }
   return dice;
 }

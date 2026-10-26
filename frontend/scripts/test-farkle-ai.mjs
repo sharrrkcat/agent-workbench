@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createModuleLoader } from './module-loader.mjs';
+import { createModuleLoader, mockModule, sourceUrl } from './module-loader.mjs';
 
 const load = createModuleLoader();
 const { FarkleAI } = (await load('../src/components/playground/farkle/ai.ts')).exports;
@@ -81,9 +81,34 @@ result = oneDevil.decide(position([1, 2, 3, 4, 5], { types: oneDevilTypes, targe
 assert.equal(result.score, 750, 'The head fills the high straight, rather than scoring a single one');
 assert.equal(result.dice.length, 5);
 
+const newLoadouts = [
+  ['normal', 'normal', 'normal', 'normal', 'favourable', 'pie'],
+  ['lucky', 'unlucky', 'monk', 'painted', 'heavenly', 'aranka'],
+  ['lu', 'ci', 'fer', 'normal', 'normal', 'normal'],
+];
+const newcomers = newLoadouts.map((types) => [new FarkleAI(types), types]);
+for (const [index, [engine, types]] of newcomers.entries()) {
+  const current = position([1, 1, 2, 3, 4, 6], { types });
+  const decision = engine.decide(current);
+  assert.equal(decision.action, 'store');
+  assert.deepEqual(decision.dice, [index === 1 ? 'A1' : 'A0'], 'Equal faces can retain different new dice for rerolling');
+  close(decision.continueValue, [663.1328079256355, 980.6944319004236, 424.60673613635294][index]);
+  assert.deepEqual(engine.decide({ ...current, dice: [...current.dice].reverse() }), decision);
+}
+const scoring = (await load('../src/components/playground/farkle/scoring.ts')).exports;
+for (const [type, supported] of [['favourable', [1, 3, 4, 5, 6]], ['pie', [1, 2, 3, 4]]]) {
+  const visited = new Set();
+  const probe = createModuleLoader({ [sourceUrl('components/playground/farkle/scoring.ts')]: mockModule({
+    ...scoring, scoreSubsets(dice) { dice.forEach(({ value }) => visited.add(value)); return scoring.scoreSubsets(dice); },
+  }) });
+  const { FarkleAI: ProbeAI } = (await probe('../src/components/playground/farkle/ai.ts')).exports;
+  new ProbeAI([type]);
+  assert.deepEqual([...visited].sort(), supported, 'Zero-probability faces never reach scoring enumeration');
+}
+
 let seed = 5821;
 const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-for (const [engine, types] of [[ai, normal], [mixed, mixedTypes], [devil, devilTypes]]) {
+for (const [engine, types] of [[ai, normal], [mixed, mixedTypes], [devil, devilTypes], ...newcomers]) {
   for (let sample = 0; sample < 160; sample++) {
     const count = 1 + Math.floor(random() * 6);
     const faces = rollValues(types, random).slice(0, count);

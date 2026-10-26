@@ -20,7 +20,8 @@ export type Reward = {
   converted: number;
 };
 export const INVENTORY_KEY = 'cogita.farkle.inventory';
-const emptySpecial = (): Record<SpecialType, number> => ({ even: 0, odd: 0, devil: 0, weighted: 0 });
+export const emptySpecial = (): Record<SpecialType, number> =>
+  Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, 0])) as Record<SpecialType, number>;
 export const newInventory = (): Inventory => ({ special: emptySpecial(), merchant: 0, firstWins: [] });
 
 export function inventoryPool(inventory: Inventory): DiceCounts {
@@ -39,7 +40,7 @@ export function readInventory(storage: Pick<Storage, 'getItem'>): Inventory {
     throw new Error('Invalid Farkle inventory');
   }
   return {
-    special: { even: value.special.even, odd: value.special.odd, devil: value.special.devil, weighted: value.special.weighted },
+    special: Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, value.special[id]])) as Record<SpecialType, number>,
     merchant: value.merchant, firstWins: [...new Set<LevelId>(value.firstWins)],
   };
 }

@@ -65,13 +65,14 @@ export class FarkleAI {
     const outcomes = new Map<string, Outcome>();
     const distributions = this.types.map((type) => {
       const weights = DICE_TYPES.find((die) => die.id === type)!.weights;
-      const sum = weights.reduce((total, weight) => total + weight, 0);
+      const sum = weights.reduce<number>((total, weight) => total + weight, 0);
       return weights.map((weight) => weight / sum);
     });
     const visit = (offset: number, probability: number) => {
       if (offset < indices.length) {
         const index = indices[offset];
         distributions[index].forEach((chance, face) => {
+          if (!chance) return;
           symbols[index] = this.types[index] === 'devil' && face === 0 ? 7 : face + 1;
           visit(offset + 1, probability * chance);
         });
