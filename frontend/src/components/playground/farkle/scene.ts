@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { APPEARANCE, shadowTexture, diceMaterials } from './materials';
 import { diceGeometry } from './geometry';
-import { fitTableTexture, tableMaterial } from './tableMaterial';
+import { fitRibbonTexture, fitTableTexture, ribbonMaterial, ribbonShadowTexture, RIBBON_CENTER_Z, RIBBON_SHADOW_CENTER_Z, RIBBON_SHADOW_WIDTH, RIBBON_WIDTH, tableMaterial } from './tableMaterial';
 import { RollPlayback, type Trajectory } from './playback';
 import type { PlayerId } from './state';
 import type { DieType, FaceValue } from './dice';
@@ -33,9 +33,14 @@ export class DiceScene {
   private materials = new Map<DieType, THREE.MeshStandardMaterial[]>();
   private dice = new Map<string, DieView>();
   private tableMaterial = tableMaterial();
-  private dividerMaterial = new THREE.MeshStandardMaterial({ color: '#291a10', roughness: 0.55 });
+  private ribbonMaterial = ribbonMaterial();
+  private ribbonShadowMap = ribbonShadowTexture();
+  private ribbonShadowGeometry = new THREE.PlaneGeometry(1, RIBBON_SHADOW_WIDTH).rotateX(-Math.PI / 2);
+  private ribbonShadow = new THREE.Mesh(this.ribbonShadowGeometry, new THREE.MeshBasicMaterial({
+    map: this.ribbonShadowMap, transparent: true, depthWrite: false,
+  }));
   private table = new THREE.Mesh(new THREE.BoxGeometry(1, 0.3, 1), this.tableMaterial);
-  private divider = new THREE.Mesh(new THREE.BoxGeometry(1, 0.045, 0.08), this.dividerMaterial);
+  private ribbon = new THREE.Mesh(new THREE.BoxGeometry(1, 0.008, RIBBON_WIDTH), this.ribbonMaterial);
   private frame = 0;
   private disposed = false;
   private width = 1;
@@ -47,14 +52,15 @@ export class DiceScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
     container.prepend(this.renderer.domElement);
-    this.scene.background = new THREE.Color('#503520');
-    this.scene.add(new THREE.AmbientLight('#ffeedd', 1.35));
-    const light = new THREE.DirectionalLight('#fff5e4', 1.9);
+    this.scene.background = new THREE.Color('#12241a');
+    this.scene.add(new THREE.AmbientLight('#eef5ee', 1.35));
+    const light = new THREE.DirectionalLight('#fff8ee', 1.9);
     light.position.set(-4, 15, -5);
     this.scene.add(light);
     this.table.position.y = -0.15;
-    this.divider.position.y = 0.012;
-    this.scene.add(this.table, this.divider);
+    this.ribbonShadow.position.set(0, 0.002, RIBBON_SHADOW_CENTER_Z);
+    this.ribbon.position.set(0, 0.004, RIBBON_CENTER_Z);
+    this.scene.add(this.table, this.ribbonShadow, this.ribbon);
   }
 
   resize(width: number, height: number, tableSize: number) {
@@ -62,7 +68,9 @@ export class DiceScene {
     this.renderer.setSize(width, height);
     this.table.scale.set(tableSize, 1, tableSize);
     fitTableTexture(this.tableMaterial, tableSize);
-    this.divider.scale.x = tableSize;
+    this.ribbonShadow.scale.set(tableSize, 1, 1);
+    this.ribbon.scale.set(tableSize, 1, 1);
+    fitRibbonTexture(this.ribbonMaterial, tableSize);
     this.invalidate();
   }
 
@@ -200,7 +208,8 @@ export class DiceScene {
     this.hoverOutlineGeometry.dispose(); this.selectedOutlineGeometry.dispose(); this.outlineMaterial.dispose();
     this.hoverMaterial.dispose(); this.selectedMaterial.dispose();
     this.table.geometry.dispose(); this.tableMaterial.map!.dispose(); this.tableMaterial.bumpMap!.dispose(); this.tableMaterial.dispose();
-    this.divider.geometry.dispose(); this.dividerMaterial.dispose();
+    this.ribbon.geometry.dispose(); this.ribbonMaterial.map!.dispose(); this.ribbonMaterial.bumpMap!.dispose(); this.ribbonMaterial.dispose();
+    this.ribbonShadowGeometry.dispose(); this.ribbonShadowMap.dispose(); this.ribbonShadow.material.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

@@ -302,6 +302,7 @@ for (const pool of Object.values(rolls.pools)) for (const trajectory of pool) {
 }
 
 // Projection checks use the actual camera matrices without a browser or GPU.
+const { RIBBON_WIDTH, RIBBON_CENTER_Z } = (await load('../src/components/playground/farkle/tableMaterial.ts')).exports;
 for (const [width, height] of [[1110, 844], [1366, 844], [390, 788], [844, 334], [2304, 1200], [320, 1000], [767, 844], [768, 844], [667, 334]]) {
   const compact = width < 768;
   const layout = tableLayout(width, height), camera = new THREE.PerspectiveCamera(24, 1, 0.1, 200);
@@ -320,6 +321,9 @@ for (const [width, height] of [[1110, 844], [1366, 844], [390, 788], [844, 334],
     const direction = active === 'A' ? -1 : 1;
     const dividerY = new THREE.Vector3(0, 0.012, 0).project(camera).y * direction;
     assert.ok(dividerY > 1.01, `The center line stays outside the viewport: ${width} ${active}`);
+    const edgeZ = active === 'B' ? (RIBBON_CENTER_Z + RIBBON_WIDTH / 2) : (RIBBON_CENTER_Z - RIBBON_WIDTH / 2);
+    const ribbonEdgeY = new THREE.Vector3(0, 0.004, edgeZ).project(camera).y * direction;
+    assert.ok(ribbonEdgeY < 1.0, `The golden ribbon remains partially visible in the settled view: ${width} ${active}`);
     if (compact) assert.ok(Math.abs(layout.origins[active].clone().project(camera).x) < 1e-9, 'Narrow viewports center the throwing area');
     const left = layout.origins[active].clone().add(new THREE.Vector3(-0.5, 0.5, 0)).project(camera);
     const right = layout.origins[active].clone().add(new THREE.Vector3(0.5, 0.5, 0)).project(camera);
@@ -428,23 +432,42 @@ try {
 for (const { id } of DICE_TYPES) for (const material of diceMaterials(id)) {
   material.map?.dispose(); material.bumpMap?.dispose(); material.dispose();
 }
-const { tableMaterial, fitTableTexture } = (await load('../src/components/playground/farkle/tableMaterial.ts')).exports;
-const wood = tableMaterial(), secondWood = tableMaterial();
-assert.deepEqual(uploadedTextures[0], uploadedTextures[2], 'Wood color is deterministic');
-assert.deepEqual(uploadedTextures[1], uploadedTextures[3], 'Wood relief is deterministic');
-assert.ok(new Set(uploadedTextures[0]).size > 30, 'The table has color detail rather than a flat fill');
-assert.ok(new Set(uploadedTextures[1]).size > 20, 'The wood has subtle surface relief');
+const { tableMaterial, ribbonMaterial, fitTableTexture, fitRibbonTexture } = (await load('../src/components/playground/farkle/tableMaterial.ts')).exports;
+const cloth = tableMaterial(), secondCloth = tableMaterial();
+assert.deepEqual(uploadedTextures[0], uploadedTextures[2], 'Table cloth color is deterministic');
+assert.deepEqual(uploadedTextures[1], uploadedTextures[3], 'Table cloth relief is deterministic');
+assert.ok(new Set(uploadedTextures[0]).size > 30, 'The table cloth has color detail rather than a flat fill');
+assert.ok(new Set(uploadedTextures[1]).size > 20, 'The table cloth has subtle surface relief');
+const ribbon = ribbonMaterial(), secondRibbon = ribbonMaterial();
+assert.deepEqual(uploadedTextures[4], uploadedTextures[6], 'Ribbon color is deterministic');
+assert.deepEqual(uploadedTextures[5], uploadedTextures[7], 'Ribbon relief is deterministic');
+assert.ok(new Set(uploadedTextures[4]).size > 30, 'The ribbon has color detail rather than a flat fill');
+assert.ok(new Set(uploadedTextures[5]).size > 20, 'The ribbon has subtle surface relief');
+
+
+
+
 const uvAt = (size, x, z) => {
-  fitTableTexture(wood, size);
+  fitTableTexture(cloth, size);
   const uv = new THREE.Vector2(x / size + 0.5, z / size + 0.5);
-  const color = uv.clone().applyMatrix3(wood.map.matrix);
-  assert.ok(color.distanceTo(uv.clone().applyMatrix3(wood.bumpMap.matrix)) < 1e-10, 'Color and relief stay aligned');
+  const color = uv.clone().applyMatrix3(cloth.map.matrix);
+  assert.ok(color.distanceTo(uv.clone().applyMatrix3(cloth.bumpMap.matrix)) < 1e-10, 'Color and relief stay aligned');
   return color;
 };
 for (const [x, z] of [[0, 0], [-5.2, 8.3], [14.8, -19.4]]) {
-  assert.ok(uvAt(200, x, z).distanceTo(uvAt(383, x, z)) < 1e-10, 'Resizing never stretches or shifts world-space grain');
+  assert.ok(uvAt(200, x, z).distanceTo(uvAt(383, x, z)) < 1e-10, 'Resizing never stretches or shifts world-space weave');
 }
-for (const material of [wood, secondWood]) { material.map.dispose(); material.bumpMap.dispose(); material.dispose(); }
+const ribbonUvAt = (size, x, z) => {
+  fitRibbonTexture(ribbon, size);
+  const uv = new THREE.Vector2(x / size + 0.5, z / RIBBON_WIDTH + 0.5);
+  const color = uv.clone().applyMatrix3(ribbon.map.matrix);
+  assert.ok(color.distanceTo(uv.clone().applyMatrix3(ribbon.bumpMap.matrix)) < 1e-10, 'Ribbon color and relief stay aligned');
+  return color;
+};
+for (const [x, z] of [[0, 0], [-5.2, 1.3], [14.8, -2.1]]) {
+  assert.ok(ribbonUvAt(200, x, z).distanceTo(ribbonUvAt(383, x, z)) < 1e-10, 'Resizing never stretches or shifts ribbon pattern');
+}
+for (const material of [cloth, secondCloth, ribbon, secondRibbon]) { material.map.dispose(); material.bumpMap.dispose(); material.dispose(); }
 const textureDisposals = [];
 const geometryDisposals = [];
 const disposeTexture = THREE.Texture.prototype.dispose;
@@ -485,10 +508,10 @@ scene.animate(() => false, () => completions++);
 scene.dispose();
 assert.equal(callbacks.size, 0);
 assert.equal(disposed, 1);
-assert.equal(textureDisposals.length, 51, 'Four dice types, the wooden table and shared shadow release their textures');
-assert.equal(new Set(textureDisposals).size, 51, 'Shared textures are disposed exactly once');
-assert.equal(geometryDisposals.length, 9, 'Two shared dice shapes, shadow, four indicators, table and divider release their geometry');
-assert.equal(new Set(geometryDisposals).size, 9, 'Shared dice geometry is disposed exactly once');
+assert.equal(textureDisposals.length, 54, 'Four dice types, table cloth, golden ribbon, ribbon shadow and shared shadow release their textures');
+assert.equal(new Set(textureDisposals).size, 54, 'Shared textures are disposed exactly once');
+assert.equal(geometryDisposals.length, 10, 'Two shared dice shapes, shadow, four indicators, table, ribbon and ribbon shadow release their geometry');
+assert.equal(new Set(geometryDisposals).size, 10, 'Shared dice geometry is disposed exactly once');
 THREE.Texture.prototype.dispose = disposeTexture;
 THREE.BufferGeometry.prototype.dispose = disposeGeometry;
 assert.equal(removed, 1);
