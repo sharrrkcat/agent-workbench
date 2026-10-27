@@ -5,7 +5,7 @@ const load = createModuleLoader();
 const { DICE_TYPES, SPECIAL_TYPES, difficultyFor, rollValues } = (await load('../src/components/playground/farkle/dice.ts')).exports;
 const { drawOpponentDice } = (await load('../src/components/playground/farkle/opponentDice.ts')).exports;
 const { LEVELS, newInventory, emptySpecial, inventoryPool, readInventory, saveInventory, awardDice, INVENTORY_KEY,
-  INVENTORY_ACTIONS, canModifyInventory, modifyInventory } =
+  INVENTORY_ACTIONS, canModifyInventory, modifyInventory, DICE_BUY_PRICE, DICE_SELL_PRICE, canTradeDice, tradeDice } =
   (await load('../src/components/playground/farkle/economy.ts')).exports;
 const { evaluateDice } = (await load('../src/components/playground/farkle/scoring.ts')).exports;
 const { gameReducer, initialGame } = (await load('../src/components/playground/farkle/state.ts')).exports;
@@ -20,6 +20,35 @@ assert.deepEqual(LEVELS.map(({ id, target, special, merchant, firstWin }) => [id
   ['chancellors', 8000, 4, 3, 3], ['burgraves', 9000, 4, 4, 4], ['electors', 10000, 4, 4, 4],
 ]);
 const maintained = { special: { ...emptySpecial(), even: 2 }, merchant: 2000, firstWins: ['beggars', 'electors'] };
+assert.equal(DICE_BUY_PRICE, 2);
+assert.equal(DICE_SELL_PRICE, 1);
+for (const { id } of SPECIAL_TYPES) {
+  const initial = { ...newInventory(), merchant: 12, firstWins: ['beggars'] };
+  let inventory = initial;
+  assert.equal(canTradeDice(inventory, id, 'sell'), false);
+  for (let count = 1; count <= 6; count++) {
+    assert.equal(canTradeDice(inventory, id, 'buy'), true);
+    inventory = tradeDice(inventory, id, 'buy');
+    assert.equal(inventory.special[id], count);
+    assert.equal(inventory.merchant, 12 - count * 2);
+    assert.deepEqual(inventory.firstWins, ['beggars']);
+  }
+  assert.equal(canTradeDice({ ...inventory, merchant: 10 }, id, 'buy'), false, 'Six copies is the cap');
+  assert.equal(canTradeDice({ ...inventory, merchant: Number.MAX_SAFE_INTEGER }, id, 'sell'), false);
+  assert.equal(canTradeDice({ ...inventory, merchant: Number.MAX_SAFE_INTEGER - 1 }, id, 'sell'), true);
+  assert.equal(tradeDice({ ...inventory, merchant: Number.MAX_SAFE_INTEGER - 1 }, id, 'sell').merchant, Number.MAX_SAFE_INTEGER);
+  for (let count = 5; count >= 0; count--) {
+    assert.equal(canTradeDice(inventory, id, 'sell'), true);
+    inventory = tradeDice(inventory, id, 'sell');
+    assert.equal(inventory.special[id], count);
+    assert.equal(inventory.merchant, 6 - count);
+  }
+  assert.equal(canTradeDice(inventory, id, 'sell'), false);
+  for (const merchant of [0, 1]) assert.equal(canTradeDice({ ...inventory, merchant }, id, 'buy'), false);
+  assert.equal(canTradeDice({ ...inventory, merchant: 2 }, id, 'buy'), true);
+  assert.deepEqual(initial, { ...newInventory(), merchant: 12, firstWins: ['beggars'] }, 'Trades leave their input unchanged');
+  assert.deepEqual(inventory.special, emptySpecial(), 'Trading one type leaves the rest unchanged');
+}
 const filled = modifyInventory(maintained, 'fillDice');
 assert.deepEqual(Object.values(filled.special), Array(20).fill(6));
 assert.equal(filled.merchant, 999, 'Fill overwrites balances above 999');
@@ -227,12 +256,22 @@ assert.deepEqual(readLoadout(selectionStorage, selectionPool), newChosen);
 assert.deepEqual(loadoutDice(newChosen), ['normal', 'pie', 'heavenly', 'aranka', 'aranka', 'merchant']);
 for (const raw of ['{', 'null', '[]', '{}', ...[
   { ...chosen, normal: 1 }, { ...chosen, normal: 3 }, { ...chosen, normal: -1 },
-  { ...chosen, normal: 1.5, merchant: 1.5 }, { ...chosen, even: 2, normal: 1 },
-  { ...chosen, weighted: 1, normal: 1 },
+  { ...chosen, normal: 1.5, merchant: 1.5 }, { ...defaultLoadout(), normal: -1, merchant: 7 },
 ].map(JSON.stringify)]) {
   selectionJson = raw;
   assert.deepEqual(readLoadout(selectionStorage, selectionPool), defaultLoadout());
   assert.equal(selectionJson, raw, 'Reading invalid preferences never writes browser storage');
+}
+for (const [saved, available, expected] of [
+  [chosen, { ...selectionPool, even: 0, merchant: 0 }, { ...chosen, normal: 4, even: 0, merchant: 0 }],
+  [{ ...chosen, normal: 0, even: 3 }, selectionPool, chosen],
+  [{ ...chosen, normal: 1, weighted: 1 }, selectionPool, chosen],
+  [chosen, defaultLoadout(), defaultLoadout()],
+]) {
+  saveLoadout(selectionStorage, saved);
+  const raw = selectionJson;
+  assert.deepEqual(readLoadout(selectionStorage, available), expected, 'Only unavailable copies become Normal');
+  assert.equal(selectionJson, raw, 'Clipping ownership does not save a new preference');
 }
 assert.throws(() => readLoadout({ getItem() { throw new Error('blocked'); } }, selectionPool), /blocked/);
 assert.throws(() => saveLoadout({ setItem() { throw new Error('quota'); } }, chosen), /quota/);

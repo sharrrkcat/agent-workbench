@@ -15,17 +15,17 @@ export function FarkleHud({ state, disabled, onHold, onStore, onPass }: {
       <div className="farkle-score-player">
         <div className="farkle-score-heading">{t('farkle.player')}</div>
         <div className="farkle-score-total" data-wrap={state.totals.B >= 1_000_000}>{state.totals.B}</div>
-        <div data-score="B-round" data-wrap={state.rounds.B >= 1_000_000}>{state.rounds.B}</div><div data-score="B-selected">{selection(state, 'B').score}</div>
+        <div data-score="B-round" data-wrap={state.rounds.B >= 1_000_000}>{state.rounds.B}</div><div data-score="B-selected" data-wrap={false}>{selection(state, 'B').score}</div>
       </div>
       <div className="farkle-score-goal">
         <div className="farkle-score-heading">{t('farkle.goal')}</div>
         <div className="farkle-score-total" data-target-score={state.target} data-wrap={state.target >= 1_000_000}>{state.target}</div>
-        <div>{t('farkle.round')}</div><div>{t('farkle.selected')}</div>
+        <div className="farkle-score-label">{t('farkle.round')}</div><div className="farkle-score-label">{t('farkle.selected')}</div>
       </div>
       <div className="farkle-score-opponent">
         <div className="farkle-score-heading">{t('farkle.opponent')}</div>
         <div className="farkle-score-total" data-wrap={state.totals.A >= 1_000_000}>{state.totals.A}</div>
-        <div data-score="A-round" data-wrap={state.rounds.A >= 1_000_000}>{state.rounds.A}</div><div data-score="A-selected">{selection(state, 'A').score}</div>
+        <div data-score="A-round" data-wrap={state.rounds.A >= 1_000_000}>{state.rounds.A}</div><div data-score="A-selected" data-wrap={false}>{selection(state, 'A').score}</div>
       </div>
     </div>
     <div className="farkle-actions">

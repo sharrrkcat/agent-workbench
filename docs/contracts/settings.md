@@ -19,7 +19,7 @@ Shared controls in `frontend/src/components/ui/` use shadcn CLI 4.21.0; callers 
 Vite, TypeScript and the test module loader resolve `@/` to `frontend/src/`; `cn` combines component styles.
 
 Field labels/titles use explicit 12px medium text; descriptions, field errors and shared save/error Feedback use 12px regular text. Section legends stay 14px; touch inputs retain 16px text. Desktop controls retain Mira density. Coarse-pointer buttons, options and form
-actions have at least 44px targets, except the compact [chat tick rail](chat-context.md#messages-and-attachments); Checkbox/Switch keep compact marks with
+actions have at least 44px targets, except the compact [chat tick rail](chat-context.md#messages-and-attachments) and [Farkle names above quantities](farkle.md#inventory-and-chooser-views); Checkbox/Switch keep compact marks with
 expanded targets and associated labels. Field labels/descriptions are connected to controls. Forms retain native required/range validation and existing blank,
 null and zero semantics. Hidden file inputs remain behind visible Buttons.
 Controlled Select preserves groups, disabled options, empty choices and missing

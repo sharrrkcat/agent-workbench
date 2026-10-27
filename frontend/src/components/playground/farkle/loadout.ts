@@ -1,6 +1,7 @@
 import { DICE_TYPES, type DiceCounts, type DieType } from './dice';
 
 export const LOADOUT_KEY = 'cogita.farkle.loadout';
+export const FULL_DICE_POOL = Object.fromEntries(DICE_TYPES.map(({ id }) => [id, 6])) as DiceCounts;
 export const defaultLoadout = (): DiceCounts =>
   Object.fromEntries(DICE_TYPES.map(({ id }) => [id, id === 'normal' ? 6 : 0])) as DiceCounts;
 export const loadoutSize = (counts: DiceCounts) => DICE_TYPES.reduce((total, { id }) => total + counts[id], 0);
@@ -32,8 +33,10 @@ export function readLoadout(storage: Pick<Storage, 'getItem'>, owned: DiceCounts
   let value: DiceCounts;
   try { value = JSON.parse(raw); }
   catch (error) { if (error instanceof SyntaxError) return defaultLoadout(); throw error; }
-  if (!isLoadout(value, owned)) return defaultLoadout();
-  return Object.fromEntries(DICE_TYPES.map(({ id }) => [id, value[id]])) as DiceCounts;
+  if (!isLoadout(value, FULL_DICE_POOL)) return defaultLoadout();
+  const counts = Object.fromEntries(DICE_TYPES.map(({ id }) => [id, Math.min(value[id], owned[id])])) as DiceCounts;
+  counts.normal += 6 - loadoutSize(counts);
+  return counts;
 }
 
 export function saveLoadout(storage: Pick<Storage, 'setItem'>, counts: DiceCounts) {

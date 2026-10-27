@@ -8,7 +8,7 @@ Farkle is a browser-local Playground game at `/playground/farkle`, with a human 
 
 Farkle uses SidebarProvider with New Game, Custom game, My Dice, Shop and Settings; the footer is Back to Playground when idle or Exit Game when
 playing. Exit clears both sides and cancels animations and opponent operations. The camera follows turns automatically; manual view switching is
-unavailable. The header keeps its title/toggle and the actual Merchant Dice balance; balance and Shop open the same placeholder.
+unavailable. The header keeps its title/toggle and the actual Merchant Dice balance; balance and Shop open the same trading dialog.
 
 Clicking anywhere on the idle, exited or finished table opens New Game, with a keyboard-activatable full-table entry disabled while another dialog or
 mobile drawer is open. Dismissal does not click through; New Game and Exit remain available.
@@ -30,7 +30,7 @@ settlement](#rewards-and-browser-storage) owns defeat awards, conversion and per
 | Electors | 10000 | 4 | 4 | 4 |
 
 The single-select level list scrolls between its heading and fixed progression controls. Choose dice is a separate dialog step with owned types,
-smaller muted quantities below names and right-aligned minus/count/plus controls. Selections always total six, with Normal filling spare slots. All
+smaller muted `owned N` / `拥有N` quantities below names and right-aligned minus/count/plus controls. Selections always total six, with Normal filling spare slots. All
 choosers highlight selected types with a green border and background in six intensity steps; zero-count rows and My Dice have no highlight.
 
 Adding a non-Normal replaces one Normal, subject to ownership and a spare Normal; removing one restores a Normal. Normal cannot be removed directly;
@@ -47,11 +47,11 @@ strictly between 1 and Number.MAX_SAFE_INTEGER (9007199254740991), including non
 disable progression with distinct localized feedback.
 
 Generated modes open Choose dice for player; Custom first opens Choose dice for opponent. Both reuse six-die balancing, English ordering, previews and
-probability cards. Opponents have all 22 types at six copies each without inventory quantities; players retain owned limits. Back retains drafts;
+probability cards. Both sides have all 22 types at six copies each without inventory quantities, independently of owned stock. Back retains drafts;
 closing discards unconfirmed edits. Pause, drawer closure and focus restoration follow the ordinary flow.
 
-Custom matches retain their confirmed setup, grant no rewards or first wins for either outcome, even at an ordinary level's target. Play again retains
-this setup and enters the corresponding opponent/player chooser; result New Game opens ordinary level selection.
+Custom matches retain their confirmed setup and grant no rewards or first wins, even at ordinary targets. Play again reopens the corresponding
+opponent/player chooser with both loadouts; result New Game opens ordinary level selection.
 
 ## Scoring, input and turns
 
@@ -103,9 +103,8 @@ using score-total typography and Round color, always smaller than the title; no 
 opens Choose dice at the same level with the last confirmed selection; New Game opens that level in difficulty selection. Closing leaves the finished
 board frozen.
 
-Restart/exit/departure cancel animations, pending Bust handoffs, opponent timers and worker results. Match state is page-local and resets on
-refresh/departure. Only inventory, per-level first wins, the shared player selection, custom configuration and opponent settings persist in the
-browser.
+Restart/exit/departure cancel animations, pending Bust handoffs, opponent timers and worker results. Matches reset on refresh/departure.
+Only inventory, per-level first wins, ordinary player selection, custom configuration including both loadouts and opponent settings persist locally.
 
 ## Dice catalog and presentation
 
@@ -139,12 +138,21 @@ numeric scoring.
 ### Inventory and chooser views
 
 My Dice shows all 22 material previews: Normal 6 / 6, special quantities out of six and Merchant N / ∞. Its maximum width is 1200px; Choose dice uses
-480px for 1–6 owned types, 800px for 7–12 and 1200px above 12, independent of selected copy counts. Both retain 16px viewport margins. Scrolling lists
+480px for 1–6 owned types, 800px for 7–12 and 1200px above 12, independent of selected copy counts. Custom choosers and Shop use 1200px. All retain 16px viewport margins. Scrolling lists
 use one column below 720px available width, two from 720px and three from 1080px; titles and footers stay outside the scroller.
 
-Both lists sort by full English display name in either locale, including Normal and Merchant; long names wrap. Shared shadcn Hover Cards activate only
+All lists sort by full English name in either locale; long names wrap. Names above owned quantities use text-height triggers on desktop/touch, keeping both lines adjacent. Shared shadcn Hover Cards activate only
 from names by hover, focus or touch. Each shows six face-ordered percentages from gameplay weights, rounded to one decimal percent, with accessible
 face descriptions including Devil's head. Previews, quantities and quantity controls do not trigger cards.
+
+### Shop
+
+Shop lists all twenty special types, including zero stock, with shared previews, probability cards and owned quantities below names; Normal/Merchant are excluded.
+Rows have destructive-color Sell and outline Buy buttons. The Merchant icon/count sits beside Shop; secondary text below states the prices.
+Each click immediately trades one die without confirmation: Buy costs two Merchant, Sell returns one. Buy is disabled at six copies or insufficient funds; Sell at zero stock or safe-integer overflow.
+Each trade writes stock and balance together, preserving first wins and current match dice. Failed writes retain the changed in-page inventory and
+one snapshot for explicit retry, blocking trades, new matches and Exit. Retry never repeats the trade. Inventory read/reset errors also block trading.
+Closing keeps trades; the next ordinary chooser revalidates ownership. Persistence and retry reuse the inventory maintenance mechanism.
 
 ## Opponent
 
@@ -217,18 +225,17 @@ special counts (each initially zero, maximum six), an initially zero Merchant co
 backend owns these values. Storage parsing requires every special count and validates counts and level IDs, ignores injected Normal counts and does
 not overwrite unreadable data; localized errors allow retry.
 
-`cogita.farkle.loadout` is the single player preference shared by ordinary Choose dice and custom Choose dice for player. It stores all 22 type
-counts, including selected Normal copies, only when Start game is confirmed. Missing or invalid selections default to six Normal dice without writing;
-parsing requires exactly six owned copies. Read failures offer retry; save failures retain the draft and block starting until explicit retry succeeds.
+`cogita.farkle.loadout` belongs only to ordinary Choose dice and stores all 22 counts on confirmed Start game. Missing/invalid selections default to six Normal;
+parsing requires exactly six valid copies. Counts exceeding current ownership are clipped, with only missing copies replaced by Normal; other choices
+remain selected. Reading never writes the adjusted draft. Read failures offer retry; save failures retain the draft and block starting for explicit retry.
 
-`cogita.farkle.settings` separately stores `{opponentDiceMode: dynamic|random|wild}`. Missing/malformed values default to Normal mode without writing.
-Changes save immediately; read access failures show retry and temporarily use Normal mode, while save failures keep the last effective mode and the
-requested choice for retry.
+`cogita.farkle.settings` stores `{opponentDiceMode: dynamic|random|wild}`. Missing/malformed values default to Normal without writing. Changes save immediately;
+read failures show retry and temporarily use Normal, while save failures retain the effective mode and requested choice for retry.
 
-`cogita.farkle.customGame` stores only `{target, opponentDiceMode, opponentLoadout}`, defaulting to 1500, Normal mode and six Normal opponent dice. It
-never duplicates the player loadout. Missing/malformed custom values default without writing; access failures require retry. Start game saves the
-shared player selection and custom settings before drawing opponent dice or starting. A failed save retains the draft and blocks starting for explicit
-retry; these two localStorage keys are written separately, so an earlier successful write can remain if the later one fails.
+`cogita.farkle.customGame` stores `{target, opponentDiceMode, opponentLoadout, playerLoadout}`, defaulting to 1500, Normal mode and six Normal dice per
+side. Both loadouts require six valid copies from the full catalog. Missing/malformed values, including a missing playerLoadout, default without
+writing or migration; access failures require retry. Custom Start game saves only this configuration before sampling or starting. A failed save retains
+both drafts and blocks starting for explicit retry. Ordinary loadout storage is neither read nor written by custom games.
 
 ## Settings and maintenance
 
@@ -248,7 +255,7 @@ Settings inventory actions have no helper text and use two columns on desktop an
 | Clear Merchant dice | Set only Merchant to zero |
 
 Normal stays six and first wins remain intact. Actions update the balance without changing confirmed match dice or the saved loadout; the next chooser
-revalidates ownership and defaults invalid selections to six Normal. Unreadable inventory and pending writes disable these actions; additions above
+revalidates ownership and replaces only missing copies with Normal. Unreadable inventory and pending writes disable these actions; additions above
 the safe-integer boundary are disabled. Each action retains one pending inventory snapshot for explicit save retry, without repeating additions or
 settled rewards.
 
@@ -272,7 +279,7 @@ Narrower views enlarge and center the throw and put every storage row beyond the
 airborne dice; projected hit targets follow the dice, and offscreen dice leave focus/accessibility navigation.
 
 Desktop scores stay compact. Narrow/short layouts compress HUD spacing and typography, reducing number size when needed for six digits. Totals,
-targets and rounds through six digits stay on one line in accommodating columns; longer values may wrap within aligned columns without overlapping
+targets and rounds through six digits, four-digit Selected scores and Round/Selected labels stay on one line; longer values may wrap within aligned columns without overlapping
 actions. Touch actions retain 44px targets.
 
 Rapier is an offline development dependency; the browser only interpolates baked poses.
@@ -288,8 +295,6 @@ feedback and leaves Back available.
 
 ## Current limitations
 
-Purchases are unimplemented. Badges, saved matches and game APIs are unimplemented. There is no cross-device sync or coordination of simultaneous
-games in multiple tabs.
+Badges, saved matches and game APIs are unimplemented. There is no cross-device sync or coordination of simultaneous games in multiple tabs.
 
-Personality traits, random decision errors and whole-match win-probability modeling are absent. Live physics, audio and a binary trajectory pipeline
-are unavailable.
+Personality traits, random decision errors, whole-match win-probability modeling, live physics, audio and a binary trajectory pipeline are unavailable.

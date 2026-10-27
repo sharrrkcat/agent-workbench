@@ -18,8 +18,10 @@ export function DiceRow({ type, preview, quantity, quantityBelowName = false, se
     label: type === 'devil' && index === 0 ? t('farkle.wildFace') : t('farkle.faceValue', { value: index + 1 }),
     percent: (weight / sum).toLocaleString(i18n.language, { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }),
   }));
+  // Handle quantity taps so Chromium cannot retarget them to the adjacent name button.
   const count = quantity === undefined ? null : <span className={cn('shrink-0 tabular-nums',
-    quantityBelowName && 'px-2 text-[11px] leading-4 text-muted-foreground')} data-inventory-count>{quantity}</span>;
+    quantityBelowName && 'px-2 text-[11px] leading-4 text-muted-foreground')} data-inventory-count
+    onClick={() => setOpen(false)}>{quantity}</span>;
 
   return <HoverCard open={open} onOpenChange={(next, details) => {
     // Focus/touch activation outlives the synthetic mouseleave from a tap.
@@ -34,7 +36,8 @@ export function DiceRow({ type, preview, quantity, quantityBelowName = false, se
       <img className="size-10 shrink-0 rounded-md" src={preview} alt="" />
       <div className="flex min-w-0 flex-1 flex-col items-start">
         <HoverCardTrigger delay={150} closeDelay={150} render={<Button ref={trigger} variant="ghost"
-          className="h-auto max-w-full min-w-0 justify-start whitespace-normal text-left" aria-describedby={descriptionId}
+          className={cn('h-auto max-w-full min-w-0 justify-start whitespace-normal text-left',
+            quantityBelowName && quantity !== undefined && 'pointer-coarse:min-h-0')} aria-describedby={descriptionId}
           onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={() => setOpen(true)} />}>
           {t(`farkle.dice.${type}`)}
         </HoverCardTrigger>

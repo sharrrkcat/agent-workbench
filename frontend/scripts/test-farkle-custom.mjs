@@ -3,14 +3,14 @@ import { readFileSync } from 'node:fs';
 import { createModuleLoader } from './module-loader.mjs';
 
 const load = createModuleLoader();
-const { defaultLoadout, loadoutSize, canAdjustLoadout, adjustLoadout } =
+const { defaultLoadout, FULL_DICE_POOL, loadoutSize, canAdjustLoadout, adjustLoadout } =
   (await load('../src/components/playground/farkle/loadout.ts')).exports;
-const { CUSTOM_GAME_KEY, CUSTOM_OPPONENT_MODES, OPPONENT_POOL, defaultCustomGame, targetError, readCustomGame, saveCustomGame } =
+const { CUSTOM_GAME_KEY, CUSTOM_OPPONENT_MODES, defaultCustomGame, targetError, readCustomGame, saveCustomGame } =
   (await load('../src/components/playground/farkle/customGame.ts')).exports;
 const { gameReducer, initialGame } = (await load('../src/components/playground/farkle/state.ts')).exports;
 const english = JSON.parse(readFileSync(new URL('../src/i18n/resources/en/common.json', import.meta.url))).farkle.dice;
-const order = Object.keys(OPPONENT_POOL).sort((a, b) => english[a].localeCompare(english[b], 'en'));
-const pool = { ...OPPONENT_POOL, even: 1, merchant: 1000 };
+const order = Object.keys(FULL_DICE_POOL).sort((a, b) => english[a].localeCompare(english[b], 'en'));
+const pool = { ...FULL_DICE_POOL, even: 1, merchant: 1000 };
 let counts = defaultLoadout();
 function adjust(type, change) {
   assert.equal(canAdjustLoadout(counts, pool, type, change), true);
@@ -49,15 +49,26 @@ const storage = { getItem: (key) => saved.get(key) ?? null, setItem: (key, value
 assert.deepEqual(readCustomGame(storage), defaultCustomGame());
 assert.equal(saved.size, 0);
 for (const mode of CUSTOM_OPPONENT_MODES) {
-  const config = { target: 1501, opponentDiceMode: mode, opponentLoadout: { ...defaultLoadout(), normal: 0, weighted: 6 } };
+  const config = { target: 1501, opponentDiceMode: mode, opponentLoadout: { ...defaultLoadout(), normal: 0, weighted: 6 },
+    playerLoadout: { ...defaultLoadout(), normal: 0, merchant: 6 } };
   saveCustomGame(storage, config);
   assert.deepEqual(readCustomGame(storage), config);
-  assert.deepEqual(Object.keys(JSON.parse(saved.get(CUSTOM_GAME_KEY))).sort(), ['opponentDiceMode', 'opponentLoadout', 'target']);
+  assert.deepEqual(Object.keys(JSON.parse(saved.get(CUSTOM_GAME_KEY))).sort(), ['opponentDiceMode', 'opponentLoadout', 'playerLoadout', 'target']);
+  assert.deepEqual([...saved.keys()], [CUSTOM_GAME_KEY], 'Custom games only save their own configuration');
+}
+for (const type of order) {
+  const loadout = { ...defaultLoadout(), normal: 0, [type]: 6 };
+  const config = { ...defaultCustomGame(), opponentLoadout: loadout, playerLoadout: loadout };
+  saveCustomGame(storage, config);
+  assert.deepEqual(readCustomGame(storage), config, `Both custom sides allow six ${type} dice`);
 }
 for (const value of [null, [], {}, ...[0, 1, 1.5, Number.MAX_SAFE_INTEGER].map((target) => ({ ...defaultCustomGame(), target })), { ...defaultCustomGame(), opponentDiceMode: 'invalid' },
-  { ...defaultCustomGame(), opponentLoadout: { ...defaultLoadout(), weighted: 6 } }]) {
+  { ...defaultCustomGame(), opponentLoadout: { ...defaultLoadout(), weighted: 6 } },
+  { ...defaultCustomGame(), playerLoadout: { ...defaultLoadout(), weighted: 6 } },
+  { target: 1501, opponentDiceMode: 'custom', opponentLoadout: defaultLoadout() }]) {
   saved.set(CUSTOM_GAME_KEY, JSON.stringify(value));
   assert.deepEqual(readCustomGame(storage), defaultCustomGame());
+  assert.equal(saved.get(CUSTOM_GAME_KEY), JSON.stringify(value), 'Invalid custom settings are not rewritten');
 }
 saved.set(CUSTOM_GAME_KEY, '{broken');
 assert.deepEqual(readCustomGame(storage), defaultCustomGame());

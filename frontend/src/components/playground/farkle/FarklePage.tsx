@@ -18,14 +18,15 @@ import { FarkleTable } from './FarkleTable';
 import { dicePreview } from './materials';
 import { DICE_TYPES, NORMAL_COUNT, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
 import { drawOpponentDice, OPPONENT_DICE_MODES, type OpponentDiceMode } from './opponentDice';
-import { canModifyInventory, inventoryPool, INVENTORY_ACTIONS, LEVELS, type LevelId } from './economy';
+import { canModifyInventory, DICE_BUY_PRICE, DICE_SELL_PRICE, inventoryPool, INVENTORY_ACTIONS, LEVELS, type LevelId } from './economy';
 import { gameReducer, initialGame } from './state';
 import { useInventory } from './useInventory';
 import { rewardGroups } from './rewards';
-import { loadoutDice, readLoadout, saveLoadout } from './loadout';
+import { FULL_DICE_POOL, loadoutDice, readLoadout, saveLoadout } from './loadout';
 import { DiceRow } from './DiceRow';
 import { DiceChooser } from './DiceChooser';
-import { CUSTOM_OPPONENT_MODES, OPPONENT_POOL, defaultCustomGame, matchTarget, targetError, readCustomGame,
+import { DiceShop } from './DiceShop';
+import { CUSTOM_OPPONENT_MODES, defaultCustomGame, matchTarget, targetError, readCustomGame,
   saveCustomGame, type CustomGame, type MatchSetup } from './customGame';
 import { useOpponent } from './useOpponent';
 import { useFarkleSettings } from './useFarkleSettings';
@@ -65,8 +66,8 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
   const ownedPreviews = previews.filter(({ die }) => owned && owned[die.id] > 0);
   const playerChooser = modal === 'chooseDice' || modal === 'choosePlayerDice';
   const customFlow = modal === 'customGame' || modal === 'chooseOpponentDice' || modal === 'choosePlayerDice';
-  const diceDialogWidth = playerChooser && ownedPreviews.length <= 6 ? 'sm:max-w-[480px]'
-    : playerChooser && ownedPreviews.length <= 12 ? 'sm:max-w-[800px]' : 'sm:max-w-[1200px]';
+  const diceDialogWidth = modal === 'chooseDice' && ownedPreviews.length <= 6 ? 'sm:max-w-[480px]'
+    : modal === 'chooseDice' && ownedPreviews.length <= 12 ? 'sm:max-w-[800px]' : 'sm:max-w-[1200px]';
   const scoreError = targetError(targetText);
   const customTarget = scoreError ? null : Number(targetText);
   const groups = reward ? rewardGroups(reward) : [];
@@ -115,21 +116,22 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
   }
 
   function startGame() {
-    if (startDisabled || !draft || loadoutError === 'load'
+    if (startDisabled || (!customFlow && (!draft || loadoutError === 'load'))
       || (customFlow && (customTarget === null || customError === 'load'))) return;
-    try { saveLoadout(window.localStorage, draft); }
-    catch { setLoadoutError('save'); return; }
-    setLoadoutError(null);
     const setup: MatchSetup = customFlow ? { kind: 'custom', config: { ...custom, target: customTarget! } }
       : { kind: 'standard', level };
     if (setup.kind === 'custom') {
       try { saveCustomGame(window.localStorage, setup.config); }
       catch { setCustomError('save'); return; }
+    } else {
+      try { saveLoadout(window.localStorage, draft!); }
+      catch { setLoadoutError('save'); return; }
+      setLoadoutError(null);
     }
     setCustomError(null);
     const target = matchTarget(setup);
     const mode = setup.kind === 'custom' ? setup.config.opponentDiceMode : settings.mode;
-    const loadout = { B: loadoutDice(draft), A: mode === 'custom'
+    const loadout = { B: loadoutDice(setup.kind === 'custom' ? setup.config.playerLoadout : draft!), A: mode === 'custom'
       ? loadoutDice(custom.opponentLoadout) : drawOpponentDice(target, mode) };
     dispatch({ type: 'start', setup, loadout, values: rollValues(loadout.B) });
     setModal(null);
@@ -145,16 +147,15 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
   useEffect(() => { if (modal) modalTitle.current?.focus(); }, [modal]);
 
   function openModal(kind: Modal, source: HTMLElement) {
-    if (kind === 'newGame' || kind === 'chooseDice' || kind === 'customGame'
-      || kind === 'chooseOpponentDice' || kind === 'choosePlayerDice') {
+    if (kind === 'newGame' || kind === 'chooseDice') {
       if (state.setup?.kind === 'standard') setLevel(state.setup.level);
       setDraft(null);
       setLoadoutError(null);
       prepareLoadout();
-      if (kind === 'customGame') prepareCustom();
-      if ((kind === 'chooseOpponentDice' || kind === 'choosePlayerDice') && state.setup?.kind === 'custom') {
-        prepareCustom(state.setup.config);
-      }
+    }
+    if (kind === 'customGame') prepareCustom();
+    if ((kind === 'chooseOpponentDice' || kind === 'choosePlayerDice') && state.setup?.kind === 'custom') {
+      prepareCustom(state.setup.config);
     }
     trigger.current = isMobile && source.closest('.farkle-sidebar') ? sidebarTrigger.current : source;
     setOpenMobile(false);
@@ -215,15 +216,24 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
       <DialogContent initialFocus={() => modalTitle.current}
         finalFocus={() => trigger.current?.isConnected ? trigger.current : sidebarTrigger.current}
         className={cn(modal === 'result' && 'farkle-result',
-          (modal === 'myDice' || playerChooser || modal === 'chooseOpponentDice') && ['farkle-dice-dialog w-[calc(100%-2rem)]', diceDialogWidth])}>
+          (modal === 'myDice' || modal === 'shop' || playerChooser || modal === 'chooseOpponentDice')
+            && ['farkle-dice-dialog w-[calc(100%-2rem)]', diceDialogWidth])}>
         {modal === 'result' ? <div className="farkle-result-summary">
           <div className="farkle-score-heading" data-outcome={state.winner === 'B' ? 'win' : 'loss'}>
             <DialogTitle ref={modalTitle} tabIndex={-1} style={{ font: 'inherit' }}>{t(state.winner === 'B' ? 'farkle.youWin' : 'farkle.youLost')}</DialogTitle>
           </div>
           <p className="farkle-score-total" data-result-score="B">{t('farkle.resultScore', { score: state.totals.B })}</p>
         </div> : <DialogHeader>
-          <DialogTitle ref={modalTitle} tabIndex={-1}>{modal ? t(`farkle.${modal}`) : ''}</DialogTitle>
-          {modal === 'shop' ? <DialogDescription>{t('farkle.shopPlaceholder')}</DialogDescription> : null}
+          <div className="flex items-center gap-3 pr-6">
+            <DialogTitle ref={modalTitle} tabIndex={-1}>{modal ? t(`farkle.${modal}`) : ''}</DialogTitle>
+            {modal === 'shop' ? <span className="inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums"
+              data-shop-balance aria-label={inventory ? t('farkle.balance', { count: inventory.merchant }) : undefined}>
+              <Coins className="size-4" /><span>{inventory?.merchant ?? '—'}</span>
+            </span> : null}
+          </div>
+          {modal === 'shop' ? <DialogDescription data-shop-prices>
+            {t('farkle.shopPrices', { buy: DICE_BUY_PRICE, sell: DICE_SELL_PRICE })}
+          </DialogDescription> : null}
         </DialogHeader>}
         {modal !== 'settings' ? <>{storageAlert}{clearAlert}</> : null}
         {modal === 'settings' ? <FieldGroup className="min-h-0 overflow-y-auto">
@@ -270,7 +280,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
             <FieldDescription id="farkle-clear-cache-hint">{t('farkle.clearCacheHint')}</FieldDescription>
           </Field>
         </FieldGroup> : null}
-        {(modal === 'newGame' || playerChooser || customFlow) && loadoutError ? <Alert variant="destructive">
+        {(modal === 'newGame' || modal === 'chooseDice') && loadoutError ? <Alert variant="destructive">
           <AlertDescription>{t(loadoutError === 'load' ? 'farkle.loadoutLoadError' : 'farkle.loadoutSaveError')}</AlertDescription>
           <Button variant="outline" disabled={startDisabled}
             onClick={loadoutError === 'load' ? prepareLoadout : startGame}>{t('farkle.retryStorage')}</Button>
@@ -308,21 +318,25 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
                 : die.id === 'normal' ? `${NORMAL_COUNT} / ${NORMAL_COUNT}` : `${inventory.merchant} / ∞`} />)}
           </ul>
         </div> : null}
-        {playerChooser && owned && draft ? <>
-          <DiceChooser counts={draft} available={owned} previews={previews} showInventory onChange={setDraft} />
+        {modal === 'shop' && inventory ? <DiceShop inventory={inventory} previews={previews}
+          disabled={storageError !== null || clearError} onTrade={collection.trade} /> : null}
+        {playerChooser && (customFlow || (owned && draft)) ? <>
+          <DiceChooser counts={customFlow ? custom.playerLoadout : draft!} available={customFlow ? FULL_DICE_POOL : owned!}
+            previews={previews} showInventory={!customFlow}
+            onChange={(counts) => customFlow ? setCustom({ ...custom, playerLoadout: counts }) : setDraft(counts)} />
           <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setModal(modal === 'chooseDice' ? 'newGame'
               : custom.opponentDiceMode === 'custom' ? 'chooseOpponentDice' : 'customGame')}>{t('back')}</Button>
-            <Button disabled={startDisabled || loadoutError === 'load' || (customFlow && customError === 'load')}
+            <Button disabled={startDisabled || (customFlow ? customError === 'load' : loadoutError === 'load')}
               onClick={startGame}>{t('farkle.startGame')}</Button>
           </DialogFooter>
         </> : null}
         {modal === 'chooseOpponentDice' ? <>
-          <DiceChooser counts={custom.opponentLoadout} available={OPPONENT_POOL} previews={previews} showInventory={false}
+          <DiceChooser counts={custom.opponentLoadout} available={FULL_DICE_POOL} previews={previews} showInventory={false}
             onChange={(opponentLoadout) => setCustom({ ...custom, opponentLoadout })} />
           <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setModal('customGame')}>{t('back')}</Button>
-            <Button disabled={startDisabled || customError === 'load' || loadoutError === 'load'}
+            <Button disabled={startDisabled || customError === 'load'}
               onClick={() => setModal('choosePlayerDice')}>{t('farkle.choosePlayerDice')}</Button>
           </DialogFooter>
         </> : null}
@@ -352,8 +366,8 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
               </FieldDescription>
             </Field>
           </FieldGroup>
-          <DialogFooter><Button disabled={startDisabled || customTarget === null || customError === 'load' || loadoutError === 'load'}
-            onClick={() => { if (!draft) prepareLoadout(); setModal(custom.opponentDiceMode === 'custom' ? 'chooseOpponentDice' : 'choosePlayerDice'); }}>
+          <DialogFooter><Button disabled={startDisabled || customTarget === null || customError === 'load'}
+            onClick={() => setModal(custom.opponentDiceMode === 'custom' ? 'chooseOpponentDice' : 'choosePlayerDice')}>
             {t(custom.opponentDiceMode === 'custom' ? 'farkle.chooseOpponentDice' : 'farkle.choosePlayerDice')}
           </Button></DialogFooter>
         </> : null}

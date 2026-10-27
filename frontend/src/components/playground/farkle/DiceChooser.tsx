@@ -14,7 +14,7 @@ export function DiceChooser({ counts, available, previews, showInventory, onChan
   return <div className="farkle-dice-list min-h-0 overflow-y-auto">
     <ul className="farkle-dice-grid" data-loadout>
       {previews.filter(({ die }) => available[die.id] > 0).map(({ die, url }) => <DiceRow key={die.id}
-        type={die.id} preview={url} quantity={showInventory ? `×${available[die.id]}` : undefined} quantityBelowName
+        type={die.id} preview={url} quantity={showInventory ? t('farkle.owned', { count: available[die.id] }) : undefined} quantityBelowName
         selectedCount={counts[die.id]}>
         <div className="flex shrink-0 items-center gap-1">
           <Button variant="outline" size="icon" aria-label={t('farkle.removeDie', { name: t(`farkle.dice.${die.id}`) })}

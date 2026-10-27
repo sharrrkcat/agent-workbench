@@ -181,7 +181,7 @@
   .farkle-table > canvas { display: block; position: absolute; inset: 0; }
   .farkle-dice-list { container: farkle-dice-list / inline-size; }
   .farkle-dice-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 24px; }
-  .farkle-dice-grid[data-loadout] > li {
+  .farkle-dice-grid:is([data-loadout], [data-shop]) > li {
     --farkle-choice: #67b887;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
@@ -280,7 +280,7 @@
   .farkle-score-heading { color: var(--farkle-gold); font-size: 1.12em; font-weight: bold; }
   .farkle-score .farkle-score-heading { overflow-wrap: normal; }
   .farkle-score-total { font-size: 1.5em; }
-  .farkle-score [data-wrap='false'] { white-space: nowrap; }
+  .farkle-score [data-wrap='false'], .farkle-score-label { white-space: nowrap; }
   .farkle-score-player .farkle-score-total { color: #10b9f0; }
   .farkle-score-goal .farkle-score-total { color: var(--farkle-gold); }
   .farkle-score-opponent .farkle-score-total { color: var(--farkle-red); }

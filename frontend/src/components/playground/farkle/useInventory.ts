@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { awardDice, canModifyInventory, modifyInventory, newInventory, readInventory, saveInventory,
-  type Inventory, type InventoryAction, type Reward, type LevelId } from './economy';
+import { awardDice, canModifyInventory, canTradeDice, modifyInventory, newInventory, readInventory, saveInventory, tradeDice,
+  type DiceTrade, type Inventory, type InventoryAction, type Reward, type LevelId } from './economy';
+import type { SpecialType } from './dice';
 import type { PlayerId } from './state';
 
 type Collection = { inventory: Inventory | null; error: 'load' | 'save' | null };
@@ -47,5 +48,9 @@ export function useInventory(winner: PlayerId | null, level: LevelId | null) {
     setReward(null);
     setCollection({ inventory: newInventory(), error: null });
   }
-  return { ...collection, reward, retry, modify, reset };
+  function trade(type: SpecialType, action: DiceTrade) {
+    if (!collection.inventory || collection.error || !canTradeDice(collection.inventory, type, action)) return;
+    persist(tradeDice(collection.inventory, type, action));
+  }
+  return { ...collection, reward, retry, modify, trade, reset };
 }

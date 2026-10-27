@@ -15,9 +15,10 @@ Game modules below are under [frontend/src/components/playground/farkle/](../../
   scoring subsets and wildcards. dice.ts owns type identities, integer face weights,
   difficulty and face sampling; input.ts owns directional navigation.
 - DiceChooser.tsx and DiceRow.tsx share selection controls, previews and probability
-  cards. loadout.ts owns six-die balancing and the shared player preference;
-  customGame.ts owns custom configuration, target validation and match setup types.
-- economy.ts owns levels, inventory, maintenance actions and reward settlement;
+  cards; DiceShop.tsx reuses rows for immediate trading. loadout.ts owns six-die balancing,
+  the full catalog pool and the ordinary player preference; customGame.ts owns custom
+  configuration including both loadouts, target validation and match setup types.
+- economy.ts owns levels, inventory, trading, maintenance actions and reward settlement;
   rewards.ts groups result rewards and useInventory.ts handles persistence/retry.
 - settings.ts and useFarkleSettings.ts own opponent-mode preferences and retries;
   storage.ts clears the four game-owned browser keys.
@@ -58,12 +59,12 @@ Focused scripts under [frontend/scripts/](../../frontend/scripts/):
   closed circular-face geometry, deterministic textures and rendering cleanup.
 - test-farkle-rolls.mjs: artifact validity, seeded reproduction, interpolated
   floor/dice contacts, settling and per-count recent history.
-- test-farkle-economy.mjs: all ten reward schedules, inventory maintenance and
+- test-farkle-economy.mjs: all ten reward schedules, trading, ownership clipping, inventory maintenance and
   safe-integer boundaries, scoped cache removal/retry, face weights and zero-probability
   faces, uniform sampling/caps, the twenty-type reward pool and browser storage.
 - test-farkle-opponent.mjs: frozen calibration validity, named probabilities,
   interval boundaries, original random parity, unrestricted loadouts and local settings.
-- test-farkle-custom.mjs: six-die balancing, replacement order, custom storage and safe integer targets.
+- test-farkle-custom.mjs: six-die balancing, replacement order, independent custom storage, full pools and safe integer targets.
 - test-farkle-ai.mjs: bounded large-target computation against full-goal values,
   extreme Weighted loadouts, exact turn values, conservative difficulty, identity-sensitive
   selections, complete banking, hot dice and pausable operation timing.
@@ -72,19 +73,19 @@ Browser coverage uses production UI with deterministic draws/rolls in both local
 and desktop/touch layouts:
 
 - [farkle-hud.spec.ts](../../frontend/tests/farkle-hud.spec.ts): five/six-digit totals
-  and rounds, longer wrapped values and HUD sizing.
+  and rounds, four-digit selections, unbroken row labels, longer wrapped values and HUD sizing.
 - [farkle.spec.ts](../../frontend/tests/farkle.spec.ts): ordinary levels and custom
-  flows; separate opponent configuration and shared player preferences; target validation,
+  flows; independent ordinary/custom player preferences and unrestricted custom loadouts; target validation,
   contextual errors, mode descriptions, selected-row highlights and short-screen scrolling.
   Gameplay covers selection/wildcards, batches, rerolls, passes, Bust, automatic camera/AI
   ownership, visible thinking/selection timing, return-to-B pause, pause/retry/cancellation,
   victory, replay, custom reward exclusion, table entry and turn notices.
   Storage covers inventory/rewards/loadouts, quantity limits, drafts, read/save retries,
-  next-game opponent settings, shared language persistence, inventory maintenance and
+  immediate shop trades, fixed-snapshot retries, next-game ownership clipping, shared language persistence, inventory maintenance and
   scoped cache reset including failed removals, pending writes and cancellation.
   Presentation covers probability cards, all 22 appearances, circular Heavenly faces with
   a Maltese cross and numeric hover hint, English-name ordering in either locale,
-  inventory/chooser columns and owned-type-dependent width, grouped results,
+  inventory/chooser/shop columns, owned-type-dependent chooser width and grouped results,
   short-screen reward scrolling, large scores and overlay isolation.
 
 [playground.spec.ts](../../frontend/tests/playground.spec.ts) and

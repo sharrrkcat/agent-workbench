@@ -19,7 +19,7 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [
   const touch = viewport.width < 768 || viewport.height < 440;
   test.describe(`Farkle HUD ${locale} ${viewport.width}x${viewport.height}`, () => {
     test.use({ viewport, hasTouch: touch });
-    test('five and six digit scores stay on one line; longer scores can wrap', async ({ page }, testInfo) => {
+    test('scores and Round/Selected labels fit their columns; longer scores can wrap', async ({ page }, testInfo) => {
       const common = JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/common.json`, import.meta.url), 'utf8'));
       const i18n = createInstance();
       await i18n.init({ lng: locale, resources: { [locale]: { common } } });
@@ -27,7 +27,10 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [
       // accumulated rounds without playing hundreds of artificial turns.
       await page.route('**/__test__/farkle-hud?*', (route) => {
         const value = Number(new URL(route.request().url()).searchParams.get('score'));
-        const state = { ...initialGame, target: value, totals: { A: value, B: value }, rounds: { A: value, B: value } };
+        const state = { ...initialGame, target: value, totals: { A: value, B: value }, rounds: { A: value, B: value },
+          dice: ['A', 'B'].flatMap((player) => Array.from({ length: 6 }, (_, index) => ({
+            id: `${player}${index}`, player, index, type: 'normal', value: 1, status: 'selected',
+          }))) };
         const hud = React.createElement(FarkleHud, { state, disabled: false, onHold() {}, onStore() {}, onPass() {} });
         const content = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n },
           React.createElement('main', { className: 'farkle-table', style: {
@@ -35,15 +38,17 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [
           } }, hud)));
         return route.fulfill({ contentType: 'text/html; charset=utf-8', body: template.replace('<div id="root"></div>', content) });
       });
-      for (const value of [9999, 10000, 99999, 100000, 999999, 1000000, Number.MAX_SAFE_INTEGER - 1]) {
+      for (const value of [1500, 9999, 10000, 99999, 100000, 999999, 1000000, Number.MAX_SAFE_INTEGER - 1]) {
         await page.goto(`/__test__/farkle-hud?score=${value}`);
         await page.evaluate(() => document.fonts.ready);
         const actual = await page.locator('.farkle-score').evaluate((score) => {
-          const cells = [...score.querySelectorAll('[data-wrap]')];
+          const cells = [...score.querySelectorAll('[data-wrap], .farkle-score-goal > div:nth-child(n+3)')];
           return {
             numbers: cells.map((cell) => {
               const range = document.createRange(); range.selectNodeContents(cell);
               return { text: cell.textContent, lines: range.getClientRects().length,
+                selected: cell.getAttribute('data-score')?.endsWith('-selected'), label: cell.classList.contains('farkle-score-label'),
+                left: range.getBoundingClientRect().left, boxLeft: cell.getBoundingClientRect().left,
                 right: range.getBoundingClientRect().right, boxRight: cell.getBoundingClientRect().right,
                 wrap: getComputedStyle(cell).whiteSpace };
             }),
@@ -52,15 +57,18 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [
             overflow: document.documentElement.scrollWidth > innerWidth,
           };
         });
-        expect(actual.numbers).toHaveLength(5);
+        expect(actual.numbers).toHaveLength(9);
         for (const cell of actual.numbers) {
-          expect(cell.text).toBe(String(value));
+          if (cell.label) expect([common.farkle.round, common.farkle.selected]).toContain(cell.text);
+          else expect(cell.text).toBe(cell.selected ? '8000' : String(value));
+          expect(cell.left).toBeGreaterThanOrEqual(cell.boxLeft - 1);
           expect(cell.right).toBeLessThanOrEqual(cell.boxRight + 1);
-          if (value < 1_000_000) expect(cell.lines).toBe(1);
+          if (cell.label || cell.selected || value < 1_000_000) expect(cell.lines).toBe(1);
           else expect(cell.wrap).not.toBe('nowrap');
         }
         expect(actual.right).toBeLessThanOrEqual(actual.actionsLeft);
         expect(actual.overflow).toBe(false);
+        if (value === 1500) await page.screenshot({ path: testInfo.outputPath('four-digit-selected-hud.png') });
         if (value === 999999) await page.screenshot({ path: testInfo.outputPath('six-digit-hud.png') });
       }
     });

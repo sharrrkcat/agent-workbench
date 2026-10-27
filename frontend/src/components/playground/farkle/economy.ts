@@ -29,6 +29,19 @@ export const emptySpecial = (): Record<SpecialType, number> =>
   Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, 0])) as Record<SpecialType, number>;
 export const newInventory = (): Inventory => ({ special: emptySpecial(), merchant: 0, firstWins: [] });
 
+export const DICE_BUY_PRICE = 2;
+export const DICE_SELL_PRICE = 1;
+export type DiceTrade = 'buy' | 'sell';
+export const canTradeDice = (inventory: Inventory, type: SpecialType, action: DiceTrade) => action === 'buy'
+  ? inventory.special[type] < SPECIAL_LIMIT && inventory.merchant >= DICE_BUY_PRICE
+  : inventory.special[type] > 0 && inventory.merchant <= Number.MAX_SAFE_INTEGER - DICE_SELL_PRICE;
+
+export function tradeDice(inventory: Inventory, type: SpecialType, action: DiceTrade): Inventory {
+  return { ...inventory,
+    special: { ...inventory.special, [type]: inventory.special[type] + (action === 'buy' ? 1 : -1) },
+    merchant: inventory.merchant + (action === 'buy' ? -DICE_BUY_PRICE : DICE_SELL_PRICE) };
+}
+
 export const INVENTORY_ACTIONS = ['fillDice', 'clearDice', 'addMerchantDice', 'clearMerchantDice'] as const;
 export type InventoryAction = typeof INVENTORY_ACTIONS[number];
 export const canModifyInventory = (inventory: Inventory, action: InventoryAction) =>
