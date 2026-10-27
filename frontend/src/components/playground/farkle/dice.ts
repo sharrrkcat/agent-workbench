@@ -38,22 +38,6 @@ function weightedIndex(weights: readonly number[], sample: number) {
   return index;
 }
 
-export function drawOpponentDice(target: number, random = Math.random): DieType[] {
-  const difficulty = difficultyFor(target);
-  const range = difficulty <= 0.2 ? [0, 1] : difficulty <= 0.4 ? [1, 2]
-    : difficulty <= 0.6 ? [2, 3] : difficulty <= 0.8 ? [3, 4] : [3, 5];
-  const count = range[0] + Math.floor(random() * (range[1] - range[0] + 1));
-  const remaining = SPECIAL_TYPES.map(({ id }) => ({ id, copies: id === 'weighted' ? 1 : 3 }));
-  const dice: DieType[] = Array(6 - count).fill('normal');
-  for (let copy = 0; copy < count; copy++) {
-    const candidates = remaining.filter(({ copies }) => copies > 0);
-    const selected = candidates[Math.floor(random() * candidates.length)];
-    selected.copies--;
-    dice.push(selected.id);
-  }
-  return dice;
-}
-
 export function rollValues(types: readonly DieType[], random = Math.random): FaceValue[] {
   return types.map((type) => (weightedIndex(DICE_TYPES.find(({ id }) => id === type)!.weights, random()) + 1) as FaceValue);
 }

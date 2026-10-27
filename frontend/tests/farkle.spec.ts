@@ -136,6 +136,139 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       }, locale);
       await page.goto('/playground/farkle');
     });
+    test('opponent settings slide, stay single-select and persist in both input layouts', async ({ page }, testInfo) => {
+      await menu(page, words.settings);
+      const modal = page.getByRole('dialog', { name: words.settings, exact: true });
+      const group = modal.getByRole('group', { name: words.opponentDice, exact: true });
+      const mode = (value: string) => group.getByRole('button', { name: words.opponentModes[value], exact: true });
+      await expect(modal.getByRole('heading')).toBeFocused();
+      await expect(mode('dynamic')).toHaveAttribute('aria-pressed', 'true');
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.settings'))).toBeNull();
+      if (touch) await expect(sidebar(page)).toBeHidden();
+      await press(mode('dynamic'));
+      await expect(group.locator('[aria-pressed="true"]')).toHaveCount(1);
+      await mode('dynamic').focus();
+      await page.keyboard.press('ArrowRight');
+      await expect(mode('random')).toBeFocused();
+      await page.keyboard.press('Space');
+      await expect(mode('random')).toHaveAttribute('aria-pressed', 'true');
+      await expect(group.locator('[aria-pressed="true"]')).toHaveCount(1);
+      await press(mode('wild'));
+      await expect(mode('wild')).toHaveAttribute('aria-pressed', 'true');
+      const indicator = group.locator('[data-slot="toggle-group-indicator"]');
+      await expect.poll(async () => {
+        const selected = (await mode('wild').boundingBox())!, highlight = (await indicator.boundingBox())!;
+        return Math.abs(selected.x - highlight.x) + Math.abs(selected.width - highlight.width);
+      }).toBeLessThan(1);
+      for (const button of await group.getByRole('button').all()) {
+        const box = (await button.boundingBox())!;
+        if (touch) expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(box.x).toBeGreaterThanOrEqual(16);
+        expect(box.x + box.width).toBeLessThanOrEqual(width - 16);
+      }
+      expect(await modal.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath('opponent-settings.png') });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await expect(indicator).toHaveCSS('transition-property', 'none');
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogita.farkle.settings')!))).toEqual({ opponentDiceMode: 'wild' });
+      await page.keyboard.press('Escape');
+      await expect(touch ? page.locator('[data-sidebar="trigger"]') : sidebar(page).getByRole('button', { name: words.settings, exact: true })).toBeFocused();
+      await page.reload();
+      await menu(page, words.settings);
+      await expect(mode('wild')).toHaveAttribute('aria-pressed', 'true');
+      await modal.getByRole('button', { name: common.close, exact: true }).click();
+      await expect(modal).toBeHidden();
+    });
+    test('opponent settings report storage failures and retry without applying unsaved choices', async ({ page }) => {
+      await menu(page, words.settings);
+      const modal = page.getByRole('dialog', { name: words.settings, exact: true });
+      const mode = (value: string) => modal.getByRole('button', { name: words.opponentModes[value], exact: true });
+      await page.evaluate(() => {
+        const original = Storage.prototype.setItem;
+        Object.defineProperty(window, 'farkleSettingsWriteBlocked', { configurable: true, writable: true, value: true });
+        Storage.prototype.setItem = function (key, value) {
+          if (key === 'cogita.farkle.settings' && (window as typeof window & { farkleSettingsWriteBlocked: boolean }).farkleSettingsWriteBlocked)
+            throw new DOMException('Storage denied', 'QuotaExceededError');
+          original.call(this, key, value);
+        };
+      });
+      await press(mode('wild'));
+      await expect(modal.getByText(words.settingsSaveError, { exact: true })).toBeVisible();
+      await expect(mode('dynamic')).toHaveAttribute('aria-pressed', 'true');
+      await expect(mode('wild')).toHaveAttribute('aria-pressed', 'false');
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.settings'))).toBeNull();
+      await page.keyboard.press('Escape');
+      await menu(page, words.settings);
+      await expect(modal.getByText(words.settingsSaveError, { exact: true })).toBeVisible();
+      await page.evaluate(() => { (window as typeof window & { farkleSettingsWriteBlocked: boolean }).farkleSettingsWriteBlocked = false; });
+      await press(modal.getByRole('button', { name: words.retryStorage, exact: true }));
+      await expect(mode('wild')).toHaveAttribute('aria-pressed', 'true');
+      await expect(modal.getByRole('alert')).toHaveCount(0);
+      await page.addInitScript(() => {
+        const original = Storage.prototype.getItem;
+        Object.defineProperty(window, 'farkleSettingsReadBlocked', { configurable: true, writable: true, value: true });
+        Storage.prototype.getItem = function (key) {
+          if (key === 'cogita.farkle.settings' && (window as typeof window & { farkleSettingsReadBlocked: boolean }).farkleSettingsReadBlocked)
+            throw new DOMException('Storage denied', 'SecurityError');
+          return original.call(this, key);
+        };
+      });
+      await page.reload();
+      await menu(page, words.settings);
+      await expect(modal.getByText(words.settingsLoadError, { exact: true })).toBeVisible();
+      await expect(mode('dynamic')).toBeDisabled();
+      await expect(mode('dynamic')).toHaveAttribute('aria-pressed', 'true');
+      await page.evaluate(() => { (window as typeof window & { farkleSettingsReadBlocked: boolean }).farkleSettingsReadBlocked = false; });
+      await press(modal.getByRole('button', { name: words.retryStorage, exact: true }));
+      await expect(mode('wild')).toHaveAttribute('aria-pressed', 'true');
+      await expect(mode('wild')).toBeEnabled();
+      await expect(modal.getByRole('alert')).toHaveCount(0);
+    });
+    test('opponent settings apply only to the next confirmed new game or replay', async ({ page }) => {
+      await page.evaluate(() => {
+        const loadouts: string[][] = [];
+        Object.defineProperty(window, 'farklePreparedLoadouts', { configurable: true, value: loadouts });
+        const Original = window.Worker;
+        window.Worker = class extends Original {
+          postMessage(message: { kind: string; types?: string[] }) {
+            if (message.kind === 'prepare') loadouts.push([...message.types!]);
+            super.postMessage(message);
+          }
+        };
+      });
+      const prepared = () => page.evaluate(() => (window as typeof window & { farklePreparedLoadouts: string[][] }).farklePreparedLoadouts);
+      await start(page, 'masters', undefined, [0.75, 0]);
+      const original = await prepared();
+      expect(original).toHaveLength(1);
+      expect(original[0].filter((type) => type !== 'normal')).toHaveLength(2);
+      await menu(page, words.settings);
+      let modal = page.getByRole('dialog', { name: words.settings, exact: true });
+      await press(modal.getByRole('button', { name: words.opponentModes.random, exact: true }));
+      await page.keyboard.press('Escape');
+      expect(await prepared()).toEqual(original);
+      await start(page, 'masters', undefined, [0.75, 0, 0]);
+      expect(await prepared()).toEqual([...original, ['normal', 'normal', 'normal', 'normal', 'even', 'even']]);
+      await menu(page, words.settings);
+      modal = page.getByRole('dialog', { name: words.settings, exact: true });
+      await press(modal.getByRole('button', { name: words.opponentModes.wild, exact: true }));
+      await page.keyboard.press('Escape');
+      expect(await prepared()).toHaveLength(2);
+      for (let index = 0; index < 6; index++) await press(die(page, `B${index}`));
+      await press(page.getByRole('button', { name: words.pass, exact: true }));
+      const result = page.getByRole('dialog', { name: words.youWin, exact: true });
+      await expect(result).toBeVisible();
+      await press(result.getByRole('button', { name: words.playAgain, exact: true }));
+      expect(await prepared()).toHaveLength(2);
+      await page.evaluate(() => {
+        const previous = Math.random; let remaining = 6;
+        Math.random = () => remaining-- > 0 ? 4.5 / 22 : previous();
+      });
+      await press(choice(page).getByRole('button', { name: words.startGame, exact: true }));
+      await settled(page);
+      expect(await prepared()).toHaveLength(3);
+      expect((await prepared())[2]).toEqual(Array(6).fill('weighted'));
+      await expect(page.locator('[data-target-score]')).toHaveText('3000');
+    });
     test('baked throws stay visible and clear of the HUD in portrait and landscape', async ({ page }, testInfo) => {
       for (const viewport of [{ width, height: touch ? 844 : 900 }, { width: touch ? 667 : 844, height: 390 }]) {
         await page.setViewportSize(viewport);
@@ -581,7 +714,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(page.locator('.farkle-actions button:enabled')).toHaveCount(0);
       await expect(total(page, 'B')).toHaveText('8000');
       await openSidebar(page);
-      await expect(sidebar(page).locator('.sidebar-header [data-sidebar="menu-button"]')).toHaveText([words.newGame, words.myDice, words.shop]);
+      await expect(sidebar(page).locator('.sidebar-header [data-sidebar="menu-button"]')).toHaveText([words.newGame, words.myDice, words.shop, words.settings]);
       await press(sidebar(page).getByRole('button', { name: words.newGame, exact: true }));
       await press(settings.getByRole('button', { name: words.chooseDice, exact: true }));
       await press(choice(page).getByRole('button', { name: words.startGame, exact: true }));
@@ -670,8 +803,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await start(page, 'masters');
       await press(page.getByRole('button', { name: words.pass, exact: true }));
       await settled(page);
-      await menu(page, words.myDice);
-      await expect(page.getByRole('dialog', { name: words.myDice, exact: true })).toBeVisible();
+      await menu(page, words.settings);
+      await expect(page.getByRole('dialog', { name: words.settings, exact: true })).toBeVisible();
       await page.waitForTimeout(1800);
       await expect(score(page, 'A', 'selected')).toHaveText('0');
       await expect(total(page, 'A')).toHaveText('0');
@@ -748,6 +881,12 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(result).toBeVisible();
 
       await press(result.getByRole('button', { name: words.playAgain, exact: true }));
+      // Keep both matches on the same known single-Even loadout; this tests retry,
+      // not the strength of a newly sampled dynamic combination.
+      await page.evaluate(() => {
+        const previous = Math.random, samples = [0, 0];
+        Math.random = () => samples.length ? samples.shift()! : previous();
+      });
       await press(choice(page).getByRole('button', { name: words.startGame, exact: true }));
       await settled(page);
       await page.evaluate(() => {
@@ -941,6 +1080,9 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       expect(errors).toEqual([]);
     });
     test('opponent worker uses Heavenly and Pie dice with ordinary scoring', async ({ page }) => {
+      await menu(page, words.settings);
+      await press(page.getByRole('dialog').getByRole('button', { name: words.opponentModes.random, exact: true }));
+      await page.keyboard.press('Escape');
       const sample = (type: string) => (SPECIAL_TYPES.findIndex(({ id }) => id === type) + 0.5) / SPECIAL_TYPES.length;
       await start(page, 'courtiers', undefined, [0.99, sample('heavenly'), sample('pie')]);
       await nextOpponentFaces(page, [1, 1, 1, 1, 6, 1]);

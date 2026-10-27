@@ -33,6 +33,8 @@ function ToggleGroup({
     spacing?: number;
     orientation?: 'horizontal' | 'vertical';
   }) {
+  const items = React.Children.toArray(children);
+  const selectedIndex = items.findIndex((child) => React.isValidElement<{ value: string }>(child) && child.props.value === props.value?.[0]);
   return (
     <ToggleGroupPrimitive
       orientation={orientation}
@@ -44,10 +46,15 @@ function ToggleGroup({
       style={{ '--gap': spacing } as React.CSSProperties}
       className={cn(
         'group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-md data-[size=sm]:rounded-[min(var(--radius-md),8px)] data-vertical:flex-col data-vertical:items-stretch',
+        variant === 'segmented' && 'relative isolate grid w-full auto-cols-fr grid-flow-col gap-0 rounded-lg bg-muted p-1',
         className,
       )}
       {...props}
     >
+      {variant === 'segmented' && selectedIndex >= 0 ? <span aria-hidden="true" className="pointer-events-none absolute inset-1">
+        <span data-slot="toggle-group-indicator" className="block h-full rounded-md bg-background shadow-xs transition-transform duration-200 motion-reduce:transition-none"
+          style={{ width: `${100 / items.length}%`, transform: `translateX(${selectedIndex * 100}%)` }} />
+      </span> : null}
       <ToggleGroupContext.Provider value={{ variant, size, spacing, orientation }}>
         {children}
       </ToggleGroupContext.Provider>

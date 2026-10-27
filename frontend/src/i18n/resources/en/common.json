@@ -27,6 +27,16 @@
     "newGame": "New Game",
     "myDice": "My Dice",
     "shop": "Shop",
+    "settings": "Settings",
+    "opponentDice": "Opponent dice",
+    "opponentModes": {
+      "dynamic": "Dynamic",
+      "random": "Random",
+      "wild": "Wild Random"
+    },
+    "settingsNextGame": "Changes apply to the next game.",
+    "settingsLoadError": "Couldn't read opponent dice settings. Using Dynamic until you retry.",
+    "settingsSaveError": "Couldn't save opponent dice settings. The previous setting is still active.",
     "exitGame": "Exit Game",
     "balance": "Merchant Dice: {{count}}",
     "shopPlaceholder": "The shop is coming soon.",

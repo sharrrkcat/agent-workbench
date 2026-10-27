@@ -27,6 +27,16 @@
     "newGame": "新游戏",
     "myDice": "我的骰子",
     "shop": "商店",
+    "settings": "设置",
+    "opponentDice": "对手骰子",
+    "opponentModes": {
+      "dynamic": "动态组合",
+      "random": "随机组合",
+      "wild": "狂野随机"
+    },
+    "settingsNextGame": "更改将在下一局生效。",
+    "settingsLoadError": "无法读取对手骰子设置，暂用动态组合。请重试。",
+    "settingsSaveError": "未能保存对手骰子设置，仍使用之前的设置。请重试。",
     "exitGame": "退出游戏",
     "balance": "商人骰子：{{count}}",
     "shopPlaceholder": "商店即将开放。",

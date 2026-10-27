@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Coins, LogOut, Minus, Package, Plus, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Coins, LogOut, Minus, Package, Plus, Settings, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Field, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -14,7 +14,8 @@ import type { SettingsNavigate } from '@/components/settings/navigation';
 import { playgroundUrl } from '../navigation';
 import { FarkleTable } from './FarkleTable';
 import { dicePreview } from './materials';
-import { DICE_TYPES, drawOpponentDice, NORMAL_COUNT, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
+import { DICE_TYPES, NORMAL_COUNT, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
+import { drawOpponentDice, OPPONENT_DICE_MODES, type OpponentDiceMode } from './opponentDice';
 import { inventoryPool, LEVELS, type TargetScore } from './economy';
 import { gameReducer, initialGame } from './state';
 import { useInventory } from './useInventory';
@@ -22,14 +23,16 @@ import { rewardGroups } from './rewards';
 import { loadoutDice, loadoutSize, readLoadout, saveLoadout } from './loadout';
 import { DiceRow } from './DiceRow';
 import { useOpponent } from './useOpponent';
+import { useFarkleSettings } from './useFarkleSettings';
 
-type Modal = 'newGame' | 'chooseDice' | 'myDice' | 'shop' | 'result';
+type Modal = 'newGame' | 'chooseDice' | 'myDice' | 'shop' | 'settings' | 'result';
 
 export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigate }) {
   const { t, i18n } = useTranslation('common');
   const { setOpenMobile, isMobile, openMobile } = useSidebar();
   const [state, dispatch] = useReducer(gameReducer, initialGame);
   const { inventory, reward, error: storageError, retry } = useInventory(state.winner, state.target);
+  const settings = useFarkleSettings();
   const [modal, setModal] = useState<Modal | null>(null);
   const [ready, setReady] = useState(false);
   const [target, setTarget] = useState<TargetScore>(1500);
@@ -68,7 +71,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
     try { saveLoadout(window.localStorage, draft); }
     catch { setLoadoutError('save'); return; }
     setLoadoutError(null);
-    const loadout = { B: loadoutDice(draft), A: drawOpponentDice(target) };
+    const loadout = { B: loadoutDice(draft), A: drawOpponentDice(target, settings.mode) };
     dispatch({ type: 'start', target, loadout, values: rollValues(loadout.B) });
     setModal(null);
   }
@@ -107,6 +110,9 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
           </SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('shop', event.currentTarget)}>
             <ShoppingBag /><span>{t('farkle.shop')}</span>
+          </SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('settings', event.currentTarget)}>
+            <Settings /><span>{t('farkle.settings')}</span>
           </SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
@@ -152,6 +158,23 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
           {modal === 'shop' ? <DialogDescription>{t('farkle.shopPlaceholder')}</DialogDescription> : null}
         </DialogHeader>}
         {storageAlert}
+        {modal === 'settings' ? <FieldGroup>
+          <Field>
+            <FieldLabel id="farkle-opponent-dice-label">{t('farkle.opponentDice')}</FieldLabel>
+            <ToggleGroup aria-labelledby="farkle-opponent-dice-label" aria-describedby="farkle-opponent-dice-hint"
+              variant="segmented" value={[settings.mode]} disabled={settings.error === 'load'}
+              onValueChange={(values) => { if (values.length) settings.setMode(values[0] as OpponentDiceMode); }}>
+              {OPPONENT_DICE_MODES.map((mode) => <ToggleGroupItem key={mode} value={mode}>
+                {t(`farkle.opponentModes.${mode}`)}
+              </ToggleGroupItem>)}
+            </ToggleGroup>
+            <FieldDescription id="farkle-opponent-dice-hint">{t('farkle.settingsNextGame')}</FieldDescription>
+          </Field>
+          {settings.error ? <Alert variant="destructive">
+            <AlertDescription>{t(settings.error === 'load' ? 'farkle.settingsLoadError' : 'farkle.settingsSaveError')}</AlertDescription>
+            <Button variant="outline" onClick={settings.retry}>{t('farkle.retryStorage')}</Button>
+          </Alert> : null}
+        </FieldGroup> : null}
         {(modal === 'newGame' || modal === 'chooseDice') && loadoutError ? <Alert variant="destructive">
           <AlertDescription>{t(loadoutError === 'load' ? 'farkle.loadoutLoadError' : 'farkle.loadoutSaveError')}</AlertDescription>
           <Button variant="outline" disabled={startDisabled}

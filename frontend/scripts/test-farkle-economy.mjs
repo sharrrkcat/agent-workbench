@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { createModuleLoader } from './module-loader.mjs';
 
 const load = createModuleLoader();
-const { DICE_TYPES, SPECIAL_TYPES, drawOpponentDice, difficultyFor, rollValues } = (await load('../src/components/playground/farkle/dice.ts')).exports;
+const { DICE_TYPES, SPECIAL_TYPES, difficultyFor, rollValues } = (await load('../src/components/playground/farkle/dice.ts')).exports;
+const { drawOpponentDice } = (await load('../src/components/playground/farkle/opponentDice.ts')).exports;
 const { LEVELS, newInventory, emptySpecial, inventoryPool, readInventory, saveInventory, awardDice, INVENTORY_KEY } =
   (await load('../src/components/playground/farkle/economy.ts')).exports;
 const { evaluateDice } = (await load('../src/components/playground/farkle/scoring.ts')).exports;
@@ -48,14 +49,14 @@ assert.deepEqual(DICE_TYPES.find((die) => die.id === 'weighted').weights, [10, 1
 assert.equal(difficultyFor(1500), 0.15);
 assert.equal(difficultyFor(4000), 0.4);
 assert.equal(difficultyFor(20_000), 1);
-assert.deepEqual(drawOpponentDice(1500, () => 0), Array(6).fill('normal'));
-assert.deepEqual(drawOpponentDice(1500, () => 0.999), [...Array(5).fill('normal'), 'aranka']);
-assert.deepEqual(drawOpponentDice(4000, () => 0.999), [...Array(4).fill('normal'), 'aranka', 'aranka']);
+assert.deepEqual(drawOpponentDice(1500, 'random', () => 0), Array(6).fill('normal'));
+assert.deepEqual(drawOpponentDice(1500, 'random', () => 0.999), [...Array(5).fill('normal'), 'aranka']);
+assert.deepEqual(drawOpponentDice(4000, 'random', () => 0.999), [...Array(4).fill('normal'), 'aranka', 'aranka']);
 for (const [target, min, max] of [[0, 0, 1], [1500, 0, 1], [2000, 0, 1], [2001, 1, 2], [4000, 1, 2],
   [4001, 2, 3], [6000, 2, 3], [6001, 3, 4], [8000, 3, 4], [8001, 3, 5], [10000, 3, 5], [20000, 3, 5]]) {
   for (let wanted = min; wanted <= max; wanted++) {
     let first = true, sequence = 123;
-    const result = drawOpponentDice(target, () => {
+    const result = drawOpponentDice(target, 'random', () => {
       if (first) { first = false; return (wanted - min + 0.5) / (max - min + 1); }
       sequence = (sequence * 1664525 + 1013904223) >>> 0;
       return sequence / 2 ** 32;
@@ -67,12 +68,12 @@ for (const [target, min, max] of [[0, 0, 1], [1500, 0, 1], [2000, 0, 1], [2001, 
       assert.ok(result.filter((candidate) => candidate === id).length <= (id === 'weighted' ? 1 : 3), `${target}: ${id} cap`);
   }
 }
-assert.deepEqual(drawOpponentDice(10000, () => 0.999), ['normal', 'aranka', 'aranka', 'aranka', 'fer', 'fer']);
+assert.deepEqual(drawOpponentDice(10000, 'random', () => 0.999), ['normal', 'aranka', 'aranka', 'aranka', 'fer', 'fer']);
 const firstTypeCounts = (target) => {
   const counts = emptySpecial();
   for (let index = 0; index < 1000; index++) {
     let first = true;
-    const dice = drawOpponentDice(target, () => { if (first) { first = false; return 0.75; } return (index + 0.5) / 1000; });
+    const dice = drawOpponentDice(target, 'random', () => { if (first) { first = false; return 0.75; } return (index + 0.5) / 1000; });
     counts[dice.find((type) => type !== 'normal')]++;
   }
   return counts;
@@ -82,7 +83,7 @@ assert.deepEqual(Object.values(lower), Array(20).fill(50), 'Every type starts wi
 assert.deepEqual(higher, lower, 'Difficulty changes the special count, not type preference');
 for (const [index, { id }] of SPECIAL_TYPES.entries()) {
   const rolls = [0.999, (index + 0.5) / 20, (index + 0.5) / 20, (index + 0.5) / 20, (index + 0.5) / 20, (index + 0.5) / 20];
-  const dice = drawOpponentDice(10000, () => rolls.shift());
+  const dice = drawOpponentDice(10000, 'random', () => rolls.shift());
   assert.equal(dice.filter((type) => type === id).length, id === 'weighted' ? 1 : 3, 'Full types leave the candidate pool');
 }
 
