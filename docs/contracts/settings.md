@@ -11,7 +11,7 @@ Language uses browser key `cogita.locale`, defaulting to English when absent or 
 
 Tailwind CSS 4 uses its Vite plugin; shadcn/ui uses Base UI and the Mira preset
 `b1D0dv72` (`base-mira`, Neutral, Lucide, default menus and subtle accents).
-`frontend/src/styles.css` is the sole CSS entry for preset tokens, base rules and scoped layout/Markdown/media styles; shared controls own their component styles.
+`frontend/src/styles.css` is the application CSS entry, importing shared theme/shell and Farkle styles alongside scoped layout/Markdown/media rules. The standalone Farkle entry imports only the shared/game styles; shared controls own their component styles.
 Both preset palettes remain, but the HTML root always uses dark colors and color-scheme. Theme selection and system-theme tracking are unavailable.
 Inter Variable is bundled; shared headings inherit the body font, and Chinese uses system fallbacks. Fonts have no external CDN or backend settings.
 

@@ -1,6 +1,7 @@
+import { farkleHost } from '@/components/playground/farkle/host';
 import { OPPONENT_DICE_MODES, type OpponentDiceMode } from './opponentDice';
 
-export const FARKLE_SETTINGS_KEY = 'cogita.farkle.settings';
+export const FARKLE_SETTINGS_KEY = `${farkleHost.storagePrefix}.settings`;
 export const DEFAULT_OPPONENT_MODE: OpponentDiceMode = 'dynamic';
 
 export function readFarkleSettings(storage: Pick<Storage, 'getItem'>): OpponentDiceMode {

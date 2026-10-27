@@ -9,11 +9,11 @@ import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { changeLocale, type SupportedLocale } from '@/i18n/index';
+import type { SupportedLocale } from '@/i18n/index';
+import { farkleHost } from '@/components/playground/farkle/host';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
-import type { SettingsNavigate } from '@/components/settings/navigation';
-import { farkleHistoryUrl, isFarkleHistory, playgroundUrl } from '../navigation';
+import { farkleHistoryUrl, isFarkleHistory, type FarkleNavigate } from './navigation';
 import { FarkleTable } from './FarkleTable';
 import { dicePreview } from './materials';
 import { DICE_TYPES, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
@@ -36,7 +36,7 @@ import { useMatchHistory } from './useMatchHistory';
 
 type Modal = 'newGame' | 'customGame' | 'chooseDice' | 'chooseOpponentDice' | 'choosePlayerDice' | 'myDice' | 'shop' | 'settings' | 'result';
 
-export default function FarklePage({ search, onNavigate }: { search: string; onNavigate: SettingsNavigate }) {
+export default function FarklePage({ search, onNavigate }: { search: string; onNavigate: FarkleNavigate }) {
   const { t, i18n } = useTranslation('common');
   const { setOpenMobile, isMobile, openMobile } = useSidebar();
   const [state, dispatch] = useReducer(gameReducer, initialGame);
@@ -96,7 +96,7 @@ export default function FarklePage({ search, onNavigate }: { search: string; onN
   </Alert> : null;
 
   async function setLanguage(locale: SupportedLocale) {
-    try { await changeLocale(locale); setLocaleError(null); }
+    try { await i18n.changeLanguage(locale); setLocaleError(null); }
     catch { setLocaleError(locale); }
   }
 
@@ -156,7 +156,7 @@ export default function FarklePage({ search, onNavigate }: { search: string; onN
       ? loadoutDice(custom.opponentLoadout) : drawOpponentDice(target, mode) };
     dispatch({ type: 'start', setup, loadout, values: rollValues(loadout.B), startedAt: Date.now(), opponentDiceMode: mode });
     setModal(null);
-    if (showingHistory) void onNavigate(playgroundUrl('farkle'));
+    if (showingHistory) void onNavigate(farkleHost.tableUrl);
   }
 
   useEffect(() => { setModal(null); setOpenMobile(false); }, [search, setOpenMobile]);
@@ -189,7 +189,7 @@ export default function FarklePage({ search, onNavigate }: { search: string; onN
   return <>
     <Sidebar className="farkle-sidebar" title={t('playground.farkle')} aria-label={t('playground.farkle')}>
       <SidebarHeader className="sidebar-header min-h-0 gap-4 overflow-y-auto p-3">
-        <div className="sidebar-brand">{t('appName')}</div>
+        <div className="sidebar-brand">{farkleHost.brand}</div>
         <SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('newGame', event.currentTarget)}>
             <Plus /><span>{t('farkle.newGame')}</span>
@@ -212,22 +212,22 @@ export default function FarklePage({ search, onNavigate }: { search: string; onN
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent />
-      <SidebarFooter className="sidebar-footer shrink-0 p-3">
+      {showingHistory || state.playing || farkleHost.backUrl ? <SidebarFooter className="sidebar-footer shrink-0 p-3">
         <SidebarMenu><SidebarMenuItem><SidebarMenuButton disabled={!showingHistory && (storageError === 'save' || history.error === 'save' || clearError)} onClick={async () => {
-          if (showingHistory) { await onNavigate(playgroundUrl('farkle')); setOpenMobile(false); }
+          if (showingHistory) { await onNavigate(farkleHost.tableUrl); setOpenMobile(false); }
           else if (state.playing) { dispatch({ type: 'exit' }); setOpenMobile(false); }
-          else if (await onNavigate(playgroundUrl())) setOpenMobile(false);
+          else if (farkleHost.backUrl && await onNavigate(farkleHost.backUrl)) setOpenMobile(false);
         }}>
           {state.playing && !showingHistory ? <LogOut /> : <ArrowLeft />}<span>{t(showingHistory ? 'farkle.backToTable' : state.playing ? 'farkle.exitGame' : 'back')}</span>
         </SidebarMenuButton></SidebarMenuItem></SidebarMenu>
-      </SidebarFooter>
+      </SidebarFooter> : null}
     </Sidebar>
     <SidebarInset className="workspace farkle-workspace min-h-0 min-w-0 overflow-hidden">
       <header className="topbar">
         <SidebarTrigger ref={sidebarTrigger} />
         <div className="settings-heading min-w-0"><h1 className="truncate">{t(showingHistory ? 'farkle.history' : 'playground.farkle')}</h1></div>
         <div className="flex items-center gap-2">
-          {showingHistory ? <Button variant="outline" onClick={() => void onNavigate(playgroundUrl('farkle'))}>
+          {showingHistory ? <Button variant="outline" onClick={() => void onNavigate(farkleHost.tableUrl)}>
             <ArrowLeft data-icon="inline-start" />{t('farkle.backToTable')}
           </Button> : null}
           <Button variant="ghost" aria-label={inventory ? t('farkle.balance', { count: inventory.merchant }) : t('farkle.myDice')}

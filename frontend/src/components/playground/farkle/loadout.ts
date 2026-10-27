@@ -1,7 +1,8 @@
+import { farkleHost } from '@/components/playground/farkle/host';
 import { DICE_TYPES, type DiceCounts, type DieType } from './dice';
 import { encodeDice, decodeDice, isEncodedDice } from './diceEncoding';
 
-export const LOADOUT_KEY = 'cogita.farkle.loadout';
+export const LOADOUT_KEY = `${farkleHost.storagePrefix}.loadout`;
 export const FULL_DICE_POOL = Object.fromEntries(DICE_TYPES.map(({ id }) => [id, 6])) as DiceCounts;
 export const defaultLoadout = (): DiceCounts =>
   Object.fromEntries(DICE_TYPES.map(({ id }) => [id, id === 'normal' ? 6 : 0])) as DiceCounts;

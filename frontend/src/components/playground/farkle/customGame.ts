@@ -1,10 +1,11 @@
+import { farkleHost } from '@/components/playground/farkle/host';
 import type { DiceCounts } from './dice';
 import { defaultLoadout, encodeLoadout, decodeLoadout } from './loadout';
 import { isEncodedDice } from './diceEncoding';
 import { OPPONENT_DICE_MODES } from './opponentDice';
 import { LEVELS, type LevelId } from './economy';
 
-export const CUSTOM_GAME_KEY = 'cogita.farkle.customGame';
+export const CUSTOM_GAME_KEY = `${farkleHost.storagePrefix}.customGame`;
 export const CUSTOM_OPPONENT_MODES = [...OPPONENT_DICE_MODES, 'custom'] as const;
 export type CustomGame = {
   target: number;

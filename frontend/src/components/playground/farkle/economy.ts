@@ -1,3 +1,4 @@
+import { farkleHost } from '@/components/playground/farkle/host';
 import { NORMAL_COUNT, SPECIAL_LIMIT, SPECIAL_TYPES, type DiceCounts, type SpecialType } from './dice';
 import { encodeDie, decodeDie, isDiceCode } from './diceEncoding';
 
@@ -25,7 +26,7 @@ export type Reward = {
   firstWin: number;
   converted: number;
 };
-export const INVENTORY_KEY = 'cogita.farkle.inventory';
+export const INVENTORY_KEY = `${farkleHost.storagePrefix}.inventory`;
 export const emptySpecial = (): Record<SpecialType, number> =>
   Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, 0])) as Record<SpecialType, number>;
 export const newInventory = (): Inventory => ({ special: emptySpecial(), merchant: 0, firstWins: [] });

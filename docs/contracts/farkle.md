@@ -1,8 +1,17 @@
 # Farkle contract
 
-Farkle is a browser-local Playground game at `/playground/farkle`, with a human player (B) and an automatic opponent (A).
+Farkle is a browser-local game with a human player (B) and an automatic opponent (A), embedded at `/playground/farkle` or built as a standalone static site.
 [Settings](settings.md#frontend-styling-foundation) owns the shared shell, controls, Playground navigation and conversation-departure rules. The
 [Farkle task card](../ai/TASK_FARKLE.md) locates source, artifacts and tests; [README](../../README.md#verification) owns verification commands.
+
+## Standalone hosting
+
+The standalone entry includes only Farkle, shared controls, styles and English/Chinese resources; it initializes no application stores, APIs or WebSockets.
+Its title/brand is Farkle. The root table has no idle Back button or footer; Exit Game, Back to table and dialog Back controls retain their game behavior.
+History uses `/?view=history&page=N`, supporting static-host refresh and browser history while keeping the mounted match during in-page navigation.
+The build-selected host supplies branding, routes and storage prefix: standalone uses `farkle.*` and `farkle.locale`; the embedded game retains the keys below. No storage migration occurs.
+Valid saved language wins; otherwise browser languages are matched in order (single browser language if the list is unavailable/empty): all Chinese variants use Simplified Chinese, English variants use English, and no match uses English. The initial choice is saved; manual changes persist.
+Fonts, trajectories, calibration, the AI Worker and a 64px normal five-pip PNG favicon ship locally with relative URLs; WebGL and HTTP(S) hosting are required. Builds stage and update only manifest-owned files; README, Git metadata and other files are maintained separately.
 
 ## Navigation and match setup
 
@@ -11,7 +20,6 @@ In history, the footer offers Back to table, preserving the match even during sa
 Exit clears both sides and cancels animations/opponent work. The camera follows turns without manual switching. The header has its title/toggle and actual Merchant balance, which opens Shop.
 
 Idle/exited/finished tables open New Game by pointer or keyboard. Dialogs/mobile drawers disable this entry; dismissal cannot click through.
-
 New Game defaults to Beggars. First-win Merchant dice supplement victory rewards; [settlement](#rewards-and-browser-storage) owns defeat/conversion/persistence.
 
 | Level | Target | Special dice per victory | Merchant dice per victory | First-win Merchant dice |
@@ -29,14 +37,11 @@ New Game defaults to Beggars. First-win Merchant dice supplement victory rewards
 
 The single-select level list scrolls above fixed controls. Choose dice shows owned types, muted `owned N` / `拥有N` below names and minus/count/plus
 on the right. Normal fills selections to six. Selected rows have six green intensity steps; zero-count rows and Inventory have no highlight.
-
 Adding a non-Normal replaces one Normal, subject to ownership and a spare Normal; removing one restores a Normal. Normal cannot be removed directly;
 adding one replaces the first selected non-Normal in full English-name order, including Merchant.
-
 Chooser reset icons restore only that side's draft to six Normal. Player choosers place Random between Back and Start; small screens put Start above
 equal-width Back/Random. Random samples six stock copies uniformly without replacement: owned counts with Merchant capped at six for ordinary games,
 or six of all 22 types for custom games. The opponent chooser has no Random button.
-
 Start game saves the selection, resets both sides and rolls B's dice immediately; A uses the [opponent loadout rules](#opponent). Back retains the draft;
 closing discards unconfirmed changes. Selection and sampling consume no inventory. Types stay fixed through rerolls and handoffs.
 
@@ -44,10 +49,8 @@ closing discards unconfirmed changes. Selection and sampling consume no inventor
 
 Custom game has a target input and sliding Normal / Random / Wild / Custom choice independent of Settings. Decimal integer targets must be strictly
 between 1 and 9007199254740991, including nonmultiples of 50; syntax/lower/upper errors block progression with distinct localized feedback.
-
 Generated modes open the player chooser; Custom opens the opponent chooser first. Both reuse ordinary controls/previews/cards, with six of all 22
 types per side and no inventory quantities/limits. Back retains drafts; closing discards edits.
-
 Custom matches retain their confirmed setup and grant no rewards or first wins, even at ordinary targets. Play again reopens the corresponding
 opponent/player chooser with both loadouts; result New Game opens ordinary level selection.
 
@@ -69,7 +72,6 @@ Dice retain face values and idle/selected/scored state with independent hover. H
 and reject AI operations from older rolls. Settled B rolls randomly hover one non-scored die for fine pointers. WASD picks the nearest eligible die
 within 45 degrees of the requested screen direction, including the boundary, using projected centers. Fixed index breaks distance ties; an empty
 cone retains hover without wrapping or widening the search. Mouse movement transfers B's hover; E, Hold or direct activation toggles selection in place.
-
 Hover draws a gold ring and face icon (the engraved head for wilds), plus localized names for non-Normal types. Selection adds a blue lower half-ring
 for B or deep orange for A. Both use thick bands with black outlines, including half-ring ends. Touch selects without hover, showing only the last selected die's face icon and localized name, including Normal, below its half-ring.
 Deselecting any die clears the hint without falling back; other selection rings remain. Roll/score/turn/reset/exit and mouse or game-keyboard input clear it. Dialogs/drawers hide it and restore only its still-selected, same-roll target; resize reprojects it.
@@ -81,13 +83,11 @@ F requires a valid nonempty selection: the batch moves together over 280ms, beco
 remaining dice roll. Each batch occupies one right-aligned row, sorted left-to-right by physical face then fixed index; rows remain separate. Scoring
 all six preserves Round, clears that side's batches and rolls all six. Q accepts a valid selection or no selection (including Round zero): selected
 dice first complete the same storage animation, then Round plus Selected is banked into Total and both temporary scores clear.
-
 After each settled roll, only its idle dice are checked for scoring subsets. None means Bust: Round becomes zero, Total stays unchanged and input
 locks. The table center shows localized Bust! for 1.2 seconds with score-heading typography, gold color, shadow and independent responsive 32–64px
 size. Nonwinning Q and Bust hand off over a 500ms camera transition, clear incoming batches and roll all six incoming dice. A retains its view/turn
 notice with locked input for another 500ms after banking or the Bust notice, before returning to B; B has no added pause. Banking updates totals
 before this pause; winning never hands off.
-
 Each B turn displays localized Your turn! at the table's top center, fading in for 200ms, holding for 1200ms and fading out for 400ms. The same
 position continuously shows localized Opponent's turn during A turns. Both reuse score-heading typography without intercepting input. A turn
 identifier changes only at match start and handoff; rerolls, selection and dialogs do not repeat the notice. Results, exit and departure clear
@@ -292,7 +292,7 @@ checked-in recipe owns gravity, contact and damping parameters. Playback uses on
 speed; each dice count excludes its last eight trajectories until match reset.
 
 Face correction retains chosen values and height-based shadows. Geometry/materials are cached by shape/type; rendering occurs only on invalidation
-or animation. Departure disposes resources/textures. Renderer failure gives localized feedback and leaves Back available.
+or animation. Departure disposes resources/textures. Renderer failure gives localized reload feedback; the embedded version also retains Back.
 
 ## Current limitations
 

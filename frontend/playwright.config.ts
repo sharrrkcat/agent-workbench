@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test';
 const port = Number(process.env.COGITA_BROWSER_PORT || 18767);
 export default defineConfig({
   testDir: './tests',
+  testIgnore: 'farkle-standalone.spec.ts',
   workers: 1,
   timeout: 45000,
   expect: { timeout: 10000 },

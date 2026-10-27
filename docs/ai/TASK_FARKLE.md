@@ -33,8 +33,13 @@ Game modules below are under [frontend/src/components/playground/farkle/](../../
 Integration lives in [App.tsx](../../frontend/src/App.tsx),
 [PlaygroundPage.tsx](../../frontend/src/components/playground/PlaygroundPage.tsx) and
 [navigation.ts](../../frontend/src/components/playground/navigation.ts).
-[styles.css](../../frontend/src/styles.css) owns scoped game layout/HUD styles.
+[game styles](../../frontend/src/components/playground/farkle/styles.css) own scoped layout/HUD rules; both entries import the shared theme/shell styles.
 Follow the [i18n guide](../../frontend/src/i18n/README.md) for both locale resources.
+
+[standalone/](../../frontend/src/standalone/) owns the static entry, build-selected host, browser language detection, minimal locale resources and favicon derived from the normal five-pip preview.
+[build-farkle.mjs](../../frontend/scripts/build-farkle.mjs) stages and publishes its generated assets.
+[farkle-standalone.spec.ts](../../frontend/tests/farkle-standalone.spec.ts) checks the production output on a plain static server,
+including isolated startup/storage, local resources/favicon/Worker, root/history navigation, matches, initial language precedence/persistence and responsive sidebar behavior.
 
 ## Data artifacts
 

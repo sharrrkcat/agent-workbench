@@ -9,7 +9,7 @@ const { encodeDie, decodeDie, encodeDice, decodeDice, isDiceCode, isEncodedDice 
 const { defaultCustomGame } = (await load('../src/components/playground/farkle/customGame.ts')).exports;
 const { appendHistory, matchRecord, readHistory, saveHistory, HISTORY_KEY, historyPage, formatDuration } =
   (await load('../src/components/playground/farkle/history.ts')).exports;
-const { farkleHistoryUrl, isFarkleHistory } = (await load('../src/components/playground/navigation.ts')).exports;
+const { farkleHistoryUrl, isFarkleHistory } = (await load('../src/components/playground/farkle/navigation.ts')).exports;
 
 const startedAt = 1793100000123;
 const fixedTypes = ['normal', 'even', 'odd', 'devil', 'weighted', 'lucky', 'unlucky', 'favourable', 'pie', 'misfortune',

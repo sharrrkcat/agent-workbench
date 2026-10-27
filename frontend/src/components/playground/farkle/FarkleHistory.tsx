@@ -4,8 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
-import type { SettingsNavigate } from '@/components/settings/navigation';
-import { farkleHistoryUrl } from '../navigation';
+import { farkleHistoryUrl, type FarkleNavigate } from './navigation';
 import type { DieType } from './dice';
 import { dicePreview } from './materials';
 import { formatDuration, historyPage, HISTORY_PAGE_SIZE, type MatchRecord } from './history';
@@ -32,7 +31,7 @@ function HistoryDie({ type, face, src, interactive }: { type: DieType; face: num
 }
 
 export function FarkleHistory({ records, search, onNavigate, interactive }: {
-  records: MatchRecord[] | null; search: string; onNavigate: SettingsNavigate; interactive: boolean;
+  records: MatchRecord[] | null; search: string; onNavigate: FarkleNavigate; interactive: boolean;
 }) {
   const { t, i18n } = useTranslation('common');
   const scroll = useRef<HTMLDivElement>(null);

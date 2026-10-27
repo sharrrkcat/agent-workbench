@@ -8,6 +8,8 @@
     "test:browser": "playwright test",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
+    "build:farkle": "tsc && node scripts/build-farkle.mjs",
+    "test:farkle-standalone": "playwright test --config playwright.farkle.config.ts",
     "preview": "vite preview --host 127.0.0.1",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:docs": "node scripts/check-doc-links.mjs",

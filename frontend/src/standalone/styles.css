@@ -1,0 +1,11 @@
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "../styles/theme.css";
+@import "../styles/shell.css";
+@import "../components/playground/farkle/styles.css";
+
+@source ".";
+@source "../components/playground/farkle";
+@source "../components/ui";

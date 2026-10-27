@@ -7,8 +7,8 @@ Read [settings](../contracts/settings.md), [chat/context](../contracts/chat-cont
 
 Paths below are under frontend/src:
 
-- styles.css owns Tailwind 4/Mira tokens, bundled Inter and scoped application
-  layout/content rules. components/ui/ owns shared Base UI/Mira controls and
+- styles.css imports shared styles/theme.css and styles/shell.css for Tailwind 4/Mira tokens,
+  bundled Inter and shell layout, plus game styles; it owns remaining application rules. components/ui/ owns shared Base UI/Mira controls and
   their styling; lib/utils.ts exports the class utility.
   frontend/components.json configures generation; Vite/TypeScript and the test
   loader share the @/ alias. Current layout limits belong to

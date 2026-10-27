@@ -1,10 +1,11 @@
+import { farkleHost } from '@/components/playground/farkle/host';
 import type { DieType } from './dice';
 import type { CustomGame } from './customGame';
 import type { LevelId } from './economy';
 import type { GameState, PlayerId } from './state';
 import { encodeDice, decodeDice, isEncodedDice } from './diceEncoding';
 
-export const HISTORY_KEY = 'cogita.farkle.history';
+export const HISTORY_KEY = `${farkleHost.storagePrefix}.history`;
 export const HISTORY_LIMIT = 100;
 export const HISTORY_PAGE_SIZE = 20;
 export const RULES_VERSION = 1;
