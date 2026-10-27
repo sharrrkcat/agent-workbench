@@ -1,11 +1,12 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { cn } from '@/lib/utils';
 import { DICE_TYPES, type DieType } from './dice';
 
-export function DiceRow({ type, preview, quantity, inlineQuantity = false, children }: {
-  type: DieType; preview: string; quantity: string; inlineQuantity?: boolean; children?: ReactNode;
+export function DiceRow({ type, preview, quantity, quantityBelowName = false, selectedCount, children }: {
+  type: DieType; preview: string; quantity?: string; quantityBelowName?: boolean; selectedCount?: number; children?: ReactNode;
 }) {
   const { t, i18n } = useTranslation('common');
   const [open, setOpen] = useState(false);
@@ -17,7 +18,8 @@ export function DiceRow({ type, preview, quantity, inlineQuantity = false, child
     label: type === 'devil' && index === 0 ? t('farkle.wildFace') : t('farkle.faceValue', { value: index + 1 }),
     percent: (weight / sum).toLocaleString(i18n.language, { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }),
   }));
-  const count = <span className="shrink-0" data-inventory-count>{quantity}</span>;
+  const count = quantity === undefined ? null : <span className={cn('shrink-0 tabular-nums',
+    quantityBelowName && 'px-2 text-[11px] leading-4 text-muted-foreground')} data-inventory-count>{quantity}</span>;
 
   return <HoverCard open={open} onOpenChange={(next, details) => {
     // Focus/touch activation outlives the synthetic mouseleave from a tap.
@@ -27,18 +29,19 @@ export function DiceRow({ type, preview, quantity, inlineQuantity = false, child
     }
     setOpen(next);
   }}>
-    <li className="flex min-w-0 items-center gap-2" data-inventory-type={type}>
+    <li className="flex min-w-0 items-center gap-2" data-inventory-type={type} data-loadout-count={selectedCount}
+      style={{ '--farkle-selected-count': selectedCount } as CSSProperties}>
       <img className="size-10 shrink-0 rounded-md" src={preview} alt="" />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1">
+      <div className="flex min-w-0 flex-1 flex-col items-start">
         <HoverCardTrigger delay={150} closeDelay={150} render={<Button ref={trigger} variant="ghost"
           className="h-auto max-w-full min-w-0 justify-start whitespace-normal text-left" aria-describedby={descriptionId}
           onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={() => setOpen(true)} />}>
           {t(`farkle.dice.${type}`)}
         </HoverCardTrigger>
-        {inlineQuantity ? count : null}
+        {quantityBelowName ? count : null}
       </div>
       <span className="sr-only" id={descriptionId}>{faces.map(({ label, percent }) => `${label}: ${percent}`).join(', ')}</span>
-      {!inlineQuantity ? count : null}
+      {!quantityBelowName ? count : null}
       {children}
     </li>
     <HoverCardContent align="start" data-dice-probabilities={type}>

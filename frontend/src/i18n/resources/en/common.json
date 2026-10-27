@@ -24,18 +24,36 @@
     "next": "Next"
   },
   "farkle": {
+    "customGame": "Custom game",
+    "chooseOpponentDice": "Choose dice for opponent",
+    "choosePlayerDice": "Choose dice for player",
+    "targetScore": "Target score",
+    "targetErrors": {
+      "integer": "Must be an integer.",
+      "minimum": "Must be greater than 1.",
+      "maximum": "Must be less than 9007199254740991."
+    },
+    "customLoadError": "Could not read custom game settings. Check browser storage and retry.",
+    "customSaveError": "Could not save custom game settings. Retry to start the game.",
     "newGame": "New Game",
     "myDice": "My Dice",
     "shop": "Shop",
     "settings": "Settings",
     "opponentDice": "Opponent dice",
     "opponentModes": {
-      "dynamic": "Dynamic",
+      "dynamic": "Normal",
       "random": "Random",
-      "wild": "Wild Random"
+      "custom": "Custom",
+      "wild": "Wild"
+    },
+    "opponentModeHints": {
+      "dynamic": "Uses tested dice combinations.",
+      "random": "Random dice within set limits.",
+      "wild": "Fully random dice; surprises are possible.",
+      "custom": "Choose your opponent’s dice."
     },
     "settingsNextGame": "Changes apply to the next game.",
-    "settingsLoadError": "Couldn't read opponent dice settings. Using Dynamic until you retry.",
+    "settingsLoadError": "Couldn't read opponent dice settings. Using Normal until you retry.",
     "settingsSaveError": "Couldn't save opponent dice settings. The previous setting is still active.",
     "exitGame": "Exit Game",
     "balance": "Merchant Dice: {{count}}",
@@ -45,7 +63,6 @@
     "level": "Match level",
     "startGame": "Start game",
     "chooseDice": "Choose dice",
-    "diceSelected": "Selected {{count}} / 6",
     "addDie": "Add {{name}}",
     "removeDie": "Remove {{name}}",
     "loadoutLoadError": "Could not read your dice selection. Check browser storage and retry.",

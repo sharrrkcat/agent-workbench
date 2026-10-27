@@ -7,7 +7,6 @@ export const LEVELS = [
   { id: 'courtiers', target: 4000, special: 3, merchant: 2, firstWin: 2 },
 ] as const;
 export type LevelId = typeof LEVELS[number]['id'];
-export type TargetScore = typeof LEVELS[number]['target'];
 export type Inventory = {
   special: Record<SpecialType, number>;
   merchant: number;
@@ -49,8 +48,8 @@ export function saveInventory(storage: Pick<Storage, 'setItem'>, inventory: Inve
   storage.setItem(INVENTORY_KEY, JSON.stringify(inventory));
 }
 
-export function awardDice(inventory: Inventory, target: TargetScore, won: boolean, random = Math.random) {
-  const level = LEVELS.find((item) => item.target === target)!;
+export function awardDice(inventory: Inventory, levelId: LevelId, won: boolean, random = Math.random) {
+  const level = LEVELS.find((item) => item.id === levelId)!;
   const next: Inventory = { special: { ...inventory.special }, merchant: inventory.merchant, firstWins: [...inventory.firstWins] };
   const firstWin = won && !next.firstWins.includes(level.id) ? level.firstWin : 0;
   const reward: Reward = { special: emptySpecial(), merchant: won ? level.merchant : 0, firstWin, converted: 0 };

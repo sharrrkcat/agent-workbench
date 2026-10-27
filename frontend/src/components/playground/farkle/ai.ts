@@ -40,8 +40,10 @@ export class FarkleAI {
   private readonly canonical: number[];
   private readonly masks: number[];
   private readonly kernels = new Map<number, Outcome[]>();
+  private readonly stoppingRound: number;
   private goal = 0;
-  private values: Float64Array[] = [];
+  private values = new Map<number, Float64Array>();
+  private steps = 0;
 
   constructor(private readonly types: readonly DieType[]) {
     this.full = (1 << types.length) - 1;
@@ -57,6 +59,14 @@ export class FarkleAI {
     });
     this.masks = [...new Set(this.canonical.slice(1))];
     for (const mask of this.masks) this.kernels.set(mask, this.buildKernel(mask));
+    // Above every E[bank score] / P[Bust], another roll cannot improve banking.
+    // All subsequent scoring states have larger rounds, so backward induction
+    // makes a single roll followed by banking exact above this common bound.
+    this.stoppingRound = Math.max(...[...this.kernels.values()].map((outcomes) => {
+      const survival = outcomes.reduce((sum, outcome) => sum + outcome.probability, 0);
+      const gain = outcomes.reduce((sum, outcome) => sum + outcome.probability * outcome.bank, 0);
+      return gain / (1 - survival);
+    }));
   }
 
   private buildKernel(mask: number): Outcome[] {
@@ -99,21 +109,27 @@ export class FarkleAI {
   private prepareValues(goal: number) {
     if (this.goal === goal) return;
     this.goal = goal;
-    const steps = Math.ceil(goal / 50);
-    this.values = Array.from({ length: this.full + 1 }, () => new Float64Array(steps));
+    this.steps = Math.ceil(Math.min(goal, this.stoppingRound) / 50);
+    this.values = new Map(this.masks.map((mask) => [mask, new Float64Array(this.steps)]));
     // Every submission adds at least 50, including a submission that releases all six dice.
-    for (let step = steps - 1; step >= 0; step--) for (const mask of this.masks) {
+    for (let step = this.steps - 1; step >= 0; step--) for (const mask of this.masks) {
       const round = step * 50;
       let value = 0;
       for (const outcome of this.kernels.get(mask)!) {
         let best = Math.min(goal, round + outcome.bank);
         if (best < goal) for (const option of outcome.options) {
-          best = Math.max(best, this.values[option.remaining][step + option.score / 50]);
+          best = Math.max(best, this.rollValue(option.remaining, round + option.score));
         }
         value += outcome.probability * best;
       }
-      this.values[mask][step] = value;
+      this.values.get(mask)![step] = value;
     }
+  }
+
+  private rollValue(mask: number, round: number): number {
+    if (round / 50 < this.steps) return this.values.get(mask)![round / 50];
+    return this.kernels.get(mask)!.reduce((sum, outcome) =>
+      sum + outcome.probability * Math.min(this.goal, round + outcome.bank), 0);
   }
 
   decide(position: AiPosition): AiDecision & { bankValue: number; continueValue: number | null } {
@@ -135,7 +151,7 @@ export class FarkleAI {
     let continueValue = -Infinity;
     for (const choice of scores.continuations) {
       const remaining = this.canonical[remainingMask & ~physicalMask(choice.mask, order)] || this.full;
-      const value = this.values[remaining][(position.round + choice.score) / 50];
+      const value = this.rollValue(remaining, position.round + choice.score);
       if (value > continueValue + 1e-9 || (Math.abs(value - continueValue) <= 1e-9 && choice.score > best.score)) {
         best = choice;
         continueValue = value;

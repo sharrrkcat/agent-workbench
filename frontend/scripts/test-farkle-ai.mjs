@@ -52,6 +52,49 @@ assert.equal(ai.decide(position([1, 2, 3, 4, 5, 6], { target: 1500 })).score, 15
 assert.equal(ai.decide(position([2, 3, 4, 5, 6], { target: 1500, banked: 750 })).score, 750);
 assert.equal(ai.decide(position([1, 1, 1, 1, 1, 1], { target: 4000 })).score, 8000);
 
+// Compare the bounded solver against the original full-goal recurrence, including
+// the non-50-point goal boundary and states above the stopping threshold.
+function fullGoalValues(engine, goal) {
+  const steps = Math.ceil(goal / 50);
+  const values = new Map(engine.masks.map((mask) => [mask, new Float64Array(steps)]));
+  for (let step = steps - 1; step >= 0; step--) for (const mask of engine.masks) {
+    let value = 0;
+    for (const outcome of engine.kernels.get(mask)) {
+      let best = Math.min(goal, step * 50 + outcome.bank);
+      if (best < goal) for (const option of outcome.options) {
+        best = Math.max(best, values.get(option.remaining)[step + option.score / 50]);
+      }
+      value += outcome.probability * best;
+    }
+    values.get(mask)[step] = value;
+  }
+  return values;
+}
+for (const target of [1501, 10001, 30001]) {
+  const expected = fullGoalValues(ai, target);
+  ai.decide(position(hand, { target }));
+  for (const [mask, values] of expected) for (let step = 0; step < values.length; step++) {
+    close(ai.rollValue(mask, step * 50), values[step]);
+  }
+}
+const hugeResults = [10 ** 12, Number.MAX_SAFE_INTEGER].map((target) => {
+  const decision = ai.decide(position(hand, { target }));
+  assert.ok(Number.isFinite(decision.continueValue));
+  assert.ok(ai.steps < 300);
+  assert.equal(ai.values.size, 6, 'Identical dice need six canonical subsets, not 64 tables');
+  return decision;
+});
+assert.deepEqual(hugeResults[0], hugeResults[1], 'Large goals no longer increase work or truncate the turn strategy');
+assert.notEqual(ai.decide(position(hand, { target: 10000 })).continueValue, hugeResults[0].continueValue);
+assert.equal(ai.decide(position(hand, { target: Number.MAX_SAFE_INTEGER, round: 100000 })).action, 'pass');
+assert.equal(ai.decide(position(hand, { target: 1 })).action, 'pass');
+const extreme = new FarkleAI(Array(6).fill('weighted'));
+const extremeStart = performance.now();
+const extremeDecision = extreme.decide(position([1, 1, 1, 1, 1, 1], { types: Array(6).fill('weighted'), target: Number.MAX_SAFE_INTEGER }));
+assert.ok(Number.isFinite(extremeDecision.continueValue));
+assert.ok([...extreme.values.values()].reduce((bytes, table) => bytes + table.byteLength, 0) < 25 * 1024 ** 2);
+console.log(`Six Weighted dice at the safe integer limit: ${(performance.now() - extremeStart).toFixed(0)}ms, ${extreme.steps} score steps.`);
+
 const mixedTypes = ['normal', 'normal', 'even', 'odd', 'devil', 'weighted'];
 const mixed = new FarkleAI(mixedTypes);
 const mixedPosition = position(hand, { types: mixedTypes });

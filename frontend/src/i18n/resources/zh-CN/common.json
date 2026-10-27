@@ -24,18 +24,36 @@
     "next": "下一页"
   },
   "farkle": {
+    "customGame": "自定义对局",
+    "chooseOpponentDice": "选择对手骰子",
+    "choosePlayerDice": "选择玩家骰子",
+    "targetScore": "对局分数",
+    "targetErrors": {
+      "integer": "必须是整数。",
+      "minimum": "必须大于 1。",
+      "maximum": "必须小于 9007199254740991。"
+    },
+    "customLoadError": "无法读取自定义对局设置，请检查浏览器存储后重试。",
+    "customSaveError": "未能保存自定义对局设置，请重试以开始游戏。",
     "newGame": "新游戏",
     "myDice": "我的骰子",
     "shop": "商店",
     "settings": "设置",
     "opponentDice": "对手骰子",
     "opponentModes": {
-      "dynamic": "动态组合",
-      "random": "随机组合",
-      "wild": "狂野随机"
+      "dynamic": "标准",
+      "random": "随机",
+      "custom": "自定义",
+      "wild": "狂野"
+    },
+    "opponentModeHints": {
+      "dynamic": "使用经过验证的骰子组合。",
+      "random": "在一定限制内随机组合骰子。",
+      "wild": "完全随机，可能出现意外组合。",
+      "custom": "自行选择对手的骰子。"
     },
     "settingsNextGame": "更改将在下一局生效。",
-    "settingsLoadError": "无法读取对手骰子设置，暂用动态组合。请重试。",
+    "settingsLoadError": "无法读取对手骰子设置，暂用标准模式。请重试。",
     "settingsSaveError": "未能保存对手骰子设置，仍使用之前的设置。请重试。",
     "exitGame": "退出游戏",
     "balance": "商人骰子：{{count}}",
@@ -45,7 +63,6 @@
     "level": "对局等级",
     "startGame": "开始游戏",
     "chooseDice": "选择骰子",
-    "diceSelected": "已选 {{count}} / 6",
     "addDie": "增加{{name}}",
     "removeDie": "减少{{name}}",
     "loadoutLoadError": "无法读取选骰记录，请检查浏览器存储后重试。",

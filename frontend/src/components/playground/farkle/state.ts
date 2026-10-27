@@ -1,6 +1,6 @@
 import { evaluateDice } from './scoring';
 import type { DieType, FaceValue } from './dice';
-import type { TargetScore } from './economy';
+import { matchTarget, type MatchSetup } from './customGame';
 
 export type PlayerId = 'A' | 'B';
 export type GameDie = {
@@ -16,7 +16,7 @@ export type GameCommand =
   | { kind: 'bust'; id: number };
 export type GameState = {
   revision: number; matchId: number; turnId: number; playing: boolean; player: PlayerId; busy: boolean;
-  target: TargetScore; hoverId: string | null; batches: Record<PlayerId, string[][]>;
+  target: number; setup: MatchSetup | null; hoverId: string | null; batches: Record<PlayerId, string[][]>;
   totals: Record<PlayerId, number>; rounds: Record<PlayerId, number>; winner: PlayerId | null;
   dice: GameDie[]; command: GameCommand | null;
 };
@@ -25,13 +25,13 @@ export type TurnInput =
   | { type: 'hover'; id: string | null }
   | { type: 'select'; id: string };
 export type GameAction =
-  | { type: 'start'; target: TargetScore; loadout: Record<PlayerId, DieType[]>; values: FaceValue[] }
+  | { type: 'start'; setup: MatchSetup; loadout: Record<PlayerId, DieType[]>; values: FaceValue[] }
   | { type: 'exit' }
   | (TurnInput & ({ actor: 'human' } | { actor: 'ai'; revision: number }))
   | { type: 'complete'; id: number; hoverSample: number | null; values: FaceValue[] };
 
 export const initialGame: GameState = {
-  revision: 0, matchId: 0, turnId: 0, playing: false, player: 'B', busy: false, target: 1500,
+  revision: 0, matchId: 0, turnId: 0, playing: false, player: 'B', busy: false, target: 1500, setup: null,
   hoverId: null, batches: { A: [], B: [] }, dice: [], command: null,
   totals: { A: 0, B: 0 }, rounds: { A: 0, B: 0 }, winner: null,
 };
@@ -91,7 +91,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       id: `${player}${index}`, player, index, type, value: 1, status: 'idle',
     }))) : [];
     return { ...initialGame, revision: id, matchId: playing ? id : 0, turnId: playing ? id : 0, playing, busy: true, dice,
-      target: playing ? action.target : initialGame.target, batches: { A: [], B: [] },
+      target: playing ? matchTarget(action.setup) : initialGame.target, setup: playing ? action.setup : null, batches: { A: [], B: [] },
       totals: { A: 0, B: 0 }, rounds: { A: 0, B: 0 },
       command: { kind: 'reset', id, values: playing ? action.values : null } };
   }

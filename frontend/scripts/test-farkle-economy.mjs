@@ -90,34 +90,34 @@ for (const [index, { id }] of SPECIAL_TYPES.entries()) {
 const full = () => ({ special: Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, 6])), merchant: 0, firstWins: [] });
 assert.deepEqual(Object.values(newInventory().special), Array(20).fill(0));
 for (const [index, { id }] of SPECIAL_TYPES.entries()) {
-  const { reward } = awardDice(newInventory(), 1500, false, () => (index + 0.5) / 20);
+  const { reward } = awardDice(newInventory(), 'beggars', false, () => (index + 0.5) / 20);
   assert.equal(reward.special[id], 1, 'Every new type is obtainable from the uniform reward pool');
 }
 for (const level of LEVELS) {
-  const loss = awardDice(newInventory(), level.target, false, () => 0.999);
+  const loss = awardDice(newInventory(), level.id, false, () => 0.999);
   assert.equal(loss.inventory.special.aranka, 1);
   assert.equal(loss.reward.merchant, 0);
   assert.deepEqual(loss.inventory.firstWins, []);
-  const win = awardDice(loss.inventory, level.target, true, () => 0);
+  const win = awardDice(loss.inventory, level.id, true, () => 0);
   assert.equal(win.inventory.special.even, level.special);
   assert.equal(win.reward.merchant, level.merchant + level.firstWin);
   assert.equal(win.reward.firstWin, level.firstWin);
-  const repeat = awardDice(win.inventory, level.target, true, () => 0);
+  const repeat = awardDice(win.inventory, level.id, true, () => 0);
   assert.equal(repeat.reward.firstWin, 0);
   assert.equal(repeat.reward.merchant, level.merchant);
   assert.deepEqual(repeat.inventory.firstWins, [level.id]);
-  const surplus = awardDice(full(), level.target, true);
+  const surplus = awardDice(full(), level.id, true);
   assert.equal(surplus.reward.converted, Math.ceil(level.special / 2));
   assert.equal(surplus.reward.merchant, level.merchant + level.firstWin + Math.ceil(level.special / 2));
 }
 const almost = full(); almost.special.even = 5; almost.special.odd = 5; almost.firstWins = ['courtiers'];
-const result = awardDice(almost, 4000, true, () => 0);
+const result = awardDice(almost, 'courtiers', true, () => 0);
 assert.deepEqual(result.reward.special, { ...emptySpecial(), even: 1, odd: 1 });
 assert.equal(result.reward.merchant, 3);
 assert.deepEqual(result.inventory.special, full().special);
 assert.equal(almost.special.even, 5, 'Settlement is pure');
-assert.equal(awardDice({ ...almost, firstWins: [] }, 4000, true, () => 0).reward.merchant, 5);
-const grouped = rewardGroups(awardDice({ ...almost, firstWins: [] }, 4000, true, () => 0).reward);
+assert.equal(awardDice({ ...almost, firstWins: [] }, 'courtiers', true, () => 0).reward.merchant, 5);
+const grouped = rewardGroups(awardDice({ ...almost, firstWins: [] }, 'courtiers', true, () => 0).reward);
 assert.deepEqual(grouped, [
   { source: 'regular', entries: [{ type: 'even', count: 1 }, { type: 'odd', count: 1 }, { type: 'merchant', count: 2 }] },
   { source: 'firstWin', entries: [{ type: 'merchant', count: 2 }] },
@@ -127,15 +127,15 @@ for (const [inventory, won, sources] of [
   [newInventory(), false, ['regular']], [newInventory(), true, ['regular', 'firstWin']],
   [full(), false, ['converted']], [{ ...full(), firstWins: ['courtiers'] }, true, ['regular', 'converted']],
 ]) {
-  const { reward } = awardDice(inventory, 4000, won, () => 0);
+  const { reward } = awardDice(inventory, 'courtiers', won, () => 0);
   const groups = rewardGroups(reward);
   assert.deepEqual(groups.map(({ source }) => source), sources, 'Only nonempty reward groups are shown, in source order');
   assert.equal(groups.flatMap(({ entries }) => entries).filter(({ type }) => type === 'merchant')
     .reduce((sum, { count }) => sum + count, 0), reward.merchant, 'Display groups never duplicate Merchant rewards');
 }
-assert.equal(awardDice(full(), 1500, false).reward.converted, 1);
+assert.equal(awardDice(full(), 'beggars', false).reward.converted, 1);
 const unequal = full(); unequal.special.even = 0; unequal.special.odd = 5;
-assert.equal(awardDice(unequal, 1500, false, () => 0.6).reward.special.odd, 1, 'Reward chooses types equally, not missing copies');
+assert.equal(awardDice(unequal, 'beggars', false, () => 0.6).reward.special.odd, 1, 'Reward chooses types equally, not missing copies');
 
 for (let count = 2; count <= 6; count++) {
   const dice = Array.from({ length: count }, () => ({ type: 'devil', value: 1 }));
@@ -151,7 +151,7 @@ assert.equal(evaluateDice(Array.from({ length: 3 }, () => ({ type: 'heavenly', v
 assert.equal(evaluateDice([2, 3, 4, 5, 6].map((value) => ({ type: 'heavenly', value }))).score, 750);
 const mixed = ['normal', 'favourable', 'pie', 'heavenly', 'lu', 'aranka'];
 const loadout = { A: mixed, B: mixed };
-let game = gameReducer(initialGame, { type: 'start', target: 4000, loadout, values: [1, 1, 1, 1, 1, 1] });
+let game = gameReducer(initialGame, { type: 'start', setup: { kind: 'standard', level: 'courtiers' }, loadout, values: [1, 1, 1, 1, 1, 1] });
 const types = game.dice.map(({ id, type }) => [id, type]);
 function finish() { game = gameReducer(game, { type: 'complete', id: game.command.id, values: [1, 1, 1, 1, 1, 1], hoverSample: 0 }); }
 finish(); finish();

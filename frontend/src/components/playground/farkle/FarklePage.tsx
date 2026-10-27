@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Coins, LogOut, Minus, Package, Plus, Settings, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Coins, LogOut, Package, Plus, Settings, ShoppingBag, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -16,26 +17,32 @@ import { FarkleTable } from './FarkleTable';
 import { dicePreview } from './materials';
 import { DICE_TYPES, NORMAL_COUNT, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
 import { drawOpponentDice, OPPONENT_DICE_MODES, type OpponentDiceMode } from './opponentDice';
-import { inventoryPool, LEVELS, type TargetScore } from './economy';
+import { inventoryPool, LEVELS, type LevelId } from './economy';
 import { gameReducer, initialGame } from './state';
 import { useInventory } from './useInventory';
 import { rewardGroups } from './rewards';
-import { loadoutDice, loadoutSize, readLoadout, saveLoadout } from './loadout';
+import { loadoutDice, readLoadout, saveLoadout } from './loadout';
 import { DiceRow } from './DiceRow';
+import { DiceChooser } from './DiceChooser';
+import { CUSTOM_OPPONENT_MODES, OPPONENT_POOL, defaultCustomGame, matchTarget, targetError, readCustomGame,
+  saveCustomGame, type CustomGame, type MatchSetup } from './customGame';
 import { useOpponent } from './useOpponent';
 import { useFarkleSettings } from './useFarkleSettings';
 
-type Modal = 'newGame' | 'chooseDice' | 'myDice' | 'shop' | 'settings' | 'result';
+type Modal = 'newGame' | 'customGame' | 'chooseDice' | 'chooseOpponentDice' | 'choosePlayerDice' | 'myDice' | 'shop' | 'settings' | 'result';
 
 export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigate }) {
   const { t, i18n } = useTranslation('common');
   const { setOpenMobile, isMobile, openMobile } = useSidebar();
   const [state, dispatch] = useReducer(gameReducer, initialGame);
-  const { inventory, reward, error: storageError, retry } = useInventory(state.winner, state.target);
+  const { inventory, reward, error: storageError, retry } = useInventory(state.winner, state.setup?.kind === 'standard' ? state.setup.level : null);
   const settings = useFarkleSettings();
   const [modal, setModal] = useState<Modal | null>(null);
   const [ready, setReady] = useState(false);
-  const [target, setTarget] = useState<TargetScore>(1500);
+  const [level, setLevel] = useState<LevelId>('beggars');
+  const [custom, setCustom] = useState(defaultCustomGame);
+  const [targetText, setTargetText] = useState('1500');
+  const [customError, setCustomError] = useState<'load' | 'save' | null>(null);
   const [draft, setDraft] = useState<DiceCounts | null>(null);
   const [loadoutError, setLoadoutError] = useState<'load' | 'save' | null>(null);
   const blocked = modal !== null || (isMobile && openMobile);
@@ -51,9 +58,12 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
   const startDisabled = !ready || !inventory || storageError !== null;
   const owned = inventory ? inventoryPool(inventory) : null;
   const ownedPreviews = previews.filter(({ die }) => owned && owned[die.id] > 0);
-  const diceDialogWidth = modal === 'chooseDice' && ownedPreviews.length <= 6 ? 'sm:max-w-[480px]'
-    : modal === 'chooseDice' && ownedPreviews.length <= 12 ? 'sm:max-w-[800px]' : 'sm:max-w-[1200px]';
-  const selectedCount = draft ? loadoutSize(draft) : 0;
+  const playerChooser = modal === 'chooseDice' || modal === 'choosePlayerDice';
+  const customFlow = modal === 'customGame' || modal === 'chooseOpponentDice' || modal === 'choosePlayerDice';
+  const diceDialogWidth = playerChooser && ownedPreviews.length <= 6 ? 'sm:max-w-[480px]'
+    : playerChooser && ownedPreviews.length <= 12 ? 'sm:max-w-[800px]' : 'sm:max-w-[1200px]';
+  const scoreError = targetError(targetText);
+  const customTarget = scoreError ? null : Number(targetText);
   const groups = reward ? rewardGroups(reward) : [];
   const storageAlert = storageError ? <Alert variant="destructive">
     <AlertDescription>{t(storageError === 'load' ? 'farkle.inventoryLoadError' : 'farkle.inventorySaveError')}</AlertDescription>
@@ -66,13 +76,31 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
     catch { setLoadoutError('load'); }
   }
 
+  function prepareCustom(config?: CustomGame) {
+    try {
+      const next = config ?? readCustomGame(window.localStorage);
+      setCustom(next); setTargetText(String(next.target)); setCustomError(null);
+    } catch { setCustomError('load'); }
+  }
+
   function startGame() {
-    if (startDisabled || !draft || selectedCount !== 6 || loadoutError === 'load') return;
+    if (startDisabled || !draft || loadoutError === 'load'
+      || (customFlow && (customTarget === null || customError === 'load'))) return;
     try { saveLoadout(window.localStorage, draft); }
     catch { setLoadoutError('save'); return; }
     setLoadoutError(null);
-    const loadout = { B: loadoutDice(draft), A: drawOpponentDice(target, settings.mode) };
-    dispatch({ type: 'start', target, loadout, values: rollValues(loadout.B) });
+    const setup: MatchSetup = customFlow ? { kind: 'custom', config: { ...custom, target: customTarget! } }
+      : { kind: 'standard', level };
+    if (setup.kind === 'custom') {
+      try { saveCustomGame(window.localStorage, setup.config); }
+      catch { setCustomError('save'); return; }
+    }
+    setCustomError(null);
+    const target = matchTarget(setup);
+    const mode = setup.kind === 'custom' ? setup.config.opponentDiceMode : settings.mode;
+    const loadout = { B: loadoutDice(draft), A: mode === 'custom'
+      ? loadoutDice(custom.opponentLoadout) : drawOpponentDice(target, mode) };
+    dispatch({ type: 'start', setup, loadout, values: rollValues(loadout.B) });
     setModal(null);
   }
 
@@ -86,11 +114,16 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
   useEffect(() => { if (modal) modalTitle.current?.focus(); }, [modal]);
 
   function openModal(kind: Modal, source: HTMLElement) {
-    if (kind === 'newGame' || kind === 'chooseDice') {
-      if (state.playing) setTarget(state.target);
+    if (kind === 'newGame' || kind === 'chooseDice' || kind === 'customGame'
+      || kind === 'chooseOpponentDice' || kind === 'choosePlayerDice') {
+      if (state.setup?.kind === 'standard') setLevel(state.setup.level);
       setDraft(null);
       setLoadoutError(null);
       prepareLoadout();
+      if (kind === 'customGame') prepareCustom();
+      if ((kind === 'chooseOpponentDice' || kind === 'choosePlayerDice') && state.setup?.kind === 'custom') {
+        prepareCustom(state.setup.config);
+      }
     }
     trigger.current = isMobile && source.closest('.farkle-sidebar') ? sidebarTrigger.current : source;
     setOpenMobile(false);
@@ -104,6 +137,9 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
         <SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('newGame', event.currentTarget)}>
             <Plus /><span>{t('farkle.newGame')}</span>
+          </SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('customGame', event.currentTarget)}>
+            <SlidersHorizontal /><span>{t('farkle.customGame')}</span>
           </SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('myDice', event.currentTarget)}>
             <Package /><span>{t('farkle.myDice')}</span>
@@ -147,7 +183,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
       <DialogContent initialFocus={() => modalTitle.current}
         finalFocus={() => trigger.current?.isConnected ? trigger.current : sidebarTrigger.current}
         className={cn(modal === 'result' && 'farkle-result',
-          (modal === 'myDice' || modal === 'chooseDice') && ['farkle-dice-dialog w-[calc(100%-2rem)]', diceDialogWidth])}>
+          (modal === 'myDice' || playerChooser || modal === 'chooseOpponentDice') && ['farkle-dice-dialog w-[calc(100%-2rem)]', diceDialogWidth])}>
         {modal === 'result' ? <div className="farkle-result-summary">
           <div className="farkle-score-heading" data-outcome={state.winner === 'B' ? 'win' : 'loss'}>
             <DialogTitle ref={modalTitle} tabIndex={-1} style={{ font: 'inherit' }}>{t(state.winner === 'B' ? 'farkle.youWin' : 'farkle.youLost')}</DialogTitle>
@@ -168,17 +204,24 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
                 {t(`farkle.opponentModes.${mode}`)}
               </ToggleGroupItem>)}
             </ToggleGroup>
-            <FieldDescription id="farkle-opponent-dice-hint">{t('farkle.settingsNextGame')}</FieldDescription>
+            <FieldDescription id="farkle-opponent-dice-hint" aria-live="polite">
+              {t(`farkle.opponentModeHints.${settings.mode}`)} {t('farkle.settingsNextGame')}
+            </FieldDescription>
           </Field>
           {settings.error ? <Alert variant="destructive">
             <AlertDescription>{t(settings.error === 'load' ? 'farkle.settingsLoadError' : 'farkle.settingsSaveError')}</AlertDescription>
             <Button variant="outline" onClick={settings.retry}>{t('farkle.retryStorage')}</Button>
           </Alert> : null}
         </FieldGroup> : null}
-        {(modal === 'newGame' || modal === 'chooseDice') && loadoutError ? <Alert variant="destructive">
+        {(modal === 'newGame' || playerChooser || customFlow) && loadoutError ? <Alert variant="destructive">
           <AlertDescription>{t(loadoutError === 'load' ? 'farkle.loadoutLoadError' : 'farkle.loadoutSaveError')}</AlertDescription>
           <Button variant="outline" disabled={startDisabled}
             onClick={loadoutError === 'load' ? prepareLoadout : startGame}>{t('farkle.retryStorage')}</Button>
+        </Alert> : null}
+        {customFlow && customError ? <Alert variant="destructive">
+          <AlertDescription>{t(customError === 'load' ? 'farkle.customLoadError' : 'farkle.customSaveError')}</AlertDescription>
+          <Button variant="outline" disabled={startDisabled}
+            onClick={customError === 'load' ? () => prepareCustom() : startGame}>{t('farkle.retryStorage')}</Button>
         </Alert> : null}
         {modal === 'result' && state.winner ? <>
           {reward ? <div className="flex min-h-0 flex-col gap-3 overflow-y-auto" data-rewards role="group" aria-label={t('farkle.rewards')}>
@@ -196,47 +239,75 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
           </div> : null}
           <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={(event) => openModal('newGame', event.currentTarget)}>{t('farkle.newGame')}</Button>
-            <Button disabled={startDisabled} onClick={(event) => openModal('chooseDice', event.currentTarget)}>{t('farkle.playAgain')}</Button>
+            <Button disabled={startDisabled} onClick={(event) => openModal(state.setup?.kind === 'custom'
+              ? state.setup.config.opponentDiceMode === 'custom' ? 'chooseOpponentDice' : 'choosePlayerDice'
+              : 'chooseDice', event.currentTarget)}>{t('farkle.playAgain')}</Button>
           </DialogFooter>
         </> : null}
         {modal === 'myDice' && inventory ? <div className="farkle-dice-list min-h-0 overflow-y-auto">
           <ul className="farkle-dice-grid">
             {previews.map(({ die, url }) => <DiceRow key={die.id} type={die.id} preview={url}
               quantity={die.category === 'special' ? `${inventory.special[die.id]} / ${SPECIAL_LIMIT}`
-                : `×${die.id === 'normal' ? NORMAL_COUNT : inventory.merchant}`} />)}
+                : die.id === 'normal' ? `${NORMAL_COUNT} / ${NORMAL_COUNT}` : `${inventory.merchant} / ∞`} />)}
           </ul>
         </div> : null}
-        {modal === 'chooseDice' && owned && draft ? <>
-          <p className="shrink-0" data-loadout-total aria-live="polite">{t('farkle.diceSelected', { count: selectedCount })}</p>
-          <div className="farkle-dice-list min-h-0 overflow-y-auto">
-            <ul className="farkle-dice-grid" data-loadout>
-              {ownedPreviews.map(({ die, url }) => <DiceRow key={die.id} type={die.id} preview={url}
-                quantity={`×${owned[die.id]}`} inlineQuantity>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button variant="outline" size="icon" aria-label={t('farkle.removeDie', { name: t(`farkle.dice.${die.id}`) })}
-                    disabled={draft[die.id] === 0} onClick={() => setDraft({ ...draft, [die.id]: draft[die.id] - 1 })}><Minus /></Button>
-                  <span className="w-4 text-center tabular-nums" data-selected-count>{draft[die.id]}</span>
-                  <Button variant="outline" size="icon" aria-label={t('farkle.addDie', { name: t(`farkle.dice.${die.id}`) })}
-                    disabled={selectedCount === 6 || draft[die.id] === owned[die.id]}
-                    onClick={() => setDraft({ ...draft, [die.id]: draft[die.id] + 1 })}><Plus /></Button>
-                </div>
-              </DiceRow>)}
-            </ul>
-          </div>
+        {playerChooser && owned && draft ? <>
+          <DiceChooser counts={draft} available={owned} previews={previews} showInventory onChange={setDraft} />
           <DialogFooter className="shrink-0">
-            <Button variant="outline" onClick={() => setModal('newGame')}>{t('back')}</Button>
-            <Button disabled={startDisabled || selectedCount !== 6 || loadoutError === 'load'} onClick={startGame}>{t('farkle.startGame')}</Button>
+            <Button variant="outline" onClick={() => setModal(modal === 'chooseDice' ? 'newGame'
+              : custom.opponentDiceMode === 'custom' ? 'chooseOpponentDice' : 'customGame')}>{t('back')}</Button>
+            <Button disabled={startDisabled || loadoutError === 'load' || (customFlow && customError === 'load')}
+              onClick={startGame}>{t('farkle.startGame')}</Button>
           </DialogFooter>
+        </> : null}
+        {modal === 'chooseOpponentDice' ? <>
+          <DiceChooser counts={custom.opponentLoadout} available={OPPONENT_POOL} previews={previews} showInventory={false}
+            onChange={(opponentLoadout) => setCustom({ ...custom, opponentLoadout })} />
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" onClick={() => setModal('customGame')}>{t('back')}</Button>
+            <Button disabled={startDisabled || customError === 'load' || loadoutError === 'load'}
+              onClick={() => setModal('choosePlayerDice')}>{t('farkle.choosePlayerDice')}</Button>
+          </DialogFooter>
+        </> : null}
+        {modal === 'customGame' ? <>
+          <FieldGroup>
+            <Field data-invalid={customTarget === null || undefined}>
+              <FieldLabel htmlFor="farkle-custom-target">{t('farkle.targetScore')}</FieldLabel>
+              <Input id="farkle-custom-target" inputMode="numeric" required pattern="[0-9]+" value={targetText}
+                disabled={customError === 'load'} aria-invalid={customTarget === null}
+                aria-describedby={customTarget === null ? 'farkle-target-error' : undefined}
+                onChange={(event) => setTargetText(event.target.value)} />
+              {scoreError ? <FieldError id="farkle-target-error">{t(`farkle.targetErrors.${scoreError}`)}</FieldError> : null}
+            </Field>
+            <Field>
+              <FieldLabel id="farkle-custom-mode-label">{t('farkle.opponentDice')}</FieldLabel>
+              <ToggleGroup aria-labelledby="farkle-custom-mode-label" aria-describedby="farkle-custom-mode-hint"
+                variant="segmented" value={[custom.opponentDiceMode]}
+                disabled={customError === 'load'} onValueChange={(values) => {
+                  if (values.length) setCustom({ ...custom, opponentDiceMode: values[0] as CustomGame['opponentDiceMode'] });
+                }}>
+                {CUSTOM_OPPONENT_MODES.map((mode) => <ToggleGroupItem key={mode} value={mode}>
+                  {t(`farkle.opponentModes.${mode}`)}
+                </ToggleGroupItem>)}
+              </ToggleGroup>
+              <FieldDescription id="farkle-custom-mode-hint" aria-live="polite">
+                {t(`farkle.opponentModeHints.${custom.opponentDiceMode}`)}
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+          <DialogFooter><Button disabled={startDisabled || customTarget === null || customError === 'load' || loadoutError === 'load'}
+            onClick={() => { if (!draft) prepareLoadout(); setModal(custom.opponentDiceMode === 'custom' ? 'chooseOpponentDice' : 'choosePlayerDice'); }}>
+            {t(custom.opponentDiceMode === 'custom' ? 'farkle.chooseOpponentDice' : 'farkle.choosePlayerDice')}
+          </Button></DialogFooter>
         </> : null}
         {modal === 'newGame' ? <>
           <Field>
             <FieldLabel id="farkle-level-label">{t('farkle.level')}</FieldLabel>
             <ToggleGroup aria-labelledby="farkle-level-label" variant="outline" orientation="vertical"
-              className="w-full" value={[String(target)]} onValueChange={(values) => {
-                const level = LEVELS.find((item) => String(item.target) === values[0]);
-                if (level) setTarget(level.target);
+              className="w-full" value={[level]} onValueChange={(values) => {
+                if (values.length) setLevel(values[0] as LevelId);
               }}>
-              {LEVELS.map((level) => <ToggleGroupItem key={level.id} value={String(level.target)} className="justify-between">
+              {LEVELS.map((level) => <ToggleGroupItem key={level.id} value={level.id} className="justify-between">
                 <span>{t(`farkle.levels.${level.id}`)}</span><span>{level.target}</span>
               </ToggleGroupItem>)}
             </ToggleGroup>
