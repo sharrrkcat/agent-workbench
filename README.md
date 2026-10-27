@@ -304,7 +304,7 @@ Cross-client TTS acceptance: `uv run python -m scripts.serve_tts_acceptance --ou
 
 After a build, `npm run test:browser` checks bilingual desktop/touch layouts and workflows; add `-- app-layout.spec.ts settings-layout.spec.ts` for focused layout checks. Install Chromium with `npx playwright install chromium`; the isolated server uses port 18767 (COGITA_BROWSER_PORT overrides it), with artifacts in frontend/test-results.
 
-Farkle trajectories: run `npm run bake:farkle` in frontend to regenerate the checked-in library from its seeded Rapier recipe, then `node scripts/test-farkle-rolls.mjs` and `node scripts/test-farkle.mjs` to check physics, playback and layout. Rapier is an offline development dependency; the browser only interpolates the baked poses.
+Farkle trajectories: run `npm run bake:farkle` in frontend to regenerate the checked-in library from its seeded Rapier recipe, then `node scripts/test-farkle-rolls.mjs` and `node scripts/test-farkle.mjs` to check physics, playback and layout. See the [Farkle contract](docs/contracts/farkle.md) for behavior and limitations, and its [task card](docs/ai/TASK_FARKLE.md) for source, artifacts and test coverage.
 
 Local-runtime smokes reuse installation and fail if repair is needed. Scripts offering --install-only install/confirm a release without inference; other scripts never install.
 For offline runtime preparation, stop Cogita and wait for its workers to exit. Apply the pinned Transformers patch and one incremental bytecode pass using the installed interpreter, without installation or Repair:

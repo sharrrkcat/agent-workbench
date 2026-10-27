@@ -8,8 +8,8 @@ content, identifiers and API payloads are outside this documentation policy.
 
 - `AGENTS.md` owns permanent engineering constraints and contributor rules.
 - `docs/AI_CONTEXT.md` is the current-product and contract navigation entry.
-- `docs/contracts/` has six owners for implemented behavior: models,
-  chat/context, harness/tools, Knowledge, runs/streaming and settings.
+- `docs/contracts/` has seven owners for implemented behavior: models,
+  chat/context, harness/tools, Knowledge, runs/streaming, settings and [Farkle](../contracts/farkle.md).
 - `docs/ai/TASK_*.md` cards locate relevant source and tests; they link to
   behavioral rules rather than maintaining another specification.
 - `README.md` owns source installation, model setup, API examples and verification.
@@ -58,7 +58,7 @@ Check line limits with:
 uv run python scripts/check_docs_size.py
 ```
 
-Each of the six contracts has a 300-line limit. README has 350, AI_CONTEXT 150,
+Each of the seven contracts has a 300-line limit. README has 350, AI_CONTEXT 150,
 and task cards 120. Do not split a topic to evade the limit; remove duplication
 and link to its actual owner.
 
