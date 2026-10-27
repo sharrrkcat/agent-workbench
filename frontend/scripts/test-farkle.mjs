@@ -453,7 +453,7 @@ try {
   Math.random = () => { throw new Error('Dice appearance must not use gameplay randomness'); };
   for (const { id } of DICE_TYPES) {
     dicePreview(id);
-    for (const face of FACE_VALUES) faceCanvas(id, face);
+    for (const face of FACE_VALUES) { faceCanvas(id, face); dicePreview(id, face); }
   }
 } finally { Math.random = gameplayRandom; }
 for (const { id } of DICE_TYPES) for (const material of diceMaterials(id)) {

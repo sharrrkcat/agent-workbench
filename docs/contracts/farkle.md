@@ -6,9 +6,8 @@ Farkle is a browser-local Playground game at `/playground/farkle`, with a human 
 
 ## Navigation and match setup
 
-Farkle uses SidebarProvider with New Game, Custom game, My Dice, Shop and Settings; the footer is Back to Playground when idle or Exit Game when
-playing. Exit clears both sides and cancels animations and opponent operations. The camera follows turns automatically; manual view switching is
-unavailable. The header keeps its title/toggle and the actual Merchant Dice balance; balance and Shop open the same trading dialog.
+SidebarProvider contains New Game, Custom game, Inventory, Shop and Settings; its footer offers Back to Playground when idle and Exit Game while playing.
+Exit clears both sides and cancels animations/opponent work. The camera follows turns without manual switching. The header has its title/toggle and actual Merchant balance, which opens Shop.
 
 Clicking anywhere on the idle, exited or finished table opens New Game, with a keyboard-activatable full-table entry disabled while another dialog or
 mobile drawer is open. Dismissal does not click through; New Game and Exit remain available.
@@ -29,26 +28,27 @@ settlement](#rewards-and-browser-storage) owns defeat awards, conversion and per
 | Burgraves | 9000 | 4 | 4 | 4 |
 | Electors | 10000 | 4 | 4 | 4 |
 
-The single-select level list scrolls between its heading and fixed progression controls. Choose dice is a separate dialog step with owned types,
-smaller muted `owned N` / `拥有N` quantities below names and right-aligned minus/count/plus controls. Selections always total six, with Normal filling spare slots. All
-choosers highlight selected types with a green border and background in six intensity steps; zero-count rows and My Dice have no highlight.
+The single-select level list scrolls above fixed progression controls. Choose dice lists owned types with smaller muted `owned N` / `拥有N` quantities
+below names and right-aligned minus/count/plus controls. Selections total six, with Normal filling spare slots. Selected types have six green border/background intensity steps; zero-count rows and Inventory have no highlight.
 
 Adding a non-Normal replaces one Normal, subject to ownership and a spare Normal; removing one restores a Normal. Normal cannot be removed directly;
 adding one replaces the first selected non-Normal in full English-name order, including Merchant.
 
-Start game saves the selection, resets both sides and immediately rolls B's chosen dice; A uses the [opponent loadout rules](#opponent). Back retains
-the draft at level selection; closing discards unconfirmed changes. Selection and sampling consume no inventory. Types stay fixed through rerolls and
-handoffs.
+All three chooser titles have a reset icon that restores only the current side's draft to six Normal dice. Player choosers also offer Random between
+Back and Start game; below the small-screen breakpoint, Start game occupies the upper row and equal-width Back/Random share the lower row.
+Random replaces the draft with six copies sampled uniformly without replacement from the available stock, including Normal. Ordinary games use owned
+counts with Merchant capped at six before sampling; custom games use all 22 types at six copies each. The opponent chooser has no Random button.
+
+Start game saves the selection, resets both sides and rolls B's dice immediately; A uses the [opponent loadout rules](#opponent). Back retains the draft;
+closing discards unconfirmed changes. Selection and sampling consume no inventory. Types stay fixed through rerolls and handoffs.
 
 ### Custom games
 
-Custom game has a target input and a sliding Normal / Random / Wild / Custom single-select, independent of Settings. Targets are decimal integers
-strictly between 1 and Number.MAX_SAFE_INTEGER (9007199254740991), including nonmultiples of 50. Syntax, lower-bound and upper-bound errors each
-disable progression with distinct localized feedback.
+Custom game has a target input and a sliding Normal / Random / Wild / Custom single-select, independent of Settings. Targets are decimal integers strictly
+between 1 and Number.MAX_SAFE_INTEGER (9007199254740991), including nonmultiples of 50. Syntax/lower/upper errors block progression with distinct localized feedback.
 
-Generated modes open Choose dice for player; Custom first opens Choose dice for opponent. Both reuse six-die balancing, English ordering, previews and
-probability cards. Both sides have all 22 types at six copies each without inventory quantities, independently of owned stock. Back retains drafts;
-closing discards unconfirmed edits. Pause, drawer closure and focus restoration follow the ordinary flow.
+Generated modes open Choose dice for player; Custom first opens Choose dice for opponent. Both reuse ordinary balancing, ordering, previews, probability
+cards and dialog behavior. Each side has all 22 types at six copies, without inventory quantities or ownership limits. Back retains drafts; closing discards edits.
 
 Custom matches retain their confirmed setup and grant no rewards or first wins, even at ordinary targets. Play again reopens the corresponding
 opponent/player chooser with both loadouts; result New Game opens ordinary level selection.
@@ -98,7 +98,7 @@ notices/timers; reduced motion omits the fade.
 ### Results and lifecycle
 
 Only Q banking at or above the target wins; an unbanked winning Round can still Bust. Winning keeps the winner's view, disables dice/hotkeys/HUD
-actions and opens localized You win! / You lost! in centered gold/red score-heading typography. The centered Score line shows only B's banked total,
+actions and opens localized Victory! / Defeat! in centered gold/red score-heading typography. The centered Score line shows only B's banked total,
 using score-total typography and Round color, always smaller than the title; no separate winner or opponent-score rows appear. Ordinary Play again
 opens Choose dice at the same level with the last confirmed selection; New Game opens that level in difficulty selection. Closing leaves the finished
 board frozen.
@@ -129,17 +129,17 @@ drawing does not consume gameplay randomness.
 | Heavenly | Warm white; large black painted circles and a broad-ended Maltese cross styled like ✠ on six |
 | Merchant | Matte graphite ceramic; teal outlined diamond pips |
 
-Painted circles have no recessed relief. Heavenly uses a dedicated sphere cut by six planes to form circular faces, with the same unit bounds, face
-normals and material ordering; its curved connecting surface shares one body material, while physics still approximates every type with the standard
-rounded cube. The six-face texture and circular preview share the broad-ended ✠ cross for six; the hover hint uses the ordinary six-pip icon, and
-accessible labels and scoring retain numeric six. Lu, Ci and Fer have separate inventory identities but identical blue appearances and ordinary
-numeric scoring.
+Painted circles have no recessed relief. Heavenly uses a sphere cut by six planes into circular faces with the same unit bounds, face normals and material
+ordering; its curved connecting surface shares one body material. Physics approximates every type with the standard rounded cube. Heavenly's six-face
+texture and preview share the broad-ended ✠ cross; its hover icon, accessible labels and scoring retain numeric six. Lu, Ci and Fer have separate inventory
+identities but identical blue appearances and ordinary numeric scoring.
 
 ### Inventory and chooser views
 
-My Dice shows all 22 material previews: Normal 6 / 6, special quantities out of six and Merchant N / ∞. Its maximum width is 1200px; Choose dice uses
-480px for 1–6 owned types, 800px for 7–12 and 1200px above 12, independent of selected copy counts. Custom choosers and Shop use 1200px. All retain 16px viewport margins. Scrolling lists
-use one column below 720px available width, two from 720px and three from 1080px; titles and footers stay outside the scroller.
+Inventory shows all 22 previews: Normal 6 / 6, specials N / 6 and Merchant N / ∞. Preview faces show owned counts capped at six, or five when unowned.
+Only unowned images are grayscale, restoring color while hovered. Other views keep their fixed preview faces and colors.
+Inventory, custom choosers and Shop use 1200px; ordinary Choose dice uses 480px for 1–6 owned types, 800px for 7–12 and 1200px above 12, independent of copy counts.
+All retain 16px viewport margins. Lists use one column below 720px available width, two from 720px and three from 1080px; titles and footers stay outside scrolling.
 
 All lists sort by full English name in either locale; long names wrap. Names above owned quantities use text-height triggers on desktop/touch, keeping both lines adjacent. Shared shadcn Hover Cards activate only
 from names by hover, focus or touch. Each shows six face-ordered percentages from gameplay weights, rounded to one decimal percent, with accessible
@@ -148,8 +148,8 @@ face descriptions including Devil's head. Previews, quantities and quantity cont
 ### Shop
 
 Shop lists all twenty special types, including zero stock, with shared previews, probability cards and owned quantities below names; Normal/Merchant are excluded.
-Rows have destructive-color Sell and outline Buy buttons. The Merchant icon/count sits beside Shop; secondary text below states the prices.
-Each click immediately trades one die without confirmation: Buy costs two Merchant, Sell returns one. Buy is disabled at six copies or insufficient funds; Sell at zero stock or safe-integer overflow.
+Rows have destructive-color Sell and outline Buy buttons; Sell appears only with positive stock. The Merchant icon/count sits beside Shop, with prices below.
+Each click trades one die immediately without confirmation: Buy costs two Merchant, Sell returns one. Buy is disabled at six copies or insufficient funds; Sell at safe-integer overflow.
 Each trade writes stock and balance together, preserving first wins and current match dice. Failed writes retain the changed in-page inventory and
 one snapshot for explicit retry, blocking trades, new matches and Exit. Retry never repeats the trade. Inventory read/reset errors also block trading.
 Closing keeps trades; the next ordinary chooser revalidates ownership. Persistence and retry reuse the inventory maintenance mechanism.

@@ -5,8 +5,8 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { cn } from '@/lib/utils';
 import { DICE_TYPES, type DieType } from './dice';
 
-export function DiceRow({ type, preview, quantity, quantityBelowName = false, selectedCount, children }: {
-  type: DieType; preview: string; quantity?: string; quantityBelowName?: boolean; selectedCount?: number; children?: ReactNode;
+export function DiceRow({ type, preview, quantity, quantityBelowName = false, selectedCount, unowned = false, children }: {
+  type: DieType; preview: string; quantity?: string; quantityBelowName?: boolean; selectedCount?: number; unowned?: boolean; children?: ReactNode;
 }) {
   const { t, i18n } = useTranslation('common');
   const [open, setOpen] = useState(false);
@@ -33,7 +33,8 @@ export function DiceRow({ type, preview, quantity, quantityBelowName = false, se
   }}>
     <li className="flex min-w-0 items-center gap-2" data-inventory-type={type} data-loadout-count={selectedCount}
       style={{ '--farkle-selected-count': selectedCount } as CSSProperties}>
-      <img className="size-10 shrink-0 rounded-md" src={preview} alt="" />
+      <img className={cn('size-10 shrink-0 rounded-md',
+        unowned && 'grayscale transition-[filter] duration-150 hover:grayscale-0 motion-reduce:transition-none')} src={preview} alt="" />
       <div className="flex min-w-0 flex-1 flex-col items-start">
         <HoverCardTrigger delay={150} closeDelay={150} render={<Button ref={trigger} variant="ghost"
           className={cn('h-auto max-w-full min-w-0 justify-start whitespace-normal text-left',

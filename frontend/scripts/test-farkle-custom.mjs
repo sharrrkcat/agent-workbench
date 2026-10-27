@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createModuleLoader } from './module-loader.mjs';
 
 const load = createModuleLoader();
-const { defaultLoadout, FULL_DICE_POOL, loadoutSize, canAdjustLoadout, adjustLoadout } =
+const { defaultLoadout, FULL_DICE_POOL, loadoutSize, canAdjustLoadout, adjustLoadout, randomLoadout } =
   (await load('../src/components/playground/farkle/loadout.ts')).exports;
 const { CUSTOM_GAME_KEY, CUSTOM_OPPONENT_MODES, defaultCustomGame, targetError, readCustomGame, saveCustomGame } =
   (await load('../src/components/playground/farkle/customGame.ts')).exports;
@@ -36,6 +36,41 @@ for (const type of order.filter((type) => type !== 'normal')) {
   for (let i = 0; i < copies; i++) adjust(type, 1);
   for (let i = 0; i < copies; i++) adjust(type, -1);
 }
+
+assert.deepEqual(randomLoadout(defaultLoadout(), () => 0.99), defaultLoadout(), 'Normal dice alone fill every slot');
+const limitedStock = Object.freeze({ ...defaultLoadout(), even: 2, merchant: 2 });
+assert.deepEqual(randomLoadout(limitedStock, () => 0.999), { ...defaultLoadout(), normal: 2, even: 2, merchant: 2 },
+  'Sampling without replacement cannot repeat an exhausted copy or select an unowned type');
+const firstDrawCounts = { normal: 0, even: 0, odd: 0 };
+for (let first = 0; first < 9; first++) {
+  let calls = 0;
+  const result = randomLoadout({ ...defaultLoadout(), even: 1, odd: 2 }, () => calls++ === 0 ? (first + 0.5) / 9 : 0);
+  assert.equal(calls, 6);
+  // The final five draws are Normal, so the remaining copy identifies the first draw.
+  firstDrawCounts.normal += result.normal - 5;
+  firstDrawCounts.even += result.even;
+  firstDrawCounts.odd += result.odd;
+}
+assert.deepEqual(firstDrawCounts, { normal: 6, even: 1, odd: 2 }, 'Every owned copy has equal probability');
+const seededRandom = (seed) => () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 2 ** 32);
+const seen = new Set();
+for (let seed = 0; seed < 128; seed++) {
+  for (const available of [limitedStock, Object.freeze({ ...FULL_DICE_POOL })]) {
+    const selected = randomLoadout(available, seededRandom(seed));
+    assert.equal(loadoutSize(selected), 6);
+    for (const type of order) {
+      assert(Number.isInteger(selected[type]) && selected[type] >= 0 && selected[type] <= available[type]);
+      if (selected[type]) seen.add(type);
+    }
+  }
+  const capped = randomLoadout({ ...FULL_DICE_POOL, merchant: 6 }, seededRandom(seed));
+  for (const merchant of [7, 999, Number.MAX_SAFE_INTEGER]) {
+    assert.deepEqual(randomLoadout({ ...FULL_DICE_POOL, merchant }, seededRandom(seed)), capped,
+      'Merchant balance above six must not change probability or allocate extra copies');
+  }
+}
+assert.deepEqual([...seen].sort(), [...order].sort(), 'The full stock can supply all 22 types, including Normal and Merchant');
+assert.deepEqual(limitedStock, { ...defaultLoadout(), even: 2, merchant: 2 }, 'Random allocation leaves inventory unchanged');
 
 for (const target of [2, 1501, 10000, 10001, 10 ** 12, Number.MAX_SAFE_INTEGER - 1]) assert.equal(targetError(String(target)), null);
 for (const input of ['', ' ', '1.5', '1.0', '1e3', '0x10', '+1', ' 1', '1 ', 'Infinity', 'NaN']) {

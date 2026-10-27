@@ -14,8 +14,8 @@ export function DiceShop({ inventory, previews, disabled, onTrade }: {
       {previews.map(({ die, url }) => die.category === 'special' ? <DiceRow key={die.id} type={die.id} preview={url}
         quantity={t('farkle.owned', { count: inventory.special[die.id] })} quantityBelowName>
         <div className="flex shrink-0 items-center gap-1">
-          <Button variant="destructive" disabled={disabled || !canTradeDice(inventory, die.id, 'sell')}
-            onClick={() => onTrade(die.id, 'sell')}>{t('farkle.sellDie')}</Button>
+          {inventory.special[die.id] > 0 ? <Button variant="destructive" disabled={disabled || !canTradeDice(inventory, die.id, 'sell')}
+            onClick={() => onTrade(die.id, 'sell')}>{t('farkle.sellDie')}</Button> : null}
           <Button variant="outline" disabled={disabled || !canTradeDice(inventory, die.id, 'buy')}
             onClick={() => onTrade(die.id, 'buy')}>{t('farkle.buyDie')}</Button>
         </div>

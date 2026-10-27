@@ -7,6 +7,16 @@ export const defaultLoadout = (): DiceCounts =>
 export const loadoutSize = (counts: DiceCounts) => DICE_TYPES.reduce((total, { id }) => total + counts[id], 0);
 export const loadoutDice = (counts: DiceCounts): DieType[] => DICE_TYPES.flatMap(({ id }) => Array<DieType>(counts[id]).fill(id));
 
+export function randomLoadout(available: DiceCounts, random: () => number = Math.random): DiceCounts {
+  const pool = loadoutDice({ ...available, merchant: Math.min(6, available.merchant) });
+  const counts = { ...defaultLoadout(), normal: 0 };
+  for (let index = 0; index < 6; index++) {
+    const [type] = pool.splice(Math.floor(random() * pool.length), 1);
+    counts[type]++;
+  }
+  return counts;
+}
+
 export function isLoadout(value: unknown, available: DiceCounts): value is DiceCounts {
   if (!value || typeof value !== 'object') return false;
   const counts = value as DiceCounts;

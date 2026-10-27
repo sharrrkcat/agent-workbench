@@ -168,8 +168,8 @@ function paintFace(type: DieType, value: number, height: boolean) {
 
 export function faceCanvas(type: DieType, value: number) { return paintFace(type, value, false); }
 
-export function dicePreview(type: DieType) {
-  const face = faceCanvas(type, type === 'devil' ? 1 : type === 'heavenly' ? 6 : 5);
+export function dicePreview(type: DieType, value = type === 'devil' ? 1 : type === 'heavenly' ? 6 : 5) {
+  const face = faceCanvas(type, value);
   if (APPEARANCE[type].geometry !== 'roundFaces') return face;
   const result = canvas(), ctx = result.getContext('2d')!;
   ctx.beginPath(); ctx.arc(128, 128, 115.2, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(face, 0, 0);

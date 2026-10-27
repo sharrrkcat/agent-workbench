@@ -159,6 +159,182 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
     const nextPlayer = (page: Page) => press(dialog(page).getByRole('button', { name: words.choosePlayerDice, exact: true }));
     const nextOpponent = (page: Page) => press(dialog(page).getByRole('button', { name: words.chooseOpponentDice, exact: true }));
     const beginCustom = (page: Page) => press(dialog(page).getByRole('button', { name: words.startGame, exact: true }));
+    const resetSelection = (page: Page) => press(dialog(page).getByRole('button', { name: words.resetDice, exact: true }));
+    const randomSelection = (page: Page) => press(dialog(page).getByRole('button', { name: words.randomDice, exact: true }));
+    const allocation = async (page: Page) => ({ ...defaultLoadout(), normal: 0,
+      ...await dialog(page).locator('[data-loadout-count]').evaluateAll((nodes) => Object.fromEntries(nodes.map((node) =>
+        [node.getAttribute('data-inventory-type')!, Number(node.getAttribute('data-loadout-count'))]))),
+    });
+
+    test('player chooser random uses owned stock and reset follows draft and save rules', async ({ page }) => {
+      await seedInventory(page, stock({ even: 1 }, 999));
+      await page.reload();
+      const inventory = await page.evaluate(() => localStorage.getItem('cogita.farkle.inventory'));
+      const openChooser = async () => {
+        await menu(page, words.newGame);
+        await press(dialog(page).getByRole('button', { name: words.chooseDice, exact: true }));
+      };
+      await openChooser();
+      await page.evaluate(() => { Math.random = () => 0.999; });
+      await randomSelection(page);
+      expect(await allocation(page)).toEqual({ ...defaultLoadout(), normal: 0, merchant: 6 });
+      await page.evaluate(() => { Math.random = () => 0.5; });
+      await randomSelection(page);
+      const selected = { ...defaultLoadout(), normal: 2, even: 1, merchant: 3 };
+      expect(await allocation(page)).toEqual(selected);
+      await press(dialog(page).getByRole('button', { name: common.back, exact: true }));
+      await press(dialog(page).getByRole('button', { name: words.chooseDice, exact: true }));
+      expect(await allocation(page)).toEqual(selected);
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.loadout'))).toBeNull();
+      await page.keyboard.press('Escape');
+      await openChooser();
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await randomSelection(page);
+      await useFace(page, 1);
+      await beginCustom(page);
+      await settled(page);
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogita.farkle.loadout')!))).toEqual(selected);
+      await openChooser();
+      await resetSelection(page);
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await press(dialog(page).getByRole('button', { name: common.back, exact: true }));
+      await press(dialog(page).getByRole('button', { name: words.chooseDice, exact: true }));
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await page.keyboard.press('Escape');
+      await openChooser();
+      expect(await allocation(page)).toEqual(selected);
+      await resetSelection(page);
+      await beginCustom(page);
+      await settled(page);
+      await page.reload();
+      await openChooser();
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.inventory'))).toBe(inventory);
+    });
+
+    test('custom choosers randomize full stock and reset each side independently', async ({ page }) => {
+      const inventory = await page.evaluate(() => localStorage.getItem('cogita.farkle.inventory'));
+      await menu(page, words.customGame);
+      await dialog(page).getByLabel(words.targetScore, { exact: true }).fill('1501');
+      await press(dialog(page).getByRole('button', { name: words.opponentModes.custom, exact: true }));
+      await nextOpponent(page);
+      await expect(dialog(page).getByRole('button', { name: words.randomDice, exact: true })).toHaveCount(0);
+      await customAdjust(page, 'even', true);
+      await customAdjust(page, 'even', true);
+      await nextPlayer(page);
+      await page.evaluate(() => { Math.random = () => 0.999; });
+      await randomSelection(page);
+      const merchants = { ...defaultLoadout(), normal: 0, merchant: 6 };
+      expect(await allocation(page)).toEqual(merchants);
+      await press(dialog(page).getByRole('button', { name: common.back, exact: true }));
+      expect(await allocation(page)).toEqual({ ...defaultLoadout(), normal: 4, even: 2 });
+      await resetSelection(page);
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await nextPlayer(page);
+      expect(await allocation(page)).toEqual(merchants);
+      await resetSelection(page);
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await press(dialog(page).getByRole('button', { name: common.back, exact: true }));
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await customAdjust(page, 'odd', true);
+      await nextPlayer(page);
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await randomSelection(page);
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.customGame'))).toBeNull();
+      await useFace(page, 1);
+      await beginCustom(page);
+      await settled(page);
+      const saved = { target: 1501, opponentDiceMode: 'custom', opponentLoadout: { ...defaultLoadout(), normal: 5, odd: 1 },
+        playerLoadout: merchants };
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogita.farkle.customGame')!))).toEqual(saved);
+      await menu(page, words.customGame);
+      await nextOpponent(page);
+      await resetSelection(page);
+      await nextPlayer(page);
+      await resetSelection(page);
+      await page.keyboard.press('Escape');
+      await menu(page, words.customGame);
+      await nextOpponent(page);
+      expect(await allocation(page)).toEqual(saved.opponentLoadout);
+      await nextPlayer(page);
+      expect(await allocation(page)).toEqual(merchants);
+      await resetSelection(page);
+      await beginCustom(page);
+      await settled(page);
+      await page.reload();
+      await menu(page, words.customGame);
+      await nextOpponent(page);
+      expect(await allocation(page)).toEqual(saved.opponentLoadout);
+      await resetSelection(page);
+      await nextPlayer(page);
+      expect(await allocation(page)).toEqual(defaultLoadout());
+      await beginCustom(page);
+      await settled(page);
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogita.farkle.customGame')!)))
+        .toEqual({ ...saved, opponentLoadout: defaultLoadout(), playerLoadout: defaultLoadout() });
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.inventory'))).toBe(inventory);
+      expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.loadout'))).toBeNull();
+    });
+
+    test('chooser actions fit beside titles and preserve desktop and mobile footer layout', async ({ page }, testInfo) => {
+      await seedInventory(page, stock(fullSpecial, 999));
+      await page.reload();
+      const checkLayout = async (name: string, player: boolean) => {
+        const modal = dialog(page);
+        const reset = modal.getByRole('button', { name: words.resetDice, exact: true });
+        await expect(reset).toBeVisible();
+        // Read one frame so dialog transitions cannot mix title and button positions.
+        const { titleBox, resetBox, closeBox, actions } = await modal.evaluate((node) => {
+          const box = (selector: string) => node.querySelector(selector)!.getBoundingClientRect().toJSON();
+          return { titleBox: box('[data-slot="dialog-title"]'), resetBox: box('[data-slot="dialog-header"] button'),
+            closeBox: box('[data-slot="dialog-close"]'), actions: [...node.querySelectorAll('[data-slot="dialog-footer"] button')]
+              .map((button) => button.getBoundingClientRect().toJSON()) };
+        });
+        expect(resetBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width);
+        expect(resetBox.x + resetBox.width).toBeLessThanOrEqual(closeBox.x);
+        expect(Math.abs(resetBox.y + resetBox.height / 2 - titleBox.y - titleBox.height / 2)).toBeLessThan(1);
+        if (touch) expect(Math.min(resetBox.width, resetBox.height)).toBeGreaterThanOrEqual(44);
+        if (player) {
+          await expect(modal.locator('[data-slot="dialog-footer"] button')).toHaveText([common.back, words.randomDice, words.startGame]);
+          const [back, random, start] = actions;
+          expect(Math.abs(back.y - random.y)).toBeLessThan(1);
+          expect(random.x).toBeGreaterThanOrEqual(back.x + back.width);
+          if (touch) {
+            expect(Math.abs(back.width - random.width)).toBeLessThan(1);
+            expect(start.y + start.height).toBeLessThanOrEqual(back.y);
+            expect(Math.abs(start.width - (random.x + random.width - back.x))).toBeLessThan(1);
+          } else {
+            expect(Math.abs(random.y - start.y)).toBeLessThan(1);
+            expect(start.x).toBeGreaterThanOrEqual(random.x + random.width);
+          }
+        } else await expect(modal.getByRole('button', { name: words.randomDice, exact: true })).toHaveCount(0);
+        const viewport = page.viewportSize()!;
+        await page.setViewportSize({ width, height: 320 });
+        await expect.poll(() => modal.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return Math.max(Math.abs(box.top - 16), Math.abs(box.bottom - 304));
+        })).toBeLessThan(0.1);
+        const footer = modal.locator('[data-slot="dialog-footer"]');
+        const before = (await footer.boundingBox())!;
+        expect(before.y + before.height).toBeLessThanOrEqual(320);
+        expect(await modal.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+        await modal.locator('.farkle-dice-list').evaluate((node) => { node.scrollTop = node.scrollHeight; });
+        expect((await footer.boundingBox())!.y).toBeCloseTo(before.y, 0);
+        await expect(reset).toBeInViewport();
+        await page.screenshot({ path: testInfo.outputPath(`${name}-actions.png`) });
+        await page.setViewportSize(viewport);
+      };
+      await menu(page, words.newGame);
+      await press(dialog(page).getByRole('button', { name: words.chooseDice, exact: true }));
+      await checkLayout('standard', true);
+      await page.keyboard.press('Escape');
+      await menu(page, words.customGame);
+      await press(dialog(page).getByRole('button', { name: words.opponentModes.custom, exact: true }));
+      await nextOpponent(page);
+      await checkLayout('opponent', false);
+      await nextPlayer(page);
+      await checkLayout('player', true);
+    });
 
     test('custom opponent selection retains drafts, balances six and saves only confirmed settings', async ({ page }, testInfo) => {
       await menu(page, words.customGame);
@@ -1084,7 +1260,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(dialog(page).locator('[data-inventory-type]')).toHaveCount(20);
       expect(await dialog(page).locator('[data-inventory-type]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-inventory-type'))))
         .toEqual(englishOrder.filter((type) => !['normal', 'merchant'].includes(type)));
-      await expect(shopButton(page, 'aranka', 'sell')).toBeDisabled();
+      await expect(shopButton(page, 'aranka', 'sell')).toHaveCount(0);
       await press(shopButton(page, 'even', 'buy'));
       await shopBalance(page, 0);
       await expect(page.locator('[data-merchant-balance]')).toHaveText('0');
@@ -1101,7 +1277,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await shopBalance(page, 0);
       await expect(shopButton(page, 'aranka', 'sell')).toBeEnabled();
       await press(shopButton(page, 'aranka', 'sell'));
-      await expect(shopButton(page, 'aranka', 'sell')).toBeDisabled();
+      await expect(shopButton(page, 'aranka', 'sell')).toHaveCount(0);
       await expect(shopRow(page, 'aranka').locator('[data-inventory-count]')).toHaveText(ownedText(0));
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cogita.farkle.inventory')!)))
         .toEqual(stock({ even: 4 }, 1, ['electors']));
@@ -1156,7 +1332,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(dialog(page).getByRole('alert')).toContainText(words.inventorySaveError);
         await shopBalance(page, balance);
         await expect(shopRow(page, 'even').locator('[data-inventory-count]')).toHaveText(ownedText(count));
-        for (const { id } of SPECIAL_TYPES) for (const kind of ['buy', 'sell'] as const) await expect(shopButton(page, id, kind)).toBeDisabled();
+        for (const { id } of SPECIAL_TYPES) {
+          await expect(shopButton(page, id, 'buy')).toBeDisabled();
+          if (id === 'even') await expect(shopButton(page, id, 'sell')).toBeDisabled();
+          else await expect(shopButton(page, id, 'sell')).toHaveCount(0);
+        }
         expect(await page.evaluate(() => localStorage.getItem('cogita.farkle.inventory'))).toBe(previous);
         await press(dialog(page).getByRole('button', { name: words.retryStorage, exact: true }));
         await expect(dialog(page).getByRole('alert')).toHaveCount(0);
@@ -1175,7 +1355,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await menu(page, words.shop);
       const modal = dialog(page);
       await expect(modal.locator('[data-shop-prices]')).toHaveText(words.shopPrices.replace('{{buy}}', '2').replace('{{sell}}', '1'));
-      await expect(shopRow(page, 'aranka').getByRole('button')).toHaveText([words.dice.aranka, words.sellDie, words.buyDie]);
+      await expect(shopRow(page, 'aranka').getByRole('button')).toHaveText([words.dice.aranka, words.buyDie]);
       if (!touch) await page.mouse.move(0, 0);
       for (const viewport of touch ? [{ width: 390, height: 844, columns: 1 }]
         : [{ width: 1366, height: 900, columns: 3 }, { width: 1024, height: 768, columns: 2 }, { width: 390, height: 844, columns: 1 }]) {
@@ -1813,6 +1993,60 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expectCompactDiceLabels(choice(page));
         await page.screenshot({ path: testInfo.outputPath(`chooser-${count}-types.png`) });
       }
+    });
+    test('inventory previews show owned quantities and restore unowned colors only on image hover', async ({ page }, testInfo) => {
+      const image = (type: string) => dialog(page).locator(`[data-inventory-type="${type}"] img`);
+      const pips = () => image('painted').evaluate(async (node) => {
+        const source = node as HTMLImageElement;
+        await source.decode();
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+        const context = canvas.getContext('2d')!; context.drawImage(source, 0, 0);
+        return [[65, 65], [191, 65], [128, 128], [65, 128], [191, 128], [65, 191], [191, 191]]
+          .filter(([x, y]) => [...context.getImageData(x, y, 1, 1).data].slice(0, 3).every((channel) => channel > 200)).length;
+      });
+      for (const count of [0, 1, 2, 3, 4, 5, 6]) {
+        await seedInventory(page, stock({ painted: count, devil: count, heavenly: count }, count === 6 ? 999 : count));
+        await page.reload();
+        await menu(page, words.myDice);
+        await expect(dialog(page)).toHaveAccessibleName(words.myDice);
+        expect(await pips()).toBe(count || 5);
+        await expect(image('painted')).toHaveCSS('filter', count ? 'none' : 'grayscale(1)');
+        await expect(image('normal')).toHaveCSS('filter', 'none');
+        await expect(image('odd')).toHaveCSS('filter', 'grayscale(1)');
+        if (!count) {
+          if (touch) {
+            await image('painted').tap();
+            await expect(image('painted')).toHaveCSS('filter', 'grayscale(1)');
+          } else {
+            await image('painted').hover();
+            await expect(image('painted')).toHaveCSS('filter', 'grayscale(0)');
+            await expect(page.locator('[data-dice-probabilities]')).toHaveCount(0);
+            await page.mouse.move(0, 0);
+            await expect(image('painted')).toHaveCSS('filter', 'grayscale(1)');
+          }
+          const label = dialog(page).getByRole('button', { name: words.dice.painted, exact: true });
+          await expect(label).toHaveCSS('filter', 'none');
+        }
+        if (count === 0 || count === 6) await page.screenshot({ path: testInfo.outputPath(`inventory-${count}.png`) });
+      }
+      const cappedMerchant = await image('merchant').getAttribute('src');
+      await seedInventory(page, stock({ painted: 6, heavenly: 6 }, 6));
+      await page.reload();
+      await menu(page, words.myDice);
+      await expect(image('merchant')).toHaveAttribute('src', cappedMerchant!);
+      const inventoryHeavenly = await image('heavenly').getAttribute('src');
+      await page.keyboard.press('Escape');
+      await menu(page, words.shop);
+      await expect(image('heavenly')).toHaveAttribute('src', inventoryHeavenly!);
+      await expect(image('devil')).toHaveCSS('filter', 'none');
+      const shopDevil = await image('devil').getAttribute('src');
+      const sell = dialog(page).locator('[data-inventory-type="painted"]').getByRole('button', { name: words.sellDie, exact: true });
+      for (let count = 0; count < 6; count++) await press(sell);
+      await page.keyboard.press('Escape');
+      await menu(page, words.myDice);
+      expect(await pips()).toBe(5);
+      await expect(image('painted')).toHaveCSS('filter', 'grayscale(1)');
+      await expect(image('devil')).not.toHaveAttribute('src', shopDevil!);
     });
     test('expanded inventory and chooser use responsive columns and scroll below fixed controls', async ({ page }, testInfo) => {
       await seedInventory(page, stock(fullSpecial, 2));

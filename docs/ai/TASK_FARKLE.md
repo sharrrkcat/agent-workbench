@@ -16,7 +16,7 @@ Game modules below are under [frontend/src/components/playground/farkle/](../../
   difficulty and face sampling; input.ts owns directional navigation.
 - DiceChooser.tsx and DiceRow.tsx share selection controls, previews and probability
   cards; DiceShop.tsx reuses rows for immediate trading. loadout.ts owns six-die balancing,
-  the full catalog pool and the ordinary player preference; customGame.ts owns custom
+  stock-based random sampling, the full catalog pool and the ordinary player preference; customGame.ts owns custom
   configuration including both loadouts, target validation and match setup types.
 - economy.ts owns levels, inventory, trading, maintenance actions and reward settlement;
   rewards.ts groups result rewards and useInventory.ts handles persistence/retry.
@@ -64,7 +64,7 @@ Focused scripts under [frontend/scripts/](../../frontend/scripts/):
   faces, uniform sampling/caps, the twenty-type reward pool and browser storage.
 - test-farkle-opponent.mjs: frozen calibration validity, named probabilities,
   interval boundaries, original random parity, unrestricted loadouts and local settings.
-- test-farkle-custom.mjs: six-die balancing, replacement order, independent custom storage, full pools and safe integer targets.
+- test-farkle-custom.mjs: six-die balancing, replacement order, stock-weighted sampling without replacement, Merchant caps, independent custom storage, full pools and safe integer targets.
 - test-farkle-ai.mjs: bounded large-target computation against full-goal values,
   extreme Weighted loadouts, exact turn values, conservative difficulty, identity-sensitive
   selections, complete banking, hot dice and pausable operation timing.
@@ -76,16 +76,16 @@ and desktop/touch layouts:
   and rounds, four-digit selections, unbroken row labels, longer wrapped values and HUD sizing.
 - [farkle.spec.ts](../../frontend/tests/farkle.spec.ts): ordinary levels and custom
   flows; independent ordinary/custom player preferences and unrestricted custom loadouts; target validation,
-  contextual errors, mode descriptions, selected-row highlights and short-screen scrolling.
+  contextual errors, mode descriptions, selected-row highlights, random/reset drafts and responsive chooser actions.
   Gameplay covers selection/wildcards, touch hints without deselection fallback, directional keyboard navigation, batches, rerolls, passes, Bust, automatic camera/AI
   ownership, visible thinking/selection timing, return-to-B pause, pause/retry/cancellation,
   victory, replay, custom reward exclusion, table entry and turn notices.
   Storage covers inventory/rewards/loadouts, quantity limits, drafts, read/save retries,
-  immediate shop trades, fixed-snapshot retries, next-game ownership clipping, shared language persistence, inventory maintenance and
+  immediate shop trades, zero-stock Sell visibility, fixed-snapshot retries, next-game ownership clipping, shared language persistence, inventory maintenance and
   scoped cache reset including failed removals, pending writes and cancellation.
   Presentation covers probability cards, all 22 appearances, circular Heavenly faces with
   a Maltese cross and numeric hover hint, English-name ordering in either locale,
-  inventory/chooser/shop columns, owned-type-dependent chooser width and grouped results,
+  inventory quantity faces and unowned-image hover colors, inventory/chooser/shop columns, owned-type-dependent chooser width and grouped results,
   short-screen reward scrolling, large scores and overlay isolation.
 
 [playground.spec.ts](../../frontend/tests/playground.spec.ts) and
