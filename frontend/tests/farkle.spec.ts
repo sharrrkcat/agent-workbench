@@ -136,6 +136,42 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       }, locale);
       await page.goto('/playground/farkle');
     });
+    test('baked throws stay visible and clear of the HUD in portrait and landscape', async ({ page }, testInfo) => {
+      for (const viewport of [{ width, height: touch ? 844 : 900 }, { width: touch ? 667 : 844, height: 390 }]) {
+        await page.setViewportSize(viewport);
+        await expect(table(page)).toBeVisible();
+        await page.evaluate(() => {
+          const samples = { frames: 0, errors: [] as string[] };
+          (window as typeof window & { rollSamples: typeof samples }).rollSamples = samples;
+          const measure = () => {
+            const board = document.querySelector('.farkle-table')!;
+            if (board.getAttribute('data-phase') === 'roll') {
+              samples.frames++;
+              const area = board.getBoundingClientRect();
+              const hud = [...board.querySelectorAll('.farkle-score, .farkle-actions')].map((node) => node.getBoundingClientRect());
+              for (const die of board.querySelectorAll('[data-die-id][data-state="idle"]')) {
+                const box = die.getBoundingClientRect();
+                if (box.width <= 0) continue;
+                const id = die.getAttribute('data-die-id');
+                if (box.left < area.left || box.right > area.right || box.top < area.top || box.bottom > area.bottom)
+                  samples.errors.push(`${id} leaves the table viewport`);
+                if (hud.some((item) => box.left < item.right && box.right > item.left && box.top < item.bottom && box.bottom > item.top))
+                  samples.errors.push(`${id} overlaps the HUD`);
+              }
+            }
+            requestAnimationFrame(measure);
+          };
+          requestAnimationFrame(measure);
+        });
+        await useFace(page, 5);
+        await start(page);
+        await page.screenshot({ path: testInfo.outputPath(`baked-roll-${viewport.width}.png`) });
+        const samples = await page.evaluate(() => (window as typeof window & { rollSamples: { frames: number; errors: string[] } }).rollSamples);
+        expect(samples.frames).toBeGreaterThan(4);
+        expect([...new Set(samples.errors)]).toEqual([]);
+        await page.reload();
+      }
+    });
     test('choose six owned dice, keep drafts when going back, and persist only on start', async ({ page }, testInfo) => {
       await seedInventory(page, stock({ even: 1 }, 2));
       await page.reload();

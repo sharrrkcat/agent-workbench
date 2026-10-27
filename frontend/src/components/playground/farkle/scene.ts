@@ -124,7 +124,7 @@ export class DiceScene {
   }
 
   roll(trajectory: Trajectory, dice: { id: string; value: FaceValue }[], complete: () => void) {
-    const playback = new RollPlayback(trajectory, dice, Math.random() < 0.5, Math.random() * Math.PI * 2,
+    const playback = new RollPlayback(trajectory, dice, Math.random() < 0.5, Math.random() < 0.5 ? 0 : Math.PI,
       0.94 + Math.random() * 0.12);
     this.animate((elapsed) => playback.sample(elapsed, (id, position, rotation) => {
       const { mesh } = this.dice.get(id)!;

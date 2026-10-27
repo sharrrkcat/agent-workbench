@@ -12,6 +12,7 @@ for (const script of [
   'test-session-actions',
   'test-playground',
   'test-farkle',
+  'test-farkle-rolls',
   'test-farkle-economy',
   'test-farkle-ai',
   'test-history-window',

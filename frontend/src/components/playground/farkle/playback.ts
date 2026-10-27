@@ -32,6 +32,17 @@ export function shuffled<T>(values: T[], random = Math.random) {
   return result;
 }
 
+export function pickTrajectory(pool: Trajectory[], recent: Map<number, number[]>, random = Math.random) {
+  const count = pool[0].n;
+  const history = recent.get(count) ?? [];
+  const candidates = pool.filter((trajectory) => !history.includes(trajectory.seed));
+  const trajectory = candidates[Math.floor(random() * candidates.length)];
+  history.push(trajectory.seed);
+  if (history.length > 8) history.shift();
+  recent.set(count, history);
+  return trajectory;
+}
+
 export class RollPlayback {
   readonly tracks: { id: string; channel: number; correction: Quaternion }[];
   private yaw: Quaternion;

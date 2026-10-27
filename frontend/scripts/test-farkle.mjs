@@ -283,12 +283,12 @@ for (const [direction, expected] of [['w', 'up'], ['a', 'left'], ['s', 'down'], 
 assert.equal(nextHoveredDie(points, 'left', 'a'), 'left', 'No directional candidate retains hover');
 assert.equal(nextHoveredDie([], null, 'w'), null);
 
-// Verify real baked trajectories, all six outcomes, both mirror states and non-axis-aligned yaw.
+// Verify all six outcomes and all four rectangular-table symmetries.
 let poses = 0;
 for (const pool of Object.values(rolls.pools)) for (const trajectory of pool) {
-  for (const value of values) for (const mirror of [false, true]) {
+  for (const value of values) for (const mirror of [false, true]) for (const angle of [0, Math.PI]) {
     const dice = Array.from({ length: trajectory.n }, (_, index) => ({ id: String(index), value }));
-    const playback = new RollPlayback(trajectory, dice, mirror, 0.73, 0.94, () => 0.4);
+    const playback = new RollPlayback(trajectory, dice, mirror, angle, 0.94, () => 0.4);
     let first;
     assert.equal(playback.sample(-20, (id, p) => { if (id === '0') first = p.toArray(); }), false);
     playback.sample(0, (id, p) => { if (id === '0') assert.deepEqual(p.toArray(), first); });
@@ -345,8 +345,9 @@ for (const [width, height] of [[1110, 844], [1366, 844], [390, 788], [844, 334],
         if (player !== active) assert.ok(Math.abs(p.y) > 1, 'Opposite throwing area is outside the view');
       }
     }
-    for (const pool of Object.values(rolls.pools)) for (const trajectory of pool) {
-      const playback = new RollPlayback(trajectory, Array.from({ length: trajectory.n }, (_, i) => ({ id: String(i), value: 1 })), true, 0.73, 1, () => 0.4);
+    for (const pool of Object.values(rolls.pools)) for (const trajectory of pool)
+      for (const mirror of [false, true]) for (const angle of [0, Math.PI]) {
+      const playback = new RollPlayback(trajectory, Array.from({ length: trajectory.n }, (_, i) => ({ id: String(i), value: 1 })), mirror, angle, 1, () => 0.4);
       for (let frame = 0; frame < trajectory.frames.length; frame++) playback.sample(frame / trajectory.sampleRate * 1000, (_, position, rotation) => {
         const p = position.clone().add(layout.origins[active]).project(camera);
         assert.ok(Math.abs(p.y) < 0.97, `Airborne dice remain visible: ${width} ${active}`);
@@ -354,6 +355,15 @@ for (const [width, height] of [[1110, 844], [1366, 844], [390, 788], [844, 334],
         for (const x of [-0.5, 0.5]) for (const y of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
           const corner = new THREE.Vector3(x, y, z).applyQuaternion(rotation).add(position).add(layout.origins[active]).project(camera);
           assert.ok(Math.abs(corner.x) < 1 && Math.abs(corner.y) < 1, 'Whole dice stay visible during playback');
+        }
+        if (frame === trajectory.frames.length - 1) {
+          // At most 6-n dice can already be stored when this pool is played.
+          for (let row = 0; row < 6 - trajectory.n; row++) for (let count = 1; count <= 6 - trajectory.n - row; count++)
+            for (let column = 0; column < count; column++) {
+              const slot = layout.slot(active, row, column, count);
+              assert.ok(Math.hypot(position.x - slot.x, position.z - slot.z) > 1.4,
+                `Stored dice stay clear of the throw: ${width} ${active} ${trajectory.seed}`);
+            }
         }
       });
     }

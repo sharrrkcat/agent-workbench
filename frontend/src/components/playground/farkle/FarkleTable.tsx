@@ -8,7 +8,7 @@ import { DiceScene, type HitBounds } from './scene';
 import { nextHoveredDie, type Direction } from './input';
 import { FarkleHud } from './FarkleHud';
 import { TurnNotice } from './TurnNotice';
-import type { Trajectory } from './playback';
+import { pickTrajectory, type Trajectory } from './playback';
 import { canHumanPlay, canPlay, type GameAction, type GameState, type TurnInput } from './state';
 import { rollValues } from './dice';
 import { DEVIL_HEAD_PATH } from './materials';
@@ -101,7 +101,7 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
     let layout = tableLayout(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight));
     let commandId = -1;
     const moves = new Map<string, Vector3>();
-    const recent: string[] = [];
+    const recent = new Map<number, number[]>();
     const target = layout.views.B.clone();
     let viewProgress = 1;
     let live = true;
@@ -142,7 +142,7 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
             hoverSample: next.player === 'B' && hoverEnabled.current ? Math.random() : null });
         };
         if (command.kind === 'reset') {
-          moves.clear(); bounds.current.clear(); recent.length = 0;
+          moves.clear(); bounds.current.clear(); recent.clear();
           scene.reset(next.dice.map((die) => ({ id: die.id, type: die.type,
             origin: layout.origins[die.player], position: initialPosition(die.index) })));
           frameCamera();
@@ -165,12 +165,7 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
           turnTimer = setTimeout(complete, OPPONENT_TIMING.handoff);
         } else {
           const pool: Trajectory[] = (rolls.pools as Record<number, Trajectory[]>)[command.dice.length];
-          const unused = pool.filter((item) => !recent.includes(`${item.n}:${item.seed}`));
-          const candidates = unused.length ? unused : pool;
-          const trajectory = candidates[Math.floor(Math.random() * candidates.length)];
-          recent.push(`${trajectory.n}:${trajectory.seed}`);
-          if (recent.length > 8) recent.shift();
-          scene.roll(trajectory, command.dice, complete);
+          scene.roll(pickTrajectory(pool, recent), command.dice, complete);
         }
       }
       scene.setIndicators(canPlay(next) ? next.dice.filter((die) => die.player === next.player && die.status === 'selected').map((die) => die.id) : [],

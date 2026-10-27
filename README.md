@@ -302,8 +302,9 @@ Backend tests use temporary roots, mock providers and loopback HTTP/SSE/WS acros
 
 Cross-client TTS acceptance: `uv run python -m scripts.serve_tts_acceptance --output build/tts-client-acceptance` serves isolated in-memory Cogita on loopback port 18765 with a mock supplier, aliases accept-catalog/accept-custom and test key isolated-voxia-acceptance-key. Add `--saved-profile ID` only for explicit live acceptance: it reads the saved supplier configuration in read-only mode and forwards billable speech requests without changing production settings. The caller owns its test library and audio files; the server records sanitized requests and checks that the saved supplier stayed unchanged.
 
-After a build, `npm run test:browser` checks bilingual desktop/touch home and settings layouts, grouped navigation/history, retained drafts, overlays, chat, images, controls, fonts and domain workflows.
-Use `-- app-layout.spec.ts settings-layout.spec.ts` for focused layout checks. Install Chromium with `npx playwright install chromium`; the isolated server uses port 18767 (COGITA_BROWSER_PORT overrides it), with artifacts in frontend/test-results.
+After a build, `npm run test:browser` checks bilingual desktop/touch layouts and workflows; add `-- app-layout.spec.ts settings-layout.spec.ts` for focused layout checks. Install Chromium with `npx playwright install chromium`; the isolated server uses port 18767 (COGITA_BROWSER_PORT overrides it), with artifacts in frontend/test-results.
+
+Farkle trajectories: run `npm run bake:farkle` in frontend to regenerate the checked-in library from its seeded Rapier recipe, then `node scripts/test-farkle-rolls.mjs` and `node scripts/test-farkle.mjs` to check physics, playback and layout. Rapier is an offline development dependency; the browser only interpolates the baked poses.
 
 Local-runtime smokes reuse installation and fail if repair is needed. Scripts offering --install-only install/confirm a release without inference; other scripts never install.
 For offline runtime preparation, stop Cogita and wait for its workers to exit. Apply the pinned Transformers patch and one incremental bytecode pass using the installed interpreter, without installation or Repair:
