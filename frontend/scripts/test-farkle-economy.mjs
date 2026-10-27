@@ -4,13 +4,50 @@ import { createModuleLoader } from './module-loader.mjs';
 const load = createModuleLoader();
 const { DICE_TYPES, SPECIAL_TYPES, difficultyFor, rollValues } = (await load('../src/components/playground/farkle/dice.ts')).exports;
 const { drawOpponentDice } = (await load('../src/components/playground/farkle/opponentDice.ts')).exports;
-const { LEVELS, newInventory, emptySpecial, inventoryPool, readInventory, saveInventory, awardDice, INVENTORY_KEY } =
+const { LEVELS, newInventory, emptySpecial, inventoryPool, readInventory, saveInventory, awardDice, INVENTORY_KEY,
+  INVENTORY_ACTIONS, canModifyInventory, modifyInventory } =
   (await load('../src/components/playground/farkle/economy.ts')).exports;
 const { evaluateDice } = (await load('../src/components/playground/farkle/scoring.ts')).exports;
 const { gameReducer, initialGame } = (await load('../src/components/playground/farkle/state.ts')).exports;
 const { rewardGroups } = (await load('../src/components/playground/farkle/rewards.ts')).exports;
 const { defaultLoadout, loadoutSize, loadoutDice, readLoadout, saveLoadout, LOADOUT_KEY } =
   (await load('../src/components/playground/farkle/loadout.ts')).exports;
+const { clearFarkleStorage } = (await load('../src/components/playground/farkle/storage.ts')).exports;
+
+assert.deepEqual(LEVELS.map(({ id, target, special, merchant, firstWin }) => [id, target, special, merchant, firstWin]), [
+  ['beggars', 1500, 2, 1, 1], ['wagoners', 2000, 2, 1, 1], ['masters', 3000, 3, 2, 2], ['courtiers', 4000, 3, 2, 2],
+  ['burgomasters', 5000, 3, 3, 3], ['stewards', 6000, 3, 3, 3], ['governors', 7000, 4, 3, 3],
+  ['chancellors', 8000, 4, 3, 3], ['burgraves', 9000, 4, 4, 4], ['electors', 10000, 4, 4, 4],
+]);
+const maintained = { special: { ...emptySpecial(), even: 2 }, merchant: 2000, firstWins: ['beggars', 'electors'] };
+const filled = modifyInventory(maintained, 'fillDice');
+assert.deepEqual(Object.values(filled.special), Array(20).fill(6));
+assert.equal(filled.merchant, 999, 'Fill overwrites balances above 999');
+assert.deepEqual(modifyInventory(maintained, 'clearDice'), { ...newInventory(), firstWins: maintained.firstWins });
+assert.deepEqual(modifyInventory(maintained, 'addMerchantDice'), { ...maintained, merchant: 2999 });
+assert.equal(modifyInventory(modifyInventory(maintained, 'addMerchantDice'), 'addMerchantDice').merchant, 3998);
+assert.deepEqual(modifyInventory(maintained, 'clearMerchantDice'), { ...maintained, merchant: 0 });
+for (const action of INVENTORY_ACTIONS) {
+  const next = modifyInventory(maintained, action);
+  assert.deepEqual(next.firstWins, maintained.firstWins);
+  assert.equal(inventoryPool(next).normal, 6);
+}
+assert.equal(maintained.merchant, 2000, 'Maintenance does not mutate its source');
+assert.equal(maintained.special.even, 2);
+assert.equal(canModifyInventory({ ...maintained, merchant: Number.MAX_SAFE_INTEGER - 999 }, 'addMerchantDice'), true);
+assert.equal(canModifyInventory({ ...maintained, merchant: Number.MAX_SAFE_INTEGER - 998 }, 'addMerchantDice'), false);
+const cache = new Map(['cogita.farkle.inventory', 'cogita.farkle.loadout', 'cogita.farkle.settings', 'cogita.farkle.customGame',
+  'cogita.locale', 'unrelated'].map((key) => [key, '{broken']));
+let failRemoval = true;
+const cacheStorage = { removeItem(key) {
+  if (key === 'cogita.farkle.settings' && failRemoval) throw new Error('denied');
+  cache.delete(key);
+} };
+assert.throws(() => clearFarkleStorage(cacheStorage), /denied/);
+failRemoval = false;
+clearFarkleStorage(cacheStorage);
+clearFarkleStorage(cacheStorage);
+assert.deepEqual([...cache.keys()], ['cogita.locale', 'unrelated'], 'Reset retries remove only the four owned keys');
 
 const expectedWeights = {
   lucky: [6, 1, 2, 3, 4, 6], unlucky: [1, 3, 2, 2, 2, 1], favourable: [6, 0, 1, 1, 6, 4],

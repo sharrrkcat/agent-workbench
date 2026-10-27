@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { awardDice, readInventory, saveInventory, type Inventory, type Reward, type LevelId } from './economy';
+import { awardDice, canModifyInventory, modifyInventory, newInventory, readInventory, saveInventory,
+  type Inventory, type InventoryAction, type Reward, type LevelId } from './economy';
 import type { PlayerId } from './state';
 
 type Collection = { inventory: Inventory | null; error: 'load' | 'save' | null };
@@ -12,9 +13,12 @@ export function useInventory(winner: PlayerId | null, level: LevelId | null) {
   const [collection, setCollection] = useState(loadCollection);
   const [reward, setReward] = useState<Reward | null>(null);
   const settlement = useRef<ReturnType<typeof awardDice> | null>(null);
+  const pending = useRef<Inventory | null>(null);
   const persist = useCallback((inventory: Inventory) => {
+    pending.current = inventory;
     try {
       saveInventory(window.localStorage, inventory);
+      pending.current = null;
       setCollection({ inventory, error: null });
     } catch { setCollection({ inventory, error: 'save' }); }
   }, []);
@@ -30,8 +34,18 @@ export function useInventory(winner: PlayerId | null, level: LevelId | null) {
   }, [winner, level, collection.inventory, persist]);
 
   function retry() {
-    if (collection.error === 'save' && settlement.current) persist(settlement.current.inventory);
+    if (pending.current) persist(pending.current);
     else setCollection(loadCollection());
   }
-  return { ...collection, reward, retry };
+  function modify(action: InventoryAction) {
+    if (!collection.inventory || collection.error || !canModifyInventory(collection.inventory, action)) return;
+    persist(modifyInventory(collection.inventory, action));
+  }
+  function reset() {
+    pending.current = null;
+    settlement.current = null;
+    setReward(null);
+    setCollection({ inventory: newInventory(), error: null });
+  }
+  return { ...collection, reward, retry, modify, reset };
 }

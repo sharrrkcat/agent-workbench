@@ -19,5 +19,6 @@ export function useFarkleSettings() {
     if (settings.pending) setMode(settings.pending);
     else setSettings(loadSettings());
   }
-  return { mode: settings.mode, error: settings.error, setMode, retry };
+  function reset() { setSettings({ mode: DEFAULT_OPPONENT_MODE, error: null, pending: null }); }
+  return { mode: settings.mode, error: settings.error, setMode, retry, reset };
 }

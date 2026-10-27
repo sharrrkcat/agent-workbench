@@ -5,6 +5,12 @@ export const LEVELS = [
   { id: 'wagoners', target: 2000, special: 2, merchant: 1, firstWin: 1 },
   { id: 'masters', target: 3000, special: 3, merchant: 2, firstWin: 2 },
   { id: 'courtiers', target: 4000, special: 3, merchant: 2, firstWin: 2 },
+  { id: 'burgomasters', target: 5000, special: 3, merchant: 3, firstWin: 3 },
+  { id: 'stewards', target: 6000, special: 3, merchant: 3, firstWin: 3 },
+  { id: 'governors', target: 7000, special: 4, merchant: 3, firstWin: 3 },
+  { id: 'chancellors', target: 8000, special: 4, merchant: 3, firstWin: 3 },
+  { id: 'burgraves', target: 9000, special: 4, merchant: 4, firstWin: 4 },
+  { id: 'electors', target: 10000, special: 4, merchant: 4, firstWin: 4 },
 ] as const;
 export type LevelId = typeof LEVELS[number]['id'];
 export type Inventory = {
@@ -22,6 +28,21 @@ export const INVENTORY_KEY = 'cogita.farkle.inventory';
 export const emptySpecial = (): Record<SpecialType, number> =>
   Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, 0])) as Record<SpecialType, number>;
 export const newInventory = (): Inventory => ({ special: emptySpecial(), merchant: 0, firstWins: [] });
+
+export const INVENTORY_ACTIONS = ['fillDice', 'clearDice', 'addMerchantDice', 'clearMerchantDice'] as const;
+export type InventoryAction = typeof INVENTORY_ACTIONS[number];
+export const canModifyInventory = (inventory: Inventory, action: InventoryAction) =>
+  action !== 'addMerchantDice' || inventory.merchant <= Number.MAX_SAFE_INTEGER - 999;
+
+export function modifyInventory(inventory: Inventory, action: InventoryAction): Inventory {
+  switch (action) {
+    case 'fillDice': return { ...inventory, merchant: 999,
+      special: Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, SPECIAL_LIMIT])) as Inventory['special'] };
+    case 'clearDice': return { ...inventory, special: emptySpecial(), merchant: 0 };
+    case 'addMerchantDice': return { ...inventory, merchant: inventory.merchant + 999 };
+    case 'clearMerchantDice': return { ...inventory, merchant: 0 };
+  }
+}
 
 export function inventoryPool(inventory: Inventory): DiceCounts {
   return { ...inventory.special, normal: NORMAL_COUNT, merchant: inventory.merchant };
