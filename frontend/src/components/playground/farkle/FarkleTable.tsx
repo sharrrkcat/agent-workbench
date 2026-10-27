@@ -31,6 +31,7 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
   const apply = useRef<(state: GameState) => void>(() => {});
   const [failed, setFailed] = useState(false);
   const [canHover, setCanHover] = useState(() => window.matchMedia(hoverQuery).matches);
+  const [touchHintId, setTouchHintId] = useState<string | null>(null);
   const hoverEnabled = useRef(canHover);
   hoverEnabled.current = canHover;
   const inputBlocked = useRef(blocked);
@@ -38,7 +39,12 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
   const disabled = !canHumanPlay(state) || blocked;
   const hovered = canPlay(state) && !blocked && (state.player === 'A' || canHover)
     ? state.dice.find((die) => die.id === state.hoverId) : undefined;
-  const FaceIcon = faceIcons[(hovered?.value ?? 1) - 1];
+  const touched = !disabled && !canHover
+    ? state.dice.find((die) => die.id === touchHintId && die.status === 'selected') : undefined;
+  const hinted = hovered ?? touched;
+  const hintId = useRef<string | undefined>(undefined);
+  hintId.current = hinted?.id;
+  const FaceIcon = faceIcons[(hinted?.value ?? 1) - 1];
   const play = useCallback((input: TurnInput) => dispatch({ ...input, actor: 'human' }), [dispatch]);
 
   useEffect(() => {
@@ -48,6 +54,7 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
     return () => query.removeEventListener('change', update);
   }, []);
   useEffect(() => { if (!canHover) play({ type: 'hover', id: null }); }, [canHover, play]);
+  useEffect(() => { setTouchHintId(null); }, [state.revision, canHover]);
 
   useEffect(() => {
     function keydown(event: KeyboardEvent) {
@@ -66,6 +73,7 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
       } else if (key === 'e' || key === 'f' || key === 'q') {
         event.preventDefault();
         if (event.repeat) return;
+        setCanHover(true);
         if (key === 'e' && state.hoverId && canHover) play({ type: 'select', id: state.hoverId });
         if (key === 'f') play({ type: 'store' });
         if (key === 'q') play({ type: 'pass' });
@@ -88,7 +96,7 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
           left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`,
           visibility: left >= host.clientWidth || left + width <= 0 || top >= host.clientHeight || top + height <= 0 ? 'hidden' : 'visible',
         });
-        if (id === current?.hoverId && faceIcon.current) Object.assign(faceIcon.current.style, {
+        if (id === hintId.current && faceIcon.current) Object.assign(faceIcon.current.style, {
           left: `${position.iconX}px`, top: `${position.iconY}px`,
         });
       });
@@ -185,11 +193,14 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
     };
   }, [dispatch, onReady]);
 
-  useLayoutEffect(() => { apply.current(state); }, [state, canHover, blocked]);
+  useLayoutEffect(() => { apply.current(state); }, [state, canHover, blocked, hinted?.id]);
   return <div ref={container} className="farkle-table relative min-h-0 flex-1 overflow-hidden" aria-label={t('farkle.table')}
     data-player={state.player} data-view={state.player} data-busy={state.busy}
     data-phase={state.winner ? 'finished' : state.command?.kind ?? 'idle'} onPointerDown={(event) => {
       if (event.pointerType === 'touch') { setCanHover(false); play({ type: 'hover', id: null }); }
+      else if (!disabled && event.pointerType === 'mouse') setCanHover(true);
+    }} onPointerMove={(event) => {
+      if (!disabled && event.pointerType === 'mouse') setCanHover(true);
     }}>
     {failed ? <div className="absolute inset-0 flex items-center justify-center p-6" role="alert">{t('farkle.renderError')}</div> : <>
       {state.dice.filter((die) => die.player === state.player).map((die) => <Button key={die.id}
@@ -204,16 +215,18 @@ export function FarkleTable({ state, dispatch, onReady, blocked, onNewGame }: {
         data-batch={state.batches[die.player].findIndex((batch) => batch.includes(die.id))}
         aria-pressed={die.status === 'selected'}
         onPointerMove={(event) => {
-          if (!disabled && event.pointerType === 'mouse') { setCanHover(true); play({ type: 'hover', id: die.id }); }
+          if (!disabled && event.pointerType === 'mouse') play({ type: 'hover', id: die.id });
         }}
         onFocus={() => { if (canHover) play({ type: 'hover', id: die.id }); }}
         onClick={() => {
           if (canHover) play({ type: 'hover', id: die.id });
+          else setTouchHintId(die.status === 'selected' ? null : die.id);
           play({ type: 'select', id: die.id });
         }} />)}
-      {hovered ? <div ref={faceIcon} className="farkle-face-icon" aria-hidden="true" data-face-value={isWild(hovered) ? 'wild' : hovered.value}>
-        {isWild(hovered) ? <svg viewBox="0 0 100 100" className="farkle-head-icon"><path d={DEVIL_HEAD_PATH} fillRule="evenodd" /></svg> : <FaceIcon />}
-        {hovered.type !== 'normal' ? <span className="farkle-die-name">{t(`farkle.dice.${hovered.type}`)}</span> : null}
+      {hinted ? <div ref={faceIcon} className="farkle-face-icon" aria-hidden="true"
+        data-hint-die-id={hinted.id} data-hint-source={touched ? 'touch' : 'hover'} data-face-value={isWild(hinted) ? 'wild' : hinted.value}>
+        {isWild(hinted) ? <svg viewBox="0 0 100 100" className="farkle-head-icon"><path d={DEVIL_HEAD_PATH} fillRule="evenodd" /></svg> : <FaceIcon />}
+        {touched || hinted.type !== 'normal' ? <span className="farkle-die-name">{t(`farkle.dice.${hinted.type}`)}</span> : null}
       </div> : null}
       {state.command?.kind === 'bust' ? <div className="farkle-bust" role="status">
         <div className="farkle-score-heading">{t('farkle.bust')}</div>

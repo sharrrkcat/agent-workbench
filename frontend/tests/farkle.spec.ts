@@ -1331,10 +1331,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         const prior = (await hovered.boundingBox())!;
         await page.keyboard.press(key);
         const next = (await hovered.boundingBox())!;
-        if (key === 'w') expect(next.y).toBeLessThanOrEqual(prior.y + 3);
-        if (key === 's') expect(next.y).toBeGreaterThanOrEqual(prior.y - 3);
-        if (key === 'a') expect(next.x).toBeLessThanOrEqual(prior.x + 3);
-        if (key === 'd') expect(next.x).toBeGreaterThanOrEqual(prior.x - 3);
+        const dx = next.x + next.width / 2 - prior.x - prior.width / 2;
+        const dy = next.y + next.height / 2 - prior.y - prior.height / 2;
+        const forward = key === 'a' ? -dx : key === 'd' ? dx : key === 'w' ? -dy : dy;
+        expect(forward).toBeGreaterThanOrEqual(-3);
+        expect(Math.abs(key === 'a' || key === 'd' ? dy : dx)).toBeLessThanOrEqual(forward + 3);
       }
       await page.keyboard.press('e');
       await expect(page.locator('[data-state="selected"]')).toHaveCount(1);
@@ -1351,6 +1352,92 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await settled(page);
       await expect(table(page)).toHaveAttribute('data-player', 'A');
       await expect(total(page, 'B')).toHaveText('50');
+    });
+    test('touch hints follow the last selection without falling back', async ({ page }, testInfo) => {
+      test.skip(!touch, 'Desktop retains independent hover hints.');
+      await start(page, 'masters');
+      const hint = page.locator('.farkle-face-icon[data-hint-source="touch"]');
+      const first = die(page, 'B0'), second = die(page, 'B1');
+      await expect(hint).toHaveCount(0);
+      await first.tap();
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B0');
+      await expect(hint).toHaveAttribute('data-face-value', '5');
+      await expect(hint.locator('.farkle-die-name')).toHaveText(words.dice.normal);
+      await expect(page.locator('[data-hovered="true"]')).toHaveCount(0);
+      await second.tap();
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B1');
+      await expect(first).toHaveAttribute('aria-pressed', 'true');
+      await second.tap();
+      await expect(hint).toHaveCount(0);
+      await expect(first).toHaveAttribute('aria-pressed', 'true');
+      await second.tap();
+      await first.tap();
+      await expect(hint).toHaveCount(0);
+      await expect(second).toHaveAttribute('aria-pressed', 'true');
+      await first.tap();
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B0');
+      await openSidebar(page);
+      await expect(hint).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B0');
+      await menu(page, words.myDice);
+      await expect(hint).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B0');
+      for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+        await page.setViewportSize(viewport);
+        await expect.poll(async () => {
+          const dieBox = (await first.boundingBox())!, hintBox = (await hint.boundingBox())!;
+          return hintBox.y - dieBox.y - dieBox.height;
+        }).toBeGreaterThan(0);
+        const tableBox = (await table(page).boundingBox())!, hintBox = (await hint.boundingBox())!;
+        expect(hintBox.x).toBeGreaterThanOrEqual(tableBox.x);
+        expect(hintBox.x + hintBox.width).toBeLessThanOrEqual(tableBox.x + tableBox.width);
+        expect(hintBox.y + hintBox.height).toBeLessThanOrEqual(tableBox.y + tableBox.height);
+        expect(await hint.evaluate((node) => getComputedStyle(node).pointerEvents)).toBe('none');
+        await page.screenshot({ path: testInfo.outputPath(`touch-hint-${viewport.width}.png`) });
+      }
+      await page.keyboard.press('d');
+      await expect(hint).toHaveCount(0);
+      await expect(page.locator('[data-hovered="true"]')).toHaveCount(1);
+      await first.tap();
+      await expect(hint).toHaveCount(0);
+      await first.tap();
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B0');
+      const tableBox = (await table(page).boundingBox())!;
+      await page.mouse.move(tableBox.x + 4, tableBox.y + 20);
+      await expect(hint).toHaveCount(0);
+      await expect(page.locator('[data-hovered="true"]')).toHaveCount(0);
+      await second.hover();
+      await expect(hint).toHaveCount(0);
+      await expect(second).toHaveAttribute('data-hovered', 'true');
+      await first.tap();
+      await expect(hint).toHaveCount(0);
+      await first.tap();
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B0');
+      await page.getByRole('button', { name: words.scoreContinue, exact: true }).tap();
+      await expect(hint).toHaveCount(0);
+      await settled(page);
+      await expect(hint).toHaveCount(0);
+      await die(page, 'B2').tap();
+      await expect(hint).toHaveAttribute('data-hint-die-id', 'B2');
+      await page.getByRole('button', { name: words.pass, exact: true }).tap();
+      await expect(hint).toHaveCount(0);
+      await expect(table(page)).toHaveAttribute('data-player', 'A');
+      await expect(page.locator('[data-hint-source="hover"]')).toBeVisible();
+      await expect(hint).toHaveCount(0);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await start(page, 'masters');
+      await expect(hint).toHaveCount(0);
+      await die(page, 'B0').tap();
+      await expect(hint).toHaveCount(1);
+      await start(page, 'masters');
+      await expect(hint).toHaveCount(0);
+      await die(page, 'B0').tap();
+      await menu(page, words.exitGame);
+      await expect(hint).toHaveCount(0);
+      await start(page, 'masters');
+      await expect(hint).toHaveCount(0);
     });
     test('live scores, automatic opponent banking and passes with or without a selection', async ({ page }, testInfo) => {
       await start(page);
@@ -1398,6 +1485,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.locator('.farkle-face-icon')).toHaveAttribute('data-face-value', 'wild');
       }
       await press(head);
+      await expect(page.locator('.farkle-face-icon')).toHaveAttribute('data-face-value', 'wild');
+      await expect(page.locator('.farkle-die-name')).toHaveText(words.dice.devil);
       const storeButton = page.getByRole('button', { name: words.scoreContinue, exact: true });
       const passButton = page.getByRole('button', { name: words.pass, exact: true });
       await expect(score(page, 'B', 'selected')).toHaveText('0');
@@ -1690,6 +1779,10 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           await die(page, `B${index}`).hover();
           if (type === 'normal') await expect(page.locator('.farkle-die-name')).toHaveCount(0);
           else await expect(page.locator('.farkle-die-name')).toHaveText(words.dice[type]);
+        } else {
+          await die(page, `B${index}`).tap();
+          await expect(page.locator('.farkle-face-icon')).toHaveAttribute('data-hint-die-id', `B${index}`);
+          await expect(page.locator('.farkle-die-name')).toHaveText(words.dice[type]);
         }
       }
       await page.screenshot({ path: testInfo.outputPath('six-types.png') });

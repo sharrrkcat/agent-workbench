@@ -282,6 +282,33 @@ for (const [direction, expected] of [['w', 'up'], ['a', 'left'], ['s', 'down'], 
   assert.equal(nextHoveredDie(points, 'center', direction), expected);
 assert.equal(nextHoveredDie(points, 'left', 'a'), 'left', 'No directional candidate retains hover');
 assert.equal(nextHoveredDie([], null, 'w'), null);
+assert.equal(nextHoveredDie(points, null, 'd'), 'center');
+
+const screenshotPoints = [
+  { id: 'bottom-right', index: 0, x: 880, y: 545 },
+  { id: 'left', index: 1, x: 446, y: 533 },
+  { id: 'upper', index: 2, x: 827, y: 237 },
+  { id: 'upper-left', index: 3, x: 473, y: 256 },
+];
+for (const scale of [0.4, 1, 2]) {
+  const scaled = screenshotPoints.map((point) => ({ ...point, x: point.x * scale + 30, y: point.y * scale + 20 }));
+  assert.equal(nextHoveredDie(scaled, 'bottom-right', 'a'), 'left', 'Left beats a closer, mostly upward die');
+  assert.equal(nextHoveredDie(scaled.filter((point) => point.id === 'bottom-right' || point.id === 'upper'),
+    'bottom-right', 'a'), 'bottom-right', 'No fallback outside the directional cone');
+}
+for (const direction of ['w', 'a', 's', 'd']) {
+  const orient = (id, index, forward, across) => ({ id, index,
+    x: 100 + (direction === 'a' ? -forward : direction === 'd' ? forward : across),
+    y: 100 + (direction === 'w' ? -forward : direction === 's' ? forward : across) });
+  const origin = orient('origin', 0, 0, 0);
+  const edge = orient('edge', 1, 60, 60), oppositeEdge = orient('opposite-edge', 2, 60, -60);
+  const outside = orient('outside', 3, 30, 31), behind = orient('behind', 4, -30, 0);
+  assert.equal(nextHoveredDie([origin, outside, behind], 'origin', direction), 'origin');
+  for (const boundary of [edge, oppositeEdge])
+    assert.equal(nextHoveredDie([origin, outside, boundary], 'origin', direction), boundary.id, '45-degree boundary is eligible');
+  assert.equal(nextHoveredDie([origin, oppositeEdge, edge], 'origin', direction), 'edge', 'Fixed index resolves equal distances');
+  assert.equal(nextHoveredDie([origin, edge, orient('near', 5, 45, 0)], 'origin', direction), 'near');
+}
 
 // Verify all six outcomes and all four rectangular-table symmetries.
 let poses = 0;

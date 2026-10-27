@@ -5,10 +5,10 @@ export function nextHoveredDie(points: DiePoint[], currentId: string | null, dir
   const current = points.find((point) => point.id === currentId);
   if (!current) return points[0]?.id ?? null;
   const candidates = points.filter((point) => {
-    if (direction === 'w') return point.y < current.y;
-    if (direction === 's') return point.y > current.y;
-    if (direction === 'a') return point.x < current.x;
-    return point.x > current.x;
+    const dx = point.x - current.x, dy = point.y - current.y;
+    const horizontal = direction === 'a' || direction === 'd';
+    const forward = direction === 'a' ? -dx : direction === 'd' ? dx : direction === 'w' ? -dy : dy;
+    return forward > 0 && Math.abs(horizontal ? dy : dx) <= forward;
   });
   const distance = (point: DiePoint) => (point.x - current.x) ** 2 + (point.y - current.y) ** 2;
   candidates.sort((a, b) => distance(a) - distance(b) || a.index - b.index);

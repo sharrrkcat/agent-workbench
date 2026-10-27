@@ -65,17 +65,17 @@ die once; invalid selections show zero and block F/Q. No three-pair bonus or bad
 The score display, Bust and turn notices, and result summary use local serif typography instead of the shared body font. The bottom-left score display
 is transparent and borderless, with three columns, inner separators, Player/Goal/Opponent headings and Round/Selected rows. Player means B and
 Opponent A; totals are banked and Selected updates with selection. Bottom-right Hold die (E), Score and continue (F) and Pass (Q) use content-width
-buttons aligned on their right edges, with separate shadcn Kbd hints. Coarse pointers hide Hold and hints. The sidebar has no separate Roll action.
+buttons aligned on their right edges, with separate shadcn Kbd hints. Coarse pointers hide Hold and keyboard hints. The sidebar has no separate Roll action.
 
 Dice retain face values and idle/selected/scored state with independent hover. Human input operates B only; reducer inputs identify human/AI ownership
-and reject AI operations from older rolls. Settled B rolls randomly hover one non-scored die for fine pointers. WASD picks the nearest eligible die in
-the requested screen direction (fixed index breaks ties; if none exists, hover stays unchanged). Mouse movement transfers B's hover; E, Hold or direct
-activation toggles selection in place.
+and reject AI operations from older rolls. Settled B rolls randomly hover one non-scored die for fine pointers. WASD picks the nearest eligible die
+within 45 degrees of the requested screen direction, including the boundary, using projected centers. Fixed index breaks distance ties; an empty
+cone retains hover without wrapping or widening the search. Mouse movement transfers B's hover; E, Hold or direct activation toggles selection in place.
 
 Hover draws a gold ring and face icon (the engraved head for wilds), plus localized names for non-Normal types. Selection adds a blue lower half-ring
-for B or deep orange for A. Both use thick bands with black outlines, including half-ring ends. Touch toggles B's selection without hover or icon. A's
-automatic hover/selection stays visible on desktop and touch, but human dice, HUD and hotkeys cannot operate A or alter its hover. Scored dice cannot
-be retrieved. Animations, dialogs, mobile drawers and text entry block game input; E/F/Q ignore key repeat.
+for B or deep orange for A. Both use thick bands with black outlines, including half-ring ends. Touch selects without hover, showing only the last selected die's face icon and localized name, including Normal, below its half-ring.
+Deselecting any die clears the hint without falling back; other selection rings remain. Roll/score/turn/reset/exit and mouse or game-keyboard input clear it. Dialogs/drawers hide it and restore only its still-selected, same-roll target; resize reprojects it.
+A's automatic hover/selection stays visible on desktop and touch, but human dice, HUD and hotkeys cannot operate A or alter its hover. Scored dice cannot be retrieved. Animations, dialogs, mobile drawers and text entry block game input; E/F/Q ignore key repeat.
 
 ### Banking and handoff
 

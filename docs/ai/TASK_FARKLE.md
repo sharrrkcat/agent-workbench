@@ -54,7 +54,7 @@ checked-in artifacts; regenerate trajectories only when their recipe/artifact ch
 Focused scripts under [frontend/scripts/](../../frontend/scripts/):
 
 - test-farkle.mjs: scoring partitions, wildcard limits, turn/batch transitions,
-  input ownership, stale AI rejection, reset cancellation, navigation, trajectories,
+  input ownership, stale AI rejection, reset cancellation, directional cones/ties/boundaries, trajectories,
   camera projection/storage clearance under all four rectangular symmetries,
   closed circular-face geometry, deterministic textures and rendering cleanup.
 - test-farkle-rolls.mjs: artifact validity, seeded reproduction, interpolated
@@ -77,7 +77,7 @@ and desktop/touch layouts:
 - [farkle.spec.ts](../../frontend/tests/farkle.spec.ts): ordinary levels and custom
   flows; independent ordinary/custom player preferences and unrestricted custom loadouts; target validation,
   contextual errors, mode descriptions, selected-row highlights and short-screen scrolling.
-  Gameplay covers selection/wildcards, batches, rerolls, passes, Bust, automatic camera/AI
+  Gameplay covers selection/wildcards, touch hints without deselection fallback, directional keyboard navigation, batches, rerolls, passes, Bust, automatic camera/AI
   ownership, visible thinking/selection timing, return-to-B pause, pause/retry/cancellation,
   victory, replay, custom reward exclusion, table entry and turn notices.
   Storage covers inventory/rewards/loadouts, quantity limits, drafts, read/save retries,
