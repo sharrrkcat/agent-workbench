@@ -17,7 +17,7 @@ const bustFaces = [2, 2, 3, 3, 4, 6];
 const finish = (state, faces = fives, hoverSample = 0) => gameReducer(state, {
   type: 'complete', id: state.command.id, hoverSample, values: faces,
 });
-const start = (target = 1500, faces = values) => finish(finish(gameReducer(initialGame, { type: 'start', setup: { kind: 'standard', level: ({ 1500: 'beggars', 2000: 'wagoners', 3000: 'masters', 4000: 'courtiers' })[target] }, loadout, values: faces })));
+const start = (target = 1500, faces = values) => finish(finish(gameReducer(initialGame, { type: 'start', startedAt: 1793100000123, opponentDiceMode: 'dynamic', setup: { kind: 'standard', level: ({ 1500: 'beggars', 2000: 'wagoners', 3000: 'masters', 4000: 'courtiers' })[target] }, loadout, values: faces })));
 const input = (state, action) => gameReducer(state, { ...action, actor: state.player === 'A' ? 'ai' : 'human', revision: state.revision });
 const select = (state, ...ids) => ids.reduce((next, id) => input(next, { type: 'select', id }), state);
 const store = (state) => input(state, { type: 'store' });
@@ -61,7 +61,7 @@ assert.equal(isWild({ type: 'devil', value: 2 }), false);
 assert.equal(isWild({ type: 'even', value: 1 }), false);
 
 for (const target of [1500, 2000, 3000, 4000]) {
-  const reset = gameReducer(initialGame, { type: 'start', setup: { kind: 'standard', level: ({ 1500: 'beggars', 2000: 'wagoners', 3000: 'masters', 4000: 'courtiers' })[target] }, loadout, values });
+  const reset = gameReducer(initialGame, { type: 'start', startedAt: 1793100000123, opponentDiceMode: 'dynamic', setup: { kind: 'standard', level: ({ 1500: 'beggars', 2000: 'wagoners', 3000: 'masters', 4000: 'courtiers' })[target] }, loadout, values });
   const roll = finish(reset);
   assert.equal(roll.command.kind, 'roll', 'Starting immediately rolls the active side');
   assert.equal(roll.command.dice.length, 6);
@@ -124,7 +124,7 @@ game = select(game, 'B0');
 assert.equal(game.turnId, start().turnId, 'Selections, storage and rerolls preserve the turn identity');
 const nextTurn = pass(start());
 assert.ok(nextTurn.turnId > game.turnId, 'Handoff changes the turn identity');
-const restarted = gameReducer(game, { type: 'start', setup: { kind: 'standard', level: 'beggars' }, loadout, values });
+const restarted = gameReducer(game, { type: 'start', startedAt: 1793100000123, opponentDiceMode: 'dynamic', setup: { kind: 'standard', level: 'beggars' }, loadout, values });
 assert.ok(restarted.turnId > game.turnId, 'Restarting B creates a fresh turn identity');
 assert.ok(restarted.matchId > game.matchId, 'Restarting replaces the match identity');
 assert.equal(gameReducer(game, { type: 'exit' }).turnId, 0);

@@ -21,7 +21,8 @@ Game modules below are under [frontend/src/components/playground/farkle/](../../
 - economy.ts owns levels, inventory, trading, maintenance actions and reward settlement;
   rewards.ts groups result rewards and useInventory.ts handles persistence/retry.
 - settings.ts and useFarkleSettings.ts own opponent-mode preferences and retries;
-  storage.ts clears the four game-owned browser keys.
+  storage.ts clears the five game-owned browser keys; diceEncoding.ts shares fixed short codes across inventory, loadouts and history. history.ts/useMatchHistory.ts own
+  compact completed-match summaries and save retries; FarkleHistory.tsx renders the paginated history route.
 - opponentDice.ts selects loadouts from the catalog/calibration artifact.
   ai.ts computes turn values; ai.worker.ts owns worker messages; useOpponent.ts
   coordinates worker lifetime, failure/retry and opponentPlayback.ts operation timing.
@@ -65,6 +66,7 @@ Focused scripts under [frontend/scripts/](../../frontend/scripts/):
 - test-farkle-opponent.mjs: frozen calibration validity, named probabilities,
   interval boundaries, original random parity, unrestricted loadouts and local settings.
 - test-farkle-custom.mjs: six-die balancing, replacement order, stock-weighted sampling without replacement, Merchant caps, independent custom storage, full pools and safe integer targets.
+- test-farkle-history.mjs: turn/throw counters, settlement snapshots, compact identities, retention, storage validation and pagination boundaries.
 - test-farkle-ai.mjs: bounded large-target computation against full-goal values,
   extreme Weighted loadouts, exact turn values, conservative difficulty, identity-sensitive
   selections, complete banking, hot dice and pausable operation timing.
@@ -72,6 +74,8 @@ Focused scripts under [frontend/scripts/](../../frontend/scripts/):
 Browser coverage uses production UI with deterministic draws/rolls in both locales
 and desktop/touch layouts:
 
+- [farkle-history.spec.ts](../../frontend/tests/farkle-history.spec.ts): history layout, dice-name cards, pagination/history navigation,
+  paused matches, deferred results, standard/custom summaries, independent reward/history retries and scoped reset.
 - [farkle-hud.spec.ts](../../frontend/tests/farkle-hud.spec.ts): five/six-digit totals
   and rounds, four-digit selections, unbroken row labels, longer wrapped values and HUD sizing.
 - [farkle.spec.ts](../../frontend/tests/farkle.spec.ts): ordinary levels and custom

@@ -14,6 +14,7 @@ for (const script of [
   'test-farkle',
   'test-farkle-rolls',
   'test-farkle-economy',
+  'test-farkle-history',
   'test-farkle-custom',
   'test-farkle-opponent',
   'test-farkle-ai',

@@ -1,5 +1,6 @@
-import { DICE_TYPES, type DiceCounts } from './dice';
-import { defaultLoadout, FULL_DICE_POOL, isLoadout } from './loadout';
+import type { DiceCounts } from './dice';
+import { defaultLoadout, encodeLoadout, decodeLoadout } from './loadout';
+import { isEncodedDice } from './diceEncoding';
 import { OPPONENT_DICE_MODES } from './opponentDice';
 import { LEVELS, type LevelId } from './economy';
 
@@ -33,13 +34,13 @@ export function readCustomGame(storage: Pick<Storage, 'getItem'>): CustomGame {
   try { value = JSON.parse(raw); }
   catch (error) { if (error instanceof SyntaxError) return defaultCustomGame(); throw error; }
   if (!validTarget(value?.target) || !CUSTOM_OPPONENT_MODES.includes(value?.opponentDiceMode)
-    || !isLoadout(value?.opponentLoadout, FULL_DICE_POOL)
-    || !isLoadout(value?.playerLoadout, FULL_DICE_POOL)) return defaultCustomGame();
+    || !isEncodedDice(value?.opponentLoadout)
+    || !isEncodedDice(value?.playerLoadout)) return defaultCustomGame();
   return { target: value.target, opponentDiceMode: value.opponentDiceMode,
-    playerLoadout: Object.fromEntries(DICE_TYPES.map(({ id }) => [id, value.playerLoadout[id]])) as DiceCounts,
-    opponentLoadout: Object.fromEntries(DICE_TYPES.map(({ id }) => [id, value.opponentLoadout[id]])) as DiceCounts };
+    playerLoadout: decodeLoadout(value.playerLoadout), opponentLoadout: decodeLoadout(value.opponentLoadout) };
 }
 
 export function saveCustomGame(storage: Pick<Storage, 'setItem'>, config: CustomGame) {
-  storage.setItem(CUSTOM_GAME_KEY, JSON.stringify(config));
+  storage.setItem(CUSTOM_GAME_KEY, JSON.stringify({ ...config,
+    playerLoadout: encodeLoadout(config.playerLoadout), opponentLoadout: encodeLoadout(config.opponentLoadout) }));
 }

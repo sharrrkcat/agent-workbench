@@ -65,7 +65,7 @@ assert.equal(maintained.merchant, 2000, 'Maintenance does not mutate its source'
 assert.equal(maintained.special.even, 2);
 assert.equal(canModifyInventory({ ...maintained, merchant: Number.MAX_SAFE_INTEGER - 999 }, 'addMerchantDice'), true);
 assert.equal(canModifyInventory({ ...maintained, merchant: Number.MAX_SAFE_INTEGER - 998 }, 'addMerchantDice'), false);
-const cache = new Map(['cogita.farkle.inventory', 'cogita.farkle.loadout', 'cogita.farkle.settings', 'cogita.farkle.customGame',
+const cache = new Map(['cogita.farkle.inventory', 'cogita.farkle.loadout', 'cogita.farkle.settings', 'cogita.farkle.customGame', 'cogita.farkle.history',
   'cogita.locale', 'unrelated'].map((key) => [key, '{broken']));
 let failRemoval = true;
 const cacheStorage = { removeItem(key) {
@@ -76,7 +76,7 @@ assert.throws(() => clearFarkleStorage(cacheStorage), /denied/);
 failRemoval = false;
 clearFarkleStorage(cacheStorage);
 clearFarkleStorage(cacheStorage);
-assert.deepEqual([...cache.keys()], ['cogita.locale', 'unrelated'], 'Reset retries remove only the four owned keys');
+assert.deepEqual([...cache.keys()], ['cogita.locale', 'unrelated'], 'Reset retries remove only the five owned keys');
 
 const expectedWeights = {
   lucky: [6, 1, 2, 3, 4, 6], unlucky: [1, 3, 2, 2, 2, 1], favourable: [6, 0, 1, 1, 6, 4],
@@ -217,7 +217,7 @@ assert.equal(evaluateDice(Array.from({ length: 3 }, () => ({ type: 'heavenly', v
 assert.equal(evaluateDice([2, 3, 4, 5, 6].map((value) => ({ type: 'heavenly', value }))).score, 750);
 const mixed = ['normal', 'favourable', 'pie', 'heavenly', 'lu', 'aranka'];
 const loadout = { A: mixed, B: mixed };
-let game = gameReducer(initialGame, { type: 'start', setup: { kind: 'standard', level: 'courtiers' }, loadout, values: [1, 1, 1, 1, 1, 1] });
+let game = gameReducer(initialGame, { type: 'start', startedAt: 1793100000123, opponentDiceMode: 'dynamic', setup: { kind: 'standard', level: 'courtiers' }, loadout, values: [1, 1, 1, 1, 1, 1] });
 const types = game.dice.map(({ id, type }) => [id, type]);
 function finish() { game = gameReducer(game, { type: 'complete', id: game.command.id, values: [1, 1, 1, 1, 1, 1], hoverSample: 0 }); }
 finish(); finish();
@@ -231,10 +231,29 @@ const storage = { getItem(key) { assert.equal(key, INVENTORY_KEY); return stored
 assert.deepEqual(readInventory(storage), newInventory());
 saveInventory(storage, result.inventory);
 assert.deepEqual(readInventory(storage), result.inventory);
-assert.equal(Object.hasOwn(JSON.parse(stored), 'normal'), false);
-stored = JSON.stringify({ ...result.inventory, normal: 999, special: { ...result.inventory.special, normal: 999 } });
+const encodedInventory = JSON.parse(stored);
+assert.equal(Object.hasOwn(encodedInventory.dice, 'a'), false);
+assert.equal(Object.hasOwn(encodedInventory, 'special'), false);
+assert.ok(Object.values(encodedInventory.dice).every((count) => count > 0), 'Zero stock is omitted');
+stored = JSON.stringify({ ...encodedInventory, dice: { ...encodedInventory.dice, a: 999 } });
 assert.equal(inventoryPool(readInventory(storage)).normal, 6);
-for (const raw of ['{', 'null', JSON.stringify({ ...newInventory(), merchant: -1 }), JSON.stringify({ ...newInventory(), special: { ...newInventory().special, even: 7 } }), JSON.stringify({ ...newInventory(), firstWins: ['unknown'] })]) {
+saveInventory(storage, { ...newInventory(), merchant: Number.MAX_SAFE_INTEGER });
+assert.deepEqual(JSON.parse(stored), { dice: { v: Number.MAX_SAFE_INTEGER }, firstWins: [] });
+assert.equal(readInventory(storage).merchant, Number.MAX_SAFE_INTEGER);
+saveInventory(storage, newInventory());
+assert.deepEqual(JSON.parse(stored), { dice: {}, firstWins: [] });
+for (const { id } of SPECIAL_TYPES) {
+  const inventory = { ...newInventory(), special: { ...emptySpecial(), [id]: 6 } };
+  saveInventory(storage, inventory);
+  assert.equal(Object.keys(JSON.parse(stored).dice).length, 1);
+  assert.deepEqual(readInventory(storage), inventory);
+}
+for (const raw of ['{', 'null', JSON.stringify(result.inventory), ...[
+  { dice: { v: -1 }, firstWins: [] }, { dice: { v: Number.MAX_SAFE_INTEGER + 1 }, firstWins: [] },
+  { dice: { b: 7 }, firstWins: [] }, { dice: { b: 1.5 }, firstWins: [] }, { dice: { b: '2' }, firstWins: [] },
+  { dice: { even: 2 }, firstWins: [] }, { dice: { z: 2 }, firstWins: [] }, { dice: [], firstWins: [] },
+  { dice: {}, firstWins: ['unknown'] },
+].map(JSON.stringify)]) {
   stored = raw; assert.throws(() => readInventory(storage)); assert.equal(stored, raw, 'Invalid data is not overwritten');
 }
 assert.throws(() => saveInventory({ setItem() { throw new Error('quota'); } }, result.inventory), /quota/);
@@ -247,14 +266,16 @@ const selectionPool = { ...defaultLoadout(), even: 1, odd: 2, devil: 1, pie: 1, 
 assert.deepEqual(readLoadout(selectionStorage, selectionPool), defaultLoadout());
 const chosen = { ...defaultLoadout(), normal: 2, even: 1, odd: 1, devil: 1, merchant: 1 };
 saveLoadout(selectionStorage, chosen);
+assert.equal(selectionJson, 'aabcdv');
 assert.deepEqual(readLoadout(selectionStorage, selectionPool), chosen);
 assert.equal(loadoutSize(chosen), 6);
 assert.deepEqual(loadoutDice(chosen), ['normal', 'normal', 'even', 'odd', 'devil', 'merchant']);
 const newChosen = { ...defaultLoadout(), normal: 1, pie: 1, heavenly: 1, aranka: 2, merchant: 1 };
 saveLoadout(selectionStorage, newChosen);
+assert.equal(selectionJson, 'aipuuv');
 assert.deepEqual(readLoadout(selectionStorage, selectionPool), newChosen);
 assert.deepEqual(loadoutDice(newChosen), ['normal', 'pie', 'heavenly', 'aranka', 'aranka', 'merchant']);
-for (const raw of ['{', 'null', '[]', '{}', ...[
+for (const raw of ['{', 'null', '[]', '{}', 'aaaaa', 'aaaaaaa', 'aaaaaz', 'AAAaaa', 'aaaaa1', JSON.stringify(chosen), ...[
   { ...chosen, normal: 1 }, { ...chosen, normal: 3 }, { ...chosen, normal: -1 },
   { ...chosen, normal: 1.5, merchant: 1.5 }, { ...defaultLoadout(), normal: -1, merchant: 7 },
 ].map(JSON.stringify)]) {

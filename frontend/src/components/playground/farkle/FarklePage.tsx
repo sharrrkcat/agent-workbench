@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Coins, LogOut, Package, Plus, RotateCcw, Settings, ShoppingBag, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Coins, History, LogOut, Package, Plus, RotateCcw, Settings, ShoppingBag, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -13,7 +13,7 @@ import { changeLocale, type SupportedLocale } from '@/i18n/index';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import type { SettingsNavigate } from '@/components/settings/navigation';
-import { playgroundUrl } from '../navigation';
+import { farkleHistoryUrl, isFarkleHistory, playgroundUrl } from '../navigation';
 import { FarkleTable } from './FarkleTable';
 import { dicePreview } from './materials';
 import { DICE_TYPES, rollValues, SPECIAL_LIMIT, type DiceCounts } from './dice';
@@ -31,13 +31,18 @@ import { CUSTOM_OPPONENT_MODES, defaultCustomGame, matchTarget, targetError, rea
 import { useOpponent } from './useOpponent';
 import { useFarkleSettings } from './useFarkleSettings';
 import { clearFarkleStorage } from './storage';
+import { FarkleHistory } from './FarkleHistory';
+import { useMatchHistory } from './useMatchHistory';
 
 type Modal = 'newGame' | 'customGame' | 'chooseDice' | 'chooseOpponentDice' | 'choosePlayerDice' | 'myDice' | 'shop' | 'settings' | 'result';
 
-export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigate }) {
+export default function FarklePage({ search, onNavigate }: { search: string; onNavigate: SettingsNavigate }) {
   const { t, i18n } = useTranslation('common');
   const { setOpenMobile, isMobile, openMobile } = useSidebar();
   const [state, dispatch] = useReducer(gameReducer, initialGame);
+  const history = useMatchHistory(state);
+  const showingHistory = isFarkleHistory(search);
+  const shownResult = useRef<number | null>(null);
   const collection = useInventory(state.winner, state.setup?.kind === 'standard' ? state.setup.level : null);
   const { inventory, reward, error: storageError, retry } = collection;
   const settings = useFarkleSettings();
@@ -51,7 +56,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
   const [customError, setCustomError] = useState<'load' | 'save' | null>(null);
   const [draft, setDraft] = useState<DiceCounts | null>(null);
   const [loadoutError, setLoadoutError] = useState<'load' | 'save' | null>(null);
-  const blocked = modal !== null || (isMobile && openMobile);
+  const blocked = showingHistory || modal !== null || (isMobile && openMobile);
   const opponent = useOpponent(state, dispatch, blocked || !ready);
   const trigger = useRef<HTMLElement | null>(null);
   const sidebarTrigger = useRef<HTMLButtonElement>(null);
@@ -67,7 +72,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
     return previews.map(({ die }) => ({ die, count: counts[die.id],
       url: dicePreview(die.id, Math.min(6, counts[die.id]) || 5).toDataURL() }));
   }, [inventory, modal, previews]);
-  const startDisabled = !ready || !inventory || storageError !== null || clearError;
+  const startDisabled = !ready || !inventory || storageError !== null || history.error !== null || clearError;
   const owned = inventory ? inventoryPool(inventory) : null;
   const ownedPreviews = previews.filter(({ die }) => owned && owned[die.id] > 0);
   const playerChooser = modal === 'chooseDice' || modal === 'choosePlayerDice';
@@ -85,6 +90,10 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
     <AlertDescription>{t('farkle.clearCacheError')}</AlertDescription>
     <Button variant="outline" onClick={clearCache}>{t('farkle.retryStorage')}</Button>
   </Alert> : null;
+  const historyAlert = history.error ? <Alert variant="destructive">
+    <AlertDescription>{t(history.error === 'load' ? 'farkle.historyLoadError' : 'farkle.historySaveError')}</AlertDescription>
+    <Button variant="outline" onClick={history.retry}>{t('farkle.retryStorage')}</Button>
+  </Alert> : null;
 
   async function setLanguage(locale: SupportedLocale) {
     try { await changeLocale(locale); setLocaleError(null); }
@@ -96,6 +105,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
     catch { setClearError(true); return; }
     dispatch({ type: 'exit' });
     collection.reset();
+    history.reset();
     settings.reset();
     setClearError(false);
     setLevel('beggars');
@@ -144,17 +154,20 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
     const mode = setup.kind === 'custom' ? setup.config.opponentDiceMode : settings.mode;
     const loadout = { B: loadoutDice(setup.kind === 'custom' ? setup.config.playerLoadout : draft!), A: mode === 'custom'
       ? loadoutDice(custom.opponentLoadout) : drawOpponentDice(target, mode) };
-    dispatch({ type: 'start', setup, loadout, values: rollValues(loadout.B) });
+    dispatch({ type: 'start', setup, loadout, values: rollValues(loadout.B), startedAt: Date.now(), opponentDiceMode: mode });
     setModal(null);
+    if (showingHistory) void onNavigate(playgroundUrl('farkle'));
   }
 
+  useEffect(() => { setModal(null); setOpenMobile(false); }, [search, setOpenMobile]);
   useEffect(() => {
-    if (state.winner) {
+    if (state.winner && !showingHistory && shownResult.current !== state.matchId) {
+      shownResult.current = state.matchId;
       trigger.current = sidebarTrigger.current;
       setOpenMobile(false);
       setModal('result');
     }
-  }, [state.winner, setOpenMobile]);
+  }, [state.winner, state.matchId, showingHistory, setOpenMobile]);
   useEffect(() => { if (modal) modalTitle.current?.focus(); }, [modal]);
 
   function openModal(kind: Modal, source: HTMLElement) {
@@ -175,7 +188,7 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
 
   return <>
     <Sidebar className="farkle-sidebar" title={t('playground.farkle')} aria-label={t('playground.farkle')}>
-      <SidebarHeader className="sidebar-header shrink-0 gap-4 p-3">
+      <SidebarHeader className="sidebar-header min-h-0 gap-4 overflow-y-auto p-3">
         <div className="sidebar-brand">{t('appName')}</div>
         <SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('newGame', event.currentTarget)}>
@@ -184,6 +197,9 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('customGame', event.currentTarget)}>
             <SlidersHorizontal /><span>{t('farkle.customGame')}</span>
           </SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton isActive={showingHistory} onClick={() => {
+            setModal(null); setOpenMobile(false); void onNavigate(farkleHistoryUrl());
+          }}><History /><span>{t('farkle.history')}</span></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton onClick={(event) => openModal('myDice', event.currentTarget)}>
             <Package /><span>{t('farkle.myDice')}</span>
           </SidebarMenuButton></SidebarMenuItem>
@@ -197,31 +213,42 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
       </SidebarHeader>
       <SidebarContent />
       <SidebarFooter className="sidebar-footer shrink-0 p-3">
-        <SidebarMenu><SidebarMenuItem><SidebarMenuButton disabled={storageError === 'save' || clearError} onClick={async () => {
-          if (state.playing) { dispatch({ type: 'exit' }); setOpenMobile(false); }
+        <SidebarMenu><SidebarMenuItem><SidebarMenuButton disabled={!showingHistory && (storageError === 'save' || history.error === 'save' || clearError)} onClick={async () => {
+          if (showingHistory) { await onNavigate(playgroundUrl('farkle')); setOpenMobile(false); }
+          else if (state.playing) { dispatch({ type: 'exit' }); setOpenMobile(false); }
           else if (await onNavigate(playgroundUrl())) setOpenMobile(false);
         }}>
-          {state.playing ? <LogOut /> : <ArrowLeft />}<span>{t(state.playing ? 'farkle.exitGame' : 'back')}</span>
+          {state.playing && !showingHistory ? <LogOut /> : <ArrowLeft />}<span>{t(showingHistory ? 'farkle.backToTable' : state.playing ? 'farkle.exitGame' : 'back')}</span>
         </SidebarMenuButton></SidebarMenuItem></SidebarMenu>
       </SidebarFooter>
     </Sidebar>
     <SidebarInset className="workspace farkle-workspace min-h-0 min-w-0 overflow-hidden">
       <header className="topbar">
         <SidebarTrigger ref={sidebarTrigger} />
-        <div className="settings-heading min-w-0"><h1 className="truncate">{t('playground.farkle')}</h1></div>
-        <Button variant="ghost" aria-label={inventory ? t('farkle.balance', { count: inventory.merchant }) : t('farkle.myDice')}
-          onClick={(event) => openModal('shop', event.currentTarget)}>
-          <Coins data-icon="inline-start" /><span data-merchant-balance>{inventory?.merchant ?? '—'}</span>
-        </Button>
+        <div className="settings-heading min-w-0"><h1 className="truncate">{t(showingHistory ? 'farkle.history' : 'playground.farkle')}</h1></div>
+        <div className="flex items-center gap-2">
+          {showingHistory ? <Button variant="outline" onClick={() => void onNavigate(playgroundUrl('farkle'))}>
+            <ArrowLeft data-icon="inline-start" />{t('farkle.backToTable')}
+          </Button> : null}
+          <Button variant="ghost" aria-label={inventory ? t('farkle.balance', { count: inventory.merchant }) : t('farkle.myDice')}
+            onClick={(event) => openModal('shop', event.currentTarget)}>
+            <Coins data-icon="inline-start" /><span data-merchant-balance>{inventory?.merchant ?? '—'}</span>
+          </Button>
+        </div>
       </header>
       {!modal && storageAlert ? <div className="p-3">{storageAlert}</div> : null}
       {!modal && clearAlert ? <div className="p-3">{clearAlert}</div> : null}
-      {state.playing && !state.winner && opponent.failed ? <div className="p-3"><Alert variant="destructive">
+      {!modal && historyAlert ? <div className="p-3">{historyAlert}</div> : null}
+      {!showingHistory && state.playing && !state.winner && opponent.failed ? <div className="p-3"><Alert variant="destructive">
         <AlertDescription>{t('farkle.opponentError')}</AlertDescription>
         <AlertAction><Button variant="outline" onClick={opponent.retry}>{t('farkle.retryOpponent')}</Button></AlertAction>
       </Alert></div> : null}
-      <FarkleTable state={state} dispatch={dispatch} onReady={setReady} blocked={blocked}
-        onNewGame={(source) => openModal('newGame', source)} />
+      <div className={cn('min-h-0 flex-1 flex-col', showingHistory ? 'hidden' : 'flex')} inert={showingHistory} aria-hidden={showingHistory || undefined}>
+        <FarkleTable state={state} dispatch={dispatch} onReady={setReady} blocked={blocked}
+          onNewGame={(source) => openModal('newGame', source)} />
+      </div>
+      {showingHistory ? <FarkleHistory records={history.records} search={search} onNavigate={onNavigate}
+        interactive={!modal && !(isMobile && openMobile)} /> : null}
     </SidebarInset>
     <Dialog open={modal !== null} onOpenChange={(open) => { if (!open) setModal(null); }}>
       <DialogContent initialFocus={() => modalTitle.current}
@@ -253,9 +280,9 @@ export default function FarklePage({ onNavigate }: { onNavigate: SettingsNavigat
             {t('farkle.shopPrices', { buy: DICE_BUY_PRICE, sell: DICE_SELL_PRICE })}
           </DialogDescription> : null}
         </DialogHeader>}
-        {modal !== 'settings' ? <>{storageAlert}{clearAlert}</> : null}
+        {modal !== 'settings' ? <>{storageAlert}{clearAlert}{historyAlert}</> : null}
         {modal === 'settings' ? <FieldGroup className="min-h-0 overflow-y-auto">
-          {storageAlert}{clearAlert}
+          {storageAlert}{clearAlert}{historyAlert}
           <Field>
             <FieldLabel id="farkle-language-label">{t('language')}</FieldLabel>
             <ToggleGroup aria-labelledby="farkle-language-label" variant="segmented" value={[i18n.language]}

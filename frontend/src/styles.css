@@ -198,11 +198,78 @@
     .farkle-dice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
   .farkle-table { container: farkle / size; }
-  .farkle-table, .farkle-result {
+  .farkle-table, .farkle-result, .farkle-history {
     --farkle-gold: #f5e3a2;
     --farkle-red: #e52424;
     --farkle-text: #fff8e8;
     --farkle-font: Georgia, 'Noto Serif SC', 'Songti SC', SimSun, serif;
+  }
+  .farkle-history { container: farkle-history / inline-size; --farkle-history-die-size: 20px; }
+  .farkle-history-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .farkle-history-meta {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-areas: 'start outcome duration';
+    align-items: center;
+    gap: 6px;
+  }
+  .farkle-history-time { display: contents; font-size: 10px; }
+  .farkle-history-start { grid-area: start; justify-self: start; white-space: nowrap; }
+  .farkle-history-duration { grid-area: duration; justify-self: end; white-space: nowrap; }
+  .farkle-history-body {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: 'scores scores' 'player opponent';
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .farkle-history-player { grid-area: player; }
+  .farkle-history-opponent { grid-area: opponent; }
+  .farkle-history-dice { display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 2px; }
+  .farkle-history-side { font-size: 11px; }
+  .farkle-history-outcome { grid-area: outcome; text-align: center; font: 600 14px/1.3 var(--farkle-font); color: var(--farkle-gold); }
+  .farkle-history-outcome[data-outcome='loss'] { color: var(--farkle-red); }
+  .farkle-history-scores { grid-area: scores; display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; }
+  .farkle-history-scores > span { min-width: 0; padding-inline: 2px; overflow-wrap: anywhere; font-size: 14px; }
+  .farkle-history-scores > span + span { border-left: 1px solid var(--border); }
+  .farkle-history-scores > span:nth-child(2) { font-size: 11px; }
+  @container farkle-history (min-width: 480px) {
+    .farkle-history-time { font-size: 11px; }
+    .farkle-history-outcome { font-size: 16px; }
+    .farkle-history-meta { gap: 8px; }
+    .farkle-history-body {
+      grid-template-columns: max-content minmax(112px, 156px) max-content;
+      grid-template-areas: 'player scores opponent';
+      justify-content: center;
+      gap: 12px;
+    }
+    .farkle-history-scores > span { font-size: 12px; }
+    .farkle-history-scores > span:nth-child(2) { font-size: 10px; }
+  }
+  @container farkle-history (min-width: 560px) {
+    .farkle-history-row { --farkle-history-die-size: 24px; }
+  }
+  @container farkle-history (min-width: 800px) {
+    .farkle-history-row {
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr) max-content 156px max-content minmax(0, 1fr);
+      grid-template-areas: 'time . player outcome opponent .' 'time . player scores opponent .';
+      align-items: center;
+      gap: 2px 12px;
+    }
+    .farkle-history-meta, .farkle-history-body { display: contents; }
+    .farkle-history-time { grid-area: time; display: flex; flex-direction: column; gap: 4px; }
+    .farkle-history-scores > span { font-size: 13px; }
+    .farkle-history-scores > span:nth-child(2) { font-size: 11px; }
+  }
+  @container farkle-history (min-width: 1000px) {
+    .farkle-history-row { --farkle-history-die-size: 28px; grid-template-columns: max-content minmax(0, 1fr) max-content 168px max-content minmax(0, 1fr); }
+    .farkle-history-time { font-size: 12px; }
+    .farkle-history-scores > span { font-size: 14px; }
   }
   .farkle-face-icon {
     position: absolute;

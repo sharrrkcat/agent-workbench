@@ -1,4 +1,5 @@
 import { DICE_TYPES, type DiceCounts, type DieType } from './dice';
+import { encodeDice, decodeDice, isEncodedDice } from './diceEncoding';
 
 export const LOADOUT_KEY = 'cogita.farkle.loadout';
 export const FULL_DICE_POOL = Object.fromEntries(DICE_TYPES.map(({ id }) => [id, 6])) as DiceCounts;
@@ -6,6 +7,12 @@ export const defaultLoadout = (): DiceCounts =>
   Object.fromEntries(DICE_TYPES.map(({ id }) => [id, id === 'normal' ? 6 : 0])) as DiceCounts;
 export const loadoutSize = (counts: DiceCounts) => DICE_TYPES.reduce((total, { id }) => total + counts[id], 0);
 export const loadoutDice = (counts: DiceCounts): DieType[] => DICE_TYPES.flatMap(({ id }) => Array<DieType>(counts[id]).fill(id));
+export const encodeLoadout = (counts: DiceCounts) => encodeDice(loadoutDice(counts));
+export function decodeLoadout(code: string): DiceCounts {
+  const counts = Object.fromEntries(DICE_TYPES.map(({ id }) => [id, 0])) as DiceCounts;
+  for (const type of decodeDice(code)) counts[type]++;
+  return counts;
+}
 
 export function randomLoadout(available: DiceCounts, random: () => number = Math.random): DiceCounts {
   const pool = loadoutDice({ ...available, merchant: Math.min(6, available.merchant) });
@@ -15,13 +22,6 @@ export function randomLoadout(available: DiceCounts, random: () => number = Math
     counts[type]++;
   }
   return counts;
-}
-
-export function isLoadout(value: unknown, available: DiceCounts): value is DiceCounts {
-  if (!value || typeof value !== 'object') return false;
-  const counts = value as DiceCounts;
-  return DICE_TYPES.every(({ id }) => Number.isInteger(counts[id]) && counts[id] >= 0 && counts[id] <= available[id])
-    && loadoutSize(counts) === 6;
 }
 
 export function canAdjustLoadout(counts: DiceCounts, available: DiceCounts, type: DieType, change: -1 | 1) {
@@ -39,16 +39,13 @@ export function adjustLoadout(counts: DiceCounts, type: DieType, change: -1 | 1,
 
 export function readLoadout(storage: Pick<Storage, 'getItem'>, owned: DiceCounts): DiceCounts {
   const raw = storage.getItem(LOADOUT_KEY);
-  if (raw === null) return defaultLoadout();
-  let value: DiceCounts;
-  try { value = JSON.parse(raw); }
-  catch (error) { if (error instanceof SyntaxError) return defaultLoadout(); throw error; }
-  if (!isLoadout(value, FULL_DICE_POOL)) return defaultLoadout();
+  if (!isEncodedDice(raw)) return defaultLoadout();
+  const value = decodeLoadout(raw);
   const counts = Object.fromEntries(DICE_TYPES.map(({ id }) => [id, Math.min(value[id], owned[id])])) as DiceCounts;
   counts.normal += 6 - loadoutSize(counts);
   return counts;
 }
 
 export function saveLoadout(storage: Pick<Storage, 'setItem'>, counts: DiceCounts) {
-  storage.setItem(LOADOUT_KEY, JSON.stringify(counts));
+  storage.setItem(LOADOUT_KEY, encodeLoadout(counts));
 }

@@ -1,6 +1,6 @@
 import { evaluateDice } from './scoring';
 import type { DieType, FaceValue } from './dice';
-import { matchTarget, type MatchSetup } from './customGame';
+import { matchTarget, type CustomGame, type MatchSetup } from './customGame';
 
 export type PlayerId = 'A' | 'B';
 export type GameDie = {
@@ -18,6 +18,8 @@ export type GameState = {
   revision: number; matchId: number; turnId: number; playing: boolean; player: PlayerId; busy: boolean;
   target: number; setup: MatchSetup | null; hoverId: string | null; batches: Record<PlayerId, string[][]>;
   totals: Record<PlayerId, number>; rounds: Record<PlayerId, number>; winner: PlayerId | null;
+  startedAt: number | null; opponentDiceMode: CustomGame['opponentDiceMode'] | null;
+  turns: Record<PlayerId, number>; rolls: Record<PlayerId, number>;
   dice: GameDie[]; command: GameCommand | null;
 };
 export type TurnInput =
@@ -25,7 +27,8 @@ export type TurnInput =
   | { type: 'hover'; id: string | null }
   | { type: 'select'; id: string };
 export type GameAction =
-  | { type: 'start'; setup: MatchSetup; loadout: Record<PlayerId, DieType[]>; values: FaceValue[] }
+  | { type: 'start'; setup: MatchSetup; loadout: Record<PlayerId, DieType[]>; values: FaceValue[];
+      startedAt: number; opponentDiceMode: CustomGame['opponentDiceMode'] }
   | { type: 'exit' }
   | (TurnInput & ({ actor: 'human' } | { actor: 'ai'; revision: number }))
   | { type: 'complete'; id: number; hoverSample: number | null; values: FaceValue[] };
@@ -34,6 +37,7 @@ export const initialGame: GameState = {
   revision: 0, matchId: 0, turnId: 0, playing: false, player: 'B', busy: false, target: 1500, setup: null,
   hoverId: null, batches: { A: [], B: [] }, dice: [], command: null,
   totals: { A: 0, B: 0 }, rounds: { A: 0, B: 0 }, winner: null,
+  startedAt: null, opponentDiceMode: null, turns: { A: 0, B: 0 }, rolls: { A: 0, B: 0 },
 };
 
 export function canPlay(state: GameState) {
@@ -54,6 +58,7 @@ function beginRoll(state: GameState, values: FaceValue[]): GameState {
     ? { ...die, value: values[die.index] } : die);
   const id = state.revision + 1;
   return { ...state, revision: id, busy: true, hoverId: null, dice,
+    rolls: { ...state.rolls, [state.player]: state.rolls[state.player] + 1 },
     command: { kind: 'roll', id, dice: dice.filter((die) => die.player === state.player && die.status !== 'scored')
       .map(({ id, value }) => ({ id, value })) } };
 }
@@ -73,6 +78,7 @@ function handOff(state: GameState): GameState {
 function bankRound(state: GameState): GameState {
   const total = state.totals[state.player] + state.rounds[state.player];
   const next = { ...state, totals: { ...state.totals, [state.player]: total },
+    turns: { ...state.turns, [state.player]: state.turns[state.player] + 1 },
     rounds: { ...state.rounds, [state.player]: 0 }, hoverId: null, command: null, busy: false };
   return total >= state.target ? { ...next, winner: state.player } : endTurn(next);
 }
@@ -93,6 +99,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     return { ...initialGame, revision: id, matchId: playing ? id : 0, turnId: playing ? id : 0, playing, busy: true, dice,
       target: playing ? matchTarget(action.setup) : initialGame.target, setup: playing ? action.setup : null, batches: { A: [], B: [] },
       totals: { A: 0, B: 0 }, rounds: { A: 0, B: 0 },
+      startedAt: playing ? action.startedAt : null, opponentDiceMode: playing ? action.opponentDiceMode : null,
+      turns: { A: 0, B: 0 }, rolls: { A: 0, B: 0 },
       command: { kind: 'reset', id, values: playing ? action.values : null } };
   }
   if (action.type === 'complete') {
@@ -114,6 +122,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     const candidates = state.dice.filter((die) => die.player === state.player && die.status !== 'scored');
     if (command.kind === 'roll' && !evaluateDice(candidates).hasScore) {
       return { ...state, revision: id, hoverId: null, rounds: { ...state.rounds, [state.player]: 0 },
+        turns: { ...state.turns, [state.player]: state.turns[state.player] + 1 },
         command: { kind: 'bust', id } };
     }
     const hoverId = state.player === 'B' && action.hoverSample !== null && candidates.length

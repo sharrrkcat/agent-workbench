@@ -91,9 +91,9 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await openSidebar(page);
       const gameSidebar = page.locator('.farkle-sidebar');
       await expect(gameSidebar.locator('.sidebar-header [data-sidebar="menu-button"]')).toHaveText([
-        common.farkle.newGame, common.farkle.myDice, common.farkle.shop,
+        common.farkle.newGame, common.farkle.customGame, common.farkle.history, common.farkle.myDice, common.farkle.shop, common.farkle.settings,
       ]);
-      await expect(gameSidebar.getByRole('button', { name: labels.settings, exact: true })).toHaveCount(0);
+      await expect(gameSidebar.getByRole('button', { name: common.farkle.settings, exact: true })).toHaveCount(1);
       if (width === 390) await page.keyboard.press('Escape');
       await page.goBack();
       await expect(page).toHaveURL('/playground');

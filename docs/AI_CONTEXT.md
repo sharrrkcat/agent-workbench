@@ -41,7 +41,7 @@ tool data without executing it. Cogita Persona background and Knowledge support 
 Timeline Projects support creation/settings and roleplay Persona/Worldbook selection; internal sessions and context injection remain deferred.
 QQBot Projects bind group/friend Sessions through external OneBot v11, use nickname/account keyword triggers and follow-up/private batching and optional per-group quiet icebreakers with explicit skip, share ordered media resources with a paginated gallery, manual descriptions and retained favorites, optionally supply up to five current-batch pictures/stickers and asynchronously describe them for textual history. Icebreakers wait for a lone speaker, cancel before sending when others join and allow at most one reply under a durable cooldown; confirmed replies give the lone speaker 60 seconds of follow-up eligibility. Harness sends text, described favorites as original images/animations and optional provider-generated images gated by current-batch user text containing `生成` or `画`; confirmed generated images join shared resources with their drawing prompts, while history uses text placeholders. Cogita/Knowledge/Worldbook inheritance is excluded. Local simulated acceptance is separate from live NapCat delivery.
 Playground includes browser-local Farkle with standard/custom matches, 22 dice types,
-an automatic opponent, inventory/rewards and baked 3D throws. Game APIs and saved matches are unimplemented.
+an automatic opponent, inventory/rewards, baked 3D throws and up to 100 compact completed-match summaries. Game APIs and in-progress saves are unimplemented.
 Pet has position, dragging and task-state foundations only, with no mounted UI.
 
 ## Contracts

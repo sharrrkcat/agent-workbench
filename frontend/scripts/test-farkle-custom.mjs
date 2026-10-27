@@ -89,6 +89,8 @@ for (const mode of CUSTOM_OPPONENT_MODES) {
   saveCustomGame(storage, config);
   assert.deepEqual(readCustomGame(storage), config);
   assert.deepEqual(Object.keys(JSON.parse(saved.get(CUSTOM_GAME_KEY))).sort(), ['opponentDiceMode', 'opponentLoadout', 'playerLoadout', 'target']);
+  assert.equal(JSON.parse(saved.get(CUSTOM_GAME_KEY)).opponentLoadout, 'eeeeee');
+  assert.equal(JSON.parse(saved.get(CUSTOM_GAME_KEY)).playerLoadout, 'vvvvvv');
   assert.deepEqual([...saved.keys()], [CUSTOM_GAME_KEY], 'Custom games only save their own configuration');
 }
 for (const type of order) {
@@ -97,10 +99,12 @@ for (const type of order) {
   saveCustomGame(storage, config);
   assert.deepEqual(readCustomGame(storage), config, `Both custom sides allow six ${type} dice`);
 }
-for (const value of [null, [], {}, ...[0, 1, 1.5, Number.MAX_SAFE_INTEGER].map((target) => ({ ...defaultCustomGame(), target })), { ...defaultCustomGame(), opponentDiceMode: 'invalid' },
-  { ...defaultCustomGame(), opponentLoadout: { ...defaultLoadout(), weighted: 6 } },
-  { ...defaultCustomGame(), playerLoadout: { ...defaultLoadout(), weighted: 6 } },
-  { target: 1501, opponentDiceMode: 'custom', opponentLoadout: defaultLoadout() }]) {
+const encodedCustom = { target: 1500, opponentDiceMode: 'dynamic', opponentLoadout: 'aaaaaa', playerLoadout: 'aaaaaa' };
+for (const value of [null, [], {}, defaultCustomGame(), ...[0, 1, 1.5, Number.MAX_SAFE_INTEGER].map((target) => ({ ...encodedCustom, target })),
+  { ...encodedCustom, opponentDiceMode: 'invalid' }, { ...encodedCustom, opponentLoadout: 'zzzzzz' },
+  { ...encodedCustom, opponentLoadout: 'aaaaa' }, { ...encodedCustom, playerLoadout: 'aaaaaaa' },
+  { ...encodedCustom, playerLoadout: defaultLoadout() },
+  { target: 1501, opponentDiceMode: 'custom', opponentLoadout: 'aaaaaa' }]) {
   saved.set(CUSTOM_GAME_KEY, JSON.stringify(value));
   assert.deepEqual(readCustomGame(storage), defaultCustomGame());
   assert.equal(saved.get(CUSTOM_GAME_KEY), JSON.stringify(value), 'Invalid custom settings are not rewritten');
@@ -113,7 +117,7 @@ assert.throws(() => saveCustomGame({ setItem() { throw Error('quota'); } }, defa
 
 for (const target of [2, 1500, 1501, 10000, 10001, 10 ** 12, Number.MAX_SAFE_INTEGER - 1]) {
   const setup = { kind: 'custom', config: { ...defaultCustomGame(), target } };
-  let game = gameReducer(initialGame, { type: 'start', setup,
+  let game = gameReducer(initialGame, { type: 'start', startedAt: 1793100000123, opponentDiceMode: 'dynamic', setup,
     loadout: { A: Array(6).fill('normal'), B: Array(6).fill('normal') }, values: [1, 1, 1, 1, 1, 1] });
   assert.equal(game.target, target);
   assert.deepEqual(game.setup, setup);

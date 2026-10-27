@@ -1,4 +1,5 @@
 import { NORMAL_COUNT, SPECIAL_LIMIT, SPECIAL_TYPES, type DiceCounts, type SpecialType } from './dice';
+import { encodeDie, decodeDie, isDiceCode } from './diceEncoding';
 
 export const LEVELS = [
   { id: 'beggars', target: 1500, special: 2, merchant: 1, firstWin: 1 },
@@ -66,20 +67,32 @@ export function readInventory(storage: Pick<Storage, 'getItem'>): Inventory {
   const raw = storage.getItem(INVENTORY_KEY);
   if (raw === null) return newInventory();
   const value = JSON.parse(raw);
-  if (!value || typeof value !== 'object' || !value.special || typeof value.special !== 'object'
-    || !SPECIAL_TYPES.every(({ id }) => Number.isSafeInteger(value.special[id]) && value.special[id] >= 0 && value.special[id] <= SPECIAL_LIMIT)
-    || !Number.isSafeInteger(value.merchant) || value.merchant < 0
+  if (!value || typeof value !== 'object' || !value.dice || typeof value.dice !== 'object' || Array.isArray(value.dice)
+    || !Object.entries(value.dice).every(([code, count]) => {
+      if (!isDiceCode(code)) return false;
+      const type = decodeDie(code);
+      return type === 'normal' || (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0
+        && (type === 'merchant' || count <= SPECIAL_LIMIT));
+    })
     || !Array.isArray(value.firstWins) || !value.firstWins.every((id: unknown) => LEVELS.some((level) => level.id === id))) {
     throw new Error('Invalid Farkle inventory');
   }
-  return {
-    special: Object.fromEntries(SPECIAL_TYPES.map(({ id }) => [id, value.special[id]])) as Record<SpecialType, number>,
-    merchant: value.merchant, firstWins: [...new Set<LevelId>(value.firstWins)],
-  };
+  const inventory = { ...newInventory(), firstWins: [...new Set<LevelId>(value.firstWins)] };
+  for (const [code, count] of Object.entries(value.dice)) {
+    const type = decodeDie(code);
+    if (type === 'merchant') inventory.merchant = count as number;
+    else if (type !== 'normal') inventory.special[type] = count as number;
+  }
+  return inventory;
 }
 
 export function saveInventory(storage: Pick<Storage, 'setItem'>, inventory: Inventory) {
-  storage.setItem(INVENTORY_KEY, JSON.stringify(inventory));
+  const counts = { ...inventory.special, merchant: inventory.merchant };
+  storage.setItem(INVENTORY_KEY, JSON.stringify({
+    dice: Object.fromEntries(Object.entries(counts).filter(([, count]) => count > 0)
+      .map(([type, count]) => [encodeDie(type as SpecialType | 'merchant'), count])),
+    firstWins: inventory.firstWins,
+  }));
 }
 
 export function awardDice(inventory: Inventory, levelId: LevelId, won: boolean, random = Math.random) {

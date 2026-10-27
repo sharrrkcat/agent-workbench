@@ -269,7 +269,7 @@ export default function App() {
         <SettingsPage search={location.search} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} returnTo={lastHome.current} />
       ) : playgroundRoute === 'farkle' ? (
         <Suspense fallback={<SidebarInset className="workspace min-h-0 min-w-0"><ResourceLoading /></SidebarInset>}>
-          <FarklePage onNavigate={navigate} />
+          <FarklePage search={location.search} onNavigate={navigate} />
         </Suspense>
       ) : (
         <>
