@@ -1,4 +1,5 @@
 import { API_BASE_URL, joinApiUrl } from './url';
+import i18n from 'i18next';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -14,6 +15,7 @@ export class ApiError extends Error {
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
+  if (!headers.has('X-UI-Language')) headers.set('X-UI-Language', i18n.language === 'zh-CN' ? 'zh-CN' : 'en');
   if (!headers.has('Content-Type') && !(options.body instanceof FormData))
     headers.set('Content-Type', 'application/json');
   const response = await fetch(joinApiUrl(API_BASE_URL, path), { ...options, headers });

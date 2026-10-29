@@ -11,6 +11,7 @@ from ai_workbench.core.message_parts import text_from_parts
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.json_data import strict_json_loads
+from ai_workbench.core.instructions import UiLanguage
 
 
 class ActiveRunRegistry:
@@ -58,6 +59,7 @@ class CogitaRuntime:
         input_message_id: str | None = None,
         attachments: list[dict[str, Any]] | None = None,
         client_message_id: str | None = None,
+        ui_language: UiLanguage = "en",
     ) -> RunResult:
         self._assert_available(session)
         direct = self._parse_direct_tool(text)
@@ -70,6 +72,7 @@ class CogitaRuntime:
             attachments=attachments,
             input_message_id=input_message_id,
             client_message_id=client_message_id,
+            ui_language=ui_language,
         )
 
     def _parse_direct_tool(self, text: str) -> tuple[str, dict[str, Any]] | None:
@@ -128,21 +131,23 @@ class CogitaRuntime:
         return await self.chat_runner.harness_loop.direct(
             session=session, config=config, run=run, tool_name=name, arguments=arguments)
 
-    async def retry_chat_run(self, session: Any, run: Any, source_user_message: Any) -> RunResult:
+    async def retry_chat_run(self, session: Any, run: Any, source_user_message: Any, *, ui_language: UiLanguage = "en") -> RunResult:
         return await self.chat_runner.run(
             session_id=session.session_id,
             text=_text(source_user_message),
             attachments=(source_user_message.metadata or {}).get("attachments") or [],
             input_message_id=source_user_message.message_id,
             persona_id=run.persona_id,
+            ui_language=ui_language,
         )
 
-    async def rerun_user_message(self, session: Any, message: Any) -> RunResult:
+    async def rerun_user_message(self, session: Any, message: Any, *, ui_language: UiLanguage = "en") -> RunResult:
         return await self.chat_runner.run(
             session_id=session.session_id,
             text=_text(message),
             attachments=(message.metadata or {}).get("attachments") or [],
             input_message_id=message.message_id,
+            ui_language=ui_language,
         )
 
 def _text(message: Any) -> str:

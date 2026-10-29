@@ -3,7 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from ai_workbench.api.schemas.history import RunEventsPage
 
-from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.deps import RuntimeState, get_state, get_ui_language
+from ai_workbench.core.instructions import UiLanguage
 from ai_workbench.api.schemas.common import error_responses
 from ai_workbench.api.schemas.chat import RunResponse, RunStepResponse, RunEventResponse, RunCancellation, HistoryResult
 from ai_workbench.core.conversation_history import HistoryPruned
@@ -41,10 +42,10 @@ async def delete_run(run_id: str, state: RuntimeState = Depends(get_state)) -> d
 
 @router.post("/api/runs/{run_id}/retry", response_model=HistoryResult, response_model_exclude_unset=True,
     responses=error_responses(400, 404, 409, 422))
-async def retry_run(run_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+async def retry_run(run_id: str, state: RuntimeState = Depends(get_state), ui_language: UiLanguage = Depends(get_ui_language)) -> dict:
     run, source, change = state.history.retry(run_id)
     session = state.sessions.get_session(run.session_id)
-    result = await state.runtime.retry_chat_run(session, run, source)
+    result = await state.runtime.retry_chat_run(session, run, source, ui_language=ui_language)
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "RUN_RETRY_FAILED", result.error or "Reply retry failed.")
     return {**_result_payload(state, run.session_id, result), **change.model_dump()}

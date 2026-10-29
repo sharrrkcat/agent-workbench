@@ -1,4 +1,14 @@
 {
+  "webTools": {
+    "maxResults": "结果数量上限",
+    "zone": "搜索地区",
+    "language": "搜索语言",
+    "zones": { "default": "默认", "cn": "中国", "intl": "国际" },
+    "apiKey": "API Key",
+    "keySet": "已配置，输入新密钥以替换",
+    "keyMissing": "输入 AnySearch API Key",
+    "clearKey": "清除密钥"
+  },
   "resources": {
     "list": "资源列表",
     "settings": "全局设置",
@@ -27,6 +37,8 @@
     "network": "网络请求"
   },
   "toolDescriptions": {
+    "web_search": "搜索网页以获取最新信息。",
+    "web_fetch": "获取并提取公共网页的内容。",
     "base64_encode": "将 UTF-8 文本编码为 Base64。",
     "base64_decode": "将 Base64 解码为 UTF-8 文本。",
     "qq_send_message": "向当前 QQ 会话发送一条文本消息。",

@@ -36,6 +36,7 @@ for (const script of [
   'test-dlss',
   'test-transformers',
   'test-harness',
+  'test-web-tools',
   'test-chat-presentation',
   'test-qq-conversation',
   'test-qq-resources',

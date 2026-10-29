@@ -4,6 +4,7 @@ Alembic records application schema changes without modifying model files, attach
 
 SQLite records are disposable test state. Files have separate ownership and
 are never removed by schema revisions.
+Web tools store their independent provider/key settings in appmetadatarecord.web_tools_settings. Citation identities/content use existing tool-result JSON and private run continuation; no table or schema revision is added.
 
 | Path | Contents and owner |
 | --- | --- |

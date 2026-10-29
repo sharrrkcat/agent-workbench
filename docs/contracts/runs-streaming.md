@@ -57,18 +57,13 @@ The processing header has no cancel button; cancellation remains in the composer
 (ceiling seconds, including zero), or Thought when timing is unknown, in both locales.
 Expansion shows full Markdown. Incoming deltas preserve manual expansion; an expanded
 live segment closes once, one second after thinking ends. Reopening it stays open.
-Each tool title includes its name and arguments: one argument shows its value, multiple arguments show compact key=value pairs, and nested values use compact JSON. Long titles
-truncate. There is no separate argument-preview control; pending confirmation retains full arguments.
-Running/queued calls are plain Trace lines. Results make each call independently expandable,
-initially collapsed, showing only bounded, wrapped output/errors and truncation notices.
-Pending approvals appear outside Trace as an Item with identity, risk, service, full arguments and Approve/Reject buttons; submitting locks both actions. Resolution removes
-the Item and returns the call to its Trace line.
-MessageScroller follows streamed content near the bottom and yields when the user
-reads earlier messages. Disclosures use registered header anchors to retain the
-reading position. Returning to the bottom, choosing Latest messages or sending
-input resumes following. Each session gets a fresh scroller opened at its latest
-content. The fixed shell and responsive layout belong to
-[Settings](settings.md#frontend-styling-foundation).
+General tool titles include their name and arguments: one value or compact key=value pairs, with nested JSON. Long titles truncate; pending confirmation retains full arguments.
+Running/queued calls are plain Trace lines; general results start collapsed and show bounded output/errors and truncation notices.
+Web tools use specialized Trace steps: Searched the web for {query} with linked hostname Badges, or Fetched {url} with the extracted content in a Code Block. Titles reflect pending/running/failed/cancelled states in both locales, and empty searches show No results found.
+Web details start expanded inside processing history and remain independently collapsible. Replies containing web tools keep the processing content mounted so closing the outer clock preserves step choices. Fetched content remains text, bounded to 320px on desktop and 240px below 768px.
+Pending approvals appear outside Trace as an Item with identity, risk, service, full arguments and locked-on-submit Approve/Reject buttons. Resolution restores the call's Trace line.
+MessageScroller follows near the bottom and yields while reading earlier messages. Processing, web steps and Sources register disclosure anchors to retain position. Returning to the bottom, Latest messages or sending resumes following; each session opens a fresh scroller at its latest content.
+The fixed shell and responsive layout belong to [Settings](settings.md#frontend-styling-foundation).
 
 ## WebSocket events
 
@@ -206,7 +201,7 @@ Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and
 The Layers action sits between retry and usage, independent of recorded usage. It appears on chat replies
 at terminal status or approval waiting when a snapshot exists. Its read-only modal defaults to the final
 answer's call, otherwise the latest captured call; a single call has no selector. Input structure follows
-send order, with system sources nested as Agent, Project, QQ runtime (QQ only), Cogita Persona and Knowledge, and tools separate. QQ runtime records that call's identity/batch/count; paired historical sends retain whole-message excerpts and a shared input turn for pruning. System groups use the label System without a request-position prefix.
+send order, with system sources nested as Instruction (when web search is enabled), Agent, Project, QQ runtime (QQ only), Cogita Persona and Knowledge, and tools separate. Instruction contains the actual localized date/weekday sent before Agent content, with exact source offsets and normal token budgeting. QQ runtime records that call's identity/batch/count; historical sends retain whole-message excerpts and a shared turn for pruning. System groups use System without a request-position prefix.
 Empty system sources recorded as empty/no-bindings/no-results appear muted in Agent/Project/Cogita/Knowledge order,
 with an Empty label and no transmitted-message number for a synthetic system group. They do not change request data
 or counts; other exclusions remain collapsed diagnostics. Ordinary chats do not invent a Project source.

@@ -7,9 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import Request
+from fastapi import Header, Request
+from ai_workbench.core.instructions import UiLanguage
 
 from ai_workbench.core.chat_runner import ChatRunner
+from ai_workbench.core.anysearch import AnySearchProvider
 from ai_workbench.core.harness import ToolRegistry, register_builtin_tools
 from ai_workbench.core.chat_service import ChatService
 from ai_workbench.core.conversation_history import ConversationHistory, MemoryHistoryStore
@@ -34,6 +36,7 @@ from ai_workbench.core.stores import MessageStore, RunEventStore, RunStore, Sess
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.utility_llm import UtilityLLMService
 from ai_workbench.core.worldbook import MemoryWorldbookStore
+from ai_workbench.core.web_tools import WebToolsService, WebToolsSettingsStore
 from ai_workbench.db.database import get_engine, get_database_url, init_db
 from ai_workbench.db.stores import (
     SqlAppSettingsStore, SqlKnowledgeStore, SqlMessageStore,
@@ -68,6 +71,7 @@ class RuntimeState:
     utility_llm: UtilityLLMService
     network_policy: NetworkPolicy
     tool_registry: ToolRegistry
+    web_tools: WebToolsService
     runtime_resources: RuntimeResourcesService
     runtime_supervisor: RuntimeSupervisor
     repo_root: Path
@@ -113,6 +117,8 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     events = EventBus(run_event_store=run_events, app_settings_store=app_settings)
     tool_registry = ToolRegistry()
     register_builtin_tools(tool_registry)
+    web_tools = WebToolsService(WebToolsSettingsStore(engine), AnySearchProvider())
+    web_tools.register(tool_registry)
     supervisor = RuntimeSupervisor(repo_root, RuntimeStore(engine), local_runtime_settings, events)
     manager = ModelManager(profiles, providers, model_settings, events, adapter_factory, supervisor)
     utility_llm = UtilityLLMService(model_manager=manager, app_settings_store=app_settings)
@@ -157,6 +163,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         runtime_supervisor=supervisor,
         tool_registry=tool_registry,
         database_url=resolved_database_url,
+        web_tools=web_tools,
         history_reader=MemoryHistoryReader(sessions, messages, runs) if use_memory else SqlHistoryReader(engine),
     )
     from ai_workbench.core.qq_service import QQService
@@ -167,3 +174,8 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
 
 def get_state(request: Request) -> RuntimeState:
     return request.app.state.runtime_state
+
+
+def get_ui_language(ui_language: UiLanguage = Header(default="en", alias="X-UI-Language",
+    description="Interface language for application-owned chat instructions.")) -> UiLanguage:
+    return ui_language

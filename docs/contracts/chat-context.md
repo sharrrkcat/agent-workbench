@@ -232,6 +232,8 @@ error, tool_call and tool_result. Unknown types are rejected; there are no
 forms, actions, command buttons or diff parts.
 
 Text parts use plain text/Markdown; reasoning uses expanded GFM and [timed Trace disclosures](runs-streaming.md). Its optional nullable duration_ms is a strict nonnegative integer persisted in parts JSON, without a schema migration. Knowledge citations such as `[K1]` use ordinary Markdown without a dedicated parser, lookup or popover.
+Web citations resolve [W1] markers only against successful tool results in the current reply. Markdown AST parsing preserves code, normal links, escaped markers and unknown IDs; plain text also supports citations. Hover Card/Button compositions show a hostname with title/link details on hover, keyboard focus or touch. Empty titles use the hostname.
+Below the answer and above its actions, a collapsed Sources Trace lists only cited URLs, deduplicated in first-citation order. Inline and footer links open new tabs. Streaming and reloaded history share source resolution; copying converts valid markers to ordinary Markdown links without copying processing content.
 
 Large binary data belongs in the attachment store and is referenced by id/URL.
 Uploads and serving use the configured attachment directory; General owns
@@ -263,9 +265,7 @@ Reasoning is assistant-only strict {id,type:reasoning,text} data. The output nor
 Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete messages are excluded from history; live tool transcripts retain upstream content/structured reasoning for provider continuation.
 [Runs/streaming](runs-streaming.md) owns replies, provisional answers, processing/reasoning, command groups and usage. Replies retain original Persona identity; copy uses answer text only, and direct tools never invent a model answer.
 
-The frontend renders parts as content without execution/routing; edit/retry uses original text. MessageActions owns controls,
-MessageParts owns presentation, ChatAttachments owns cards/URLs, and [runs/streaming](runs-streaming.md) owns stream merging.
-
+The frontend renders parts as data; edit/retry uses original text. MessageActions owns controls, MessageParts presentation, ChatAttachments cards/URLs, and [runs/streaming](runs-streaming.md) stream merging. Send/edit/retry pass the current UI language through X-UI-Language (en/zh-CN; absent defaults to en, other values return 422) for application-owned instructions. Each new run snapshots that language; model content and saved snapshots are never translated when the UI changes.
 User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Agent identity; user rows use current Cogita Persona identity. Headers use 14px names and 12px timestamps/numbers, ordered number/time/name for users and name/time/number for assistants.
 Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps and message numbers, user action buttons and reply usage metrics appear on message hover or keyboard focus,
 fade in and out over 180ms (instantly with reduced motion), and retain layout space. Touch layouts keep them visible; editing keeps save/cancel visible and an open usage modal keeps its owner visible. Message bodies use 16px text with Markdown headings, lists, quotes, code, tables and media.

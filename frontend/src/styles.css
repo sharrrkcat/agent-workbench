@@ -630,6 +630,11 @@
 }
 
 .qq-message-content { overflow-wrap: anywhere; }
+.web-tool-content { max-height: 320px; }
+.web-source-link { overflow-wrap: anywhere; }
+@media (max-width: 767px) {
+  .web-tool-content { max-height: 240px; }
+}
 .qq-image-button {
   display: inline-flex;
   vertical-align: middle;

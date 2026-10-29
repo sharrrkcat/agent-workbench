@@ -27,6 +27,7 @@ from ai_workbench.core.user_persona_context import build_user_persona_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
+from ai_workbench.core.instructions import UiLanguage
 
 
 class ChatRunner:
@@ -76,6 +77,7 @@ class ChatRunner:
         on_run_created: Callable[[str], None] | None = None,
         on_context_ready: Callable[[ContextTrace], None] | None = None,
         resolved_config: ResolvedChatConfig | None = None,
+        ui_language: UiLanguage = "en",
     ) -> RunResult:
         session = self.sessions.get_session(session_id)
         raw_text = str(text)
@@ -200,7 +202,7 @@ class ChatRunner:
 
             if use_harness:
                 result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context, trace=context_trace,
-                                                     reasoning=reasoning,
+                                                     reasoning=reasoning, ui_language=ui_language,
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
                                                      active_seconds=time.monotonic() - context_started, first_metrics=first_metrics)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:

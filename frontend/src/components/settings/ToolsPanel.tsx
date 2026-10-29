@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { toolsApi } from '../../api/tools';
 import type { HarnessTool } from '../../types/tools';
 import { errorText, Feedback } from './resources/ResourceUI';
+import { WebToolsSettings } from './WebToolsSettings';
 
 export function ToolsPanel() {
   const { t } = useTranslation('settings');
@@ -28,6 +29,8 @@ export function ToolsPanel() {
 
   return (
     <section className="settings-panel" aria-label={t('toolCatalog')}>
+      <WebToolsSettings />
+      <Separator />
       {error ? (
         <>
           <Feedback error={error} />

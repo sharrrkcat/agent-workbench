@@ -64,6 +64,37 @@ def append_system_block(messages, trace: ContextTrace, text: str, kind, referenc
     return result, source
 
 
+def prepend_system_block(messages, trace: ContextTrace, text: str, kind):
+    """Insert a fixed instruction before existing system content and remap its sources."""
+    result = [dict(message) for message in messages]
+    index = next((i for i, message in enumerate(result) if message["role"] == "system"), None)
+    if index is None:
+        index = 0
+        result.insert(0, {"role": "system", "content": text})
+        for source in trace.sources:
+            if source.message_index is not None:
+                source.message_index += 1
+    else:
+        content = result[index]["content"] or ""
+        prefix = text + ("\n\n" if content else "")
+        result[index]["content"] = prefix + content
+        for source in trace.sources:
+            if source.message_index == index and source.kind != "system":
+                source.start += len(prefix)
+                if source.end is not None:
+                    source.end += len(prefix)
+    root = next((source for source in trace.sources if source.kind == "system" and source.message_index == index), None)
+    if root is None:
+        root = ContextSource(id=f"system:{index}", kind="system", message_index=index, role="system")
+        trace.sources.insert(0, root)
+        for source in trace.sources:
+            if source.message_index == index and source.id != root.id and source.parent_id is None:
+                source.parent_id = root.id
+    source = ContextSource(id=kind, kind=kind, parent_id=root.id, message_index=index, role="system", end=len(text))
+    trace.sources.insert(trace.sources.index(root) + 1, source)
+    return result, source
+
+
 def capture_context(runs, step_id, trace: ContextTrace, profile, policy, *, budget=None):
     """Bind one chat call to its step; the transport supplies the body it sends."""
     def capture(payload: dict) -> None:

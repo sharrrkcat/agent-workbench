@@ -10,6 +10,8 @@ from ai_workbench.core.models.schema import ToolCall, ImageGenerationControls
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 from ai_workbench.core.schema.qq import QQTriggerKind, QQImageCandidate
+from ai_workbench.core.web_schemas import WebSource
+from ai_workbench.core.instructions import UiLanguage
 
 ToolRisk = Literal["safe", "file", "network"]
 ToolScope = Literal["general", "qqbot"]
@@ -87,6 +89,7 @@ class HarnessState(BaseModel):
 
     direct: bool = False
     reasoning: bool = True
+    ui_language: UiLanguage = "en"
     base_messages: list[ContextMessage] = Field(default_factory=list)
     context_trace: ContextTrace = Field(default_factory=ContextTrace)
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
@@ -100,6 +103,7 @@ class HarnessState(BaseModel):
     qq_skipped: bool = False
     active_seconds: float = Field(default=0.0, ge=0)
     last_result: ToolOutcome | None = None
+    web_sources: dict[str, WebSource] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def approval_matches_call(self):

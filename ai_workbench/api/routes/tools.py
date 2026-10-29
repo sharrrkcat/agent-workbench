@@ -13,6 +13,7 @@ from ai_workbench.core.harness.schema import ApprovalDecision, ToolExecutionErro
 from ai_workbench.core.message_parts import text_from_parts
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.schema.run import RunStatus
+from ai_workbench.core.web_schemas import WebToolsSettingsPatch, WebToolsSettingsResponse
 
 
 async def validate_tool_json(request: Request) -> None:
@@ -37,6 +38,16 @@ class DirectToolRequest(BaseModel):
     responses=error_responses(422))
 def list_tools(state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
     return state.tool_registry.catalog()
+
+
+@router.get("/web/settings", response_model=WebToolsSettingsResponse, responses=error_responses(422))
+def get_web_settings(state: RuntimeState = Depends(get_state)) -> WebToolsSettingsResponse:
+    return state.web_tools.settings.public()
+
+
+@router.patch("/web/settings", response_model=WebToolsSettingsResponse, responses=error_responses(422))
+def patch_web_settings(payload: WebToolsSettingsPatch, state: RuntimeState = Depends(get_state)) -> WebToolsSettingsResponse:
+    return state.web_tools.settings.patch(payload)
 
 
 @router.post("/{tool_name}/call", response_model=ToolResult, response_model_exclude_unset=True,

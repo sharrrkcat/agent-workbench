@@ -2,7 +2,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Trace, TraceCollapsible, TraceCollapsibleTrigger, TraceCollapsibleContent, TraceLine, TraceTitle } from '@/components/ui/trace';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { terminal } from '../../store/cogita/mergeState';
 import type { Run } from '../../types/runs';
@@ -16,12 +16,17 @@ import { ReasoningBlock } from './ReasoningBlock';
 import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
 import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
+import { WebToolCall } from './WebToolCall';
+import { WebSources } from './WebSourcesList';
+import { citedWebSources, isWebTool, webSourcesForReply } from './webSources';
 
 export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = false, deleteAction }: {
   reply: Reply; messageNumber?: number; showFullProcessing: boolean; readOnly?: boolean; deleteAction?: ReplyDeleteAction;
 }) {
   const { t } = useTranslation(['runs', 'personas']);
   const { run, process, answer, answerParts } = reply;
+  const webSources = useMemo(() => webSourcesForReply(reply.messages), [reply.messages]);
+  const citedSources = useMemo(() => citedWebSources(answerParts, webSources), [answerParts, webSources]);
   const ended = terminal(run.status);
   const [expanded, setExpanded] = useState(() => !ended && showFullProcessing);
   useEffect(() => {
@@ -34,6 +39,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
   const contextErrors: Record<string, string> = { CONTEXT_WINDOW_REQUIRED: 'contextErrors.required',
     CONTEXT_WINDOW_EXCEEDED: 'contextErrors.exceeded', CONTEXT_COUNT_FAILED: 'contextErrors.countFailed' };
   const errorKey = run.error_code === 'QQ_REPLY_REQUIRED' ? 'personas:qq.status.QQ_REPLY_REQUIRED'
+    : run.error_code?.startsWith('WEB_') ? `web.errors.${run.error_code}`
     : contextErrors[run.error_code ?? ''] ?? imageErrorKey(run.error_code, error);
   const status = (
     {
@@ -73,11 +79,14 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
               ) : null}
             </div>
           </MessageScrollerItem>
-          <TraceCollapsibleContent id={processId} className="ml-0 border-l-0 px-0">
+          <TraceCollapsibleContent id={processId} className="ml-0 border-l-0 px-0"
+            keepMounted={process.some((item) => item.kind === 'tool' && isWebTool(item.entry.call.tool_name))}>
             <div className="processing-list">
               {process.map((item) =>
                 item.kind === 'tool' ? (
-                  <ToolCall key={item.id} entry={item.entry} run={run} />
+                  isWebTool(item.entry.call.tool_name)
+                    ? <WebToolCall key={item.id} entry={item.entry} run={run} />
+                    : <ToolCall key={item.id} entry={item.entry} run={run} />
                 ) : item.part.type === 'reasoning' ? (
                   <ReasoningBlock
                     key={`${item.message.message_id}-${item.id}`}
@@ -114,10 +123,11 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
       ) : null}
       {answerParts.length ? (
         <div className="message reply-answer" data-message-id={answer?.message_id}>
-          <MessageParts parts={answerParts} />
+          <MessageParts parts={answerParts} webSources={webSources} />
           {answer?.metadata?.streaming ? <span className="streaming-cursor" aria-hidden="true" /> : null}
         </div>
       ) : null}
+      <WebSources sources={citedSources} runId={run.run_id} />
       {ended || run.status === 'WAITING_FOR_USER' ? <ReplyMetrics reply={reply} readOnly={readOnly} deleteAction={deleteAction} /> : null}
     </MessageFrame>
   );

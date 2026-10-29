@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { terminal } from '../../store/cogita/mergeState';
-import { messageText } from './messageContent';
+import { copyWebAnswer, webSourcesForReply } from './webSources';
 import type { Reply } from './turns';
 import { ReplyContext } from './ReplyContext';
 
@@ -30,7 +30,7 @@ export function ReplyActions({ reply, usage, summary, readOnly = false, deleteAc
     const timer = setTimeout(() => setCopied(false), 2000);
     return () => clearTimeout(timer);
   }, [copied]);
-  const body = reply.answer ? messageText(reply.answer) : '';
+  const body = copyWebAnswer(reply.answerParts, webSourcesForReply(reply.messages));
   async function copy() {
     try {
       await navigator.clipboard.writeText(body);

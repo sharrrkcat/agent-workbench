@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
+from dataclasses import replace
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
@@ -26,7 +27,7 @@ class ToolRegistry:
         Draft202012Validator.check_schema(spec.parameters)
         if spec.parameters.get("type") != "object":
             raise ValueError("Tool parameters must describe a JSON object")
-        self._tools[spec.name] = deepcopy(spec)
+        self._tools[spec.name] = replace(spec, parameters=deepcopy(spec.parameters))
 
     def get(self, name: str) -> ToolSpec:
         try:

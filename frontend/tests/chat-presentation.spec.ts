@@ -12,7 +12,7 @@ async function submit(page: Page, content: string) {
 }
 
 async function noOverflow(page: Page) {
-  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .workspace, .chat-view, .message-row, .message-stack, .processing-list, [data-tool-call-id] [data-slot=trace-collapsible-content], .approval-details')]
+  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .workspace, .chat-view, .message-row, .message-parts, .reply-answer, .processing-list, [data-tool-call-id] [data-slot=trace-collapsible-content], .approval-details')]
     .filter((node) => node.scrollWidth > node.clientWidth + 1).map((node) => node.className || node.tagName));
   expect(overflow).toEqual([]);
 }
@@ -141,7 +141,8 @@ for (const locale of ['en', 'zh-CN']) {
         await submit(page, 'approval');
         const first = page.locator('article[data-run-id]').first();
         await expect(first.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
-        await expect(first.locator('.approval-details')).toContainText('data/knowledge/note.txt');
+        await expect(first.locator('.approval-details')).toContainText('test_approval');
+        await expect(first.locator('.approval-details')).toContainText('confirm');
         await expect(first.locator('.approval-details')).toHaveAttribute('data-slot', 'item');
         await first.locator('.processing-toggle').click();
         await expect(first.locator('[data-tool-call-id]')).toHaveCount(0);

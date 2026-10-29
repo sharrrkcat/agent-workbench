@@ -25,6 +25,8 @@ from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, register_approval_tool, tool_call
 from tests.runtime_browser_fixture import install_runtime_fixture
 from tests.qq_browser_fixture import install_qq_fixture
+from tests.web_tools_browser_fixture import WEB_URL, install_web_fixture
+from ai_workbench.core.web_schemas import WebToolsSettingsPatch
 
 
 class FixtureStream(httpx.AsyncByteStream):
@@ -97,6 +99,19 @@ class PresentationOpenAI(ToolOpenAI):
         elif "qq-fixture" in command:
             chunks = [{"tool_calls": [{"index": 0, **tool_call("qq_send_message", {"text": "Confirmed QQ reply"})}]}] if not outputs else [{"content": "Internal QQ prose"}]
             stream = FixtureStream(chunks, "tool_calls" if not outputs else "stop", delay=.01)
+        elif command.startswith("web-"):
+            if command == "web-no-call":
+                stream = FixtureStream([{"content": "Unknown [W1] in this reply."}])
+            elif not outputs:
+                stream = FixtureStream([{"tool_calls": [{"index": 0, **tool_call("web_search",
+                    {"query": command if command != "web-research" else "fixture query"}, "web_search_call")}]}], "tool_calls")
+            elif command != "web-research":
+                stream = FixtureStream([{"content": "Search finished without usable sources."}])
+            elif len(outputs) == 1:
+                stream = FixtureStream([{"tool_calls": [{"index": 0, **tool_call("web_fetch", {"url": WEB_URL}, "web_fetch_call")}]}], "tool_calls")
+            else:
+                stream = FixtureStream([{"content": "Evidence ["}, {"content": "W1"}, {"content": "] and repeated [W1]. "},
+                    {"content": "Reference [W2].\n\nCode `[W1]` stays literal."}], delay=.4)
         elif command in {"context-usage", "context-no-usage"}:
             stream = FixtureStream([{"content": "Context meter answer."}], delay=1,
                 prompt_tokens=8126 if command == "context-usage" else None)
@@ -137,11 +152,14 @@ def create_fixture_app(repository: Path, root: Path):
     register_approval_tool(state.tool_registry, content="Approved browser fixture result")
     install_runtime_fixture(app, root)
     install_qq_fixture(app)
+    install_web_fixture(app)
 
     @app.post("/__test__/session")
     async def fixture_session(values: dict = Body(default={})):
         await state.active_runs.cancel_all()
         state.app_settings.patch({"show_full_processing": bool(values.get("show_full_processing", False))})
+        if values.get("web_tools"):
+            state.web_tools.settings.patch(WebToolsSettingsPatch(api_key="browser-web-key"))
         session = state.chat_service.create_session({"title": "Presentation fixture", "harness_enabled": True,
                                                      "model_profile_id": profile["id"]})
         if values.get("long_history"):

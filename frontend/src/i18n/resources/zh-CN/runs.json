@@ -1,4 +1,46 @@
 {
+  "web": {
+    "citation": "来源：{{title}}",
+    "newTab": "（在新标签页打开）",
+    "sources_one": "使用了 {{count}} 个来源",
+    "sources_other": "使用了 {{count}} 个来源",
+    "noResults": "未找到结果。",
+    "invalidResult": "无法显示网页工具结果。",
+    "search": {
+      "pending": "等待搜索网页：{{value}}",
+      "running": "正在搜索网页：{{value}}",
+      "success": "已搜索网页：{{value}}",
+      "error": "网页搜索失败：{{value}}",
+      "cancelled": "已取消网页搜索：{{value}}"
+    },
+    "fetch": {
+      "pending": "等待获取 {{value}}",
+      "running": "正在获取 {{value}}",
+      "success": "已获取 {{value}}",
+      "error": "获取失败：{{value}}",
+      "cancelled": "已取消获取 {{value}}"
+    },
+    "errors": {
+      "WEB_NOT_CONFIGURED": "请在设置 → 工具中配置 AnySearch API Key。",
+      "WEB_REQUEST_REJECTED": "联网服务拒绝了此请求。",
+      "WEB_AUTH_FAILED": "联网服务的 API Key 无效或已失去授权。",
+      "WEB_QUOTA_EXHAUSTED": "联网服务的额度已用尽。",
+      "WEB_EXTRACTION_FAILED": "联网服务无法提取此页面。",
+      "WEB_RATE_LIMITED": "联网服务请求过于频繁，请稍后重试。",
+      "WEB_SERVICE_UNAVAILABLE": "联网服务暂不可用。",
+      "WEB_REQUEST_FAILED": "联网服务请求失败。",
+      "WEB_RESPONSE_INVALID": "联网服务返回了无效响应。",
+      "WEB_RESPONSE_TOO_LARGE": "联网服务的响应超过 1 MiB 限制。",
+      "TOOL_TIMEOUT": "联网请求超时。",
+      "TOOL_RUN_TIMEOUT": "本轮运行超时。",
+      "RUN_CANCELLED": "联网请求已取消。",
+      "TOOL_NOT_ALLOWED": "当前会话或项目不允许使用此工具。",
+      "TOOL_INVALID_ARGUMENTS": "网页工具参数无效。",
+      "NETWORK_URL_SCHEME_FORBIDDEN": "仅支持 HTTP 和 HTTPS 网页链接。",
+      "NETWORK_URL_HOST_FORBIDDEN": "网页链接必须包含有效主机，且不能包含登录凭据。",
+      "NETWORK_ADDRESS_FORBIDDEN": "网页链接必须指向公共网站。"
+    }
+  },
   "queued": "排队中",
   "running": "运行中",
   "cancelling": "取消中",
@@ -78,6 +120,7 @@
     "retry": "重试",
     "requestHint": "图片以附件引用显示；未列出的参数由引擎默认决定。",
     "sources": {
+      "instruction": "指令",
       "system": "System",
       "agent_persona": "Agent Persona",
       "project_prompt": "项目提示词",

@@ -4,7 +4,8 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.deps import RuntimeState, get_state, get_ui_language
+from ai_workbench.core.instructions import UiLanguage
 from ai_workbench.api.openapi import request_body
 from ai_workbench.api.schemas.common import error_responses, public_model
 from ai_workbench.api.schemas.attachments import AttachmentInput
@@ -49,6 +50,7 @@ async def create_message(
     session_id: str,
     payload: CreateMessageRequest,
     state: RuntimeState = Depends(get_state),
+    ui_language: UiLanguage = Depends(get_ui_language),
 ) -> dict:
     session = _get_session_or_404(state, session_id)
     try:
@@ -63,6 +65,7 @@ async def create_message(
         payload.content,
         attachments=attachments,
         client_message_id=payload.client_message_id,
+        ui_language=ui_language,
     )
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "CHAT_FAILED", result.error or "Chat failed.")
@@ -82,6 +85,7 @@ async def edit_message(
     message_id: str,
     payload: EditMessageRequest,
     state: RuntimeState = Depends(get_state),
+    ui_language: UiLanguage = Depends(get_ui_language),
 ) -> dict:
     message = _get_message_or_404(state, message_id)
     if message.role != "user":
@@ -95,7 +99,7 @@ async def edit_message(
         return {"success": True, "data": updated.model_dump(mode="json"), "error": None, "run": None,
                 "session": state.chat_service.session_response(state.sessions.get_session(session.session_id)),
                 "messages": [updated.model_dump(mode="json")], **change.model_dump()}
-    result = await state.runtime.rerun_user_message(session, updated)
+    result = await state.runtime.rerun_user_message(session, updated, ui_language=ui_language)
     if not result.success and not result.run_id:
         raise_error(400, result.error_code or "MESSAGE_EDIT_FAILED", result.error or "Message edit failed.")
     response = _result_payload(state, session.session_id, result)

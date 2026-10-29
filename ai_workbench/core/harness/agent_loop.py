@@ -19,7 +19,9 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.schema import ChatRequest, ToolCall
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
-from ai_workbench.core.context_snapshot import append_system_block, capture_context
+from ai_workbench.core.context_snapshot import append_system_block, prepend_system_block, capture_context
+from ai_workbench.core.instructions import UiLanguage, date_instruction
+from ai_workbench.core.time import utc_now
 from ai_workbench.core.qq_context import runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.schema.message import MessageSchema
@@ -27,6 +29,7 @@ from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.schema.qq import QQ_SEND_TOOLS
+from ai_workbench.core.web_tools import WEB_TOOL_NAMES, assign_web_sources
 
 
 MAX_TOOL_ROUNDS = 8
@@ -64,9 +67,9 @@ class HarnessAgentLoop:
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                   user: MessageSchema, context: list[dict[str, Any]], trace, max_image_bytes: int, active_seconds: float = 0.0,
-                  reasoning: bool = True,
+                  reasoning: bool = True, ui_language: UiLanguage = "en",
                   first_metrics: LLMCallMetrics | None = None) -> RunResult:
-        state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning,
+        state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
                              qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
                              max_image_bytes=max_image_bytes)
         return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
@@ -216,11 +219,16 @@ class HarnessAgentLoop:
         if not config.model_profile_id:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
+        allowed = self._allowed_tools(config, state)
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
-                 for spec in (self.registry.get(name) for name in self._allowed_tools(config, state))]
+                 for spec in (self.registry.get(name) for name in allowed)]
         base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
         trace = state.context_trace
+        if "web_search" in allowed:
+            trace = trace.model_copy(deep=True)
+            base_messages, _ = prepend_system_block(base_messages, trace,
+                date_instruction(state.ui_language, utc_now().astimezone().date()), "instruction")
         if session.kind == "qqbot":
             trace = trace.model_copy(deep=True)
             base_messages, _ = append_system_block(base_messages, trace,
@@ -362,6 +370,8 @@ class HarnessAgentLoop:
             # Other QQ sends use their response deadline while still consuming the run budget.
             data = await execution if image_tool else await asyncio.wait_for(execution,
                 timeout=tool_timeout)
+            if call.function.name in WEB_TOOL_NAMES:
+                assign_web_sources(call.function.name, data, state.web_sources)
             outcome = ToolOutcome(status="success", data=data)
         except asyncio.TimeoutError:
             total = tool_timeout == remaining or budget.remaining() <= 0

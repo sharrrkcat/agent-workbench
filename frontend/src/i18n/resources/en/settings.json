@@ -1,4 +1,14 @@
 {
+  "webTools": {
+    "maxResults": "Maximum results",
+    "zone": "Search region",
+    "language": "Search language",
+    "zones": { "default": "Default", "cn": "China", "intl": "International" },
+    "apiKey": "API Key",
+    "keySet": "Configured — enter a new key to replace",
+    "keyMissing": "Enter your AnySearch API key",
+    "clearKey": "Clear key"
+  },
   "resources": {
     "list": "Resources",
     "settings": "Global settings",
@@ -27,6 +37,8 @@
     "network": "Network request"
   },
   "toolDescriptions": {
+    "web_search": "Search the web for current information.",
+    "web_fetch": "Fetch and extract the content of a public web page.",
     "base64_encode": "Encode UTF-8 text as Base64.",
     "base64_decode": "Decode Base64 to UTF-8 text.",
     "qq_send_message": "Send one text message to the current QQ conversation.",

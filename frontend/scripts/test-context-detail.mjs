@@ -12,6 +12,8 @@ let view = contextPresentation(detail);
 assert.deepEqual(view.byParent.get('sys').map((item) => item.kind), ['agent_persona', 'cogita_persona', 'knowledge']);
 assert.equal(view.sources.find((item) => item.kind === 'project_prompt'), undefined);
 assert.equal(view.exclusions.length, 1);
+const instructed = contextPresentation({ ...detail, sources: [...detail.sources, source('instruction', 'instruction', 'sys')] });
+assert.deepEqual(instructed.byParent.get('sys').map((item) => item.kind), ['instruction', 'agent_persona', 'cogita_persona', 'knowledge']);
 assert.equal(view.sources.find((item) => item.kind === 'cogita_persona').reference_id, 'cogita');
 assert.equal(JSON.stringify(detail), original);
 view = contextPresentation({ sources: [], exclusions: ['knowledge', 'cogita_persona', 'project_prompt', 'agent_persona']

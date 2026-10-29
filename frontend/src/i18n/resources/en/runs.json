@@ -1,4 +1,46 @@
 {
+  "web": {
+    "citation": "Source: {{title}}",
+    "newTab": " (opens in a new tab)",
+    "sources_one": "Used {{count}} source",
+    "sources_other": "Used {{count}} sources",
+    "noResults": "No results found.",
+    "invalidResult": "The web result could not be displayed.",
+    "search": {
+      "pending": "Queued web search for {{value}}",
+      "running": "Searching the web for {{value}}",
+      "success": "Searched the web for {{value}}",
+      "error": "Failed to search the web for {{value}}",
+      "cancelled": "Cancelled web search for {{value}}"
+    },
+    "fetch": {
+      "pending": "Queued fetch for {{value}}",
+      "running": "Fetching {{value}}",
+      "success": "Fetched {{value}}",
+      "error": "Failed to fetch {{value}}",
+      "cancelled": "Cancelled fetch for {{value}}"
+    },
+    "errors": {
+      "WEB_NOT_CONFIGURED": "Configure an AnySearch API key in Settings > Tools.",
+      "WEB_REQUEST_REJECTED": "The web service rejected the request.",
+      "WEB_AUTH_FAILED": "The web service API key is invalid or no longer authorized.",
+      "WEB_QUOTA_EXHAUSTED": "The web service quota is exhausted.",
+      "WEB_EXTRACTION_FAILED": "The web service could not extract this page.",
+      "WEB_RATE_LIMITED": "The web service rate limit was reached. Try again later.",
+      "WEB_SERVICE_UNAVAILABLE": "The web service is unavailable.",
+      "WEB_REQUEST_FAILED": "The web service request failed.",
+      "WEB_RESPONSE_INVALID": "The web service returned an invalid response.",
+      "WEB_RESPONSE_TOO_LARGE": "The web service response exceeds the 1 MiB limit.",
+      "TOOL_TIMEOUT": "The web request timed out.",
+      "TOOL_RUN_TIMEOUT": "The run exceeded its time limit.",
+      "RUN_CANCELLED": "The web request was cancelled.",
+      "TOOL_NOT_ALLOWED": "This tool is not allowed for the session or Project.",
+      "TOOL_INVALID_ARGUMENTS": "The web tool arguments are invalid.",
+      "NETWORK_URL_SCHEME_FORBIDDEN": "Only HTTP and HTTPS URLs are allowed.",
+      "NETWORK_URL_HOST_FORBIDDEN": "The URL must have a valid host and must not contain credentials.",
+      "NETWORK_ADDRESS_FORBIDDEN": "The URL must point to a public website."
+    }
+  },
   "queued": "Queued",
   "running": "Running",
   "cancelling": "Cancelling",
@@ -78,6 +120,7 @@
     "retry": "Retry",
     "requestHint": "Images use attachment references. Parameters not listed are left to engine defaults.",
     "sources": {
+      "instruction": "Instruction",
       "system": "System",
       "agent_persona": "Agent Persona",
       "project_prompt": "Project prompt",

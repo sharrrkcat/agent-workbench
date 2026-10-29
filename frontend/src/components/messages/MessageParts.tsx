@@ -11,27 +11,34 @@ import type { MessagePart } from '../../types/messages';
 import { API_BASE_URL, resolveAttachmentUrlFromBase } from '../../api/url';
 import { ToolResultBody } from './ToolResultBody';
 import { imageErrorKey } from './messageContent';
+import { remarkWebCitations, type WebSourceMap } from './webSources';
+import { PlainWebCitations, WebCitation } from './WebCitation';
 
-export function MessageParts({ parts, compact = false }: { parts: MessagePart[]; compact?: boolean }) {
+export function MessageParts({ parts, compact = false, webSources }: { parts: MessagePart[]; compact?: boolean; webSources?: WebSourceMap }) {
   return (
     <div className="message-parts">
       {parts.map((part) => (
-        <Part key={part.id} part={part} compact={compact} />
+        <Part key={part.id} part={part} compact={compact} webSources={webSources} />
       ))}
     </div>
   );
 }
 
-function Part({ part, compact }: { part: MessagePart; compact: boolean }) {
+function Part({ part, compact, webSources }: { part: MessagePart; compact: boolean; webSources?: WebSourceMap }) {
   const { t } = useTranslation('runs');
   if (part.type === 'text' || part.type === 'reasoning')
     return part.type === 'text' && part.format === 'plain' ? (
-      <p className="part-text">{part.text}</p>
+      <p className="part-text">{webSources?.size ? <PlainWebCitations text={part.text} sources={webSources} /> : part.text}</p>
     ) : (
       <div className="part-markdown">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[remarkGfm, [remarkWebCitations, webSources]]}
           components={{
+            a: ({ node, children, ...props }) => {
+              const id = node?.properties['data-web-source'];
+              const source = typeof id === 'string' ? webSources?.get(id) : undefined;
+              return source ? <WebCitation source={source} /> : <a {...props}>{children}</a>;
+            },
             pre: ({ children }) => {
               const code = Children.only(children) as ReactElement<ComponentProps<'code'>>;
               return <CodeBlock size={compact ? 'sm' : 'default'}>

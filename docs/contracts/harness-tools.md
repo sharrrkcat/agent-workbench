@@ -36,6 +36,8 @@ model loop. Invalid direct requests fail before creating a run.
 | Tool | Parameters | Approval |
 | --- | --- | --- |
 | base64_encode / base64_decode | value | Automatic |
+| web_search | query | Automatic |
+| web_fetch | url (public absolute HTTP/HTTPS) | Automatic |
 | qq_send_message | text (1..4000 characters, nonblank) | Automatic, QQBot model runs only |
 | qq_send_image | asset_id (strict positive integer from this batch’s candidates) | Automatic, QQBot model runs only |
 | qq_generate_image | prompt (1..32000 characters, nonblank) | Automatic, configured QQBot batches with an input keyword only |
@@ -51,6 +53,21 @@ compressed responses are rejected to keep decoding bounded. QQ media acquisition
 
 Codec input and output are each capped at 1 MiB and decoded
 bytes must be valid UTF-8.
+
+## Web tools
+
+The explicit WebToolsService uses a provider-independent search/fetch interface; AnySearch is the current implementation.
+Authenticated POSTs use [Search](https://www.anysearch.com/docs/api-endpoints/v1-search) with format=markdown and [Extract](https://www.anysearch.com/docs/api-endpoints/v1-extract) with only url. Search accepts only query; max_results, zone and language come from global web settings and cannot be overridden by model/REST tool arguments. Unset zone/language use provider defaults; tag/params are unavailable.
+Both tools have general scope, network risk, direct invocation and no approval. The effective session/Project allowlist still applies.
+[Settings](settings.md) owns the independent write-only AnySearch key. Missing keys return WEB_NOT_CONFIGURED; calls never use anonymous quota or model-provider keys.
+Requests retain the ordinary 30-second tool deadline, five-minute run budget and cancellation. Uncompressed responses are streamed with a 1 MiB limit; Extract bodies are limited to 16 KiB. Oversized responses fail explicitly; model context budgets still apply to retained content.
+Targets require HTTP(S), a valid host and no credentials; non-public literal addresses/localhost are rejected. AnySearch owns target DNS, redirects and extraction. The API process contacts only the fixed AnySearch endpoint without following redirects or environment proxies.
+HTTP statuses distinguish rejected input, authentication, exhausted quota, extraction failure, rate limits and service unavailability. Only status and valid UUID request_id diagnostics are retained; raw error bodies, including generated credentials, never enter results or traces. There is no automatic retry.
+Search returns provider, query, ordered results (url/title, optional snippet/content), request_id and available search_time_ms. Fetch returns provider, url/title/content and request_id. Empty titles/results are valid; malformed page data fails the tool.
+Harness adds source_id W1, W2, etc. to successful pages before persistence and model continuation. IDs are run-local, allocated in result order and reused for identical URLs. Private continuation retains the URL/source map across approvals; public source data stays in existing tool_result parts/events, with no new message type or table.
+Tool descriptions instruct models to treat page content as untrusted evidence and cite only current-run IDs as [W1]. Errors remain structured tool results so the model can continue. [Chat/context](chat-context.md#messages-and-attachments) owns visible citations; [Runs/streaming](runs-streaming.md#run-lifecycle) owns web steps.
+Each Harness model call with web_search in its effective tool list prepends an Instruction containing the current server-local date and weekday. The run's UI language is retained across approval continuation; dates refresh for each call. Disabling Harness, excluding/revoking web_search or falling back to ordinary chat omits the block. Direct tools and public inference do not receive it.
+Automated acceptance uses mock AnySearch responses and model calls; live AnySearch requests remain unverified.
 
 ## QQ delivery and queues
 
@@ -174,8 +191,9 @@ INTERRUPTED and is never replayed automatically.
 
 ## REST and user workflow
 
-- GET /api/tools returns all six tools, their general/qqbot scope and parameter schemas.
-  General defaults and selection controls use only the two Base64 tools. There are no global tool settings.
+- GET /api/tools returns all eight tools, their general/qqbot scope and parameter schemas.
+  General defaults/selection include Base64 and web tools; existing saved allowlists are unchanged.
+- GET/PATCH /api/tools/web/settings owns the independent web service key.
 - POST /api/tools/{tool_name}/call accepts {session_id, arguments}.
 - POST /api/tools/approvals/{run_id} accepts {decision: approve|reject}.
 - GET /api/tools/runs/{run_id} returns a direct or harness run.
@@ -192,14 +210,13 @@ string receives the raw remainder, preserving whitespace; other schemas require
 a JSON object. There is no key=value parser. Unknown slash prefixes remain
 ordinary text; known unauthorized tools return TOOL_NOT_ALLOWED.
 
-Tools settings are a session-independent, read-only catalog. General tools and QQ Bot tools
+Tools settings contain the web key form and a session-independent, read-only catalog. General tools and QQ Bot tools
 form two stacked lists separated by a divider; each entry shows its name, localized description
 and a collapsed parameter schema. All four QQ tools remain visible regardless of Project configuration.
-The page has no call form, results, approvals or search settings.
-The chat reply shows the current call's parameters and supports approval, rejection
-and cancellation outside collapsed processing history. Adjacent calls render
-as one collapsed command group; command rows expand arguments and corresponding
-results without separate message avatars. Tool calls are retried only as part of
+The page has no call form, results or approval controls. Slash web calls accept the raw query/URL; search preferences belong to the settings form.
+The chat reply renders individual steps and keeps approval controls outside collapsed processing history.
+Web steps use dedicated result links/page text; other tools retain their general presentation.
+Calls have no separate message avatars. Tool calls are retried only as part of
 their whole chat run, never as standalone assistant answers. Historical tool parts are quoted data in ordinary/group
 context within history limits; live loop results use native tool
 roles. Tool data is never promoted to a system/developer instruction.
@@ -210,7 +227,7 @@ Completion replaces streamed drafts authoritatively. The frontend merges
 duplicate and older events, preserves newer approvals through stale refreshes,
 and isolates asynchronous responses after session switches.
 
-Provider keys are not passed to tools. Tool content is rendered as JSON/text, never executed.
+Model-provider keys are not passed to tools; the web service receives only its own configured key. Tool content is rendered as data, never executed.
 All workflow labels, risks, results and step kinds have English/Chinese text.
 
 OpenAPI describes the catalog, direct calls and approval results with
