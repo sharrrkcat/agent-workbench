@@ -118,7 +118,7 @@ for (const locale of ['en', 'zh-CN']) {
           if (section === 'tools')
             expect(
               await page
-                .locator('.tool-selector')
+                .locator('[data-tool-name]')
                 .evaluateAll((buttons) =>
                   buttons
                     .filter((button) => button.scrollWidth > button.clientWidth + 1)

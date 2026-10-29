@@ -20,7 +20,7 @@ from ai_workbench.core.stores import MessageStore
 from tests.model_fixtures import configure_model
 from tests.test_chat_presentation import presentation_client, configure, send
 from tests.test_context_detail import details
-from tests.tool_fixtures import completion, ok, tool_call
+from tests.tool_fixtures import register_approval_tool, completion, ok, tool_call
 
 
 def local():
@@ -139,13 +139,11 @@ def test_provider_trims_history_and_preserves_snapshot_attachment_indices(presen
 
 def test_tool_growth_and_approval_resume_recheck_saved_limits(presentation_client, tmp_path):
     client, upstream = presentation_client
+    register_approval_tool(client.app.state.runtime_state.tool_registry, content='tool result ' * 5000)
     session = configure(client, harness=True, streaming=False)
     ok(client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 4096}))
-    note = tmp_path / 'data/knowledge/large.txt'
-    note.parent.mkdir(parents=True, exist_ok=True)
-    note.write_text('tool result ' * 5000, encoding='utf-8')
-    upstream.turns = [completion(tool_call('read_file', {'path': 'data/knowledge/large.txt'})), completion(content='must not execute')]
-    result = send(client, session, 'read the file')
+    upstream.turns = [completion(tool_call('test_approval', {'value': 'large result'})), completion(content='must not execute')]
+    result = send(client, session, 'produce a large result')
     assert result['run']['status'] == 'WAITING_FOR_USER', result
     assert client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 32768}).status_code == 409
     run_id = result['run']['run_id']

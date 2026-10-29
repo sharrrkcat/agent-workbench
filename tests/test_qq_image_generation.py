@@ -76,7 +76,7 @@ def test_settings_validation_visibility_and_model_references(qq_client, image_pr
     ok(client.patch(url, json={"image_generation_model_profile_id": model_id,
         "image_generation_options": {"size": "1024x1024", "quality": "low", "style": "vivid"}}))
     assert client.delete(f"/api/models/profiles/{model_id}").status_code == 409
-    assert "qq_generate_image" not in {tool['name'] for tool in ok(client.get('/api/tools'))}
+    assert "qq_generate_image" in {tool['name'] for tool in ok(client.get('/api/tools'))}
     response = client.post('/api/tools/qq_generate_image/call', json={"session_id": session['session_id'], "arguments": {"prompt": "test"}})
     assert response.status_code >= 400
     ok(client.patch(url, json={"name": "Renamed"}))

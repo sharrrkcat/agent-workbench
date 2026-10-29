@@ -6,7 +6,7 @@ Workspace sessions inherit Project defaults and may override them; Persona owns 
 Changing Harness enablement preserves the list, and new registry entries do
 not rewrite existing lists. The composer's model menu toggles Harness immediately, displays on/off text and keeps the menu open; failure preserves confirmed state.
 Its independent settings action opens a right Sheet with fade/slide transitions in both directions for catalog-backed session tool selection. Changes require Save; unsaved closing confirms discard, and failed saves retain edits. The Sheet is full-width on mobile and restores focus to the model trigger on close.
-Session settings no longer edit or submit Harness/allowlists. Workspace inheritance and per-field resets for both fields live in the Sheet; reset submits null. Draft edits remain local until first send. Session changes close the menu/Sheet and ignore late saves. Global search settings remain separate.
+Session settings no longer edit or submit Harness/allowlists. Workspace inheritance and per-field resets for both fields live in the Sheet; reset submits null. Draft edits remain local until first send. Session changes close the menu/Sheet and ignore late saves.
 Workspace tools are intersected with the Project allowlist; forbidden override submissions return 422.
 A Project's Harness boolean is a default, so a session may enable it independently.
 Each model round and queued call, including approval resumption, rechecks the current
@@ -22,7 +22,7 @@ with an empty allowlist uses ordinary chat. Before the first model round, explic
 The registry contains only explicitly registered built-in Python tools. It
 does not load manifests, plugin directories or dynamic modules. Each ToolSpec
 has a lower snake_case name (at most 64 characters), description, Draft 2020-12
-object schema, handler, risk, requires_approval and direct_callable.
+object schema, handler, risk, requires_approval, direct_callable and scope (general or qqbot).
 Session allowlists are unique and reference registered names.
 General-purpose built-ins support model and direct invocation through the same handler,
 schema, permissions, approval and persistence paths. MCP clients and ComfyUI
@@ -35,37 +35,21 @@ model loop. Invalid direct requests fail before creating a run.
 
 | Tool | Parameters | Approval |
 | --- | --- | --- |
-| read_file | path, max_bytes? | Every call |
-| web_search | query, limit? | Every call |
-| fetch_url | url, max_chars? | Every call |
-| knowledge_search | query, knowledge_base_ids?, top_k?, max_context_chars? | Automatic |
 | base64_encode / base64_decode | value | Automatic |
 | qq_send_message | text (1..4000 characters, nonblank) | Automatic, QQBot model runs only |
 | qq_send_image | asset_id (strict positive integer from this batch’s candidates) | Automatic, QQBot model runs only |
 | qq_generate_image | prompt (1..32000 characters, nonblank) | Automatic, configured QQBot batches with an input keyword only |
 | qq_skip_reply | Empty object | Automatic, unanswered QQ group follow-up/icebreaker runs only |
 
-File paths are relative to the application root and restricted to `data/knowledge`
-and `data/attachments`. Absolute paths, traversal, Windows alternate streams
-and symlink/junction escapes are rejected. Reads are bounded to 200,000 bytes;
-the result exposes a relative path, text, size and truncation flag.
-Projects share these directories and the existing per-call approval; there is no Project filesystem sandbox.
-
-Network tools accept public HTTP(S) URLs without credentials. Every DNS answer
+QQ media downloads accept public HTTP(S) URLs without credentials. Every DNS answer
 and redirect target is checked. HTTP connects to a validated address while
 retaining the original Host and TLS server name, preventing a second DNS
 resolution from bypassing the policy. Environment proxies are disabled.
-There are at most three redirects and a 1 MiB response limit, enforced during
-streaming even without Content-Length. Requests ask for identity encoding;
-compressed responses are rejected to keep decoding bounded. Only text content
-is fetched, with an additional 200,000 character output limit.
+There are at most three redirects. The caller's image response limit is enforced
+during streaming even without Content-Length. Requests ask for identity encoding;
+compressed responses are rejected to keep decoding bounded. QQ media acquisition and generation retain their own format limits.
 
-Web search calls a configured SearXNG JSON service. Missing configuration
-returns `TOOL_NOT_CONFIGURED`; malformed results return `NETWORK_INVALID_JSON`.
-The service URL is snapshotted at run creation and shown in the approval step.
-Changing settings while waiting affects later runs. Knowledge search accepts
-only subsets of the run's resolved session bindings, including an explicit
-empty subset. Codec input and output are each capped at 1 MiB and decoded
+Codec input and output are each capped at 1 MiB and decoded
 bytes must be valid UTF-8.
 
 ## QQ delivery and queues
@@ -78,7 +62,7 @@ are ignored without resetting debounce. Bot echoes never enter batches; known ex
 An active send retains at most 128 self-message ids for its bound Session, so a self report arriving before the response can set echoed in the confirmation transaction. Only a successful response with the current request echo and a valid integer/nonblank string message id confirms delivery. Self reports alone never confirm unknown sends; temporary ids are discarded when the send ends. Duplicate reports do not add history, reply counts or eligibility.
 
 QQ runs always enable Harness. Batches expose qq_send_message, qq_send_image when favorite candidates exist, and qq_generate_image when the snapshotted generation permission allows it; unanswered follow-up and icebreaker batches also expose qq_skip_reply.
-QQ tools are absent from the general catalog/default selections, reject ordinary/Workspace allowlists and direct calls,
+QQ tools appear in the qqbot catalog group, stay outside general selections, reject ordinary/Workspace allowlists and direct calls,
 and require server-owned session, active batch/run and tool-call ids. The destination comes solely from the immutable Session binding.
 One text send delivers one plain-text OneBot segment; CQ-looking content remains literal. Image tools send one separate OneBot image segment with base64 bytes, using only the immutable destination binding.
 All three sends supply NapCat's per-request timeout=60000 milliseconds and wait up to 90 seconds for the OneBot response; ordinary queries retain 20 seconds. Text/favorite-image tools use the remaining five-minute Harness budget rather than its ordinary 30-second tool limit. Generated images retain their existing Provider/budget ownership and use the same send deadline. Stop and an earlier run-budget deadline still cancel sending; errors return immediately.
@@ -190,8 +174,8 @@ INTERRUPTED and is never replayed automatically.
 
 ## REST and user workflow
 
-- GET /api/tools returns the catalog and parameter schemas.
-- GET/PATCH /api/tools/settings owns the optional searxng_base_url.
+- GET /api/tools returns all six tools, their general/qqbot scope and parameter schemas.
+  General defaults and selection controls use only the two Base64 tools. There are no global tool settings.
 - POST /api/tools/{tool_name}/call accepts {session_id, arguments}.
 - POST /api/tools/approvals/{run_id} accepts {decision: approve|reject}.
 - GET /api/tools/runs/{run_id} returns a direct or harness run.
@@ -208,10 +192,12 @@ string receives the raw remainder, preserving whitespace; other schemas require
 a JSON object. There is no key=value parser. Unknown slash prefixes remain
 ordinary text; known unauthorized tools return TOOL_NOT_ALLOWED.
 
-Tools settings show catalog, risk, JSON arguments, results and approval controls.
+Tools settings are a session-independent, read-only catalog. General tools and QQ Bot tools
+form two stacked lists separated by a divider; each entry shows its name, localized description
+and a collapsed parameter schema. All four QQ tools remain visible regardless of Project configuration.
+The page has no call form, results, approvals or search settings.
 The chat reply shows the current call's parameters and supports approval, rejection
-and cancellation outside collapsed processing history. Tools settings retain
-RunPanel diagnostics and share the same approval controls. Adjacent calls render
+and cancellation outside collapsed processing history. Adjacent calls render
 as one collapsed command group; command rows expand arguments and corresponding
 results without separate message avatars. Tool calls are retried only as part of
 their whole chat run, never as standalone assistant answers. Historical tool parts are quoted data in ordinary/group
@@ -224,12 +210,10 @@ Completion replaces streamed drafts authoritatively. The frontend merges
 duplicate and older events, preserves newer approvals through stale refreshes,
 and isolates asynchronous responses after session switches.
 
-Tool-generated paths are relative; rejected absolute arguments are masked.
-URL credentials and authentication query values are not echoed. Provider keys
-are not passed to tools. Tool content is rendered as JSON/text, never executed.
+Provider keys are not passed to tools. Tool content is rendered as JSON/text, never executed.
 All workflow labels, risks, results and step kinds have English/Chinese text.
 
-OpenAPI describes the catalog, settings, direct calls and approval results with
+OpenAPI describes the catalog, direct calls and approval results with
 validated run/message/session types. Tool parameters and results are explicitly
 finite JSON, with field-specific documented exceptions for their tool-owned
 schemas. Duplicate-key and non-finite input rejection still precedes execution;

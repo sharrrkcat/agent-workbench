@@ -21,7 +21,7 @@ from ai_workbench.workers.transformers_engine import TransformersEngine
 from ai_workbench.workers.transformers_server import build_app
 from tests.test_chat_request_options import DEFAULTS, install_fake_worker
 from tests.model_fixtures import configure_model
-from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
+from tests.tool_fixtures import register_approval_tool, ToolOpenAI, completion, ok, tool_call
 
 
 @pytest.mark.parametrize("template,prefixes,expected", [
@@ -228,15 +228,13 @@ def test_session_reasoning_is_independent_and_workspace_null_restores_default(tm
 
 def test_adjusted_mode_survives_harness_approval_and_session_edits(tmp_path, monkeypatch):
     app = create_app(root=tmp_path, use_memory=False, database_url=f"sqlite:///{tmp_path / 'chat.db'}")
+    register_approval_tool(app.state.runtime_state.tool_registry)
     with TestClient(app) as client:
         profile, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, tools=True)
         adapter.reasoning_support = {"instant": "unsupported", "reasoning": "supported"}
-        upstream.turns = [completion(tool_call("read_file", {"path": "data/knowledge/note.txt"})), completion(content="answer")]
-        note = tmp_path / "data/knowledge/note.txt"
-        note.parent.mkdir(parents=True, exist_ok=True)
-        note.write_text("A note")
+        upstream.turns = [completion(tool_call("test_approval", {"value": "confirm"})), completion(content="answer")]
         session = ok(client.post("/api/sessions", json={"model_profile_id": profile["id"],
-            "reasoning": False, "harness_enabled": True, "tools_allowed": ["read_file"]}))
+            "reasoning": False, "harness_enabled": True, "tools_allowed": ["test_approval"]}))
         path = f"/api/sessions/{session['session_id']}"
         waiting = ok(client.post(path + "/messages", json={"content": "read the note"}))
         run_id = waiting["run"]["run_id"]

@@ -26,9 +26,9 @@ function descendants(node) {
   return [node, ...descendants(node.props.children)];
 }
 const tools = [
-  { name: 'base64_encode', risk: 'safe', requires_approval: false },
-  { name: 'read_file', risk: 'file', requires_approval: true },
-  { name: 'web_search', risk: 'network', requires_approval: true },
+  { name: 'base64_encode', scope: 'general', risk: 'safe', requires_approval: false },
+  { name: 'test_approval', scope: 'general', risk: 'safe', requires_approval: true },
+  { name: 'base64_decode', scope: 'general', risk: 'safe', requires_approval: false },
 ];
 let selected = tools.map((tool) => tool.name);
 const renderTools = () => ToolsField({ tools, value: selected, onChange: (value) => { selected = value; } });
@@ -36,11 +36,11 @@ let toggles = descendants(renderTools()).filter((node) => node.type === Checkbox
 assert.equal(toggles.length, 3);
 assert.ok(toggles.every((node) => node.props.checked));
 toggles[1].props.onCheckedChange(false);
-assert.deepEqual(selected, ['base64_encode', 'web_search']);
+assert.deepEqual(selected, ['base64_encode', 'base64_decode']);
 toggles = descendants(renderTools()).filter((node) => node.type === Checkbox);
 assert.equal(toggles[1].props.checked, false);
 toggles[1].props.onCheckedChange(true);
-assert.deepEqual(selected, ['base64_encode', 'read_file', 'web_search']);
+assert.deepEqual(selected, ['base64_encode', 'test_approval', 'base64_decode']);
 for (const name of [...selected])
   descendants(renderTools()).filter((node) => node.type === Checkbox)[tools.findIndex((tool) => tool.name === name)].props.onCheckedChange(false);
 assert.deepEqual(selected, []);
@@ -103,7 +103,7 @@ for (const [locale, labels] of [
 ]) {
   await i18n.changeLanguage(locale);
   const html = renderToStaticMarkup(React.createElement(React.Fragment, null,
-    React.createElement(ToolsField, { tools, value: ['read_file'], onChange: () => {} }),
+    React.createElement(ToolsField, { tools, value: ['test_approval'], onChange: () => {} }),
     React.createElement(ContextFields, { value: policy, onChange: () => {} }),
     React.createElement(GenerationFields, { value: {}, onChange: () => {} }),
     React.createElement(ModelField, { profiles: [], value: null, onChange: () => {} }),

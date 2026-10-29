@@ -20,7 +20,7 @@ from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from tests.model_fixtures import configure_model
-from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
+from tests.tool_fixtures import ToolOpenAI, completion, ok, register_approval_tool, tool_call
 
 
 @pytest.fixture(params=[True, False], ids=["memory", "sqlite"])
@@ -28,6 +28,7 @@ def harness_client(tmp_path, request):
     upstream = ToolOpenAI()
     app = create_app(root=tmp_path, database_url=f"sqlite:///{tmp_path / 'app.db'}",
                      use_memory=request.param, adapter_factory=upstream.factory)
+    register_approval_tool(app.state.runtime_state.tool_registry)
     with TestClient(app) as client:
         yield client, upstream, tmp_path
 
@@ -88,7 +89,7 @@ def test_multi_call_round_and_stream_fragments(harness_client, streaming):
 
 
 @pytest.mark.parametrize("call,code", [
-    (tool_call("unknown"), "TOOL_NOT_FOUND"), (tool_call("read_file", {"path": "data/knowledge/a.txt"}), "TOOL_NOT_ALLOWED"),
+    (tool_call("unknown"), "TOOL_NOT_FOUND"), (tool_call("test_approval", {"value": "approval input"}), "TOOL_NOT_ALLOWED"),
     (tool_call(arguments="not json"), "TOOL_INVALID_ARGUMENTS"), (tool_call(arguments='{"value":"a","value":"b"}'), "TOOL_INVALID_ARGUMENTS"),
     (tool_call(arguments='{"value":NaN}'), "TOOL_INVALID_ARGUMENTS"), (tool_call(arguments={"value": 5}), "TOOL_INVALID_ARGUMENTS"),
     (tool_call("base64_decode", {"value": "???"}), "CODEC_INVALID_BASE64"),
@@ -127,12 +128,9 @@ def test_duplicate_call_ids_fail_before_execution(harness_client, repeated_round
 
 def test_approval_retains_queue_snapshot_and_original_input(harness_client):
     client, upstream, root = harness_client
-    file = root / "data/knowledge/note.txt"
-    file.parent.mkdir(parents=True)
-    file.write_text("file data")
-    session, persona, model = configure(client, tools=["read_file", "base64_encode"])
-    upstream.turns = [completion(tool_call("read_file", {"path": "data/knowledge/note.txt"}, "first"),
-        tool_call(call_id="middle"), tool_call("read_file", {"path": "data/knowledge/note.txt"}, "last")), completion(content="answer")]
+    session, persona, model = configure(client, tools=["test_approval", "base64_encode"])
+    upstream.turns = [completion(tool_call("test_approval", {"value": "approval input"}, "first"),
+        tool_call(call_id="middle"), tool_call("test_approval", {"value": "approval input"}, "last")), completion(content="answer")]
     response = send(client, session, "original question")
     run_id = response["run"]["run_id"]
     state = client.app.state.runtime_state
@@ -164,15 +162,13 @@ def test_approval_retains_queue_snapshot_and_original_input(harness_client):
 
 def test_restart_preserves_only_pending_approval(tmp_path):
     upstream = ToolOpenAI(
-        {**completion(tool_call("read_file", {"path": "data/knowledge/note.txt"})), "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        {**completion(tool_call("test_approval", {"value": "approval input"})), "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
         {**completion(content="read completed"), "usage": {"prompt_tokens": 20, "completion_tokens": 3}})
-    file = tmp_path / "data/knowledge/note.txt"
-    file.parent.mkdir(parents=True)
-    file.write_text("persisted file")
     kwargs = {"root": tmp_path, "database_url": f"sqlite:///{tmp_path / 'app.db'}", "adapter_factory": upstream.factory}
     app = create_app(**kwargs)
+    register_approval_tool(app.state.runtime_state.tool_registry)
     with TestClient(app) as client:
-        session, _, _ = configure(client, tools=["read_file"])
+        session, _, _ = configure(client, tools=["test_approval"])
         ok(client.patch(f"/api/sessions/{session['session_id']}", json={"reasoning": False}))
         response = send(client, session)
         ok(client.patch(f"/api/sessions/{session['session_id']}", json={"reasoning": True}))
@@ -186,6 +182,7 @@ def test_restart_preserves_only_pending_approval(tmp_path):
         orphan = state.runs.create_run(kind="tool", persona_id=COGITA_PERSONA_ID, session_id=orphan_session.session_id)
         state.runs.update_status(orphan.run_id, RunStatus.RUNNING)
     restarted = create_app(**kwargs)
+    register_approval_tool(restarted.state.runtime_state.tool_registry)
     with TestClient(restarted) as client:
         saved_run = ok(client.get(f"/api/runs/{run_id}"))
         assert saved_run["status"] == "WAITING_FOR_USER"
@@ -194,7 +191,7 @@ def test_restart_preserves_only_pending_approval(tmp_path):
         assert ok(client.get(f"/api/runs/{orphan.run_id}"))["status"] == "INTERRUPTED"
         response = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
         assert response["run"]["status"] == "DONE"
-        assert results(response)[0]["data"]["content"] == "persisted file"
+        assert results(response)[0]["data"]["content"] == "approved"
         calls = [step["metadata"]["llm"] for step in response["run"]["steps"] if step["kind"] == "model"]
         assert len(calls) == 2 and calls[0] == first_statistics
         assert sum(call["usage"]["total_tokens"] for call in calls) == 38
@@ -218,8 +215,8 @@ def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_clie
     assert not bad["success"] and bad["run"]["error_code"] == "CODEC_INVALID_BASE64"
     assert results(bad)[0]["error_code"] == "CODEC_INVALID_BASE64" and upstream.calls == []
     count = len(client.app.state.runtime_state.runs.list_runs(session["session_id"]))
-    for url, payload in (("/api/tools/read_file/call", {"session_id": session["session_id"], "arguments": {"path": "x"}}),
-                         (f"/api/sessions/{session['session_id']}/messages", {"content": "/read_file x"})):
+    for url, payload in (("/api/tools/test_approval/call", {"session_id": session["session_id"], "arguments": {"value": "x"}}),
+                         (f"/api/sessions/{session['session_id']}/messages", {"content": "/test_approval x"})):
         denied = client.post(url, json=payload)
         assert denied.status_code == 400 and denied.json()["error"]["code"] == "TOOL_NOT_ALLOWED"
     assert len(client.app.state.runtime_state.runs.list_runs(session["session_id"])) == count
@@ -231,11 +228,10 @@ def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_clie
 @pytest.mark.parametrize("decision", ["reject", "cancel"])
 def test_direct_approval_rejection_and_cancellation(harness_client, decision):
     client, upstream, _ = harness_client
-    session, _, _ = configure(client, tools=["read_file"], enabled=False, model=False)
-    response = ok(client.post("/api/tools/read_file/call", json={"session_id": session["session_id"], "arguments": {"path": "C:\\private\\secret.txt"}}))
+    session, _, _ = configure(client, tools=["test_approval"], enabled=False, model=False)
+    response = ok(client.post("/api/tools/test_approval/call", json={"session_id": session["session_id"], "arguments": {"value": "approval input"}}))
     run_id = response["run"]["run_id"]
     assert response["run"]["status"] == "WAITING_FOR_USER"
-    assert "C:" not in json.dumps(response)
     if decision == "reject":
         response = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "reject"}))
         assert response["run"]["status"] == "FAILED" and results(response)[0]["status"] == "rejected"
@@ -247,7 +243,7 @@ def test_direct_approval_rejection_and_cancellation(harness_client, decision):
     assert response["session"]["waiting_run_id"] is None
     assert not upstream.calls
     events = ok(client.get(f"/api/runs/{run_id}/events"))["items"]
-    assert "C:" not in json.dumps(events) and "harness_state" not in json.dumps(events)
+    assert "harness_state" not in json.dumps(events)
 
 
 @pytest.mark.parametrize("finish", [True, False])
@@ -283,9 +279,9 @@ def test_active_budget_includes_approved_tool_execution(harness_client, monkeypa
     async def slow(*_args):
         await asyncio.sleep(10)
     registry = client.app.state.runtime_state.tool_registry
-    registry._tools["read_file"] = replace(registry.get("read_file"), handler=slow)
-    session, _, _ = configure(client, tools=["read_file"])
-    upstream.turns = [completion(tool_call("read_file", {"path": "data/knowledge/a"}))]
+    registry._tools["test_approval"] = replace(registry.get("test_approval"), handler=slow)
+    session, _, _ = configure(client, tools=["test_approval"])
+    upstream.turns = [completion(tool_call("test_approval", {"value": "approval input"}))]
     response = send(client, session)
     run_id = response["run"]["run_id"]
     runs = client.app.state.runtime_state.runs
@@ -389,28 +385,12 @@ def test_model_refusal_is_terminal_without_an_assistant_message(harness_client, 
     assert [message["role"] for message in response["messages"]] == ["user"]
 
 
-def test_settings_snapshot_and_strict_rest_json(harness_client):
+def test_strict_rest_json(harness_client):
     client, _, _ = harness_client
-    state = client.app.state.runtime_state
-    settings = ok(client.patch("/api/tools/settings", json={"searxng_base_url": "https://8.8.8.8"}))
-    assert settings["searxng_base_url"] == "https://8.8.8.8"
-    session, _, _ = configure(client, tools=["web_search"], enabled=False, model=False)
-    async def search(_args, context):
-        return {"service": context.harness_settings.searxng_base_url}
-    state.tool_registry._tools["web_search"] = replace(state.tool_registry.get("web_search"), handler=search)
-    waiting = ok(client.post("/api/tools/web_search/call", json={"session_id": session["session_id"], "arguments": {"query": "search"}}))
-    run_id = waiting["run"]["run_id"]
-    approval = next(step for step in waiting["run"]["steps"] if step["kind"] == "approval")
-    assert approval["metadata"]["service_url"] == "https://8.8.8.8"
-    ok(client.patch("/api/tools/settings", json={"searxng_base_url": "https://8.8.4.4"}))
-    resolved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
-    assert results(resolved)[0]["data"]["service"] == "https://8.8.8.8"
-    bad = client.patch("/api/tools/settings", json={"searxng_base_url": "https://name:SECRET@example.com"})
-    assert bad.status_code == 422 and "SECRET" not in bad.text
-    assert client.patch("/api/tools/settings", json={"extra": 1}).status_code == 422
-    assert client.patch("/api/tools/settings", content='{"searxng_base_url":null,"searxng_base_url":"https://8.8.8.8"}', headers={"Content-Type": "application/json"}).status_code == 422
-    duplicate = '{"session_id":' + json.dumps(session["session_id"]) + ',"arguments":{"query":"a","query":"b"}}'
-    assert client.post("/api/tools/web_search/call", content=duplicate, headers={"Content-Type": "application/json"}).json()["error"]["code"] == "INVALID_TOOL_JSON"
+    session, _, _ = configure(client, enabled=False, model=False)
+    duplicate = '{"session_id":' + json.dumps(session["session_id"]) + ',"arguments":{"value":"a","value":"b"}}'
+    response = client.post("/api/tools/base64_encode/call", content=duplicate, headers={"Content-Type": "application/json"})
+    assert response.status_code == 422 and response.json()["error"]["code"] == "INVALID_TOOL_JSON"
     assert client.post("/api/sessions", json={"tools_allowed": ["not_registered"]}).json()["error"]["code"] == "TOOL_NOT_FOUND"
 
 
@@ -425,10 +405,10 @@ def test_waiting_time_is_excluded_and_approval_rounds_remain_bounded(harness_cli
     monkeypatch.setattr(agent_loop, "_Budget", lambda spent: budget_type(spent, started=clock[0]))
     async def read(*_args):
         clock[0] += .1
-        return {"path": "data/knowledge/note.txt", "content": "read"}
-    state.tool_registry._tools["read_file"] = replace(state.tool_registry.get("read_file"), handler=read)
-    session, _, _ = configure(client, tools=["read_file"])
-    upstream.turns = [completion(tool_call("read_file", {"path": "data/knowledge/note.txt"}, f"call_{i}")) for i in range(9)]
+        return {"value": "approval input", "content": "read"}
+    state.tool_registry._tools["test_approval"] = replace(state.tool_registry.get("test_approval"), handler=read)
+    session, _, _ = configure(client, tools=["test_approval"])
+    upstream.turns = [completion(tool_call("test_approval", {"value": "approval input"}, f"call_{i}")) for i in range(9)]
     waiting = send(client, session)
     run_id = waiting["run"]["run_id"]
     monkeypatch.setattr(agent_loop, "ACTIVE_BUDGET_SECONDS", 1)

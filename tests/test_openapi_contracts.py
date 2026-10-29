@@ -334,10 +334,11 @@ def test_management_reads_updates_and_deletions_keep_response_shapes(api):
     client, _ = api
     for path in ("/api/health", "/api/data/storage-stats", "/api/models/inventory",
                  "/api/models/local-runtime/settings", "/api/models/local-runtime", "/api/models/local-runtime/catalog",
-                 "/api/sessions", "/api/tools", "/api/tools/settings", "/api/personas"):
+                 "/api/sessions", "/api/tools", "/api/personas"):
         assert client.get(path).status_code == 200
     assert client.patch("/api/models/local-runtime/settings", json={"download": {"http_proxy": ""}}).json()["download"]["http_proxy"] is None
-    assert client.patch("/api/tools/settings", json={"searxng_base_url": None}).status_code == 200
+    assert client.get("/api/tools/settings").status_code == 404
+    assert client.patch("/api/tools/settings", json={"searxng_base_url": None}).status_code == 404
     assert client.post("/api/data/attachments/scan-orphans").json()["orphans"] == []
     assert client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}).json()["errors"] == []
 

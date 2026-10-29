@@ -46,7 +46,7 @@ export function newProjectInput(kind: ProjectKind, personas: Persona[], tools: H
   return kind === 'workspace' ? { ...common, kind,
     agent_persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)?.id || '',
     cogita_persona_id: personas.find((p) => p.collection === 'user')?.id || '',
-    harness_enabled: false, tools_allowed: tools.map((tool) => tool.name), system_prompt: '', knowledge_base_ids: [],
+    harness_enabled: false, tools_allowed: tools.filter((tool) => tool.scope === 'general').map((tool) => tool.name), system_prompt: '', knowledge_base_ids: [],
   } : { ...common, kind, character_persona_id: '', user_persona_id: '', worldbook_ids: [] };
 }
 
@@ -100,7 +100,7 @@ function StandardProjectEditor({ project, kind, onSaved, onNavigate, onLeaveGuar
     ]).then(([, , available, catalog]) => {
       if (!active) return;
       setResources(available);
-      setTools(catalog);
+      setTools(catalog.filter((tool) => tool.scope === 'general'));
       if (!project) {
         const initial = newProjectInput(kind, usePersonasStore.getState().personas, catalog);
         setDraft(initial);

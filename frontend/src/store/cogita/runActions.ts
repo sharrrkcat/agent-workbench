@@ -4,7 +4,7 @@ import { errorText, mergeRuns, mergeSteps, toolResponseState, pruneHistoryState,
 import { runsApi } from '../../api/runs';
 import { toolsApi } from '../../api/tools';
 
-export const createRunActions: CogitaActions<'deleteRun' | 'retryRun' | 'cancelRun' | 'resolveApproval' | 'callTool'> = (set, get) => ({
+export const createRunActions: CogitaActions<'deleteRun' | 'retryRun' | 'cancelRun' | 'resolveApproval'> = (set, get) => ({
   deleteRun: async (runId) => {
     if (get().mutatingHistory) return;
     const epoch = get().sessionEpoch;
@@ -72,23 +72,5 @@ export const createRunActions: CogitaActions<'deleteRun' | 'retryRun' | 'cancelR
     } finally {
       set((state) => ({ resolvingApprovals: state.resolvingApprovals.filter((id) => id !== runId) }));
     }
-  },
-
-  callTool: async (name, args) => {
-    const session = get().currentSession;
-    const epoch = get().sessionEpoch;
-    if (!session || get().sending || get().mutatingHistory) return undefined;
-    set({ sending: true, error: null });
-    try {
-      const response = await toolsApi.callTool(name, session.session_id, args);
-      if (get().sessionEpoch !== epoch) return undefined;
-      set((state) => toolResponseState(state, response));
-      return response;
-    } catch (error) {
-      if (get().currentSession?.session_id === session.session_id && get().sessionEpoch === epoch) set({ error: errorText(error) });
-    } finally {
-      if (get().sessionEpoch === epoch) set({ sending: false });
-    }
-    return undefined;
   },
 });

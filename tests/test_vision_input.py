@@ -30,7 +30,7 @@ from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.stores import MessageStore
 from ai_workbench.workers.transformers_server import build_app
 from tests.model_fixtures import configure_model, write_local_model, resolve_local_profile
-from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
+from tests.tool_fixtures import register_approval_tool, ToolOpenAI, completion, ok, tool_call
 
 
 def image_bytes(format_="PNG", color="red", size=(16, 12), **kwargs):
@@ -240,16 +240,14 @@ def test_external_local_errors_precede_loading_and_stream_headers(tmp_path, stre
 @pytest.mark.parametrize("memory", [True, False], ids=["memory", "sqlite"])
 def test_images_survive_approval_history_retry_edit_and_cleanup(tmp_path, monkeypatch, memory):
     monkeypatch.setenv("COGITA_ATTACHMENTS_DIR", str(tmp_path / "data/attachments"))
-    upstream = ToolOpenAI(completion(tool_call("read_file", {"path": "data/knowledge/note.txt"})), completion(content="seen"))
-    note = tmp_path / "data/knowledge/note.txt"
-    note.parent.mkdir(parents=True)
-    note.write_text("fixture", encoding="utf-8")
+    upstream = ToolOpenAI(completion(tool_call("test_approval", {"value": "confirm"})), completion(content="seen"))
     app = create_app(root=tmp_path, use_memory=memory, database_url=f"sqlite:///{tmp_path / 'test.db'}", adapter_factory=upstream.factory)
+    register_approval_tool(app.state.runtime_state.tool_registry)
     with TestClient(app) as client:
         configure_model(client, request_options={"streaming": True})
         ok(client.patch("/api/settings/general", json={"auto_generate_session_titles": False}))
         attachment = ok(client.post("/api/attachments", files={"file": ("picture.png", image_bytes(), "image/png")}))
-        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["read_file"]}))
+        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["test_approval"]}))
         state = app.state.runtime_state
         path = f"/api/sessions/{session['session_id']}/messages"
         pending = ok(client.post(path, json={"content": "", "attachments": [attachment]}))

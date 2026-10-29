@@ -38,7 +38,8 @@ for (const locale of ['en', 'zh-CN']) {
           await dialog.getByLabel(labels.projectName, { exact: true }).fill(`Workspace ${tag}`);
           await chooseOption(dialog.getByLabel(labels.defaultAgentPersona, { exact: true }), agent.name);
           await dialog.getByLabel(labels.projectPrompt, { exact: true }).fill('Project instructions');
-          await dialog.getByRole('checkbox', { name: 'read_file', exact: true }).uncheck();
+          await dialog.getByRole('checkbox', { name: 'base64_decode', exact: true }).uncheck();
+          await expect(dialog.getByRole('checkbox', { name: /^qq_/ })).toHaveCount(0);
           await dialog.getByRole('tab', { name: labels.knowledge, exact: true }).click();
           await dialog.getByRole('checkbox', { name: bases[0].name, exact: true }).check();
           const created = page.waitForResponse((r) => r.url().endsWith('/api/projects') && r.request().method() === 'POST');
@@ -69,7 +70,7 @@ for (const locale of ['en', 'zh-CN']) {
           await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
           dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
           await expect(dialog.getByLabel(labels.agentPersona, { exact: true })).toContainText(agent.name);
-          await expect(dialog.getByRole('checkbox', { name: 'read_file', exact: true })).toHaveCount(0);
+          await expect(dialog.getByRole('checkbox', { name: 'base64_decode', exact: true })).toHaveCount(0);
           await expect(dialog.getByLabel(labels.collections.user, { exact: true })).toHaveCount(0);
           await expect(dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true })).toHaveCount(0);
           await dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true }).fill('0');
@@ -87,7 +88,7 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true })).toBeChecked();
           await page.getByRole('menuitem', { name: labels.harnessSettings, exact: true }).click();
           const harness = page.getByRole('dialog', { name: labels.harnessSettings, exact: true });
-          await expect(harness.getByRole('checkbox', { name: 'read_file', exact: true })).toBeDisabled();
+          await expect(harness.getByRole('checkbox', { name: 'base64_decode', exact: true })).toBeDisabled();
           await page.keyboard.press('Escape');
           await expect(harness).toBeHidden();
           await page.locator('.composer textarea').fill('Workspace question');

@@ -5,6 +5,18 @@ import json
 import httpx
 
 from tests.model_fixtures import MockOpenAI
+from ai_workbench.core.harness.schema import ToolSpec
+
+
+def register_approval_tool(registry, *, content="approved"):
+    """Exercise the shared approval workflow without a production side effect."""
+    async def handler(_arguments, _context):
+        return {"content": content}
+
+    registry.register(ToolSpec("test_approval", "Test approval", {
+        "type": "object", "properties": {"value": {"type": "string"}},
+        "required": ["value"], "additionalProperties": False,
+    }, handler, requires_approval=True))
 
 
 def tool_call(name="base64_encode", arguments=None, call_id="call_1"):

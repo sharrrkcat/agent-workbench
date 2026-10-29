@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-from email.message import Message
-from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
 from ai_workbench.core.harness.schema import ToolExecutionError
-from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.network_policy import NetworkPolicyError
 
 
 MAX_NETWORK_BYTES = 1024 * 1024
-MAX_TEXT_CHARS = 200_000
 
 
 async def fetch_bytes(url: str, policy: Any, *, max_bytes: int = MAX_NETWORK_BYTES) -> tuple[bytes, str, str]:
@@ -65,49 +61,3 @@ async def fetch_bytes(url: str, policy: Any, *, max_bytes: int = MAX_NETWORK_BYT
         raise ToolExecutionError(exc.code, exc.message) from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise ToolExecutionError("NETWORK_REQUEST_FAILED", "Network request failed.") from exc
-
-
-class _TextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.parts: list[str] = []
-        self.hidden = 0
-
-    def handle_starttag(self, tag: str, attrs) -> None:
-        if tag.lower() in {"script", "style", "noscript", "template"}:
-            self.hidden += 1
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag.lower() in {"script", "style", "noscript", "template"} and self.hidden:
-            self.hidden -= 1
-
-    def handle_data(self, data: str) -> None:
-        if not self.hidden and data.strip():
-            self.parts.append(" ".join(data.split()))
-
-
-def text_from_response(data: bytes, content_type: str) -> tuple[str, bool]:
-    header = Message()
-    header["content-type"] = content_type
-    charset = header.get_content_charset() or "utf-8"
-    try:
-        text = data.decode(charset, errors="replace")
-    except LookupError as exc:
-        raise ToolExecutionError("NETWORK_INVALID_ENCODING", "The service returned an unsupported text encoding.") from exc
-    if "html" in content_type.lower():
-        parser = _TextExtractor()
-        parser.feed(text)
-        text = "\n".join(parser.parts)
-    truncated = len(text) > MAX_TEXT_CHARS
-    return text[:MAX_TEXT_CHARS], truncated
-
-
-async def fetch_json(url: str, policy: Any) -> tuple[dict[str, Any], str]:
-    data, final_url, _content_type = await fetch_bytes(url, policy)
-    try:
-        value = strict_json_loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
-        raise ToolExecutionError("NETWORK_INVALID_JSON", "Search service returned invalid JSON.") from exc
-    if not isinstance(value, dict):
-        raise ToolExecutionError("NETWORK_INVALID_JSON", "Search service returned an invalid JSON object.")
-    return value, final_url

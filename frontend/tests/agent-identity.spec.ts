@@ -18,6 +18,7 @@ for (const locale of ['en', 'zh-CN']) {
         test(`${kind} history follows original personas through edits, streaming and deletion`, async ({ page, request }, info) => {
           test.setTimeout(90000);
           const labels = words(locale);
+          const chatLabels = JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/chat.json`, import.meta.url), 'utf8'));
           await page.addInitScript((language) => {
             localStorage.setItem('cogita.locale', language);
             const sockets: WebSocket[] = [];
@@ -38,13 +39,13 @@ for (const locale of ['en', 'zh-CN']) {
             if (kind === 'workspace') {
               const project = await json(request.post('/api/projects', { data: {
                 kind: 'workspace', name: 'Identity workspace', agent_persona_id: first.id, cogita_persona_id: user.id,
-                context_policy: {}, harness_enabled: true, tools_allowed: ['read_file'],
+                context_policy: {}, harness_enabled: true, tools_allowed: ['test_approval'],
               } }));
               projectId = project.id;
               sessionId = (await json(request.post(`/api/projects/${projectId}/sessions`, { data: {} }))).session_id;
             } else {
               sessionId = (await json(request.post('/api/sessions', { data: {
-                persona_id: first.id, context_policy: {}, harness_enabled: true, tools_allowed: ['read_file'],
+                persona_id: first.id, context_policy: {}, harness_enabled: true, tools_allowed: ['test_approval'],
               } }))).session_id;
             }
             const sessionPath = `/api/sessions/${sessionId}`;
@@ -89,6 +90,7 @@ for (const locale of ['en', 'zh-CN']) {
             await expect(page.getByRole('button', { name: labels.cancel, exact: true })).toHaveCount(0);
             await page.locator('.composer textarea').fill('approval');
             await page.locator('.composer textarea').press('Enter');
+            await page.getByRole('button', { name: chatLabels.queue.resume, exact: true }).click();
             await expect.poll(async () => (await json(request.get(sessionPath))).waiting_run_id).toBeTruthy();
             const waiting = (await json(request.get(sessionPath))).waiting_run_id;
             await json(request.patch(`/api/personas/${second.id}`, { data: { name: 'Approval agent' } }));

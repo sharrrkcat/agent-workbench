@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from copy import deepcopy
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
@@ -41,17 +40,6 @@ class ToolRegistry:
     def catalog(self) -> list[dict[str, Any]]:
         return [deepcopy(item.public()) for item in self.list()]
 
-    @staticmethod
-    def public_arguments(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = deepcopy(arguments)
-        if name == "read_file" and isinstance(result.get("path"), str):
-            value = result["path"].replace("\\", "/")
-            if ":" in value or value.startswith("/") or any(part == ".." for part in value.split("/")):
-                result["path"] = "[blocked path]"
-        if name == "fetch_url" and isinstance(result.get("url"), str):
-            result["url"] = public_url(result["url"])
-        return result
-
     def validate_allowlist(self, names: list[str]) -> list[str]:
         if len(names) != len(set(names)):
             raise ValueError("Tool names must be unique")
@@ -87,18 +75,3 @@ class ToolRegistry:
         except (ValueError, TypeError, RecursionError) as exc:
             raise ToolExecutionError("TOOL_PROTOCOL_ERROR", "Tool returned invalid JSON data.") from exc
         return result
-
-
-def public_url(value: str) -> str:
-    """Do not echo URL credentials or common authentication query parameters."""
-    try:
-        parsed = urlsplit(value)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            return "[invalid URL]"
-        if parsed.username is not None or parsed.password is not None:
-            return "[blocked URL credentials]"
-        secret_keys = {"key", "api_key", "apikey", "token", "access_token", "secret", "password", "signature"}
-        query = [(key, "[redacted]" if key.lower() in secret_keys else item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)]
-        return urlunsplit(parsed._replace(query=urlencode(query))) if query else value
-    except ValueError:
-        return "[invalid URL]"

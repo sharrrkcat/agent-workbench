@@ -14,7 +14,7 @@ from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import AppMetadataRecord, KnowledgeBaseRecord, RuntimeInstallationRecord, WorldbookRecord
 from tests.migration_fixtures import insert_pre_request_options_model, model_row
 from tests.model_fixtures import configure_model
-from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
+from tests.tool_fixtures import register_approval_tool, ToolOpenAI, completion, ok, tool_call
 
 
 @pytest.fixture(params=[True, False], ids=["memory", "sqlite"])
@@ -30,7 +30,7 @@ def workspace(client, **values):
     return ok(client.post("/api/projects", json={
         "kind": "workspace", "name": "Workspace", "agent_persona_id": COGITA_PERSONA_ID,
         "cogita_persona_id": USER_PERSONA_ID, "context_policy": {},
-        "harness_enabled": False, "tools_allowed": ["base64_encode", "read_file", "knowledge_search"], **values,
+        "harness_enabled": False, "tools_allowed": ["base64_encode", "base64_decode"], **values,
     }))
 
 
@@ -129,7 +129,7 @@ def test_empty_global_model_and_project_tool_ceiling(client_pair):
     session = child(client, project)
     path = f"/api/sessions/{session['session_id']}"
     assert session["effective"]["model_profile_id"] is None
-    denied = client.patch(path, json={"overrides": {"tools_allowed": ["read_file"]}})
+    denied = client.patch(path, json={"overrides": {"tools_allowed": ["base64_decode"]}})
     assert denied.status_code == 422 and denied.json()["error"]["code"] == "TOOL_NOT_ALLOWED"
     assert ok(client.get(path))["overrides"] == {}
     ok(client.patch(path, json={"overrides": {"harness_enabled": True, "tools_allowed": ["base64_encode"]}}))
@@ -178,8 +178,6 @@ def test_project_knowledge_context_order_and_session_isolation(client_pair):
         assert all(system.count(value) == 1 for value in ("AGENT_INSTRUCTION", "PROJECT_INSTRUCTION", "COGITA_BACKGROUND"))
         assert "PROJECT_INSTRUCTION" not in json.dumps(result)
         assert result["session"]["user_persona"]["name"] == "Me"
-    denied = ok(client.post("/api/tools/knowledge_search/call", json={"session_id": session["session_id"], "arguments": {"query": "artifact", "knowledge_base_ids": ids[4:]}}))
-    assert denied["run"]["error_code"] == "KNOWLEDGE_SCOPE_FORBIDDEN"
     sibling = child(client, project, overrides={"context_policy": {}})
     isolated = ok(client.post(f"/api/sessions/{sibling['session_id']}/messages", json={"content": "artifact"}))
     assert isolated["success"]
@@ -193,12 +191,10 @@ def test_project_knowledge_context_order_and_session_isolation(client_pair):
 def test_approval_uses_snapshot_but_cannot_execute_revoked_project_tools(client_pair):
     client, upstream, root = client_pair
     model = configure_model(client, request_options={"streaming": False})
-    file = root / "data/knowledge/note.txt"
-    file.parent.mkdir(parents=True)
-    file.write_text("PRIVATE_FILE_DATA")
-    project = workspace(client, harness_enabled=True, system_prompt="ORIGINAL_PROJECT_PROMPT", temperature=0.3)
+    register_approval_tool(client.app.state.runtime_state.tool_registry, content="PRIVATE_TOOL_RESULT")
+    project = workspace(client, tools_allowed=["base64_encode", "test_approval"], harness_enabled=True, system_prompt="ORIGINAL_PROJECT_PROMPT", temperature=0.3)
     session = child(client, project)
-    upstream.turns = [completion(tool_call("read_file", {"path": "data/knowledge/note.txt"})), completion(content="done")]
+    upstream.turns = [completion(tool_call("test_approval", {"value": "confirm"})), completion(content="done")]
     pending = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "read"}))
     run_id = pending["run"]["run_id"]
     assert pending["run"]["status"] == "WAITING_FOR_USER"
@@ -211,7 +207,7 @@ def test_approval_uses_snapshot_but_cannot_execute_revoked_project_tools(client_
     assert results[0]["error_code"] == "TOOL_NOT_ALLOWED" and approved["run"]["status"] == "DONE"
     assert upstream.calls[-1]["temperature"] == 0.3
     assert "ORIGINAL_PROJECT_PROMPT" in json.dumps(upstream.calls[-1]) and "NEW_PROJECT_PROMPT" not in json.dumps(upstream.calls[-1])
-    assert "PRIVATE_FILE_DATA" not in json.dumps(upstream.calls)
+    assert "PRIVATE_TOOL_RESULT" not in json.dumps(upstream.calls)
     assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["base64_encode"]
     other = child(client, workspace(client, name="Keep"))
     deleted = ok(client.delete(f"/api/projects/{project['id']}"))

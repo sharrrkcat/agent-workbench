@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import Request
 
 from ai_workbench.core.chat_runner import ChatRunner
-from ai_workbench.core.harness import HarnessSettingsStore, ToolRegistry, register_builtin_tools
+from ai_workbench.core.harness import ToolRegistry, register_builtin_tools
 from ai_workbench.core.chat_service import ChatService
 from ai_workbench.core.conversation_history import ConversationHistory, MemoryHistoryStore
 from ai_workbench.core.history_page import MemoryHistoryReader
@@ -68,7 +68,6 @@ class RuntimeState:
     utility_llm: UtilityLLMService
     network_policy: NetworkPolicy
     tool_registry: ToolRegistry
-    harness_settings: HarnessSettingsStore
     runtime_resources: RuntimeResourcesService
     runtime_supervisor: RuntimeSupervisor
     repo_root: Path
@@ -114,7 +113,6 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     events = EventBus(run_event_store=run_events, app_settings_store=app_settings)
     tool_registry = ToolRegistry()
     register_builtin_tools(tool_registry)
-    harness_settings = HarnessSettingsStore(engine)
     supervisor = RuntimeSupervisor(repo_root, RuntimeStore(engine), local_runtime_settings, events)
     manager = ModelManager(profiles, providers, model_settings, events, adapter_factory, supervisor)
     utility_llm = UtilityLLMService(model_manager=manager, app_settings_store=app_settings)
@@ -140,7 +138,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         model_manager=manager, app_settings=app_settings, utility_llm=utility_llm,
         knowledge_service=knowledge_service, active_runs=active_runs,
         chat_service=chat_service, qq_store=qq_store,
-        tool_registry=tool_registry, harness_settings=harness_settings, network_policy=network_policy, repo_root=repo_root,
+        tool_registry=tool_registry,
     )
     runtime = CogitaRuntime(chat_runner=chat_runner, active_runs=active_runs)
     history = ConversationHistory(
@@ -157,7 +155,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         utility_llm=utility_llm, network_policy=network_policy,
         runtime_resources=RuntimeResourcesService(), repo_root=repo_root,
         runtime_supervisor=supervisor,
-        tool_registry=tool_registry, harness_settings=harness_settings,
+        tool_registry=tool_registry,
         database_url=resolved_database_url,
         history_reader=MemoryHistoryReader(sessions, messages, runs) if use_memory else SqlHistoryReader(engine),
     )

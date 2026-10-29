@@ -58,22 +58,22 @@ class QQService:
         self.icebreaker = QQIcebreaker(store)
         state.tool_registry.register(ToolSpec("qq_send_message", "Send one plain-text message to the current QQ conversation.",
             {"type": "object", "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 4000}},
-             "required": ["text"], "additionalProperties": False}, lambda args, context: self.send(args, context), "network", False, False))
+             "required": ["text"], "additionalProperties": False}, lambda args, context: self.send(args, context), "network", False, False, scope="qqbot"))
         state.tool_registry.register(ToolSpec("qq_skip_reply", "End this optional follow-up or icebreaker batch without replying. Available only before sending a reply.",
             {"type": "object", "properties": {}, "additionalProperties": False},
-            lambda args, context: self.skip(context), "safe", False, False))
+            lambda args, context: self.skip(context), "safe", False, False, scope="qqbot"))
         state.tool_registry.register(ToolSpec("qq_send_image",
             "Send one favorite image from the current candidates to this QQ conversation. Prefer text; most replies need no image. "
             "Use a fitting emotional reaction sparingly, at most one image per reply; matching a tag is not a reason to send. "
             "Do not routinely illustrate replies, send unsolicited images consecutively, or repeat a delivery announcement. "
             "A confirmed image uses one reply slot.", QQSendImageArguments.model_json_schema(),
-            lambda args, context: self.send_image(args, context), "network", False, False))
+            lambda args, context: self.send_image(args, context), "network", False, False, scope="qqbot"))
         state.tool_registry.register(ToolSpec("qq_generate_image",
             "Generate and immediately send one image to the current QQ conversation. A successful send uses one reply slot. "
             "Use only for an explicit request to create a new picture. Discussing animation, scenes, generating text, or declining images is not such a request. "
             "Only supply a drawing prompt; size, quality and style come from Project settings. Generation may take a while.",
             {"type": "object", "properties": {"prompt": {"type": "string", "minLength": 1, "maxLength": 32000, "pattern": r"\S"}},
-             "required": ["prompt"], "additionalProperties": False}, lambda args, context: self.generate_image(args, context), "network", False, False))
+             "required": ["prompt"], "additionalProperties": False}, lambda args, context: self.generate_image(args, context), "network", False, False, scope="qqbot"))
 
     def start(self):
         self.supervisor = asyncio.create_task(self.run())

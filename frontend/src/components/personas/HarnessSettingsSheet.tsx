@@ -44,7 +44,7 @@ export function HarnessSettingsSheet({ session, onClose, finalFocus, onBusyChang
     setError('');
     setLoading(true);
     void toolsApi.listTools().then((catalog) => {
-      if (live) { setTools(catalog); setLoading(false); }
+      if (live) { setTools(catalog.filter((tool) => tool.scope === 'general')); setLoading(false); }
     }).catch((reason) => { if (live) setError(errorText(reason)); });
     return () => { live = false; };
   }, [reload]);

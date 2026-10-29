@@ -314,7 +314,7 @@ def test_participant_state_and_frozen_policy_survive_store_recovery(qq_client):
 def test_skip_stays_out_of_general_tools_and_public_snapshot_state(qq_client):
     client, state, _ = qq_client
     tools = ok(client.get("/api/tools"))
-    assert not {"qq_send_message", "qq_skip_reply"}.intersection(t["name"] for t in tools)
+    assert {"qq_send_message", "qq_skip_reply"}.issubset(t["name"] for t in tools if t["scope"] == "qqbot")
     session = ok(client.post("/api/sessions", json={}))
     assert "qq_skip_reply" not in session["tools_allowed"]
     assert client.patch(f"/api/sessions/{session['session_id']}", json={"tools_allowed": ["qq_skip_reply"]}).status_code == 422

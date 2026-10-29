@@ -450,10 +450,9 @@ for (const locale of ['en', 'zh-CN']) {
           .toBe(entries[1].id);
         await expect(second.getByRole('button', { name: worldbook.expand, exact: true })).toBeVisible();
         await navigateSettings(page, settings.tools);
-        const args = page.getByLabel(settings.toolArguments, { exact: true });
-        await args.fill('{"value":"hi"}');
-        await page.getByRole('button', { name: settings.callTool, exact: true }).click();
-        await expect(page.locator('.tool-output')).toContainText('aGk=');
+        const codec = page.locator('[data-tool-name="base64_encode"]');
+        await codec.getByRole('button', { name: settings.toolSchema, exact: true }).click();
+        await expect(codec.locator('[data-slot="code-block-content"]')).toContainText('value');
         await navigateSettings(page, settings.general);
         const processing = page.getByRole('switch', {
           name: settings.generalFields.showFullProcessing,

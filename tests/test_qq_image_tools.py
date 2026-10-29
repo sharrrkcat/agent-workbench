@@ -143,7 +143,7 @@ def test_asset_id_is_strict_and_tool_is_qq_only(qq_client, value):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=1)
     favorite(state)
-    assert 'qq_send_image' not in {t['name'] for t in ok(client.get('/api/tools'))}
+    assert 'qq_send_image' in {t['name'] for t in ok(client.get('/api/tools'))}
     assert client.post('/api/tools/qq_send_image/call', json={'session_id': session['session_id'], 'arguments': {'asset_id': 1}}).status_code >= 400
     ordinary = ok(client.post('/api/sessions', json={}))
     assert client.patch(f"/api/sessions/{ordinary['session_id']}", json={'tools_allowed': ['qq_send_image']}).status_code == 422

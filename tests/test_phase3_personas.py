@@ -21,6 +21,7 @@ from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import MessageRecord
 from tests.model_fixtures import MockOpenAI, configure_model
+from tests.tool_fixtures import register_approval_tool
 
 
 @pytest.fixture(params=[True, False], ids=["memory", "sqlite"])
@@ -129,12 +130,12 @@ def test_model_generation_and_context_precedence(chat_client):
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": global_model["id"]}))
     role = persona(client)
     session = session_for(client, role["id"], model_profile_id=selected_model["id"], generation={"temperature": 0.6},
-                          context_policy={"max_messages": 0}, harness_enabled=True, tools_allowed=["read_file"])
+                          context_policy={"max_messages": 0}, harness_enabled=True, tools_allowed=["base64_encode"])
     response = send(client, session)
     assert response["run"]["persona_id"] == role["id"]
     assert upstream.calls[-1]["model"] == "other"
     assert upstream.calls[-1]["temperature"] == 0.6 and upstream.calls[-1]["top_p"] == 0.7
-    assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["read_file"]
+    assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["base64_encode"]
     assert response["session"]["effective"]["harness_enabled"] is True
     assert response["session"]["effective"]["model_source"] == "session"
     assert response["messages"][-1]["speaker_name"] is None
@@ -278,16 +279,13 @@ def test_disabled_or_wrong_kind_session_model_never_substitutes(chat_client):
 
 def test_explicit_approval_retains_saved_persona_configuration(chat_client):
     client, upstream = chat_client
+    register_approval_tool(client.app.state.runtime_state.tool_registry)
     configure_model(client, request_options={"streaming": True})
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "USER_BEFORE"}))
     role = persona(client, "Waiting persona")
-    session = session_for(client, role['id'], context_policy={"max_messages": 0}, generation={'temperature': 0.25}, harness_enabled=True, tools_allowed=['read_file'])
-    state = client.app.state.runtime_state
-    path = state.repo_root / "data/knowledge/note.txt"
-    path.parent.mkdir(parents=True)
-    path.write_text("approved file")
+    session = session_for(client, role['id'], context_policy={"max_messages": 0}, generation={'temperature': 0.25}, harness_enabled=True, tools_allowed=['test_approval'])
     upstream.stream_events = [
-        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "read_file", "arguments": '{"path":"data/knowledge/note.txt"}'}}]}, "finish_reason": None}]},
+        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "test_approval", "arguments": '{"value":"confirm"}'}}]}, "finish_reason": None}]},
         {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
     ]
     waiting = send(client, session)
@@ -310,9 +308,9 @@ def test_disabled_harness_never_authorizes_unexpected_tools(chat_client):
     client, upstream = chat_client
     configure_model(client, request_options={"streaming": True})
     role = persona(client)
-    session = session_for(client, role["id"], harness_enabled=False, tools_allowed=["read_file"])
+    session = session_for(client, role["id"], harness_enabled=False, tools_allowed=["base64_encode"])
     upstream.stream_events = [
-        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]}, "finish_reason": None}]},
+        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "base64_encode", "arguments": "{}"}}]}, "finish_reason": None}]},
         {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
     ]
     result = send(client, session)
@@ -353,7 +351,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
             model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "context_window_tokens": 32768, "request_options": {"streaming": True}, "parameters": {"temperature": 0.2}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             ok(await client.patch("/api/models/settings", json={"default_model_profile_id": model["id"]}))
             before = ok(await client.post("/api/personas", json={'collection': 'agent', 'name': 'Before', 'system_prompt': 'BEFORE_PROMPT'}))
-            session = ok(await client.post("/api/sessions", json={'persona_id': before['id'], 'harness_enabled': True, 'tools_allowed': ['read_file']}))
+            session = ok(await client.post("/api/sessions", json={'persona_id': before['id'], 'harness_enabled': True, 'tools_allowed': ['base64_encode']}))
             path = f"/api/sessions/{session['session_id']}"
             request = asyncio.create_task(client.post(path + "/messages", json={"content": "first"}))
             await asyncio.wait_for(entered.wait(), 5)
@@ -378,7 +376,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
             assert response["session"]["persona_id"] == COGITA_PERSONA_ID
             assert upstream.calls[-1]["temperature"] == 0.2
             assert "BEFORE_PROMPT" in json.dumps(upstream.calls[-1]) and "AFTER_PROMPT" not in json.dumps(upstream.calls[-1])
-            assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["read_file"]
+            assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["base64_encode"]
             ok(await client.patch(path, json={"persona_id": before["id"], "generation": {}}))
             later = ok(await client.post(path + "/messages", json={"content": "second"}))
             assert later["messages"][-1]["speaker_name"] is None

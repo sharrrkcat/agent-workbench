@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -11,11 +11,8 @@ from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 from ai_workbench.core.schema.qq import QQTriggerKind, QQImageCandidate
 
-if TYPE_CHECKING:
-    from ai_workbench.core.harness.settings import HarnessSettings
-
-
 ToolRisk = Literal["safe", "file", "network"]
+ToolScope = Literal["general", "qqbot"]
 ToolHandler = Callable[[dict[str, Any], "ToolExecutionContext"], Awaitable[dict[str, Any]]]
 
 
@@ -36,6 +33,7 @@ class ToolSpec:
     risk: ToolRisk = "safe"
     requires_approval: bool = False
     direct_callable: bool = True
+    scope: ToolScope = "general"
 
     def public(self) -> dict[str, Any]:
         return {
@@ -45,19 +43,15 @@ class ToolSpec:
             "risk": self.risk,
             "requires_approval": self.requires_approval,
             "direct_callable": self.direct_callable,
+            "scope": self.scope,
         }
 
 
 @dataclass
 class ToolExecutionContext:
-    repo_root: Any
-    network_policy: Any
-    knowledge_service: Any = None
     session_id: str | None = None
     run_id: str | None = None
     tool_call_id: str | None = None
-    knowledge_base_ids: list[str] | None = None
-    harness_settings: HarnessSettings | None = None
     qq_image_generation_model_profile_id: str | None = None
     qq_image_generation_options: ImageGenerationControls | None = None
     qq_image_generation_allowed: bool = False
@@ -93,7 +87,6 @@ class HarnessState(BaseModel):
 
     direct: bool = False
     reasoning: bool = True
-    searxng_base_url: str | None = None
     base_messages: list[ContextMessage] = Field(default_factory=list)
     context_trace: ContextTrace = Field(default_factory=ContextTrace)
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)

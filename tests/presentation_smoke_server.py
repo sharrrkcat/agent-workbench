@@ -22,7 +22,7 @@ from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part
 from ai_workbench.core.schema.run import RunStatus
 from tests.model_fixtures import configure_model
-from tests.tool_fixtures import ToolOpenAI, tool_call
+from tests.tool_fixtures import ToolOpenAI, register_approval_tool, tool_call
 from tests.runtime_browser_fixture import install_runtime_fixture
 from tests.qq_browser_fixture import install_qq_fixture
 
@@ -112,8 +112,8 @@ class PresentationOpenAI(ToolOpenAI):
             stream = FixtureStream([{"reasoning_content": "Received reasoning before interruption."},
                                     {"content": "Incomplete streamed answer."}], hold=command == "cancel-stream", fail=command == "fail-stream")
         elif command == "approval" and not outputs:
-            stream = FixtureStream([{"reasoning_content": "I will read the requested file."},
-                                    {"tool_calls": [{"index": 0, **tool_call("read_file", {"path": "data/knowledge/note.txt"})}]}], "tool_calls")
+            stream = FixtureStream([{"reasoning_content": "I will run the requested test tool."},
+                                    {"tool_calls": [{"index": 0, **tool_call("test_approval", {"value": "confirm"})}]}], "tool_calls")
         elif command == "two-rounds" and len(outputs) < 2:
             index = len(outputs)
             call = tool_call("base64_encode" if index == 0 else "base64_decode", {"value": "hi" if index == 0 else "aGk="}, f"call_{index}")
@@ -134,6 +134,7 @@ def create_fixture_app(repository: Path, root: Path):
     configure_model(client, kind="embedding", alias="resource-embedding", parameters={"dimensions": 2})
     client.patch("/api/settings/general", json={"auto_generate_session_titles": False}).raise_for_status()
     state = app.state.runtime_state
+    register_approval_tool(state.tool_registry, content="Approved browser fixture result")
     install_runtime_fixture(app, root)
     install_qq_fixture(app)
 
@@ -174,9 +175,6 @@ def main():
     with TemporaryDirectory(prefix="cogita-presentation-") as directory:
         root = Path(directory)
         os.environ["COGITA_ATTACHMENTS_DIR"] = str(root / "data/attachments")
-        note = root / "data/knowledge/note.txt"
-        note.parent.mkdir(parents=True)
-        note.write_text("Approved browser fixture result", encoding="utf-8")
         app = create_fixture_app(Path(__file__).resolve().parents[1], root)
         uvicorn.run(app, host="127.0.0.1", port=args.port)
 

@@ -117,7 +117,7 @@ class ChatService:
             profile = self.model_manager.default_chat_profile()
             values = {**values, "model_profile_id": profile.id if profile else None}
         if "tools_allowed" not in values:
-            values = {**values, "tools_allowed": [tool.name for tool in self.tool_registry.list() if tool.name not in QQ_TOOLS] if self.tool_registry else []}
+            values = {**values, "tools_allowed": [tool.name for tool in self.tool_registry.list() if tool.scope == "general"] if self.tool_registry else []}
         candidate = OrdinarySession(session_id="new", **values)
         self.validate_session(candidate)
         return self.sessions.create_session(**values)

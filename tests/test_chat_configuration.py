@@ -89,7 +89,7 @@ def test_catalog_defaults_and_session_tool_switches(client_pair):
     client, upstream = client_pair
     configure_model(client, request_options={"streaming": False})
     catalog = ok(client.get("/api/tools"))
-    names = [tool["name"] for tool in catalog]
+    names = [tool["name"] for tool in catalog if tool["scope"] == "general"]
     session = ok(client.post("/api/sessions", json={}))
     path = f"/api/sessions/{session['session_id']}"
     assert session["tools_allowed"] == names == session["effective"]["tools_allowed"]
@@ -215,7 +215,7 @@ def test_prompt_is_always_included_once_with_every_history_limit(client_pair):
     assert "FIXED_PERSONA_PROMPT" not in json.dumps(upstream.calls[-1])
 
 
-def test_user_agent_and_session_knowledge_order_and_tool_scope(client_pair):
+def test_user_agent_and_session_knowledge_order_and_search_scope(client_pair):
     client, upstream = client_pair
     configure_model(client)
     embedding = configure_model(client, kind="embedding", alias="embedding")
@@ -236,11 +236,6 @@ def test_user_agent_and_session_knowledge_order_and_tool_scope(client_pair):
     ok(client.post(path + "/messages", json={"content": "artifact"}))
     search = ok(client.post("/api/knowledge/search", json={"query": "artifact", "session_id": session["session_id"]}))
     assert {item["knowledge_base_id"] for item in search["results"]} == set(bases[:3])
-    direct = ok(client.post("/api/tools/knowledge_search/call", json={"session_id": session["session_id"], "arguments": {"query": "artifact"}}))
-    part = next(part for message in direct["messages"] for part in message["parts"] if part["type"] == "tool_result")
-    assert {item["knowledge_base_id"] for item in part["data"]["results"]} == set(bases[:3])
-    forbidden = ok(client.post("/api/tools/knowledge_search/call", json={"session_id": session["session_id"], "arguments": {"query": "artifact", "knowledge_base_ids": bases[3:]}}))
-    assert forbidden["run"]["error_code"] == "KNOWLEDGE_SCOPE_FORBIDDEN"
     ok(client.patch(f"/api/knowledge/bases/{bases[1]}", json={"enabled": False}))
     search = ok(client.post("/api/knowledge/search", json={"query": "artifact", "session_id": session["session_id"]}))
     assert {item["knowledge_base_id"] for item in search["results"]} == {bases[0], bases[2]}

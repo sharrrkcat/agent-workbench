@@ -464,7 +464,7 @@
 
   .settings-panel, .settings-view, .runtime-panel,
   .model-service, .knowledge-sources, .worldbook-entries,
-  .tool-call-form, .tool-output, .tool-search-settings, .resource-test,
+  .resource-test,
   .worldbook-match-results, .knowledge-source-content {
     display: flex;
     flex-direction: column;
@@ -616,16 +616,7 @@
   .worldbook-entry-card-body { padding: 0 1rem 1rem; }
   .worldbook-entry-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.5fr); gap: 1rem; }
 
-  .tools-layout { display: grid; grid-template-columns: 15rem minmax(0, 1fr); align-items: start; gap: 1.5rem; }
-  .tool-catalog, .tool-workspace { display: flex; flex-direction: column; min-width: 0; gap: 1rem; }
-  .tool-selector > span { display: flex; flex-direction: column; min-width: 0; gap: 0.25rem; }
-  .tool-selector small { display: block; }
-  .tool-search-settings { max-width: 48rem; }
   .tts-voices-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-
-  @media (max-width: 1023px) {
-    .tools-layout { grid-template-columns: minmax(0, 1fr); }
-  }
 
   @media (max-width: 767px) {
     .qq-resources-content { padding: 1.25rem 1rem; }

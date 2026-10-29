@@ -27,7 +27,7 @@ const session = {
   title: 'Chat',
   updated_at: at('0'),
   waiting_run_id: null,
-  effective: { tools_allowed: ['read_file'] },
+  effective: { tools_allowed: ['test_approval'] },
 };
 const run = { run_id: 'r', session_id: 's', kind: 'tool', status: 'RUNNING', created_at: at('0'), updated_at: at('1') };
 const waiting = { ...run, status: 'WAITING_FOR_USER', updated_at: at('2') };
@@ -37,8 +37,8 @@ const part = {
   id: 'call',
   type: 'tool_call',
   tool_call_id: 'call_1',
-  tool_name: 'read_file',
-  arguments: { path: 'data/knowledge/note.txt' },
+  tool_name: 'test_approval',
+  arguments: { value: 'confirm' },
 };
 const call = {
   message_id: 'call-message',
@@ -130,16 +130,6 @@ assert.deepEqual(store.getState().runs, []);
 assert.equal(store.getState().currentSession.session_id, 'other');
 assert.deepEqual(store.getState().resolvingApprovals, []);
 
-store.setState({ currentSession: session, sessions: [session], messages: [], runs: [], stepsByRunId: {} });
-api.callTool = async () => ({
-  run: { ...waiting, steps: [step] },
-  messages: [call],
-  session: { ...session, waiting_run_id: 'r' },
-});
-await store.getState().callTool('read_file', part.arguments);
-assert.equal(store.getState().messages[0].parts[0].tool_name, 'read_file');
-assert.equal(store.getState().currentSession.waiting_run_id, 'r');
-assert.equal(store.getState().sending, false);
 console.log('harness events, stale refresh, microsecond ordering, approvals and session isolation: ok');
 
 const locale = JSON.parse(fs.readFileSync(new URL('../src/i18n/resources/en/runs.json', import.meta.url), 'utf8'));
@@ -156,7 +146,7 @@ const panel = (await loadView('../src/components/RunPanel.tsx')).exports.RunPane
 const html = renderToStaticMarkup(React.createElement(panel, { run: waiting }));
 assert.match(html, /Approve/);
 assert.match(html, /Reject/);
-assert.match(html, /data\/knowledge\/note.txt/);
+assert.match(html, /confirm/);
 assert.match(html, /aria-label="Cancel"/);
 globalThis.harnessTestState.resolvingApprovals = ['r'];
 const busy = renderToStaticMarkup(React.createElement(panel, { run: waiting }));
@@ -169,7 +159,7 @@ const rendered = renderToStaticMarkup(
       {
         id: 'result',
         type: 'tool_result',
-        tool_name: 'read_file',
+        tool_name: 'test_approval',
         tool_call_id: 'call_1',
         status: 'error',
         data: { text: '<script>window.invalid=true</script>' },

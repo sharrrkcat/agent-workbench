@@ -78,8 +78,6 @@ assert.equal(requests.at(-1).url, '/api/models/providers/backend%2F1');
 assert.equal('connection' in requests.at(-1).body, false);
 await modelsApi.patchProviderProfile('backend/1', { connection: { api_key: '' } });
 assert.deepEqual(requests.at(-1).body.connection, { api_key: '' });
-await toolsApi.callTool('read_file', 'session', { path: 'data/knowledge/note.txt' });
-assert.deepEqual(requests.at(-1).body, { session_id: 'session', arguments: { path: 'data/knowledge/note.txt' } });
 await toolsApi.resolveToolApproval('run/1', 'reject');
 assert.equal(requests.at(-1).url, '/api/tools/approvals/run%2F1');
 assert.deepEqual(requests.at(-1).body, { decision: 'reject' });

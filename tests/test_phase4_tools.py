@@ -1,12 +1,8 @@
 import asyncio
 import base64
-import json
-import os
 import socket
-import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -17,7 +13,6 @@ from ai_workbench.core.harness import ToolRegistry, register_builtin_tools
 from ai_workbench.core.harness import network
 from ai_workbench.core.harness.builtins import CODEC_MAX_BYTES
 from ai_workbench.core.harness.schema import ToolExecutionContext, ToolExecutionError, ToolSpec
-from ai_workbench.core.harness.settings import HarnessSettings
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part, validate_message_part, MessagePartValidationError
 from ai_workbench.core.network_policy import NetworkPolicy, NetworkPolicyError
@@ -25,10 +20,10 @@ from ai_workbench.core.schema.message import MessageSchema
 
 
 @pytest.fixture
-def tool_env(tmp_path):
+def tool_env():
     registry = ToolRegistry()
     register_builtin_tools(registry)
-    context = ToolExecutionContext(repo_root=tmp_path, network_policy=NetworkPolicy(), harness_settings=HarnessSettings())
+    context = ToolExecutionContext()
     return registry, context
 
 
@@ -39,19 +34,20 @@ def execute(env, name, arguments):
 
 def test_registry_schema_allowlist_and_catalog(tool_env):
     registry, _ = tool_env
-    assert len(registry.catalog()) == 6
-    assert {item.name for item in registry.list() if item.requires_approval} == {"read_file", "web_search", "fetch_url"}
+    assert {tool["name"] for tool in registry.catalog()} == {"base64_encode", "base64_decode"}
+    assert all(tool["scope"] == "general" for tool in registry.catalog())
+    assert {item.name for item in registry.list() if item.requires_approval} == set()
     for name in ("Bad", "has-dash", "_prefix", "x" * 65):
         with pytest.raises(ValueError):
             registry.register(ToolSpec(name, "invalid", {"type": "object"}, lambda *_: None))
     with pytest.raises(ValueError):
-        registry.register(registry.get("read_file"))
+        registry.register(registry.get("base64_encode"))
     with pytest.raises(SchemaError):
         registry.register(ToolSpec("invalid", "invalid", {"type": "invalid"}, lambda *_: None))
     with pytest.raises(ValueError):
         registry.register(ToolSpec("invalid", "invalid", {"type": "array"}, lambda *_: None))
     with pytest.raises(ValueError):
-        registry.validate_allowlist(["read_file", "read_file"])
+        registry.validate_allowlist(["base64_encode", "base64_encode"])
     with pytest.raises(ToolExecutionError):
         registry.validate_allowlist(["unknown"])
     catalog = registry.catalog()
@@ -60,9 +56,8 @@ def test_registry_schema_allowlist_and_catalog(tool_env):
 
 
 @pytest.mark.parametrize("name,args", [
-    ("read_file", {}), ("read_file", {"path": 3}), ("read_file", {"path": "x", "max_bytes": True}),
-    ("read_file", {"path": "x", "max_bytes": 0}), ("base64_encode", {"value": "x", "extra": True}),
-    ("fetch_url", {"url": "not a URI"}), ("base64_encode", {"value": float("nan")}),
+    ("base64_encode", {}), ("base64_encode", {"value": 3}), ("base64_decode", {"value": True}),
+    ("base64_encode", {"value": "x", "extra": True}), ("base64_encode", {"value": float("nan")}),
 ])
 def test_strict_tool_arguments(tool_env, name, args):
     with pytest.raises(ToolExecutionError) as error:
@@ -77,8 +72,8 @@ def test_strict_json_rejects_ambiguous_values(raw):
 
 
 def test_tool_parts_and_roles_are_strict():
-    call = make_tool_call_part("id", "read_file", {"path": "data/knowledge/a.txt"})
-    result = make_tool_result_part("id", "read_file", "success", {"content": "untrusted"}, truncated=True)
+    call = make_tool_call_part("id", "base64_encode", {"value": "untrusted"})
+    result = make_tool_result_part("id", "base64_encode", "success", {"content": "untrusted"}, truncated=True)
     assert validate_message_part(result)["truncated"] is True
     for invalid in ({**call, "extra": True}, {**call, "arguments": []}, {**result, "status": "oops"}, {**result, "data": float("nan")}):
         with pytest.raises(MessagePartValidationError):
@@ -87,40 +82,6 @@ def test_tool_parts_and_roles_are_strict():
         MessageSchema(message_id="m", session_id="s", role="system", parts=[result])
     with pytest.raises(ValidationError):
         MessageSchema(message_id="m", session_id="s", role="tool", parts=[call])
-
-
-def test_file_read_bounds_and_truncation(tool_env):
-    _, context = tool_env
-    path = context.repo_root / "data/knowledge/a.txt"
-    path.parent.mkdir(parents=True)
-    path.write_text("abcdef", encoding="utf-8")
-    result = execute(tool_env, "read_file", {"path": "data/knowledge/a.txt", "max_bytes": 3})
-    assert result == {"path": "data/knowledge/a.txt", "content": "abc", "size_bytes": 6, "truncated": True}
-    assert execute(tool_env, "read_file", {"path": "data\\knowledge\\a.txt"})["content"] == "abcdef"
-    for raw in (str(path), "../outside.txt", "data/knowledge/../outside", "/etc/passwd", "C:\\secret.txt", "\\\\server\\share\\file", "data/knowledge/a.txt:stream"):
-        with pytest.raises(ToolExecutionError) as error:
-            execute(tool_env, "read_file", {"path": raw})
-        assert error.value.code == "FILE_PATH_FORBIDDEN"
-        assert str(context.repo_root) not in str(error.value)
-
-
-def test_file_symlink_or_junction_escape_is_blocked(tool_env):
-    _, context = tool_env
-    outside = context.repo_root / "outside"
-    outside.mkdir()
-    (outside / "secret.txt").write_text("secret")
-    link = context.repo_root / "data/knowledge/escape"
-    link.parent.mkdir(parents=True)
-    try:
-        link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        if os.name != "nt":
-            raise
-        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside)], check=True, capture_output=True)
-    with pytest.raises(ToolExecutionError) as error:
-        execute(tool_env, "read_file", {"path": "data/knowledge/escape/secret.txt"})
-    assert error.value.code == "FILE_PATH_FORBIDDEN"
-    link.unlink() if link.is_symlink() else link.rmdir()
 
 
 def test_codec_size_unicode_and_invalid_data(tool_env):
@@ -135,25 +96,6 @@ def test_codec_size_unicode_and_invalid_data(tool_env):
         with pytest.raises(ToolExecutionError) as error:
             execute(tool_env, name, {"value": value})
         assert error.value.code == code
-
-
-def test_knowledge_search_uses_only_resolved_bindings(tool_env):
-    _, context = tool_env
-    calls = []
-    async def search(**kwargs):
-        calls.append(kwargs)
-        return {"results": []}
-    context.knowledge_service = SimpleNamespace(search=search)
-    context.session_id = "s"
-    context.knowledge_base_ids = ["kb2", "kb1"]
-    execute(tool_env, "knowledge_search", {"query": " q "})
-    assert calls[-1]["knowledge_base_ids"] == ["kb2", "kb1"]
-    assert calls[-1]["query"] == "q" and calls[-1]["include_debug"] is False
-    execute(tool_env, "knowledge_search", {"query": "q", "knowledge_base_ids": []})
-    assert calls[-1]["knowledge_base_ids"] == []
-    with pytest.raises(ToolExecutionError) as error:
-        execute(tool_env, "knowledge_search", {"query": "q", "knowledge_base_ids": ["other"]})
-    assert error.value.code == "KNOWLEDGE_SCOPE_FORBIDDEN" and len(calls) == 2
 
 
 def mock_network(monkeypatch, handler):
@@ -213,27 +155,6 @@ def test_network_redirect_and_response_limits(monkeypatch, case, code):
         asyncio.run(network.fetch_bytes("http://8.8.8.8/test", NetworkPolicy()))
     assert error.value.code == code
     assert len(calls) == (4 if case == "redirect" else 1)
-
-
-def test_search_configuration_json_and_fetch_text(tool_env, monkeypatch):
-    with pytest.raises(ToolExecutionError) as error:
-        execute(tool_env, "web_search", {"query": "test"})
-    assert error.value.code == "TOOL_NOT_CONFIGURED"
-    _, context = tool_env
-    context.harness_settings = HarnessSettings(searxng_base_url="https://8.8.8.8")
-    def handler(request):
-        if request.url.path == "/search":
-            assert request.url.params["q"] == "测试 & hello"
-            return httpx.Response(200, json={"results": [{"title": "blocked", "url": "http://127.0.0.1"},
-                {"title": "result", "url": "https://8.8.4.4/x", "content": "snippet"}]})
-        return httpx.Response(200, headers={"content-type": 'text/html; charset="utf-8"'},
-                              content=b"<p>Hello</p><script>hidden</script><p>world</p>")
-    mock_network(monkeypatch, handler)
-    result = execute(tool_env, "web_search", {"query": "测试 & hello", "limit": 1})
-    assert result["results"] == [{"title": "result", "url": "https://8.8.4.4/x", "snippet": "snippet"}]
-    fetched = execute(tool_env, "fetch_url", {"url": "https://8.8.8.8/page?token=private-secret", "max_chars": 5})
-    assert fetched["content"] == "Hello" and fetched["truncated"] is True
-    assert "private-secret" not in json.dumps(fetched)
 
 
 def test_network_with_local_http_server():

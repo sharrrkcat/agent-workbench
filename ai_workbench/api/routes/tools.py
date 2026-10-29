@@ -3,18 +3,16 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.schemas.common import JsonObject, error_responses
 from ai_workbench.api.schemas.chat import ToolCatalogItem, ToolResult
-from ai_workbench.core.harness.settings import HarnessSettings
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.harness.schema import ApprovalDecision, ToolExecutionError
 from ai_workbench.core.message_parts import text_from_parts
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.schema.run import RunStatus
-from ai_workbench.core.schema.qq import QQ_TOOLS
 
 
 async def validate_tool_json(request: Request) -> None:
@@ -29,11 +27,6 @@ async def validate_tool_json(request: Request) -> None:
 router = APIRouter(prefix="/api/tools", tags=["tools"], dependencies=[Depends(validate_tool_json)])
 
 
-class HarnessSettingsPatch(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    searxng_base_url: str | None = None
-
-
 class DirectToolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     session_id: str = Field(min_length=1)
@@ -43,26 +36,7 @@ class DirectToolRequest(BaseModel):
 @router.get("", response_model=list[ToolCatalogItem], response_model_exclude_unset=True,
     responses=error_responses(422))
 def list_tools(state: RuntimeState = Depends(get_state)) -> list[dict[str, Any]]:
-    return [tool for tool in state.tool_registry.catalog() if tool["name"] not in QQ_TOOLS]
-
-
-@router.get("/settings", response_model=HarnessSettings, response_model_exclude_unset=True,
-    responses=error_responses(422))
-def get_tool_settings(state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    return state.harness_settings.get().model_dump(mode="json")
-
-
-@router.patch("/settings", response_model=HarnessSettings, response_model_exclude_unset=True,
-    responses=error_responses(422))
-def patch_tool_settings(payload: HarnessSettingsPatch, state: RuntimeState = Depends(get_state)) -> dict[str, Any]:
-    try:
-        values = payload.model_dump(exclude_unset=True)
-        if (values.get("searxng_base_url") or "").strip():
-            state.network_policy.validate_url(values["searxng_base_url"], resolve_dns=False)
-        value = state.harness_settings.patch(values)
-        return value.model_dump(mode="json")
-    except (ValidationError, ValueError):
-        raise_error(422, "INVALID_TOOL_SETTING", "Use a public HTTP(S) SearXNG URL without credentials, query or fragment.")
+    return state.tool_registry.catalog()
 
 
 @router.post("/{tool_name}/call", response_model=ToolResult, response_model_exclude_unset=True,

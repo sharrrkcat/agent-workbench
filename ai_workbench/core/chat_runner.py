@@ -44,9 +44,6 @@ class ChatRunner:
         knowledge_service: Any = None,
         active_runs: Any = None,
         tool_registry: Any = None,
-        harness_settings: Any = None,
-        network_policy: Any = None,
-        repo_root: Any = None,
         qq_store: Any = None,
     ) -> None:
         self.sessions = sessions
@@ -62,8 +59,7 @@ class ChatRunner:
         self.qq_store = qq_store
         self.harness_loop = HarnessAgentLoop(
             sessions=sessions, messages=messages, runs=runs, events=events, model_manager=model_manager,
-            registry=tool_registry, network_policy=network_policy, harness_settings=harness_settings,
-            repo_root=repo_root, knowledge_service=knowledge_service, active_runs=active_runs,
+            registry=tool_registry, active_runs=active_runs,
             allowed_tools=chat_service.tools_for_run,
         ) if tool_registry is not None else None
         self.context_builder = ContextBuilder(messages)

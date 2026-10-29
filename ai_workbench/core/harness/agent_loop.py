@@ -11,9 +11,8 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from ai_workbench.core.assistant_output import AssistantDraft
-from ai_workbench.core.harness.registry import TOOL_NAME_RE, ToolRegistry, public_url
+from ai_workbench.core.harness.registry import TOOL_NAME_RE, ToolRegistry
 from ai_workbench.core.harness.schema import HarnessState, ToolExecutionContext, ToolExecutionError, ToolOutcome
-from ai_workbench.core.harness.settings import HarnessSettings
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part
 from ai_workbench.core.models.errors import ModelError
@@ -53,17 +52,13 @@ class _Budget:
 
 class HarnessAgentLoop:
     def __init__(self, *, sessions, messages, runs, events, model_manager, registry: ToolRegistry,
-                 network_policy, harness_settings, repo_root, allowed_tools, knowledge_service=None, active_runs=None) -> None:
+                 allowed_tools, active_runs=None) -> None:
         self.sessions = sessions
         self.messages = messages
         self.runs = runs
         self.events = events
         self.model_manager = model_manager
         self.registry = registry
-        self.network_policy = network_policy
-        self.harness_settings = harness_settings
-        self.repo_root = repo_root
-        self.knowledge_service = knowledge_service
         self.active_runs = active_runs
         self.allowed_tools = allowed_tools
 
@@ -73,14 +68,13 @@ class HarnessAgentLoop:
                   first_metrics: LLMCallMetrics | None = None) -> RunResult:
         state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning,
                              qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
-                             max_image_bytes=max_image_bytes,
-                             searxng_base_url=self.harness_settings.get().searxng_base_url)
+                             max_image_bytes=max_image_bytes)
         return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
 
     async def direct(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                      tool_name: str, arguments: dict[str, Any]) -> RunResult:
         call = ToolCall(id=str(uuid4()), function={"name": tool_name, "arguments": json.dumps(arguments, ensure_ascii=False, allow_nan=False)})
-        state = HarnessState(direct=True, pending_calls=[call], searxng_base_url=self.harness_settings.get().searxng_base_url)
+        state = HarnessState(direct=True, pending_calls=[call])
         self.runs.update_status(run.run_id, RunStatus.RUNNING, current_step="tool")
         self._emit_run("run_started", run.run_id)
         draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
@@ -351,11 +345,8 @@ class HarnessAgentLoop:
     async def _execute_one(self, session, config, run, state, call, arguments, budget) -> None:
         step = self._start_step(run.run_id, "tool", call.function.name,
                                 {"tool_name": call.function.name, "tool_call_id": call.id})
-        context = ToolExecutionContext(repo_root=self.repo_root, network_policy=self.network_policy,
-                                       knowledge_service=self.knowledge_service, session_id=session.session_id,
+        context = ToolExecutionContext(session_id=session.session_id,
                                        run_id=run.run_id, tool_call_id=call.id,
-                                       knowledge_base_ids=config.knowledge_base_ids,
-                                       harness_settings=HarnessSettings(searxng_base_url=state.searxng_base_url),
                                        qq_image_generation_model_profile_id=config.qq_image_generation_model_profile_id,
                                        qq_image_generation_options=config.qq_image_generation_options,
                                        qq_image_generation_allowed=config.qq_image_generation_allowed,
@@ -431,23 +422,22 @@ class HarnessAgentLoop:
             except ToolExecutionError:
                 arguments = {}
             parts.append(make_tool_call_part(call.id, call.function.name,
-                         self.registry.public_arguments(call.function.name, arguments), part_id=f"call_{index}"))
+                         arguments, part_id=f"call_{index}"))
         message = draft.persist(extra_parts=parts, metadata={"tool_calls": True, "direct": direct})
         payload = {"message": message.model_dump(mode="json")}
         self.events.emit("tool_call_created", session_id=message.session_id, run_id=message.run_id, message_id=message.message_id,
                          payload={**payload, "tool_calls": [{"id": call.id, "name": call.function.name} for call in calls]})
 
     def _pause(self, session, run, state, call, arguments, risk) -> RunResult:
-        service = {"service_url": public_url(state.searxng_base_url)} if call.function.name == "web_search" and state.searxng_base_url else {}
         step = self._start_step(run.run_id, "approval", "Waiting for confirmation",
-                               {"tool_name": call.function.name, "tool_call_id": call.id, "risk": risk, **service})
+                               {"tool_name": call.function.name, "tool_call_id": call.id, "risk": risk})
         state.awaiting_approval = call.id
         state.approval_step_id = step.step_id
         self._save_state(run.run_id, state)
         self.runs.update_status(run.run_id, RunStatus.WAITING_FOR_USER, current_step="approval")
         self.sessions.set_waiting_run(session.session_id, run.run_id)
         self._emit_run("approval_requested", run.run_id, {"tool_call_id": call.id, "tool_name": call.function.name,
-                       "arguments": self.registry.public_arguments(call.function.name, arguments), "step_id": step.step_id, "risk": risk, **service})
+                       "arguments": arguments, "step_id": step.step_id, "risk": risk})
         return RunResult(success=True, run_id=run.run_id)
 
     def _save_final(self, run, draft: AssistantDraft) -> None:

@@ -5,7 +5,6 @@ import type { Attachment, Message } from '../../types/messages';
 import type { ComposerAttachment, MessageQueue } from './messageQueue';
 import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
 import type { ChatDraft, Session, SessionPatch } from '../../types/chat';
-import type { ToolRunResponse } from '../../types/tools';
 import type { HistoryWindow } from '../../types/history';
 import type { HistoryLoad } from './historyWindow';
 
@@ -75,7 +74,6 @@ export type CogitaState = {
   editMessage: (messageId: string, content: string, attachmentIds: string[], rerun?: boolean) => Promise<boolean>;
   cancelRun: (runId: string) => Promise<void>;
   resolveApproval: (runId: string, decision: 'approve' | 'reject') => Promise<void>;
-  callTool: (name: string, args: Record<string, unknown>) => Promise<ToolRunResponse | undefined>;
   applyRuntimeEvent: (event: RuntimeEvent) => void;
   setComposerDraftText: (text: string) => void;
   setError: (error: string | null) => void;

@@ -149,7 +149,7 @@ export const createSessionActions: CogitaActions<
           persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)!.id,
           model_profile_id: defaultModelId(models.profiles, models.settings?.default_model_profile_id),
           context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'explicit' },
-          generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.filter((tool) => tool.name !== "qq_send_message").map((tool) => tool.name) } });
+          generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.filter((tool) => tool.scope === 'general').map((tool) => tool.name) } });
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });
     }
