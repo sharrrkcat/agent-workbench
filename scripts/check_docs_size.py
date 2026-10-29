@@ -1,4 +1,4 @@
-"""Check line limits and the seven owning contracts.
+"""Check line limits and the eight owning contracts.
 
 Run from the repository root:
 
@@ -32,7 +32,7 @@ FIXED_LIMITS = {
 TASK_LIMIT = 120
 CONTRACT_NAMES = {
     "models.md", "chat-context.md", "harness-tools.md", "knowledge.md",
-    "runs-streaming.md", "settings.md", "farkle.md",
+    "runs-streaming.md", "settings.md", "qqbot.md", "farkle.md",
 }
 CONTRACT_LIMIT = 300
 

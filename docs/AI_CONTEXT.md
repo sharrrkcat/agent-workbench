@@ -40,7 +40,8 @@ Built-in tools share direct and model invocation with bounded execution and dura
 tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.
 AnySearch-backed web search/fetch use their own configured key without approval, with run-local citations, reply Sources and dedicated web steps.
 Timeline Projects support creation/settings and roleplay Persona/Worldbook selection; internal sessions and context injection remain deferred.
-QQBot Projects bind group/friend Sessions through external OneBot v11, use nickname/account keyword triggers and follow-up/private batching and optional per-group quiet icebreakers with explicit skip, share ordered media resources with a paginated gallery, manual descriptions and retained favorites, optionally supply up to five current-batch pictures/stickers and asynchronously describe them for textual history. Icebreakers wait for a lone speaker, cancel before sending when others join and allow at most one reply under a durable cooldown; confirmed replies give the lone speaker 60 seconds of follow-up eligibility. Harness sends text, described favorites as original images/animations and optional provider-generated images gated by current-batch user text containing `生成` or `画`; confirmed generated images join shared resources with their drawing prompts, while history uses text placeholders. Cogita/Knowledge/Worldbook inheritance is excluded. Local simulated acceptance is separate from live NapCat delivery.
+[QQBot](contracts/qqbot.md) binds group/friend conversations through external OneBot v11, with keyword/follow-up batches, optional icebreakers, shared media and text/image tools.
+Its independent contract owns settings, delivery/recovery and current acceptance limits.
 Playground includes browser-local Farkle with standard/custom matches, 22 dice types,
 an automatic opponent, inventory/rewards, baked 3D throws and up to 100 compact completed-match summaries. An isolated static build supports GitHub Pages. Game APIs and in-progress saves are unimplemented.
 Pet has position, dragging and task-state foundations only, with no mounted UI.
@@ -53,6 +54,7 @@ Pet has position, dragging and task-state foundations only, with no mounted UI.
 - [Knowledge](contracts/knowledge.md): sources, indexing, hybrid retrieval and rerank.
 - [Runs/streaming](contracts/runs-streaming.md): status, WS/SSE, persistence, reconciliation.
 - [Settings](contracts/settings.md): strict ownership, six sidebar domains, Pet foundations.
+- [QQBot](contracts/qqbot.md): OneBot conversations, triggers, media, tools, delivery, UI and acceptance limits.
 - [Farkle](contracts/farkle.md): game rules, dice, opponent, economy, browser storage and rendering.
 
 HTTP schemas and validation belong to these same domain contracts. OpenAPI
@@ -65,6 +67,7 @@ generation and verification commands are in the [README](../README.md#http-contr
 - [Personas/Worldbook](ai/TASK_PERSONAS_WORLDBOOK.md)
 - [Settings](ai/TASK_SETTINGS.md)
 - [Frontend](ai/TASK_FRONTEND_UI.md)
+- [QQBot](ai/TASK_QQBOT.md)
 - [Farkle](ai/TASK_FARKLE.md)
 
 ## Supporting documents
@@ -76,4 +79,3 @@ generation and verification commands are in the [README](../README.md#http-contr
   ownership and active-plan completion rules.
 - [Future model services](FUTURE_MODEL_SERVICES.md): unimplemented design boundaries.
   Future Pet visuals remain undecided under [Settings](contracts/settings.md#pet-foundations).
-- [QQ integration boundaries](FUTURE_QQ_INTEGRATION.md): live acceptance gaps, exclusions and limited Linux deployment evidence.

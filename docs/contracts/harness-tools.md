@@ -38,18 +38,8 @@ model loop. Invalid direct requests fail before creating a run.
 | base64_encode / base64_decode | value | Automatic |
 | web_search | query | Automatic |
 | web_fetch | url (public absolute HTTP/HTTPS) | Automatic |
-| qq_send_message | text (1..4000 characters, nonblank) | Automatic, QQBot model runs only |
-| qq_send_image | asset_id (strict positive integer from this batch’s candidates) | Automatic, QQBot model runs only |
-| qq_generate_image | prompt (1..32000 characters, nonblank) | Automatic, configured QQBot batches with an input keyword only |
-| qq_skip_reply | Empty object | Automatic, unanswered QQ group follow-up/icebreaker runs only |
 
-QQ media downloads accept public HTTP(S) URLs without credentials. Every DNS answer
-and redirect target is checked. HTTP connects to a validated address while
-retaining the original Host and TLS server name, preventing a second DNS
-resolution from bypassing the policy. Environment proxies are disabled.
-There are at most three redirects. The caller's image response limit is enforced
-during streaming even without Content-Length. Requests ask for identity encoding;
-compressed responses are rejected to keep decoding bounded. QQ media acquisition and generation retain their own format limits.
+[QQBot](qqbot.md) owns QQ-scoped tool arguments, availability, delivery behavior and media downloads.
 
 Codec input and output are each capped at 1 MiB and decoded
 bytes must be valid UTF-8.
@@ -69,79 +59,12 @@ Tool descriptions instruct models to treat page content as untrusted evidence an
 Each Harness model call with web_search in its effective tool list prepends an Instruction containing the current server-local date and weekday. The run's UI language is retained across approval continuation; dates refresh for each call. Disabling Harness, excluding/revoking web_search or falling back to ordinary chat omits the block. Direct tools and public inference do not receive it.
 Automated acceptance uses mock AnySearch responses and model calls; live AnySearch requests remain unverified.
 
-## QQ delivery and queues
-
-The application owns one OneBot v11 WebSocket connection per enabled QQBot Project, with external NapCat installation/login.
-Identity verification precedes ingestion. Transport reconnects automatically; status distinguishes authentication,
-account mismatch and connection failure without exposing tokens. Wire messages are at most 1 MiB with a bounded receive queue.
-Malformed bound messages are ignored with a content-free diagnostic. Duplicate external ids within a bound conversation
-are ignored without resetting debounce. Bot echoes never enter batches; known external ids mark confirmed delivery records echoed.
-An active send retains at most 128 self-message ids for its bound Session, so a self report arriving before the response can set echoed in the confirmation transaction. Only a successful response with the current request echo and a valid integer/nonblank string message id confirms delivery. Self reports alone never confirm unknown sends; temporary ids are discarded when the send ends. Duplicate reports do not add history, reply counts or eligibility.
-
-QQ runs always enable Harness. Batches expose qq_send_message, qq_send_image when favorite candidates exist, and qq_generate_image when the snapshotted generation permission allows it; unanswered follow-up and icebreaker batches also expose qq_skip_reply.
-QQ tools appear in the qqbot catalog group, stay outside general selections, reject ordinary/Workspace allowlists and direct calls,
-and require server-owned session, active batch/run and tool-call ids. The destination comes solely from the immutable Session binding.
-One text send delivers one plain-text OneBot segment; CQ-looking content remains literal. Image tools send one separate OneBot image segment with base64 bytes, using only the immutable destination binding.
-All three sends supply NapCat's per-request timeout=60000 milliseconds and wait up to 90 seconds for the OneBot response; ordinary queries retain 20 seconds. Text/favorite-image tools use the remaining five-minute Harness budget rather than its ordinary 30-second tool limit. Generated images retain their existing Provider/budget ownership and use the same send deadline. Stop and an earlier run-budget deadline still cancel sending; errors return immediately.
-Every batch's first model call uses tool_choice=required; subsequent calls use auto. Model requests and queued execution share the same tool permissions.
-Each call appends one qq_runtime system block: snapshotted target/bot identity, batch id/trigger kind and live confirmed-send count/limit.
-It distinguishes mandatory replies, optional follow-ups and optional quiet-group icebreakers, excludes historical sends from the count and treats transcript names/text as data. Icebreakers naturally continue the topic without announcing a rescue or demanding engagement. Project prompts remain separate.
-Successful qq_skip_reply immediately completes the run/batch without sending, another model call or a pause, recording metadata.qq_reply.skipped=true.
-Skip expires only submitted participants whose current keyword epoch matches this batch's snapshot; newer keywords are protected.
-Existing windows and queued batches remain valid. Each confirmed follow-up send renews only this batch's submitted participants to max(current expiry, confirmation time + 45 seconds), even after expiry; later failures retain that renewal. Keyword/private sends do not renew eligibility.
-Confirmed icebreaker text/image sends grant their snapshotted lone speaker eligibility until max(current expiry, confirmation time + 60 seconds), in the same transaction as delivery confirmation. Grant sources use the submitted message id; newer sources and existing windows are preserved. Pending nickname decisions retain pre-confirmation eligibility for already-received messages. Skips, failures, unknown results and pre-send cancellation grant nothing; repeated receipts and restart never extend an existing grant.
-Calls execute in order: a successful skip rejects remaining calls with QQ_REPLY_SKIPPED; a confirmed send removes skip and later skip calls receive TOOL_NOT_ALLOWED without expiring participants. Invalid arguments or a disallowed skip do not satisfy the reply decision.
-Unsupported tools fail without ordinary-chat fallback. Final model prose remains internal. Ending without a confirmed send
-or a legitimate skip fails the run/batch with QQ_REPLY_REQUIRED and pauses the Session. Provider rejection/ignored tool choice is not retried or downgraded.
-
-The Project reply_message_limit defaults to 4 (strict integer, 1..20), distinct from the incoming batch limit.
-Execution snapshots it with the configuration. Only confirmed qq_send_message/qq_send_image/qq_generate_image results increment the run's
-private qq_sent_count; failed/unknown sends, validation errors and other tools do not count. Reaching the limit
-completes the run and batch without pausing or another model call. Remaining calls already emitted by the model
-receive rejected results with QQ_REPLY_LIMIT_REACHED and skipped steps, without creating delivery intents.
-Icebreaker execution overrides its run snapshot's reply limit to 1, shared by text, favorite images and generated images. Skipping changes no participant eligibility; normal follow-up skip and renewal rules remain unchanged. Cooldown starts after context preparation when entering model inference. Queue/preparation cancellation consumes no cooldown; skips, later cancellation and failures retain it.
-Cancellation, delivery errors and existing Harness limits retain precedence. Counts reset for each new batch.
-
-Every expired debounce window creates a SQLite FIFO batch with fixed trigger policy, including during inference or pause.
-Messages belong to at most one batch at a time. Execution is serialized across each Project, loading only the next unpaused Session's batch.
-Project configuration resolves when execution starts, before asynchronous media waits/member lookup, then follows the immutable run snapshot.
-After deduplicated ingress, four background media acquisitions run independently of the WebSocket reader and preserve stored segment order. They use reported HTTP(S) URLs, then get_image for a downloadable URL when needed; remote filesystem paths are never read locally. Public-network policy, download byte limits and image decoding guard this boundary. QFace 1.4.1 supplies the bundled system-face mapping with its MIT notice; unknown IDs remain labeled unavailable.
-QQ media occurrences reference shared qq_media_assets, unique by SHA-256 of original PNG/JPEG/WebP/GIF bytes across all QQBot Projects. Resource rows own the original attachment, optional first-frame PNG for GIF/animated WebP/APNG, description, manual-description flag, favorite state and creation/update times. Static images reuse their attachment. An existing resource is attached before decoding; new resources are saved and referenced atomically so competing downloads retain one copy. Ordinary chat attachments do not share this deduplication. With image input enabled, a batch waits at most ten extra seconds for pending pictures/stickers, excluding system faces. Unavailable resources become positional text placeholders; late completion updates display but never sends historical images. Pending acquisition resumes after restart. History deletion releases a non-favorite resource after its final visible reference, protecting favorites and files referenced by other messages or model snapshots; late results cannot recreate deleted records and IDs are not reused.
-QQDescriptionService sends each selected undescribed asset independently through core/models, using only a fixed Chinese description prompt and its static image, with non-streaming output, reasoning off, max_tokens=64, temperature=0 and no tools. Plain text is normalized to one line and at most 20 Unicode characters; empty/structured/tool output is ignored. Concurrent batches share in-flight asset tasks and normal ModelManager admission/timeout limits. Main replies never await descriptions, though shared providers retain their configured concurrency. Writes fill only still-existing, undescribed resources without manual edits; changes are visible to later contexts. Failure leaves the description empty without pausing chat or borrowing another model; later selected occurrences may retry. Shutdown cancels these in-memory tasks; there is no persistent description queue or history-wide backfill.
-At ingress, only real text segments determine an internal image_generation_keyword flag for the literal substrings `生成` or `画`. Names, mentions, quotes, cards, descriptions and other synthetic text never contribute. Execution ORs the flags of visible, submitted batch messages after truncation; a configured generation model is also required. This permission stays fixed in the run snapshot, shared by tool visibility, qq_runtime and handler validation. Historical messages, tool results and model output cannot unlock it; a new batch such as `再来一张` without either keyword stays disabled. Keywords enable a tool, not an obligation to generate: instructions require an explicit request for a new picture and exclude discussing animation/scenes, text generation and requests not to draw.
-Each preparation snapshots all global favorites with nonblank descriptions as ordered `{asset_id, description}` candidates. Only their text enters qq_runtime under the existing context budget; paths, URLs and image bytes are excluded. No candidates means no list or qq_send_image definition. Changes apply to later batches. Runtime instructions prefer text, discourage routine/consecutive unsolicited images and recommend at most one image per reply without a separate execution quota or cooldown. Descriptions/tags are untrusted candidate data, not instructions.
-qq_send_image requires a snapshotted candidate id and rechecks that the resource exists, is favorite and has a nonblank description. After any icebreaker wait, it reads the original attachment synchronously before the durable intent, retaining animation rather than the model’s static derivative. The intent references the existing resource; confirmation atomically saves its receipt and historical text marker with the description at send time. It never copies the resource, changes its description or invokes a model. Missing, unfavorited, undescribed or unreadable resources return QQ_IMAGE_RESOURCE_UNAVAILABLE to the model before any intent/slot, allowing a text reply. Normal delivery failure, stop and recovery rules still apply.
-qq_generate_image calls ModelManager.generate_images with n=1 and snapshotted Project size/quality/style overrides. Unset controls and response format inherit the selected image profile. URL results use the existing public-network download policy; URL/base64 images use attachment byte limits and QQ image decoding. Files are staged before dispatch. Only confirmed sends create/reuse a shared SHA-256 asset, linking it with the delivery and historical message in the confirmation transaction; its description becomes the full original prompt unless that asset has a manually edited description (including an intentionally cleared one). Provider revised_prompt is ignored. Unreferenced staged files are cleaned after normal completion, failure or cancellation; crash leftovers use explicit orphan cleanup.
-Generation, download and preparation failures return QQ_IMAGE_GENERATION_FAILED to the model without consuming a reply slot or pausing, so the model may send text or invoke generation again. There is no automatic retry. Missing mandatory replies and normal loop limits still fail. A sending failure or uncertain receipt retains the existing terminal delivery policy; restart never regenerates or resends. Project execution remains serial while generation awaits its provider, with ingestion and Stop available.
-Delivery intents persist before dispatch, unique by run/tool-call id, with pending/sending/sent/failed/unknown states.
-Successful confirmation and its historical assistant message commit atomically; later failures preserve earlier sends.
-OneBot errors normally produce failed deliveries. On send_group_msg/send_private_msg, the specific native sendMsg/onMsgInfoListUpdate Timeout diagnostic in message/wording produces unknown with QQ_SEND_ACK_TIMEOUT; other retcode=1200 errors, unrelated timeouts and EventChecker Failed are not reclassified. Tool error details retain only action, numeric retcode and normalized cause, never raw upstream diagnostics.
-Disconnect, response timeout, cancellation during sending or an invalid receipt is unknown. Delayed successful responses within the send deadline are accepted; responses after a request ends do not trigger background confirmation or reopen a run. No history lookup or content/time matching is used.
-Delivery errors terminate the current run and pause the Session before another send. No automatic resend or regeneration occurs.
-Main reply-model failures also pause. `/api/qq/sessions/{id}/control` pause prevents new execution while ingestion/batching continue;
-stop additionally cancels active work. Manual resume requires idle state and coalesces backlog for every pause reason, including stop, failure and restart interruption. Repeating resume on an already unpaused idle Session leaves its queues and icebreaker observation unchanged.
-Resume waits for nickname decisions already pending when requested, using their existing lookup deadlines; later arrivals do not extend this wait. It then consumes the classified receipt-order prefix, leaving later unclassified inputs for normal batching. Connection changes still discard unfinished decisions without retriggering them.
-One SQLite transaction replaces untouched ordinary queued batches and the pending triggered window with at most one new batch, using the current input limit and [trigger/participant policy](chat-context.md#qqbot-conversations). It allocates the new batch before deleting replaced queue records, appends it to the Project FIFO, clears the consumed deadline/window membership and unpauses. No ordinary trigger means no recovery batch and pending group context stays available. The normal Project reply limit applies once to the merged batch.
-Failed, cancelled and interrupted batches never replay. Disabling a connection stops ingress/dispatch and blocks later sends.
-Restart retains ordinary queues, window membership/policy and absolute participant expiries, marks running batches interrupted and in-flight intents unknown, and pauses affected Sessions.
-Existing run reconciliation remains authoritative. QQ history has no editing, retry or direct-send API.
-Icebreaker observations are process-local and run on the existing supervisor. Pause, disablement, disconnect, restart or changes to icebreaker/connection settings discard observations and cancel unsent icebreakers. Resuming starts a fresh silence baseline; persisted cooldown deadlines survive. Restart cancels queued/running icebreakers with no delivery intent instead of replaying them; submitted sends retain normal interrupted/unknown recovery.
-A second speaker or ordinary reply trigger cancels an icebreaker during queueing, media/member waits, context preparation, inference or image generation. Execution and sending wait for preceding nickname decisions; the sending entry point then rechecks eligibility before its durable intent and OneBot submission, with no intervening await. Once submitted, the message is not cancelled or retracted by new activity. Automatic invalidation records QQ_ICEBREAKER_CANCELLED on the batch without automatically pausing the Session; actual model/delivery errors retain normal failure handling. Explicit pause/stop still pauses.
-Local [history deletion](chat-context.md#qqbot-conversations) excludes removed inputs before dispatch and cancels empty queued batches without changing participant eligibility or replaying work.
-Deleting observed inputs uses only remaining visible messages; deleting all cancels the observation. History deletion never rewinds activity or cooldown clocks.
-Deleting a Session/Project requires idle run/batch state and removes associated QQ records without retracting external messages.
-
-Local fake-OneBot/fake-model tests cover transport, participant windows, skip/renewal races, batching, manual backlog coalescing, paired delivery history/pruning, nonblocking member queries, failures, cancellation and restart. Live NapCat delivery and member lookup,
-reconnect backfill, real media/model round trips, manual sends, memory integration and Linux Local Runtime remain outside current acceptance;
-[QQ integration boundaries](../FUTURE_QQ_INTEGRATION.md) retains deployment evidence and outstanding live verification.
-
 ## Loop, approval and cancellation
 
 One run can execute eight tool-producing rounds, followed by a final model
 answer. A further tool round fails with `TOOL_LOOP_LIMIT`. Each tool has a
-30-second timeout; the harness has five minutes of cumulative active time. The QQ image-generation tool is exempt from both counters: provider queue/request, download and OneBot delivery retain their own timeouts and cancellation, while other model/tool work keeps the shared budgets.
+30-second timeout; the harness has five minutes of cumulative active time. [QQBot](qqbot.md#tools-delivery-and-recovery) owns send deadlines, generation budget exceptions and early completion.
 Waiting for approval consumes no active time and holds no model lease.
-QQ's send limit can complete a run earlier and does not increase these shared limits.
 
 Each model round, including after approval, applies the shared
 [chat token budget](chat-context.md#configuration-snapshots-and-context) to its final request.

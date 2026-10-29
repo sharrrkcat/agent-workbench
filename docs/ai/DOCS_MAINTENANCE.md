@@ -8,17 +8,17 @@ content, identifiers and API payloads are outside this documentation policy.
 
 - `AGENTS.md` owns permanent engineering constraints and contributor rules.
 - `docs/AI_CONTEXT.md` is the current-product and contract navigation entry.
-- `docs/contracts/` has seven owners for implemented behavior: models,
-  chat/context, harness/tools, Knowledge, runs/streaming, settings and [Farkle](../contracts/farkle.md).
+- `docs/contracts/` has eight owners for implemented behavior: models,
+  chat/context, harness/tools, Knowledge, runs/streaming, settings, [QQBot](../contracts/qqbot.md) and [Farkle](../contracts/farkle.md).
 - `docs/ai/TASK_*.md` cards locate relevant source and tests; they link to
   behavioral rules rather than maintaining another specification.
 - `README.md` owns source installation, model setup, API examples and verification.
-  `README_RUN.md` owns launcher and portable-package instructions.
+  `README_RUN.md` owns launcher, deployment and portable-package instructions.
 - `docs/DATA_LAYOUT.md` owns storage boundaries, revision effects and maintenance.
 - `docs/FUTURE_MODEL_SERVICES.md` records unimplemented design boundaries,
   without authorizing implementation or promising frozen interfaces.
-- `docs/FUTURE_QQ_INTEGRATION.md` records QQ integration limits, outstanding acceptance
-  and project-relevant feasibility evidence; host operations remain outside this repository.
+- The QQBot contract owns current integration limits and outstanding live acceptance;
+  host operations remain outside this repository and detailed historical experiments remain in Git.
 
 When behavior changes, update the owning contract and both frontend locales
 when text is user-visible. Do not document removed extension concepts as
@@ -58,7 +58,7 @@ Check line limits with:
 uv run python scripts/check_docs_size.py
 ```
 
-Each of the seven contracts has a 300-line limit. README has 350, AI_CONTEXT 150,
+Each of the eight contracts has a 300-line limit. README has 350, AI_CONTEXT 150,
 and task cards 120. Do not split a topic to evade the limit; remove duplication
 and link to its actual owner.
 

@@ -2,7 +2,8 @@
 
 Read [settings](../contracts/settings.md) and the domain owner:
 [models](../contracts/models.md), [chat/context](../contracts/chat-context.md),
-[Knowledge](../contracts/knowledge.md) or [harness/tools](../contracts/harness-tools.md).
+[Knowledge](../contracts/knowledge.md), [harness/tools](../contracts/harness-tools.md) or [QQBot](../contracts/qqbot.md).
+The [QQBot task](TASK_QQBOT.md) maps its Project editor, domain services and focused tests.
 
 ## Source map
 

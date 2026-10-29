@@ -20,6 +20,7 @@ Paths below are under frontend/src:
 - components/SessionSidebar.tsx and ChatHeader.tsx compose the home navigation.
   components/playground/ owns the app cards and local routes; App commits conversation departure.
   The [Farkle task](TASK_FARKLE.md) maps the lazy game page, modules, artifacts and focused tests.
+  The [QQBot task](TASK_QQBOT.md) maps its Project editor, conversations, resources and backend integration.
   components/projects/ owns the Project tree, routes, editors and Workspace session overrides; store/useProjectsStore.ts owns Project reads/mutations.
   components/ChatView.tsx owns the session-scoped MessageScroller; components/messages/
   compose replies, disclosure anchors and approvals; ReplyContext.tsx owns lazy per-call input inspection. ChatInput.tsx owns the composer.
@@ -54,6 +55,7 @@ app-layout.spec.ts covers sidebar scrolling/menus, deletion, drawer focus, Markd
 composer growth, disclosure position and breakpoint/short viewport behavior.
 playground.spec.ts covers bilingual desktop/touch cards, app routes/history, leave guards, draft cleanup and queue return; test-playground.mjs covers startup and late-response isolation.
 Game-specific behavior and test coverage belong to the [Farkle task](TASK_FARKLE.md).
+QQBot-specific scripts and bilingual browser coverage belong to the [QQBot task](TASK_QQBOT.md#verification-map).
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
 independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
 chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning timing, Trace disclosures, tool titles/results, message alignment and images.
@@ -69,14 +71,8 @@ personas.spec.ts covers shared Persona CRUD, protected identities, binding restr
 agent-identity.spec.ts covers Agent history, avatars, deletion, reconnects, streaming and approvals in ordinary/Workspace chats;
 test-persona-identity.mjs covers list/event races and deleted identities. projects.spec.ts covers Project creation, type restrictions,
 inherited resources, sparse overrides, guarded history and scoped deletion; test-projects.mjs covers selection/deletion races.
-qqbot-images.spec.ts covers the image-input switch, ordered inline pictures/stickers, animated previews, separate bubbles and older pending-media refresh in both locales/viewports. qqbot.spec.ts covers QQ Project creation, token settings, binding, sender grouping, history, delivery/skip states and usage/context inspection. Composer cases cover Project model/reasoning edits, failed/delayed saves, controls and responsive hints. qqbot-delete.spec.ts covers local bubble/reply deletion, confirmations, unchanged statuses, busy/failure feedback and version reconciliation in both locales/viewports.
 context-detail.spec.ts covers lazy call selection, exact request views, stale reads, error retry, deletion and modal focus/scroll in both locales/viewports.
 image-generation.spec.ts covers provider-only sources, disabled Local Runtime, discovery/manual IDs, parameter defaults and CRUD in both locales/viewports.
-qqbot-send-image.spec.ts covers original favorite animations, preview, resource placeholders and delivery deletion in both locales/viewports. test_qq_image_tools.py covers candidate snapshots, generation keyword permissions, delivery, retention and migration.
-qqbot-generation.spec.ts covers provider-only Project generation selection/controls, save failure retention, image delivery previews/deletion, generation failure recovery and Stop in both locales/viewports. test_qq_image_generation.py covers generation, shared quotas/resources, text-only history, cancellation, timeout exemption and migration.
-qqbot-resources.spec.ts covers the global gallery, responsive Attachment grid, favorites, Sheet drafts, sorting/pagination, deletion placeholders and navigation races in both locales; test-qq-resources.mjs covers URL/pagination/API contracts.
-qqbot-icebreaker.spec.ts covers bilingual desktop/touch icebreaker settings, defaults, save failures and retained disabled controls. test_qq_icebreaker.py covers quiet-group timing, optional single replies, cancellation races, cooldown isolation and lifecycle recovery; test_qq_icebreaker_migration.py covers durable cooldown storage.
-qqbot-settings-layout.spec.ts covers shared creation/settings tabs, container grids, bounded textareas, cross-tab drafts/validation and busy/failed saves in both locales/viewports.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.
 model-profiles.spec.ts covers local card layouts, enable saves/failures, source-required drafts and local suggestion states in both locales/viewports.

@@ -17,8 +17,7 @@ Steps have stable order, optional parent ids, timing, compact messages and struc
 Both locales label stable kinds, never implementation progress strings.
 
 The optional Pet foundation selects session statuses/steps/progress without a UI, separate stream or polling.
-QQ uses existing chat runs, inspection and cancellation; [Harness/tools](harness-tools.md#qq-delivery-and-queues) owns batches and delivery. Public metadata.qq_reply retains sent_count, message_limit, limit_reached and skipped during execution and termination, including partial sends before failure/cancellation.
-Only normal completion at the send limit sets limit_reached=true. A legitimate follow-up/icebreaker skip completes with skipped=true and no delivery; ending without a confirmed reply or allowed skip fails with QQ_REPLY_REQUIRED before DONE. Icebreaker snapshots and metadata use message_limit=1. Automatic pre-send invalidation cancels work without automatically pausing the QQ Session; its batch records QQ_ICEBREAKER_CANCELLED.
+QQ uses existing chat runs, inspection and cancellation. [QQBot](qqbot.md#tools-delivery-and-recovery) owns batches, delivery and metadata.qq_reply outcome semantics.
 
 ChatRunner persists messages, runs, steps and events. Run/message metadata contains public ids, counts, timings, warnings and source refs, never prompts, full history/context, vectors, binaries or keys.
 Model resolution includes source_type and provider_profile_id (null for local/unbound); local worker traces carry source_type=local.
@@ -188,7 +187,7 @@ on their model step immediately before transport dispatch. Preparation failures 
 failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
 do not record context. Reads never reconstruct missing inputs from current configuration or history.
 Snapshots preserve the outbound body, source positions, exclusions, model identity, capture time and
-context policy. Images use attachment-store references instead of binary data URLs. QQ image sources preserve each message/part position and static model attachment; disabled/unavailable images record attachments_disabled/qq_image_unavailable exclusions. Late media completion leaves captured inputs unchanged. Source excerpts
+context policy. Images use attachment-store references instead of binary data URLs. [QQBot](qqbot.md#context-and-media) owns its media source/exclusion and history-pair semantics. Source excerpts
 and Unicode character counts are resolved on the backend; usage stays in `metadata.llm`.
 Step `metadata.context` exposes availability, message/tool/image counts and a strict budget: configured
 and effective window_tokens, input_budget_tokens, pre-call input_tokens, counting=native|estimated,
@@ -201,7 +200,7 @@ Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and
 The Layers action sits between retry and usage, independent of recorded usage. It appears on chat replies
 at terminal status or approval waiting when a snapshot exists. Its read-only modal defaults to the final
 answer's call, otherwise the latest captured call; a single call has no selector. Input structure follows
-send order, with system sources nested as Instruction (when web search is enabled), Agent, Project, QQ runtime (QQ only), Cogita Persona and Knowledge, and tools separate. Instruction contains the actual localized date/weekday sent before Agent content, with exact source offsets and normal token budgeting. QQ runtime records that call's identity/batch/count; historical sends retain whole-message excerpts and a shared turn for pruning. System groups use System without a request-position prefix.
+send order, with system sources nested as Instruction (when web search is enabled), Agent, Project, QQ runtime (QQ only), Cogita Persona and Knowledge, and tools separate. Instruction contains the actual localized date/weekday sent before Agent content, with exact source offsets and normal token budgeting. System groups use System without a request-position prefix.
 Empty system sources recorded as empty/no-bindings/no-results appear muted in Agent/Project/Cogita/Knowledge order,
 with an Empty label and no transmitted-message number for a synthetic system group. They do not change request data
 or counts; other exclusions remain collapsed diagnostics. Ordinary chats do not invent a Project source.

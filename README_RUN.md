@@ -35,6 +35,30 @@ the shared local installation and manual model placement. The
 owns Windows x64 engines and CPU/CUDA/D3D12 support. Local installation requires neither
 model files nor a GPU; model execution checks its selected device and resources.
 
+## QQBot deployment
+
+[QQBot](docs/contracts/qqbot.md) connects directly to an external NapCat-compatible
+OneBot v11 server; no separate Node.js agent service is needed. NapCat Shell and
+SnowLuma still require an actual NTQQ client and its memory, even without Docker.
+Linux NapCat Shell can use Xvfb without a desktop. Linux Local Runtime is unsupported;
+QQBot inference uses configured external OpenAI-compatible providers.
+
+For a small VPS, build frontend assets elsewhere. Cogita serves the built UI;
+the browser runs on the accessing computer. Start without opening a local browser:
+
+```shell
+uv run python scripts/run_app.py --host 127.0.0.1 --no-open
+```
+
+Use SSH forwarding for management access. Host setup, credentials, QQ installation
+and login records belong to external operational documentation.
+A short Ubuntu 24.04 amd64 trial reached QQ online and Cogita migrations/health,
+with no inference or media workload. This establishes basic same-host feasibility,
+not a minimum-memory requirement, swap-free operation or long-running stability.
+The [QQBot acceptance limits](docs/contracts/qqbot.md#limits-and-acceptance) retain
+outstanding live delivery, workload, restart and shutdown checks; detailed experiment
+records remain in Git and the separate operational workspace.
+
 ## Portable packages and data
 
 Build from a source checkout with `uv run python scripts/build_portable.py --zip`.

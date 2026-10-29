@@ -2,7 +2,7 @@
 
 Local chat and an OpenAI-compatible model service. One ModelManager serves chat, titles, Knowledge and external inference. The Python package remains `ai_workbench`. Prompt Personas and an optional bounded tool harness support ordinary/group conversations. Local models run in managed llama-server/Python workers outside the API process; external connections use the OpenAI-compatible protocol.
 
-The project is in testing, without users or user data. It does not provide an autonomous coding agent, extension/plugin discovery, model downloads or image generation. The external API stays single-key and localhost-only.
+The project is in testing, without users or user data. It does not provide an autonomous coding agent, extension/plugin discovery, model downloads or local image generation. The external API stays single-key and localhost-only.
 
 ## Start
 
@@ -239,12 +239,13 @@ Invoke-WebRequest "$apiBase/images/process" -Method Post -Headers $headers `
 
 ### QQBot Projects
 
-Choose New QQBot, enter an independently installed NapCat OneBot v11 WebSocket endpoint and bot account,
-select an external LLM, then enable the connection. Bind each group/friend manually through New session.
-Group keywords include real-mention group names; a built-in @bot-account trigger remains active with empty keywords. Matches grant 60-second follow-up eligibility; participants extend a five-second quiet window. Follow-ups may skip; private messages require replies. Optional group icebreaking waits for a lone speaker after silence, allows one reply or a skip, and has a per-group cooldown. A confirmed icebreaker reply gives its speaker 60 seconds to continue, independently of cooldown. Configure its switch and three durations in Project settings. Sessions show delivery/skip/run details, pause/resume/stop and idle local deletion without recalling QQ messages. Only the QQ send tool
-publishes text; qq_send_image selects global favorites with nonblank descriptions and sends their original image/animation. Optional qq_generate_image is available only when this batch’s real user text contains `生成` or `画` and should serve explicit image-creation requests. Text and both image tools share the reply limit. Select an external image generation model in Project settings, with optional size/quality/style overrides. Long generation uses the Provider request timeout; increase it there when needed. [Chat/context](docs/contracts/chat-context.md#qqbot-conversations) owns settings;
-[QQ boundaries](docs/FUTURE_QQ_INTEGRATION.md) owns exclusions and outstanding live acceptance.
-Bilingual desktop/touch verification: `npm run test:browser -- qqbot.spec.ts qqbot-generation.spec.ts` after building frontend assets.
+Choose New QQBot, configure an independently installed NapCat OneBot v11 WebSocket endpoint and bot account,
+select an external LLM and enable the connection. Bind each group/friend through New session.
+The [QQBot contract](docs/contracts/qqbot.md) owns keyword/follow-up/icebreaker replies, image input, shared favorites,
+provider image generation, pause/resume/stop and local history management. See its [current limits](docs/contracts/qqbot.md#limits-and-acceptance)
+and the [deployment guide](README_RUN.md#qqbot-deployment) before live acceptance.
+For bilingual desktop/touch verification, run `npm run test:browser -- qqbot` after building frontend assets;
+the [QQBot task](docs/ai/TASK_QQBOT.md#verification-map) maps the individual suites and simulated backend coverage.
 
 ## HTTP contract
 

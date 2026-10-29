@@ -3,6 +3,7 @@
 Read [chat/context](../contracts/chat-context.md),
 [runs/streaming](../contracts/runs-streaming.md), [models](../contracts/models.md)
 and [harness/tools](../contracts/harness-tools.md).
+For OneBot transport, QQ batches/media/delivery and their Harness integration, use the [QQBot task](TASK_QQBOT.md).
 
 ## Source map
 
