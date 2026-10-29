@@ -12,7 +12,7 @@ async function submit(page: Page, content: string) {
 }
 
 async function noOverflow(page: Page) {
-  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .workspace, .chat-view, .message-row, .message-stack, .processing-timeline, .tool-command-details, .approval-details')]
+  const overflow = await page.evaluate(() => [...document.querySelectorAll('body, .workspace, .chat-view, .message-row, .message-stack, .processing-list, [data-tool-call-id] [data-slot=trace-collapsible-content], .approval-details')]
     .filter((node) => node.scrollWidth > node.clientWidth + 1).map((node) => node.className || node.tagName));
   expect(overflow).toEqual([]);
 }
@@ -48,7 +48,7 @@ test('retry replaces the whole reply and deletion removes its tool history', asy
   await expect(page.locator('.status-done')).toBeVisible();
   expect(await page.locator('article[data-run-id]').getAttribute('data-run-id')).not.toBe(originalId);
   expect((await request.get(`/api/runs/${originalId}`)).status()).toBe(404);
-  await expect(page.locator('.tool-command')).toHaveCount(0);
+  await expect(page.locator('[data-tool-call-id]')).toHaveCount(0);
   await page.locator('article[data-run-id]').hover();
   await page.locator('.reply-actions button').last().click();
   await answerConfirmation(page, true);
@@ -67,7 +67,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.addInitScript((locale) => localStorage.setItem('cogita.locale', locale), locale);
       });
 
-      test('nested history stays compact and long results stay bounded', async ({ page, request }, info) => {
+      test('flat history stays compact and long results stay bounded', async ({ page, request }, info) => {
         const response = await request.post('/__test__/session', { data: { long_history: true } });
         expect(response.ok()).toBeTruthy();
         await page.goto('/');
@@ -80,19 +80,17 @@ for (const locale of ['en', 'zh-CN']) {
         await noOverflow(page);
         await page.screenshot({ path: info.outputPath('completed.png') });
         await reply.locator('.processing-toggle').click();
-        await expect(reply.locator('.processing-timeline')).toBeVisible();
-        await expect(reply.locator('.tool-group-toggle')).toHaveCount(1);
-        await expect(reply.locator('.tool-group-toggle')).toContainText('12');
-        await reply.locator('.tool-group-toggle').click();
-        await expect(reply.locator('.tool-command-toggle')).toHaveCount(12);
-        await expect(reply.locator('.tool-command-details')).toHaveCount(0);
-        await reply.locator('.tool-command-toggle').first().click();
-        const details = reply.locator('.tool-command-details').first();
+        await expect(reply.locator('.processing-list')).toBeVisible();
+        await expect(reply.locator('[data-tool-call-id] [data-slot=trace-collapsible-trigger]')).toHaveCount(12);
+        await expect(reply.locator('[data-tool-call-id] [data-slot=trace-collapsible-content]')).toHaveCount(0);
+        await reply.locator('[data-tool-call-id] [data-slot=trace-collapsible-trigger]').first().click();
+        const details = reply.locator('[data-tool-call-id] [data-slot=trace-collapsible-content]').first();
+        await expect(details.locator('pre')).toHaveCount(1);
         await expect(details).toContainText('large-result:');
         const bounds = await details.locator('pre').last().evaluate((node) => ({ height: node.clientHeight, scrollHeight: node.scrollHeight, width: node.clientWidth, scrollWidth: node.scrollWidth }));
-        expect(bounds.height).toBeLessThanOrEqual(viewport.width < 600 ? 240 : 320);
+        expect(bounds.height).toBeLessThanOrEqual(256);
         expect(bounds.scrollHeight).toBeGreaterThan(bounds.height);
-        expect(bounds.scrollWidth).toBeGreaterThan(bounds.width);
+        expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.width + 1);
         await noOverflow(page);
         await page.screenshot({ path: info.outputPath('expanded-commands.png') });
         await page.reload();
@@ -106,11 +104,11 @@ for (const locale of ['en', 'zh-CN']) {
         let reply = page.locator('article[data-run-id]').last();
         await expect(reply.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
         await reply.locator('.processing-toggle').click();
-        await expect(reply.locator('.processing-timeline')).toContainText('I will encode first.');
+        await expect(reply.locator('[data-reasoning-id]')).toHaveCount(1);
         await expect(reply.locator('.reply-answer')).toContainText('Working on the conversion.');
-        await expect(reply.locator('.tool-group-toggle').first()).toBeVisible();
+        await expect(reply.locator('[data-tool-call-id] [data-slot=trace-collapsible-trigger]').first()).toBeVisible();
         await expect(reply.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'true');
-        await expect(reply.locator('.processing-timeline')).toContainText('I will decode the encoded text.');
+        await expect(reply.locator('[data-reasoning-id]')).toHaveCount(2);
         await page.screenshot({ path: info.outputPath('processing.png') });
         await expect(reply.locator('.reply-answer')).toHaveText('Final result: aGk= decodes to hi.');
         await expect(reply.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
@@ -125,7 +123,7 @@ for (const locale of ['en', 'zh-CN']) {
         await submit(page, 'two-rounds');
         reply = page.locator('article[data-run-id]').last();
         await expect(reply.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'true');
-        await expect(reply.locator('.processing-timeline')).toContainText('I will encode first.');
+        await expect(reply.locator('[data-reasoning-id]')).toHaveCount(1);
         await reply.locator('.processing-toggle').click();
         await expect(reply.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
         await expect(reply.locator('.reply-answer')).toContainText('Working on the conversion.');
@@ -144,9 +142,21 @@ for (const locale of ['en', 'zh-CN']) {
         const first = page.locator('article[data-run-id]').first();
         await expect(first.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
         await expect(first.locator('.approval-details')).toContainText('data/knowledge/note.txt');
+        await expect(first.locator('.approval-details')).toHaveAttribute('data-slot', 'item');
+        await first.locator('.processing-toggle').click();
+        await expect(first.locator('[data-tool-call-id]')).toHaveCount(0);
+        await first.locator('.processing-toggle').click();
         await noOverflow(page);
         await page.screenshot({ path: info.outputPath('approval.png') });
+        let releaseApproval!: () => void;
+        const approvalPending = new Promise<void>((resolve) => { releaseApproval = resolve; });
+        await page.route('**/api/tools/approvals/*', async (route) => {
+          await approvalPending;
+          await route.continue();
+        });
         await first.getByRole('button', { name: locale === 'en' ? 'Approve' : '批准', exact: true }).click();
+        for (const button of await first.locator('.approval-details button').all()) await expect(button).toBeDisabled();
+        releaseApproval();
         await expect(first.locator('.approval-details')).toHaveCount(0);
         await expect(first.locator('.reply-answer')).toHaveText('Browser final answer.');
         await expect(first.locator('.status-done')).toBeVisible();

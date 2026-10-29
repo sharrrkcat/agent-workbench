@@ -50,23 +50,19 @@ active expansion. User toggles survive incoming deltas; entering a terminal stat
 collapses the outer history, and reopened conversations start terminal histories
 collapsed. Final answers and approval controls stay outside that history.
 User message metadata.request_warnings contains run_id and deduplicated images_ignored/images_require_text/tools_ignored codes. Chat emits message_updated on change, including clearing prior warnings on retry. Warnings render as localized warning-colored text below the current user bubble, survive refresh, and never enter model context; historical messages are not rewritten.
-History and tool details use controlled Base UI Collapsible sections; replacing
-their controls does not reset user expansion during streaming. Shared control
-and overlay behavior belongs to [Settings](settings.md#frontend-styling-foundation).
-Disclosure arrows follow labels: the processing clock arrow stays visible; command
-group/item arrows appear on hover or keyboard focus and stay visible on touch.
-The elapsed label aligns with the reply content's left edge. The processing header
-has no cancel button; cancellation remains available in the composer.
-Reasoning previews show one line of plain text extracted from Markdown, merging
-whitespace and retaining code text and link labels. Streaming previews follow the
-tail with a left ellipsis when overflowing; completed previews show the beginning
-with a right ellipsis. Text that fits has no ellipsis and cannot be expanded.
-A later part, message completion
-or terminal run resets that preview to its beginning and collapses manual expansion.
-Reasoning places an icon-only expand/collapse control beside the first preview line,
-without a separate heading or arrow. Incoming deltas preserve manual
-expansion, which renders the full Markdown. Text and width changes remeasure
-horizontal overflow, and reopened histories start compact.
+Processing uses shadcn Base UI AI Elements compositions: Trace for the outer clock, reasoning and individual tool calls, Code Block for tool output, and Item/Button for pending confirmation. The clock's content has no left rule or inset, keeping reasoning/tool rows aligned with it and the answer. Child disclosures retain their left rule/inset. Trace titles, content and code use 14px text. The clock is a plain
+text disclosure. Trace owns the right-chevron rotation, height transition and running title shimmer; reduced motion disables animation. Touch disclosures retain 44px targets.
+Shared control and overlay behavior belongs to [Settings](settings.md#frontend-styling-foundation).
+The processing header has no cancel button; cancellation remains in the composer. Each reasoning segment starts collapsed, with Thinking while active, then Thought for Ns
+(ceiling seconds, including zero), or Thought when timing is unknown, in both locales.
+Expansion shows full Markdown. Incoming deltas preserve manual expansion; an expanded
+live segment closes once, one second after thinking ends. Reopening it stays open.
+Each tool title includes its name and arguments: one argument shows its value, multiple arguments show compact key=value pairs, and nested values use compact JSON. Long titles
+truncate. There is no separate argument-preview control; pending confirmation retains full arguments.
+Running/queued calls are plain Trace lines. Results make each call independently expandable,
+initially collapsed, showing only bounded, wrapped output/errors and truncation notices.
+Pending approvals appear outside Trace as an Item with identity, risk, service, full arguments and Approve/Reject buttons; submitting locks both actions. Resolution removes
+the Item and returns the call to its Trace line.
 MessageScroller follows streamed content near the bottom and yields when the user
 reads earlier messages. Disclosures use registered header anchors to retain the
 reading position. Returning to the bottom, choosing Latest messages or sending
@@ -132,6 +128,10 @@ Loading/failure preserves known identities and never implies deletion; errors us
 
 messageStream tracks one sequence per message across text and reasoning parts,
 ignores duplicates/late/gapped deltas, and replaces drafts with completed parts.
+Shared AssistantDraft times each streamed reasoning segment with a monotonic clock, from first normalized reasoning through its closing marker, text/tool transition or generation end.
+Cancellation/failure settles partial timing. A final empty reasoning message_delta carries
+duration_ms and the next sequence; reconciliation retains it without replacing text.
+Non-streaming output has no measured duration. Reasoning time excludes later tool/approval work.
 Part ids remain stable and cannot change type. Gaps are repaired by completion or
 authoritative refresh. Tool events merge by message id, including repeated
 completion of an assistant tool-call message. Controlled cancellation and caught

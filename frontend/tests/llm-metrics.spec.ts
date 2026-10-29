@@ -77,7 +77,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.reply-metrics')).toHaveCount(0);
       });
 
-      test('assistant buttons stay visible while usage and user actions reveal without layout shifts', async ({ page }) => {
+      test('assistant buttons stay visible while usage and user actions reveal without layout shifts', async ({ page }, info) => {
         let healthRequests = 0;
         page.on('request', request => { if (request.url().endsWith('/api/health/details')) healthRequests++; });
         await page.reload();
@@ -87,8 +87,18 @@ for (const locale of ['en', 'zh-CN']) {
         const reply = page.locator('article[data-run-id]').last();
         await expect(reply.locator('.reply-metrics')).toBeAttached({ timeout: 20000 });
         const user = page.locator('article.user').last();
-        await expect(user.locator('.message-meta time + strong')).toHaveCount(1);
-        await expect(reply.locator('.message-meta > :last-child')).toHaveJSProperty('tagName', 'TIME');
+        await expect(user.locator('.message-meta .message-number + time + strong')).toHaveCount(1);
+        await expect(reply.locator('.message-meta strong + time + .message-number')).toHaveCount(1);
+        for (const row of [user, reply]) {
+          const header = row.locator('.message-meta');
+          await expect(header.locator('strong')).toHaveCSS('font-size', '14px');
+          await expect(header.locator('time')).toHaveCSS('font-size', '12px');
+          await expect(header.locator('.message-number')).toHaveCSS('font-size', '12px');
+          const avatar = (await row.locator('.message-avatar').boundingBox())!;
+          expect(avatar.width).toBe(48);
+          expect(avatar.height).toBe(48);
+          expect(Math.abs(avatar.y - (await header.boundingBox())!.y)).toBeLessThan(1);
+        }
         await page.mouse.move(0, 0);
         const actions = reply.locator('.message-actions');
         const usage = reply.locator('.reply-metrics');
@@ -96,15 +106,18 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(actions).toHaveCSS('pointer-events', 'auto');
         await expect(usage).toHaveCSS('opacity', width === 390 ? '1' : '0');
         await expect(reply.locator('time')).toHaveCSS('opacity', width === 390 ? '1' : '0');
+        await expect(reply.locator('.message-number')).toHaveCSS('opacity', width === 390 ? '1' : '0');
         const before = await actions.boundingBox();
         if (width !== 390) {
           await reply.hover();
           await expect(usage).toHaveCSS('transition-duration', '0.18s');
           await expect(reply.locator('time')).toHaveCSS('transition-duration', '0.18s');
+          await expect(reply.locator('.message-number')).toHaveCSS('transition-duration', '0.18s');
         }
         await expect(actions).toHaveCSS('opacity', '1');
         await expect(usage).toHaveCSS('opacity', '1');
         await expect(reply.locator('time')).toHaveCSS('opacity', '1');
+        await expect(reply.locator('.message-number')).toHaveCSS('opacity', '1');
         expect(await actions.boundingBox()).toEqual(before);
         const names = await actions.locator('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')));
         expect(names).toEqual(locale === 'en' ? ['Copy answer', 'Retry reply', 'Context detail', 'Usage details', 'Delete reply'] : ['复制回复', '重试回复', '上下文详情', '用量详情', '删除回复']);
@@ -113,24 +126,30 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(usage).toHaveCSS('transition-duration', '0.18s');
           await expect(reply.locator('time')).toHaveCSS('transition-duration', '0.18s');
           await expect(usage).toHaveCSS('opacity', '0');
+          await expect(reply.locator('.message-number')).toHaveCSS('opacity', '0');
           await expect(actions).toHaveCSS('opacity', '1');
           await page.emulateMedia({ reducedMotion: 'reduce' });
           await expect(usage).toHaveCSS('transition-duration', '0s');
           await expect(reply.locator('time')).toHaveCSS('transition-duration', '0s');
+          await expect(reply.locator('.message-number')).toHaveCSS('transition-duration', '0s');
           await page.emulateMedia({ reducedMotion: 'no-preference' });
         }
         await actions.locator('button').first().focus();
         await expect(actions).toHaveCSS('opacity', '1');
         await expect(usage).toHaveCSS('opacity', '1');
+        await expect(reply.locator('.message-number')).toHaveCSS('opacity', '1');
         await input.focus();
         await page.mouse.move(0, 0);
         await expect(user.locator('.message-actions')).toHaveCSS('opacity', width === 390 ? '1' : '0');
         await expect(user.locator('time')).toHaveCSS('opacity', width === 390 ? '1' : '0');
+        await expect(user.locator('.message-number')).toHaveCSS('opacity', width === 390 ? '1' : '0');
         if (width !== 390) {
           await user.hover();
           await expect(user.locator('.message-actions')).toHaveCSS('transition-duration', '0.18s');
           await expect(user.locator('time')).toHaveCSS('transition-duration', '0.18s');
+          await expect(user.locator('.message-number')).toHaveCSS('transition-duration', '0.18s');
         }
+        await expect(user.locator('.message-number')).toHaveCSS('opacity', '1');
         await user.locator('.message-actions button').first().click();
         await input.focus();
         await page.mouse.move(0, 0);
@@ -139,6 +158,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(user.locator('textarea')).toHaveCount(0);
         await expect(page.locator('.status-bar')).toHaveCount(0);
         await expect(page.locator('.composer-hint')).toHaveCount(0);
+        await page.screenshot({ path: info.outputPath('identity-headers.png') });
         expect(healthRequests).toBe(0);
       });
 

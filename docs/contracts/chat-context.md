@@ -231,7 +231,7 @@ attachment_ref), image, audio, video, media_group image galleries, notice,
 error, tool_call and tool_result. Unknown types are rejected; there are no
 forms, actions, command buttons or diff parts.
 
-Text parts use plain text/Markdown; reasoning uses expanded GFM or compact [plain-text previews](runs-streaming.md). Knowledge citations such as `[K1]` use ordinary Markdown without a dedicated parser, lookup or popover.
+Text parts use plain text/Markdown; reasoning uses expanded GFM and [timed Trace disclosures](runs-streaming.md). Its optional nullable duration_ms is a strict nonnegative integer persisted in parts JSON, without a schema migration. Knowledge citations such as `[K1]` use ordinary Markdown without a dedicated parser, lookup or popover.
 
 Large binary data belongs in the attachment store and is referenced by id/URL.
 Uploads and serving use the configured attachment directory; General owns
@@ -266,8 +266,8 @@ Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete
 The frontend renders parts as content without execution/routing; edit/retry uses original text. MessageActions owns controls,
 MessageParts owns presentation, ChatAttachments owns cards/URLs, and [runs/streaming](runs-streaming.md) owns stream merging.
 
-User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Agent identity; user rows use current Cogita Persona identity. User headers place time before the name; assistant headers place it after the name.
-Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps, user action buttons and reply usage metrics appear on message hover or keyboard focus,
+User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Agent identity; user rows use current Cogita Persona identity. Headers use 14px names and 12px timestamps/numbers, ordered number/time/name for users and name/time/number for assistants.
+Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps and message numbers, user action buttons and reply usage metrics appear on message hover or keyboard focus,
 fade in and out over 180ms (instantly with reduced motion), and retain layout space. Touch layouts keep them visible; editing keeps save/cancel visible and an open usage modal keeps its owner visible. Message bodies use 16px text with Markdown headings, lists, quotes, code, tables and media.
 Markdown block code uses gray secondary Bubble surfaces with 24px corners and preserves preformatted text; inline code retains its compact styling. Message action tooltips open below their buttons without flipping above, including usage details. Wide code, tables and tool results scroll inside their own bounds; tool results are limited to 320px height on desktop and 240px below 768px.
 

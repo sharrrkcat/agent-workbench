@@ -3,7 +3,7 @@ import type { Run } from './runs';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
 export type TextPart = { id: string; type: 'text'; format?: 'plain' | 'markdown'; text: string };
-export type ReasoningPart = { id: string; type: 'reasoning'; text: string };
+export type ReasoningPart = { id: string; type: 'reasoning'; text: string; duration_ms?: number | null };
 
 export type JsonPart = { id: string; type: 'json'; data: unknown };
 

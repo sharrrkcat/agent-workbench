@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, model_validator
 
 from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, JsonObject, patch_model, public_model
 from ai_workbench.api.openapi import schema_ref
@@ -116,6 +116,13 @@ class MessageDeltaPayload(ApiModel):
     part_id: str
     part_type: Literal["text", "reasoning"]
     delta: str
+    duration_ms: int | None = Field(default=None, ge=0, strict=True)
+
+    @model_validator(mode="after")
+    def reasoning_duration(self):
+        if self.duration_ms is not None and (self.part_type != "reasoning" or self.delta):
+            raise ValueError("Reasoning duration must close a reasoning part with an empty delta")
+        return self
 
 
 class ApprovalRequestedPayload(ApiModel):

@@ -56,7 +56,7 @@ playground.spec.ts covers bilingual desktop/touch cards, app routes/history, lea
 Game-specific behavior and test coverage belong to the [Farkle task](TASK_FARKLE.md).
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
 independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
-chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning previews, message alignment and images.
+chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning timing, Trace disclosures, tool titles/results, message alignment and images.
 settings-layout.spec.ts covers populated grouped pages, collapsed menus, direct links, history, resource
 leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, shared navigation and responsive scroll regions.
 chat-drafts.spec.ts covers unsaved settings, shared creation entries, attachment promotion/retry,

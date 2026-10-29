@@ -1,9 +1,7 @@
-import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { MessageScrollerItem } from '@/components/ui/message-scroller';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { ChevronRight, LoaderCircle } from 'lucide-react';
+import { Trace, TraceCollapsible, TraceCollapsibleTrigger, TraceCollapsibleContent, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { terminal } from '../../store/cogita/mergeState';
@@ -13,8 +11,8 @@ import { MessageParts } from './MessageParts';
 import { RunApproval } from './RunApproval';
 import { ReplyMetrics } from './ReplyMetrics';
 import type { ReplyDeleteAction } from './ReplyActions';
-import { ToolGroup } from './ToolGroup';
-import { ReasoningPreview } from './ReasoningPreview';
+import { ToolCall } from './ToolCall';
+import { ReasoningBlock } from './ReasoningBlock';
 import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
 import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
@@ -56,57 +54,50 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
       runId={run.run_id}
       messageNumber={messageNumber}
     >
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <MessageScrollerItem messageId={'disclosure-' + processId} data-scroll-pause>
-          <div className={`reply-processing-header status-${run.status.toLowerCase()}`}>
-            <CollapsibleTrigger
-              render={
-                <Button
-                  type="button"
-                  disabled={ended && process.length === 0}
-                  variant="ghost"
-                  className="process-disclosure processing-toggle"
-                />
-              }
-            >
-              {!ended ? <LoaderCircle size={14} className="animate-spin" /> : null}
-              <span>{t(ended ? 'elapsed' : 'processing', { seconds })}</span>
-              {process.length || !ended ? (
-                <ChevronRight data-icon="inline-end" className={expanded ? 'disclosure-arrow expanded' : 'disclosure-arrow'} />
-              ) : null}
-            </CollapsibleTrigger>
-            {status ? (
-              <span className="reply-run-status" role="status">
-                {t(status)}
-              </span>
-            ) : null}
-          </div>
-        </MessageScrollerItem>
-        <CollapsibleContent id={processId} className="processing-timeline">
-          {process.map((item) =>
-            item.kind === 'tools' ? (
-              <ToolGroup key={item.id} calls={item.calls} run={run} />
-            ) : item.part.type === 'reasoning' ? (
-              <ReasoningPreview
-                key={`${item.message.message_id}-${item.id}`}
-                id={`reasoning-${item.message.message_id}-${item.id}`}
-                part={item.part}
-                streaming={!ended && item.message.metadata?.streaming === true && item.message.parts[item.message.parts.length - 1]?.id === item.id}
-              />
-            ) : (
-              <div
-                className="processing-content"
-                key={`${item.message.message_id}-${item.id}`}
+      <Trace>
+        <TraceCollapsible open={expanded} onOpenChange={setExpanded}>
+          <MessageScrollerItem messageId={'disclosure-' + processId} data-scroll-pause>
+            <div className={`reply-processing-header status-${run.status.toLowerCase()}`}>
+              <TraceCollapsibleTrigger
+                disabled={ended && process.length === 0}
+                className="processing-toggle"
               >
-                <div className="processing-content-body">
-                  <MessageParts parts={[item.part]} />
-                </div>
-              </div>
-            ),
-          )}
-          {!process.length && !ended ? <span className="run-muted">{t('preparing')}</span> : null}
-        </CollapsibleContent>
-      </Collapsible>
+                <TraceLine status={!ended ? 'running' : undefined}>
+                  <TraceTitle>{t(ended ? 'elapsed' : 'processing', { seconds })}</TraceTitle>
+                </TraceLine>
+              </TraceCollapsibleTrigger>
+              {status ? (
+                <span className="reply-run-status" role="status">
+                  {t(status)}
+                </span>
+              ) : null}
+            </div>
+          </MessageScrollerItem>
+          <TraceCollapsibleContent id={processId} className="ml-0 border-l-0 px-0">
+            <div className="processing-list">
+              {process.map((item) =>
+                item.kind === 'tool' ? (
+                  <ToolCall key={item.id} entry={item.entry} run={run} />
+                ) : item.part.type === 'reasoning' ? (
+                  <ReasoningBlock
+                    key={`${item.message.message_id}-${item.id}`}
+                    part={item.part}
+                    streaming={!ended && item.part.duration_ms == null && item.message.metadata?.streaming === true && item.message.parts[item.message.parts.length - 1]?.id === item.id}
+                  />
+                ) : (
+                  <div
+                    className="min-w-0"
+                    key={`${item.message.message_id}-${item.id}`}
+                  >
+                    <MessageParts parts={[item.part]} compact />
+                  </div>
+                ),
+              )}
+              {!process.length && !ended ? <span>{t('preparing')}</span> : null}
+            </div>
+          </TraceCollapsibleContent>
+        </TraceCollapsible>
+      </Trace>
       {!readOnly && <RunApproval run={run} steps={reply.steps} messages={reply.messages} />}
       {error ? (
         <Alert className="reply-error" variant="destructive">

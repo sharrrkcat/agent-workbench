@@ -31,6 +31,9 @@ export function MessageFrame({
   children: ReactNode;
 }) {
   const date = new Date(createdAt);
+  const number = messageNumber != null
+    ? <span className="message-number text-muted-foreground whitespace-nowrap tabular-nums">#{messageNumber}</span>
+    : null;
   return (
     <Message
       align={role === 'user' ? 'end' : 'start'}
@@ -41,7 +44,7 @@ export function MessageFrame({
       <MessageContent className="message-stack">
         {showIdentity || showTime || messageNumber != null ? <MessageHeader className="message-meta gap-2 px-0">
           {showIdentity ? <MessageAvatar className="message-avatar">
-            <Avatar>
+            <Avatar size="xl">
               {avatarId ? (
                 <AvatarImage
                   src={resolveAttachmentUrlFromBase(API_BASE_URL, `local://attachments/${avatarId}`)}
@@ -54,12 +57,13 @@ export function MessageFrame({
             </Avatar>
           </MessageAvatar> : null}
           {showIdentity && role !== 'user' ? <strong>{name}</strong> : null}
+          {role === 'user' ? number : null}
           {showTime ? <time dateTime={createdAt}>
             {Number.isNaN(date.getTime())
               ? ''
               : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </time> : null}
-          {messageNumber != null ? <span className="message-number text-muted-foreground whitespace-nowrap tabular-nums">#{messageNumber}</span> : null}
+          {role !== 'user' ? number : null}
           {showIdentity && role === 'user' ? <strong>{name}</strong> : null}
         </MessageHeader> : null}
         {children}

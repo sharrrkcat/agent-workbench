@@ -11,7 +11,7 @@ export type ToolEntry = {
 
 export type ProcessingItem =
   | { kind: 'content'; id: string; part: MessagePart; message: Message }
-  | { kind: 'tools'; id: string; calls: ToolEntry[] };
+  | { kind: 'tool'; id: string; entry: ToolEntry };
 
 export type Reply = {
   run: Run;
@@ -45,9 +45,7 @@ export function buildReply(run: Run, messages: Message[], steps: RunStep[]): Rep
           step: steps.find((step) => step.kind === 'tool' && step.metadata?.tool_call_id === part.tool_call_id),
           approval: [...steps].reverse().find((step) => step.kind === 'approval' && step.metadata?.tool_call_id === part.tool_call_id),
         };
-        const last = process[process.length - 1];
-        if (last?.kind === 'tools') last.calls.push(entry);
-        else process.push({ kind: 'tools', id: part.tool_call_id, calls: [entry] });
+        process.push({ kind: 'tool', id: part.tool_call_id, entry });
       } else if (part.type !== 'tool_result' && (part.type === 'reasoning' || message !== answer)) {
         if ((part.type === 'text' || part.type === 'reasoning') && !part.text.trim()) continue;
         process.push({ kind: 'content', id: part.id, part, message });

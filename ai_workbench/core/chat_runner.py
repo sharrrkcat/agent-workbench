@@ -244,6 +244,8 @@ class ChatRunner:
                             if self._cancelled(run.run_id):
                                 raise asyncio.CancelledError()
                             draft.append(chunk.delta.content, chunk.delta.reasoning_content)
+                            if chunk.finish_reason:
+                                draft.finish()
                             if chunk.finish_reason == "content_filter":
                                 raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)
                             if chunk.delta.tool_calls:

@@ -26,8 +26,13 @@ export function applyMessageEvent(messages: Message[], event: RuntimeEvent): Mes
   if (!message.metadata?.streaming || typeof seq !== 'number' || seq !== Number(message.metadata.stream_seq || 0) + 1 || typeof payload.delta !== 'string' || typeof partId !== 'string' || !partId || !['text', 'reasoning'].includes(String(kind))) return messages;
   const part = message.parts.find((item) => item.id === partId);
   if (part && part.type !== kind) return messages;
+  const duration = payload.duration_ms;
+  if (duration != null && (kind !== 'reasoning' || payload.delta !== '' ||
+    typeof duration !== 'number' || !Number.isSafeInteger(duration) || duration < 0 || !part)) return messages;
+  if (part?.type === 'reasoning' && part.duration_ms != null) return messages;
   const next = kind === 'reasoning'
-    ? { id: partId, type: 'reasoning' as const, text: (part?.type === 'reasoning' ? part.text : '') + payload.delta }
+    ? { id: partId, type: 'reasoning' as const, text: (part?.type === 'reasoning' ? part.text : '') + payload.delta,
+      ...(duration != null ? { duration_ms: duration as number } : {}) }
     : { id: partId, type: 'text' as const, format: 'markdown' as const, text: (part?.type === 'text' ? part.text : '') + payload.delta };
   return messages.map((m) => m.message_id === id ? { ...m,
     metadata: { ...m.metadata, stream_seq: seq },

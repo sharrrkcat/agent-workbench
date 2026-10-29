@@ -39,6 +39,7 @@ class ReasoningPart(_PartBase):
     model_config = ConfigDict(extra="forbid", strict=True)
     type: Literal["reasoning"]
     text: str
+    duration_ms: int | None = Field(default=None, ge=0)
 
 
 class JsonPart(_PartBase):

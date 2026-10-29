@@ -72,11 +72,12 @@ The QQ Project settings header contains only its name and sidebar toggle; conver
 
 The fixed chat header stays on one row, including narrow screens, with the sidebar toggle, title and session settings; Agent Persona selection lives in the session dialog. The composer owns the concrete model menu with Harness and Reasoning on/off controls. Reasoning selects generation mode with session defaults and automatic-adjustment feedback owned by [chat/context](chat-context.md#personas-and-sessions).
 The message column is at most 48rem wide, with an independent scroller and aligned fixed composer/status area.
-Assistant bodies align with both composer edges; user messages align with its right edge. Avatars sit outside
+Assistant bodies align with both composer edges; user messages align with its right edge. Avatars are 48px square and their top edges align with the entire identity header box. They sit outside
 the body column. Below 61rem of chat width, avatars and names share a row above each body, left-aligned
 for assistants and right-aligned for users, without narrowing the body or composer.
 The composer uses InputGroup and a horizontally scrolling AttachmentGroup; its textarea grows to 12rem, less in short viewports.
 MessageScroller uses pinned @shadcn/react 0.3.1; [runs/streaming](runs-streaming.md#run-lifecycle) owns transcript behavior.
+Message Markdown fences, JSON, inline files and tool output use shadcn Code Block surfaces with keyboard scrolling and bounded height. Trace code blocks retain compact padding and 14px text; answer fences preserve language classes, whitespace and horizontal scrolling.
 
 Settings fixes its title in the shared sidebar brand position and a Back to chat footer; the middle navigation
 scrolls independently. SidebarGroup reflects responsibility: Application preferences

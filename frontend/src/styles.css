@@ -71,15 +71,15 @@
   @media (prefers-reduced-motion: reduce) {
     .user-message-enter { animation: none; }
   }
-  .message-meta { min-height: 2rem; }
-  .message-row { margin-inline: -2.75rem; padding-inline: 2.75rem; }
+  .message-meta { position: relative; min-height: 2rem; }
+  .message-row { margin-inline: -3.75rem; padding-inline: 3.75rem; }
   .message-row.user .message-meta { justify-content: flex-end; }
-  .message-row .message-avatar { position: absolute; inset-inline-start: 0; top: 0; }
-  .message-row.user .message-avatar { inset-inline-start: auto; inset-inline-end: 0; }
+  .message-row .message-avatar { position: absolute; inset-inline-start: -3.75rem; top: 0; }
+  .message-row.user .message-avatar { inset-inline-start: auto; inset-inline-end: -3.75rem; }
 
   @container conversation (width < 61rem) {
     .message-row { margin-inline: 0; padding-inline: 0; }
-    .message-row .message-avatar { position: static; align-self: center; }
+    .message-row .message-avatar { position: static; }
     .message-row.user .message-avatar { order: 1; }
   }
 
@@ -99,8 +99,9 @@
     overflow-wrap: anywhere;
   }
 
-  .message-meta time {
+  .message-meta :is(time, .message-number) {
     flex-shrink: 0;
+    font-size: 0.75rem;
     font-weight: 400;
   }
 
@@ -109,8 +110,7 @@
   }
 
   .message,
-  .message-parts,
-  .processing-content-body {
+  .message-parts {
     min-width: 0;
     max-width: 100%;
     overflow-wrap: anywhere;
@@ -137,7 +137,7 @@
     max-width: 100%;
   }
 
-  .part-markdown :where(p, ul, ol, blockquote, .markdown-code, .markdown-table) {
+  .part-markdown :where(p, ul, ol, blockquote, [data-slot=code-block], .markdown-table) {
     margin-block: 0.85em;
   }
 
@@ -193,35 +193,6 @@
     border-radius: var(--radius-sm);
     background: var(--muted);
     font-size: 0.875em;
-  }
-
-  .part-markdown pre,
-  .part-json,
-  .part-file {
-    max-width: 100%;
-    min-width: 0;
-    overflow: auto;
-    overscroll-behavior: contain;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 0.75rem 1rem;
-    background: var(--card);
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-    line-height: 1.65;
-    white-space: pre;
-    overflow-wrap: normal;
-  }
-
-  .part-markdown pre code {
-    font: inherit;
-    white-space: inherit;
-  }
-
-  .part-json,
-  .part-file {
-    max-height: 320px;
-    margin: 0;
   }
 
   .markdown-table {
@@ -280,9 +251,7 @@
   .part-gallery > img { width: min(12rem, 100%); }
 
   .message-actions,
-  .reply-processing-header,
-  .tool-detail-label,
-  .approval-actions {
+  .reply-processing-header {
     display: flex;
     min-width: 0;
     align-items: center;
@@ -296,17 +265,17 @@
     .qq-delete,
     .message-row.user .message-actions,
     .message-row .reply-metrics,
-    .message-row .message-meta time { opacity: 0; pointer-events: none; transition: opacity 180ms ease-out; }
+    .message-row .message-meta :is(time, .message-number) { opacity: 0; pointer-events: none; transition: opacity 180ms ease-out; }
     [data-qq-bubble-row]:hover .qq-delete,
     [data-qq-bubble-row]:focus-within .qq-delete,
     .message-row.user:hover .message-actions,
     .message-row:hover .reply-metrics,
-    .message-row:hover .message-meta time,
+    .message-row:hover .message-meta :is(time, .message-number),
     .message-row.user:focus-within .message-actions,
     .message-row:focus-within .reply-metrics,
-    .message-row:focus-within .message-meta time,
+    .message-row:focus-within .message-meta :is(time, .message-number),
     .message-row:has(.reply-footer[data-usage-open=true]) .reply-metrics,
-    .message-row:has(.reply-footer[data-usage-open=true]) .message-meta time,
+    .message-row:has(.reply-footer[data-usage-open=true]) .message-meta :is(time, .message-number),
     .message-row.user .message-actions[data-editing=true] { opacity: 1; pointer-events: auto; }
   }
 
@@ -314,110 +283,21 @@
     .qq-delete,
     .message-row.user .message-actions,
     .message-row .reply-metrics,
-    .message-row .message-meta time { transition: none; }
+    .message-row .message-meta :is(time, .message-number) { transition: none; }
   }
 
   .reply-processing-header {
     color: var(--muted-foreground);
-    font-size: 0.75rem;
+    font-size: 1rem;
   }
 
-  .process-disclosure {
-    height: auto;
-    min-height: 2rem;
-    max-width: 100%;
-    justify-content: flex-start;
-    white-space: normal;
-    text-align: start;
-  }
-
-  .process-disclosure > span {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .process-disclosure .expanded { transform: rotate(90deg); }
-  .processing-toggle { margin-inline-start: calc(-0.5rem - 1px); }
-  .disclosure-arrow { flex-shrink: 0; }
-
-  @media (hover: hover) and (pointer: fine) {
-    .tool-group-toggle .disclosure-arrow,
-    .tool-command-toggle .disclosure-arrow { opacity: 0; }
-    .process-disclosure:hover .disclosure-arrow,
-    .process-disclosure:focus-visible .disclosure-arrow { opacity: 1; }
-  }
-
-  .markdown-code pre {
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .processing-reasoning {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    column-gap: 0.5rem;
-  }
-  .reasoning-preview,
-  .processing-reasoning > [data-slot=collapsible-content] { grid-column: 2; grid-row: 1; }
-  .processing-reasoning > [data-scroll-pause] {
-    display: flex;
-    align-items: center;
-    height: 1lh;
-  }
-  .reasoning-preview {
-    display: flex;
-    min-width: 0;
-    height: 1lh;
-    overflow: clip;
-  }
-  .reasoning-window { display: flex; flex: 1; min-width: 0; overflow: clip; }
-  .reasoning-preview[data-streaming=true][data-overflowing=true] .reasoning-window { justify-content: flex-end; }
-  .reasoning-preview-text { flex-shrink: 0; white-space: nowrap; }
-  .reasoning-ellipsis { flex-shrink: 0; }
-  .reasoning-content { flex-shrink: 0; min-width: 0; }
-
-  .processing-timeline {
+  .processing-list {
     display: flex;
     min-width: 0;
     flex-direction: column;
     gap: 0.75rem;
-    margin-inline-start: 0.75rem;
-    padding: 0.5rem 0 0.75rem 1rem;
-    border-inline-start: 1px solid var(--border);
-    color: var(--muted-foreground);
-    font-size: 0.875rem;
-    line-height: 1.65;
+    padding-block: 0.5rem 0.75rem;
   }
-
-  .processing-content {
-    display: flex;
-    min-width: 0;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .processing-content > svg { flex-shrink: 0; margin-top: 0.25rem; }
-  .processing-content-body { flex: 1; }
-
-  .tool-group-list,
-  .tool-command-details {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-inline-start: 0.75rem;
-  }
-
-  .tool-command-details { padding-block: 0.5rem; }
-  .tool-detail-label { justify-content: space-between; font-size: 0.75rem; }
-  .tool-group-errors { color: var(--destructive); }
-  .approval-details { min-width: 0; padding: 1rem; }
-  .approval-details [data-slot=alert-description] { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
-  .approval-actions { justify-content: flex-end; }
   .reply-error { overflow-wrap: anywhere; }
   .run-muted { color: var(--muted-foreground); font-size: 0.75rem; }
 
@@ -566,9 +446,6 @@
     .session-settings-trigger { grid-column: 3; grid-row: 1; }
     .conversation-content, .chat-bottom { --chat-column-padding: 0.75rem; }
     .conversation-content { padding-block: 1.25rem 1.75rem; gap: 1.5rem; }
-    .part-json, .part-file { max-height: 240px; }
-    .processing-timeline { margin-inline-start: 0.375rem; padding-inline-start: 0.625rem; }
-    .tool-group-list, .tool-command-details { margin-inline-start: 0.375rem; }
   }
 
   @media (height < 600px) {

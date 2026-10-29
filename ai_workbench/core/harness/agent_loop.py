@@ -300,6 +300,8 @@ class HarnessAgentLoop:
             async for chunk in stream:
                 self._check_cancelled(run_id)
                 draft.append(chunk.delta.content, chunk.delta.reasoning_content)
+                if chunk.delta.tool_calls:
+                    draft.finish_reasoning()
                 for delta in chunk.delta.tool_calls or []:
                     item = calls.setdefault(delta.index, {"id": "", "name": "", "arguments": ""})
                     if delta.id:
@@ -310,6 +312,7 @@ class HarnessAgentLoop:
                         item["name"] += delta.function.name or ""
                         item["arguments"] += delta.function.arguments or ""
                 if chunk.finish_reason:
+                    draft.finish()
                     finish = chunk.finish_reason
         if finish == "content_filter":
             raise ModelError("MODEL_REFUSAL", "Provider refused this request.", 422)

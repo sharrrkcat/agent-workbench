@@ -102,11 +102,11 @@ class PresentationOpenAI(ToolOpenAI):
                 prompt_tokens=8126 if command == "context-usage" else None)
         elif command == "scroll-output":
             stream = FixtureStream([{"content": f"Paragraph {index}: streamed progress text.\n\n"} for index in range(40)], delay=0.12)
-        elif command in {"reasoning-preview", "reasoning-cancel"}:
-            chunks = [{"reasoning_content": "Preview beginning.  \nSecond line.  \nThird line.  \nFourth line.  \n"}]
+        elif command in {"reasoning-live", "reasoning-cancel"}:
+            chunks = [{"reasoning_content": "Reasoning beginning.  \nSecond line.  \nThird line.  \nFourth line.  \n"}]
             chunks += [{"reasoning_content": f"Latest reasoning {index}.  \n"} for index in range(8)]
-            if command == "reasoning-preview":
-                chunks += [{"content": "Reasoning finished."}, {"content": " Final answer."}]
+            if command == "reasoning-live":
+                chunks += [{"content": "Reasoning finished."}, {"content": " The answer"}, {"content": " is ready."}, {"content": " Final answer."}]
             stream = FixtureStream(chunks, delay=0.8, hold=command == "reasoning-cancel")
         elif command == "cancel-stream" or command == "fail-stream":
             stream = FixtureStream([{"reasoning_content": "Received reasoning before interruption."},

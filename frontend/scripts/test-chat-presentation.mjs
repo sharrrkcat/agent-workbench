@@ -12,12 +12,14 @@ const { messageNumbers } = (await load('../src/components/messages/messageNumber
 const { applyMessageEvent } = (await load('../src/store/messageStream.ts')).exports;
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
 const { toolResponseState } = (await load('../src/store/cogita/mergeState.ts')).exports;
-const { reasoningText } = (await load('../src/components/messages/reasoningText.ts')).exports;
-assert.equal(reasoningText('# Heading\n\nA **bold** [link](https://example.com) and `code`.\n\n- First\n- Second'), 'Heading A bold link and code. First Second');
-assert.equal(reasoningText('```ts\nconst value = 1;\n```\n\n> 思考内容\n\n![diagram](image.png)'), 'const value = 1; 思考内容 diagram');
-assert.equal(reasoningText('| Left | Right |\n| --- | --- |\n| a | b |\n\n[hidden]: https://example.com'), 'Left Right a b');
-assert.equal(reasoningText('First  \nNext\n\n**still streaming'), 'First Next **still streaming');
-assert.equal(reasoningText(' \n\t'), '');
+const { toolArgumentsSummary } = (await load('../src/components/messages/toolPresentation.ts')).exports;
+assert.equal(toolArgumentsSummary({ value: 'ABC' }), 'ABC');
+assert.equal(toolArgumentsSummary({ path: 'data/knowledge/note.txt', max_bytes: 2000 }), 'path=data/knowledge/note.txt max_bytes=2000');
+assert.equal(toolArgumentsSummary({ options: { enabled: false }, ids: [1, 2] }), 'options={"enabled":false} ids=[1,2]');
+assert.equal(toolArgumentsSummary({ value: 'first\n\tsecond' }), 'first second');
+assert.equal(toolArgumentsSummary({ value: false }), 'false');
+assert.equal(toolArgumentsSummary({ value: 0 }), '0');
+assert.equal(toolArgumentsSummary({}), '');
 const at = (n) => `2026-09-07T00:00:00.${String(n).padStart(6, '0')}Z`;
 const run = { run_id: 'r', session_id: 's', persona_id: 'p', kind: 'chat', status: 'RUNNING',
   created_at: at(2), started_at: at(2), updated_at: at(3), metadata: { input_message_id: 'u', configuration: { persona_name: 'Original speaker' } } };
@@ -36,12 +38,12 @@ const done = { ...run, status: 'DONE', updated_at: at(8), finished_at: '2026-09-
 const reply = buildReply(done, [answer, output, moreCalls, calls], []);
 assert.equal(reply.answer.message_id, 'answer');
 assert.deepEqual(reply.answerParts.map((p) => p.text), ['final answer']);
-assert.deepEqual(reply.process.map((p) => p.kind), ['content', 'content', 'tools', 'content']);
-assert.deepEqual(reply.process[2].calls.map((c) => c.call.tool_call_id), ['a', 'b', 'c']);
-assert.deepEqual(reply.process[2].calls[0].result, output.parts[0]);
-assert.equal(toolEntryStatus(reply.process[2].calls[0], done), 'success');
+assert.deepEqual(reply.process.map((p) => p.kind), ['content', 'content', 'tool', 'tool', 'tool', 'content']);
+assert.deepEqual(reply.process.filter((p) => p.kind === 'tool').map((p) => p.entry.call.tool_call_id), ['a', 'b', 'c']);
+assert.deepEqual(reply.process[2].entry.result, output.parts[0]);
+assert.equal(toolEntryStatus(reply.process[2].entry, done), 'success');
 const separated = buildReply(run, [calls, { ...moreCalls, parts: [text('separator', 'next step'), call('c', 'base64_decode')] }, answer], []);
-assert.equal(separated.process.filter((p) => p.kind === 'tools').length, 2);
+assert.deepEqual(separated.process.map((p) => p.kind), ['content', 'content', 'tool', 'tool', 'content', 'tool', 'content']);
 const direct = buildReply({ ...done, kind: 'tool' }, [calls, output], []);
 assert.equal(direct.answer, undefined);
 const items = buildConversation('s', [user, calls, output, moreCalls, answer, { ...user, session_id: 'other', message_id: 'other' }], [done], {});
@@ -75,6 +77,21 @@ for (const bad of [delta(3, 'reason', 'reasoning', 'duplicate'), delta(5, 'body'
   delta(4, 'reason', 'text', 'changed type'), event('message_delta', { seq: 4, delta: 'missing kind' })]) {
   assert.equal(applyMessageEvent(messages, bad), messages);
 }
+for (const duration_ms of [-1, 1.5, '1000', false]) {
+  assert.equal(applyMessageEvent(messages, event('message_delta', { seq: 4, part_id: 'reason', part_type: 'reasoning', delta: '', duration_ms })), messages);
+}
+assert.equal(applyMessageEvent(messages, event('message_delta', { seq: 4, part_id: 'body', part_type: 'text', delta: '', duration_ms: 10 })), messages);
+assert.equal(applyMessageEvent(messages, event('message_delta', { seq: 4, part_id: 'missing', part_type: 'reasoning', delta: '', duration_ms: 10 })), messages);
+const timing = event('message_delta', { seq: 4, part_id: 'reason', part_type: 'reasoning', delta: '', duration_ms: 0 });
+const timed = applyMessageEvent(messages, timing);
+assert.equal(timed[0].parts[0].text, 'think more');
+assert.equal(timed[0].parts[0].duration_ms, 0);
+assert.equal(timed[0].metadata.stream_seq, 4);
+assert.equal(applyMessageEvent(timed, timing), timed);
+assert.equal(applyMessageEvent(timed, delta(5, 'reason', 'reasoning', 'late')), timed);
+const withBody = applyMessageEvent(timed, delta(5, 'body', 'text', ' after reasoning'));
+assert.equal(withBody[0].parts[0].duration_ms, 0);
+assert.equal(withBody[0].parts[1].text, 'body after reasoning');
 const incomplete = { ...draft, parts: [reason('reason', 'think more'), text('body', 'body')], metadata: { incomplete: true } };
 messages = applyMessageEvent(messages, event('message_completed', { message: incomplete }));
 assert.deepEqual(messages, [incomplete]);
@@ -162,6 +179,8 @@ const views = createModuleLoader({
   [sourceUrl('store/usePersonasStore.ts')]: mockModule({ usePersonasStore: () => personaState }),
 });
 const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).exports;
+const { ReasoningBlock } = (await views('../src/components/messages/ReasoningBlock.tsx')).exports;
+const { ToolResultBody } = (await views('../src/components/messages/ToolResultBody.tsx')).exports;
 const { MessageScrollerProvider } = (await views('../src/components/ui/message-scroller.tsx')).exports;
 const { MessageBubble } = (await views('../src/components/MessageBubble.tsx')).exports;
 const { ChatAttachments, attachmentSize } = (await views('../src/components/messages/ChatAttachments.tsx')).exports;
@@ -192,11 +211,13 @@ for (const locale of ['en', 'zh-CN']) {
   const hidden = render(active, false);
   assert.match(hidden, /Current agent/);
   assert.doesNotMatch(hidden, /Original speaker/);
-  assert.doesNotMatch(hidden, /first reasoning|base64_encode|processing-timeline/);
+  assert.doesNotMatch(hidden, /first reasoning|base64_encode|processing-list/);
   assert.match(hidden, /final answer/);
   const shown = render(active, true);
-  assert.match(shown, /first reasoning/);
-  assert.doesNotMatch(shown, /aGk=|tool-command-details/);
+  assert.doesNotMatch(shown, /first reasoning|data-slot="code-block"/);
+  assert.match(shown, /aGk=/);
+  assert.equal((shown.match(/data-tool-call-id=/g) || []).length, 2);
+  assert.ok(shown.includes(i18n.t('runs:thought')));
   assert.equal((shown.match(/data-slot="message-avatar"/g) || []).length, 1);
   assert.equal((shown.match(/data-slot="message"/g) || []).length, 1);
   const readOnly = render(reply, true, true);
@@ -204,7 +225,7 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(!readOnly.includes(i18n.t('runs:retryReply')));
   assert.ok(!readOnly.includes(i18n.t('runs:deleteReply')));
   const completed = render(reply, true);
-  assert.doesNotMatch(completed, /first reasoning|processing-timeline/);
+  assert.doesNotMatch(completed, /first reasoning|processing-list/);
   assert.match(completed, /final answer/);
   assert.equal((completed.match(/reply-actions/g) || []).length, 1);
   const waiting = render(buildReply({ ...run, status: 'WAITING_FOR_USER' }, [calls], [approvalStep]), false);
@@ -215,6 +236,17 @@ for (const locale of ['en', 'zh-CN']) {
   assert.ok(waiting.includes(i18n.t('runs:approve')));
   assert.ok(waiting.includes(i18n.t('runs:reject')));
   assert.doesNotMatch(waiting, /role="switch"/, 'Approval is one button without a nested switch');
+  assert.match(waiting, /data-slot="item"/);
+  for (const [duration_ms, seconds] of [[0, 0], [1, 1], [2001, 3]]) {
+    const reasoning = renderToStaticMarkup(React.createElement(MessageScrollerProvider, {},
+      React.createElement(ReasoningBlock, { part: { ...reason('timed', 'Private expanded content'), duration_ms }, streaming: false })));
+    assert.ok(reasoning.includes(i18n.t('runs:thoughtDuration', { seconds })));
+    assert.doesNotMatch(reasoning, /Private expanded content|data-slot="shimmer"/);
+  }
+  for (const value of [false, 0, '']) {
+    const result = renderToStaticMarkup(React.createElement(ToolResultBody, { part: { ...output.parts[0], data: value } }));
+    assert.ok(result.includes(value === '' ? '&quot;&quot;' : JSON.stringify(value)));
+  }
   assert.match(render(buildReply(failedEmpty, [], []), false), /MODEL_NOT_CONFIGURED/);
   assert.match(render(buildReply(failedEmpty, [], []), false), /Current agent/);
   personaState.personas[0].name = 'Changed agent';

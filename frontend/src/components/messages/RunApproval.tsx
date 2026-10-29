@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { CodeBlock, CodeBlockContent } from '@/components/ui/code-block';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Check, ShieldAlert, Square, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -19,43 +20,45 @@ export function RunApproval({ run, steps, messages }: { run: Run; steps: RunStep
     .find((part) => part.type === 'tool_call' && part.tool_call_id === approval.metadata?.tool_call_id);
   const ready = call?.type === 'tool_call';
   return (
-    <Alert className="approval-details" role="region" aria-label={t('waiting')}>
-      <ShieldAlert />
-      <AlertTitle className="approval-heading">{ready ? call.tool_name : t('waiting')}</AlertTitle>
-      <AlertDescription>
-        <p>{t(`approvalRisk.${String(approval.metadata?.risk || 'safe')}`)}</p>
-        {ready ? (
-          <pre className="part-json">{JSON.stringify(call.arguments, null, 2)}</pre>
-        ) : (
-          <p>{t('preparing')}</p>
-        )}
+    <Item variant="outline" size="sm" className="approval-details min-w-0" role="region" aria-label={t('waiting')}>
+      <ItemMedia variant="icon"><ShieldAlert /></ItemMedia>
+      <ItemContent className="min-w-0">
+        <ItemTitle>
+          <span>{ready ? call.tool_name : t('waiting')}</span>
+        </ItemTitle>
+        <ItemDescription>{t(`approvalRisk.${String(approval.metadata?.risk || 'safe')}`)}</ItemDescription>
         {typeof approval.metadata?.service_url === 'string' ? (
-          <p>
+          <ItemDescription className="wrap-anywhere">
             {t('service')}: {approval.metadata.service_url}
-          </p>
+          </ItemDescription>
         ) : null}
-        <div className="approval-actions">
-          <Button
-            type="button"
-            disabled={resolving || !ready}
-            onClick={() => void resolve(run.run_id, 'reject')}
-            variant="outline"
-          >
-            <X size={14} />
-            {t('reject')}
-          </Button>
-          <Button
-            type="button"
-            disabled={resolving || !ready}
-            onClick={() => void resolve(run.run_id, 'approve')}
-            variant="default"
-          >
-            <Check data-icon="inline-start" />
-            {t(resolving ? 'resuming' : 'approve')}
-          </Button>
-        </div>
-      </AlertDescription>
-    </Alert>
+      </ItemContent>
+      <ItemActions className="ml-auto">
+        <Button size="sm"
+          type="button"
+          disabled={resolving || !ready}
+          onClick={() => void resolve(run.run_id, 'reject')}
+          variant="outline"
+        >
+          <X data-icon="inline-start" />
+          {t('reject')}
+        </Button>
+        <Button size="sm"
+          type="button"
+          disabled={resolving || !ready}
+          onClick={() => void resolve(run.run_id, 'approve')}
+          variant="default"
+        >
+          <Check data-icon="inline-start" />
+          {t(resolving ? 'resuming' : 'approve')}
+        </Button>
+      </ItemActions>
+      <ItemFooter className="min-w-0">
+        {ready ? <CodeBlock size="sm"><CodeBlockContent wrap className="max-h-64">
+          {JSON.stringify(call.arguments, null, 2)}
+        </CodeBlockContent></CodeBlock> : <ItemDescription>{t('preparing')}</ItemDescription>}
+      </ItemFooter>
+    </Item>
   );
 }
 

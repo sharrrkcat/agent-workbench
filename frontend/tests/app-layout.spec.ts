@@ -235,12 +235,14 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(body.locator('ol')).toHaveCSS('list-style-type', 'decimal');
         const code = body.locator('pre').first();
         expect(await code.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
-        await expect(body.locator('.markdown-code')).toHaveCount(3);
-        for (const surface of await body.locator('.markdown-code > [data-slot="bubble-content"]').all()) {
-          await expect(surface).toHaveCSS('border-radius', '24px');
+        await expect(body.locator('[data-slot=code-block]')).toHaveCount(3);
+        for (const surface of await body.locator('[data-slot=code-block]').all()) {
+          await expect(surface).toHaveCSS('border-width', '1px');
+          await expect(surface).toHaveCSS('font-size', '14px');
+          await expect(surface.locator('[data-slot=code-block-content]')).toHaveAttribute('tabindex', '0');
         }
         await expect(body.locator('pre').nth(1)).toHaveText('  plain code\n');
-        await expect(body.locator('pre').nth(2).locator('code')).toHaveClass('language-js');
+        await expect(body.locator('pre').nth(2).locator('code')).toHaveClass(/language-js/);
         await expect(body.locator('p code')).toHaveText('value');
         await expect(body.locator('p code')).not.toHaveCSS('border-radius', '24px');
         await expect(code).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
@@ -304,8 +306,8 @@ for (const locale of ['en', 'zh-CN']) {
         await page.goto('/');
         await expect(page.locator('.reply-answer')).toContainText('All 12 commands completed.');
         await expandInPlace(page.locator('.processing-toggle'));
-        await expandInPlace(page.locator('.tool-group-toggle'));
-        await expandInPlace(page.locator('.tool-command-toggle').first());
+        await expandInPlace(page.locator('[data-reasoning-id] [data-slot=trace-collapsible-trigger]'));
+        await expandInPlace(page.locator('[data-tool-call-id] [data-slot=trace-collapsible-trigger]').first());
         await noPageOverflow(page);
         await openSidebar(page);
         await page

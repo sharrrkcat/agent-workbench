@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from time import monotonic
 from typing import Any, Literal
 
 from ai_workbench.core.schema.message import MessageSchema
@@ -14,8 +15,9 @@ PartKind = Literal["text", "reasoning"]
 class ThinkParser:
     """Incremental model markers, with Markdown code and escapes left literal."""
 
-    def __init__(self, emit: Callable[[PartKind, str], None]) -> None:
+    def __init__(self, emit: Callable[[PartKind, str], None], on_reasoning_end: Callable[[], None] | None = None) -> None:
         self.emit = emit
+        self.on_reasoning_end = on_reasoning_end
         self.pending = ""
         self.reasoning = False
         self.fence: tuple[str, int] | None = None
@@ -86,6 +88,8 @@ class ThinkParser:
                     flush()
                     self.pending = self.pending[len(marker):]
                     self.reasoning = not self.reasoning
+                    if not self.reasoning and self.on_reasoning_end is not None:
+                        self.on_reasoning_end()
                     continue
                 if marker.startswith(self.pending) and not final:
                     break
@@ -105,7 +109,8 @@ class AssistantDraft:
         self.reasoning_content = ""
         self.seq = 0
         self.saved: MessageSchema | None = None
-        self.parser = ThinkParser(self._append_part)
+        self.reasoning_started: float | None = None
+        self.parser = ThinkParser(self._append_part, self.finish_reasoning)
         self.message = MessageSchema(
             message_id=message_id, session_id=session_id, run_id=run_id, role="assistant",
             speaker_type="assistant", speaker_id=config.persona_id,
@@ -126,23 +131,41 @@ class AssistantDraft:
     def _append_part(self, kind: PartKind, text: str) -> None:
         if not text:
             return
-        if not self.parts or self.parts[-1]["type"] != kind:
+        if kind != "reasoning":
+            self.finish_reasoning()
+        if not self.parts or self.parts[-1]["type"] != kind or self.parts[-1].get("duration_ms") is not None:
             part = {"id": f"{self.message.message_id}-part-{len(self.parts) + 1}", "type": kind, "text": ""}
             if kind == "text":
                 part["format"] = "markdown"
             self.parts.append(part)
+        if kind == "reasoning" and self.streamed and self.reasoning_started is None:
+            self.reasoning_started = monotonic()
         part = self.parts[-1]
         part["text"] += text
         if self.streamed:
             self.seq += 1
             self._emit("message_delta", {"seq": self.seq, "part_id": part["id"], "part_type": kind, "delta": text})
 
+    def finish_reasoning(self) -> None:
+        if self.reasoning_started is None:
+            return
+        part = self.parts[-1]
+        part["duration_ms"] = round((monotonic() - self.reasoning_started) * 1000)
+        self.reasoning_started = None
+        self.seq += 1
+        self._emit("message_delta", {"seq": self.seq, "part_id": part["id"], "part_type": "reasoning",
+                                     "delta": "", "duration_ms": part["duration_ms"]})
+
+    def finish(self) -> None:
+        if not self.parser.finished:
+            self.parser.feed("", final=True)
+        self.finish_reasoning()
+
     def persist(self, *, incomplete: bool = False, extra_parts: list[dict[str, Any]] | None = None,
                 metadata: dict[str, Any] | None = None) -> MessageSchema | None:
         if self.saved is not None:
             return self.saved
-        if not self.parser.finished:
-            self.parser.feed("", final=True)
+        self.finish()
         parts = [*self.parts, *(extra_parts or [])]
         if incomplete and not parts:
             return None

@@ -1,13 +1,12 @@
 import { readMessages, mockHistory } from './history';
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-async function previewEdges(preview: Locator) {
-  return preview.evaluate((node) => {
-    const outer = node.querySelector('.reasoning-window')!.getBoundingClientRect();
-    const inner = node.querySelector('.reasoning-preview-text')!.getBoundingClientRect();
-    return { left: inner.left - outer.left, right: inner.right - outer.right,
-      height: outer.height, limit: parseFloat(getComputedStyle(node).lineHeight) };
-  });
+const reasoningTrigger = '[data-reasoning-id] [data-slot=trace-collapsible-trigger]';
+const reasoningContent = '[data-reasoning-id] [data-slot=trace-collapsible-content]';
+const toolTrigger = '[data-slot=trace-collapsible-trigger]';
+
+async function noOverflow(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 }
 
 for (const locale of ['en', 'zh-CN']) {
@@ -18,181 +17,171 @@ for (const locale of ['en', 'zh-CN']) {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
-      test('reasoning follows the tail, preserves expansion and resets at completion', async ({ page, request }, info) => {
-        await request.post('/__test__/session', { data: { show_full_processing: true } });
+      test('reasoning shows measured time, preserves expansion and reloads its duration', async ({ page, request }, info) => {
+        const session = await (await request.post('/__test__/session', { data: { show_full_processing: true } })).json();
         await page.goto('/');
-        await page.locator('.composer textarea').fill('reasoning-preview');
-        await page.locator('.composer textarea').press('Enter');
-        const preview = page.locator('.reasoning-preview');
-        const toggle = page.locator('.reasoning-toggle');
-        await expect(preview).toContainText('Latest reasoning 4.');
-        await expect(toggle).toBeEnabled();
-        await expect(preview.locator('.reasoning-ellipsis')).toHaveText('…');
-        expect(await preview.locator('.reasoning-ellipsis').evaluate((node) => node === node.parentElement!.firstElementChild)).toBe(true);
-        await expect(toggle).toHaveText('');
-        await expect(page.locator('.reply-processing-header button')).toHaveCount(1);
-        const iconBox = (await toggle.boundingBox())!;
-        const previewBox = (await preview.boundingBox())!;
-        expect(previewBox.x).toBeGreaterThanOrEqual(iconBox.x + iconBox.width);
-        const lineHeight = await preview.evaluate((node) => parseFloat(getComputedStyle(node).lineHeight));
-        expect(Math.abs(previewBox.y + lineHeight / 2 - iconBox.y - iconBox.height / 2)).toBeLessThan(1);
-        await expect(preview).toHaveAttribute('data-streaming', 'true');
-        const edges = await previewEdges(preview);
-        expect(edges.height).toBeCloseTo(edges.limit, 0);
-        expect(edges.left).toBeLessThan(-10);
-        expect(Math.abs(edges.right)).toBeLessThan(1);
-        await toggle.click();
-        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-        await expect(page.locator('.reasoning-content')).toContainText('Latest reasoning 5.');
-        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-        await expect(page.locator('.reply-answer')).toContainText('Reasoning finished.');
+        const input = page.locator('.composer textarea');
+        await input.fill('reasoning-live');
+        await input.press('Enter');
+        const toggle = page.locator(reasoningTrigger);
+        await expect(toggle).toHaveText(locale === 'en' ? 'Thinking…' : '正在思考…');
         await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-        await expect(preview).toHaveAttribute('data-streaming', 'false');
-        await expect(preview.locator('.reasoning-preview-text')).toContainText('Preview beginning. Second line.');
-        await expect(preview.locator('.reasoning-ellipsis')).toHaveText('…');
-        expect(await preview.locator('.reasoning-ellipsis').evaluate((node) => node === node.parentElement!.lastElementChild)).toBe(true);
-        expect(Math.abs((await previewEdges(preview)).left)).toBeLessThan(1);
+        await expect(page.locator(reasoningContent)).toHaveCount(0);
+        await toggle.click();
+        await expect(page.locator(reasoningContent)).toContainText('Latest reasoning 2.');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(page.locator(reasoningContent)).toContainText('Latest reasoning 4.');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await page.screenshot({ path: info.outputPath('reasoning-live.png') });
+        await expect(page.locator('.reply-answer')).toContainText('Reasoning finished.');
+        await expect(toggle).toHaveText(locale === 'en' ? /^Thought for \d+s$/ : /^思考了 \d+ 秒$/);
+        const timedLabel = await toggle.innerText();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await toggle.click();
+        await expect(page.locator('.reply-answer')).toContainText('Final answer.');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await expect(page.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
-        await page.locator('.processing-toggle').click();
-        await toggle.click();
-        await expect(page.locator('.reasoning-content')).toContainText('Latest reasoning 7.');
-        await toggle.click();
-        expect(Math.abs((await previewEdges(preview)).left)).toBeLessThan(1);
-        await page.screenshot({ path: info.outputPath('reasoning-complete.png') });
+        const history = await readMessages(request, session.session_id);
+        const part = history.flatMap((message) => message.parts).find((part) => part.type === 'reasoning');
+        expect(part.duration_ms).toBeGreaterThan(5000);
         await page.reload();
         await page.locator('.processing-toggle').click();
+        await expect(toggle).toHaveText(timedLabel);
         await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-        expect(Math.abs((await previewEdges(preview)).left)).toBeLessThan(1);
+        await toggle.click();
+        await expect(page.locator(reasoningContent)).toContainText('Latest reasoning 7.');
+        await noOverflow(page);
+        await page.screenshot({ path: info.outputPath('reasoning-completed.png') });
       });
 
-      test('single-line previews handle long text and sidebar width changes', async ({ page, request }) => {
+      test('unknown and zero durations stay expandable and render full Markdown', async ({ page, request }, info) => {
         const session = await (await request.post('/__test__/session', { data: { long_history: true } })).json();
         const history = await readMessages(request, session.session_id);
-        const message = history.find((item: { parts: { type: string }[] }) => item.parts.some((part) => part.type === 'reasoning'));
-        const part = message.parts.find((part: { type: string }) => part.type === 'reasoning');
+        const message = history.find((item) => item.parts.some((part) => part.type === 'reasoning'));
+        const original = message.parts.find((part) => part.type === 'reasoning');
+        message.parts = [
+          { ...original, text: 'A **formatted** thought with [a link](https://example.com) and `code`.\n\nNext line.\n\n```js\nconst ready = true;\n```' },
+          { id: 'zero-duration', type: 'reasoning', text: 'Zero-duration thought.', duration_ms: 0 },
+          { id: 'rounded-duration', type: 'reasoning', text: 'Another thought.', duration_ms: 2001 },
+          ...message.parts.filter((part) => part.type !== 'reasoning'),
+        ];
         await mockHistory(page, request, session.session_id, history);
-        for (const text of ['短思考', '开始思考，中英文 mixed text。'.repeat(30), 'Beginning' + 'x'.repeat(600) + 'End']) {
-          part.text = text;
-          await page.goto('/');
-          await page.locator('.processing-toggle').click();
-          const preview = page.locator('.reasoning-preview');
-          await expect(preview.locator('.reasoning-preview-text')).toHaveText(text);
-          await expect(preview.locator('.reasoning-ellipsis')).toHaveCount(text.length > 10 ? 1 : 0);
-          const edges = await previewEdges(preview);
-          expect(edges.height).toBeCloseTo(edges.limit, 0);
-          expect(Math.abs(edges.left)).toBeLessThan(1);
-          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        }
-        if (width === 1366) {
-          // Choose a measured width between the open and closed sidebar sizes.
-          await page.setViewportSize({ width: 900, height: 900 });
-          const preview = page.locator('.reasoning-preview');
-          const narrow = (await preview.boundingBox())!.width;
-          await page.locator('[data-sidebar=trigger]').click();
-          await expect.poll(async () => (await preview.boundingBox())!.width).toBeGreaterThan(narrow + 100);
-          const wide = (await preview.boundingBox())!.width;
-          const characterWidth = await preview.locator('.reasoning-preview-text').evaluate((node) => node.getBoundingClientRect().width / node.textContent!.length);
-          part.text = 'x'.repeat(Math.floor((narrow + wide) / 2 / characterWidth));
-          await page.reload();
-          await page.locator('.processing-toggle').click();
-          await expect(preview.locator('.reasoning-ellipsis')).toHaveCount(1);
-          await page.locator('[data-sidebar=trigger]').click();
-          await expect(preview.locator('.reasoning-ellipsis')).toHaveCount(0);
-          await expect(page.locator('.reasoning-toggle')).toBeDisabled();
-          await page.locator('[data-sidebar=trigger]').click();
-          await expect(preview.locator('.reasoning-ellipsis')).toHaveCount(1);
-        }
+        await page.goto('/');
+        await page.locator('.processing-toggle').click();
+        const toggles = page.locator(reasoningTrigger);
+        await expect(toggles).toHaveText(locale === 'en'
+          ? ['Thought', 'Thought for 0s', 'Thought for 3s']
+          : ['已思考', '思考了 0 秒', '思考了 3 秒']);
+        await toggles.first().focus();
+        await page.keyboard.press('Enter');
+        const content = page.locator(reasoningContent);
+        await expect(content.locator('strong')).toHaveText('formatted');
+        await expect(content.locator('a')).toHaveText('a link');
+        await expect(content.locator('p code')).toHaveText('code');
+        await expect(content).toContainText('Next line.');
+        await expect(toggles.first()).toHaveCSS('font-size', '14px');
+        await expect(content.locator('.part-markdown')).toHaveCSS('font-size', '14px');
+        await expect(content.locator('[data-slot=trace-collapsible-content-inner]')).toHaveCSS('border-left-width', '1px');
+        await expect(content.locator('[data-slot=code-block]')).toHaveAttribute('data-size', 'sm');
+        await expect(content.locator('[data-slot=code-block-content]')).toHaveCSS('font-size', '14px');
+        await expect(toggles.first().locator(':scope > [data-slot=trace-icon]')).toHaveCSS('rotate', '90deg');
+        await expect(content).toHaveCSS('transition-duration', '0.2s');
+        await page.screenshot({ path: info.outputPath('reasoning-markdown.png') });
+        await page.keyboard.press('Enter');
+        await expect(content).toHaveCount(0);
+        await toggles.nth(1).click();
+        await expect(page.locator(reasoningContent)).toHaveText('Zero-duration thought.');
+        await noOverflow(page);
       });
 
-      test('message bodies align with composer and disclosure arrows trail labels', async ({ page, request }, info) => {
-        await request.post('/__test__/session', { data: { long_history: true } });
+      test('tools show arguments in their titles and expand directly to shadcn results', async ({ page, request }, info) => {
+        const session = await (await request.post('/__test__/session', { data: { long_history: true } })).json();
+        const history = await readMessages(request, session.session_id);
+        const calls = history.flatMap((item) => item.parts).filter((part) => part.type === 'tool_call');
+        const longValue = 'ABC ' + 'long request/'.repeat(100) + ' END';
+        calls[0].arguments = { value: longValue };
+        calls[1].arguments = { path: 'data/knowledge/note.txt', max_bytes: 2000 };
+        await mockHistory(page, request, session.session_id, history);
         await page.goto('/');
-        await expect(page.locator('.reply-answer')).toBeVisible();
-        const composer = (await page.locator('.composer').boundingBox())!;
-        const answer = (await page.locator('.reply-answer').boundingBox())!;
-        const user = (await page.locator('.message-row.user [data-slot=bubble]').boundingBox())!;
-        expect(Math.abs(answer.x - composer.x)).toBeLessThan(1);
-        expect(Math.abs(answer.x + answer.width - composer.x - composer.width)).toBeLessThan(1);
-        expect(Math.abs(user.x + user.width - composer.x - composer.width)).toBeLessThan(1);
-        for (const role of ['assistant', 'user']) {
-          const row = page.locator(`.message-row.${role}`);
-          const avatar = (await row.locator('.message-avatar').boundingBox())!;
-          const name = (await row.locator('.message-meta strong').boundingBox())!;
-          if (width === 390) {
-            expect(avatar.y).toBeLessThan(name.y + name.height);
-            expect(avatar.y + avatar.height).toBeGreaterThan(name.y);
-            const body = (await row.locator(role === 'user' ? '[data-slot=bubble]' : '.reply-processing-header').boundingBox())!;
-            expect(body.y).toBeGreaterThanOrEqual(avatar.y + avatar.height);
-          } else if (role === 'assistant') {
-            expect(avatar.x + avatar.width).toBeLessThan(composer.x);
-          } else {
-            expect(avatar.x).toBeGreaterThan(composer.x + composer.width);
-          }
-        }
         const clock = page.locator('.processing-toggle');
-        const clockText = (await clock.locator('span').boundingBox())!;
-        expect(Math.abs(clockText.x - answer.x)).toBeLessThan(1);
-        await expect(clock.locator('.disclosure-arrow')).toHaveCSS('opacity', '1');
         await clock.click();
-        const group = page.locator('.tool-group-toggle');
-        await page.mouse.move(0, 0);
-        await expect(group.locator('.disclosure-arrow')).toHaveCSS('opacity', width === 390 ? '1' : '0');
-        await page.keyboard.press('Tab');
-        await group.focus();
-        await expect(group.locator('.disclosure-arrow')).toHaveCSS('opacity', '1');
-        await group.click();
-        const command = page.locator('.tool-command-toggle').first();
-        for (const trigger of [clock, group, command]) {
-          const label = (await trigger.locator('span').first().boundingBox())!;
-          const arrow = (await trigger.locator('.disclosure-arrow').boundingBox())!;
-          expect(arrow.x).toBeGreaterThanOrEqual(label.x + label.width);
+        const tools = page.locator('[data-tool-call-id]');
+        await expect(tools).toHaveCount(12);
+        await expect(page.locator('.tool-group, .processing-timeline, .reasoning-preview')).toHaveCount(0);
+        const first = tools.first();
+        const title = first.locator('[data-slot=trace-title]');
+        await expect(title).toHaveText(`${locale === 'en' ? 'Ran' : '已运行'} base64_decode ${longValue}`);
+        expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+        await expect(title).toHaveCSS('text-overflow', 'ellipsis');
+        await expect(tools.nth(1).locator('[data-slot=trace-title]')).toContainText('path=data/knowledge/note.txt max_bytes=2000');
+        await expect(first.getByRole('button')).toHaveCount(1);
+        await expect(first.locator(toolTrigger)).toHaveAttribute('aria-expanded', 'false');
+        await first.locator(toolTrigger).click();
+        const result = first.locator('[data-slot=trace-collapsible-content]');
+        await expect(result.locator('pre')).toHaveCount(1);
+        await expect(result).toContainText('large-result:');
+        await expect(result).not.toContainText(longValue);
+        await expect(page.locator('button button')).toHaveCount(0);
+
+        const body = (await page.locator('.reply-answer').boundingBox())!;
+        const composer = (await page.locator('.composer').boundingBox())!;
+        expect(Math.abs(body.x - composer.x)).toBeLessThan(1);
+        expect(Math.abs(body.width - composer.width)).toBeLessThan(1);
+        expect(Math.abs((await clock.boundingBox())!.x - body.x)).toBeLessThan(1);
+        const reasoningX = (await page.locator('[data-reasoning-id]').boundingBox())!.x;
+        expect(Math.abs(reasoningX - body.x)).toBeLessThan(1);
+        await expect(page.locator('.processing-toggle [data-slot=trace-title]')).toHaveCSS('font-size', '14px');
+        await expect(title).toHaveCSS('font-size', '14px');
+        await expect(page.locator('[id^=processing-] > [data-slot=trace-collapsible-content-inner]')).toHaveCSS('border-left-width', '0px');
+        for (const block of await tools.all()) {
+          expect(Math.abs((await block.boundingBox())!.x - reasoningX)).toBeLessThan(1);
         }
-        await command.click();
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        await page.screenshot({ path: info.outputPath('aligned-messages.png') });
+        await expect(result.locator('[data-slot=trace-collapsible-content-inner]')).toHaveCSS('border-left-width', '1px');
+        await expect(result.locator('[data-slot=code-block]')).toHaveAttribute('data-size', 'sm');
+        await expect(result.locator('[data-slot=code-block-content]')).toHaveCSS('font-size', '14px');
+        await expect(clock).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        await expect(clock.locator(':scope > [data-slot=trace-icon]')).toHaveCSS('rotate', '90deg');
+        await noOverflow(page);
+        await page.screenshot({ path: info.outputPath('flat-tools.png') });
+      });
+
+      test('reduced motion keeps disclosures usable without shimmer or transitions', async ({ page, request }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await request.post('/__test__/session', { data: { show_full_processing: true } });
+        await page.goto('/');
+        await page.locator('.composer textarea').fill('reasoning-cancel');
+        await page.locator('.composer textarea').press('Enter');
+        await expect(page.locator(reasoningTrigger)).toHaveText(locale === 'en' ? 'Thinking…' : '正在思考…');
+        for (const title of await page.locator('[data-status=running] > [data-slot=trace-title]').all()) {
+          await expect(title).toHaveCSS('animation-name', 'none');
+          await expect(title).toHaveCSS('background-image', 'none');
+        }
+        await page.locator(reasoningTrigger).click();
+        await expect(page.locator(reasoningContent)).toHaveCSS('transition-property', 'none');
+        await expect(page.locator(reasoningContent)).toContainText('Reasoning beginning.');
+        await page.locator('.composer').getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click();
+        await expect(page.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
       });
     });
   }
 }
 
-test('cancelled reasoning returns to the beginning and remains expandable after reload', async ({ page, request }) => {
-  await request.post('/__test__/session', { data: { show_full_processing: true } });
+test('cancelled reasoning retains its content and measured duration after reload', async ({ page, request }) => {
+  const session = await (await request.post('/__test__/session', { data: { show_full_processing: true } })).json();
   await page.goto('/');
   await page.locator('.composer textarea').fill('reasoning-cancel');
   await page.locator('.composer textarea').press('Enter');
-  await expect(page.locator('.reasoning-preview')).toContainText('Latest reasoning 4.');
-  await page.locator('.reasoning-toggle').click();
+  await page.locator(reasoningTrigger).click();
+  await expect(page.locator(reasoningContent)).toContainText('Latest reasoning 2.');
   await page.locator('.composer').getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.locator('.processing-toggle')).toHaveAttribute('aria-expanded', 'false');
+  const part = (await readMessages(request, session.session_id)).flatMap((message) => message.parts).find((part) => part.type === 'reasoning');
+  expect(part.duration_ms).toBeGreaterThan(1500);
   await page.reload();
   await page.locator('.processing-toggle').click();
-  await expect(page.locator('.reasoning-toggle')).toBeEnabled();
-  expect(Math.abs((await previewEdges(page.locator('.reasoning-preview'))).left)).toBeLessThan(1);
-});
-
-test('short reasoning becomes expandable after overflowing a narrower chat region', async ({ page, request }) => {
-  const session = await (await request.post('/__test__/session', { data: { long_history: true } })).json();
-  const history = await readMessages(request, session.session_id);
-  const message = history.find((item: { parts: { type: string }[] }) => item.parts.some((part) => part.type === 'reasoning'));
-  message.parts.find((part: { type: string }) => part.type === 'reasoning').text = 'A **formatted** reasoning preview with [a link](https://example.com) and `code`.\nNext line.';
-  await mockHistory(page, request, session.session_id, history);
-  await page.setViewportSize({ width: 1366, height: 900 });
-  await page.goto('/');
-  await page.locator('.processing-toggle').click();
-  await expect(page.locator('.reasoning-toggle')).toBeDisabled();
-  await expect(page.locator('.reasoning-preview-text')).toHaveText('A formatted reasoning preview with a link and code. Next line.');
-  await expect(page.locator('.reasoning-ellipsis')).toHaveCount(0);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('.reasoning-toggle')).toBeEnabled();
-  await expect(page.locator('.reasoning-ellipsis')).toHaveText('…');
-  await page.locator('.reasoning-toggle').focus();
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.reasoning-content strong')).toHaveText('formatted');
-  await expect(page.locator('.reasoning-content a')).toHaveText('a link');
-  await expect(page.locator('.reasoning-content code')).toHaveText('code');
-  await page.keyboard.press('Enter');
-  await page.setViewportSize({ width: 1366, height: 900 });
-  await expect(page.locator('.reasoning-toggle')).toBeDisabled();
+  await expect(page.locator(reasoningTrigger)).toHaveText(`Thought for ${Math.ceil(part.duration_ms / 1000)}s`);
+  await page.locator(reasoningTrigger).click();
+  await expect(page.locator(reasoningContent)).toContainText('Latest reasoning 2.');
 });
 
 test('identity rows respond to available chat width when toggling the sidebar', async ({ page, request }) => {
@@ -200,10 +189,21 @@ test('identity rows respond to available chat width when toggling the sidebar', 
   await page.setViewportSize({ width: 1100, height: 900 });
   await page.goto('/');
   const avatar = page.locator('.message-row.assistant .message-avatar');
+  async function expectAlignedAvatars() {
+    for (const row of await page.locator('.message-row').all()) {
+      const avatarBox = (await row.locator('.message-avatar').boundingBox())!;
+      const headerBox = (await row.locator('.message-meta').boundingBox())!;
+      expect(avatarBox.width).toBe(48);
+      expect(avatarBox.height).toBe(48);
+      expect(Math.abs(avatarBox.y - headerBox.y)).toBeLessThan(1);
+    }
+  }
   await expect(avatar).toHaveCSS('position', 'static');
+  await expectAlignedAvatars();
   const sidebar = page.locator('[data-sidebar=trigger]');
   await sidebar.click();
   await expect(avatar).toHaveCSS('position', 'absolute');
+  await expectAlignedAvatars();
   await sidebar.click();
   await expect(avatar).toHaveCSS('position', 'static');
   for (const width of [1024, 1036, 1050, 390]) {
@@ -213,5 +213,7 @@ test('identity rows respond to available chat width when toggling the sidebar', 
       const body = (await page.locator('.reply-answer').boundingBox())!;
       return Math.max(Math.abs(composer.x - body.x), Math.abs(composer.width - body.width));
     }).toBeLessThan(1);
+    await expectAlignedAvatars();
+    await noOverflow(page);
   }
 });

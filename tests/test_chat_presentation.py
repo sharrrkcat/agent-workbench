@@ -1,6 +1,7 @@
 from tests.history_helpers import history_messages, history_runs
 import asyncio
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -9,7 +10,8 @@ from pydantic import ValidationError
 from sqlalchemy import event
 
 from ai_workbench.api.main import create_app
-from ai_workbench.core.assistant_output import ThinkParser
+from ai_workbench.api.schemas.chat import MessageDeltaPayload
+from ai_workbench.core.assistant_output import AssistantDraft, ThinkParser
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.message import MessageSchema
@@ -72,10 +74,105 @@ def test_think_parser_is_independent_of_chunk_boundaries(value, expected):
 def test_reasoning_part_is_strict_and_assistant_only():
     values = dict(message_id="m", session_id="s", role="assistant", parts=[{"id": "r", "type": "reasoning", "text": "reason"}])
     assert MessageSchema(**values).parts[0]["type"] == "reasoning"
+    for duration in (None, 0, 1234):
+        part = {**values['parts'][0], 'duration_ms': duration}
+        assert MessageSchema(**{**values, 'parts': [part]}).parts[0].get('duration_ms') == duration
+    for duration in (-1, True, 1.5, '1000'):
+        with pytest.raises((ValidationError, ValueError)):
+            MessageSchema(**{**values, 'parts': [{**values['parts'][0], 'duration_ms': duration}]})
     for change in ({"role": "user"}, {"parts": [{"id": "r", "type": "reasoning", "text": 123}]},
                    {"parts": [{"id": "r", "type": "reasoning", "text": "reason", "extra": True}]}):
         with pytest.raises((ValidationError, ValueError)):
             MessageSchema(**{**values, **change})
+
+
+def test_reasoning_duration_delta_is_strict_and_reasoning_only():
+    payload = dict(seq=2, part_id='reason', part_type='reasoning', delta='', duration_ms=0)
+    assert MessageDeltaPayload(**payload).duration_ms == 0
+    for change in ({'duration_ms': -1}, {'duration_ms': True}, {'duration_ms': '1'}, {'duration_ms': 1.5},
+                   {'part_type': 'text'}, {'delta': 'more reasoning'}):
+        with pytest.raises(ValidationError):
+            MessageDeltaPayload(**{**payload, **change})
+
+
+@pytest.fixture
+def timed_draft(presentation_client, monkeypatch):
+    client, _ = presentation_client
+    session = configure(client, harness=False)
+    state = client.app.state.runtime_state
+    config = state.chat_service.resolve(state.sessions.get_session(session['session_id']))
+    run = state.runs.create_run(kind='chat', persona_id=config.persona_id, session_id=session['session_id'])
+    clock = SimpleNamespace(now=10.0)
+    monkeypatch.setattr('ai_workbench.core.assistant_output.monotonic', lambda: clock.now)
+    draft = AssistantDraft(messages=state.messages, events=state.events, session_id=session['session_id'],
+        run_id=run.run_id, message_id='timed-draft', config=config, parent_message_id=None, streamed=True)
+    return draft, clock, state
+
+
+def test_reasoning_durations_settle_independently_and_survive_storage(timed_draft):
+    draft, clock, state = timed_draft
+    draft.append(reasoning_content='First reasoning')
+    clock.now = 11.0
+    draft.append(reasoning_content=' continues')
+    clock.now = 12.401
+    draft.append(content='First answer')
+    clock.now = 40.0
+    draft.append(content='<think>Second reasoning')
+    clock.now = 41.0
+    draft.append(content='</think>')
+    clock.now = 80.0
+    draft.append(content='Second answer')
+    saved = draft.persist()
+    assert [part.get('duration_ms') for part in saved.parts] == [2401, None, 1000, None]
+    assert saved.parts[0]['text'] == 'First reasoning continues'
+    stored = state.messages.get_message(saved.message_id)
+    assert stored.parts == saved.parts
+    deltas = [event.payload for event in state.events.list_events() if event.type == 'message_delta']
+    assert [payload['seq'] for payload in deltas] == list(range(1, len(deltas) + 1))
+    closed = [payload for payload in deltas if 'duration_ms' in payload]
+    assert [payload['duration_ms'] for payload in closed] == [2401, 1000]
+    assert all(payload['delta'] == '' for payload in closed)
+    for payload in deltas:
+        MessageDeltaPayload.model_validate(payload)
+
+
+@pytest.mark.parametrize('ending', ['tool', 'finish', 'failure', 'cancellation'])
+def test_reasoning_duration_excludes_work_after_its_end(timed_draft, ending):
+    draft, clock, _ = timed_draft
+    draft.append(reasoning_content='Working')
+    clock.now = 12.5
+    if ending == 'tool':
+        draft.finish_reasoning()
+    elif ending == 'finish':
+        draft.finish()
+    else:
+        draft.persist(incomplete=True)
+    clock.now = 200.0
+    saved = draft.persist()
+    assert saved.parts[0]['duration_ms'] == 2500
+    assert bool(saved.metadata.get('incomplete')) == (ending in {'failure', 'cancellation'})
+
+
+def test_zero_duration_and_incomplete_marker_tail_are_settled_once(timed_draft):
+    draft, clock, state = timed_draft
+    draft.append(content='<think>Reason</thi')
+    saved = draft.persist(incomplete=True)
+    assert saved.parts[0]['text'] == 'Reason</thi'
+    assert saved.parts[0]['duration_ms'] == 0
+    clock.now += 30
+    assert draft.persist() is saved
+    assert len([event for event in state.events.list_events()
+                if event.type == 'message_delta' and 'duration_ms' in event.payload]) == 1
+
+
+def test_non_streaming_reasoning_has_no_measured_duration(timed_draft):
+    draft, clock, state = timed_draft
+    draft.streamed = False
+    draft.append(reasoning_content='One completed response')
+    clock.now += 20
+    saved = draft.persist()
+    assert 'duration_ms' not in saved.parts[0]
+    assert not [event for event in state.events.list_events() if event.type == 'message_delta']
 
 
 @pytest.mark.parametrize("harness", [False, True])
@@ -89,6 +186,8 @@ def test_reasoning_body_deltas_and_native_tool_transcript(presentation_client, h
     answer = response["messages"][-1]
     assert [(part["type"], part["text"]) for part in answer["parts"]] == [
         ("reasoning", "structured reasoning; tag reasoning"), ("text", "answer")]
+    duration = answer['parts'][0].get('duration_ms')
+    assert isinstance(duration, int) and duration >= 0 if streaming else duration is None
     state = client.app.state.runtime_state
     if streaming:
         deltas = [e for e in state.events.list_events() if e.type == "message_delta" and e.message_id == answer["message_id"]]
@@ -97,6 +196,9 @@ def test_reasoning_body_deltas_and_native_tool_transcript(presentation_client, h
             chunks = [e.payload for e in deltas if e.payload["part_id"] == part["id"]]
             assert "".join(chunk["delta"] for chunk in chunks) == part["text"]
             assert all(chunk["part_type"] == part["type"] for chunk in chunks)
+        assert [item.payload['duration_ms'] for item in deltas if 'duration_ms' in item.payload] == [duration]
+    reloaded = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))
+    assert reloaded[-1]['parts'][0].get('duration_ms') == duration
     if harness:
         native = upstream.calls[-1]["messages"][-2]
         assert native["reasoning_content"] == "structured reasoning; "
@@ -117,6 +219,7 @@ def test_failed_stream_persists_partial_content(presentation_client, harness):
     partial = response["messages"][-1]
     assert partial["metadata"]["incomplete"] is True and not partial["metadata"].get("streaming")
     assert [p["text"] for p in partial["parts"]] == ["received reasoning", "partial answer"]
+    assert partial['parts'][0]['duration_ms'] >= 0
     history = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))
     assert history[-1]["message_id"] == partial["message_id"] and history[-1]["metadata"]["incomplete"]
     state = client.app.state.runtime_state
@@ -246,6 +349,7 @@ def test_cancelled_stream_retains_received_content(tmp_path, use_memory, harness
                 assert history[-1]["message_id"] == started.message_id
                 assert history[-1]["metadata"]["incomplete"] is True
                 assert [p["text"] for p in history[-1]["parts"]] == ["reason", "partial"]
+                assert history[-1]['parts'][0]['duration_ms'] >= 0
                 assert state.runs.get_run(started.run_id).status == "CANCELLED"
                 step = next(step for step in cancelled["run"]["steps"] if step["kind"] == "model")
                 snapshot = ok(await client.get(f"/api/runs/{started.run_id}/steps/{step['step_id']}/context"))
