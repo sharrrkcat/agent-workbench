@@ -88,13 +88,14 @@ parents only toggle their nested pages and have no selected state. Menus start c
 and closed pages leave keyboard navigation. Active pages use aria-current.
 | Menu | Pages / `view` values |
 | --- | --- |
-| General, Tools | Single page; no `view` |
+| General | Single page; no `view` |
+| Tools | General tools `general`, QQ Bot tools `qqbot`, Web search `web` |
 | Personas | Cogita Persona `user`, Agent Personas `agent`, User Personas `roleplay_user`, Character Personas `character` |
 | Models | Dashboard `dashboard`; LLM `llm`, Text Embedding `embedding`, Reranker `reranker`, Image Embedding `image_embedding`, Vision `vision`, Text to Speech `tts`, Speech to Text `asr`, Processor `processor`, Image Generation `image_generation` |
 | Providers & Runtime | Model Providers `providers`, Local Runtime `localRuntime` (both remain under `tab=models`) |
 | Knowledge, Worldbook | Resources `list`, Global settings `settings` |
 
-Missing/unknown views select user for Personas, dashboard for Models or list for resources. Page changes push browser history;
+Missing/unknown views select user for Personas, dashboard for Models, general for Tools or list for resources. Page changes push browser history;
 reselecting the effective current page adds no entry. Back to chat restores the previous ordinary/Project/Playground route.
 Refresh restores the domain/subpage; resource selection and detail Tabs are local.
 The fixed location header shares Home's primary-row height and toggle position. Content scrolls independently
@@ -208,14 +209,28 @@ submit only changed overrides, lock Cogita identity and inherited Knowledge, and
 Project editors offer type-specific Configuration and Knowledge/Worldbook tabs; missing required Personas
 have management links. Context controls expose message/character limits and attachments, with no History selector.
 Creation defaults to unlimited session history, global model inheritance and, for Workspace, the default Agent, fixed Cogita Persona, Harness off and the explicit current tool catalog.
-ToolsPanel places an AnySearch web settings form above the session-independent General and QQ Bot catalogs, separated by dividers.
+Tools has separate General tools/QQ Bot tools catalogs and a Web search page for AnySearch, subscriptions and custom rules. All Web search forms share one leave guard.
 GET/PATCH `/api/tools/web/settings` owns appmetadatarecord.web_tools_settings: max_results (strict integer 1..10, default 5), zone (cn/intl/null) and language (nonblank string/null), with null defaults using the provider's choice. Reads also return provider=anysearch and has_api_key; api_key is write-only. Omission retains every field; an empty key clears it, while null/non-string/control-character keys and null max_results are rejected.
 The same endpoint/form owns search_calls_per_run (1..16, default 4), fetch_calls_per_run (1..16, default 6), cache_ttl_hours (1..168, default 24) and cache_retention_days (1..365, default 30), all strict integers.
 The form contains the masked key, results per query, search language/region, run call limits and cache durations. Saving options preserves an omitted key; explicit key clearing preserves search drafts/preferences. A placeholder indicates key presence. Failed saves retain drafts; unsaved navigation confirms discard and busy saves block departure. Call limits are snapshotted for each new run; other changes affect subsequent tool calls without restart.
-Each catalog entry shows its name, localized description and an initially collapsed, scrollable parameter schema. Both groups remain visible on narrow screens; all four QQ tools remain visible independently of Project configuration.
+Each catalog entry shows its name, localized description and an initially collapsed, scrollable parameter schema. Both catalog pages work on narrow screens; all four QQ tools remain visible independently of Project configuration.
 Ordinary Session and Workspace selectors/defaults use only general-scoped tools. Loading uses delayed text; errors offer local refresh.
 The page contains no test calls, results or approval controls. Anonymous access and additional web providers remain unavailable.
 [Harness/tools](harness-tools.md) owns the catalog, remaining direct calls and permissions.
+
+GET/PATCH `/api/tools/web/filters` reads metadata or replaces custom_rules (UTF-8, at most 16 MiB).
+POST `/api/tools/web/subscriptions` accepts name/url and adds an enabled subscription with an immediate download;
+PATCH/DELETE `/api/tools/web/subscriptions/{id}` toggles enabled or deletes it; POST `/{id}/refresh` under that
+same prefix updates one subscription. Duplicate URLs return 409; missing entries return 404; invalid custom rules
+return 422 with a line number. Reads include counts, attempt/success/error metadata and next update, never subscription bodies.
+Rows have a Switch, source link, count/update status and update/delete actions. The add dialog owns name/URL;
+custom rules use a separate Textarea/Save with inline errors. Subscription actions preserve unsaved rules;
+failed saves/switches retain drafts/confirmed state. Both forms and an unfinished add dialog guard navigation.
+The four initial enabled subscriptions are BadWebsiteBlocklist, uBlacklist Pinterest, GitHub Translation and
+uBlock-Origin dev filter at their published raw GitHub URLs. Default custom patterns cover roots/subdomains of
+youtube.com, instagram.com, facebook.com, tiktok.com, flipboard.com, fb.watch, baidu.com and ifeng.com.
+Initialization happens once through [migration](../DATA_LAYOUT.md); clearing/deleting does not restore defaults.
+The [web tools contract](harness-tools.md#web-tools) owns weekly updates, failures and matching semantics.
 
 Knowledge settings own chunk/retrieval/context controls and unified reranker
 selection. KB records select unified embedding profiles. Model paths, connection

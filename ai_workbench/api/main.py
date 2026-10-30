@@ -31,11 +31,13 @@ async def runtime_lifespan(app: FastAPI):
     try:
         web = app.state.runtime_state.web_tools
         web.cache.prune(web.settings.get().cache_retention_days)
+        web.filters.start()
         await asyncio.to_thread(lambda: app.state.runtime_state.model_manager.asr_inputs)
         app.state.runtime_state.qq.start()
         yield
     finally:
         state = app.state.runtime_state
+        await state.web_tools.filters.close()
         await state.qq.close()
         await state.active_runs.cancel_all()
         await state.runtime_supervisor.close()

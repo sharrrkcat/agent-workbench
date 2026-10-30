@@ -120,6 +120,8 @@ def main():
                 record()
 
     app = create_app(root=args.output / "cogita", use_memory=True, adapter_factory=RecordingAdapter)
+    from tests.web_filter_fixtures import install_offline_subscriptions
+    install_offline_subscriptions(app.state.runtime_state)
     original_lifespan = app.router.lifespan_context
 
     @asynccontextmanager

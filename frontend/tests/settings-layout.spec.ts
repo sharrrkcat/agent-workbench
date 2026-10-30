@@ -57,7 +57,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(sidebar.locator('[data-slot="sidebar-header"]')).toHaveText(settings.title);
         expect(await sidebar.locator('.sidebar-brand').boundingBox()).toEqual(homeBrand);
         const historyLength = await page.evaluate(() => history.length);
-        for (const section of ['models', 'providersRuntime', 'knowledge', 'worldbook']) {
+        for (const section of ['models', 'providersRuntime', 'knowledge', 'worldbook', 'tools']) {
           const menu = sidebar.getByRole('list', { name: settings[section], exact: true });
           const toggle = menu.getByRole('button', { name: settings[section], exact: true });
           await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -87,14 +87,14 @@ for (const locale of ['en', 'zh-CN']) {
           ['knowledge', 'settings'],
           ['worldbook', 'list'],
           ['worldbook', 'settings'],
-          ['tools', ''],
+          ['tools', 'general'], ['tools', 'qqbot'], ['tools', 'web'],
         ];
         for (const [section, view] of pages) {
           const label = !view
             ? settings[section]
             : section === 'models'
               ? llm.kinds[view] || llm[view]
-              : section === 'personas' ? personas.collections[view] : settings.resources[view];
+              : section === 'personas' ? personas.collections[view] : section === 'tools' ? settings.toolGroups[view] : settings.resources[view];
           const menuLabel = section === 'models' && ['providers', 'localRuntime'].includes(view) ? settings.providersRuntime : settings[section];
           await navigateSettings(page, menuLabel, label, section === 'personas' ? settings.sidebarGroups[['user', 'agent'].includes(view) ? 'daily' : 'roleplay'] : undefined);
           await expect(page).toHaveURL(`/settings?tab=${section}${view ? `&view=${view}` : ''}`);
@@ -139,12 +139,13 @@ for (const locale of ['en', 'zh-CN']) {
           settings.sidebarGroups.roleplay,
         ]);
         await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(8);
-        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(13 + populatedKinds.size);
+        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(15 + populatedKinds.size);
         for (const [section, count] of [
           ['models', 1 + populatedKinds.size],
           ['providersRuntime', 2],
           ['knowledge', 2],
           ['worldbook', 2],
+          ['tools', 3],
         ] as const) {
           const menu = sidebar.getByRole('list', { name: settings[section], exact: true });
           const toggle = menu.locator(`button[data-settings-menu="${section}"]`);
@@ -156,7 +157,7 @@ for (const locale of ['en', 'zh-CN']) {
             ),
           ).toHaveCount(count);
         }
-        await expect(sidebar.locator('[aria-current="page"]')).toHaveText(settings.tools);
+        await expect(sidebar.locator('[aria-current="page"]')).toHaveText(settings.toolGroups.web);
         expect((await sidebar.boundingBox())!.width).toBeCloseTo(viewport.width === 390 ? 288 : 256, 1);
         await sidebar.locator('[data-slot="sidebar-content"]').evaluate((node) => {
           node.scrollTop = 0;

@@ -6,14 +6,17 @@ export type SettingsSection = (typeof settingsSections)[number];
 export const modelViews = ['dashboard', ...modelKinds, 'providers', 'localRuntime'] as const;
 export const resourceViews = ['list', 'settings'] as const;
 export const personaViews = ['user', 'agent', 'roleplay_user', 'character'] as const;
+export const toolViews = ['general', 'qqbot', 'web'] as const;
 export type ModelView = (typeof modelViews)[number];
 export type ResourceView = (typeof resourceViews)[number];
 export type PersonaView = (typeof personaViews)[number];
+export type ToolView = (typeof toolViews)[number];
 export type SettingsRoute =
   | { section: 'models'; view: ModelView }
   | { section: 'knowledge' | 'worldbook'; view: ResourceView }
   | { section: 'personas'; view: PersonaView }
-  | { section: 'general' | 'tools'; view?: never };
+  | { section: 'tools'; view: ToolView }
+  | { section: 'general'; view?: never };
 export type NavigationTarget = { pathname: string; search: string };
 export type SettingsNavigate = (url: string) => Promise<boolean>;
 
@@ -32,7 +35,7 @@ export const settingsGroups: {
       { id: 'providersRuntime', section: 'models', label: 'providersRuntime', pages: [
         { section: 'models', view: 'providers' }, { section: 'models', view: 'localRuntime' },
       ] },
-      { id: 'tools', section: 'tools', label: 'tools', pages: [{ section: 'tools' }] },
+      { id: 'tools', section: 'tools', label: 'tools', pages: toolViews.map((view) => ({ section: 'tools', view })) },
     ],
   },
   {
@@ -58,6 +61,7 @@ export function readSettingsRoute(search: string): SettingsRoute {
   const view = params.get('view');
   if (section === 'models') return { section, view: modelViews.find((item) => item === view) || 'dashboard' };
   if (section === 'personas') return { section, view: personaViews.find((item) => item === view) || 'user' };
+  if (section === 'tools') return { section, view: toolViews.find((item) => item === view) || 'general' };
   if (section === 'knowledge' || section === 'worldbook')
     return { section, view: resourceViews.find((item) => item === view) || 'list' };
   return { section };
@@ -71,6 +75,7 @@ export function settingsPageLabel(route: SettingsRoute): string {
   if (route.section === 'models') return route.view === 'dashboard' || route.view === 'providers' || route.view === 'localRuntime'
     ? `llm:${route.view}` : `llm:kinds.${route.view}`;
   if (route.section === 'personas') return `personas:collections.${route.view}`;
+  if (route.section === 'tools') return `settings:toolGroups.${route.view}`;
   if (route.section === 'knowledge' || route.section === 'worldbook')
     return `settings:resources.${route.view}`;
   return `settings:${route.section}`;

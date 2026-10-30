@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.api.deps import RuntimeState, get_state
@@ -14,6 +14,10 @@ from ai_workbench.core.message_parts import text_from_parts
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.web_schemas import WebToolsSettingsPatch, WebToolsSettingsResponse
+from ai_workbench.core.web_filter_rules import FilterRuleError
+from ai_workbench.core.web_filter_schemas import (
+    WebFilterPatch, WebFilterSettingsResponse, WebSubscriptionCreate, WebSubscriptionInfo, WebSubscriptionPatch,
+)
 
 
 async def validate_tool_json(request: Request) -> None:
@@ -48,6 +52,51 @@ def get_web_settings(state: RuntimeState = Depends(get_state)) -> WebToolsSettin
 @router.patch("/web/settings", response_model=WebToolsSettingsResponse, responses=error_responses(422))
 def patch_web_settings(payload: WebToolsSettingsPatch, state: RuntimeState = Depends(get_state)) -> WebToolsSettingsResponse:
     return state.web_tools.settings.patch(payload)
+
+
+async def _filter_result(operation):
+    try:
+        return await operation
+    except FilterRuleError as exc:
+        raise_error(422, "WEB_FILTER_RULE_INVALID", str(exc), {"line": exc.line})
+    except KeyError:
+        raise_error(404, "WEB_SUBSCRIPTION_NOT_FOUND", "Subscription does not exist.")
+    except ToolExecutionError as exc:
+        raise_error(409, exc.code, exc.message, exc.details)
+
+
+@router.get("/web/filters", response_model=WebFilterSettingsResponse)
+def get_web_filters(state: RuntimeState = Depends(get_state)):
+    return state.web_tools.filters.public()
+
+
+@router.patch("/web/filters", response_model=WebFilterSettingsResponse, responses=error_responses(422))
+async def patch_web_filters(payload: WebFilterPatch, state: RuntimeState = Depends(get_state)):
+    return await _filter_result(state.web_tools.filters.set_custom(payload.custom_rules))
+
+
+@router.post("/web/subscriptions", response_model=WebSubscriptionInfo, status_code=201, responses=error_responses(404, 409, 422))
+async def add_web_subscription(payload: WebSubscriptionCreate, state: RuntimeState = Depends(get_state)):
+    return await _filter_result(state.web_tools.filters.add(payload.name, payload.url))
+
+
+@router.patch("/web/subscriptions/{subscription_id}", response_model=WebSubscriptionInfo, responses=error_responses(404, 422))
+async def patch_web_subscription(subscription_id: str, payload: WebSubscriptionPatch, state: RuntimeState = Depends(get_state)):
+    return await _filter_result(state.web_tools.filters.set_enabled(subscription_id, payload.enabled))
+
+
+@router.delete("/web/subscriptions/{subscription_id}", status_code=204, responses=error_responses(404, 422))
+async def delete_web_subscription(subscription_id: str, state: RuntimeState = Depends(get_state)):
+    await _filter_result(state.web_tools.filters.delete(subscription_id))
+    return Response(status_code=204)
+
+
+@router.post("/web/subscriptions/{subscription_id}/refresh", response_model=WebSubscriptionInfo, responses=error_responses(404, 422))
+async def refresh_web_subscription(subscription_id: str, state: RuntimeState = Depends(get_state)):
+    result = await state.web_tools.filters.refresh(subscription_id)
+    if result is None:
+        raise_error(404, "WEB_SUBSCRIPTION_NOT_FOUND", "Subscription does not exist.")
+    return result
 
 
 @router.post("/{tool_name}/call", response_model=ToolResult, response_model_exclude_unset=True,

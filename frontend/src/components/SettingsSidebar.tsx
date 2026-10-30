@@ -9,6 +9,7 @@ import {
   Settings2,
   SlidersHorizontal,
   Wrench,
+  Globe,
   Boxes,
   LayoutDashboard,
   Plus,
@@ -54,7 +55,8 @@ function pageIcon(route: SettingsRoute) {
         ? Database
         : BookOpen;
   if (route.section === 'personas') return Bot;
-  return { general: Settings2, tools: Wrench }[route.section];
+  if (route.section === 'tools') return route.view === 'web' ? Globe : route.view === 'qqbot' ? Bot : Wrench;
+  return Settings2;
 }
 
 export function SettingsSidebar({

@@ -103,6 +103,8 @@ async def native_smoke(root, model_ref):
     output.mkdir(parents=True, exist_ok=True)
     database = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     state = build_runtime_state(root=root, use_memory=True)
+    from tests.web_filter_fixtures import install_offline_subscriptions
+    install_offline_subscriptions(state)
     supervisor = state.runtime_supervisor
     supervisor.store, supervisor.settings = RuntimeStore(database), LocalRuntimeSettingsStore(database)
     report = {"model_ref": model_ref, "platform": platform.platform(), "device": "cuda", "cases": {}}
@@ -194,6 +196,8 @@ async def smoke(root, model_ref, *, full_lifecycle=False, cases=None):
     database = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(database)
     state = build_runtime_state(root=root, use_memory=True)
+    from tests.web_filter_fixtures import install_offline_subscriptions
+    install_offline_subscriptions(state)
     manager, supervisor = state.model_manager, state.runtime_supervisor
     supervisor.store, supervisor.settings = RuntimeStore(database), LocalRuntimeSettingsStore(database)
     listener, server, server_task = None, None, None

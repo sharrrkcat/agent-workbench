@@ -86,6 +86,8 @@ async def smoke(args):
     database = get_engine(f"sqlite:///{root / 'data/cogita.db'}")
     init_db(database)
     state = build_runtime_state(root=root, use_memory=True)
+    from tests.web_filter_fixtures import install_offline_subscriptions
+    install_offline_subscriptions(state)
     manager, supervisor = state.model_manager, state.runtime_supervisor
     supervisor.store, supervisor.settings = RuntimeStore(database), LocalRuntimeSettingsStore(database)
     listener, server, task = None, None, None

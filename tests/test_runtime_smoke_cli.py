@@ -65,7 +65,8 @@ def test_wd14_requires_an_explicit_model_and_never_installs(tmp_path, monkeypatc
     monkeypatch.setattr(smoke_wd14_runtime, "RuntimeStore", lambda *_: None)
     monkeypatch.setattr(smoke_wd14_runtime, "LocalRuntimeSettingsStore", lambda *_: None)
     monkeypatch.setattr(smoke_wd14_runtime, "build_runtime_state",
-        lambda **_: SimpleNamespace(runtime_supervisor=supervisor, model_manager=manager))
+        lambda **_: SimpleNamespace(runtime_supervisor=supervisor, model_manager=manager,
+                                   web_tools=SimpleNamespace(filters=SimpleNamespace())))
     with pytest.raises(ModelError, match="Repair"):
         asyncio.run(smoke_wd14_runtime.smoke(tmp_path, "vision/test"))
     supervisor.assert_available.assert_called_once_with()
@@ -145,7 +146,8 @@ def test_smoke_modes_separate_installation_from_inference(tmp_path, monkeypatch,
         assert_available=Mock(side_effect=ModelError("RUNTIME_BROKEN", "Repair the local backend", 503)))
     manager = SimpleNamespace(close=AsyncMock(), profiles=ModelProfileStore(), settings=ModelSettingsStore(),
         load=AsyncMock(side_effect=AssertionError("Unexpected inference")), process_log=lambda _: "")
-    state = SimpleNamespace(runtime_supervisor=supervisor, model_manager=manager)
+    state = SimpleNamespace(runtime_supervisor=supervisor, model_manager=manager,
+                            web_tools=SimpleNamespace(filters=SimpleNamespace()))
     engine = SimpleNamespace(dispose=Mock())
     monkeypatch.setattr(script, "get_engine", lambda *_: engine)
     monkeypatch.setattr(script, "RuntimeStore", lambda *_: store)

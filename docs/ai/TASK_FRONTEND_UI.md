@@ -59,7 +59,7 @@ QQBot-specific scripts and bilingual browser coverage belong to the [QQBot task]
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
 independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
 chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning timing, Trace disclosures, tool titles/results, message alignment and images.
-web-tools.spec.ts and test-web-tools.mjs cover web settings, UI-language headers/date Instruction, trace links/text, citation parsing/copying, source deduplication, streaming/history and bilingual desktop/touch interactions. test_web_instructions.py covers request ordering, gating, localized weekdays, approval continuation and retry/edit language.
+web-tools.spec.ts and test-web-tools.mjs cover web settings, UI-language headers/date Instruction, trace links/text, citation parsing/copying, source deduplication, streaming/history and bilingual desktop/touch interactions. web-filters.spec.ts covers subscription CRUD/failures, custom validation and shared navigation guards. test_web_instructions.py covers request ordering, gating, localized weekdays, approval continuation and retry/edit language.
 settings-layout.spec.ts covers populated grouped pages, collapsed menus, direct links, history, resource
 leave guards, independent model-kind drafts/hidden dialogs, Dashboard settings, shared navigation and responsive scroll regions.
 chat-drafts.spec.ts covers unsaved settings, shared creation entries, attachment promotion/retry,

@@ -59,6 +59,35 @@ replace provider navigation titles. URLs and identical 150-character body prefix
 longer evidence. URL keys remove fragments/tracking parameters while preserving scheme, www, meaningful
 query order and path differences.
 
+Before cleaning or candidate accounting, search filters each provider URL against one compiled snapshot.
+Blocked results never enter ranking, page caches or source numbering. Structured stats include blocked;
+candidates counts only accepted URLs. These counts do not enter model text. All search invocation paths
+share this application-level policy. Fetch remains unrestricted by these filters, including existing caches.
+
+The uBlacklist subset supports HTTP(S) match patterns, scheme/host wildcards, path stars, `<all_urls>`,
+@ exceptions, blank/comment lines, inline # comments, UTF-8 BOM and complete leading frontmatter.
+Frontmatter is skipped as metadata; it is not application configuration. Regex, expressions, @if and
+highlight rules are unsupported. Invalid lines reject the entire custom edit or subscription refresh,
+with a one-based line number. Empty/comment-only sets are valid. Host matching respects label boundaries;
+*.example.com covers the root and subdomains. Scheme/host are case-insensitive, path/query case-sensitive;
+ports and fragments do not participate. URL components use HTTPX's normalized ASCII representation.
+Custom rules take precedence over subscriptions; within each layer, exceptions beat block rules.
+Enabled subscriptions combine into one layer. Defaults and controls belong to [Settings](settings.md).
+
+The backend updates all subscriptions, including disabled entries, every seven days. Startup loads local
+indexes and performs one overdue update in the background. Manual refresh does not postpone that schedule.
+Same-entry refreshes join one task; deleted entries discard late downloads. Failed updates retain their
+previous body/count/success time and expose an error. A failed first download leaves an entry without rules.
+Downloads use public-address/DNS-pinned policy: direct HTTP(S), no environment proxy or alternate URL,
+a 30-second total deadline, three redirects and a 16 MiB uncompressed limit. Four downloads may run together.
+Failures wait for manual retry or the next seven-day cycle. No independent scheduler/runtime is required.
+
+Host indexes and compressed literal-path-prefix trees select local buckets before string glob matching.
+Indexes rebuild at startup or successful edits, outside request matching; each search retains its snapshot.
+Acceptance measures 100,000 rules and 40-URL batches: ordinary domain/prefixed-path cases require P95 <=10 ms,
+compilation <=5 seconds and retained index memory <=128 MiB. Unprefixed globs can still scan their entire
+matching bucket; the benchmark reports this degradation separately rather than promising constant-time matching.
+
 Ranking evaluates each successful query separately against candidate titles, snippets and cleaned bodies.
 English stop words are excluded; Chinese matching primarily uses bigrams. Numbers, versions, decimals,
 times and quoted phrases stay atomic and are mandatory. Page-level IDF weights required terms by three;
@@ -197,9 +226,9 @@ receives the raw remainder, preserving whitespace; other schemas require
 a JSON object. There is no key=value parser. Unknown slash prefixes remain
 ordinary text; known unauthorized tools return TOOL_NOT_ALLOWED.
 
-Tools settings contain the web key form and a session-independent, read-only catalog. General tools and QQ Bot tools
-form two stacked lists separated by a divider; each entry shows its name, localized description
-and a collapsed parameter schema. All four QQ tools remain visible regardless of Project configuration.
+Tools settings split into General tools, QQ Bot tools and Web search subpages. The first two contain
+session-independent, read-only catalogs; each entry shows its name, localized description and a collapsed
+parameter schema. Web search owns the key/preferences and filter controls. All four QQ tools remain visible regardless of Project configuration.
 The page has no call form, results or approval controls. Slash web calls require JSON objects matching the same schemas; search preferences belong to the settings form.
 The chat reply renders individual steps and keeps approval controls outside collapsed processing history.
 Web steps use dedicated result links/page text, including QQ results without source IDs; only numbered results participate in citations/Sources. Other tools retain their general presentation.

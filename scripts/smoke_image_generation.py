@@ -38,7 +38,10 @@ def main():
     logging.basicConfig(level=logging.WARNING)
     results = []
     with TemporaryDirectory(prefix="cogita-image-smoke-") as directory:
-        with TestClient(create_app(root=Path(directory), use_memory=True), client=("127.0.0.1", 40001)) as client:
+        app = create_app(root=Path(directory), use_memory=True)
+        from tests.web_filter_fixtures import install_offline_subscriptions
+        install_offline_subscriptions(app.state.runtime_state)
+        with TestClient(app, client=("127.0.0.1", 40001)) as client:
             provider = client.post("/api/models/providers", json={"name": before[0], "connection": json.loads(before[2])})
             provider.raise_for_status()
             profile = client.post("/api/models/profiles", json={"name": "Image acceptance", "alias": "image-smoke",

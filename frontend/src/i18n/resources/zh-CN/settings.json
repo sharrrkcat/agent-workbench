@@ -73,6 +73,30 @@
   "providersRuntime": "提供商与运行环境",
   "toolGroups": {
     "general": "通用工具",
-    "qqbot": "QQ Bot 工具"
+    "qqbot": "QQ Bot 工具",
+    "web": "联网搜索"
+  },
+  "webFilters": {
+    "subscriptions": "订阅过滤",
+    "custom": "自定义过滤",
+    "add": "添加订阅",
+    "name": "名称",
+    "url": "订阅地址",
+    "enabled": "启用 {{name}}",
+    "update": "更新 {{name}}",
+    "delete": "删除 {{name}}",
+    "deleteConfirm": "删除订阅“{{name}}”及其已下载的规则？",
+    "empty": "暂无订阅",
+    "schedule": "每 7 天自动更新全部订阅，包含已禁用的订阅。",
+    "nextUpdate": "下次更新：{{date}}",
+    "ruleCount_one": "{{count}} 条规则",
+    "ruleCount_other": "{{count}} 条规则",
+    "updated": "更新于 {{date}}",
+    "notDownloaded": "尚未下载",
+    "syntax": "一行一条，支持 uBlacklist URL 通配规则、@ 放行和 # 注释。自定义规则优先于订阅。",
+    "invalidRule": "第 {{line}} 行规则无效或不受支持。请使用 URL 通配规则或 @ 放行规则。",
+    "invalidEncoding": "订阅须为 UTF-8 文本。已保存的规则保持不变。",
+    "duplicate": "此订阅地址已存在。",
+    "downloadFailed": "下载失败，请检查订阅地址和网络。已保存的规则保持不变。"
   }
 }

@@ -7,7 +7,7 @@ for (const locale of ['en', 'zh-CN']) {
     test.describe(`Tools catalog ${locale} ${width}`, () => {
       test.use({ viewport: { width, height: 900 }, hasTouch: width === 390 });
 
-      test('groups the complete read-only catalog without a session', async ({ page, request }, info) => {
+      test('separates the read-only catalogs from web settings', async ({ page, request }, info) => {
         const errors: string[] = [];
         const requests: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
@@ -21,32 +21,29 @@ for (const locale of ['en', 'zh-CN']) {
         await request.patch('/api/tools/web/settings', { data: { api_key: '' } });
         await page.route('**/api/tools', (route) => route.fulfill({ json: catalog }));
         await page.route('**/api/sessions', (route) => route.fulfill({ json: [] }));
-        await page.goto('/settings?tab=tools');
-
-        const panel = page.getByRole('region', { name: words.toolCatalog, exact: true });
-        const general = panel.getByRole('region', { name: words.toolGroups.general, exact: true });
-        const qq = panel.getByRole('region', { name: words.toolGroups.qqbot, exact: true });
-        await expect(general.locator('[data-slot="item-title"]')).toHaveText(['web_fetch', 'web_search']);
-        await expect(qq.locator('[data-slot="item-title"]')).toHaveText(['qq_generate_image', 'qq_send_image', 'qq_send_message', 'qq_skip_reply']);
-        await expect(panel.locator('[data-slot="separator"]')).toHaveCount(2);
-        await expect(panel.locator('input[type="password"]')).toHaveCount(1);
-        await expect(panel.locator('.tool-output, .tool-search-settings, .tool-call-form')).toHaveCount(0);
-        await expect(panel.getByRole('button', { name: words.toolSchema, exact: true })).toHaveCount(6);
-        await expect(panel.locator('[data-slot="code-block-content"]')).toHaveCount(0);
-        await page.screenshot({ path: info.outputPath('tools-catalog.png'), fullPage: true });
-        for (const tool of catalog) {
-          const item = panel.locator(`[data-tool-name="${tool.name}"]`);
-          await expect(item).toContainText(words.toolDescriptions[tool.name]);
-          const trigger = item.getByRole('button', { name: words.toolSchema, exact: true });
-          await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-          await trigger.focus();
-          await trigger.press('Enter');
-          await expect(item.locator('[data-slot="code-block-content"]')).toHaveText(JSON.stringify(tool.parameters, null, 2));
-          await trigger.press('Space');
-          await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        for (const scope of ['general', 'qqbot']) {
+          await page.goto(`/settings?tab=tools${scope === 'general' ? '' : '&view=qqbot'}`);
+          const panel = page.getByRole('region', { name: words.toolCatalog, exact: true });
+          const selected = catalog.filter((tool: { scope: string }) => tool.scope === scope);
+          await expect(panel.locator('[data-slot="item-title"]')).toHaveText(selected.map((tool: { name: string }) => tool.name));
+          await expect(panel.locator('input[type="password"], .tool-output, .tool-call-form')).toHaveCount(0);
+          await expect(panel.getByRole('button', { name: words.toolSchema, exact: true })).toHaveCount(selected.length);
+          await expect(panel.locator('[data-slot="code-block-content"]')).toHaveCount(0);
+          await page.screenshot({ path: info.outputPath(`tools-${scope}.png`), fullPage: true });
+          for (const tool of selected) {
+            const item = panel.locator(`[data-tool-name="${tool.name}"]`);
+            await expect(item).toContainText(words.toolDescriptions[tool.name]);
+            const trigger = item.getByRole('button', { name: words.toolSchema, exact: true });
+            await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+            await trigger.focus();
+            await trigger.press('Enter');
+            await expect(item.locator('[data-slot="code-block-content"]')).toHaveText(JSON.stringify(tool.parameters, null, 2));
+            await trigger.press('Space');
+            await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+          }
         }
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        expect([...new Set(requests)].sort()).toEqual(['GET /api/tools', 'GET /api/tools/web/settings']);
+        expect([...new Set(requests)].sort()).toEqual(['GET /api/tools']);
         expect(errors).toEqual([]);
       });
     });

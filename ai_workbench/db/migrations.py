@@ -61,7 +61,8 @@ QQ_TRIGGER_GRANTS_REVISION = "0041_qq_trigger_grants"
 QQ_IMAGE_TOOLS_REVISION = "0042_qq_image_tools"
 WEB_CACHE_REVISION = "0043_web_cache"
 WEB_QUALITY_REVISION = "0044_web_quality"
-HEAD_REVISION = WEB_QUALITY_REVISION
+WEB_FILTERS_REVISION = "0045_web_filters"
+HEAD_REVISION = WEB_FILTERS_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

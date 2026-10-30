@@ -7,6 +7,12 @@ are never removed by schema revisions.
 Web settings remain in appmetadatarecord.web_tools_settings. Revision `0043_web_cache` adds web_pages (cleaned bodies/links, content hash/source and acquisition/access times) and web_session_pages (session-owned queries, keyed by session/URL/query). Only displayed search results and successful Extract pages are cached. Search never overwrites Extract content or renews its acquisition time; successful unchanged Extract results do renew freshness.
 Cache bodies are separate from bounded tool-result JSON and private citation/budget continuation. Session deletion removes its cache associations, unreferenced pages and session in one transaction; Project deletion reuses that path. Default expiration is 30 idle days, checked by indexed queries at startup and before web calls, at most once daily. Expiration removes page associations as well; historical excerpts/snapshots are not rewritten. The migration preserves existing data and every filesystem directory.
 
+Revision `0045_web_filters` adds web_filter_settings (custom rules and next weekly update) and web_filter_subscriptions
+(identity, source URL, enablement, downloaded text, count and attempt/success/error metadata). It seeds four enabled
+subscriptions and eight custom domain patterns once. Deletions and explicit empty rules persist across restarts/upgrades.
+Rule text lives in SQLite, separate from page evidence and ordinary web preferences; compiled indexes are process-local.
+The revision does not clear page caches, historical messages, settings or filesystem data.
+
 | Path | Contents and owner |
 | --- | --- |
 | data/cogita.db | Application test state: Personas, Projects, sessions/messages/runs, QQ bindings/queues/deliveries, settings, models/providers, resources and runtime jobs |
@@ -29,7 +35,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0044_web_quality`; current tables follow the SQLModel schema.
+Alembic head is `0045_web_filters`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.

@@ -4,8 +4,10 @@ import asyncio
 import json
 
 import httpx
+from fastapi import Body
 
 from ai_workbench.core.anysearch import AnySearchProvider
+from ai_workbench.core.harness.schema import ToolExecutionError
 
 
 WEB_URL = "https://example.com/article?query=" + "long-query-" * 24
@@ -14,6 +16,29 @@ WEB_CONTENT = "<script>window.webPageExecuted = true</script>\n" + "\n".join(
 
 
 def install_web_fixture(app):
+    overrides = {}
+
+    @app.post("/__test__/web-filter-source")
+    def set_source(values: dict = Body(...)):
+        if values.get("reset"):
+            overrides.clear()
+        else:
+            overrides[values["url"]] = values
+        return {"ok": True}
+
+    async def subscription(url):
+        override = overrides.get(url, {})
+        if override.get("error"):
+            raise ToolExecutionError("NETWORK_HTTP_ERROR", "Network request returned HTTP 503.")
+        if "content" in override:
+            return override["content"]
+        if url.endswith("/invalid.txt"):
+            return "# Invalid fixture\n/example/"
+        if url.endswith("/failed.txt"):
+            raise ToolExecutionError("NETWORK_HTTP_ERROR", "Network request returned HTTP 503.")
+        return "---\nname: Browser fixture\n---\n*://blocked.example/*\n"
+    app.state.runtime_state.web_tools.filters.download = subscription
+
     async def handle(request):
         payload = json.loads(request.content)
         query = payload.get("query", "")

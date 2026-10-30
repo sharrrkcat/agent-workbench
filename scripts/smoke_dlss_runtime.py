@@ -68,6 +68,8 @@ async def smoke(root, model_ref, lifecycle, sample):
     output.mkdir(parents=True, exist_ok=True)
     report = {'platform': platform.platform(), 'cases': [], 'status': 'running'}
     app = create_app(root=root, use_memory=False)
+    from tests.web_filter_fixtures import install_offline_subscriptions
+    install_offline_subscriptions(app.state.runtime_state)
     state = app.state.runtime_state
     supervisor, manager = state.runtime_supervisor, state.model_manager
     # Acceptance credentials and settings are request-local; profile/bootstrap ownership stays durable.

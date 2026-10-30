@@ -73,6 +73,30 @@
   "providersRuntime": "Providers & Runtime",
   "toolGroups": {
     "general": "General tools",
-    "qqbot": "QQ Bot tools"
+    "qqbot": "QQ Bot tools",
+    "web": "Web search"
+  },
+  "webFilters": {
+    "subscriptions": "Subscriptions",
+    "custom": "Custom rules",
+    "add": "Add subscription",
+    "name": "Name",
+    "url": "Subscription URL",
+    "enabled": "Enable {{name}}",
+    "update": "Update {{name}}",
+    "delete": "Delete {{name}}",
+    "deleteConfirm": "Delete subscription “{{name}}” and its downloaded rules?",
+    "empty": "No subscriptions",
+    "schedule": "All subscriptions update automatically every 7 days, including disabled ones.",
+    "nextUpdate": "Next update: {{date}}",
+    "ruleCount_one": "{{count}} rule",
+    "ruleCount_other": "{{count}} rules",
+    "updated": "Updated {{date}}",
+    "notDownloaded": "Not downloaded",
+    "syntax": "One rule per line. Supports uBlacklist URL patterns, @ exceptions and # comments. Custom rules take priority over subscriptions.",
+    "invalidRule": "Invalid or unsupported rule on line {{line}}. Use a URL match pattern or @ exception.",
+    "invalidEncoding": "The subscription must contain UTF-8 text. Previously saved rules are retained.",
+    "duplicate": "This subscription URL is already configured.",
+    "downloadFailed": "Download failed. Check the subscription URL and network. Previously saved rules are retained."
   }
 }

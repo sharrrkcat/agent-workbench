@@ -68,7 +68,7 @@ export function errorText(error: unknown) {
   return error instanceof ApiError ? `${error.code}: ${error.message}` : String(error);
 }
 
-export function useResourceTask() {
+export function useResourceTask(formatError: (error: unknown) => string = errorText) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -91,7 +91,7 @@ export function useResourceTask() {
       if (live.current) setNotice(message);
       return result;
     } catch (reason) {
-      if (live.current) setError(errorText(reason));
+      if (live.current) setError(formatError(reason));
     } finally {
       lock.current = false;
       if (live.current) setBusy('');

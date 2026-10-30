@@ -115,6 +115,7 @@ class WebSearchStatus(WebSearchQuery):
 
 
 class WebSearchStats(WebModel):
+    blocked: int = 0
     candidates: int = 0
     source_chars: int = 0
     duplicates: int = 0

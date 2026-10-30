@@ -11,6 +11,8 @@ from ai_workbench.core.harness.schema import ToolExecutionContext, ToolExecution
 from ai_workbench.core.network_policy import NetworkPolicy
 from ai_workbench.core.time import ensure_utc, isoformat_utc, utc_now
 from ai_workbench.core.web_cache import WebPageStore, cached_page
+from ai_workbench.core.web_filters import WebFilterService
+from ai_workbench.core.web_filter_store import WebFilterStore
 from ai_workbench.core.web_content import (
     BM25, Paragraph, QueryRelevance, clean_content, decoded_text, excerpt, fingerprint, infer_date, is_expired,
     normalize_url, page_title, paragraphs, query_key, terms,
@@ -86,6 +88,7 @@ class WebToolsService:
         self.settings = settings
         self.provider = provider
         self.cache = WebPageStore(settings.engine)
+        self.filters = WebFilterService(WebFilterStore(settings.engine))
 
     def register(self, registry) -> None:
         for name, description, schema, handler in (
@@ -105,7 +108,7 @@ class WebToolsService:
     def _configured_settings(self) -> WebToolsSettings:
         settings = self.settings.get()
         if not settings.api_key:
-            raise ToolExecutionError("WEB_NOT_CONFIGURED", "Configure an AnySearch API key in Settings > Tools.")
+            raise ToolExecutionError("WEB_NOT_CONFIGURED", "Configure an AnySearch API key in Settings > Tools > Web search.")
         self.cache.prune(settings.cache_retention_days)
         return settings
 
@@ -123,6 +126,7 @@ class WebToolsService:
 
     async def search(self, arguments: dict, context: ToolExecutionContext) -> dict:
         settings = self._configured_settings()
+        filters = self.filters.snapshot
         request = WebSearchArguments.model_validate(arguments)
         statuses, tasks = {}, {}
         for index, query in enumerate(request.searches):
@@ -143,6 +147,9 @@ class WebToolsService:
         for index, (status, pages) in zip(tasks, responses):
             statuses[index] = status
             for page in pages:
+                if filters.blocked(page.url):
+                    stats.blocked += 1
+                    continue
                 raw = page.content or page.snippet or page.title
                 title = page_title(raw, page.title, page.url)
                 content, links = clean_content(raw, title, page.url)

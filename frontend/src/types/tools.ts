@@ -25,9 +25,14 @@ export type WebPage = { url: string; title: string; source_id?: string; snippet?
 export type WebQuery = { query: string; recency: 'any' | 'week' | 'month' | 'year' };
 export type WebSearchStatus = WebQuery & { status: 'success' | 'error' | 'duplicate'; error_code?: string };
 export type WebRemaining = { search: number; fetch: number };
-export type WebSearchStats = { candidates: number; duplicates: number; expired: number; unrelated: number; omitted: number; source_chars: number };
+export type WebSearchStats = { blocked: number; candidates: number; duplicates: number; expired: number; unrelated: number; omitted: number; source_chars: number };
 export type WebSearchResult = { searches: WebSearchStatus[]; results: WebPage[]; stats: WebSearchStats;
   retrieved_at: string; remaining: WebRemaining; truncated: boolean };
 export type WebFetchResult = WebPage & { content: string; page: number; total_pages: number; order: 'document' | 'relevance';
   cache_hit: boolean; cached_at: string; content_hash: string; retrieved_at: string; remaining: WebRemaining;
   links: { text: string; url: string; offset: number }[]; notice?: 'no_more_content' | 'no_focus_match'; truncated: boolean };
+
+export type WebFilterIssue = { code: string; message: string; line: number | null };
+export type WebSubscription = { id: string; name: string; url: string; enabled: boolean; rule_count: number;
+  last_attempt_at: string | null; last_success_at: string | null; error: WebFilterIssue | null };
+export type WebFilterSettings = { custom_rules: string; next_update_at: string | null; subscriptions: WebSubscription[] };

@@ -7,6 +7,7 @@ import { KnowledgePanel } from './settings/KnowledgePanel';
 import { ModelsPanel } from './settings/ModelsPanel';
 import { PersonasPanel } from './settings/PersonasPanel';
 import { ToolsPanel } from './settings/ToolsPanel';
+import { WebToolsSettings } from './settings/WebToolsSettings';
 import { WorldbookPanel } from './settings/WorldbookPanel';
 import { readSettingsRoute, settingsMenuLabel, settingsPageLabel, settingsRouteUrl, type SettingsNavigate } from './settings/navigation';
 import { SettingsLeaveContext, type LeaveGuard } from './settings/resources/ResourceUI';
@@ -85,7 +86,7 @@ export function SettingsPage({
             {route.section === 'personas' ? <PersonasPanel key={route.view} collection={route.view} /> : null}
             {route.section === 'knowledge' ? <KnowledgePanel view={route.view} /> : null}
             {route.section === 'worldbook' ? <WorldbookPanel view={route.view} /> : null}
-            {route.section === 'tools' ? <ToolsPanel /> : null}
+            {route.section === 'tools' ? route.view === 'web' ? <WebToolsSettings /> : <ToolsPanel scope={route.view} /> : null}
           </div>
         </div>
       </SidebarInset>

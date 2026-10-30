@@ -28,13 +28,15 @@ const { settingsSections, settingsGroups, readSettingsRoute, settingsRouteUrl, s
 ).exports;
 assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools']);
 const settingsPages = settingsGroups.flatMap((group) => group.menus.flatMap((menu) => menu.pages));
-assert.equal(settingsPages.length, 22);
+assert.equal(settingsPages.length, 24);
 for (const route of settingsPages)
   assert.deepEqual(readSettingsRoute(new URL(settingsRouteUrl(route), 'http://localhost').search), route);
 for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities', '?tab=pet'])
   assert.deepEqual(readSettingsRoute(tab), { section: 'general' });
 assert.deepEqual(readSettingsRoute('?tab=personas'), { section: 'personas', view: 'user' });
 assert.deepEqual(readSettingsRoute('?tab=personas&view=unknown'), { section: 'personas', view: 'user' });
+assert.deepEqual(readSettingsRoute('?tab=tools'), { section: 'tools', view: 'general' });
+assert.deepEqual(readSettingsRoute('?tab=tools&view=unknown'), { section: 'tools', view: 'general' });
 assert.equal(new Set(settingsGroups.flatMap((g) => g.menus.map((m) => m.id))).size, 8);
 assert.deepEqual(readSettingsRoute('?tab=models'), { section: 'models', view: 'dashboard' });
 for (const view of ['settings', 'profiles', 'service', 'unknown'])
@@ -44,6 +46,7 @@ assert.deepEqual(executionMenus.map((menu) => menu.id), ['models', 'providersRun
 assert.deepEqual(executionMenus[0].pages.map((page) => page.view),
   ['dashboard', 'llm', 'embedding', 'reranker', 'image_embedding', 'vision', 'tts', 'asr', 'processor', 'image_generation']);
 assert.deepEqual(executionMenus[1].pages.map((page) => page.view), ['providers', 'localRuntime']);
+assert.deepEqual(executionMenus[2].pages.map((page) => page.view), ['general', 'qqbot', 'web']);
 for (const locale of ['en', 'zh-CN']) {
   const t = i18n.getFixedT(locale, 'settings');
   for (const page of settingsPages) {

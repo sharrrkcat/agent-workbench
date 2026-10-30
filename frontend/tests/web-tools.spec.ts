@@ -128,7 +128,7 @@ for (const locale of ['en', 'zh-CN']) {
     test('saves, replaces and clears the key while retaining failed edits', async ({ page, request }) => {
       const limits = { search_calls_per_run: 4, fetch_calls_per_run: 6, cache_ttl_hours: 24, cache_retention_days: 30 };
       await request.patch('/api/tools/web/settings', { data: { api_key: '', max_results: 10, zone: null, language: null, ...limits } });
-      await page.goto('/settings?tab=tools');
+      await page.goto('/settings?tab=tools&view=web');
       const form = page.getByRole('region', { name: 'AnySearch', exact: true });
       const input = form.getByLabel(settings.webTools.apiKey, { exact: true });
       const save = form.getByRole('button', { name: settings.save, exact: true });

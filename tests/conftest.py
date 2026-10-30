@@ -17,6 +17,13 @@ MODELS_ROOT = REPO_ROOT / "data" / "models"
 
 
 @pytest.fixture(autouse=True)
+def offline_web_subscriptions(monkeypatch):
+    from ai_workbench.core import web_filters
+    from tests.web_filter_fixtures import empty_subscription
+    monkeypatch.setattr(web_filters, "download_subscription", empty_subscription)
+
+
+@pytest.fixture(autouse=True)
 def record_runtime_events(monkeypatch):
     from ai_workbench.api import deps
     from tests.event_recorder import RecordingEventBus

@@ -38,7 +38,7 @@ External chat optionally returns performance metrics.
 Internal chat budgets every model call, trims old turns and displays actual per-call context usage beside model selection.
 Built-in tools share direct and model invocation with bounded execution and durable approvals; `/v1` forwards
 tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.
-AnySearch-backed batch search/focused fetch use their own key without approval, coverage-filtered excerpts, run budgets, guarded extraction, cached pagination, inferred dates, run-local citations, Sources and dedicated web steps.
+AnySearch-backed batch search/focused fetch use their own key without approval, search-only URL filters with weekly subscriptions/custom rules, coverage-filtered excerpts, run budgets, guarded extraction, cached pagination, inferred dates, run-local citations, Sources and dedicated web steps.
 Timeline Projects support creation/settings and roleplay Persona/Worldbook selection; internal sessions and context injection remain deferred.
 [QQBot](contracts/qqbot.md) binds group/friend conversations through external OneBot v11, with keyword/follow-up batches, optional icebreakers, shared media and text/image tools.
 Its independent contract owns settings, delivery/recovery and current acceptance limits.

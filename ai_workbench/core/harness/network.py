@@ -46,13 +46,13 @@ async def fetch_bytes(url: str, policy: Any, *, max_bytes: int = MAX_NETWORK_BYT
                         except ValueError:
                             too_large = False
                         if too_large:
-                            raise ToolExecutionError("NETWORK_RESPONSE_TOO_LARGE", "Network response exceeds the 1 MiB limit.")
+                            raise ToolExecutionError("NETWORK_RESPONSE_TOO_LARGE", f"Network response exceeds the {max_bytes} byte limit.")
                     chunks: list[bytes] = []
                     size = 0
                     async for chunk in response.aiter_bytes():
                         size += len(chunk)
                         if size > max_bytes:
-                            raise ToolExecutionError("NETWORK_RESPONSE_TOO_LARGE", "Network response exceeds the 1 MiB limit.")
+                            raise ToolExecutionError("NETWORK_RESPONSE_TOO_LARGE", f"Network response exceeds the {max_bytes} byte limit.")
                         chunks.append(chunk)
                     return b"".join(chunks), current, headers.get("content-type", "")
     except ToolExecutionError:

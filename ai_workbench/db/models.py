@@ -11,6 +11,7 @@ from sqlmodel import Field, SQLModel
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 from ai_workbench.db.web_models import WebPageRecord, WebSessionPageRecord
+from ai_workbench.db.web_filter_models import WebFilterSettingsRecord, WebSubscriptionRecord
 
 
 class SessionRecord(SQLModel, table=True):

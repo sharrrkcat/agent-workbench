@@ -85,6 +85,8 @@ async def build_document() -> tuple[dict, set[tuple[str, str]]]:
 
     with TemporaryDirectory(prefix="cogita-openapi-") as directory:
         app = create_app(use_memory=True, root=directory, frontend_dist=Path(directory) / "frontend")
+        from tests.web_filter_fixtures import install_offline_subscriptions
+        install_offline_subscriptions(app.state.runtime_state)
         async with app.router.lifespan_context(app):
             document = app.openapi()
             errors = check_route_contracts(app, document)
