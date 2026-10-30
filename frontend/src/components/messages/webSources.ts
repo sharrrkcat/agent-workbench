@@ -10,13 +10,13 @@ import type { WebPage, WebSource } from '@/types/tools';
 export type WebSourceMap = ReadonlyMap<string, WebSource>;
 export type WebToolOutput = { pages: WebPage[]; content?: string };
 export const isWebTool = (name: string) => name === 'web_search' || name === 'web_fetch';
-export const sourceHostname = (source: WebSource) => new URL(source.url).hostname;
-export const sourceTitle = (source: WebSource) => source.title.trim() || sourceHostname(source);
+export const sourceHostname = (source: Pick<WebPage, 'url'>) => new URL(source.url).hostname;
+export const sourceTitle = (source: Pick<WebPage, 'url' | 'title'>) => source.title.trim() || sourceHostname(source);
 
 function readPage(value: unknown): WebPage | null {
   if (!value || typeof value !== 'object') return null;
   const page = value as Record<string, unknown>;
-  if (typeof page.source_id !== 'string' || !/^W[1-9]\d*$/.test(page.source_id) ||
+  if ((page.source_id !== undefined && (typeof page.source_id !== 'string' || !/^W[1-9]\d*$/.test(page.source_id))) ||
       typeof page.url !== 'string' || typeof page.title !== 'string' ||
       (page.content !== undefined && typeof page.content !== 'string') ||
       (page.snippet !== undefined && typeof page.snippet !== 'string')) return null;
@@ -45,6 +45,7 @@ export function webSourcesForReply(messages: Message[]): Map<string, WebSource> 
   for (const message of messages) for (const part of message.parts) {
     if (part.type !== 'tool_result') continue;
     for (const page of readWebToolOutput(part)?.pages ?? []) {
+      if (!page.source_id) continue;
       const previous = sources.get(page.source_id);
       sources.set(page.source_id, { source_id: page.source_id, url: page.url, title: page.title || previous?.title || '' });
     }

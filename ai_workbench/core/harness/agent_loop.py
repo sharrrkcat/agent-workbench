@@ -28,8 +28,8 @@ from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
-from ai_workbench.core.schema.qq import QQ_SEND_TOOLS
-from ai_workbench.core.web_tools import WEB_TOOL_NAMES, assign_web_sources
+from ai_workbench.core.schema.qq import QQ_SEND_TOOLS, QQ_TOOLS
+from ai_workbench.core.web_tools import CITATION_INSTRUCTION, WEB_TOOL_NAMES, assign_web_sources
 
 
 MAX_TOOL_ROUNDS = 8
@@ -222,6 +222,10 @@ class HarnessAgentLoop:
         allowed = self._allowed_tools(config, state)
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
                  for spec in (self.registry.get(name) for name in allowed)]
+        if session.kind != "qqbot":
+            for tool in tools:
+                if tool["function"]["name"] in WEB_TOOL_NAMES:
+                    tool["function"]["description"] += " " + CITATION_INSTRUCTION
         base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
         trace = state.context_trace
@@ -370,7 +374,7 @@ class HarnessAgentLoop:
             # Other QQ sends use their response deadline while still consuming the run budget.
             data = await execution if image_tool else await asyncio.wait_for(execution,
                 timeout=tool_timeout)
-            if call.function.name in WEB_TOOL_NAMES:
+            if call.function.name in WEB_TOOL_NAMES and session.kind != "qqbot":
                 assign_web_sources(call.function.name, data, state.web_sources)
             outcome = ToolOutcome(status="success", data=data)
         except asyncio.TimeoutError:
@@ -391,7 +395,8 @@ class HarnessAgentLoop:
         self._record_result(session, run, state, call, outcome, step_id=step.step_id)
         recoverable_image_error = (image_tool and outcome.error_code == "QQ_IMAGE_GENERATION_FAILED") or (
             call.function.name == "qq_send_image" and outcome.error_code in {"QQ_IMAGE_RESOURCE_UNAVAILABLE", "TOOL_INVALID_ARGUMENTS"})
-        if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and outcome.status != "success" and not recoverable_image_error):
+        if outcome.error_code == "TOOL_RUN_TIMEOUT" or (session.kind == "qqbot" and call.function.name in QQ_TOOLS
+                and outcome.status != "success" and not recoverable_image_error):
             state.pending_calls.pop(0)
             raise ToolExecutionError(outcome.error_code, outcome.error_message)
 

@@ -77,7 +77,7 @@ def test_project_identity_resources_and_write_only_token(qq_client):
     assert session["user_persona"] is None
     assert session["effective"]["knowledge_base_ids"] == []
     assert session["effective"]["persona_id"] == ""
-    assert session["effective"]["tools_allowed"] == ["qq_send_message", "qq_skip_reply"]
+    assert session["effective"]["tools_allowed"] == ["qq_send_message", "qq_skip_reply", "web_fetch", "web_search"]
     assert session["effective"]["harness_enabled"]
     assert client.post(f"/api/projects/{p['id']}/sessions", json={}).status_code == 422
     assert client.post(f"/api/projects/{p['id']}/sessions", json={"target_kind": "group", "target_id": "7788"}).status_code == 409
@@ -173,7 +173,7 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert connection.calls[1] == ("send_group_msg", {"group_id": 7788,
         "message": [{"type": "text", "data": {"text": "[CQ:at,qq=all]"}}], "timeout": 60000})
     assert connection.timeouts == [90, 90]
-    assert [t["function"]["name"] for t in upstream.calls[0]["tools"]] == ["qq_send_message"]
+    assert [t["function"]["name"] for t in upstream.calls[0]["tools"]] == ["qq_send_message", "web_fetch", "web_search"]
     request = json.dumps(upstream.calls[0], ensure_ascii=False)
     assert "AGENT_PROMPT" in request and "PROJECT_PROMPT" in request and "PRIVATE_USER_PROMPT" not in request
     assert upstream.calls[0]["messages"][-1]["role"] == "user"

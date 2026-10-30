@@ -160,7 +160,7 @@ def test_no_candidates_hides_tool_and_prompt(qq_client):
     upstream.turns = [completion(tool_call('qq_send_message', {'text': 'reply'}))]
     _, run = execute_batch(client, state, p, session)
     assert run.status == 'DONE'
-    assert tool_names(upstream.calls[0]) == {'qq_send_message'}
+    assert tool_names(upstream.calls[0]) == {'qq_send_message', 'web_fetch', 'web_search'}
     assert 'Favorite image candidates:' not in upstream.calls[0]['messages'][0]['content']
     assert state.projects.get(p['id']).system_prompt == 'Custom prompt'
 

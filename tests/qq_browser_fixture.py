@@ -120,7 +120,7 @@ def install_qq_fixture(app):
         return {"batch_id": batch.id, "run_id": batch.run_id}
 
     @app.post("/__test__/qq/{session_id}/reply/{mode}")
-    async def reply(session_id: str, mode: Literal["limit", "missing", "skip", "image-generated", "image-failure", "image-hold", "resource-image"]):
+    async def reply(session_id: str, mode: Literal["limit", "missing", "skip", "image-generated", "image-failure", "image-hold", "resource-image", "web-research", "web-failure"]):
         session = state.sessions.get_session(session_id)
         project = state.projects.get(session.project_id)
         now = time.time()

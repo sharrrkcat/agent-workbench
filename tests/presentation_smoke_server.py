@@ -88,6 +88,16 @@ class PresentationOpenAI(ToolOpenAI):
             chunks = [{'tool_calls': [{'index': 0, **tool_call('qq_generate_image', {'prompt': prompt})}]}] if not outputs else [
                 {'tool_calls': [{'index': 0, **tool_call('qq_send_message', {'text': 'Image generation failed; here is a text reply.'}, 'text_reply')}]}]
             stream = FixtureStream(chunks, 'tool_calls', delay=.01)
+        elif "qq-web-" in command:
+            failed = "qq-web-failure-fixture" in command
+            if not outputs:
+                call = tool_call("web_search", {"query": "web-failure" if failed else "fixture query"}, "qq_search")
+            elif len(outputs) == 1 and not failed:
+                call = tool_call("web_fetch", {"url": WEB_URL}, "qq_fetch")
+            else:
+                call = tool_call("qq_send_message", {"text": "Search unavailable; here is a reply." if failed else
+                    "Here are the current facts from the web."}, "qq_reply")
+            stream = FixtureStream([{"tool_calls": [{"index": 0, **call}]}], "tool_calls", delay=.01)
         elif "qq-limit-fixture" in command:
             calls = [{"index": index, **tool_call("qq_send_message", {"text": f"Limited QQ reply {index + 1}"}, f"call_{index}")}
                      for index in range(21)]

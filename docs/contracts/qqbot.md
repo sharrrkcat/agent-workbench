@@ -129,8 +129,10 @@ Writes advance history_version in every referencing Session. Original display an
 
 ## Tools, delivery and recovery
 
-QQ runs always enable Harness. All four tools are automatic, scope=qqbot, excluded from ordinary/Workspace allowlists and direct calls.
-Handlers require server-owned Session, active batch/run and tool-call ids; only the immutable Session binding supplies the destination.
+QQ runs always enable Harness with web_search/web_fetch plus the available QQ tools below. Web tools reuse global AnySearch settings without Project configuration; other general tools are excluded.
+The four QQ tools are automatic, scope=qqbot, excluded from ordinary/Workspace allowlists and direct calls. Their handlers require server-owned Session, active batch/run and tool-call ids; only the immutable Session binding supplies the destination.
+Web tools retain shared deadlines, cancellation, per-call date instructions and context budgets. Missing configuration, request failures and tool timeouts return structured results so the model can continue; total timeout and cancellation remain terminal.
+QQ web results retain page links/content without source_id or citation instructions. Processing history displays web steps without citations/Sources; later batches retain only the existing input/confirmed-delivery history.
 
 | Tool | Strict arguments | Availability |
 | --- | --- | --- |
@@ -150,6 +152,7 @@ Calls execute in order: successful skip rejects remaining calls with QQ_REPLY_SK
 Invalid arguments/disallowed skip do not satisfy the reply decision. Final model prose is internal; no confirmed send or legitimate skip fails run/batch with QQ_REPLY_REQUIRED and pauses the Session before DONE.
 
 Provider rejection/ignored tool choice is neither retried nor downgraded. Only confirmed sends increment private qq_sent_count; failed/unknown sends, validation errors and other tools consume no slot.
+All tools share eight tool-producing model rounds per batch; multiple calls in one response count once. Web calls consume rounds but no send slots and cannot satisfy a reply decision. The default four-message send limit is independent of the round limit.
 Reaching the snapshotted reply limit completes run/batch without pause or another call. Remaining emitted calls receive QQ_REPLY_LIMIT_REACHED with rejected results/skipped steps and no intents.
 Cancellation, delivery errors and common Harness limits retain precedence; counts reset per batch. Public metadata.qq_reply retains sent_count, message_limit, limit_reached and skipped, including partial sends before failure/cancellation.
 Only normal completion at the limit sets limit_reached=true; legitimate skip sets skipped=true with no delivery.
@@ -276,7 +279,7 @@ Closing/navigation/history/unload protect unsaved edits; pending mutations preve
 ## Limits and acceptance
 
 Local fake-OneBot/fake-model tests cover transport, ingestion, triggers/participant windows, skip/renewal races, batching, icebreaker timing/cancellation/cooldowns, delivery, resume, deletion, stop and restart.
-Media/provider fixtures cover shared assets, ordering/current-batch selection, names/faces/cards, captions, original animations/static frames, generation, failures and late acquisition/deletion. Browser fixtures cover both locales and desktop/touch workflows.
+Media/provider fixtures cover shared assets, ordering/current-batch selection, names/faces/cards, captions, original animations/static frames, generation, failures and late acquisition/deletion. Web fixtures cover shared settings/rounds, citation-free traces and error recovery; live AnySearch-to-QQ replies remain unverified. Browser fixtures cover both locales and desktop/touch workflows.
 Live NapCat delivery/member lookup/card reception, media URLs/system faces, vision-model round trips, real Provider-to-NapCat generated images, original-animation presentation and restrained real-model image frequency remain unverified.
 The 60-second native timeout, 90-second response wait and native-timeout classification have simulated coverage only. Live acceptance must use explicitly designated targets, compare actual QQ receipt with recorded outcome and check duplicate prevention.
 Self reports without a successful matching action response do not establish delivery; longer timeouts cannot repair an absent native success event.

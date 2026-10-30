@@ -8,6 +8,7 @@ from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.schema.persona import USER_PERSONA_ID, PersonaInput, ResolvedChatConfig
 from ai_workbench.core.schema.project import WorkspaceProject
 from ai_workbench.core.schema.qq import QQ_TOOLS
+from ai_workbench.core.web_tools import WEB_TOOL_NAMES
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.session import ChatSettings, OrdinarySession, Session, WorkspaceSession, parse_session
 from ai_workbench.core.time import utc_now
@@ -306,7 +307,7 @@ class ChatService:
                 "include_attachments": "explicit" if project.image_input_enabled else "none"}), context_limits=limits,
             model_profile_id=project.model_profile_id, model_source="project",
             generation=GenerationParameters.model_validate(parameters), reasoning=project.reasoning,
-            harness_enabled=True, tools_allowed=[name for name in QQ_TOOLS
+            harness_enabled=True, tools_allowed=[name for name in (*QQ_TOOLS, *sorted(WEB_TOOL_NAMES))
                 if (name != "qq_skip_reply" or session.target_kind == "group")
                 and name != "qq_send_image"
                 and (name != "qq_generate_image" or project.image_generation_model_profile_id is not None)], knowledge_base_ids=[],

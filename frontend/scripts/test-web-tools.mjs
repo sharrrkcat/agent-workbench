@@ -21,6 +21,16 @@ assert.equal(readWebToolOutput(result('web_search', { results: [{ ...one, url: '
 assert.equal(readWebToolOutput(result('web_fetch', { ...one, content: 12 })), null);
 assert.deepEqual(readWebToolOutput(result('web_search', { results: [] })), { pages: [] });
 assert.equal(readWebToolOutput(fetched).content, fetched.data.content);
+const pageWithoutCitation = { url: one.url, title: one.title, content: 'QQ web evidence' };
+const qqSearch = result('web_search', { results: [pageWithoutCitation] });
+const qqFetch = result('web_fetch', pageWithoutCitation);
+assert.deepEqual(readWebToolOutput(qqSearch), { pages: [pageWithoutCitation] });
+assert.equal(readWebToolOutput(qqFetch).content, pageWithoutCitation.content);
+assert.deepEqual(webSourcesForReply([{ parts: [qqSearch, qqFetch] }]), new Map());
+assert.deepEqual([...webSourcesForReply([{ parts: [qqSearch, fetched] }]).keys()], ['W1']);
+for (const source_id of [null, '', 'W0', 'invalid', 1]) {
+  assert.equal(readWebToolOutput(result('web_fetch', { ...pageWithoutCitation, source_id })), null);
+}
 
 const part = (text, format = 'markdown') => ({ id: 'body', type: 'text', format, text });
 const markdown = 'Second [W2], first [W1], repeated [W2]. Unknown [W99] and Knowledge [K1].\n\n' +

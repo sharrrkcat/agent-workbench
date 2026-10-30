@@ -69,6 +69,8 @@ Backend tests under [tests/](../../tests/):
   FIFO placement, pending nickname decisions and rollback.
 - test_qq_reply_policy.py and test_qq_delivery_receipts.py: mandatory decisions,
   shared quotas, exact receipt identity, early self reports, deadlines and unknown sends.
+- test_qq_web_tools.py: global web settings, citation-free requests/results, shared rounds,
+  reply/skip decisions, request snapshots, error recovery, timeouts and cancellation.
 - test_qq_icebreaker.py: cold/observation timing, single replies, cancellation races,
   eligibility grants, cooldown isolation and lifecycle recovery.
 - test_qq_context.py, test_qq_cards.py and test_qq_history_deletion.py: paired history,
@@ -89,6 +91,7 @@ Browser suites under [frontend/tests/](../../frontend/tests/) use English/Chines
 
 - qqbot.spec.ts: creation/token/binding, sender grouping, history, delivery/skip,
   usage/context inspection, composer controls and delayed/failed Project saves.
+- qqbot-web-tools.spec.ts: search/fetch traces without citations, error recovery and reload.
 - qqbot-images.spec.ts and qqbot-send-image.spec.ts: image input, ordered media,
   original animations, previews, pending refresh, placeholders and delivery deletion.
 - qqbot-generation.spec.ts: provider-only selection/controls, retained failed saves,

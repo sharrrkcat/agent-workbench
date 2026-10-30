@@ -21,6 +21,7 @@ from ai_workbench.core.qq_generation import prepare_image
 from ai_workbench.core.qq_icebreaker import QQIcebreaker, ICEBREAKER_SETTINGS
 from ai_workbench.core.schema.project import QQBotProject
 from ai_workbench.core.schema.qq import QQSendImageArguments, QQ_TOOLS
+from ai_workbench.core.web_tools import WEB_TOOL_NAMES
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQMediaAsset
 
 log = logging.getLogger(__name__)
@@ -312,7 +313,8 @@ class QQService:
             config = config.model_copy(update={
                 "qq_image_generation_allowed": config.qq_image_generation_model_profile_id is not None
                     and any(row.image_generation_keyword for row in records),
-                "tools_allowed": [name for name in QQ_TOOLS if name != "qq_skip_reply" or binding.target_kind == "group"],
+                "tools_allowed": [name for name in (*QQ_TOOLS, *sorted(WEB_TOOL_NAMES))
+                    if name != "qq_skip_reply" or binding.target_kind == "group"],
             })
             config = config.model_copy(update={"tools_allowed": self.state.chat_service.tools_for_run(config)})
             rows = await self.names.project(binding, config.qq_bot_account,

@@ -168,7 +168,7 @@ def test_skip_is_a_single_successful_round_and_preserves_history(qq_client, cloc
     assert run.metadata["qq_reply"] == {"sent_count": 0, "message_limit": 4, "limit_reached": False, "skipped": True}
     assert len(upstream.calls) == 1 and len(upstream.turns) == 1 and len(connection.calls) == 1
     assert upstream.calls[0]["tool_choice"] == "required"
-    assert [t["function"]["name"] for t in upstream.calls[0]["tools"]] == ["qq_send_message", "qq_skip_reply"]
+    assert [t["function"]["name"] for t in upstream.calls[0]["tools"]] == ["qq_send_message", "qq_skip_reply", "web_fetch", "web_search"]
     model_step = next(step for step in state.runs.list_steps(run.run_id) if step.kind == "model")
     snapshot = state.runs.get_context_snapshot(model_step.step_id)
     assert snapshot.request.tool_choice == "required"
@@ -202,7 +202,7 @@ def test_mixed_send_and_skip_obeys_call_order(qq_client, clock, streaming, skip_
     assert steps[1].error_code == ("QQ_REPLY_SKIPPED" if skip_first else "TOOL_NOT_ALLOWED")
     assert len(upstream.calls) == (1 if skip_first else 2)
     if not skip_first:
-        assert [t["function"]["name"] for t in upstream.calls[1]["tools"]] == ["qq_send_message"]
+        assert [t["function"]["name"] for t in upstream.calls[1]["tools"]] == ["qq_send_message", "web_fetch", "web_search"]
         assert upstream.calls[1]["tool_choice"] == "auto"
 
 
@@ -218,7 +218,7 @@ def test_required_batches_reject_skip_and_can_still_send(qq_client, clock, priva
     batch, run = execute(qq_client, freeze(state, session, 5))
     assert batch.status == "done" and batch.trigger_kind == ("private" if private else "keyword")
     assert not run.metadata["qq_reply"]["skipped"] and len(connection.calls) == 1
-    assert all([t["function"]["name"] for t in call["tools"]] == ["qq_send_message"] for call in upstream.calls)
+    assert all([t["function"]["name"] for t in call["tools"]] == ["qq_send_message", "web_fetch", "web_search"] for call in upstream.calls)
     assert json.loads(upstream.calls[1]["messages"][-1]["content"])["error_code"] == "TOOL_NOT_ALLOWED"
 
 

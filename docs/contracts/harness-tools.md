@@ -48,14 +48,14 @@ bytes must be valid UTF-8.
 
 The explicit WebToolsService uses a provider-independent search/fetch interface; AnySearch is the current implementation.
 Authenticated POSTs use [Search](https://www.anysearch.com/docs/api-endpoints/v1-search) with format=markdown and [Extract](https://www.anysearch.com/docs/api-endpoints/v1-extract) with only url. Search accepts only query; max_results, zone and language come from global web settings and cannot be overridden by model/REST tool arguments. Unset zone/language use provider defaults; tag/params are unavailable.
-Both tools have general scope, network risk, direct invocation and no approval. The effective session/Project allowlist still applies.
+Both tools have general scope, network risk, direct invocation and no approval. Ordinary/Workspace allowlists apply; [QQBot](qqbot.md#tools-delivery-and-recovery) automatically includes both without separate configuration.
 [Settings](settings.md) owns the independent write-only AnySearch key. Missing keys return WEB_NOT_CONFIGURED; calls never use anonymous quota or model-provider keys.
 Requests retain the ordinary 30-second tool deadline, five-minute run budget and cancellation. Uncompressed responses are streamed with a 1 MiB limit; Extract bodies are limited to 16 KiB. Oversized responses fail explicitly; model context budgets still apply to retained content.
 Targets require HTTP(S), a valid host and no credentials; non-public literal addresses/localhost are rejected. AnySearch owns target DNS, redirects and extraction. The API process contacts only the fixed AnySearch endpoint without following redirects or environment proxies.
 HTTP statuses distinguish rejected input, authentication, exhausted quota, extraction failure, rate limits and service unavailability. Only status and valid UUID request_id diagnostics are retained; raw error bodies, including generated credentials, never enter results or traces. There is no automatic retry.
 Search returns provider, query, ordered results (url/title, optional snippet/content), request_id and available search_time_ms. Fetch returns provider, url/title/content and request_id. Empty titles/results are valid; malformed page data fails the tool.
-Harness adds source_id W1, W2, etc. to successful pages before persistence and model continuation. IDs are run-local, allocated in result order and reused for identical URLs. Private continuation retains the URL/source map across approvals; public source data stays in existing tool_result parts/events, with no new message type or table.
-Tool descriptions instruct models to treat page content as untrusted evidence and cite only current-run IDs as [W1]. Errors remain structured tool results so the model can continue. [Chat/context](chat-context.md#messages-and-attachments) owns visible citations; [Runs/streaming](runs-streaming.md#run-lifecycle) owns web steps.
+Ordinary/Workspace Harness and direct calls add source_id W1, W2, etc. to successful pages before persistence and model continuation. IDs are run-local, allocated in result order and reused for identical URLs. Private continuation retains the URL/source map across approvals; public source data stays in existing tool_result parts/events, with no new message type or table. QQ results omit source IDs.
+Tool descriptions instruct models to treat page content as untrusted evidence; ordinary/Workspace model requests also require citing only current-run IDs as [W1]. QQ requests omit citation instructions. Errors remain structured tool results so the model can continue. [Chat/context](chat-context.md#messages-and-attachments) owns visible citations; [Runs/streaming](runs-streaming.md#run-lifecycle) owns web steps.
 Each Harness model call with web_search in its effective tool list prepends an Instruction containing the current server-local date and weekday. The run's UI language is retained across approval continuation; dates refresh for each call. Disabling Harness, excluding/revoking web_search or falling back to ordinary chat omits the block. Direct tools and public inference do not receive it.
 Automated acceptance uses mock AnySearch responses and model calls; live AnySearch requests remain unverified.
 
@@ -138,7 +138,7 @@ form two stacked lists separated by a divider; each entry shows its name, locali
 and a collapsed parameter schema. All four QQ tools remain visible regardless of Project configuration.
 The page has no call form, results or approval controls. Slash web calls accept the raw query/URL; search preferences belong to the settings form.
 The chat reply renders individual steps and keeps approval controls outside collapsed processing history.
-Web steps use dedicated result links/page text; other tools retain their general presentation.
+Web steps use dedicated result links/page text, including QQ results without source IDs; only numbered results participate in citations/Sources. Other tools retain their general presentation.
 Calls have no separate message avatars. Tool calls are retried only as part of
 their whole chat run, never as standalone assistant answers. Historical tool parts are quoted data in ordinary/group
 context within history limits; live loop results use native tool
