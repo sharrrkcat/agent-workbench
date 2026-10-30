@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,9 +8,9 @@ import pytest
 from jsonschema import SchemaError
 from pydantic import ValidationError
 
-from ai_workbench.core.harness import ToolRegistry, register_builtin_tools
+from ai_workbench.core.harness import ToolRegistry
+from tests.tool_fixtures import register_test_tools
 from ai_workbench.core.harness import network
-from ai_workbench.core.harness.builtins import CODEC_MAX_BYTES
 from ai_workbench.core.harness.schema import ToolExecutionContext, ToolExecutionError, ToolSpec
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part, validate_message_part, MessagePartValidationError
@@ -22,7 +21,7 @@ from ai_workbench.core.schema.message import MessageSchema
 @pytest.fixture
 def tool_env():
     registry = ToolRegistry()
-    register_builtin_tools(registry)
+    register_test_tools(registry)
     context = ToolExecutionContext()
     return registry, context
 
@@ -34,20 +33,20 @@ def execute(env, name, arguments):
 
 def test_registry_schema_allowlist_and_catalog(tool_env):
     registry, _ = tool_env
-    assert {tool["name"] for tool in registry.catalog()} == {"base64_encode", "base64_decode"}
+    assert {tool["name"] for tool in registry.catalog()} == {"test_echo", "test_other"}
     assert all(tool["scope"] == "general" for tool in registry.catalog())
     assert {item.name for item in registry.list() if item.requires_approval} == set()
     for name in ("Bad", "has-dash", "_prefix", "x" * 65):
         with pytest.raises(ValueError):
             registry.register(ToolSpec(name, "invalid", {"type": "object"}, lambda *_: None))
     with pytest.raises(ValueError):
-        registry.register(registry.get("base64_encode"))
+        registry.register(registry.get("test_echo"))
     with pytest.raises(SchemaError):
         registry.register(ToolSpec("invalid", "invalid", {"type": "invalid"}, lambda *_: None))
     with pytest.raises(ValueError):
         registry.register(ToolSpec("invalid", "invalid", {"type": "array"}, lambda *_: None))
     with pytest.raises(ValueError):
-        registry.validate_allowlist(["base64_encode", "base64_encode"])
+        registry.validate_allowlist(["test_echo", "test_echo"])
     with pytest.raises(ToolExecutionError):
         registry.validate_allowlist(["unknown"])
     catalog = registry.catalog()
@@ -56,8 +55,8 @@ def test_registry_schema_allowlist_and_catalog(tool_env):
 
 
 @pytest.mark.parametrize("name,args", [
-    ("base64_encode", {}), ("base64_encode", {"value": 3}), ("base64_decode", {"value": True}),
-    ("base64_encode", {"value": "x", "extra": True}), ("base64_encode", {"value": float("nan")}),
+    ("test_echo", {}), ("test_echo", {"value": 3}), ("test_other", {"value": True}),
+    ("test_echo", {"value": "x", "extra": True}), ("test_echo", {"value": float("nan")}),
 ])
 def test_strict_tool_arguments(tool_env, name, args):
     with pytest.raises(ToolExecutionError) as error:
@@ -72,8 +71,8 @@ def test_strict_json_rejects_ambiguous_values(raw):
 
 
 def test_tool_parts_and_roles_are_strict():
-    call = make_tool_call_part("id", "base64_encode", {"value": "untrusted"})
-    result = make_tool_result_part("id", "base64_encode", "success", {"content": "untrusted"}, truncated=True)
+    call = make_tool_call_part("id", "test_echo", {"value": "untrusted"})
+    result = make_tool_result_part("id", "test_echo", "success", {"content": "untrusted"}, truncated=True)
     assert validate_message_part(result)["truncated"] is True
     for invalid in ({**call, "extra": True}, {**call, "arguments": []}, {**result, "status": "oops"}, {**result, "data": float("nan")}):
         with pytest.raises(MessagePartValidationError):
@@ -82,20 +81,6 @@ def test_tool_parts_and_roles_are_strict():
         MessageSchema(message_id="m", session_id="s", role="system", parts=[result])
     with pytest.raises(ValidationError):
         MessageSchema(message_id="m", session_id="s", role="tool", parts=[call])
-
-
-def test_codec_size_unicode_and_invalid_data(tool_env):
-    assert execute(tool_env, "base64_encode", {"value": "中文"})["value"] == base64.b64encode("中文".encode()).decode()
-    assert execute(tool_env, "base64_decode", {"value": "5Lit5paH"})["value"] == "中文"
-    for name, value, code in (
-        ("base64_encode", "x" * (CODEC_MAX_BYTES + 1), "CODEC_INPUT_TOO_LARGE"),
-        ("base64_encode", "x" * CODEC_MAX_BYTES, "CODEC_OUTPUT_TOO_LARGE"),
-        ("base64_decode", "x" * (CODEC_MAX_BYTES + 1), "CODEC_INPUT_TOO_LARGE"),
-        ("base64_decode", "?!", "CODEC_INVALID_BASE64"), ("base64_decode", "/w==", "CODEC_INVALID_UTF8"),
-    ):
-        with pytest.raises(ToolExecutionError) as error:
-            execute(tool_env, name, {"value": value})
-        assert error.value.code == code
 
 
 def mock_network(monkeypatch, handler):

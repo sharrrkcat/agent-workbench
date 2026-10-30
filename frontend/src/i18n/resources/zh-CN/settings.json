@@ -1,13 +1,21 @@
 {
   "webTools": {
-    "maxResults": "结果数量上限",
+    "maxResults": "每组查询结果数",
     "zone": "搜索地区",
     "language": "搜索语言",
-    "zones": { "default": "默认", "cn": "中国", "intl": "国际" },
+    "zones": {
+      "default": "默认",
+      "cn": "中国",
+      "intl": "国际"
+    },
     "apiKey": "API Key",
     "keySet": "已配置，输入新密钥以替换",
     "keyMissing": "输入 AnySearch API Key",
-    "clearKey": "清除密钥"
+    "clearKey": "清除密钥",
+    "search_calls_per_run": "每次任务搜索次数",
+    "fetch_calls_per_run": "每次任务读取次数",
+    "cache_ttl_hours": "缓存新鲜度（小时）",
+    "cache_retention_days": "闲置缓存保留天数"
   },
   "resources": {
     "list": "资源列表",
@@ -37,10 +45,8 @@
     "network": "网络请求"
   },
   "toolDescriptions": {
-    "web_search": "搜索网页以获取最新信息。",
-    "web_fetch": "获取并提取公共网页的内容。",
-    "base64_encode": "将 UTF-8 文本编码为 Base64。",
-    "base64_decode": "将 Base64 解码为 UTF-8 文本。",
+    "web_search": "从多个角度搜索，返回相关节选和推断日期。",
+    "web_fetch": "按具体信息读取网页，支持缓存和分页。",
     "qq_send_message": "向当前 QQ 会话发送一条文本消息。",
     "qq_send_image": "从当前批次的候选收藏图片中发送一张图片。",
     "qq_generate_image": "当前批次允许生成图片时，生成并发送一张图片。",

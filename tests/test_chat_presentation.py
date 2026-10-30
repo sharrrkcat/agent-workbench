@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import event
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.api.schemas.chat import MessageDeltaPayload
 from ai_workbench.core.assistant_output import AssistantDraft, ThinkParser
 from ai_workbench.core.context import ContextBuilder

@@ -5,7 +5,28 @@ import json
 import httpx
 
 from tests.model_fixtures import MockOpenAI
-from ai_workbench.core.harness.schema import ToolSpec
+from ai_workbench.core.harness.schema import ToolExecutionError, ToolSpec
+
+
+def register_test_tools(registry):
+    async def echo(arguments, _context):
+        return {"value": arguments["value"]}
+
+    async def other(arguments, _context):
+        if arguments["value"] == "?":
+            raise ToolExecutionError("TEST_REJECTED", "Test rejection")
+        return {"value": arguments["value"]}
+
+    for name, handler in (("test_echo", echo), ("test_other", other)):
+        registry.register(ToolSpec(name, "Test string tool", {"type": "object", "properties": {"value": {"type": "string"}},
+            "required": ["value"], "additionalProperties": False}, handler))
+
+
+def create_tool_app(**kwargs):
+    from ai_workbench.api.main import create_app
+    app = create_app(**kwargs)
+    register_test_tools(app.state.runtime_state.tool_registry)
+    return app
 
 
 def register_approval_tool(registry, *, content="approved"):
@@ -19,7 +40,7 @@ def register_approval_tool(registry, *, content="approved"):
     }, handler, requires_approval=True))
 
 
-def tool_call(name="base64_encode", arguments=None, call_id="call_1"):
+def tool_call(name="test_echo", arguments=None, call_id="call_1"):
     return {"id": call_id, "type": "function", "function": {
         "name": name, "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments or {"value": "hello"}),
     }}

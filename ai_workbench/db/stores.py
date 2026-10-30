@@ -91,9 +91,11 @@ class SqlSessionStore:
             db.commit()
 
     def delete_session(self, session_id: str) -> None:
+        from ai_workbench.core.web_cache import delete_session_web_pages
         with DbSession(self.engine) as db:
             row = db.get(SessionRecord, session_id)
             if row is None: raise KeyError(f"unknown session id: {session_id}")
+            delete_session_web_pages(db, session_id)
             db.delete(row); db.commit()
 
     def list_sessions(self) -> list[Session]:

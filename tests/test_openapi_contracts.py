@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator, FormatChecker
 import pytest
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.api.schemas.common import DeletedResponse
 from ai_workbench.core.models.runtimes.schema import RuntimeJob
 from ai_workbench.core.models.schema import ChatMessage
@@ -199,14 +199,14 @@ def test_message_parts_preserve_omitted_fields_json_values_and_microseconds(api)
         {"type": "media_group", "items": [{"attachment_id": "fixture.png"}]},
         {"type": "notice", "text": "notice"},
         {"type": "error", "message": "error"},
-        {"type": "tool_call", "tool_call_id": "call-1", "tool_name": "base64_encode", "arguments": {"value": "hello"}},
+        {"type": "tool_call", "tool_call_id": "call-1", "tool_name": "test_echo", "arguments": {"value": "hello"}},
     ]
     message = state.messages.add_message(session_id, "assistant", parts=contents,
         metadata={"fixture": {"null": None, "list": [True, 1]}})
     frozen = datetime(2026, 9, 8, 1, 2, 3, 120034, tzinfo=timezone.utc)
     state.messages.update_message(message.model_copy(update={"created_at": frozen}))
     state.messages.add_message(session_id, "tool", parts=[{
-        "type": "tool_result", "tool_call_id": "call-1", "tool_name": "base64_encode", "status": "success",
+        "type": "tool_result", "tool_call_id": "call-1", "tool_name": "test_echo", "status": "success",
     }])
     messages = history_messages(client.get(f"/api/sessions/{session_id}/history").json())
     assert messages[0]["created_at"] == "2026-09-08T01:02:03.120034Z"

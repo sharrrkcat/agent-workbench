@@ -1,13 +1,21 @@
 {
   "webTools": {
-    "maxResults": "Maximum results",
+    "maxResults": "Results per query",
     "zone": "Search region",
     "language": "Search language",
-    "zones": { "default": "Default", "cn": "China", "intl": "International" },
+    "zones": {
+      "default": "Default",
+      "cn": "China",
+      "intl": "International"
+    },
     "apiKey": "API Key",
     "keySet": "Configured — enter a new key to replace",
     "keyMissing": "Enter your AnySearch API key",
-    "clearKey": "Clear key"
+    "clearKey": "Clear key",
+    "search_calls_per_run": "Search calls per run",
+    "fetch_calls_per_run": "Page reads per run",
+    "cache_ttl_hours": "Cache freshness (hours)",
+    "cache_retention_days": "Remove unused cache after (days)"
   },
   "resources": {
     "list": "Resources",
@@ -37,10 +45,8 @@
     "network": "Network request"
   },
   "toolDescriptions": {
-    "web_search": "Search the web for current information.",
-    "web_fetch": "Fetch and extract the content of a public web page.",
-    "base64_encode": "Encode UTF-8 text as Base64.",
-    "base64_decode": "Decode Base64 to UTF-8 text.",
+    "web_search": "Search multiple angles and return relevant, dated excerpts.",
+    "web_fetch": "Read extracted pages with a specific focus and pagination.",
     "qq_send_message": "Send one text message to the current QQ conversation.",
     "qq_send_image": "Send one favorite image from the current batch’s candidates.",
     "qq_generate_image": "Generate and send one image when enabled for the current batch.",

@@ -35,29 +35,93 @@ model loop. Invalid direct requests fail before creating a run.
 
 | Tool | Parameters | Approval |
 | --- | --- | --- |
-| base64_encode / base64_decode | value | Automatic |
-| web_search | query | Automatic |
-| web_fetch | url (public absolute HTTP/HTTPS) | Automatic |
+| web_search | searches (query, recency) | Automatic |
+| web_fetch | url, optional focus/page | Automatic |
 
 [QQBot](qqbot.md) owns QQ-scoped tool arguments, availability, delivery behavior and media downloads.
 
-Codec input and output are each capped at 1 MiB and decoded
-bytes must be valid UTF-8.
-
 ## Web tools
 
-The explicit WebToolsService uses a provider-independent search/fetch interface; AnySearch is the current implementation.
-Authenticated POSTs use [Search](https://www.anysearch.com/docs/api-endpoints/v1-search) with format=markdown and [Extract](https://www.anysearch.com/docs/api-endpoints/v1-extract) with only url. Search accepts only query; max_results, zone and language come from global web settings and cannot be overridden by model/REST tool arguments. Unset zone/language use provider defaults; tag/params are unavailable.
-Both tools have general scope, network risk, direct invocation and no approval. Ordinary/Workspace allowlists apply; [QQBot](qqbot.md#tools-delivery-and-recovery) automatically includes both without separate configuration.
-[Settings](settings.md) owns the independent write-only AnySearch key. Missing keys return WEB_NOT_CONFIGURED; calls never use anonymous quota or model-provider keys.
-Requests retain the ordinary 30-second tool deadline, five-minute run budget and cancellation. Uncompressed responses are streamed with a 1 MiB limit; Extract bodies are limited to 16 KiB. Oversized responses fail explicitly; model context budgets still apply to retained content.
-Targets require HTTP(S), a valid host and no credentials; non-public literal addresses/localhost are rejected. AnySearch owns target DNS, redirects and extraction. The API process contacts only the fixed AnySearch endpoint without following redirects or environment proxies.
-HTTP statuses distinguish rejected input, authentication, exhausted quota, extraction failure, rate limits and service unavailability. Only status and valid UUID request_id diagnostics are retained; raw error bodies, including generated credentials, never enter results or traces. There is no automatic retry.
-Search returns provider, query, ordered results (url/title, optional snippet/content), request_id and available search_time_ms. Fetch returns provider, url/title/content and request_id. Empty titles/results are valid; malformed page data fails the tool.
-Ordinary/Workspace Harness and direct calls add source_id W1, W2, etc. to successful pages before persistence and model continuation. IDs are run-local, allocated in result order and reused for identical URLs. Private continuation retains the URL/source map across approvals; public source data stays in existing tool_result parts/events, with no new message type or table. QQ results omit source IDs.
-Tool descriptions instruct models to treat page content as untrusted evidence; ordinary/Workspace model requests also require citing only current-run IDs as [W1]. QQ requests omit citation instructions. Errors remain structured tool results so the model can continue. [Chat/context](chat-context.md#messages-and-attachments) owns visible citations; [Runs/streaming](runs-streaming.md#run-lifecycle) owns web steps.
-Each Harness model call with web_search in its effective tool list prepends an Instruction containing the current server-local date and weekday. The run's UI language is retained across approval continuation; dates refresh for each call. Disabling Harness, excluding/revoking web_search or falling back to ordinary chat omits the block. Direct tools and public inference do not receive it.
-Automated acceptance uses mock AnySearch responses and model calls; live AnySearch requests remain unverified.
+WebToolsService uses AnySearch's authenticated [Search](https://www.anysearch.com/docs/api-endpoints/v1-search)
+and [Extract](https://www.anysearch.com/docs/api-endpoints/v1-extract) APIs with their independent write-only key.
+Missing keys return WEB_NOT_CONFIGURED. Ordinary/Workspace allowlists apply; QQ automatically includes both tools.
+Both tools have general scope, network risk, direct invocation and no approval. Public inference never executes them.
+
+web_search accepts searches (1..4 objects with nonblank query and recency=any|week|month|year, default any).
+Each query uses global max_results (default 5), zone and language; these options cannot be supplied as tool arguments.
+Only query/options/format=markdown go upstream; recency is local. Queries execute concurrently with individual
+25-second deadlines inside the ordinary 30-second tool deadline. Partial failures retain successful queries;
+all failed queries return a sanitized error. Cancellation settles all children; there is no automatic retry.
+
+Search decodes entities, strips provider wrappers, nested images, repeated text/headings, breadcrumbs,
+players/countdowns and navigation. Code, tables and meaningful numeric lines are preserved. Article h1 titles
+replace provider navigation titles. URLs and identical 150-character body prefixes are deduplicated, retaining
+longer evidence. URL keys remove fragments/tracking parameters while preserving scheme, www, meaningful
+query order and path differences.
+
+Ranking evaluates each successful query separately against candidate titles, snippets and cleaned bodies.
+English stop words are excluded; Chinese matching primarily uses bigrams. Numbers, versions, decimals,
+times and quoted phrases stay atomic and are mandatory. Page-level IDF weights required terms by three;
+coverage must reach 60%. There is no result minimum or per-query guarantee. Coverage then BM25 rank
+results descending with stable ties. Excerpts select matching paragraphs in source order without a fixed
+lead, at most 500 characters each. Packing keeps at most eight whole results and 5,000 rendered characters.
+No qualifying evidence produces an explicit no-relevant-results response.
+
+Dates prefer labeled date/Updated/Published and Chinese publication/update signals, including English
+month names and N minutes/hours/days/weeks ago. Otherwise URL and the first 800 body characters supply
+heuristic dates. Future and invalid dates are ignored; the newest valid past date wins. Relative dates stay
+anchored to acquisition time through cache reads. Recency windows are 7/31/366 days without extra tolerance;
+month-only dates use the month's interval. Undated results matched only by time-filtered queries come last,
+at most two per call; any queries are unrestricted. Dates remain inferred, not verified publication dates.
+
+web_fetch accepts a public url, optional nonblank focus and page (integer >=1, default 1). Only url goes to Extract.
+The first fetch extracts; fresh Extract caches are reused across sessions, focuses and pages. Cleaned bodies
+under 200 non-whitespace characters or under half the existing body's length fail with WEB_INSUFFICIENT_CONTENT.
+Failures preserve cached content, title, hash, acquisition time and source identity, consume the normal call
+budget and never masquerade as a successful refresh. Short legitimate pages can therefore be rejected.
+HTML/Markdown/text cleaning retains useful body-link metadata. JSON evidence remains literal.
+Without focus, pages follow document order; focus ranks paragraphs with document-local BM25 and restores
+source order within each page. No matches and out-of-range pages return explicit notices. Pages target
+4,000 body characters, at most 4,500 rendered characters. A content hash identifies the cached version;
+refreshes can change pagination. An unrepresentably long URL returns WEB_OUTPUT_TOO_LARGE.
+PDF and browser-rendered extraction are not implemented locally.
+
+Full cleaned bodies and links live in the page cache, outside tool messages/events and model snapshots.
+Structured results retain displayed excerpts, source/query/date/cache/page metadata, counts and budgets.
+The model/history projection includes one second-precision retrieval time, single-line queries, evidence
+and compact inferred dates. Each page adds a compact approximate character count of the available cleaned
+body, not its displayed excerpt/page; provider-limited text cannot establish the full site's length.
+It excludes diagnostic counts, budgets, matched-query lists, hashes, cache diagnostics
+and Related page blocks. Limited search text warns that fetching may still require login or JavaScript.
+Fetch retains pagination actions and meaningful failure notices. Web evidence has complete untrusted
+boundaries; only less-than signs are escaped, preserving ordinary ampersands and greater-than signs.
+The final web-only dispatch guard stays below 6,000 characters even on unexpected truncation.
+
+Ordinary/Workspace results assign W1, W2, etc. only to displayed pages, reusing conservative URL keys within a run.
+Private continuation preserves the source map across approval. Answers cite current-run [W1] identities; QQ uses
+URLs without numbered citations. Existing tool_result parts/events and reply Sources own presentation.
+When either web tool is effective, Instruction contains only the localized run-start date and weekday,
+before Agent Persona; date/language stay fixed through approval. Tool descriptions own concise
+query/focus/recency/privacy guidance and distinguish retrieval from publication/event dates. Shared web
+content and citation rules appear once per request, on the first available web tool, including single-tool
+allowlists. QQ omits numbered-citation guidance. Web content is untrusted evidence, never instructions.
+
+Each run snapshots four search calls and six reads by default, configurable through [Settings](settings.md).
+A batch costs one search call; cache reads, duplicate queries and failed executions also consume a call. Schema-invalid
+calls do not. Exhaustion returns WEB_BUDGET_EXHAUSTED without dispatch and allows the model to answer.
+Query deduplication uses Unicode normalization, case folding and collapsed whitespace plus recency, preserving
+operators/punctuation. Approval retains counts and query keys; retries/new inputs/QQ batches reset them.
+Direct calls each have their own run. The eight-round and five-minute Harness limits remain independent.
+
+Uncompressed provider responses are streamed with a 1 MiB limit; Extract request JSON remains limited to 16 KiB.
+HTTP(S), valid hosts and no credentials are required; non-public literal addresses/localhost are rejected.
+AnySearch owns target DNS/redirects. The API contacts only its fixed endpoint without redirects or environment proxies.
+Error bodies never enter traces/results; only safe status/request-id diagnostics survive. Per-tool step metadata.web
+records output characters, reference-token estimates, filter counts, cache status and remaining budget; existing
+model usage/context snapshots retain actual prompt/cached tokens separately.
+Acceptance covers mocked ordinary/Workspace/QQ/direct paths and live ordinary research. Lexical matching lacks
+synonym expansion, dates remain heuristic, and extraction may return only a site's shell. Source sufficiency,
+stopping and answer scope remain model/Persona decisions. The QQ contract owns live-delivery limits.
 
 ## Loop, approval and cancellation
 
@@ -71,7 +135,7 @@ Each model round, including after approval, applies the shared
 Only prior conversation turns may be removed; the entire active tool transcript stays paired and
 intact. Oversized tool results can end a run with CONTEXT_WINDOW_EXCEEDED before its next model
 dispatch. Saved base context/configuration remain stable through approval; each call captures
-its own retained request and budget. Tool-result compression is unimplemented.
+its own retained request and budget. Web results use the bounded evidence projection above.
 
 Streaming call fragments are merged by index. IDs, names and JSON are validated
 before execution; duplicate IDs across a run and incomplete calls are terminal
@@ -114,8 +178,8 @@ INTERRUPTED and is never replayed automatically.
 
 ## REST and user workflow
 
-- GET /api/tools returns all eight tools, their general/qqbot scope and parameter schemas.
-  General defaults/selection include Base64 and web tools; existing saved allowlists are unchanged.
+- GET /api/tools returns all six tools, their general/qqbot scope and parameter schemas.
+  General defaults/selection include only web_search and web_fetch; QQ tools remain separately scoped.
 - GET/PATCH /api/tools/web/settings owns the independent web service key.
 - POST /api/tools/{tool_name}/call accepts {session_id, arguments}.
 - POST /api/tools/approvals/{run_id} accepts {decision: approve|reject}.
@@ -128,15 +192,15 @@ harness_enabled. They never call a model for a summary or a title. Handler
 errors and rejected direct calls end as FAILED with the corresponding error
 code; their tool results remain visible.
 
-Only registered names are recognized as /tool_name args. A single required
-string receives the raw remainder, preserving whitespace; other schemas require
+Only registered names are recognized as /tool_name args. A tool with exactly one string parameter
+receives the raw remainder, preserving whitespace; other schemas require
 a JSON object. There is no key=value parser. Unknown slash prefixes remain
 ordinary text; known unauthorized tools return TOOL_NOT_ALLOWED.
 
 Tools settings contain the web key form and a session-independent, read-only catalog. General tools and QQ Bot tools
 form two stacked lists separated by a divider; each entry shows its name, localized description
 and a collapsed parameter schema. All four QQ tools remain visible regardless of Project configuration.
-The page has no call form, results or approval controls. Slash web calls accept the raw query/URL; search preferences belong to the settings form.
+The page has no call form, results or approval controls. Slash web calls require JSON objects matching the same schemas; search preferences belong to the settings form.
 The chat reply renders individual steps and keeps approval controls outside collapsed processing history.
 Web steps use dedicated result links/page text, including QQ results without source IDs; only numbered results participate in citations/Sources. Other tools retain their general presentation.
 Calls have no separate message avatars. Tool calls are retried only as part of

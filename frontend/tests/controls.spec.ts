@@ -450,7 +450,7 @@ for (const locale of ['en', 'zh-CN']) {
           .toBe(entries[1].id);
         await expect(second.getByRole('button', { name: worldbook.expand, exact: true })).toBeVisible();
         await navigateSettings(page, settings.tools);
-        const codec = page.locator('[data-tool-name="base64_encode"]');
+        const codec = page.locator('[data-tool-name="test_echo"]');
         await codec.getByRole('button', { name: settings.toolSchema, exact: true }).click();
         await expect(codec.locator('[data-slot="code-block-content"]')).toContainText('value');
         await navigateSettings(page, settings.general);

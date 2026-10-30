@@ -23,7 +23,8 @@ from tests.tool_fixtures import ToolOpenAI, completion, ok, register_approval_to
 
 REQUEST_ID = str(uuid4())
 URL = "https://example.com/article"
-DEFAULT_SETTINGS = {"provider": "anysearch", "max_results": 10, "zone": None, "language": None}
+DEFAULT_SETTINGS = {"provider": "anysearch", "max_results": 5, "zone": None, "language": None,
+    "search_calls_per_run": 4, "fetch_calls_per_run": 6, "cache_ttl_hours": 24, "cache_retention_days": 30}
 
 
 def response(data, *, status=200, message="success"):
@@ -41,11 +42,12 @@ class AnySearchFixture:
         if self.reply is not None:
             return self.reply
         if request.url.path == "/v1/search":
+            query = json.loads(request.content)["query"]
             return response({"results": [
-                {"url": URL, "title": "Article", "snippet": "Summary", "content": "# Evidence"},
-                {"url": "https://example.org/", "title": ""}],
+                {"url": URL, "title": "Article", "snippet": "Summary", "content": f"{query} {query} Evidence"},
+                {"url": "https://example.org/", "title": "", "snippet": query + " reference" * 10}],
                 "metadata": {"total_results": 2, "search_time_ms": 12}})
-        return response({"url": URL, "title": "Fetched article", "content": "<h1>Untrusted page</h1>\nEvidence."})
+        return response({"url": URL, "title": "Fetched article", "content": "<h1>Untrusted page</h1>\n" + "Evidence about the release, its changes and supported platforms. " * 8})
 
 
 @pytest.fixture
@@ -64,7 +66,7 @@ def configure(client, **values):
 
 def call(client, session, name="web_search", arguments=None):
     return ok(client.post(f"/api/tools/{name}/call", json={"session_id": session["session_id"],
-        "arguments": {"query": "release notes"} if arguments is None else arguments}))
+        "arguments": {"searches": [{"query": "release notes"}]} if arguments is None else arguments}))
 
 
 def results(payload):
@@ -114,20 +116,20 @@ def test_direct_search_and_fetch_without_model_or_approval(web_env):
         spec = next(tool for tool in ok(client.get("/api/tools")) if tool["name"] == name)
         assert (spec["risk"], spec["requires_approval"], spec["direct_callable"], spec["scope"]) == ("network", False, True, "general")
     ok(client.patch("/api/tools/web/settings", json={"max_results": 2, "zone": "cn", "language": "zh-CN"}))
-    payload = call(client, session, arguments={"query": "发布说明"})
+    payload = call(client, session, arguments={"searches": [{"query": "发布说明"}]})
     assert payload["run"]["kind"] == "tool" and payload["run"]["status"] == "DONE"
     assert all(step["kind"] != "approval" for step in payload["run"]["steps"])
     assert payload["session"]["waiting_run_id"] is None and not upstream.calls
     data = results(payload)[0]["data"]
     assert [page["source_id"] for page in data["results"]] == ["W1", "W2"]
     assert data["results"][1]["title"] == ""
-    assert data["request_id"] == REQUEST_ID and data["search_time_ms"] == 12
+    assert data["searches"][0]["request_id"] == REQUEST_ID and data["searches"][0]["search_time_ms"] == 12
     request = network.calls[0]
     assert request.headers["authorization"] == "Bearer test-web-key"
     assert request.url == "https://api.anysearch.com/v1/search"
     assert json.loads(request.content) == {"query": "发布说明", "max_results": 2, "zone": "cn", "language": "zh-CN", "format": "markdown"}
     payload = call(client, session, "web_fetch", {"url": URL})
-    assert results(payload)[0]["data"]["content"].startswith("<h1>")
+    assert results(payload)[0]["data"]["content"].startswith("Untrusted page")
     assert results(payload)[0]["data"]["source_id"] == "W1"
     assert json.loads(network.calls[-1].content) == {"url": URL}
     assert network.calls[-1].url.path == "/v1/extract"
@@ -137,8 +139,8 @@ def test_direct_search_and_fetch_without_model_or_approval(web_env):
 
 
 @pytest.mark.parametrize("text,body", [
-    ("/web_search release notes", {"query": "release notes", "max_results": 10, "format": "markdown"}),
-    (f"/web_fetch {URL}", {"url": URL}),
+    ('/web_search {"searches":[{"query":"release notes"}]}', {"query": "release notes", "max_results": 5, "format": "markdown"}),
+    (f'/web_fetch {{"url":"{URL}"}}', {"url": URL}),
 ])
 def test_slash_calls_use_the_same_handlers(web_env, text, body):
     client, upstream, network = web_env
@@ -150,7 +152,10 @@ def test_slash_calls_use_the_same_handlers(web_env, text, body):
 
 @pytest.mark.parametrize("arguments", [{}, {"query": " "}, {"query": 1}, {"query": "x", "max_results": True},
     {"query": "x", "max_results": 0}, {"query": "x", "max_results": 11}, {"query": "x", "max_results": 1.5},
-    {"query": "x", "zone": "cn"}, {"query": "x", "language": "en"}, {"query": "x", "tag": "code.doc"}])
+    {"query": "x", "zone": "cn"}, {"query": "x", "language": "en"}, {"query": "x", "tag": "code.doc"},
+    {"searches": []}, {"searches": [{"query": "test"}] * 5}, {"searches": [{"query": " "}]},
+    {"searches": [{"query": "test", "recency": "day"}]}, {"searches": [{"query": "test", "max_results": 3}]},
+    {"searches": [None]}, {"searches": [{"query": 3}]}])
 def test_invalid_search_inputs_never_dispatch(web_env, arguments):
     client, _, network = web_env
     session = configure(client)
@@ -173,7 +178,7 @@ def test_missing_key_and_permissions(web_env):
     session = ok(client.post("/api/sessions", json={}))
     assert call(client, session)["run"]["error_code"] == "WEB_NOT_CONFIGURED"
     session = configure(client, tools_allowed=[])
-    forbidden = client.post("/api/tools/web_search/call", json={"session_id": session["session_id"], "arguments": {"query": "x"}})
+    forbidden = client.post("/api/tools/web_search/call", json={"session_id": session["session_id"], "arguments": {"searches": [{"query": "x"}]}})
     assert forbidden.status_code == 400 and forbidden.json()["error"]["code"] == "TOOL_NOT_ALLOWED"
     assert not network.calls and not upstream.calls
 
@@ -182,10 +187,10 @@ def test_search_options_are_settings_owned_and_apply_to_later_calls(web_env):
     client, _, network = web_env
     session = configure(client)
     schema = client.app.state.runtime_state.tool_registry.get("web_search").parameters
-    assert set(schema["properties"]) == {"query"}
+    assert set(schema["properties"]) == {"searches"}
     payload = call(client, session)
     assert payload["run"]["status"] == "DONE"
-    assert json.loads(network.calls[-1].content)["max_results"] == 10
+    assert json.loads(network.calls[-1].content)["max_results"] == 5
     ok(client.patch("/api/tools/web/settings", json={"max_results": 3, "zone": "intl", "language": "en"}))
     call(client, session)
     assert json.loads(network.calls[-1].content) == {"query": "release notes", "max_results": 3, "zone": "intl", "language": "en", "format": "markdown"}
@@ -200,7 +205,9 @@ def test_provider_errors_keep_only_safe_diagnostics(web_env, status, code):
     payload = call(client, configure(client))
     result = results(payload)[0]
     assert result["error_code"] == code
-    assert result["data"] == {"http_status": status, "request_id": REQUEST_ID}
+    assert {key: result["data"][key] for key in ("http_status", "request_id", "remaining")} == {
+        "http_status": status, "request_id": REQUEST_ID, "remaining": {"search": 3, "fetch": 6}}
+    assert result["data"]["searches"][0]["error_code"] == code
     assert "generated-key" not in json.dumps(payload) and "private" not in json.dumps(payload)
     assert len(network.calls) == 1
 
@@ -224,7 +231,7 @@ def test_sources_survive_approval_and_reach_the_model(web_env):
     state = client.app.state.runtime_state
     register_approval_tool(state.tool_registry)
     session = configure(client, harness_enabled=True)
-    upstream.turns = [completion(tool_call("web_search", {"query": "test"}, "search"),
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "test"}]}, "search"),
                                  tool_call("test_approval", {"value": "pause"}, "pause")),
                       completion(tool_call("web_fetch", {"url": URL}, "fetch")),
                       completion(content="Evidence [W1] and another source [W2].")]
@@ -239,9 +246,12 @@ def test_sources_survive_approval_and_reach_the_model(web_env):
     assert payload["run"]["status"] == "DONE"
     fetch = next(part for part in results(payload) if part["tool_name"] == "web_fetch")
     assert fetch["data"]["source_id"] == "W1"
-    transcript = [json.loads(message["content"]) for message in upstream.calls[-1]["messages"] if message["role"] == "tool"]
-    assert transcript[0]["data"]["results"][0]["source_id"] == transcript[-1]["data"]["source_id"] == "W1"
-    assert all("[W1]" in tool["function"]["description"] for tool in upstream.calls[-1]["tools"] if tool["function"]["name"].startswith("web_"))
+    transcript = [message["content"] for message in upstream.calls[-1]["messages"] if message["role"] == "tool"]
+    assert "[W1]" in transcript[0] and "[W1]" in transcript[-1]
+    assert not transcript[0].startswith("{") and "provider" not in transcript[0]
+    for request in upstream.calls:
+        descriptions = "\n".join(tool["function"]["description"] for tool in request["tools"])
+        assert descriptions.count("[W1]") == descriptions.count("untrusted evidence") == 1
     assert state.runs.get_harness_state(run_id) == {}
 
 
@@ -253,7 +263,7 @@ def test_empty_results_and_model_recovery(web_env):
     configure_model(client, request_options={"streaming": False})
     session = configure(client, harness_enabled=True)
     network.reply = response(None, status=429)
-    upstream.turns = [completion(tool_call("web_search", {"query": "test"})), completion(content="Search is temporarily unavailable.")]
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "test"}]})), completion(content="Search is temporarily unavailable.")]
     payload = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Research"}))
     assert payload["run"]["status"] == "DONE" and results(payload)[0]["error_code"] == "WEB_RATE_LIMITED"
 
@@ -275,7 +285,7 @@ def test_cancel_and_timeout_use_harness_lifecycle(tmp_path, monkeypatch):
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             ok(await client.patch("/api/tools/web/settings", json={"api_key": "key"}))
             session = ok(await client.post("/api/sessions", json={}))
-            task = asyncio.create_task(client.post("/api/tools/web_search/call", json={"session_id": session["session_id"], "arguments": {"query": "test"}}))
+            task = asyncio.create_task(client.post("/api/tools/web_search/call", json={"session_id": session["session_id"], "arguments": {"searches": [{"query": "test"}]}}))
             await asyncio.wait_for(started.wait(), 3)
             if cancel:
                 run = state.runs.list_runs(session["session_id"])[0]
@@ -302,3 +312,45 @@ def test_http_timeout_and_untrusted_request_id():
     with pytest.raises(ToolExecutionError) as error:
         asyncio.run(provider.search(WebSearchRequest(query="test"), "key"))
     assert error.value.details == {"http_status": 402}
+
+
+def test_web_budgets_batch_count_duplicates_approval_and_retry(web_env):
+    client, upstream, network = web_env
+    configure_model(client, request_options={"streaming": False})
+    state = client.app.state.runtime_state
+    register_approval_tool(state.tool_registry)
+    session = configure(client, harness_enabled=True)
+    ok(client.patch("/api/tools/web/settings", json={"search_calls_per_run": 2, "fetch_calls_per_run": 1}))
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "facts"}, {"query": "details"}]}, "batch"),
+                                 tool_call("test_approval", {"value": "pause"}, "pause")),
+        completion(tool_call("web_search", {"searches": [{"query": "FACTS"}]}, "duplicate"),
+                   tool_call("web_search", {"searches": [{"query": "new angle"}]}, "over_search"),
+                   tool_call("web_fetch", {"url": URL}, "read"),
+                   tool_call("web_fetch", {"url": URL, "page": 2}, "over_fetch")),
+        completion(content="Available evidence [W1]; other details remain unconfirmed.")]
+    payload = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Research"}))
+    assert payload["run"]["status"] == "WAITING_FOR_USER"
+    budget = state.runs.get_harness_state(payload["run"]["run_id"])["web_budget"]
+    assert (budget["searches_used"], budget["search_limit"], budget["fetch_limit"]) == (1, 2, 1)
+    assert len(network.calls) == 2
+    ok(client.patch("/api/tools/web/settings", json={"search_calls_per_run": 16, "fetch_calls_per_run": 16}))
+    done = ok(client.post(f"/api/tools/approvals/{payload['run']['run_id']}", json={"decision": "approve"}))
+    assert done["run"]["status"] == "DONE" and len(network.calls) == 3
+    parts = {part["tool_call_id"]: part for part in results(done)}
+    assert parts["duplicate"]["data"]["searches"][0]["status"] == "duplicate"
+    assert parts["over_search"]["error_code"] == parts["over_fetch"]["error_code"] == "WEB_BUDGET_EXHAUSTED"
+    assert parts["over_fetch"]["data"]["remaining"] == {"search": 0, "fetch": 0}
+    assert all(step["metadata"]["web"]["output_chars"] <= 5000 for step in done["run"]["steps"] if "web" in step["metadata"])
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "facts"}]}, "retry_search")),
+                      completion(content="New run [W1].")]
+    retried = ok(client.post(f"/api/runs/{payload['run']['run_id']}/retry"))
+    assert retried["run"]["status"] == "DONE" and len(network.calls) == 4
+    assert results(retried)[0]["data"]["remaining"]["search"] == 15
+
+
+@pytest.mark.parametrize("command", ["/web_search release notes", f"/web_fetch {URL}"])
+def test_web_slash_requires_json(web_env, command):
+    client, _, network = web_env
+    session = configure(client)
+    assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": command}).status_code == 400
+    assert not network.calls

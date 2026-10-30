@@ -4,7 +4,8 @@ Alembic records application schema changes without modifying model files, attach
 
 SQLite records are disposable test state. Files have separate ownership and
 are never removed by schema revisions.
-Web tools store their independent provider/key settings in appmetadatarecord.web_tools_settings. Citation identities/content use existing tool-result JSON and private run continuation; no table or schema revision is added.
+Web settings remain in appmetadatarecord.web_tools_settings. Revision `0043_web_cache` adds web_pages (cleaned bodies/links, content hash/source and acquisition/access times) and web_session_pages (session-owned queries, keyed by session/URL/query). Only displayed search results and successful Extract pages are cached. Search never overwrites Extract content or renews its acquisition time; successful unchanged Extract results do renew freshness.
+Cache bodies are separate from bounded tool-result JSON and private citation/budget continuation. Session deletion removes its cache associations, unreferenced pages and session in one transaction; Project deletion reuses that path. Default expiration is 30 idle days, checked by indexed queries at startup and before web calls, at most once daily. Expiration removes page associations as well; historical excerpts/snapshots are not rewritten. The migration preserves existing data and every filesystem directory.
 
 | Path | Contents and owner |
 | --- | --- |
@@ -28,7 +29,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0042_qq_image_tools`; current tables follow the SQLModel schema.
+Alembic head is `0044_web_quality`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -259,3 +260,8 @@ Revision `0040_qq_resources` adds qq_media_assets.is_favorite, description_manua
 Revision `0041_qq_trigger_grants` renames qq_participants.keyword_message_id to grant_message_id, shared by keyword and confirmed-icebreaker grants. Existing epoch values, expiry deadlines and window membership are preserved without reconstructing eligibility. Batch participant snapshots retain their private sender-to-message-id shape. No model, attachment, runtime or other directories are changed.
 
 Revision `0042_qq_image_tools` adds the private qq_messages.image_generation_keyword boolean, default false. It records literal generation keywords from real incoming text segments; existing display text is not interpreted or backfilled. Batch generation permission and favorite candidate text live in private run configuration snapshots. resource_image deliveries use the existing kind, asset_id and text columns, with prompt null and a send-time description marker. No model, attachment, runtime or other directories are changed.
+
+Revision `0044_web_quality` removes retired codec names from session/Workspace tool selections, preserving
+empty and inherited selections. It interrupts affected unfinished runs and clears waiting references,
+without rewriting historical messages, configurations or model-input snapshots. It discards derived
+web_pages/web_session_pages rows so new cleaning rules apply; filesystem directories remain untouched.

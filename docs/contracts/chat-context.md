@@ -135,6 +135,7 @@ SQLite pruning, text, attachments, timestamps and history_version commit togethe
 
 ContextBuilder projects current-session history with max_messages (0..10000), max_chars (1..1000000), defaulting to 100 messages / 100000 characters, and include_attachments=explicit. Explicit null retains all
 eligible history; zero messages excludes history; positive N keeps newest N excluding current input.
+These character limits govern history, not the active tool loop. Web tool history uses the same bounded plain-text evidence projection as live tool results; full page caches never enter context.
 Characters deduct current input first and retain whole recent messages; oversized current input
 stays with a warning. mode/source_message_id return 422; Workspace inherits/overrides the whole
 policy. Agent prompts are inserted independently of history limits. Provenance follows projection;
@@ -144,6 +145,7 @@ SQLite reads eligible history in batches of 128 and stops at count/character lim
 Every internal model call enforces input tokens + output reserve + margin <= effective window.
 Runs snapshot the configured window and output reserve. Unset maximum output reserves
 min(4096, floor(configured window / 4)) and sends it as max_tokens; explicit limits are never reduced.
+For providers that count reasoning within completion tokens, that reserve covers reasoning and answer together.
 Local native counts reserve 32 tokens; provider estimates reserve max(128, ceil(window * 0.1)).
 Missing provider windows return CONTEXT_WINDOW_REQUIRED. Counting covers the final translated
 request, including images and tool definitions, within the existing model lease. Oldest history
@@ -224,13 +226,16 @@ Live loops use native assistant/tool pairs. Ordinary/Workspace history quotes to
 
 Reasoning is assistant-only strict {id,type:reasoning,text} data. The output normalizer accepts reasoning_content and incrementally extracts <think> markers, including split tags; Markdown inline/fenced/indented code and escapes stay literal.
 Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete messages are excluded from history; live tool transcripts retain upstream content/structured reasoning for provider continuation.
+Known provider limitation: [DeepSeek thinking-mode documentation](https://api-docs.deepseek.com/guides/thinking_mode)
+requires earlier-turn reasoning when tools are supplied, including answers without tool calls. Internal history
+currently omits that earlier reasoning; only the active tool loop preserves it. No model-specific history switch exists.
 [Runs/streaming](runs-streaming.md) owns replies, provisional answers, processing/reasoning, command groups and usage. Replies retain original Persona identity; copy uses answer text only, and direct tools never invent a model answer.
 
 The frontend renders parts as data; edit/retry uses original text. MessageActions owns controls, MessageParts presentation, ChatAttachments cards/URLs, and [runs/streaming](runs-streaming.md) stream merging. Send/edit/retry pass the current UI language through X-UI-Language (en/zh-CN; absent defaults to en, other values return 422) for application-owned instructions. Each new run snapshots that language; model content and saved snapshots are never translated when the UI changes.
 User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Agent identity; user rows use current Cogita Persona identity. Headers use 14px names and 12px timestamps/numbers, ordered number/time/name for users and name/time/number for assistants.
 Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps and message numbers, user action buttons and reply usage metrics appear on message hover or keyboard focus,
 fade in and out over 180ms (instantly with reduced motion), and retain layout space. Touch layouts keep them visible; editing keeps save/cancel visible and an open usage modal keeps its owner visible. Message bodies use 16px text with Markdown headings, lists, quotes, code, tables and media.
-Markdown block code uses gray secondary Bubble surfaces with 24px corners and preserves preformatted text; inline code retains its compact styling. Message action tooltips open below their buttons without flipping above, including usage details. Wide code, tables and tool results scroll inside their own bounds; tool results are limited to 320px height on desktop and 240px below 768px.
+Markdown block code uses gray secondary Bubble surfaces with 24px corners and preserves preformatted text; inline code retains its compact styling. Message action tooltips open below their buttons without flipping above, including usage details. Wide code, tables and tool results scroll inside their own bounds; general tool results are limited to 320px height on desktop and 240px below 768px. [Runs/streaming](runs-streaming.md) owns the shorter web-fetch bounds.
 
 Saving a user edit immediately restores the bubble with the submitted text while regeneration runs; request failure restores the editor and draft with the existing error feedback. Newly sent user bubbles animate once with a 300ms blur fade and 6px upward motion; historical loading, session switches and edits do not replay it. Reduced motion disables the animation.
 User messages are MessageScroller anchors. A vertically centered left tick rail tracks the current turn, previews summaries on hover/focus and navigates to user messages; it scrolls internally and is hidden below 768px message-area width or with fewer than two user messages. Ticks have 8px center spacing, 2px thickness and a shared left edge; ordinary, immediately neighboring and active ticks are 12px, 18px and 24px wide. Only the active tick changes color. History reading pauses streaming follow; the latest-message button resumes it.

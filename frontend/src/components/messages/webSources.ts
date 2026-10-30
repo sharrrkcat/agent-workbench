@@ -5,10 +5,11 @@ import { decodeString } from 'micromark-util-decode-string';
 import type { Nodes, Root, Text } from 'mdast';
 import type { ElementContent } from 'hast';
 import type { Message, MessagePart, ToolResultPart } from '@/types/messages';
-import type { WebPage, WebSource } from '@/types/tools';
+import type { WebFetchResult, WebPage, WebRemaining, WebSearchStats, WebSearchStatus, WebSource } from '@/types/tools';
 
 export type WebSourceMap = ReadonlyMap<string, WebSource>;
-export type WebToolOutput = { pages: WebPage[]; content?: string };
+export type WebToolOutput = { pages: WebPage[]; content?: string; searches?: WebSearchStatus[];
+  stats?: WebSearchStats; remaining?: WebRemaining; fetch?: WebFetchResult };
 export const isWebTool = (name: string) => name === 'web_search' || name === 'web_fetch';
 export const sourceHostname = (source: Pick<WebPage, 'url'>) => new URL(source.url).hostname;
 export const sourceTitle = (source: Pick<WebPage, 'url' | 'title'>) => source.title.trim() || sourceHostname(source);
@@ -20,6 +21,12 @@ function readPage(value: unknown): WebPage | null {
       typeof page.url !== 'string' || typeof page.title !== 'string' ||
       (page.content !== undefined && typeof page.content !== 'string') ||
       (page.snippet !== undefined && typeof page.snippet !== 'string')) return null;
+  if (page.date !== undefined) {
+    if (!page.date || typeof page.date !== 'object') return null;
+    const date = page.date as Record<string, unknown>;
+    if (typeof date.uncertain !== 'boolean' || (date.value !== undefined && typeof date.value !== 'string') ||
+        (date.source !== undefined && !['url', 'content'].includes(String(date.source)))) return null;
+  }
   try {
     const url = new URL(page.url);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
@@ -31,13 +38,27 @@ function readPage(value: unknown): WebPage | null {
 export function readWebToolOutput(part?: ToolResultPart): WebToolOutput | null {
   if (part?.status !== 'success' || !isWebTool(part.tool_name) || !part.data || typeof part.data !== 'object') return null;
   const data = part.data as Record<string, unknown>;
+  const remaining = data.remaining as WebRemaining | undefined;
+  if (remaining && (!Number.isInteger(remaining.search) || !Number.isInteger(remaining.fetch))) return null;
   if (part.tool_name === 'web_search') {
     if (!Array.isArray(data.results)) return null;
     const pages = data.results.map(readPage);
-    return pages.every((page): page is WebPage => page !== null) ? { pages } : null;
+    const searches = data.searches as WebSearchStatus[] | undefined;
+    if (searches && (!Array.isArray(searches) || searches.some((query) => !query || typeof query.query !== 'string' ||
+        !['success', 'error', 'duplicate'].includes(query.status) || !['any', 'week', 'month', 'year'].includes(query.recency)))) return null;
+    const stats = data.stats as WebSearchStats | undefined;
+    if (stats && ['candidates', 'duplicates', 'expired', 'unrelated', 'omitted'].some((key) =>
+      !Number.isInteger((stats as unknown as Record<string, unknown>)[key]))) return null;
+    return pages.every((page): page is WebPage => page !== null) ? { pages,
+      ...(searches ? { searches } : {}), ...(stats ? { stats } : {}), ...(remaining ? { remaining } : {}) } : null;
   }
   const page = readPage(data);
-  return page && typeof page.content === 'string' ? { pages: [page], content: page.content } : null;
+  if (!page || typeof page.content !== 'string') return null;
+  if (data.page !== undefined && (!Number.isInteger(data.page) || !Number.isInteger(data.total_pages) ||
+      typeof data.cache_hit !== 'boolean' || typeof data.cached_at !== 'string' || typeof data.content_hash !== 'string' ||
+      !Array.isArray(data.links) || data.links.some((link) => !link || !readPage({ url: link.url, title: link.text })))) return null;
+  return { pages: [page], content: page.content, ...(remaining ? { remaining } : {}),
+    ...(data.page !== undefined ? { fetch: data as WebFetchResult } : {}) };
 }
 
 export function webSourcesForReply(messages: Message[]): Map<string, WebSource> {

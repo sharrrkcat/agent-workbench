@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 from sqlmodel import Session as DbSession
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.schema.context_policy import ContextPolicy
@@ -130,12 +130,12 @@ def test_model_generation_and_context_precedence(chat_client):
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": global_model["id"]}))
     role = persona(client)
     session = session_for(client, role["id"], model_profile_id=selected_model["id"], generation={"temperature": 0.6},
-                          context_policy={"max_messages": 0}, harness_enabled=True, tools_allowed=["base64_encode"])
+                          context_policy={"max_messages": 0}, harness_enabled=True, tools_allowed=["test_echo"])
     response = send(client, session)
     assert response["run"]["persona_id"] == role["id"]
     assert upstream.calls[-1]["model"] == "other"
     assert upstream.calls[-1]["temperature"] == 0.6 and upstream.calls[-1]["top_p"] == 0.7
-    assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["base64_encode"]
+    assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["test_echo"]
     assert response["session"]["effective"]["harness_enabled"] is True
     assert response["session"]["effective"]["model_source"] == "session"
     assert response["messages"][-1]["speaker_name"] is None
@@ -308,9 +308,9 @@ def test_disabled_harness_never_authorizes_unexpected_tools(chat_client):
     client, upstream = chat_client
     configure_model(client, request_options={"streaming": True})
     role = persona(client)
-    session = session_for(client, role["id"], harness_enabled=False, tools_allowed=["base64_encode"])
+    session = session_for(client, role["id"], harness_enabled=False, tools_allowed=["test_echo"])
     upstream.stream_events = [
-        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "base64_encode", "arguments": "{}"}}]}, "finish_reason": None}]},
+        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "test_echo", "arguments": "{}"}}]}, "finish_reason": None}]},
         {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
     ]
     result = send(client, session)
@@ -351,7 +351,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
             model = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "context_window_tokens": 32768, "request_options": {"streaming": True}, "parameters": {"temperature": 0.2}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
             ok(await client.patch("/api/models/settings", json={"default_model_profile_id": model["id"]}))
             before = ok(await client.post("/api/personas", json={'collection': 'agent', 'name': 'Before', 'system_prompt': 'BEFORE_PROMPT'}))
-            session = ok(await client.post("/api/sessions", json={'persona_id': before['id'], 'harness_enabled': True, 'tools_allowed': ['base64_encode']}))
+            session = ok(await client.post("/api/sessions", json={'persona_id': before['id'], 'harness_enabled': True, 'tools_allowed': ['test_echo']}))
             path = f"/api/sessions/{session['session_id']}"
             request = asyncio.create_task(client.post(path + "/messages", json={"content": "first"}))
             await asyncio.wait_for(entered.wait(), 5)
@@ -376,7 +376,7 @@ def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):
             assert response["session"]["persona_id"] == COGITA_PERSONA_ID
             assert upstream.calls[-1]["temperature"] == 0.2
             assert "BEFORE_PROMPT" in json.dumps(upstream.calls[-1]) and "AFTER_PROMPT" not in json.dumps(upstream.calls[-1])
-            assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["base64_encode"]
+            assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["test_echo"]
             ok(await client.patch(path, json={"persona_id": before["id"], "generation": {}}))
             later = ok(await client.post(path + "/messages", json={"content": "second"}))
             assert later["messages"][-1]["speaker_name"] is None

@@ -27,6 +27,11 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(page.locator('.reply-answer')).toContainText('Evidence');
       await expect(page.locator('.status-done')).toBeVisible();
       const reply = page.locator('article[data-run-id]').last();
+      const runId = await reply.getAttribute('data-run-id');
+      const runData = await (await request.get(`/api/tools/runs/${runId}`)).json();
+      const fetched = runData.messages.flatMap((message: { parts: Record<string, unknown>[] }) => message.parts)
+        .find((part: { type: string; tool_name: string }) => part.type === 'tool_result' && part.tool_name === 'web_fetch').data;
+      const fetchedTitle = fetched.title;
       await expect(reply.locator('[data-web-citation]')).toHaveCount(3);
       await expect(reply.locator('.reply-answer code')).toHaveText('[W1]');
       await expect(reply.locator('.approval-details')).toHaveCount(0);
@@ -37,13 +42,13 @@ for (const locale of ['en', 'zh-CN']) {
       await sourcesToggle.focus();
       await sourcesToggle.press('Enter');
       await expect(sources.locator('a')).toHaveCount(2);
-      await expect(sources.locator('a').first()).toContainText('Fetched web article');
+      await expect(sources.locator('a').first()).toContainText(fetchedTitle);
       await expect(sources.locator('a').last()).toContainText('Reference page');
       await expect(sources.locator('a').first()).toHaveAttribute('target', '_blank');
 
       const citation = reply.locator('[data-web-citation]').first();
       await citation.focus();
-      const card = page.locator('[data-slot=hover-card-content]').filter({ hasText: 'Fetched web article' });
+      const card = page.locator('[data-slot=hover-card-content]').filter({ hasText: fetchedTitle });
       await expect(card).toBeVisible();
       await expect(card.locator('a')).toHaveAttribute('href', /^https:\/\/example.com\/article\?query=/);
       await page.keyboard.press('Escape');
@@ -63,10 +68,14 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(search).toContainText(locale === 'en' ? 'Searched the web for fixture query' : '已搜索网页：fixture query');
       await expect(search.locator('a')).toHaveCount(3);
       await expect(search.locator('a').last()).toHaveAttribute('href', 'https://unused.example.com/');
+      await expect(search.locator('[data-slot=trace-collapsible-content-inner]')).toHaveText('Web article with a long query | example.comReference page | example.orgUnused result | unused.example.com');
       const content = fetch.locator('[data-slot=code-block-content]');
-      await expect(content).toContainText('<script>window.webPageExecuted = true</script>');
+      await expect(content).toContainText('Extracted page content');
+      await expect(content).not.toContainText('<script>');
+      await expect(fetch.locator('[data-slot=trace-collapsible-content-inner]')).toHaveText(fetched.content);
       expect(await page.evaluate(() => (window as Window & { webPageExecuted?: boolean }).webPageExecuted)).toBeUndefined();
-      expect((await content.boundingBox())!.height).toBeLessThanOrEqual(width < 768 ? 241 : 321);
+      expect((await content.boundingBox())!.height).toBeLessThanOrEqual(width < 768 ? 121 : 161);
+      await page.screenshot({ path: info.outputPath('web-trace-expanded.png'), fullPage: true });
       await search.locator('[data-slot=trace-collapsible-trigger]').click();
       await reply.locator('.processing-toggle').click();
       await reply.locator('.processing-toggle').click();
@@ -81,6 +90,18 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(page.locator('.reply-answer').last()).toHaveText('Unknown [W1] in this reply.');
       await expect(page.locator('article[data-run-id]').last().locator('[data-web-sources]')).toHaveCount(0);
       expect(errors).toEqual([]);
+    });
+
+    test('shows a partial search batch as source links', async ({ page, request }) => {
+      await request.post('/__test__/session', { data: { web_tools: true, show_full_processing: true } });
+      await page.goto('/');
+      await submit(page, 'web-partial');
+      const reply = page.locator('article[data-run-id]').last();
+      await expect(reply.locator('.status-done')).toBeVisible();
+      await reply.locator('.processing-toggle').click();
+      const search = reply.locator('[data-web-tool=web_search]');
+      await expect(search.locator('a')).toHaveCount(2);
+      await expect(search.locator('[data-slot=trace-collapsible-content-inner]')).toHaveText('Web article with a long query | example.comReference page | example.org');
     });
 
     test('shows empty, failed and cancelled web steps without approval', async ({ page, request }) => {
@@ -105,7 +126,8 @@ for (const locale of ['en', 'zh-CN']) {
     });
 
     test('saves, replaces and clears the key while retaining failed edits', async ({ page, request }) => {
-      await request.patch('/api/tools/web/settings', { data: { api_key: '', max_results: 10, zone: null, language: null } });
+      const limits = { search_calls_per_run: 4, fetch_calls_per_run: 6, cache_ttl_hours: 24, cache_retention_days: 30 };
+      await request.patch('/api/tools/web/settings', { data: { api_key: '', max_results: 10, zone: null, language: null, ...limits } });
       await page.goto('/settings?tab=tools');
       const form = page.getByRole('region', { name: 'AnySearch', exact: true });
       const input = form.getByLabel(settings.webTools.apiKey, { exact: true });
@@ -116,18 +138,23 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(input).toHaveAttribute('placeholder', settings.webTools.keySet);
       await page.reload();
       await expect(input).toHaveAttribute('placeholder', settings.webTools.keySet);
-      expect(await (await request.get('/api/tools/web/settings')).json()).toEqual({ provider: 'anysearch', has_api_key: true, max_results: 10, zone: null, language: null });
+      expect(await (await request.get('/api/tools/web/settings')).json()).toEqual({ provider: 'anysearch', has_api_key: true, max_results: 10, zone: null, language: null, ...limits });
       const maxResults = form.getByLabel(settings.webTools.maxResults, { exact: true });
       const language = form.getByLabel(settings.webTools.language, { exact: true });
       await maxResults.fill('3');
       await language.fill('en');
+      for (const [key, value] of Object.entries(limits)) {
+        await form.getByLabel(settings.webTools[key], { exact: true }).fill(String(value + 1));
+        limits[key as keyof typeof limits] = value + 1;
+      }
       await form.getByRole('button', { name: settings.webTools.zones.intl, exact: true }).click();
       await save.click();
       await expect(save).toBeDisabled();
-      expect(await (await request.get('/api/tools/web/settings')).json()).toEqual({ provider: 'anysearch', has_api_key: true, max_results: 3, zone: 'intl', language: 'en' });
+      expect(await (await request.get('/api/tools/web/settings')).json()).toEqual({ provider: 'anysearch', has_api_key: true, max_results: 3, zone: 'intl', language: 'en', ...limits });
       await page.reload();
       await expect(maxResults).toHaveValue('3');
       await expect(language).toHaveValue('en');
+      for (const [key, value] of Object.entries(limits)) await expect(form.getByLabel(settings.webTools[key], { exact: true })).toHaveValue(String(value));
       await expect(form.getByRole('button', { name: settings.webTools.zones.intl, exact: true })).toHaveAttribute('aria-pressed', 'true');
 
       await page.route('**/api/tools/web/settings', (route) => route.request().method() === 'PATCH'
@@ -147,11 +174,11 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(input).toHaveValue('');
       await form.getByRole('button', { name: settings.webTools.clearKey, exact: true }).click();
       await expect(input).toHaveAttribute('placeholder', settings.webTools.keyMissing);
-      expect(await (await request.get('/api/tools/web/settings')).json()).toEqual({ provider: 'anysearch', has_api_key: false, max_results: 5, zone: 'intl', language: 'en' });
+      expect(await (await request.get('/api/tools/web/settings')).json()).toEqual({ provider: 'anysearch', has_api_key: false, max_results: 5, zone: 'intl', language: 'en', ...limits });
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
 
-    test('shows a localized date Instruction before Agent Persona only with web search', async ({ page, request }, info) => {
+    test('shows localized web instructions before Agent Persona', async ({ page, request }, info) => {
       const session = await (await request.post('/__test__/session', { data: { web_tools: true } })).json();
       await page.goto('/');
       await submit(page, 'web-no-call');
@@ -171,12 +198,17 @@ for (const locale of ['en', 'zh-CN']) {
         : /^当前日期：\d{4}年\d{1,2}月\d{1,2}日（星期[一二三四五六日]）。$/);
       const recordedDate = await text.innerText();
       await dialog.getByRole('tab', { name: runs.context.request, exact: true }).click();
-      await expect(dialog.locator('.context-request')).toContainText(recordedDate);
+      const recordedRequest = JSON.parse(await dialog.locator('.context-request').innerText());
+      expect(recordedRequest.messages[0].content).toContain(recordedDate);
+      const descriptions = recordedRequest.tools.map((tool: { function: { description: string } }) => tool.function.description).join('\n');
+      expect(descriptions.match(/Cite web evidence/g)).toHaveLength(1);
+      expect(descriptions.match(/untrusted evidence/g)).toHaveLength(1);
       await page.screenshot({ path: info.outputPath('date-instruction.png'), fullPage: true });
       await page.keyboard.press('Escape');
-      await request.patch(`/api/sessions/${session.session_id}`, { data: { tools_allowed: ['web_fetch'] } });
+      await request.patch(`/api/sessions/${session.session_id}`, { data: { tools_allowed: [] } });
       await page.reload();
       await submit(page, 'web-no-call');
+      await expect(page.locator('article[data-run-id]')).toHaveCount(2);
       await expect(reply.locator('.status-done')).toBeVisible();
       await reply.getByRole('button', { name: runs.context.details, exact: true }).click();
       await expect(dialog.locator('[data-context-source=system]')).toBeVisible();

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ai_workbench.core.harness.network import MAX_NETWORK_BYTES
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.json_data import strict_json_loads
-from ai_workbench.core.web_schemas import WebFetchArguments, WebFetchResult, WebPage, WebSearchRequest, WebSearchResult
+from ai_workbench.core.web_schemas import WebFetchArguments, ProviderFetchResult, WebPage, WebSearchRequest, ProviderSearchResult
 
 
 ANYSEARCH_URL = "https://api.anysearch.com/v1"
@@ -97,17 +97,17 @@ class AnySearchProvider:
         except httpx.HTTPError as exc:
             raise ToolExecutionError("WEB_REQUEST_FAILED", "The web service request failed.") from exc
 
-    async def search(self, arguments: WebSearchRequest, api_key: str) -> WebSearchResult:
+    async def search(self, arguments: WebSearchRequest, api_key: str) -> ProviderSearchResult:
         data, request_id = await self._post("search", {**arguments.model_dump(exclude_none=True), "format": "markdown"},
                                            api_key, _Response[_SearchData])
-        return WebSearchResult(provider="anysearch", query=arguments.query, results=data.results,
+        return ProviderSearchResult(provider="anysearch", query=arguments.query, results=data.results,
                                request_id=request_id, search_time_ms=data.metadata.search_time_ms)
 
-    async def fetch(self, arguments: WebFetchArguments, api_key: str) -> WebFetchResult:
-        body = arguments.model_dump()
+    async def fetch(self, arguments: WebFetchArguments, api_key: str) -> ProviderFetchResult:
+        body = {"url": arguments.url}
         # Extract accepts at most 16 KiB of UTF-8 JSON, including the URL's JSON escaping.
         request = httpx.Request("POST", ANYSEARCH_URL, json=body)
         if len(request.content) > 16 * 1024:
             raise ToolExecutionError("TOOL_INVALID_ARGUMENTS", "The page URL exceeds the web service request limit.")
         data, request_id = await self._post("extract", body, api_key, _Response[_FetchData])
-        return WebFetchResult(provider="anysearch", request_id=request_id, **data.model_dump())
+        return ProviderFetchResult(provider="anysearch", request_id=request_id, **data.model_dump())

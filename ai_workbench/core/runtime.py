@@ -88,7 +88,7 @@ class CogitaRuntime:
             return None
         required = spec.parameters.get("required", [])
         properties = spec.parameters.get("properties", {})
-        if len(required) == 1 and properties.get(required[0], {}).get("type") == "string":
+        if len(properties) == len(required) == 1 and properties.get(required[0], {}).get("type") == "string":
             return head, {required[0]: remainder}
         if not remainder:
             raise ChatError("TOOL_INVALID_ARGUMENTS", "Tool arguments must be a JSON object.")

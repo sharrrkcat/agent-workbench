@@ -16,8 +16,8 @@ for (const locale of ['en', 'zh-CN']) {
         });
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         // The browser server also registers a synthetic tool for approval tests.
-        const catalog = (await (await request.get('/api/tools')).json()).filter((tool: { name: string }) => tool.name !== 'test_approval');
-        expect(catalog).toHaveLength(8);
+        const catalog = (await (await request.get('/api/tools')).json()).filter((tool: { name: string }) => !tool.name.startsWith('test_'));
+        expect(catalog).toHaveLength(6);
         await request.patch('/api/tools/web/settings', { data: { api_key: '' } });
         await page.route('**/api/tools', (route) => route.fulfill({ json: catalog }));
         await page.route('**/api/sessions', (route) => route.fulfill({ json: [] }));
@@ -26,12 +26,12 @@ for (const locale of ['en', 'zh-CN']) {
         const panel = page.getByRole('region', { name: words.toolCatalog, exact: true });
         const general = panel.getByRole('region', { name: words.toolGroups.general, exact: true });
         const qq = panel.getByRole('region', { name: words.toolGroups.qqbot, exact: true });
-        await expect(general.locator('[data-slot="item-title"]')).toHaveText(['base64_decode', 'base64_encode', 'web_fetch', 'web_search']);
+        await expect(general.locator('[data-slot="item-title"]')).toHaveText(['web_fetch', 'web_search']);
         await expect(qq.locator('[data-slot="item-title"]')).toHaveText(['qq_generate_image', 'qq_send_image', 'qq_send_message', 'qq_skip_reply']);
         await expect(panel.locator('[data-slot="separator"]')).toHaveCount(2);
         await expect(panel.locator('input[type="password"]')).toHaveCount(1);
         await expect(panel.locator('.tool-output, .tool-search-settings, .tool-call-form')).toHaveCount(0);
-        await expect(panel.getByRole('button', { name: words.toolSchema, exact: true })).toHaveCount(8);
+        await expect(panel.getByRole('button', { name: words.toolSchema, exact: true })).toHaveCount(6);
         await expect(panel.locator('[data-slot="code-block-content"]')).toHaveCount(0);
         await page.screenshot({ path: info.outputPath('tools-catalog.png'), fullPage: true });
         for (const tool of catalog) {

@@ -38,7 +38,7 @@ for (const locale of ['en', 'zh-CN']) {
           await dialog.getByLabel(labels.projectName, { exact: true }).fill(`Workspace ${tag}`);
           await chooseOption(dialog.getByLabel(labels.defaultAgentPersona, { exact: true }), agent.name);
           await dialog.getByLabel(labels.projectPrompt, { exact: true }).fill('Project instructions');
-          await dialog.getByRole('checkbox', { name: 'base64_decode', exact: true }).uncheck();
+          await dialog.getByRole('checkbox', { name: 'test_other', exact: true }).uncheck();
           await expect(dialog.getByRole('checkbox', { name: /^qq_/ })).toHaveCount(0);
           await dialog.getByRole('tab', { name: labels.knowledge, exact: true }).click();
           await dialog.getByRole('checkbox', { name: bases[0].name, exact: true }).check();
@@ -70,7 +70,7 @@ for (const locale of ['en', 'zh-CN']) {
           await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
           dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
           await expect(dialog.getByLabel(labels.agentPersona, { exact: true })).toContainText(agent.name);
-          await expect(dialog.getByRole('checkbox', { name: 'base64_decode', exact: true })).toHaveCount(0);
+          await expect(dialog.getByRole('checkbox', { name: 'test_other', exact: true })).toHaveCount(0);
           await expect(dialog.getByLabel(labels.collections.user, { exact: true })).toHaveCount(0);
           await expect(dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true })).toHaveCount(0);
           await dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true }).fill('0');
@@ -88,7 +88,7 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true })).toBeChecked();
           await page.getByRole('menuitem', { name: labels.harnessSettings, exact: true }).click();
           const harness = page.getByRole('dialog', { name: labels.harnessSettings, exact: true });
-          await expect(harness.getByRole('checkbox', { name: 'base64_decode', exact: true })).toBeDisabled();
+          await expect(harness.getByRole('checkbox', { name: 'test_other', exact: true })).toBeDisabled();
           await page.keyboard.press('Escape');
           await expect(harness).toBeHidden();
           await page.locator('.composer textarea').fill('Workspace question');
@@ -124,18 +124,18 @@ for (const locale of ['en', 'zh-CN']) {
           expect(refreshedBindings.effective_knowledge_base_ids).toEqual(bases.map((base) => base.id));
           await page.locator('.chat-model-select').click();
           await page.getByRole('menuitem', { name: labels.harnessSettings, exact: true }).click();
-          await harness.getByRole('checkbox', { name: 'base64_encode', exact: true }).uncheck();
+          await harness.getByRole('checkbox', { name: 'test_echo', exact: true }).uncheck();
           await harness.getByRole('button', { name: labels.save, exact: true }).click();
           await expect(harness).toBeHidden();
           const overridden = (await json(request.get(`/api/sessions/${sessionId}`))).overrides;
           expect(overridden.harness_enabled).toBe(true);
-          expect(overridden.tools_allowed).not.toContain('base64_encode');
+          expect(overridden.tools_allowed).not.toContain('test_echo');
           await page.locator('.chat-model-select').click();
           await page.getByRole('menuitem', { name: labels.harnessSettings, exact: true }).click();
           for (const field of [labels.harness, labels.tools]) {
             await harness.getByRole('button', { name: labels.restoreInheritanceFor.replace('{{field}}', field), exact: true }).click();
           }
-          await expect(harness.getByRole('checkbox', { name: 'base64_encode', exact: true })).toBeChecked();
+          await expect(harness.getByRole('checkbox', { name: 'test_echo', exact: true })).toBeChecked();
           await harness.getByRole('button', { name: labels.save, exact: true }).click();
           await expect(harness).toBeHidden();
           expect((await json(request.get(`/api/sessions/${sessionId}`))).overrides).toEqual({});

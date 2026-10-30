@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlmodel import Session
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.models.chat_support import local_chat_support
 from ai_workbench.core.models.schema import ExternalConnection, ModelInput, ModelProfile, ModelStatus
 from ai_workbench.core.models.store import ModelProfileStore
@@ -134,7 +134,7 @@ def test_chat_drops_images_and_tools_persists_warning_and_retry_recomputes(tmp_p
     with TestClient(app) as client:
         profile, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch,
             options={**DEFAULTS, "streaming": streaming}, release="after_request")
-        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["base64_encode"]}))
+        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["test_echo"]}))
         attachment = ok(client.post("/api/attachments", files={"file": ("picture.png", image_bytes(), "image/png")}))
         path = f"/api/sessions/{session['session_id']}/messages"
         response = ok(client.post(path, json={"content": "Describe this", "attachments": [attachment]}))
@@ -262,7 +262,7 @@ def test_harness_sends_tools_when_supported_or_explicitly_unchecked(tmp_path, mo
         _, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, tools=supported,
             options={**DEFAULTS, "skip_tool_capability_check": skip})
         upstream.turns = [completion(tool_call()), completion(content="finished")]
-        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["base64_encode"]}))
+        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["test_echo"]}))
         result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Encode hello"}))
         assert result["success"], result
         assert len(upstream.calls) == 2 and adapter.load.await_count == 1

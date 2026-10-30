@@ -24,6 +24,7 @@ from ai_workbench.core.time import utc_now
 class SessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
+        self.web_cache = None
 
     def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
         session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
@@ -63,6 +64,8 @@ class SessionStore:
 
     def delete_session(self, session_id: str) -> None:
         self.get_session(session_id)
+        if self.web_cache is not None:
+            self.web_cache.delete_session(session_id)
         del self._sessions[session_id]
 
     def list_sessions(self) -> list[Session]:

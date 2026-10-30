@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session as DbSession, select
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolExecutionError
@@ -87,7 +87,7 @@ def test_project_identity_resources_and_write_only_token(qq_client):
     for path in (f"/api/projects/{p['id']}/knowledge-bases", f"/api/projects/{p['id']}/worldbooks",
                  f"/api/sessions/{session['session_id']}/knowledge-bases"):
         assert client.get(path).status_code == 422
-    assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/base64_encode hello"}).status_code == 409
+    assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/test_echo hello"}).status_code == 409
     assert client.post("/api/tools/qq_send_message/call", json={"session_id": session["session_id"], "arguments": {"text": "hi"}}).status_code == 409
     ordinary = ok(client.post("/api/sessions", json={}))
     assert "qq_send_message" not in ordinary["tools_allowed"]
@@ -164,7 +164,7 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "first"}, "one"),
         tool_call("qq_send_message", {"text": "[CQ:at,qq=all]"}, "two"), content="PRIVATE_THOUGHT"),
         completion(content="PRIVATE_FINAL")]
-    ingest(client, state, p, event(1, "/base64_encode bot"), 1)
+    ingest(client, state, p, event(1, "/test_echo bot"), 1)
     batch = freeze(state, session, 6)
     client.portal.call(state.qq.execute, batch)
     batch = state.qq.store.get(QQBatch, batch.id)
@@ -177,7 +177,7 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     request = json.dumps(upstream.calls[0], ensure_ascii=False)
     assert "AGENT_PROMPT" in request and "PROJECT_PROMPT" in request and "PRIVATE_USER_PROMPT" not in request
     assert upstream.calls[0]["messages"][-1]["role"] == "user"
-    assert "/base64_encode bot" in upstream.calls[0]["messages"][-1]["content"]
+    assert "/test_echo bot" in upstream.calls[0]["messages"][-1]["content"]
     context = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     contents = context.model_dump_json()
     assert "first" in contents and "[CQ:at,qq=all]" in contents
@@ -540,7 +540,7 @@ def test_real_service_with_fake_onebot_and_model(qq_client):
                 data = {"user_id": 12345} if login else {"message_id": 88}
                 await socket.send(json.dumps({"status": "ok", "retcode": 0, "data": data, "echo": request["echo"]}))
                 if login:
-                    await socket.send(json.dumps(event(1, "/base64_encode bot")))
+                    await socket.send(json.dumps(event(1, "/test_echo bot")))
         async with serve(server, "127.0.0.1", 0) as host:
             state.project_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
             state.qq.supervisor = asyncio.create_task(state.qq.run())

@@ -2,6 +2,7 @@
   "web": {
     "citation": "Source: {{title}}",
     "newTab": " (opens in a new tab)",
+    "sourceLabel": "{{title}} | {{hostname}}",
     "sources_one": "Used {{count}} source",
     "sources_other": "Used {{count}} sources",
     "noResults": "No results found.",
@@ -38,7 +39,14 @@
       "TOOL_INVALID_ARGUMENTS": "The web tool arguments are invalid.",
       "NETWORK_URL_SCHEME_FORBIDDEN": "Only HTTP and HTTPS URLs are allowed.",
       "NETWORK_URL_HOST_FORBIDDEN": "The URL must have a valid host and must not contain credentials.",
-      "NETWORK_ADDRESS_FORBIDDEN": "The URL must point to a public website."
+      "NETWORK_ADDRESS_FORBIDDEN": "The URL must point to a public website.",
+      "WEB_BUDGET_EXHAUSTED": "Web calls for this run are used up. Answer from the available evidence and state what remains unconfirmed.",
+      "WEB_INSUFFICIENT_CONTENT": "Extracted text is very short or much shorter than existing evidence; login or JavaScript may be required.",
+      "WEB_OUTPUT_TOO_LARGE": "The page URL is too long for a readable result."
+    },
+    "notices": {
+      "no_more_content": "No more content at this page number.",
+      "no_focus_match": "No matching passages. Change the focus or read without it."
     }
   },
   "queued": "Queued",

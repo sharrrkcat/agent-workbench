@@ -2,6 +2,7 @@
   "web": {
     "citation": "来源：{{title}}",
     "newTab": "（在新标签页打开）",
+    "sourceLabel": "{{title}} | {{hostname}}",
     "sources_one": "使用了 {{count}} 个来源",
     "sources_other": "使用了 {{count}} 个来源",
     "noResults": "未找到结果。",
@@ -38,7 +39,14 @@
       "TOOL_INVALID_ARGUMENTS": "网页工具参数无效。",
       "NETWORK_URL_SCHEME_FORBIDDEN": "仅支持 HTTP 和 HTTPS 网页链接。",
       "NETWORK_URL_HOST_FORBIDDEN": "网页链接必须包含有效主机，且不能包含登录凭据。",
-      "NETWORK_ADDRESS_FORBIDDEN": "网页链接必须指向公共网站。"
+      "NETWORK_ADDRESS_FORBIDDEN": "网页链接必须指向公共网站。",
+      "WEB_BUDGET_EXHAUSTED": "本次任务的网页调用次数已用尽，请基于已有证据作答，并说明未能确认的内容。",
+      "WEB_INSUFFICIENT_CONTENT": "正文极少或明显少于已有内容，可能需要登录或 JS 渲染。",
+      "WEB_OUTPUT_TOO_LARGE": "页面网址过长，无法生成可读结果。"
+    },
+    "notices": {
+      "no_more_content": "该页码已没有更多内容。",
+      "no_focus_match": "没有匹配片段，请更换 focus 或不指定 focus 阅读。"
     }
   },
   "queued": "排队中",

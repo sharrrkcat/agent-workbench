@@ -131,8 +131,8 @@ Writes advance history_version in every referencing Session. Original display an
 
 QQ runs always enable Harness with web_search/web_fetch plus the available QQ tools below. Web tools reuse global AnySearch settings without Project configuration; other general tools are excluded.
 The four QQ tools are automatic, scope=qqbot, excluded from ordinary/Workspace allowlists and direct calls. Their handlers require server-owned Session, active batch/run and tool-call ids; only the immutable Session binding supplies the destination.
-Web tools retain shared deadlines, cancellation, per-call date instructions and context budgets. Missing configuration, request failures and tool timeouts return structured results so the model can continue; total timeout and cancellation remain terminal.
-QQ web results retain page links/content without source_id or citation instructions. Processing history displays web steps without citations/Sources; later batches retain only the existing input/confirmed-delivery history.
+Web tools retain shared deadlines, cancellation, fixed run-start date instructions, bounded evidence and context budgets. Search/read call budgets reset per batch and remain separate from reply slots. Missing configuration, request failures and tool timeouts return structured results so the model can continue; total timeout and cancellation remain terminal.
+QQ web results retain bounded excerpts/page links and query/cache/page metadata without source_id or numbered citation instructions. Processing history displays web steps without citations/Sources; later batches retain only the existing input/confirmed-delivery history.
 
 | Tool | Strict arguments | Availability |
 | --- | --- | --- |

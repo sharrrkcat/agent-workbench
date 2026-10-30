@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.schema import ChatRequest, ExternalConnection, ModelProfile
@@ -20,7 +20,7 @@ from tests.tool_fixtures import ToolOpenAI, completion, tool_call
 OPTION = "allow_unindexed_complete_tool_call"
 # Shape captured from the third-party stream; identifiers and arguments are synthetic.
 CALL = {"id": "call_fixture", "type": "function", "function": {
-    "name": "base64_encode", "arguments": '{"value":"hello"}'}}
+    "name": "test_echo", "arguments": '{"value":"hello"}'}}
 
 
 def event(delta, finish=None):
@@ -184,7 +184,7 @@ def test_harness_executes_normalized_call_once_and_returns_result(tmp_path):
         payload = send(client, session)
         assert payload['run']['status'] == 'DONE'
         assert len(results(payload)) == 1
-        assert results(payload)[0]['data']['value'] == 'aGVsbG8='
+        assert results(payload)[0]['data']['value'] == 'hello'
         assert len(sent) == 2
         assert sent[1]['messages'][-1]['tool_call_id'] == CALL['id']
         assert json.loads(sent[1]['messages'][-1]['content'])['status'] == 'success'

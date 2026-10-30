@@ -29,6 +29,8 @@ from pydantic import ValidationError
 async def runtime_lifespan(app: FastAPI):
     import asyncio
     try:
+        web = app.state.runtime_state.web_tools
+        web.cache.prune(web.settings.get().cache_retention_days)
         await asyncio.to_thread(lambda: app.state.runtime_state.model_manager.asr_inputs)
         app.state.runtime_state.qq.start()
         yield

@@ -8,8 +8,8 @@ from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
 
 
-GENERAL_TOOLS = {"base64_encode", "base64_decode", "web_search", "web_fetch"}
-REMOVED_TOOLS = ("read_file", "fetch_url", "knowledge_search")
+GENERAL_TOOLS = {"web_search", "web_fetch"}
+REMOVED_TOOLS = ("read_file", "fetch_url", "knowledge_search", "base64_encode", "base64_decode")
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def catalog_client(tmp_path):
 def test_catalog_scopes_and_general_defaults(catalog_client):
     client, _ = catalog_client
     catalog = ok(client.get("/api/tools"))
-    assert len(catalog) == 8
+    assert len(catalog) == 6
     assert {tool["name"] for tool in catalog if tool["scope"] == "general"} == GENERAL_TOOLS
     assert {tool["name"] for tool in catalog if tool["scope"] == "qqbot"} == set(QQ_TOOLS)
     assert all(tool["direct_callable"] == (tool["scope"] == "general") for tool in catalog)

@@ -7,15 +7,23 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { LoadingStatus } from '@/components/ui/loading-status';
 import { toolsApi } from '@/api/tools';
-import type { WebToolsSettings as Settings } from '@/types/tools';
+import type { WebToolsSettings as Settings, WebLimits } from '@/types/tools';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { errorText, Feedback, useResourceTask, useSettingsLeaveGuard } from './resources/ResourceUI';
+
+const LIMIT_FIELDS = [
+  { key: 'search_calls_per_run', max: 16 }, { key: 'fetch_calls_per_run', max: 16 },
+  { key: 'cache_ttl_hours', max: 168 }, { key: 'cache_retention_days', max: 365 },
+] as const;
 
 export function WebToolsSettings() {
   const { t } = useTranslation('settings');
   const [settings, setSettings] = useState<Settings | null>(null);
   const [key, setKey] = useState('');
-  const [maxResults, setMaxResults] = useState('10');
+  const [maxResults, setMaxResults] = useState('5');
+  const [limits, setLimits] = useState<Record<keyof WebLimits, string>>({
+    search_calls_per_run: '4', fetch_calls_per_run: '6', cache_ttl_hours: '24', cache_retention_days: '30',
+  });
   const [zone, setZone] = useState<'default' | 'cn' | 'intl'>('default');
   const [language, setLanguage] = useState('');
   const [reload, setReload] = useState(0);
@@ -23,11 +31,13 @@ export function WebToolsSettings() {
   const { confirm, confirmation } = useConfirmDialog();
   const { setError } = task;
   const dirty = !!key || !!settings && (maxResults !== String(settings.max_results) ||
-    zone !== (settings.zone ?? 'default') || language !== (settings.language ?? ''));
+    zone !== (settings.zone ?? 'default') || language !== (settings.language ?? '') ||
+    LIMIT_FIELDS.some(({ key }) => limits[key] !== String(settings[key])));
   function resetOptions(value: Settings) {
     setMaxResults(String(value.max_results));
     setZone(value.zone ?? 'default');
     setLanguage(value.language ?? '');
+    setLimits(Object.fromEntries(LIMIT_FIELDS.map(({ key }) => [key, String(value[key])])) as Record<keyof WebLimits, string>);
   }
   useEffect(() => {
     let live = true;
@@ -45,6 +55,7 @@ export function WebToolsSettings() {
   async function save(clearKey = false) {
     const patch = clearKey ? { api_key: '' } : {
       max_results: Number(maxResults), zone: zone === 'default' ? null : zone, language: language.trim() || null,
+      ...Object.fromEntries(LIMIT_FIELDS.map(({ key }) => [key, Number(limits[key])])),
       ...(key ? { api_key: key } : {}),
     };
     const updated = await task.run('save', () => toolsApi.patchWebSettings(patch), t('saved'));
@@ -97,6 +108,13 @@ export function WebToolsSettings() {
             <ToggleGroupItem value="intl">{t('webTools.zones.intl')}</ToggleGroupItem>
           </ToggleGroup>
         </Field>
+        {LIMIT_FIELDS.map(({ key, max }) => <Field key={key} data-disabled={!!task.busy}>
+          <FieldLabel htmlFor={`web-${key}`}>{t(`webTools.${key}`)}</FieldLabel>
+          <Input id={`web-${key}`} type="number" min={1} max={max} step={1} required disabled={!!task.busy}
+            value={limits[key]} onChange={(event) => {
+              setLimits((current) => ({ ...current, [key]: event.target.value })); task.setNotice('');
+            }} />
+        </Field>)}
       </FieldGroup>
       <div className="settings-form-actions">
         <Button type="submit" disabled={!!task.busy || !dirty}>{t('save')}</Button>

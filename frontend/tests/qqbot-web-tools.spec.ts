@@ -36,7 +36,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
             await expect(search.locator('a').first()).toHaveAttribute('href', /^https:\/\/example.com\/article\?query=/);
             await expect(search.locator('a').first()).toHaveAttribute('target', '_blank');
             const fetch = reply.locator('[data-web-tool=web_fetch]');
-            await expect(fetch).toContainText('<script>window.webPageExecuted = true</script>');
+            await expect(fetch).toContainText('Extracted page content');
+            await expect(fetch).not.toContainText('<script>');
             expect(await page.evaluate(() => (window as Window & { webPageExecuted?: boolean }).webPageExecuted)).toBeUndefined();
             await fetch.locator('[data-slot=trace-collapsible-trigger]').click();
             await expect(fetch.locator('[data-slot=trace-collapsible-trigger]')).toHaveAttribute('aria-expanded', 'false');

@@ -110,7 +110,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.tool-group, .processing-timeline, .reasoning-preview')).toHaveCount(0);
         const first = tools.first();
         const title = first.locator('[data-slot=trace-title]');
-        await expect(title).toHaveText(`${locale === 'en' ? 'Ran' : '已运行'} base64_decode ${longValue}`);
+        await expect(title).toHaveText(`${locale === 'en' ? 'Ran' : '已运行'} test_other ${longValue}`);
         expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
         await expect(title).toHaveCSS('text-overflow', 'ellipsis');
         await expect(tools.nth(1).locator('[data-slot=trace-title]')).toContainText('path=data/knowledge/note.txt max_bytes=2000');

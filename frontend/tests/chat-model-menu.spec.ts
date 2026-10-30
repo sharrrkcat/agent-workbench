@@ -181,7 +181,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(sheet).toBeVisible();
         await expect(page.getByRole('menu')).toBeHidden();
         expect((await json(request.get(`/api/sessions/${session.session_id}`))).harness_enabled).toBe(false);
-        const decodeTool = sheet.getByRole('checkbox', { name: 'base64_decode', exact: true });
+        const decodeTool = sheet.getByRole('checkbox', { name: 'test_other', exact: true });
         await expect(sheet.getByRole('checkbox', { name: /^qq_/ })).toHaveCount(0);
         await decodeTool.uncheck();
         await page.keyboard.press('Escape');
@@ -215,12 +215,12 @@ for (const locale of ['en', 'zh-CN']) {
         await sheet.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(sheet).toBeHidden();
         const saved = await json(request.get(`/api/sessions/${session.session_id}`));
-        expect(saved.tools_allowed).toEqual(session.tools_allowed.filter((name: string) => name !== 'base64_decode'));
+        expect(saved.tools_allowed).toEqual(session.tools_allowed.filter((name: string) => name !== 'test_other'));
         expect(saved.harness_enabled).toBe(false);
         expect(patches).toEqual([{ tools_allowed: saved.tools_allowed }, { tools_allowed: saved.tools_allowed }]);
         await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
         const dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
-        await expect(dialog.getByRole('checkbox', { name: 'base64_decode', exact: true })).toHaveCount(0);
+        await expect(dialog.getByRole('checkbox', { name: 'test_other', exact: true })).toHaveCount(0);
         await dialog.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(dialog).toBeHidden();
         expect(patches.at(-1)).not.toHaveProperty('harness_enabled');

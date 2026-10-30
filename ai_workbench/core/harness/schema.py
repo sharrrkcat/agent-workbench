@@ -10,7 +10,7 @@ from ai_workbench.core.models.schema import ToolCall, ImageGenerationControls
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 from ai_workbench.core.schema.qq import QQTriggerKind, QQImageCandidate
-from ai_workbench.core.web_schemas import WebSource
+from ai_workbench.core.web_schemas import WebRunBudget, WebSource
 from ai_workbench.core.instructions import UiLanguage
 
 ToolRisk = Literal["safe", "file", "network"]
@@ -54,6 +54,8 @@ class ToolExecutionContext:
     session_id: str | None = None
     run_id: str | None = None
     tool_call_id: str | None = None
+    web_budget: WebRunBudget = field(default_factory=WebRunBudget)
+    web_sources: dict[str, WebSource] | None = None
     qq_image_generation_model_profile_id: str | None = None
     qq_image_generation_options: ImageGenerationControls | None = None
     qq_image_generation_allowed: bool = False
@@ -104,6 +106,8 @@ class HarnessState(BaseModel):
     active_seconds: float = Field(default=0.0, ge=0)
     last_result: ToolOutcome | None = None
     web_sources: dict[str, WebSource] = Field(default_factory=dict)
+    web_budget: WebRunBudget = Field(default_factory=WebRunBudget)
+    web_date: str = ""
 
     @model_validator(mode="after")
     def approval_matches_call(self):

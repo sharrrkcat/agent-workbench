@@ -10,7 +10,9 @@ const { MessageParts } = (await load('../src/components/messages/MessageParts.ts
 const result = (tool_name, data, status = 'success') => ({ id: tool_name, type: 'tool_result', tool_name, status, data });
 const one = { source_id: 'W1', url: 'https://example.com/article', title: 'First article', snippet: 'Summary' };
 const two = { source_id: 'W2', url: 'https://example.org/', title: '' };
-const results = result('web_search', { provider: 'anysearch', query: 'test', results: [one, two] });
+const results = result('web_search', { searches: [{ query: 'test', recency: 'month', status: 'success' }], results: [one, two],
+  stats: { candidates: 3, duplicates: 1, expired: 0, unrelated: 0, omitted: 0, source_chars: 5000 },
+  remaining: { search: 3, fetch: 6 } });
 const fetched = result('web_fetch', { ...one, title: 'Fetched article', content: '<script>Not executed</script>\nEvidence' });
 const sources = webSourcesForReply([{ parts: [results, fetched] }]);
 assert.deepEqual([...sources.keys()], ['W1', 'W2']);
@@ -21,6 +23,11 @@ assert.equal(readWebToolOutput(result('web_search', { results: [{ ...one, url: '
 assert.equal(readWebToolOutput(result('web_fetch', { ...one, content: 12 })), null);
 assert.deepEqual(readWebToolOutput(result('web_search', { results: [] })), { pages: [] });
 assert.equal(readWebToolOutput(fetched).content, fetched.data.content);
+assert.equal(readWebToolOutput(results).searches[0].recency, 'month');
+assert.equal(readWebToolOutput(results).stats.duplicates, 1);
+assert.deepEqual(readWebToolOutput(results).remaining, { search: 3, fetch: 6 });
+assert.equal(readWebToolOutput(result('web_search', { ...results.data, searches: [{ query: 42 }] })), null);
+assert.equal(readWebToolOutput(result('web_search', { ...results.data, remaining: { search: '3', fetch: 6 } })), null);
 const pageWithoutCitation = { url: one.url, title: one.title, content: 'QQ web evidence' };
 const qqSearch = result('web_search', { results: [pageWithoutCitation] });
 const qqFetch = result('web_fetch', pageWithoutCitation);

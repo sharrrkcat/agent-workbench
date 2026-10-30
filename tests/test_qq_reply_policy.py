@@ -158,8 +158,8 @@ def test_invalid_arguments_do_not_satisfy_reply_or_consume_send_limit(qq_client,
 def test_other_tool_success_does_not_count_as_qq_delivery(qq_client, monkeypatch, send_reply):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=1)
-    monkeypatch.setattr(state.chat_runner.harness_loop, "allowed_tools", lambda _: ["base64_encode", "qq_send_message"])
-    upstream.turns = [completion(tool_call("base64_encode", {"value": "hello"})),
+    monkeypatch.setattr(state.chat_runner.harness_loop, "allowed_tools", lambda _: ["test_echo", "qq_send_message"])
+    upstream.turns = [completion(tool_call("test_echo", {"value": "hello"})),
         completion(tool_call("qq_send_message", {"text": "reply"}, "reply")) if send_reply else completion(content="")]
     batch, run = execute_batch(client, state, p, session)
     assert upstream.calls[0]["tool_choice"] == "required"

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 from sqlmodel import Session as DbSession
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.harness.schema import ToolSpec
 from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
 from ai_workbench.db import migrations
@@ -96,17 +96,17 @@ def test_catalog_defaults_and_session_tool_switches(client_pair):
     assert not session["harness_enabled"]
     ok(client.post(path + "/messages", json={"content": "hello"}))
     assert "tools" not in upstream.calls[-1]
-    direct = ok(client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": "hi"}}))
+    direct = ok(client.post("/api/tools/test_echo/call", json={"session_id": session["session_id"], "arguments": {"value": "hi"}}))
     assert direct["run"]["status"] == "DONE"
     enabled = ok(client.patch(path, json={"harness_enabled": True}))
     assert enabled["tools_allowed"] == names
     ok(client.post(path + "/messages", json={"content": "tools"}))
     assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == names
-    subset = [name for name in names if name != "base64_encode"]
+    subset = [name for name in names if name != "test_echo"]
     ok(client.patch(path, json={"tools_allowed": subset}))
     for enabled in (False, True):
         assert ok(client.patch(path, json={"harness_enabled": enabled}))["tools_allowed"] == subset
-        rejected = client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": "x"}})
+        rejected = client.post("/api/tools/test_echo/call", json={"session_id": session["session_id"], "arguments": {"value": "x"}})
         assert rejected.json()["error"]["code"] == "TOOL_NOT_ALLOWED"
     ok(client.patch(path, json={"tools_allowed": []}))
     ok(client.post(path + "/messages", json={"content": "no tools"}))

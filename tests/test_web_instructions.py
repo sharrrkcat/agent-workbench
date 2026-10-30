@@ -29,16 +29,17 @@ def test_date_and_weekday_language(day, english, chinese):
 @pytest.mark.parametrize("language", ["en", "zh-CN"])
 @pytest.mark.parametrize("project", [False, True])
 @pytest.mark.parametrize("streaming", [False, True])
-def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypatch, language, project, streaming):
+@pytest.mark.parametrize("tools", [["web_search"], ["web_fetch"], ["web_fetch", "web_search"]])
+def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypatch, language, project, streaming, tools):
     client, upstream, _ = web_env
     configure_model(client, request_options={"streaming": streaming})
     monkeypatch.setattr(agent_loop, "utc_now", lambda: datetime(2026, 10, 29, 12, tzinfo=timezone.utc))
     ok(client.patch(f"/api/personas/{COGITA_PERSONA_ID}", json={"system_prompt": "AGENT😀\nSecond line"}))
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "USER background"}))
     if project:
-        session = child(client, workspace(client, harness_enabled=True, tools_allowed=["web_search"], system_prompt="PROJECT"))
+        session = child(client, workspace(client, harness_enabled=True, tools_allowed=tools, system_prompt="PROJECT"))
     else:
-        session = configure(client, harness_enabled=True, tools_allowed=["web_search"])
+        session = configure(client, harness_enabled=True, tools_allowed=tools)
     upstream.turns = [completion(content="answer")]
     payload = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Research"},
                              headers={"X-UI-Language": language}))
@@ -59,11 +60,16 @@ def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypat
     assert snapshot["request"]["messages"][0]["content"].startswith(expected + "\n\nAGENT😀")
     assert snapshot["budget"]["input_tokens"] > 0
     assert all(source["char_count"] == len(source["text"]) for source in snapshot["sources"])
+    descriptions = "\n".join(tool["function"]["description"] for tool in snapshot["request"]["tools"])
+    assert descriptions.count("Cite web evidence") == descriptions.count("untrusted evidence") == 1
 
 
-@pytest.mark.parametrize("harness,tools", [(False, ["web_search"]), (True, ["web_fetch"]), (True, []), (True, ["base64_encode"])])
+@pytest.mark.parametrize("harness,tools", [(False, ["web_search"]), (True, []), (True, ["test_echo"])])
 def test_instruction_is_absent_without_enabled_web_search(web_env, harness, tools):
     client, upstream, _ = web_env
+    if tools == ["test_echo"]:
+        from tests.tool_fixtures import register_test_tools
+        register_test_tools(client.app.state.runtime_state.tool_registry)
     configure_model(client, request_options={"streaming": False})
     session = configure(client, harness_enabled=harness, tools_allowed=tools)
     upstream.turns = [completion(content="answer")]
@@ -73,7 +79,7 @@ def test_instruction_is_absent_without_enabled_web_search(web_env, harness, tool
     assert "Current date:" not in str(upstream.calls[-1])
 
 
-def test_date_updates_each_round_and_language_survives_approval(web_env, monkeypatch):
+def test_date_and_language_remain_fixed_across_approval(web_env, monkeypatch):
     client, upstream, _ = web_env
     configure_model(client, request_options={"streaming": False})
     state = client.app.state.runtime_state
@@ -91,7 +97,7 @@ def test_date_updates_each_round_and_language_survives_approval(web_env, monkeyp
     payload = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}, headers={"X-UI-Language": "en"}))
     snapshots = details(client, payload["run"])
     assert snapshots[0] == first
-    for snapshot, day in zip(snapshots, [29, 30]):
+    for snapshot, day in zip(snapshots, [29, 29]):
         instructions = [source for source in snapshot["sources"] if source["kind"] == "instruction"]
         assert len(instructions) == 1
         assert instructions[0]["text"] == date_instruction("zh-CN", date(2026, 10, day))

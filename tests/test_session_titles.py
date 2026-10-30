@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from tests.model_fixtures import MockOpenAI, configure_model
 from tests.test_projects import workspace
 
@@ -115,8 +115,8 @@ def test_attachments_tools_and_failed_runs_get_basic_titles(environment):
     send(client, session_id, "", [attachment.json()])
     assert client.get(f"/api/sessions/{session_id}").json()["title"] == "notes.txt"
     session_id = create_session(client)
-    send(client, session_id, "/base64_encode hi")
-    assert client.get(f"/api/sessions/{session_id}").json()["title"] == "/base64_encode …"
+    send(client, session_id, "/test_echo hi")
+    assert client.get(f"/api/sessions/{session_id}").json()["title"] == "/test_echo hi"
     upstream.failure = 503
     session_id = create_session(client)
     send(client, session_id, "Failed answer")

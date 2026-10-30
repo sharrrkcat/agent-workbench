@@ -11,6 +11,7 @@ from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.context_snapshot import snapshot_attachment
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
+from ai_workbench.core.web_render import web_model_text
 
 
 class ContextBuildResult(BaseModel):
@@ -118,6 +119,9 @@ def message_text(message: Any, *, include_attachments: bool = True, attachment_s
         elif kind in {"audio","video"}: rendered.append(f"[{kind} attachment]")
         elif kind=="media_group": rendered.append(f"[image gallery: {len(part.get('items') or [])} image(s)]")
         elif kind=="notice": rendered.append(str(part.get("text") or ""))
+        elif kind == "tool_result" and part["tool_name"] in {"web_search", "web_fetch"}:
+            rendered.append("[Tool data] " + web_model_text(part["tool_name"], part["status"], part.get("data"),
+                part.get("error_code"), part.get("error_message"))[0])
         elif kind in {"tool_call", "tool_result"}:
             rendered.append("[Tool data] " + json.dumps({key: value for key, value in part.items() if key != "id"}, ensure_ascii=False))
     attachments=(getattr(message,"metadata",{}) or {}).get("attachments")

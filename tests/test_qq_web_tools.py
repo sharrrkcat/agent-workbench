@@ -10,6 +10,7 @@ import pytest
 from ai_workbench.core.anysearch import AnySearchProvider
 from ai_workbench.core.harness import agent_loop
 from ai_workbench.core.harness.schema import ToolExecutionError
+from ai_workbench.core.instructions import date_instruction
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.run import RunStatus
@@ -47,7 +48,7 @@ def test_shared_settings_requests_snapshots_and_history(qq_client, qq_web, monke
     assert {"web_search", "web_fetch"}.issubset(session["effective"]["tools_allowed"])
     day = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
     monkeypatch.setattr(agent_loop, "utc_now", lambda: day)
-    upstream.turns = [completion(tool_call("web_search", {"query": "current facts"}, "search")),
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "current facts"}]}, "search")),
         completion(tool_call("web_fetch", {"url": URL}, "fetch")),
         completion(tool_call("qq_send_message", {"text": "Here are the current facts."}, "send")),
         completion(content="Internal completion")]
@@ -64,21 +65,20 @@ def test_shared_settings_requests_snapshots_and_history(qq_client, qq_web, monke
     assert [request["tool_choice"] for request in upstream.calls] == ["required", "auto", "auto", "auto"]
     for step, request in zip(model_steps, upstream.calls):
         assert {tool["function"]["name"] for tool in request["tools"]} == {"qq_send_message", "web_fetch", "web_search"}
-        for tool in request["tools"]:
-            if tool["function"]["name"].startswith("web_"):
-                description = tool["function"]["description"]
-                assert "untrusted evidence" in description
-                assert "source_id" not in description and "[W1]" not in description
+        descriptions = "\n".join(tool["function"]["description"] for tool in request["tools"]
+                                 if tool["function"]["name"].startswith("web_"))
+        assert descriptions.count("untrusted evidence") == 1
+        assert "source_id" not in descriptions and "[W1]" not in descriptions
         snapshot = state.runs.get_context_snapshot(step.step_id)
         instruction = next(source for source in snapshot.sources if source.kind == "instruction")
-        assert "Current date:" in snapshot.request.messages[instruction.message_index].content[instruction.start:instruction.end]
+        assert snapshot.request.messages[instruction.message_index].content[instruction.start:instruction.end] == date_instruction("en", day.astimezone().date())
         assert day.astimezone().date().isoformat() in request["messages"][0]["content"]
         assert snapshot.request.model_dump(mode="json", exclude_unset=True, by_alias=True) == request
     assert {"web_search", "web_fetch"}.issubset(state.runs.get_config_snapshot(run.run_id)["tools_allowed"])
     web_results = [part for part in results(state, run) if part["tool_name"].startswith("web_")]
     assert len(web_results) == 2 and all(part["status"] == "success" for part in web_results)
     assert "source_id" not in json.dumps(web_results)
-    live_results = [json.loads(message["content"]) for message in upstream.calls[2]["messages"] if message["role"] == "tool"]
+    live_results = [message["content"] for message in upstream.calls[2]["messages"] if message["role"] == "tool"]
     assert "source_id" not in json.dumps(live_results) and "Evidence" in json.dumps(live_results)
     history = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     assert "Here are the current facts." in history
@@ -89,11 +89,11 @@ def test_shared_settings_requests_snapshots_and_history(qq_client, qq_web, monke
 def test_four_web_rounds_leave_four_sends_and_mixed_calls_count_once(qq_client, qq_web, streaming):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, streaming=streaming)
-    upstream.turns = [completion(tool_call("web_search", {"query": "facts"}, f"search{n}")) for n in range(4)]
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": f"facts {n}"}]}, f"search{n}")) for n in range(4)]
     upstream.turns += [completion(tool_call("web_fetch", {"url": URL}, f"fetch{n}"),
         tool_call("qq_send_message", {"text": f"reply {n}"}, f"send{n}")) for n in range(4)]
     batch, run = execute_batch(client, state, p, session)
-    assert batch.status == "done" and len(upstream.calls) == len(qq_web.calls) == 8
+    assert batch.status == "done" and len(upstream.calls) == 8 and len(qq_web.calls) == 5
     assert len(connection.calls) == 4 and run.metadata["qq_reply"]["limit_reached"]
     assert [step.metadata["round"] for step in state.runs.list_steps(run.run_id) if step.kind == "model"] == list(range(1, 9))
     assert all("confirmed sends=0/4" in request["messages"][0]["content"] for request in upstream.calls[:5])
@@ -103,8 +103,9 @@ def test_four_web_rounds_leave_four_sends_and_mixed_calls_count_once(qq_client, 
 def test_ninth_tool_round_is_rejected_even_when_no_send_slot_was_used(qq_client, qq_web, last_tool):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state)
-    upstream.turns = [completion(tool_call("web_search", {"query": "facts"}, f"search{n}")) for n in range(8)]
-    upstream.turns.append(completion(tool_call(last_tool, {"query": "again"} if last_tool == "web_search" else {"text": "too late"}, "ninth")))
+    ok(client.patch("/api/tools/web/settings", json={"search_calls_per_run": 8}))
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": f"facts {n}"}]}, f"search{n}")) for n in range(8)]
+    upstream.turns.append(completion(tool_call(last_tool, {"searches": [{"query": "again"}]} if last_tool == "web_search" else {"text": "too late"}, "ninth")))
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "failed" and run.error_code == "TOOL_LOOP_LIMIT"
     assert len(qq_web.calls) == 8 and len(upstream.calls) == 9 and not connection.calls
@@ -115,7 +116,7 @@ def test_ninth_tool_round_is_rejected_even_when_no_send_slot_was_used(qq_client,
 def test_web_errors_and_empty_results_allow_a_reply(qq_client, qq_web, failure):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=1)
-    call = tool_call("web_search", {"query": "facts"}, "search")
+    call = tool_call("web_search", {"searches": [{"query": "facts"}]}, "search")
     if failure == "missing_key":
         ok(client.patch("/api/tools/web/settings", json={"api_key": ""}))
     elif failure == "rate_limit":
@@ -125,7 +126,7 @@ def test_web_errors_and_empty_results_allow_a_reply(qq_client, qq_web, failure):
     else:
         call = tool_call("web_fetch", {"url": "http://127.0.0.1/private"}, "fetch")
     upstream.turns = [completion(call), completion(tool_call("qq_send_message", {"text": "A useful reply."}, "send"),
-        tool_call("web_search", {"query": "must not execute"}, "after_limit"))]
+        tool_call("web_search", {"searches": [{"query": "must not execute"}]}, "after_limit"))]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status == "done" and len(connection.calls) == 1
     assert not state.qq.store.get(QQBinding, session["session_id"]).paused
@@ -144,7 +145,7 @@ def test_web_failure_allows_optional_skip(qq_client, qq_web, clock, optional, st
     _, session, connection, batch = (followup if optional == "followup" else queued)(qq_client, clock, streaming=streaming)
     sent_before = len(connection.calls)
     qq_web.reply = response(None, status=429)
-    upstream.turns = [completion(tool_call("web_search", {"query": "facts"}, "search")),
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "facts"}]}, "search")),
         completion(tool_call("qq_skip_reply", "{}", "skip"), tool_call("web_fetch", {"url": URL}, "after_skip"))]
     batch, run = execute(qq_client, batch)
     assert batch.status == "done" and run.metadata["qq_reply"]["skipped"]
@@ -158,7 +159,7 @@ def test_web_success_does_not_satisfy_reply_or_hide_delivery_failure(qq_client, 
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state)
     connection.failure = ToolExecutionError("QQ_ACTION_FAILED", "Rejected")
-    upstream.turns = [completion(tool_call("web_search", {"query": "facts"}, "search")),
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "facts"}]}, "search")),
         completion(content="Internal answer") if ending == "no_reply" else
         completion(tool_call("qq_send_message", {"text": "reply"}, "send"))]
     batch, run = execute_batch(client, state, p, session)
@@ -174,7 +175,7 @@ def test_web_timeouts_and_cancellation_keep_qq_lifecycle(qq_client, qq_web, monk
     p, session, connection = configure_execution(client, state, reply_message_limit=1)
     ingest(client, state, p, event(1), 1)
     batch = freeze(state, session, 6)
-    upstream.turns = [completion(tool_call("web_search", {"query": "facts"}, "search")),
+    upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "facts"}]}, "search")),
         completion(tool_call("qq_send_message", {"text": "Search timed out."}, "send"))]
 
     async def scenario():

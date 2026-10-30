@@ -137,13 +137,19 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     assert title
     assert len(state.runs.list_steps(chat["run"]["run_id"])) == len(chat["run"]["steps"])
 
+    from ai_workbench.core.harness.schema import ToolSpec
+    async def echo(arguments, _context):
+        return {"value": arguments["value"]}
+    if "smoke_echo" not in {spec.name for spec in state.tool_registry.list()}:
+        state.tool_registry.register(ToolSpec("smoke_echo", "Return the supplied value.", {"type": "object",
+            "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": False}, echo))
     harness_session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
-        "harness_enabled": True, "tools_allowed": ["base64_encode"], "generation": {"temperature": 0}})
+        "harness_enabled": True, "tools_allowed": ["smoke_echo"], "generation": {"temperature": 0}})
     harness = await checked_json(client, "POST", f"/api/sessions/{harness_session['session_id']}/messages", json={
-        "content": "Call the base64_encode tool with value hello. After receiving its result, return only the encoded value. Use the tool; do not calculate it yourself."})
+        "content": "Call smoke_echo with value hello, then return the tool result."})
     tool_results = [part for message in harness["messages"] for part in message["parts"] if part["type"] == "tool_result"]
     assert harness["success"] and harness["run"]["status"] == "DONE", harness["run"]
-    assert any(part["data"].get("value") == "aGVsbG8=" for part in tool_results), "The model did not complete the requested Harness tool call"
+    assert any(part["data"].get("value") == "hello" for part in tool_results), "The model did not complete the requested Harness tool call"
     assert harness["data"]
     harness_calls = [step["metadata"]["llm"] for step in harness["run"]["steps"] if step["kind"] == "model"]
     assert len(harness_calls) >= 2 and all(call["completed"] and call["usage"]["completion_tokens"] > 0 for call in harness_calls)

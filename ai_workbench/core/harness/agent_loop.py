@@ -5,6 +5,7 @@ import json
 import time
 from contextlib import aclosing
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 from uuid import uuid4
 
@@ -29,7 +30,10 @@ from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.schema.qq import QQ_SEND_TOOLS, QQ_TOOLS
-from ai_workbench.core.web_tools import CITATION_INSTRUCTION, WEB_TOOL_NAMES, assign_web_sources
+from ai_workbench.core.web_tools import CITATION_INSTRUCTION, WEB_CONTENT_INSTRUCTION, WEB_TOOL_NAMES
+from ai_workbench.core.web_schemas import WebRunBudget
+from ai_workbench.core.web_render import web_model_text
+from ai_workbench.core.models.token_counting import reference_encoding
 
 
 MAX_TOOL_ROUNDS = 8
@@ -55,7 +59,7 @@ class _Budget:
 
 class HarnessAgentLoop:
     def __init__(self, *, sessions, messages, runs, events, model_manager, registry: ToolRegistry,
-                 allowed_tools, active_runs=None) -> None:
+                 allowed_tools, active_runs=None, web_tools=None) -> None:
         self.sessions = sessions
         self.messages = messages
         self.runs = runs
@@ -64,6 +68,7 @@ class HarnessAgentLoop:
         self.registry = registry
         self.active_runs = active_runs
         self.allowed_tools = allowed_tools
+        self.web_tools = web_tools
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                   user: MessageSchema, context: list[dict[str, Any]], trace, max_image_bytes: int, active_seconds: float = 0.0,
@@ -71,13 +76,17 @@ class HarnessAgentLoop:
                   first_metrics: LLMCallMetrics | None = None) -> RunResult:
         state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
                              qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
-                             max_image_bytes=max_image_bytes)
+                             max_image_bytes=max_image_bytes,
+                             web_budget=self.web_tools.new_budget() if self.web_tools else WebRunBudget(),
+                             web_date=utc_now().astimezone().date().isoformat())
         return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
 
     async def direct(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                      tool_name: str, arguments: dict[str, Any]) -> RunResult:
         call = ToolCall(id=str(uuid4()), function={"name": tool_name, "arguments": json.dumps(arguments, ensure_ascii=False, allow_nan=False)})
-        state = HarnessState(direct=True, pending_calls=[call])
+        state = HarnessState(direct=True, pending_calls=[call],
+            web_budget=self.web_tools.new_budget() if self.web_tools else WebRunBudget(),
+            web_date=utc_now().astimezone().date().isoformat())
         self.runs.update_status(run.run_id, RunStatus.RUNNING, current_step="tool")
         self._emit_run("run_started", run.run_id)
         draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
@@ -222,17 +231,19 @@ class HarnessAgentLoop:
         allowed = self._allowed_tools(config, state)
         tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
                  for spec in (self.registry.get(name) for name in allowed)]
-        if session.kind != "qqbot":
-            for tool in tools:
-                if tool["function"]["name"] in WEB_TOOL_NAMES:
+        for tool in tools:
+            if tool["function"]["name"] in WEB_TOOL_NAMES:
+                tool["function"]["description"] += " " + WEB_CONTENT_INSTRUCTION
+                if session.kind != "qqbot":
                     tool["function"]["description"] += " " + CITATION_INSTRUCTION
+                break
         base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
         trace = state.context_trace
-        if "web_search" in allowed:
+        if WEB_TOOL_NAMES.intersection(allowed):
             trace = trace.model_copy(deep=True)
             base_messages, _ = prepend_system_block(base_messages, trace,
-                date_instruction(state.ui_language, utc_now().astimezone().date()), "instruction")
+                date_instruction(state.ui_language, date.fromisoformat(state.web_date)), "instruction")
         if session.kind == "qqbot":
             trace = trace.model_copy(deep=True)
             base_messages, _ = append_system_block(base_messages, trace,
@@ -359,6 +370,8 @@ class HarnessAgentLoop:
                                 {"tool_name": call.function.name, "tool_call_id": call.id})
         context = ToolExecutionContext(session_id=session.session_id,
                                        run_id=run.run_id, tool_call_id=call.id,
+                                       web_budget=state.web_budget,
+                                       web_sources=None if session.kind == "qqbot" else state.web_sources,
                                        qq_image_generation_model_profile_id=config.qq_image_generation_model_profile_id,
                                        qq_image_generation_options=config.qq_image_generation_options,
                                        qq_image_generation_allowed=config.qq_image_generation_allowed,
@@ -369,13 +382,18 @@ class HarnessAgentLoop:
         tool_timeout = remaining if qq_send else min(TOOL_TIMEOUT_SECONDS, remaining)
         started = time.monotonic()
         try:
+            if call.function.name in WEB_TOOL_NAMES:
+                kind = "search" if call.function.name == "web_search" else "fetch"
+                if state.web_budget.remaining()[kind] == 0:
+                    raise ToolExecutionError("WEB_BUDGET_EXHAUSTED",
+                        "The web call budget for this run is exhausted. Answer from existing evidence and state what remains unconfirmed.")
+                field = "searches_used" if kind == "search" else "fetches_used"
+                setattr(state.web_budget, field, getattr(state.web_budget, field) + 1)
             execution = self.registry.execute(call.function.name, arguments, context)
             # Image providers own their queue/request timeout; download and delivery are also bounded.
             # Other QQ sends use their response deadline while still consuming the run budget.
             data = await execution if image_tool else await asyncio.wait_for(execution,
                 timeout=tool_timeout)
-            if call.function.name in WEB_TOOL_NAMES and session.kind != "qqbot":
-                assign_web_sources(call.function.name, data, state.web_sources)
             outcome = ToolOutcome(status="success", data=data)
         except asyncio.TimeoutError:
             total = tool_timeout == remaining or budget.remaining() <= 0
@@ -410,9 +428,17 @@ class HarnessAgentLoop:
             step = self._start_step(run.run_id, "tool", call.function.name,
                                     {"tool_name": call.function.name, "tool_call_id": call.id})
             step_id = step.step_id
+        web = call.function.name in WEB_TOOL_NAMES
+        projected_truncation = False
+        if web:
+            outcome.data = {**(outcome.data or {}), "remaining": state.web_budget.remaining()}
+            model_text, projected_truncation = web_model_text(call.function.name, outcome.status, outcome.data,
+                outcome.error_code, outcome.error_message)
+        else:
+            model_text = json.dumps(outcome.model_dump(exclude_none=True), ensure_ascii=False, allow_nan=False)
         part = make_tool_result_part(call.id, call.function.name, outcome.status, outcome.data,
                                     error_code=outcome.error_code, error_message=outcome.error_message,
-                                    truncated=bool((outcome.data or {}).get("truncated")))
+                                    truncated=projected_truncation or bool((outcome.data or {}).get("truncated")))
         message = self.messages.add_message(session.session_id, role="tool", parts=[part], run_id=run.run_id,
                                             parent_message_id=run.metadata.get("input_message_id"),
                                             metadata={"tool": call.function.name, "tool_call_id": call.id,
@@ -421,12 +447,17 @@ class HarnessAgentLoop:
                          payload={"message": message.model_dump(mode="json"), "status": outcome.status,
                                   "tool_name": call.function.name, "tool_call_id": call.id})
         state.transcript.append({"role": "tool", "tool_call_id": call.id,
-                                 "content": json.dumps(outcome.model_dump(exclude_none=True), ensure_ascii=False, allow_nan=False)})
+                                 "content": model_text})
         state.last_result = outcome
         self.runs.update_step(step_id, status=RunStepStatus.COMPLETED if outcome.status == "success" else
                               RunStepStatus.SKIPPED if outcome.status in {"rejected", "cancelled"} else RunStepStatus.FAILED,
                               message="Tool " + outcome.status, error_code=outcome.error_code, error_message=outcome.error_message,
-                              metadata={"result_status": outcome.status})
+                              metadata={"result_status": outcome.status, **({"web": {
+                                  "output_chars": len(model_text),
+                                  "estimated_tokens": len(reference_encoding().encode_ordinary(model_text)),
+                                  "remaining": state.web_budget.remaining(),
+                                  **{key: outcome.data[key] for key in ("stats", "cache_hit", "content_chars") if key in outcome.data},
+                              }} if web else {})})
         self._emit_step(run.run_id, step_id)
 
     def _persist_calls(self, draft: AssistantDraft, calls: list[ToolCall], *, direct: bool = False) -> None:

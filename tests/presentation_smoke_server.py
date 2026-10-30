@@ -17,7 +17,7 @@ import uvicorn
 from fastapi import Body
 from fastapi.testclient import TestClient
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part
 from ai_workbench.core.schema.run import RunStatus
@@ -91,7 +91,7 @@ class PresentationOpenAI(ToolOpenAI):
         elif "qq-web-" in command:
             failed = "qq-web-failure-fixture" in command
             if not outputs:
-                call = tool_call("web_search", {"query": "web-failure" if failed else "fixture query"}, "qq_search")
+                call = tool_call("web_search", {"searches": [{"query": "web-failure" if failed else "fixture query"}]}, "qq_search")
             elif len(outputs) == 1 and not failed:
                 call = tool_call("web_fetch", {"url": WEB_URL}, "qq_fetch")
             else:
@@ -113,8 +113,10 @@ class PresentationOpenAI(ToolOpenAI):
             if command == "web-no-call":
                 stream = FixtureStream([{"content": "Unknown [W1] in this reply."}])
             elif not outputs:
+                searches = ([{"query": "fixture query", "recency": "month"}, {"query": "web-failure"}]
+                            if command == "web-partial" else [{"query": command if command != "web-research" else "fixture query"}])
                 stream = FixtureStream([{"tool_calls": [{"index": 0, **tool_call("web_search",
-                    {"query": command if command != "web-research" else "fixture query"}, "web_search_call")}]}], "tool_calls")
+                    {"searches": searches}, "web_search_call")}]}], "tool_calls")
             elif command != "web-research":
                 stream = FixtureStream([{"content": "Search finished without usable sources."}])
             elif len(outputs) == 1:
@@ -141,7 +143,7 @@ class PresentationOpenAI(ToolOpenAI):
                                     {"tool_calls": [{"index": 0, **tool_call("test_approval", {"value": "confirm"})}]}], "tool_calls")
         elif command == "two-rounds" and len(outputs) < 2:
             index = len(outputs)
-            call = tool_call("base64_encode" if index == 0 else "base64_decode", {"value": "hi" if index == 0 else "aGk="}, f"call_{index}")
+            call = tool_call("test_echo" if index == 0 else "test_other", {"value": "hi" if index == 0 else "aGk="}, f"call_{index}")
             stream = FixtureStream([{"reasoning_content": "I will encode first." if index == 0 else "I will decode the encoded text."},
                                     {"content": "Working on the conversion."}, {"tool_calls": [{"index": 0, **call}]}], "tool_calls", delay=0.8)
         elif command == "two-rounds":
@@ -182,10 +184,10 @@ def create_fixture_app(repository: Path, root: Path):
             draft = AssistantDraft(messages=state.messages, events=state.events, session_id=session.session_id, run_id=run.run_id,
                                    message_id="long-calls-" + run.run_id, config=config, parent_message_id=user.message_id, streamed=False)
             draft.append(reasoning_content="Checking the conversion values.\n\n" * 28)
-            draft.persist(extra_parts=[make_tool_call_part(f"long_{i}", "base64_decode", {"value": "aGk="}, part_id=f"call_{i}") for i in range(12)])
+            draft.persist(extra_parts=[make_tool_call_part(f"long_{i}", "test_other", {"value": "aGk="}, part_id=f"call_{i}") for i in range(12)])
             for index in range(12):
                 state.messages.add_message(session.session_id, role="tool", run_id=run.run_id,
-                    parts=[make_tool_result_part(f"long_{index}", "base64_decode", "success", {"value": "large-result:" + "0123456789" * 500, "rows": list(range(200))})])
+                    parts=[make_tool_result_part(f"long_{index}", "test_other", "success", {"value": "large-result:" + "0123456789" * 500, "rows": list(range(200))})])
             final = AssistantDraft(messages=state.messages, events=state.events, session_id=session.session_id, run_id=run.run_id,
                                    message_id="long-final-" + run.run_id, config=config, parent_message_id=user.message_id, streamed=False)
             final.append("## Conversion result\n\nAll 12 commands completed.\n\n`aGk=` decodes to **hi**.")

@@ -9,7 +9,8 @@ from ai_workbench.core.anysearch import AnySearchProvider
 
 
 WEB_URL = "https://example.com/article?query=" + "long-query-" * 24
-WEB_CONTENT = "<script>window.webPageExecuted = true</script>\n" + "Extracted page content with preserved whitespace.\n" * 90
+WEB_CONTENT = "<script>window.webPageExecuted = true</script>\n" + "\n".join(
+    f"Extracted page content with preserved whitespace. Section {i}: supporting facts and release details." for i in range(90))
 
 
 def install_web_fixture(app):
@@ -24,9 +25,9 @@ def install_web_fixture(app):
         await asyncio.sleep(.2)
         if request.url.path == "/v1/search":
             data = {"results": [] if query == "web-empty" else [
-                {"url": WEB_URL, "title": "Web article with a long query", "snippet": "Search summary"},
-                {"url": "https://example.org/reference", "title": "Reference page"},
-                {"url": "https://unused.example.com/", "title": "Unused result"}],
+                {"url": WEB_URL, "title": "Web article with a long query", "content": f"{query} {query} {query} Search summary"},
+                {"url": "https://example.org/reference", "title": "Reference page", "content": f"{query} {query} Reference"},
+                {"url": "https://unused.example.com/", "title": "Unused result", "content": f"{query} Unused result"}],
                 "metadata": {"search_time_ms": 10}}
         else:
             data = {"url": WEB_URL, "title": "Fetched web article", "content": WEB_CONTENT}

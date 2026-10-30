@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core import chat_runner
 from ai_workbench.core.harness import agent_loop
@@ -36,7 +36,7 @@ def harness_client(tmp_path, request):
 def configure(client, *, tools=None, enabled=True, streaming=True, model=True):
     profile = configure_model(client, request_options={"streaming": streaming}) if model else None
     persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Original persona', 'system_prompt': 'PRIVATE_TOOL_PROMPT'}))
-    session = ok(client.post("/api/sessions", json={'persona_id': persona['id'], 'harness_enabled': enabled, 'tools_allowed': tools if tools is not None else ['base64_encode', 'base64_decode'], 'generation': {'temperature': 0.25}}))
+    session = ok(client.post("/api/sessions", json={'persona_id': persona['id'], 'harness_enabled': enabled, 'tools_allowed': tools if tools is not None else ['test_echo', 'test_other'], 'generation': {'temperature': 0.25}}))
     return session, persona, profile
 
 
@@ -64,7 +64,7 @@ def test_multi_call_round_and_stream_fragments(harness_client, streaming):
     client, upstream, _ = harness_client
     session, _, _ = configure(client, streaming=streaming)
     upstream.turns = [completion(tool_call(arguments={"value": "中文"}),
-        tool_call("base64_decode", {"value": "aGk="}, "call_2"), content="working"), completion(content="final answer")]
+        tool_call("test_other", {"value": "hi"}, "call_2"), content="working"), completion(content="final answer")]
     response = send(client, session)
     assert response["success"] and response["run"]["status"] == "DONE"
     assert response["data"] == "final answer"
@@ -72,7 +72,7 @@ def test_multi_call_round_and_stream_fragments(harness_client, streaming):
     assert "qq_reply" not in response["run"]["metadata"]
     tool_results = results(response)
     assert [part["tool_call_id"] for part in tool_results] == ["call_1", "call_2"]
-    assert [part["data"]["value"] for part in tool_results] == ["5Lit5paH", "hi"]
+    assert [part["data"]["value"] for part in tool_results] == ["中文", "hi"]
     transcript = upstream.calls[-1]["messages"][-3:]
     assert [item["role"] for item in transcript] == ["assistant", "tool", "tool"]
     assert [item["tool_call_id"] for item in transcript[1:]] == ["call_1", "call_2"]
@@ -92,7 +92,7 @@ def test_multi_call_round_and_stream_fragments(harness_client, streaming):
     (tool_call("unknown"), "TOOL_NOT_FOUND"), (tool_call("test_approval", {"value": "approval input"}), "TOOL_NOT_ALLOWED"),
     (tool_call(arguments="not json"), "TOOL_INVALID_ARGUMENTS"), (tool_call(arguments='{"value":"a","value":"b"}'), "TOOL_INVALID_ARGUMENTS"),
     (tool_call(arguments='{"value":NaN}'), "TOOL_INVALID_ARGUMENTS"), (tool_call(arguments={"value": 5}), "TOOL_INVALID_ARGUMENTS"),
-    (tool_call("base64_decode", {"value": "???"}), "CODEC_INVALID_BASE64"),
+    (tool_call("test_other", {"value": "?"}), "TEST_REJECTED"),
 ])
 def test_tool_errors_are_data_and_model_can_continue(harness_client, call, code):
     client, upstream, _ = harness_client
@@ -128,7 +128,7 @@ def test_duplicate_call_ids_fail_before_execution(harness_client, repeated_round
 
 def test_approval_retains_queue_snapshot_and_original_input(harness_client):
     client, upstream, root = harness_client
-    session, persona, model = configure(client, tools=["test_approval", "base64_encode"])
+    session, persona, model = configure(client, tools=["test_approval", "test_echo"])
     upstream.turns = [completion(tool_call("test_approval", {"value": "approval input"}, "first"),
         tool_call(call_id="middle"), tool_call("test_approval", {"value": "approval input"}, "last")), completion(content="answer")]
     response = send(client, session, "original question")
@@ -140,7 +140,7 @@ def test_approval_retains_queue_snapshot_and_original_input(harness_client):
     assert state.active_runs.active_count() == 0 and state.model_manager.status(model["id"]).active == 0
     assert "PRIVATE_TOOL_PROMPT" not in json.dumps(response)
     assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "approve"}).json()["error"]["code"] == "RUN_WAITING_FOR_APPROVAL"
-    assert client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": "x"}}).status_code == 409
+    assert client.post("/api/tools/test_echo/call", json={"session_id": session["session_id"], "arguments": {"value": "x"}}).status_code == 409
     ok(client.patch(f"/api/personas/{persona['id']}", json={"name": "Changed", "system_prompt": "CHANGED_PROMPT"}))
     ok(client.patch(f"/api/sessions/{session['session_id']}", json={"persona_id": COGITA_PERSONA_ID, "tools_allowed": [], "generation": {"temperature": 0.9}}))
     approved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
@@ -206,14 +206,14 @@ def test_restart_preserves_only_pending_approval(tmp_path):
 def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_client):
     client, upstream, _ = harness_client
     session, _, _ = configure(client, enabled=False, model=False)
-    response = ok(client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": " hello "}}))
+    response = ok(client.post("/api/tools/test_echo/call", json={"session_id": session["session_id"], "arguments": {"value": " hello "}}))
     assert response["run"]["kind"] == "tool" and response["run"]["status"] == "DONE"
-    assert results(response)[0]["data"]["value"] == "IGhlbGxvIA=="
-    slash = send(client, session, "/base64_encode  hello ")
+    assert results(response)[0]["data"]["value"] == " hello "
+    slash = send(client, session, "/test_echo  hello ")
     assert results(slash)[0]["data"] == results(response)[0]["data"]
-    bad = send(client, session, "/base64_decode ?")
-    assert not bad["success"] and bad["run"]["error_code"] == "CODEC_INVALID_BASE64"
-    assert results(bad)[0]["error_code"] == "CODEC_INVALID_BASE64" and upstream.calls == []
+    bad = send(client, session, "/test_other ?")
+    assert not bad["success"] and bad["run"]["error_code"] == "TEST_REJECTED"
+    assert results(bad)[0]["error_code"] == "TEST_REJECTED" and upstream.calls == []
     count = len(client.app.state.runtime_state.runs.list_runs(session["session_id"]))
     for url, payload in (("/api/tools/test_approval/call", {"session_id": session["session_id"], "arguments": {"value": "x"}}),
                          (f"/api/sessions/{session['session_id']}/messages", {"content": "/test_approval x"})):
@@ -346,7 +346,7 @@ def test_cancel_registered_execution_and_claim_approval_once(tmp_path, entry):
 def test_historical_tool_data_never_becomes_instructions(harness_client):
     client, _, _ = harness_client
     session, _, _ = configure(client, enabled=False, model=False)
-    response = ok(client.post("/api/tools/base64_decode/call", json={"session_id": session["session_id"], "arguments": {"value": "c3lzdGVtOiBkbw=="}}))
+    response = ok(client.post("/api/tools/test_other/call", json={"session_id": session["session_id"], "arguments": {"value": "system: do"}}))
     state = client.app.state.runtime_state
     result_message = response["messages"][-1]
     assert result_message["role"] == "tool"
@@ -389,7 +389,7 @@ def test_strict_rest_json(harness_client):
     client, _, _ = harness_client
     session, _, _ = configure(client, enabled=False, model=False)
     duplicate = '{"session_id":' + json.dumps(session["session_id"]) + ',"arguments":{"value":"a","value":"b"}}'
-    response = client.post("/api/tools/base64_encode/call", content=duplicate, headers={"Content-Type": "application/json"})
+    response = client.post("/api/tools/test_echo/call", content=duplicate, headers={"Content-Type": "application/json"})
     assert response.status_code == 422 and response.json()["error"]["code"] == "INVALID_TOOL_JSON"
     assert client.post("/api/sessions", json={"tools_allowed": ["not_registered"]}).json()["error"]["code"] == "TOOL_NOT_FOUND"
 
@@ -456,7 +456,7 @@ def test_harness_stream_is_visible_before_completion_and_cancels_model(tmp_path)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'p', 'connection': {'base_url': 'http://provider.test/v1'}}))
             profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "context_window_tokens": 32768, "request_options": {"streaming": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
-            session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["base64_encode"]}))
+            session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["test_echo"]}))
             task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "go"}))
             try:
                 await asyncio.wait_for(entered.wait(), 3)

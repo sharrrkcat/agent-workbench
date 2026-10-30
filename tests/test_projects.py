@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlmodel import Session as DbSession
 
-from ai_workbench.api.main import create_app
+from tests.tool_fixtures import create_tool_app as create_app
 from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.models.store import ModelProfileStore
 from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
@@ -30,7 +30,7 @@ def workspace(client, **values):
     return ok(client.post("/api/projects", json={
         "kind": "workspace", "name": "Workspace", "agent_persona_id": COGITA_PERSONA_ID,
         "cogita_persona_id": USER_PERSONA_ID, "context_policy": {},
-        "harness_enabled": False, "tools_allowed": ["base64_encode", "base64_decode"], **values,
+        "harness_enabled": False, "tools_allowed": ["web_search", "web_fetch"], **values,
     }))
 
 
@@ -125,20 +125,20 @@ def test_live_inheritance_overrides_reset_and_model_sources(client_pair):
 
 def test_empty_global_model_and_project_tool_ceiling(client_pair):
     client, upstream, _ = client_pair
-    project = workspace(client, tools_allowed=["base64_encode"])
+    project = workspace(client, tools_allowed=["test_echo"])
     session = child(client, project)
     path = f"/api/sessions/{session['session_id']}"
     assert session["effective"]["model_profile_id"] is None
-    denied = client.patch(path, json={"overrides": {"tools_allowed": ["base64_decode"]}})
+    denied = client.patch(path, json={"overrides": {"tools_allowed": ["test_other"]}})
     assert denied.status_code == 422 and denied.json()["error"]["code"] == "TOOL_NOT_ALLOWED"
     assert ok(client.get(path))["overrides"] == {}
-    ok(client.patch(path, json={"overrides": {"harness_enabled": True, "tools_allowed": ["base64_encode"]}}))
-    direct = ok(client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": "hello"}}))
+    ok(client.patch(path, json={"overrides": {"harness_enabled": True, "tools_allowed": ["test_echo"]}}))
+    direct = ok(client.post("/api/tools/test_echo/call", json={"session_id": session["session_id"], "arguments": {"value": "hello"}}))
     assert direct["run"]["status"] == "DONE" and upstream.calls == []
     ok(client.patch(f"/api/projects/{project['id']}", json={"tools_allowed": []}))
     assert ok(client.get(path))["effective"]["tools_allowed"] == []
-    assert client.post("/api/tools/base64_encode/call", json={"session_id": session["session_id"], "arguments": {"value": "hello"}}).json()["error"]["code"] == "TOOL_NOT_ALLOWED"
-    assert client.post(path + "/messages", json={"content": "/base64_encode hi"}).json()["error"]["code"] == "TOOL_NOT_ALLOWED"
+    assert client.post("/api/tools/test_echo/call", json={"session_id": session["session_id"], "arguments": {"value": "hello"}}).json()["error"]["code"] == "TOOL_NOT_ALLOWED"
+    assert client.post(path + "/messages", json={"content": "/test_echo hi"}).json()["error"]["code"] == "TOOL_NOT_ALLOWED"
     model = configure_model(client)
     assert ok(client.get(path))["effective"]["model_profile_id"] is not None
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": None}))
@@ -192,14 +192,14 @@ def test_approval_uses_snapshot_but_cannot_execute_revoked_project_tools(client_
     client, upstream, root = client_pair
     model = configure_model(client, request_options={"streaming": False})
     register_approval_tool(client.app.state.runtime_state.tool_registry, content="PRIVATE_TOOL_RESULT")
-    project = workspace(client, tools_allowed=["base64_encode", "test_approval"], harness_enabled=True, system_prompt="ORIGINAL_PROJECT_PROMPT", temperature=0.3)
+    project = workspace(client, tools_allowed=["test_echo", "test_approval"], harness_enabled=True, system_prompt="ORIGINAL_PROJECT_PROMPT", temperature=0.3)
     session = child(client, project)
     upstream.turns = [completion(tool_call("test_approval", {"value": "confirm"})), completion(content="done")]
     pending = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "read"}))
     run_id = pending["run"]["run_id"]
     assert pending["run"]["status"] == "WAITING_FOR_USER"
     assert client.delete(f"/api/projects/{project['id']}").status_code == 409
-    ok(client.patch(f"/api/projects/{project['id']}", json={"tools_allowed": ["base64_encode"], "system_prompt": "NEW_PROJECT_PROMPT", "temperature": 1.3}))
+    ok(client.patch(f"/api/projects/{project['id']}", json={"tools_allowed": ["test_echo"], "system_prompt": "NEW_PROJECT_PROMPT", "temperature": 1.3}))
     snapshot = client.app.state.runtime_state.runs.get_config_snapshot(run_id)
     assert snapshot["project_system_prompt"] == "ORIGINAL_PROJECT_PROMPT" and snapshot["model_profile_id"] == model["id"]
     approved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
@@ -208,7 +208,7 @@ def test_approval_uses_snapshot_but_cannot_execute_revoked_project_tools(client_
     assert upstream.calls[-1]["temperature"] == 0.3
     assert "ORIGINAL_PROJECT_PROMPT" in json.dumps(upstream.calls[-1]) and "NEW_PROJECT_PROMPT" not in json.dumps(upstream.calls[-1])
     assert "PRIVATE_TOOL_RESULT" not in json.dumps(upstream.calls)
-    assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["base64_encode"]
+    assert [tool["function"]["name"] for tool in upstream.calls[-1]["tools"]] == ["test_echo"]
     other = child(client, workspace(client, name="Keep"))
     deleted = ok(client.delete(f"/api/projects/{project['id']}"))
     assert deleted["deleted_session_ids"] == [session["session_id"]]

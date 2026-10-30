@@ -29,9 +29,9 @@ const reason = (id, value) => ({ id, type: 'reasoning', text: value });
 const call = (id, name) => ({ id, type: 'tool_call', tool_call_id: id, tool_name: name, arguments: { value: 'aGk=' } });
 const msg = (id, n, parts, extra = {}) => ({ message_id: id, session_id: 's', role: 'assistant', run_id: 'r',
   speaker_id: 'p', speaker_name: 'Original speaker', parent_message_id: 'u', created_at: at(n), parts, ...extra });
-const calls = msg('calls', 3, [reason('r1', 'first reasoning'), text('t1', 'working'), call('a', 'base64_encode'), call('b', 'base64_decode')]);
-const output = msg('output', 4, [{ id: 'out', type: 'tool_result', tool_call_id: 'a', tool_name: 'base64_encode', status: 'success', data: { value: 'aGk=' } }], { role: 'tool' });
-const moreCalls = msg('more', 5, [reason('empty', ' '), call('c', 'base64_decode')]);
+const calls = msg('calls', 3, [reason('r1', 'first reasoning'), text('t1', 'working'), call('a', 'test_echo'), call('b', 'test_other')]);
+const output = msg('output', 4, [{ id: 'out', type: 'tool_result', tool_call_id: 'a', tool_name: 'test_echo', status: 'success', data: { value: 'aGk=' } }], { role: 'tool' });
+const moreCalls = msg('more', 5, [reason('empty', ' '), call('c', 'test_other')]);
 const answer = msg('answer', 6, [reason('r2', 'final reasoning'), text('t2', 'final answer')]);
 const done = { ...run, status: 'DONE', updated_at: at(8), finished_at: '2026-09-07T00:00:12.000002Z' };
 
@@ -42,7 +42,7 @@ assert.deepEqual(reply.process.map((p) => p.kind), ['content', 'content', 'tool'
 assert.deepEqual(reply.process.filter((p) => p.kind === 'tool').map((p) => p.entry.call.tool_call_id), ['a', 'b', 'c']);
 assert.deepEqual(reply.process[2].entry.result, output.parts[0]);
 assert.equal(toolEntryStatus(reply.process[2].entry, done), 'success');
-const separated = buildReply(run, [calls, { ...moreCalls, parts: [text('separator', 'next step'), call('c', 'base64_decode')] }, answer], []);
+const separated = buildReply(run, [calls, { ...moreCalls, parts: [text('separator', 'next step'), call('c', 'test_other')] }, answer], []);
 assert.deepEqual(separated.process.map((p) => p.kind), ['content', 'content', 'tool', 'tool', 'content', 'tool', 'content']);
 const direct = buildReply({ ...done, kind: 'tool' }, [calls, output], []);
 assert.equal(direct.answer, undefined);
@@ -98,7 +98,7 @@ assert.deepEqual(messages, [incomplete]);
 assert.equal(applyMessageEvent(messages, delta(4, 'body', 'text', 'late')), messages);
 const source = msg('progress', 7, [text('provisional', 'working live')], { metadata: { streaming: true } });
 assert.equal(buildReply(run, [calls, source], []).answer.message_id, 'progress');
-const classified = buildReply(run, [calls, { ...source, parts: [...source.parts, call('d', 'base64_encode')], metadata: {} }], []);
+const classified = buildReply(run, [calls, { ...source, parts: [...source.parts, call('d', 'test_echo')], metadata: {} }], []);
 assert.equal(classified.answer, undefined);
 assert.ok(classified.process.some((i) => i.kind === 'content' && i.part.text === 'working live'));
 
@@ -211,7 +211,7 @@ for (const locale of ['en', 'zh-CN']) {
   const hidden = render(active, false);
   assert.match(hidden, /Current agent/);
   assert.doesNotMatch(hidden, /Original speaker/);
-  assert.doesNotMatch(hidden, /first reasoning|base64_encode|processing-list/);
+  assert.doesNotMatch(hidden, /first reasoning|test_echo|processing-list/);
   assert.match(hidden, /final answer/);
   const shown = render(active, true);
   assert.doesNotMatch(shown, /first reasoning|data-slot="code-block"/);
@@ -231,7 +231,7 @@ for (const locale of ['en', 'zh-CN']) {
   const waiting = render(buildReply({ ...run, status: 'WAITING_FOR_USER' }, [calls], [approvalStep]), false);
   assert.match(waiting, /Current agent/);
   assert.match(waiting, /aGk=/);
-  assert.match(waiting, /base64_encode/);
+  assert.match(waiting, /test_echo/);
   assert.doesNotMatch(waiting, /first reasoning/);
   assert.ok(waiting.includes(i18n.t('runs:approve')));
   assert.ok(waiting.includes(i18n.t('runs:reject')));
