@@ -25,6 +25,8 @@ class ProjectService:
             self.chat.validate_tools(project.tools_allowed)
             self.chat.validate_bindings("knowledge", project.knowledge_base_ids)
         elif project.kind == "qqbot":
+            if project.admin_qq == project.bot_account:
+                raise ChatError("QQ_ADMIN_IS_BOT", "The administrator must be a different QQ account.", 422)
             if project.agent_persona_id:
                 self.chat.agent_persona(project.agent_persona_id)
             if project.image_generation_model_profile_id is not None:

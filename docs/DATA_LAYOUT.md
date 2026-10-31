@@ -267,6 +267,8 @@ Revision `0041_qq_trigger_grants` renames qq_participants.keyword_message_id to 
 
 Revision `0042_qq_image_tools` adds the private qq_messages.image_generation_keyword boolean, default false. It records literal generation keywords from real incoming text segments; existing display text is not interpreted or backfilled. Batch generation permission and favorite candidate text live in private run configuration snapshots. resource_image deliveries use the existing kind, asset_id and text columns, with prompt null and a send-time description marker. No model, attachment, runtime or other directories are changed.
 
+Revision `0046_qq_commands` adds QQ message kind/command_status and its pending-command index; existing messages stay chat inputs without reparsing historical text. Deliveries gain model/command/notification origins, nullable model-run/tool-call ids and unique command/notification references. qq_notifications stores durable batch failures and connection episodes for administrator delivery, including outage counts/times and cancellation. Pending program sends survive restart; submitted interrupted sends become unknown. The revision changes only SQLite schema, leaving model, attachment, runtime and other directories untouched.
+
 Revision `0044_web_quality` removes retired codec names from session/Workspace tool selections, preserving
 empty and inherited selections. It interrupts affected unfinished runs and clears waiting references,
 without rewriting historical messages, configurations or model-input snapshots. It discards derived

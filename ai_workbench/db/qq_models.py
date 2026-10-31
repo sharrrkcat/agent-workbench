@@ -34,6 +34,7 @@ class QQMessage(SQLModel, table=True):
     __tablename__ = "qq_messages"
     __table_args__ = (UniqueConstraint("session_id", "external_id"),
         Index("ix_qq_message_pending", "session_id", "disposition", "id"),
+        Index("ix_qq_command_queue", "command_status", "id"),
         Index("ix_qq_message_batch", "batch_id", "deleted", "id"))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)
@@ -47,6 +48,8 @@ class QQMessage(SQLModel, table=True):
     batch_id: int | None = None
     deleted: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
     image_generation_keyword: bool = Field(default=False, sa_column_kwargs={"server_default": false()})
+    kind: str = Field(default="chat", sa_column_kwargs={"server_default": "chat"})
+    command_status: str | None = None
 
 
 class QQBatch(SQLModel, table=True):
@@ -127,12 +130,13 @@ class QQMedia(SQLModel, table=True):
 class QQDelivery(SQLModel, table=True):
     __tablename__ = "qq_deliveries"
     __table_args__ = (UniqueConstraint("run_id", "tool_call_id"),
+        UniqueConstraint("command_message_id"), UniqueConstraint("notification_id"),
         Index("ix_qq_delivery_external", "session_id", "external_id"),
         ForeignKeyConstraint(["asset_id"], ["qq_media_assets.id"], name="fk_qq_delivery_asset"))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)
-    run_id: str = Field(index=True)
-    tool_call_id: str
+    run_id: str | None = Field(default=None, index=True)
+    tool_call_id: str | None = None
     text: str
     status: str = "pending"
     external_id: str | None = None
@@ -143,3 +147,22 @@ class QQDelivery(SQLModel, table=True):
     kind: str = Field(default="text", sa_column_kwargs={"server_default": "text"})
     prompt: str | None = None
     asset_id: int | None = Field(default=None, index=True)
+    origin: str = Field(default="model", sa_column_kwargs={"server_default": "model"})
+    command_message_id: int | None = None
+    notification_id: int | None = None
+
+
+class QQNotification(SQLModel, table=True):
+    __tablename__ = "qq_notifications"
+    __table_args__ = (UniqueConstraint("event_key"), {"sqlite_autoincrement": True})
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: str = Field(index=True)
+    source_session_id: str | None = None
+    event_key: str
+    kind: str
+    error_code: str
+    created_at: float
+    last_at: float
+    resolved_at: float | None = None
+    occurrences: int = 1
+    cancelled: bool = False

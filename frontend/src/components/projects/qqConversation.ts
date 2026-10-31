@@ -6,6 +6,7 @@ export type QQRows<T> = QQPage<T> & { initialized: boolean };
 export const emptyQQRows = <T>(): QQRows<T> => ({ items: [], next_cursor: null, initialized: false, history_version: 0 });
 export class QQHistoryChanged extends Error {}
 export const unsettledQQMessage = (row: QQMessage) => row.disposition === 'pending'
+  || row.command_status === 'pending'
   || row.segments.some((segment) => segment.type === 'image' && segment.status === 'pending');
 
 // Follow the newest edge until it overlaps our saved window, including bursts larger than one page.
@@ -61,6 +62,7 @@ export async function olderQQRows<T extends { id: number }>(current: QQRows<T>, 
 
 export type QQConversationItem =
   | { kind: 'incoming'; id: string; message: QQMessage; showIdentity: boolean }
+  | { kind: 'program'; id: string; delivery: QQDelivery }
   | { kind: 'reply'; id: string; reply: Reply; deliveries: QQDelivery[] };
 
 export function buildQQConversation(messages: QQMessage[], batches: QQBatch[], deliveries: QQDelivery[], runs: Record<string, ToolRunResponse>): QQConversationItem[] {
@@ -68,7 +70,11 @@ export function buildQQConversation(messages: QQMessage[], batches: QQBatch[], d
     time: Date.parse(message.timestamp), order: message.id,
     item: { kind: 'incoming', id: `qq-message-${message.id}`, message, showIdentity: true },
   }));
-  const ids = new Set([...batches.flatMap((batch) => batch.run_id ? [batch.run_id] : []), ...deliveries.map((row) => row.run_id)]);
+  for (const delivery of deliveries.filter((row) => row.run_id === null)) {
+    entries.push({ time: delivery.created_at * 1000, order: delivery.id,
+      item: { kind: 'program', id: `qq-delivery-${delivery.id}`, delivery } });
+  }
+  const ids = new Set([...batches.flatMap((batch) => batch.run_id ? [batch.run_id] : []), ...deliveries.flatMap((row) => row.run_id ? [row.run_id] : [])]);
   for (const id of ids) {
     const data = runs[id];
     if (!data) continue;

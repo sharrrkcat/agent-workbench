@@ -132,6 +132,7 @@ def test_debounce_dedup_cutoff_fifo_and_private_media(qq_client):
 
 class FakeConnection:
     ready = True
+    status = "connected"
     def __init__(self, failure=None):
         self.calls, self.failure = [], failure
         self.timeouts = []

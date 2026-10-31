@@ -63,6 +63,7 @@ async def delete_project(project_id: str, state: RuntimeState = Depends(get_stat
         state.qq.assert_idle(session_id)
     for session_id in ids:
         delete_session_data(state, session_id)
+    state.qq.store.delete_project_notifications(project_id)
     state.projects.delete(project_id)
     return {"deleted": True, "project_id": project_id, "deleted_session_ids": ids}
 

@@ -95,7 +95,11 @@ function QQConversation({ session }: { session: QQSession }) {
               data-qq-continuation={item.kind === 'incoming' && !item.showIdentity ? '' : undefined}
               scrollAnchor={item.kind === 'incoming'}>
               {item.kind === 'incoming' ? <QQIncoming message={item.message} showIdentity={item.showIdentity}
-                deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'message', id: item.message.id }) }} /> : <>
+                deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'message', id: item.message.id }) }} />
+                : item.kind === 'program' ? <div className="my-2" data-qq-program={item.delivery.origin}>
+                  <QQOutgoing delivery={item.delivery} personaId={null}
+                    deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'delivery', id: item.delivery.id }) }} />
+                </div> : <>
                 <RunReply reply={item.reply} readOnly showFullProcessing={showFullProcessing}
                   deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'reply', id: item.reply.run.run_id }) }} />
                 {item.reply.run.metadata?.qq_reply?.skipped ? <Marker className="mt-2" data-qq-reply-skipped>
@@ -122,11 +126,12 @@ function QQConversation({ session }: { session: QQSession }) {
   </>;
 }
 
-function QQStatus({ status, detail }: { status: QQMessage['disposition'] | QQDelivery['status']; detail?: string }) {
+function QQStatus({ status, detail }: { status: QQMessage['disposition'] | QQDelivery['status'] | 'command_pending' | 'command_done'; detail?: string }) {
   const { t } = useTranslation('personas');
   const [open, setOpen] = useState(false);
   const Icon = { pending: Clock, batched: Check, skipped: SkipForward, sending: LoaderCircle,
-    sent: CheckCheck, failed: CircleX, unknown: CircleHelp }[status];
+    sent: CheckCheck, failed: CircleX, unknown: CircleHelp, cancelled: Square,
+    command: Check, command_pending: Clock, command_done: Check }[status];
   const label = t('qq.status.' + status);
   return <Tooltip open={open} onOpenChange={setOpen}><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} onClick={() => setOpen(true)}
     className={status === 'failed' ? 'shrink-0 text-destructive' : 'shrink-0 text-muted-foreground'} />}>
@@ -151,7 +156,8 @@ function QQIncoming({ message, showIdentity, deleteAction }: { message: QQMessag
     messageId={`qq-message-${message.id}`} showIdentity={showIdentity} showTime={showIdentity} textAvatar>
     <div className="flex min-w-0 items-center justify-end gap-1" data-qq-bubble-row data-qq-incoming={message.id}>
       <QQDeleteButton action={deleteAction} />
-      <QQStatus status={message.disposition} detail={references.join(' · ')} />
+      <QQStatus status={message.kind === 'command' ? (message.command_status === 'done' ? 'command_done' : 'command_pending') : message.disposition}
+        detail={references.join(' · ')} />
       <Bubble variant="secondary" align="end"><BubbleContent className="rounded-[24px] whitespace-pre-wrap"><QQMessageContent segments={message.segments} /></BubbleContent></Bubble>
     </div>
   </MessageFrame>;
@@ -160,7 +166,8 @@ function QQIncoming({ message, showIdentity, deleteAction }: { message: QQMessag
 function QQOutgoing({ delivery, personaId, deleteAction }: { delivery: QQDelivery; personaId: string | null; deleteAction: ReplyDeleteAction }) {
   const { t } = useTranslation('personas');
   const identity = usePersonaIdentity()(personaId);
-  const detail = [delivery.error_code ? t('qq.status.' + delivery.error_code, { defaultValue: delivery.error_code }) : '',
+  const detail = [delivery.run_id === null ? t('qq.origin.' + delivery.origin) : '',
+    delivery.error_code ? t('qq.status.' + delivery.error_code, { defaultValue: delivery.error_code }) : '',
     delivery.external_id ? `${t('qq.externalId')}: ${delivery.external_id}` : ''].filter(Boolean).join(' · ');
   return <div data-qq-delivery={delivery.id}>
     <MessageFrame role="assistant" name={identity.name} createdAt={new Date(delivery.created_at * 1000).toISOString()} showIdentity={false} showTime={false}>

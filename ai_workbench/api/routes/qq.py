@@ -25,14 +25,16 @@ class QQReference(ApiModel):
 
 MessageResponse = public_model("QQMessageResponse", QQMessage, omit={"references_json", "deleted", "image_generation_keyword"}, fields={
     "id": (int, ...), "references": (list[QQReference], ...), "segments": (list[QQSegment], ...),
-    "disposition": (Literal["pending", "batched", "skipped"], ...),
+    "disposition": (Literal["pending", "batched", "skipped", "command"], ...),
+    "kind": (Literal["chat", "command"], ...), "command_status": (Literal["pending", "done"] | None, ...),
 })
 BatchResponse = public_model("QQBatchResponse", QQBatch, omit={"participants_json"}, fields={"id": (int, ...),
     "trigger_kind": (QQTriggerKind, ...),
     "status": (Literal["queued", "running", "done", "failed", "cancelled", "interrupted"], ...),
 })
 DeliveryResponse = public_model("QQDeliveryResponse", QQDelivery, omit={"deleted"}, fields={"id": (int, ...),
-    "status": (Literal["pending", "sending", "sent", "failed", "unknown"], ...),
+    "status": (Literal["pending", "sending", "sent", "failed", "unknown", "cancelled"], ...),
+    "origin": (Literal["model", "command", "notification"], ...),
     "kind": (Literal["text", "generated_image", "resource_image"], ...),
     "attachment": (QQImageAttachment | None, ...), "description": (str | None, ...),
 })

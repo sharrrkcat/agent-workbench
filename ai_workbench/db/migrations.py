@@ -62,7 +62,8 @@ QQ_IMAGE_TOOLS_REVISION = "0042_qq_image_tools"
 WEB_CACHE_REVISION = "0043_web_cache"
 WEB_QUALITY_REVISION = "0044_web_quality"
 WEB_FILTERS_REVISION = "0045_web_filters"
-HEAD_REVISION = WEB_FILTERS_REVISION
+QQ_COMMANDS_REVISION = "0046_qq_commands"
+HEAD_REVISION = QQ_COMMANDS_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

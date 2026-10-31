@@ -134,9 +134,9 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     if engine is None:
         from sqlmodel import create_engine, SQLModel
         from sqlalchemy.pool import StaticPool
-        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia, QQMediaAsset
+        from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia, QQMediaAsset, QQNotification
         qq_engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMediaAsset, QQMedia)])
+        SQLModel.metadata.create_all(qq_engine, tables=[t.__table__ for t in (QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMediaAsset, QQMedia, QQNotification)])
     else:
         qq_engine = engine
     qq_store = QQStore(qq_engine, sessions)

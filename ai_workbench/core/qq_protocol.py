@@ -98,6 +98,12 @@ def _card_text(kind, data):
 def normalize(event):
     parsed = OneBotMessage.model_validate(event)
     segments = _cq_segments(parsed.message) if isinstance(parsed.message, str) else parsed.message
+    leading = []
+    for segment in segments:
+        if segment.type != "text":
+            break
+        leading.append(str(segment.data.get("text", "")))
+    command = re.match(r"^/cogita(?:\s|$)", "".join(leading)) is not None
     text, keywords, body, refs, media, offset = [], [], [], [], [], 0
     bot_id = str(event.get("self_id"))
     bot_mention = re.compile(r"@" + re.escape(bot_id) + r"(?![0-9])")
@@ -141,7 +147,7 @@ def normalize(event):
         offset += len(text[-1])
     sender_id = str(parsed.user_id)
     addresses_bot |= bot_mention.search("".join(literal)) is not None
-    return dict(external_id=str(parsed.message_id), sender_id=sender_id,
+    return dict(external_id=str(parsed.message_id), sender_id=sender_id, kind="command" if command else "chat",
         sender_name=parsed.sender.card or parsed.sender.nickname or sender_id,
         timestamp=datetime.fromtimestamp(parsed.time, timezone.utc).isoformat(),
         text="".join(text), references_json=json.dumps(refs, ensure_ascii=False),

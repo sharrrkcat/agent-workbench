@@ -25,7 +25,7 @@ export type TimelineInput = ProjectSettings & {
 };
 
 export type QQBotInput = ProjectSettings & {
-  kind: 'qqbot'; bot_account: string; websocket_url: string; access_token?: string;
+  kind: 'qqbot'; bot_account: string; admin_qq: string | null; websocket_url: string; access_token?: string;
   connection_enabled: boolean; agent_persona_id: string | null; system_prompt: string;
   reasoning: boolean; group_reply_mode: 'keyword'; keywords: string[]; batch_message_limit: number;
   reply_message_limit: number; image_input_enabled: boolean;

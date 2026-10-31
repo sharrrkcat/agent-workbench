@@ -17,15 +17,21 @@ export function useQQConversation(sessionId: string) {
   const [deleting, setDeleting] = useState(false);
   const current = useRef(data);
   const live = useRef(false);
-  const pending = useRef(false);
+  const pending = useRef<Promise<void> | null>(null);
   const mutationPending = useRef(false);
   const mutationError = useRef('');
   const revision = useRef(0);
 
   async function refresh(older = false) {
-    if (pending.current || mutationPending.current) return;
-    pending.current = true;
     const version = revision.current;
+    while (pending.current) {
+      if (!older) return;
+      await pending.current;
+      if (!live.current || version !== revision.current) return;
+    }
+    if (mutationPending.current) return;
+    let complete!: () => void;
+    pending.current = new Promise<void>((resolve) => { complete = resolve; });
     if (older) setHistoryLoading(true);
     try {
       const saved = current.current;
@@ -40,7 +46,7 @@ export function useQQConversation(sessionId: string) {
       ]);
       if ([messages, batches, deliveries].some((page) => page.history_version !== nextBinding.history_version))
         throw new QQHistoryChanged();
-      const ids = new Set([...batches.items.flatMap((batch) => batch.run_id ? [batch.run_id] : []), ...deliveries.items.map((row) => row.run_id)]);
+      const ids = new Set([...batches.items.flatMap((batch) => batch.run_id ? [batch.run_id] : []), ...deliveries.items.flatMap((row) => row.run_id ? [row.run_id] : [])]);
       const changed = saved.messages.history_version !== nextBinding.history_version;
       const runs = Object.fromEntries(Object.entries(saved.runs).filter(([id]) => ids.has(id) && !changed));
       const results = await Promise.all([...ids].filter((id) => !runs[id] || !terminal(runs[id].run.status))
@@ -53,7 +59,7 @@ export function useQQConversation(sessionId: string) {
     } catch (reason) {
       if (live.current && version === revision.current && !(reason instanceof QQHistoryChanged)) setError(errorText(reason));
     }
-    finally { pending.current = false; if (live.current) setHistoryLoading(false); }
+    finally { pending.current = null; complete(); if (live.current) setHistoryLoading(false); }
   }
 
   useEffect(() => {
@@ -81,7 +87,7 @@ export function useQQConversation(sessionId: string) {
       const removedRuns = new Set(change.deleted_run_ids);
       current.current = {
         messages: { ...saved.messages, items: saved.messages.items.filter((row) => !change.deleted_qq_message_ids.includes(row.id)) },
-        deliveries: { ...saved.deliveries, items: saved.deliveries.items.filter((row) => !change.deleted_qq_delivery_ids.includes(row.id) && !removedRuns.has(row.run_id)) },
+        deliveries: { ...saved.deliveries, items: saved.deliveries.items.filter((row) => !change.deleted_qq_delivery_ids.includes(row.id) && (row.run_id === null || !removedRuns.has(row.run_id))) },
         batches: { ...saved.batches, items: saved.batches.items.map((row) => row.run_id && removedRuns.has(row.run_id) ? { ...row, run_id: null } : row) },
         runs: Object.fromEntries(Object.entries(saved.runs).filter(([id]) => !removedRuns.has(id)).map(([id, value]) =>
           [id, { ...value, messages: value.messages.filter((message) => !change.deleted_message_ids.includes(message.message_id)) }])),

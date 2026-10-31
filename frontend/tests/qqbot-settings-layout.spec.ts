@@ -67,7 +67,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await field(labels.qq.account).fill(String(stamp));
         await field(labels.qq.token).fill('layout-secret');
         await expectColumns([field(labels.projectName), field(labels.qq.account)], width === 390 ? 1 : 2);
-        await expectColumns([field(labels.qq.url), field(labels.qq.token)], width === 390 ? 1 : 2);
+        await expectColumns([field(labels.qq.adminQQ), field(labels.qq.url)], width === 390 ? 1 : 2);
         expect((await editor.boundingBox())!.width).toBeLessThanOrEqual(768);
         await editor.getByRole('switch', { name: labels.qq.enabled, exact: true }).focus();
         await page.keyboard.press('Tab');

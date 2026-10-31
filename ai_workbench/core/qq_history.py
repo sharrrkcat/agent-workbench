@@ -22,7 +22,8 @@ class QQHistory:
         self.store = store
 
     def busy(self, session_id):
-        return self.store.active_batch(session_id) is not None or self.state.runs.has_unfinished(session_id=session_id)
+        return self.store.active_batch(session_id) is not None or self.state.runs.has_unfinished(session_id=session_id) or (
+            self.state.qq.programs.busy(session_id))
 
     def delete(self, session_id, *, message_id=None, delivery_id=None, run_id=None):
         if self.store.get(QQBinding, session_id) is None:
@@ -59,8 +60,9 @@ class QQHistory:
                 row.deleted = True
                 db.add(row)
                 change.deleted_qq_delivery_ids = [delivery_id]
-                change.deleted_message_ids = [message.message_id for message in self.state.messages.messages_for_run(row.run_id)
-                    if message.metadata.get("qq_delivery_id") == delivery_id]
+                if row.run_id is not None:
+                    change.deleted_message_ids = [message.message_id for message in self.state.messages.messages_for_run(row.run_id)
+                        if message.metadata.get("qq_delivery_id") == delivery_id]
             else:
                 run = self.state.runs.get_run(run_id)
                 if run.session_id != session_id:

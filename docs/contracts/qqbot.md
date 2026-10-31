@@ -16,6 +16,7 @@ Sessions use Project settings at execution time and Agent identity/prompt only. 
 | Setting | Default and contract |
 | --- | --- |
 | connection_enabled / agent_persona_id / model_profile_id | false / null / null |
+| admin_qq | null; optional strict positive decimal-string QQ number, distinct from bot_account; omission retains, null clears |
 | reasoning / keywords | true / empty list; keywords are trimmed, case-insensitively deduplicated |
 | batch_message_limit / reply_message_limit | Strict integers: 20 (1..200) / 4 (1..20) |
 | image_input_enabled | Strict boolean, false; derives effective context_policy.include_attachments |
@@ -29,21 +30,18 @@ PATCH omission retains settings; null is invalid for booleans and limits. Null c
 Unknown fields, invalid types/ranges and invalid nulls return 422.
 Description/generation models participate in Project/unfinished-run reference protection. Generation always requests one image regardless of profile n.
 Configuration, image switches/models and generation controls resolve before asynchronous media/member waits, then remain fixed in the run snapshot.
-New Projects have an editable conversational prompt: stay on topic, match participants' language, usually reply once and follow the selected Persona.
-Prefer qq_send_message; use favorite images sparingly for fitting emotional interaction, without routine illustrations, consecutive unsolicited images or duplicate links/announcements.
-A topic/tag match alone does not justify sending. Prompts recommend at most one image per reply, without a separate execution quota or cooldown.
-Use generation only for explicit new-picture requests; pre-send image failures permit text. API omission chooses the English prompt; explicit empty text stays empty and existing prompts are preserved.
+New Projects have an editable prompt to stay on topic, match participants' language, usually reply once and follow the selected Persona; API omission uses English, while explicit empty text and saved prompts are preserved.
+Prompts prefer qq_send_message and at most one fitting emotional image per reply, without a separate image quota/cooldown, routine illustrations, consecutive unsolicited pictures or duplicate announcements. Topic/tag matches alone do not justify sending; generation requires an explicit new-picture request, and pre-send image failures permit text.
 
 ## Ingress and triggers
 
 Each enabled Project owns one OneBot v11 WebSocket connection to independently installed/logged-in NapCat. Identity verification precedes ingestion; transport reconnects automatically.
 Status distinguishes authentication, account mismatch and connection failure without exposing tokens. Wire messages are limited to 1 MiB with a bounded receive queue.
-Only bound conversations are recorded. Malformed messages produce content-free diagnostics; duplicate external ids do not reset debounce, and bot echoes never enter batches.
+Only bound conversations are recorded, except a configured administrator's first private command creates its friend Session. Malformed messages produce content-free diagnostics; duplicate external ids do not reset debounce, and bot echoes never enter batches.
 Records retain sender identity, UTC-offset time, mention/reply references and ordered image/sticker/system-face positions from arrays or CQ strings. Literal placeholders are never parsed as media or backfilled.
 
-Share segments use title/url; JSON link cards use meta.news.title/jumpUrl with top-level prompt as title fallback, producing [分享链接: title (url)].
-JSON accepts objects or strings in data.data; lightapp also accepts data.content. Small-app cards are lightapp or JSON apps prefixed com.tencent.miniapp.
-They use prompt, then meta.detail_1.title, and the first nonempty qqdocurl/jumpUrl/url in detail_1, producing [小程序: prompt (url)].
+Share segments use title/url; JSON link cards use meta.news.title/jumpUrl with top-level prompt as title fallback, producing [分享链接: title (url)]. JSON accepts objects or strings in data.data; lightapp also accepts data.content.
+Small-app cards are lightapp or JSON apps prefixed com.tencent.miniapp. They use prompt, then meta.detail_1.title, and the first nonempty qqdocurl/jumpUrl/url in detail_1, producing [小程序: prompt (url)].
 Fields accept strings only, trimming/collapsing whitespace. Missing URLs omit parentheses; URL-only cards show [type: url]; recognized empty cards show [分享链接] or [小程序].
 Unknown/malformed JSON becomes [非文字消息] without discarding adjacent segments. Markers reach display, saved batches and history without raw JSON, fetching links or backfilling old records.
 
@@ -51,8 +49,7 @@ Group keywords match case-insensitive substrings in text, normalized real @QQ-id
 A built-in complete @bot-id matches real self mentions and literal text, independently of editable keywords; bare numbers and longer account prefixes do not match.
 Quotes, media/card fields and model-only identity labels cannot trigger independently. Clearing keywords preserves the built-in account trigger. Private messages always require replies.
 Keyword matches grant a new 60-second Session eligibility epoch; eligible senders' ordinary messages trigger follow-ups. Participant arrivals extend silence five seconds from receipt; bystanders join without extending it.
-Membership lasts until freezing, even after eligibility expires. Both durations are fixed. Arrivals exactly at a deadline follow expiry.
-Text/account matches decide immediately. Otherwise real mentions use cached names or bounded asynchronous lookup outside the socket reader.
+Membership lasts until freezing, even after eligibility expires. Both durations are fixed; exact-deadline arrivals follow expiry. Text/account matches decide immediately; other real mentions use cached names or bounded asynchronous lookup outside the socket reader.
 Pending decisions complete in Session receipt order using original receipt times; batching excludes later unclassified inputs. Failure/timeout uses available text/accounts; late names never retrigger messages.
 Connection changes discard unfinished decisions while retaining raw records. Display refreshes and later context projection do not repeat trigger decisions.
 
@@ -77,16 +74,14 @@ Keywords, existing follow-up eligibility and outstanding ordinary reply work tak
 At expiry, the newest configured count of visible observation messages forms an immutable icebreaker batch with its lone speaker and last submitted message as grant source; older pending inputs are skipped.
 Later supplements do not rewrite frozen inputs. Icebreaker run snapshots and public metadata use message_limit=1, shared by text and both image tools.
 
-Cooldown starts after context preparation on entering inference. Queue/preparation cancellation consumes none; skips, later cancellation and failures retain it.
-Confirmed icebreaker replies grant their speaker eligibility until max(current expiry, confirmation time + 60 seconds), atomically with delivery confirmation.
+Cooldown starts on entering inference after context preparation; queue/preparation cancellation consumes none, while skips/later cancellation/failures retain it. Confirmed icebreaker replies atomically grant speaker eligibility until max(current expiry, confirmation time + 60 seconds).
 Grant sources use the submitted message id; newer sources and existing windows are preserved. Pending nickname decisions retain pre-confirmation eligibility for already-received messages.
 Skips, failures, unknown sends and pre-send cancellation grant nothing; repeated receipts/restart never extend a grant. Skipping an icebreaker does not change participant eligibility.
 Cooldown does not block ordinary follow-ups; another icebreaker requires a new message after cooldown and sufficient silence.
 
 ### Icebreaker cancellation and recovery
 
-Observations are process-local on the existing supervisor. Pause, disablement, disconnect, restart or icebreaker/connection edits discard observations and cancel unsent icebreakers.
-Resume starts a fresh silence baseline; durable cooldowns survive. Restart cancels queued/running icebreakers without a delivery intent instead of replaying; submitted sends follow normal interrupted/unknown recovery.
+Process-local observations reset on pause, disablement, disconnect, restart or icebreaker/connection edits, cancelling unsent icebreakers. Resume starts a fresh silence baseline; durable cooldowns survive. Restart cancels queued/running icebreakers without delivery intents; submitted sends follow interrupted/unknown recovery.
 A second speaker or ordinary reply trigger cancels during queueing, media/member waits, context preparation, inference or generation.
 Execution/sending waits for preceding nickname decisions, then rechecks eligibility before the durable intent and OneBot submission without an intervening await.
 Once submitted, new activity cannot cancel or retract the message. Automatic invalidation records QQ_ICEBREAKER_CANCELLED without automatically pausing; actual model/delivery errors and explicit pause/stop retain normal handling.
@@ -171,9 +166,8 @@ Execution ORs flags of visible submitted messages after truncation and requires 
 History, tool results and model output cannot unlock generation; a new batch such as 再来一张 stays disabled. Keywords enable capability, not obligation: animation/scene discussion, text generation and requests not to draw are excluded by instructions.
 
 Preparation snapshots all global favorites with nonblank descriptions as ordered {asset_id, description} candidates. Only text enters qq_runtime under normal context budgets; paths/URLs/bytes stay out.
-No candidates means no list or qq_send_image definition. Favorite/description edits affect later batches; sending rechecks existence, favorite state and nonblank description.
-After any icebreaker wait, favorite sending reads the original attachment synchronously before the durable intent, retaining animation. The intent references the asset; confirmation saves receipt/history marker atomically.
-It never copies the asset, changes descriptions or invokes a model. Missing/unfavorited/undescribed/unreadable assets return QQ_IMAGE_RESOURCE_UNAVAILABLE before intent/slot, allowing text.
+No candidates means no list or qq_send_image definition. Edits affect later batches; after any icebreaker wait, sending rechecks existence/favorite/description and reads the original attachment synchronously before intent, retaining animation. Confirmation atomically saves receipt/history marker without copying assets, editing descriptions or invoking models.
+Missing/unfavorited/undescribed/unreadable assets return QQ_IMAGE_RESOURCE_UNAVAILABLE before intent/slot, allowing text.
 
 Generation calls ModelManager.generate_images with n=1 and snapshotted size/quality/style; unset controls and response format inherit profile defaults. URL results follow the download policy above; URL/base64 results use attachment limits and QQ decoding.
 Stage files before dispatch. Only confirmed sends create/reuse an asset and link delivery/history in one transaction. Its description becomes the full original prompt unless manually edited, including intentionally cleared descriptions; ignore provider revised_prompt.
@@ -183,8 +177,7 @@ There is no automatic retry. Missing mandatory replies/common loop limits still 
 ### Delivery receipts
 
 Delivery intents persist before dispatch, unique by run/tool-call id, with pending/sending/sent/failed/unknown states. Confirmation and historical assistant message commit atomically; later failures preserve earlier sends.
-Only a successful response matching the current request echo with a valid integer/nonblank string message id confirms delivery. Known self reports mark confirmed records echoed; an active send retains at most 128 self ids for its bound Session.
-An early self report can set echoed in confirmation; self reports alone cannot confirm unknown sends. Temporary ids are discarded after sending; duplicates add no history, count or eligibility.
+Only a successful matching-echo response with a valid integer/nonblank string message id confirms delivery. Self reports mark confirmed records echoed; up to 128 early self ids per active Session send survive until confirmation, then are discarded. Self reports cannot confirm unknown sends, and duplicates add no history/count/eligibility.
 
 OneBot errors normally mean failed. For send_group_msg/send_private_msg, the native sendMsg/onMsgInfoListUpdate Timeout diagnostic in message/wording means unknown with QQ_SEND_ACK_TIMEOUT.
 Other retcode=1200 errors, unrelated timeouts and EventChecker Failed are not reclassified. Tool errors retain only action, numeric retcode and normalized cause, never raw upstream diagnostics.
@@ -201,6 +194,27 @@ Any source keyword batch/window makes the merged group batch mandatory before tr
 Each retained speaker takes its latest epoch only from retained messages' source batches/current window; resume never extends eligibility. Failed/cancelled/interrupted batches never replay.
 Restart retains ordinary queues, window membership/policy and absolute participant expiry; it marks running batches interrupted, in-flight intents unknown and pauses affected Sessions. Shared run reconciliation remains authoritative.
 
+## Commands and administrator notifications
+
+Only real leading text matching case-sensitive `/cogita` followed by whitespace/end opens a command. Leading whitespace, quoted references, mentions, cards and media cannot supply the prefix.
+Commands retain QQMessage identities with kind=command, disposition=command and command_status=pending|done. Independent Project workers process them during model execution or pause without debounce or blocking the socket reader.
+They never enter trigger decisions, participant grants, icebreaker clocks, ordinary batches, resume coalescing or model context. Program replies and notifications also stay outside model history, runs, reply quotas and participant/activity updates.
+
+| Command | Permission and behavior |
+| --- | --- |
+| /cogita check | Everyone in a bound conversation; local version/database/activity, process RSS/host RAM/CPU, current Session/queue/context and NapCat/model status |
+| /cogita pause [target] | Configured sender QQ only; prevent subsequent execution while the active reply finishes |
+| /cogita resume [target] | Configured sender QQ only; require model idle, then use the ordinary backlog-coalescing transaction |
+
+Omitted targets mean the current Session; bare numbers select an existing group/friend in this Project. Ambiguity requires group:number or friend:number. Missing targets are not created, and responses stay in the command's source Session.
+Check reports the most recent completed model-call statistics matching the current model/window, timestamped rather than presented as live usage; missing values remain unavailable. It performs no inference/probe and discloses no credentials, raw errors or other conversations.
+Invalid/empty commands return usage; unauthorized controls return denial. Group roles/names grant no permissions. Control changes, command completion and one unique reply intent commit together; restart continues pending commands without replaying completed actions.
+QQDelivery.origin is model|command|notification; program deliveries have null run/tool-call ids and a unique command_message_id or notification_id. Per-Session send locks share transport receipts/timeouts with model tools; pending program sends survive restart, submitted interrupted sends become unknown and never resend automatically.
+Terminal run/send failures, unexpected cancellation/pause, interrupted work and connection/auth/account failures create durable notifications. One batch's failure/pause shares an event; one continuous connection outage accumulates attempts until verified reconnection, then sends its summary.
+Intentional Pause/Stop/disable/shutdown, normal icebreaker cancellation and recovered tool/media/name failures do not notify. Notifications auto-create/reuse the administrator's private Session and deliver during its pause; ordinary private input still follows model rules.
+Unsent notifications survive restart and follow the current administrator; clearing admin_qq cancels them. Offline notifications wait for verified reconnection. Failed/unknown submissions are terminal; notification failures never recurse or pause the recipient.
+Notifications name the Project/source target, time, sanitized error and current state with an applicable resume command. Source deletion cancels unsent alerts; Project deletion removes its events. Deleting visible program messages retains deduplication identities.
+
 ## Resources and history management
 
 The shared gallery contains each received picture/custom sticker, image delivery and retained favorite once per global asset; face-only assets are excluded.
@@ -212,7 +226,7 @@ In-flight deliveries protect resources/files. Captured requests stay unchanged; 
 
 ### Local history deletion
 
-Local incoming/delivery/reply deletion requires an idle run/batch; busy returns SESSION_BUSY (409), missing/mismatched records 404. Each removes only its local history/context contribution, never QQ messages.
+Local incoming/delivery/reply deletion requires idle run/batch/command/sending work; busy returns SESSION_BUSY (409), missing/mismatched records 404. It removes only local history/context contributions, never QQ messages.
 Incoming deletion rebuilds raw batch and submitted input using remaining messages' original times/frozen mentions. Empty queued batches cancel; empty submitted input is omitted while delivery pairs survive.
 Delivery deletion removes its saved assistant message and both protocol records. Deleted ingress/receipt identities remain private for deduplication; statuses, participant eligibility, other messages and historical send counts stay unchanged.
 Deleting a QQ run removes all its deliveries/messages/steps/events/private state and clears the batch run reference, preserving inputs. SQLite deletion, input updates and history_version commit together.
@@ -240,30 +254,24 @@ Resource lists return items/total/page/page_size; items expose id, original atta
 Missing/face-only resources return QQ_RESOURCE_NOT_FOUND (404). Batches expose trigger_kind=keyword|followup|private|icebreaker; participant epochs/windows and persisted cooldown stay private.
 Messages expose strict ordered text/image segments plus summary text. Images include media_id, nullable asset_id/description, image|sticker|face kind, pending|ready|failed|deleted state, label, original attachment and error_code.
 Download addresses, model derivatives and internal paths stay private. Deliveries expose kind=text|generated_image|resource_image and nullable prompt/asset_id/description/attachment; resource_image prompt is null, without download URLs/binary payloads.
-Ordinary sending, direct tools, editing and regeneration are rejected and hidden. [Shared events](runs-streaming.md#websocket-events) carry history invalidation; QQ polling reconciles versions across the loaded range and invalidates completed-run caches.
-Older pending media refreshes even when batched/skipped. Pre-deletion/mixed-version responses cannot restore records; Session navigation isolates late responses.
+Ordinary sending, direct tools, editing and regeneration are rejected/hidden. [Shared events](runs-streaming.md#websocket-events) and versioned polling invalidate completed-run caches across loaded history, refresh older pending media/commands, reject pre-deletion/mixed versions and isolate late responses after navigation. Explicit pagination waits for an in-flight poll.
 
 ### Project editor and conversation
 
-Creation/settings share Connection (initial), Replies and Images tabs and one save action. Tab choice resets on opening; dialog tabs/actions sit outside the scrolling body.
-Sections stay expanded; disabled icebreaker/generation fields remain conditional. Hidden panels stay mounted outside focus/accessibility navigation; submission reveals the first invalid field before native feedback.
+Creation/settings share Connection (initial, including Administrator QQ), Replies and Images tabs and one save action. Opening resets the tab; dialog tabs/actions sit outside the scrolling body. Expanded sections retain conditional icebreaker/generation fields; hidden panels stay mounted outside focus/accessibility navigation, and submission reveals the first invalid field.
 The settings header has only name/sidebar toggle; immediate group/friend binding stays in the sidebar. Editor width is at most 48rem; container widths 32rem/40rem enable two/three columns for timing/image fields.
-Prompt/keywords keep four/three rows with internal scrolling. Token clearing is inline; hints cover syntax/essential semantics. Failed saves retain drafts.
-New UI prompts use the opening language; changing language preserves the draft, clearing/saving stays empty, and editing never reapplies defaults.
+Prompt/keywords use four/three internally scrolling rows, inline token clearing and essential hints. Failed saves preserve drafts; prompts use the opening language, survive language changes and preserve empty edits without reapplying defaults.
 The image-description selector sits beside image input with Do not use. Generation uses a separate provider-only selector, Disabled initially, with model-default size/quality/style overrides; disabling retains controls.
-Icebreaker enabling reveals the three durations; disabling hides them while retaining values. Helpers explain real-mention names, built-in account matching and 60-second post-icebreaker follow-up.
-Context fields use one blank/unlimited and zero/no-history hint. Image helpers cover the five-current-image limit, later descriptions, one image per generation call and size syntax; reply limits explain shared text/image allowance.
+Icebreaker duration fields retain values while hidden. Helpers explain trigger names/account matching/follow-up, context blank/unlimited and zero/no-history, five current images/captions, generation count/size, and shared text/image reply allowance.
 
-Each original incoming message, including image-only input, has its own right-side secondary bubble. Consecutive sender ids group within 120 seconds from group start, interrupted by another sender or model reply.
-Only the first row has avatar/name/time; continuations have a 6px gap and no header. Outside icons retain pending/batched/skipped state without changing timestamps.
+Each incoming message has a right-side secondary bubble. Same-sender rows group for 120 seconds from group start, interrupted by another sender or reply; only the first has avatar/name/time and continuations use 6px gaps. Status icons include pending/batched/skipped and command pending/done without changing timestamps.
 Resume overflow becomes skipped without batch association, preserving text/media. Retained inputs move to the replacement; old unsubmitted queues disappear and history_version refreshes loaded states/associations without altering submitted history.
 Each run appears once on the left with processing, usage/context detail, original time and delivery states; inputs are not duplicated. Delivery bubbles omit headers/times, with 6px gaps and 8px after model actions.
-Generated/favorite images are separate bubbles with shared description alt/preview text. Older history loads into the same conversation without tabs or pagination controls.
+Generated/favorite images use separate bubbles with shared description alt/preview text; program replies/notifications render directly without model-run panels, with origin/context-exclusion status details. Older history loads into the same conversation.
 Both locales show reply-limit completion, skips without bubbles and missing-reply pauses. Unknown remains unconfirmed; QQ_SEND_ACK_TIMEOUT asks users to check QQ before resuming, while QQ_ACTION_FAILED reports a send API error in existing tooltips.
 There is no manual confirmation or automatic unpause; old records stay unchanged. The header shows title without a separate target number or run controls.
 The disabled composer shows localized "Chatting in {targetId}" for groups/friends, without Persona name. Outlined pause/resume and Stop replace attachment/send controls on the left; context usage/model menu stay right.
-The hint shares the row when it fits, otherwise moves above the toolbar based on both control groups. The model menu PATCHes only the Project external LLM or reasoning field; later batches inherit edits and active runs keep snapshots.
-Harness has no toggle/settings entry. Pending saves block duplicate configuration edits but not Stop; failures preserve confirmed values with feedback, and late results preserve subsequent navigation.
+The hint fits beside both control groups or moves above them. The model menu PATCHes only the Project external LLM/reasoning; later batches inherit edits and active runs retain snapshots. Harness has no toggle; pending saves block duplicate edits but not Stop, failures preserve confirmed values, and late results preserve navigation.
 Incoming rows order delete/status/bubble; delivery rows order bubble/status/delete. Delete controls reserve space and appear on hover/focus with existing 180ms/reduced-motion behavior; touch keeps them visible.
 Whole-reply deletion stays in model actions. Every deletion confirms scope; busy/pending mutations disable it and failures retain records with feedback.
 Ordered media renders in place: images up to 240px, stickers 160px, inline faces 24px, all constrained by bubble width. Original animations play; shared preview opens images and pending/failed markers retain position.
@@ -278,7 +286,7 @@ Closing/navigation/history/unload protect unsaved edits; pending mutations preve
 
 ## Limits and acceptance
 
-Local fake-OneBot/fake-model tests cover transport, ingestion, triggers/participant windows, skip/renewal races, batching, icebreaker timing/cancellation/cooldowns, delivery, resume, deletion, stop and restart.
+Local fake-OneBot/fake-model tests cover transport, ingestion, triggers/participant windows, skip/renewal races, batching, icebreakers, delivery, resume, deletion, stop/restart, command isolation/permissions/atomic controls and durable notification deduplication/recovery. Live administrator commands/alerts remain unverified.
 Media/provider fixtures cover shared assets, ordering/current-batch selection, names/faces/cards, captions, original animations/static frames, generation, failures and late acquisition/deletion. Web fixtures cover shared settings/rounds, citation-free traces and error recovery; live AnySearch-to-QQ replies remain unverified. Browser fixtures cover both locales and desktop/touch workflows.
 Live NapCat delivery/member lookup/card reception, media URLs/system faces, vision-model round trips, real Provider-to-NapCat generated images, original-animation presentation and restrained real-model image frequency remain unverified.
 The 60-second native timeout, 90-second response wait and native-timeout classification have simulated coverage only. Live acceptance must use explicitly designated targets, compare actual QQ receipt with recorded outcome and check duplicate prevention.

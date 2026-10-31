@@ -17,6 +17,42 @@ def install_qq_fixture(app):
     state = app.state.runtime_state
     state.qq.start = lambda: None
 
+    class ProgramConnection:
+        ready = True
+        status = "connected"
+
+        async def call(self, action, params, *, timeout=20):
+            return {"message_id": str(time.time_ns())}
+
+    def program_connection(session_id):
+        session = state.sessions.get_session(session_id)
+        project = state.project_service.update(session.project_id, {"connection_enabled": True})
+        state.qq.connections[project.id] = ProgramConnection()
+        return session, project
+
+    @app.post("/__test__/qq/{session_id}/command")
+    async def command_message(session_id: str, text: str = Body(embed=True)):
+        session, project = program_connection(session_id)
+        await state.qq.ingest(project.id, {"post_type": "message", "self_id": project.bot_account,
+            "message_type": "private" if session.target_kind == "friend" else "group", "group_id": session.target_id,
+            "user_id": project.admin_qq, "message_id": str(time.time_ns()), "time": time.time(),
+            "sender": {"nickname": "Administrator"}, "message": [{"type": "text", "data": {"text": text}}]})
+        await state.qq.programs.process_commands(project.id)
+        await state.qq.programs.send_pending(project.id)
+        return {"ok": True}
+
+    @app.post("/__test__/qq/{session_id}/notification")
+    async def program_notification(session_id: str):
+        from ai_workbench.db.qq_models import QQBatch
+        session, project = program_connection(session_id)
+        state.qq.store.pause(session_id, "QQ_RUN_FAILED")
+        batch = state.qq.store.save(QQBatch(session_id=session_id, project_id=project.id,
+            text="", status="failed", error_code="QQ_RUN_FAILED", created_at=time.time()))
+        state.qq.programs.batch_finished(batch)
+        state.qq.programs.prepare_notifications(project)
+        await state.qq.programs.send_pending(project.id)
+        return {"ok": True}
+
     async def complete_media(session_id, *, include_old):
         service = QQMediaService(state, state.qq.store, {})
         async def download(media, project_id, settings):

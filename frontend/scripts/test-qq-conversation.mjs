@@ -89,6 +89,13 @@ assert.equal(transcript[3].reply.messages.length, 1, 'Persisted QQ delivery mess
 assert.deepEqual(transcript[3].deliveries.map((row) => row.status), ['pending', 'sending', 'sent', 'failed', 'unknown']);
 assert.equal(buildQQConversation([], [], deliveries, runs).length, 1, 'Delivery-only history still loads its run');
 assert.equal(buildQQConversation([], batches, [], runs).length, 1, 'Runs without QQ replies remain visible');
+const commandReply = { id: 50, run_id: null, origin: 'command', created_at: Date.parse(at(6)) / 1000, status: 'sent', text: 'Command result' };
+const notification = { ...commandReply, id: 51, origin: 'notification', created_at: Date.parse(at(8)) / 1000 };
+const programs = buildQQConversation([incoming(7, 'a')], [], [notification, commandReply], {});
+assert.deepEqual(programs.map((item) => item.kind), ['program', 'incoming', 'program']);
+assert.equal(programs[0].delivery.text, 'Command result');
+assert.equal(programs[2].delivery.origin, 'notification');
+assert.equal(unsettledQQMessage({ ...incoming(1, 'a'), kind: 'command', disposition: 'command', command_status: 'pending' }), true);
 const prepend = buildQQConversation([incoming(0, 'a'), incoming(1, 'a'), incoming(2, 'a')], [], [], {});
 assert.deepEqual(prepend.map((item) => item.showIdentity), [true, false, false]);
 const grouping = (messages) => buildQQConversation(messages, [], [], {}).map((item) => item.showIdentity);
@@ -227,6 +234,26 @@ try {
   assert.equal(render('other').binding.paused, true, 'Unmounted session responses do not affect the next session');
   assert.equal(typeof timer, 'function');
   cleanup();
+
+  // A user's pagination request must survive an in-flight background poll.
+  slots = []; batchRows = []; deliveryRows = [];
+  let olderReads = 0;
+  api.messages = async (_id, before) => {
+    if (before) olderReads++;
+    return { items: [incoming(before ? 1 : 2, 'a')], next_cursor: before ? null : 2, history_version: historyVersion };
+  };
+  render('paging'); await settle();
+  let finishPoll;
+  bindingRead = () => new Promise((resolve) => { finishPoll = resolve; });
+  const pagingPoll = render('paging').refresh();
+  const requestedOlder = render('paging').loadOlder();
+  assert.equal(olderReads, 0);
+  bindingRead = async () => bindingValue();
+  finishPoll(bindingValue());
+  await pagingPoll; await requestedOlder;
+  assert.equal(olderReads, 1, 'Pagination waits for the poll instead of being silently discarded');
+  assert.deepEqual(render('paging').messages.items.map((row) => row.id).sort(), [1, 2]);
+  cleanup();
 } finally {
   Object.assign(globalThis, intervals);
 }
@@ -263,6 +290,8 @@ try {
   const { QQBotEditor, qqInput } = (await editorLoader('../src/components/projects/QQBotEditor.tsx')).exports;
   assert.equal(qqInput().image_input_enabled, false);
   assert.equal(qqInput().icebreaker_enabled, false);
+  assert.equal(qqInput().admin_qq, null);
+  assert.equal(qqInput({ ...qqInput(), admin_qq: '9999' }).admin_qq, '9999');
   assert.deepEqual([qqInput().icebreaker_cold_seconds, qqInput().icebreaker_wait_seconds, qqInput().icebreaker_cooldown_seconds], [7200, 120, 10800]);
   assert.equal(qqInput({ ...qqInput(), image_input_enabled: true }).image_input_enabled, true);
   const children = (node) => Array.isArray(node) ? node.flatMap(children) : React.isValidElement(node)

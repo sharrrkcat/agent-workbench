@@ -15,6 +15,8 @@ Paths below are under [ai_workbench/](../../ai_workbench/):
   Project FIFO execution, the four QQ tools, delivery confirmation and pause/resume/stop.
   api/deps.py wires the service; core/harness/agent_loop.py integrates tool visibility,
   reply decisions, quotas, budget exceptions and run metadata.
+- core/qq_programs.py handles direct commands, administrator routing and durable
+  notifications; core/qq_diagnostics.py formats local checks and prior-call context statistics.
 - core/qq_protocol.py owns OneBot transport, normalization, cards and native-timeout
   classification. core/qq_names.py owns mention spans, identity lookup/cache and
   frozen model-facing names; core/qq_segments.py projects ordered display/model segments.
@@ -67,6 +69,8 @@ Backend tests under [tests/](../../tests/):
   keywords, receipt ordering, lookup deadlines, participant epochs and skip/renewal races.
 - test_qq_resume.py: atomic backlog coalescing, retained participants/keywords/media,
   FIFO placement, pending nickname decisions and rollback.
+- test_qq_commands.py, test_qq_notifications.py and test_qq_commands_migration.py:
+  permissions, context isolation, atomic controls, send concurrency, alerts and restart.
 - test_qq_reply_policy.py and test_qq_delivery_receipts.py: mandatory decisions,
   shared quotas, exact receipt identity, early self reports, deadlines and unknown sends.
 - test_qq_web_tools.py: global web settings, citation-free requests/results, shared rounds,
@@ -101,6 +105,7 @@ Browser suites under [frontend/tests/](../../frontend/tests/) use English/Chines
   deletion placeholders and navigation races.
 - qqbot-icebreaker.spec.ts and qqbot-settings-layout.spec.ts: defaults, conditional
   controls, tabs/grids, bounded fields, cross-tab validation and busy/failed saves.
+- qqbot-commands.spec.ts: administrator validation/saves and program-message history.
 
 [tests/qq_browser_fixture.py](../../tests/qq_browser_fixture.py) supplies isolated
 browser APIs/media. Shared Project/navigation and context-detail suites remain

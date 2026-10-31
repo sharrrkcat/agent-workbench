@@ -40,7 +40,7 @@ Built-in tools share direct and model invocation with bounded execution and dura
 tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.
 AnySearch-backed batch search/focused fetch use their own key without approval, search-only URL filters with weekly subscriptions/custom rules, coverage-filtered excerpts, run budgets, guarded extraction, cached pagination, inferred dates, run-local citations, Sources and dedicated web steps.
 Timeline Projects support creation/settings and roleplay Persona/Worldbook selection; internal sessions and context injection remain deferred.
-[QQBot](contracts/qqbot.md) binds group/friend conversations through external OneBot v11, with keyword/follow-up batches, optional icebreakers, shared media and text/image tools.
+[QQBot](contracts/qqbot.md) binds group/friend conversations through external OneBot v11, with keyword/follow-up batches, optional icebreakers, shared media, text/image tools, direct commands and administrator error notifications.
 Its independent contract owns settings, delivery/recovery and current acceptance limits.
 Playground includes browser-local Farkle with standard/custom matches, 22 dice types,
 an automatic opponent, inventory/rewards, baked 3D throws and up to 100 compact completed-match summaries. An isolated static build supports GitHub Pages. Game APIs and in-progress saves are unimplemented.

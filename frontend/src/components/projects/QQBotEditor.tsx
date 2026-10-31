@@ -28,7 +28,7 @@ export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput 
     const { id: _id, created_at: _created, updated_at: _updated, has_access_token: _has, ...values } = project;
     return values;
   }
-  return { kind: 'qqbot', name: '', bot_account: '', websocket_url: 'ws://127.0.0.1:3001',
+  return { kind: 'qqbot', name: '', bot_account: '', admin_qq: null, websocket_url: 'ws://127.0.0.1:3001',
     connection_enabled: false, agent_persona_id: null, system_prompt: defaultPrompt, model_profile_id: null,
     temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20, reply_message_limit: 4, image_input_enabled: false,
     icebreaker_enabled: false, icebreaker_cold_seconds: 7200, icebreaker_wait_seconds: 120, icebreaker_cooldown_seconds: 10800,
@@ -86,6 +86,8 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
   const update = (values: Partial<QQBotInput>) => setDraft((current) => ({ ...current, ...values }));
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const admin = event.currentTarget.querySelector<HTMLInputElement>(`[id="${id}-admin"]`)!;
+    admin.setCustomValidity(draft.admin_qq && draft.admin_qq === draft.bot_account ? t('qq.adminIsBot') : '');
     // Validate mounted panels together, then reveal the first invalid control before native reporting.
     const invalid = event.currentTarget.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:invalid, textarea:invalid');
     if (invalid) {
@@ -124,6 +126,11 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
         <FieldGroup className="grid qq-settings-grid">
         <Field><FieldLabel htmlFor={id + '-name'}>{t('projectName')}</FieldLabel><Input id={id + '-name'} required maxLength={128} value={draft.name} onChange={(e) => update({ name: e.target.value })} /></Field>
         <Field><FieldLabel htmlFor={id + '-account'}>{t('qq.account')}</FieldLabel><Input id={id + '-account'} required inputMode="numeric" pattern="[1-9][0-9]{0,19}" value={draft.bot_account} onChange={(e) => update({ bot_account: e.target.value })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-admin'}>{t('qq.adminQQ')}</FieldLabel><Input id={id + '-admin'} inputMode="numeric" pattern="[1-9][0-9]{0,19}" maxLength={20}
+          value={draft.admin_qq ?? ''} onChange={(e) => {
+            e.target.setCustomValidity(e.target.value && e.target.value === draft.bot_account ? t('qq.adminIsBot') : '');
+            update({ admin_qq: e.target.value || null });
+          }} /><FieldDescription>{t('qq.adminHint')}</FieldDescription></Field>
         <Field><FieldLabel htmlFor={id + '-url'}>{t('qq.url')}</FieldLabel><Input id={id + '-url'} required value={draft.websocket_url} onChange={(e) => update({ websocket_url: e.target.value })} /></Field>
         <Field><FieldLabel htmlFor={id + '-token'}>{t('qq.token')}</FieldLabel>
           <InputGroup>

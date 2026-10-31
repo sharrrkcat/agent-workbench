@@ -1,8 +1,9 @@
 """Bounded SQLite operations for QQ queues; batches reserve ingress atomically."""
 import json
+from contextlib import nullcontext
 from sqlmodel import Session, select, delete
 from sqlalchemy import update, func
-from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia, QQMediaAsset
+from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQMedia, QQMediaAsset, QQNotification
 from ai_workbench.core.time import utc_now
 
 
@@ -48,7 +49,7 @@ class QQStore:
     def activate_ingress(self, message_id, *, keyword, now, eligibility_before=None):
         with Session(self.engine) as db:
             message = db.get(QQMessage, message_id)
-            if message is None or message.deleted:
+            if message is None or message.deleted or message.kind != "chat":
                 return False
             current = db.get(QQBinding, message.session_id)
             if current is None:
@@ -90,7 +91,7 @@ class QQStore:
             elif binding.deadline is None or binding.deadline > now:
                 return None
             query = select(QQMessage).where(QQMessage.session_id == session_id,
-                QQMessage.disposition == "pending", QQMessage.deleted == False)
+                QQMessage.disposition == "pending", QQMessage.kind == "chat", QQMessage.deleted == False)
             if before_message_id is not None:
                 query = query.where(QQMessage.id < before_message_id)
             if icebreaker:
@@ -142,20 +143,23 @@ class QQStore:
                 .where(QQBatch.project_id == project_id, QQBatch.status == "queued", QQBinding.paused == False)
                 .order_by(QQBatch.id).limit(1)).first()
 
-    def pause(self, session_id, reason):
-        binding = self.get(QQBinding, session_id)
-        binding.paused = bool(reason)
-        binding.pause_reason = reason
-        self.save(binding)
+    def pause(self, session_id, reason, *, transaction=None):
+        with Session(self.engine) if transaction is None else nullcontext(transaction) as db:
+            binding = db.get(QQBinding, session_id)
+            binding.paused = bool(reason)
+            binding.pause_reason = reason
+            db.add(binding)
+            if transaction is None:
+                db.commit()
 
-    def resume(self, session_id, limit, now, *, before_message_id=None):
-        with Session(self.engine) as db:
+    def resume(self, session_id, limit, now, *, before_message_id=None, transaction=None):
+        with Session(self.engine) if transaction is None else nullcontext(transaction) as db:
             binding = db.get(QQBinding, session_id)
             queued = select(QQBatch.id).where(QQBatch.session_id == session_id,
                 QQBatch.status == "queued", QQBatch.trigger_kind != "icebreaker",
                 QQBatch.input_message_id.is_(None), QQBatch.run_id.is_(None))
             if binding.deadline is not None or db.exec(queued.limit(1)).first() is not None:
-                candidates = [QQMessage.session_id == session_id, QQMessage.deleted == False,
+                candidates = [QQMessage.session_id == session_id, QQMessage.deleted == False, QQMessage.kind == "chat",
                     (QQMessage.disposition == "pending") | ((QQMessage.disposition == "batched")
                         & QQMessage.batch_id.in_(queued))]
                 if before_message_id is not None:
@@ -197,8 +201,9 @@ class QQStore:
                     QQParticipant.in_window == True).values(in_window=False))
             binding.paused, binding.pause_reason = False, ""
             db.add(binding)
-            db.commit()
-            db.refresh(binding)
+            if transaction is None:
+                db.commit()
+                db.refresh(binding)
             return binding
 
     def page(self, kind, session_id, before=None, limit=50):
@@ -224,7 +229,7 @@ class QQStore:
 
     def batch_messages(self, batch_id):
         with Session(self.engine) as db:
-            return db.exec(select(QQMessage).where(QQMessage.batch_id == batch_id, QQMessage.deleted == False)
+            return db.exec(select(QQMessage).where(QQMessage.batch_id == batch_id, QQMessage.deleted == False, QQMessage.kind == "chat")
                 .order_by(QQMessage.id)).all()
 
     def message_media(self, message_ids):
@@ -402,7 +407,7 @@ class QQStore:
             visible_input = select(QQMessage.id).where(QQMessage.batch_id == QQBatch.id, QQMessage.deleted == False).exists()
             batches = db.exec(select(func.count()).select_from(QQBatch).where(*conditions, visible_input)).one()
             deliveries = db.exec(select(func.count()).select_from(QQDelivery).join(QQBatch, QQBatch.run_id == QQDelivery.run_id)
-                .where(*conditions, QQDelivery.status == "sent", QQDelivery.deleted == False)).one()
+                .where(*conditions, QQDelivery.status == "sent", QQDelivery.origin == "model", QQDelivery.deleted == False)).one()
             return batches + deliveries
 
     def iter_history(self, session_id, current_message_id):
@@ -419,7 +424,7 @@ class QQStore:
             for batch in batches:
                 with Session(self.engine) as db:
                     deliveries = db.exec(select(QQDelivery).where(QQDelivery.run_id == batch.run_id,
-                        QQDelivery.session_id == session_id, QQDelivery.status == "sent", QQDelivery.deleted == False)
+                        QQDelivery.session_id == session_id, QQDelivery.status == "sent", QQDelivery.origin == "model", QQDelivery.deleted == False)
                         .order_by(QQDelivery.id)).all()
                 yield batch, deliveries
             before = batches[-1].id
@@ -466,6 +471,7 @@ class QQStore:
             db.commit()
 
     def recover(self):
+        recovered = set()
         with Session(self.engine) as db:
             # No observation survives a connection gap. Submitted sends still use normal recovery.
             intent = select(QQDelivery.id).where(QQDelivery.run_id == QQBatch.run_id).exists()
@@ -478,23 +484,45 @@ class QQStore:
                 while True:
                     query = select(kind).where(kind.status.in_(statuses))
                     if kind is QQDelivery:
-                        query = query.where(kind.deleted == False)
+                        query = query.where(kind.deleted == False,
+                            (QQDelivery.origin == "model") | (QQDelivery.status == "sending"))
                     rows = db.exec(query.limit(100)).all()
                     if not rows:
                         break
                     for row in rows:
+                        intentional = kind is QQBatch and row.error_code == "QQ_STOPPED"
                         row.status = "interrupted" if kind is QQBatch else "unknown"
-                        row.error_code = "QQ_INTERRUPTED"
+                        row.error_code = "QQ_STOPPED" if intentional else "QQ_INTERRUPTED"
                         db.add(row)
+                        if kind is QQDelivery and row.origin != "model":
+                            continue
                         binding = db.get(QQBinding, row.session_id)
                         if binding:
                             binding.paused, binding.pause_reason = True, "QQ_INTERRUPTED"
                             db.add(binding)
+                        if not intentional:
+                            if kind is QQBatch:
+                                recovered.add(row.id)
+                            else:
+                                batch = db.exec(select(QQBatch).where(QQBatch.run_id == row.run_id)).first()
+                                if batch is not None:
+                                    recovered.add(batch.id)
                     db.commit()
+        return recovered
 
     def delete_session(self, session_id):
         with Session(self.engine) as db:
+            events = select(QQNotification.id).where((QQNotification.source_session_id == session_id)
+                | QQNotification.id.in_(select(QQDelivery.notification_id).where(QQDelivery.session_id == session_id)))
+            db.exec(update(QQDelivery).where(QQDelivery.notification_id.in_(events), QQDelivery.status == "pending")
+                .values(status="cancelled"))
+            db.exec(update(QQNotification).where(QQNotification.id.in_(events)).values(cancelled=True))
             db.exec(delete(QQMedia).where(QQMedia.message_id.in_(select(QQMessage.id).where(QQMessage.session_id == session_id))))
             for kind in (QQDelivery, QQBatch, QQMessage, QQParticipant, QQBinding):
                 db.exec(delete(kind).where(kind.session_id == session_id))
+            db.commit()
+
+    def delete_project_notifications(self, project_id):
+        with Session(self.engine) as db:
+            db.exec(delete(QQNotification).where(QQNotification.project_id == project_id))
             db.commit()
