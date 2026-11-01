@@ -7,7 +7,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from ai_workbench.api.main import create_app
 from ai_workbench.api.schemas.inference import ModelList
-from scripts.openapi import build_document, render_document, resolve_ref
+from scripts.openapi import build_document, render_document, resolve_ref, _shaped_payload
 from tests.model_fixtures import MockOpenAI, configure_model
 
 
@@ -15,6 +15,12 @@ def validate_response(document, path, method, response):
     schema = document["paths"][path][method]["responses"][str(response.status_code)]["content"]["application/json"]["schema"]
     Draft202012Validator({**schema, "components": document["components"]},
                          format_checker=FormatChecker()).validate(response.json())
+
+
+def test_closed_empty_request_is_structured_but_open_json_is_not():
+    assert _shaped_payload({}, {'type': 'object', 'properties': {}, 'additionalProperties': False})
+    assert not _shaped_payload({}, {'type': 'object', 'properties': {}})
+    assert not _shaped_payload({}, {'type': 'object', 'additionalProperties': True})
 
 
 def test_document_endpoints_and_manual_request_schemas(tmp_path):

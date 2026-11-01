@@ -13,8 +13,8 @@ export function ContextWindowMeter({ profile, generating, runs: suppliedRuns }: 
   const runs = useCogitaStore((state) => state.runs);
   const stepsByRunId = useCogitaStore((state) => state.stepsByRunId);
   const usage = latestContextUsage(suppliedRuns ?? runs, sessionId, profile);
-  const compacting = (suppliedRuns ?? runs).some((run) => run.session_id === sessionId && run.status === 'RUNNING'
-    && (suppliedRuns ? run.steps : stepsByRunId[run.run_id] ?? run.steps)?.some((step) => step.kind === 'compaction' && step.status === 'running'));
+  const compacting = (suppliedRuns ?? runs).some((run) => run.session_id === sessionId && ['PENDING', 'RUNNING', 'CANCELLING'].includes(run.status)
+    && (run.kind === 'compaction' || (suppliedRuns ? run.steps : stepsByRunId[run.run_id] ?? run.steps)?.some((step) => step.kind === 'compaction' && step.status === 'running')));
   const configured = configuredContextWindow(profile);
   const [open, setOpen] = useState(false);
   const pressed = useRef(false);

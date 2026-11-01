@@ -21,6 +21,7 @@ for (const script of [
   'test-history-window',
   'test-chat-drafts',
   'test-message-queue',
+  'test-manual-compaction',
   'test-projects',
   'test-confirm-dialog',
   'test-pet-foundation',

@@ -219,6 +219,10 @@
     "running": "Compacting context",
     "completed": "Context compacted",
     "failed": "Context compaction failed",
+    "notNeeded": "No compaction needed",
+    "cancelled": "Compaction cancelled",
+    "cancelling": "Cancelling compaction",
+    "interrupted": "Compaction interrupted",
     "checkpoint": "Checkpoint",
     "covered": "Covered messages",
     "boundary": "Coverage boundary"

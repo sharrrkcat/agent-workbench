@@ -4,6 +4,7 @@ import { request } from './http';
 import type { ContextDetail } from '../types/context';
 
 export const runsApi = {
+  compact: (sessionId: string) => request<Run>(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, { method: 'POST' }),
   getRun: (runId: string) => request<Run>(`/api/runs/${encodeURIComponent(runId)}`),
   getContext: (runId: string, stepId: string, signal?: AbortSignal) =>
     request<ContextDetail>(`/api/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(stepId)}/context`, { signal }),

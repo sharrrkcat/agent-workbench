@@ -2,6 +2,8 @@ import type { CogitaActions } from './state';
 import { randomId } from '../../lib/randomId';
 import { errorText, pruneHistoryState, runtimeResponseState, terminal } from './mergeState';
 import { emptyQueue } from './messageQueue';
+import { compactCommand } from './compactCommand';
+import i18n from 'i18next';
 
 import { chatApi } from '../../api/chat';
 import { projectsApi } from '../../api/projects';
@@ -11,6 +13,14 @@ export const createMessageActions: CogitaActions<
   'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText'
 > = (set, get, store) => ({
   sendMessage: async (content, attachments = [], queueItemId) => {
+    const command = compactCommand(content);
+    if (command === 'compact' || command === 'invalid') {
+      if (command === 'invalid' || attachments.length || queueItemId) {
+        set({ error: i18n.t(`chat:compactCommand.${queueItemId ? 'queued' : attachments.length ? 'attachments' : 'arguments'}`) });
+        return false;
+      }
+      return get().compactContext();
+    }
     if (get().sessionLoad && get().sessionLoad?.status !== 'ready') return false;
     let session = get().currentSession;
     const draft = get().chatDraft;

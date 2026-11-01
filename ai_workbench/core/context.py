@@ -9,8 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.models.images import ContextMessage
-from ai_workbench.core.context_snapshot import snapshot_attachment
+from ai_workbench.core.context_snapshot import append_system_block, snapshot_attachment
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
+from ai_workbench.core.user_persona_context import build_user_persona_context
 from ai_workbench.core.web_render import web_model_text
 
 
@@ -19,6 +20,24 @@ class ContextBuildResult(BaseModel):
     messages: list[ContextMessage]
     warnings: list[str] = Field(default_factory=list)
     trace: ContextTrace = Field(default_factory=ContextTrace)
+
+
+def add_chat_instructions(config, messages, trace):
+    """Add the saved instructions shared by chat and idle history evaluation."""
+    if config.system_prompt:
+        messages.insert(0, {"role": "system", "content": config.system_prompt})
+        for source in trace.sources:
+            source.message_index += 1
+        trace.sources[:0] = [ContextSource(id="system:0", kind="system", message_index=0, role="system"),
+            ContextSource(id="agent_persona", kind="agent_persona", parent_id="system:0", message_index=0,
+                end=len(config.system_prompt), reference_id=config.persona_id, role="system")]
+    else:
+        trace.exclusions.append(ContextExclusion(kind="agent_persona", reason="empty", reference_id=config.persona_id))
+    if config.project_id:
+        messages, _ = append_system_block(messages, trace, config.project_system_prompt.strip(), "project_prompt", config.project_id)
+    user_context = build_user_persona_context(persona_id=config.user_persona_id, content=config.user_persona_prompt)
+    messages, _ = append_system_block(messages, trace, user_context.rendered_text, "cogita_persona", config.user_persona_id)
+    return messages, user_context.metadata
 
 
 class ContextBuilder:

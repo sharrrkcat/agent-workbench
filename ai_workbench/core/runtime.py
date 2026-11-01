@@ -1,4 +1,4 @@
-"""Input coordinator for ordinary chat, explicit tools and approval resume."""
+"""Input coordinator for chat, manual compaction, explicit tools and approval resume."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.instructions import UiLanguage
+from ai_workbench.core.manual_compaction import ManualCompactionRunner, is_compaction_command
 
 
 class ActiveRunRegistry:
@@ -45,11 +46,12 @@ class ActiveRunRegistry:
 
 
 class CogitaRuntime:
-    """Recognize only registered /tool_name inputs; other text goes to chat."""
+    """Dispatch /compact and registered /tool_name inputs before ordinary chat."""
 
     def __init__(self, chat_runner: ChatRunner, active_runs: ActiveRunRegistry | None = None) -> None:
         self.chat_runner = chat_runner
         self.active_runs = active_runs or ActiveRunRegistry()
+        self.manual_compaction = ManualCompactionRunner(chat_runner, self.active_runs)
 
     async def handle_input(
         self,
@@ -62,6 +64,9 @@ class CogitaRuntime:
         ui_language: UiLanguage = "en",
     ) -> RunResult:
         self._assert_available(session)
+        if is_compaction_command(text, attachments):
+            run = self.manual_compaction.start(session, ui_language=ui_language)
+            return RunResult(success=True, run_id=run.run_id)
         direct = self._parse_direct_tool(text)
         if direct is not None:
             name, arguments = direct

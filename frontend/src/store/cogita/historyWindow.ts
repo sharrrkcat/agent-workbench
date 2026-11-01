@@ -5,9 +5,10 @@ import { mergeQueueRuntime } from './messageQueue';
 
 export const HISTORY_WINDOW_LIMIT = 200;
 export type HistoryLoad = 'before' | 'after' | 'around' | 'latest';
-const marker = ({ id, kind, number, cursor, created_at }: HistoryMarker): HistoryMarker => ({ id, kind, number, cursor, created_at });
+const marker = (item: HistoryMarker): HistoryMarker => ({ id: item.id, cursor: item.cursor, created_at: item.created_at,
+  ...(item.kind === 'compaction' ? { kind: item.kind, number: null } : { kind: item.kind, number: item.number }) });
 const compare = (a: HistoryMarker, b: HistoryMarker) => compareTime(a.created_at, b.created_at)
-  || (a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind === 'message' ? -1 : 1);
+  || ((a.kind === 'message' ? 0 : 1) - (b.kind === 'message' ? 0 : 1)) || a.id.localeCompare(b.id);
 
 function windowInfo(history: HistoryWindow, items: HistoryMarker[]): HistoryWindow {
   return { ...history, items, before_cursor: items[0]?.cursor ?? null, after_cursor: items[items.length - 1]?.cursor ?? null };
@@ -20,8 +21,8 @@ export function historyPageState(state: CogitaState, page: HistoryPage, mode: Hi
   const markers = new Map((extending ? previous?.items ?? [] : []).map((item) => [item.id, item]));
   for (const item of page.items) markers.set(item.id, marker(item));
   const items = [...markers.values()].filter((i) => !state.deletedMessageIds.includes(i.id) && !state.deletedRunIds.includes(i.id)).sort(compare);
-  const messages = retainedMessages(state, page.items.flatMap((item) => item.kind === 'message' ? [item.message] : item.messages));
-  const runs = page.items.flatMap((item) => item.kind === 'reply' ? [item.run] : []);
+  const messages = retainedMessages(state, page.items.flatMap((item) => item.kind === 'message' ? [item.message] : item.kind === 'reply' ? item.messages : []));
+  const runs = page.items.flatMap((item) => item.kind !== 'message' ? [item.run] : []);
   if (page.active_run && !state.deletedRunIds.includes(page.active_run.run_id)) runs.push(page.active_run);
   const liveMessages = state.messages.filter((m) => m.metadata?.streaming &&
     (runs.some((r) => r.run_id === m.run_id && !terminal(r.status))));
@@ -46,24 +47,25 @@ export function trimHistory(state: CogitaState, trimEnd = !state.historyFollowin
   if (!history || !state.currentSession) return {};
   const markers = new Map(history.items.filter((i) => !state.deletedMessageIds.includes(i.id) && !state.deletedRunIds.includes(i.id))
     .map((item) => [item.id, item]));
-  let next = Math.max(0, ...history.items.map((i) => i.number)) + 1;
+  let next = Math.max(0, ...history.items.map((i) => i.number ?? 0)) + 1;
   if (state.historyFollowing && !history.has_after) {
     const identities = [
       ...state.messages.filter((m) => m.role === 'user' || !m.run_id).map((m) => ({ id: m.message_id, kind: 'message' as const, created_at: m.created_at })),
-      ...state.runs.map((r) => ({ id: r.run_id, kind: 'reply' as const, created_at: r.created_at })),
+      ...state.runs.map((r) => ({ id: r.run_id, kind: r.kind === 'compaction' ? 'compaction' as const : 'reply' as const, created_at: r.created_at })),
     ].sort((a, b) => compare(a as HistoryMarker, b as HistoryMarker));
     for (const item of identities) if (!markers.has(item.id) &&
       (!history.items.length || compare(item as HistoryMarker, history.items[history.items.length - 1]) > 0)) {
       const json = JSON.stringify({ session_id: state.currentSession.session_id, created_at: item.created_at,
         kind: item.kind === 'message' ? 0 : 1, id: item.id });
       const cursor = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
-      markers.set(item.id, { ...item, cursor, number: next++ });
+      markers.set(item.id, item.kind === 'compaction' ? { ...item, kind: item.kind, cursor, number: null }
+        : { ...item, kind: item.kind, cursor, number: next++ });
     }
   }
   const ordered = [...markers.values()].sort(compare);
   const items = trimEnd ? ordered.slice(0, HISTORY_WINDOW_LIMIT) : ordered.slice(-HISTORY_WINDOW_LIMIT);
   const messageIds = new Set(items.filter((i) => i.kind === 'message').map((i) => i.id));
-  const runIds = new Set(items.filter((i) => i.kind === 'reply').map((i) => i.id));
+  const runIds = new Set(items.filter((i) => i.kind !== 'message').map((i) => i.id));
   const active = [...state.runs].reverse().find((r) => !terminal(r.status));
   return {
     historyWindow: windowInfo({ ...history,

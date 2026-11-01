@@ -33,3 +33,13 @@ class ContextCheckpoint(CompactionReference):
 
     def reference(self) -> CompactionReference:
         return CompactionReference.model_validate(self.model_dump(include=set(CompactionReference.model_fields)))
+
+
+class CompactionOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["compacted", "not_needed"]
+    reason: Literal["no_history", "below_target"] | None = None
+    checkpoint: CompactionReference | None = None
+    input_tokens_before: int | None = Field(default=None, ge=0)
+    input_tokens_after: int | None = Field(default=None, ge=0)

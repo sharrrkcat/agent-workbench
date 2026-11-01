@@ -15,11 +15,11 @@ export async function readHistory(request: APIRequestContext, sessionId: string)
 }
 
 export async function readMessages(request: APIRequestContext, sessionId: string) {
-  return (await readHistory(request, sessionId)).flatMap((item) => item.kind === 'message' ? [item.message] : item.messages);
+  return (await readHistory(request, sessionId)).flatMap((item) => item.kind === 'message' ? [item.message] : item.kind === 'reply' ? item.messages : []);
 }
 
 export async function readRuns(request: APIRequestContext, sessionId: string) {
-  return (await readHistory(request, sessionId)).flatMap((item) => item.kind === 'reply' ? [item.run] : []);
+  return (await readHistory(request, sessionId)).flatMap((item) => item.kind !== 'message' ? [item.run] : []);
 }
 
 export async function mockHistory(page: Page, request: APIRequestContext, sessionId: string, messages: any[], suppliedRuns?: any[]) {

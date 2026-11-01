@@ -22,7 +22,8 @@ class SqlHistoryReader:
                 batch = ids[start:start + 128]
                 messages = db.exec(select(M.message_id, M.created_at, M.role, M.run_id).where(M.session_id == session_id, M.message_id.in_(batch))).all()
                 run_ids = set(batch) | {row.run_id for row in messages if row.run_id}
-                runs = {row.run_id: row.created_at for row in db.exec(select(R.run_id, R.created_at).where(R.session_id == session_id, R.run_id.in_(run_ids)))}
+                runs = {row.run_id: row.created_at for row in db.exec(select(R.run_id, R.created_at).where(
+                    R.session_id == session_id, R.run_id.in_(run_ids), R.kind != "compaction"))}
                 keys = {id: (time, 1, id) for id, time in runs.items() if id in batch}
                 for row in messages:
                     if row.role == "user" or not row.run_id:
@@ -34,7 +35,7 @@ class SqlHistoryReader:
                         message_count = db.exec(select(func.count()).select_from(M).where(M.session_id == session_id,
                             or_(M.role == "user", M.run_id.is_(None)), tuple_(M.created_at, literal(0), M.message_id) <= key)).scalar_one()
                         run_count = db.exec(select(func.count()).select_from(R).where(R.session_id == session_id,
-                            tuple_(R.created_at, literal(1), R.run_id) <= key)).scalar_one()
+                            R.kind != "compaction", tuple_(R.created_at, literal(1), R.run_id) <= key)).scalar_one()
                         cached[key] = message_count + run_count
                     result[id] = cached[key]
         return result
@@ -44,6 +45,7 @@ class SqlHistoryReader:
             M.session_id == session_id, or_(M.role == "user", M.run_id.is_(None)))
         runs = select(R.created_at.label("created_at"), literal(1).label("kind"), R.run_id.label("id")).where(R.session_id == session_id)
         all_items = union_all(messages, runs).subquery()
+        numbered_items = union_all(messages, runs.where(R.kind != "compaction")).subquery()
         candidates = (select(M.created_at.label("created_at"), literal(0).label("kind"), M.message_id.label("id")).where(
             M.session_id == session_id, M.role == "user").subquery() if users else all_items)
         key = tuple_(candidates.c.created_at, candidates.c.kind, candidates.c.id)
@@ -67,15 +69,21 @@ class SqlHistoryReader:
             else:
                 rows = list(reversed(read(key < anchor if anchor else None, query.limit, True)))
             keys = [tuple(row) for row in rows]
-            global_key = tuple_(all_items.c.created_at, all_items.c.kind, all_items.c.id)
+            global_key = tuple_(numbered_items.c.created_at, numbered_items.c.kind, numbered_items.c.id)
+            items = self._items(db, keys, users)
             if users:
-                numbers = [db.exec(select(func.count()).select_from(all_items).where(global_key <= item)).scalar_one() for item in keys]
+                numbers = [db.exec(select(func.count()).select_from(numbered_items).where(global_key <= item)).scalar_one() for item in keys]
             else:
-                preceding = db.exec(select(func.count()).select_from(all_items).where(global_key < keys[0])).scalar_one() if keys else 0
-                numbers = range(preceding + 1, preceding + len(keys) + 1)
+                preceding = db.exec(select(func.count()).select_from(numbered_items).where(global_key < keys[0])).scalar_one() if keys else 0
+                numbers = []
+                for item in items:
+                    if item["kind"] == "compaction":
+                        numbers.append(None)
+                    else:
+                        preceding += 1
+                        numbers.append(preceding)
             has_before = bool(keys and db.exec(select(literal(1)).select_from(candidates).where(key < keys[0]).limit(1)).first())
             has_after = bool(keys and db.exec(select(literal(1)).select_from(candidates).where(key > keys[-1]).limit(1)).first())
-            items = self._items(db, keys, users)
             active = None if users else db.exec(select(R).options(defer(R.config_snapshot_json), defer(R.harness_state_json)).where(
                 R.session_id == session_id, R.status.in_(("PENDING", "RUNNING", "CANCELLING", "WAITING_FOR_USER")))
                 .order_by(R.created_at.desc(), R.run_id.desc()).limit(1)).scalars().first()
@@ -103,4 +111,5 @@ class SqlHistoryReader:
         runs = {row.run_id: {**_run(row).model_dump(mode="json"), "steps": steps[row.run_id]} for row in db.exec(
             select(R).options(defer(R.config_snapshot_json), defer(R.harness_state_json)).where(R.run_id.in_(run_ids))).scalars()}
         return [{"kind": "message", "message": by_id[key[2]]} if key[1] == 0 else
+                {"kind": "compaction", "run": runs[key[2]]} if runs[key[2]]["kind"] == "compaction" else
                 {"kind": "reply", "run": runs[key[2]], "messages": by_run[key[2]]} for key in keys]

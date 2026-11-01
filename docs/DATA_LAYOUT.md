@@ -35,7 +35,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0047_context_compaction`; current tables follow the SQLModel schema.
+Alembic head is `0048_manual_compaction`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -156,6 +156,8 @@ It deletes ordinary/Workspace sessions and their messages, runs, steps, events, 
 Workspace context_policy to current defaults. QQ/Timeline configuration, other Project fields, Personas, models/providers and all files survive.
 No old context policy is converted. Checkpoints are excluded from ordinary history reads and invalidate atomically with history mutations.
 Repeating upgrade preserves subsequently created conversations and checkpoints.
+Revision `0048_manual_compaction` adds compaction to the runrecord kind constraint. It preserves all existing records,
+configuration, checkpoints and files; no session reset or policy conversion occurs. Manual events use existing run/step/event storage.
 
 ## Runtime files
 

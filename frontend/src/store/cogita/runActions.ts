@@ -3,8 +3,32 @@ import { errorText, mergeRuns, mergeSteps, toolResponseState, pruneHistoryState,
 
 import { runsApi } from '../../api/runs';
 import { toolsApi } from '../../api/tools';
+import { compactUnavailable } from './compactCommand';
+import i18n from 'i18next';
 
-export const createRunActions: CogitaActions<'deleteRun' | 'retryRun' | 'cancelRun' | 'resolveApproval'> = (set, get) => ({
+export const createRunActions: CogitaActions<'deleteRun' | 'retryRun' | 'cancelRun' | 'resolveApproval' | 'compactContext'> = (set, get) => ({
+  compactContext: async () => {
+    const reason = compactUnavailable(get());
+    if (reason) { set({ error: i18n.t(`chat:compactCommand.${reason}`) }); return false; }
+    const sessionId = get().currentSession!.session_id;
+    const epoch = get().sessionEpoch;
+    const draft = get().composerDraftText;
+    set({ mutatingHistory: true, error: null });
+    try {
+      const run = await runsApi.compact(sessionId);
+      get().observeQueueRun(run);
+      if (get().sessionEpoch !== epoch) return true;
+      set((state) => ({ runs: mergeRuns(state.runs, [run]), runVersion: state.runVersion + 1,
+        ...(state.composerDraftText === draft ? { composerDraftText: '' } : {}) }));
+      await get().loadHistory('latest');
+      return true;
+    } catch (error) {
+      if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+      return false;
+    } finally {
+      if (get().sessionEpoch === epoch) set({ mutatingHistory: false });
+    }
+  },
   deleteRun: async (runId) => {
     if (get().mutatingHistory) return;
     const epoch = get().sessionEpoch;

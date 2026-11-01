@@ -14,6 +14,7 @@ import { LoadingStatus } from '@/components/ui/loading-status';
 import { cn } from '@/lib/utils';
 import { MessageBubble } from './MessageBubble';
 import { RunReply } from './messages/RunReply';
+import { CompactionEvent } from './messages/CompactionEvent';
 import { buildConversation } from './messages/turns';
 import { messageNumbers } from './messages/messageNumbers';
 import { MessageNumbersContext } from './messages/MessageNumbersContext';
@@ -64,7 +65,7 @@ function Conversation() {
   );
   const numbers = useMemo(() => {
     if (!history) return messageNumbers(items);
-    const result = new Map(history.items.map((item) => [item.id, item.number]));
+    const result = new Map(history.items.flatMap((item) => item.number === null ? [] : [[item.id, item.number] as const]));
     for (const item of items) if (item.kind === 'reply') {
       for (const message of item.reply.messages) result.set(message.message_id, result.get(item.id)!);
     }
@@ -171,7 +172,7 @@ function Conversation() {
               scrollAnchor={item.kind === 'message' && item.message.role === 'user'}>
               {item.kind === 'message' ? (
                 <MessageBubble message={item.message} messageNumber={numbers.get(item.id)} animate={animatedIds.has(item.id)} />
-              ) : (
+              ) : item.kind === 'compaction' ? <CompactionEvent reply={item.reply} /> : (
                 <RunReply reply={item.reply} messageNumber={numbers.get(item.id)} showFullProcessing={showFullProcessing} />
               )}
             </MessageScrollerItem>

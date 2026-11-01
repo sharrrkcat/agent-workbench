@@ -219,6 +219,10 @@
     "running": "正在压缩上下文",
     "completed": "上下文已压缩",
     "failed": "上下文压缩失败",
+    "notNeeded": "无需压缩",
+    "cancelled": "压缩已取消",
+    "cancelling": "正在取消压缩",
+    "interrupted": "压缩已中断",
     "checkpoint": "检查点",
     "covered": "已覆盖消息",
     "boundary": "覆盖边界"

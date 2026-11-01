@@ -168,7 +168,7 @@ def _shaped_payload(document: dict, schema: Any, seen: frozenset[str] = frozense
         if key in schema:
             return all(_shaped_payload(document, value, seen) for value in schema[key])
     if schema.get("type") == "object":
-        return bool(schema.get("properties"))
+        return bool(schema.get("properties")) or schema.get("additionalProperties") is False
     if schema.get("type") == "array":
         return _shaped_payload(document, schema.get("items", {}), seen)
     return schema.get("type") in {"string", "integer", "number", "boolean", "null"}

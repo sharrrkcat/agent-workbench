@@ -6,11 +6,14 @@ from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp
 from ai_workbench.api.schemas.chat import MessageResponse, RunResponse, RunEventResponse
 
 
-class HistoryIdentity(ApiModel):
+class HistoryPosition(ApiModel):
     id: str
-    number: int = Field(ge=1)
     cursor: str
     created_at: ApiTimestamp
+
+
+class HistoryIdentity(HistoryPosition):
+    number: int = Field(ge=1)
 
 
 class HistoryMessage(HistoryIdentity):
@@ -22,6 +25,12 @@ class HistoryReply(HistoryIdentity):
     kind: Literal["reply"]
     run: RunResponse
     messages: list[MessageResponse]
+
+
+class HistoryCompaction(HistoryPosition):
+    kind: Literal["compaction"]
+    number: None = None
+    run: RunResponse
 
 
 class HistoryUser(HistoryIdentity):
@@ -39,7 +48,7 @@ class HistoryPageInfo(ApiModel):
 
 
 class HistoryPage(HistoryPageInfo):
-    items: list[Annotated[HistoryMessage | HistoryReply, Field(discriminator="kind")]]
+    items: list[Annotated[HistoryMessage | HistoryReply | HistoryCompaction, Field(discriminator="kind")]]
 
 
 class HistoryUsersPage(HistoryPageInfo):

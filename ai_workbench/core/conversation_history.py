@@ -61,6 +61,8 @@ class ConversationHistory:
 
     def delete_reply(self, run_id: str) -> HistoryPruned:
         run = self.runs.get_run(run_id)
+        if run.kind == "compaction":
+            raise ChatError("CANNOT_DELETE_RUN", "Compaction events are not replies.", 400)
         self._assert_editable(run.session_id)
         self.chat_service.assert_idle(run.session_id)
         return self._apply(run.session_id, {run_id})

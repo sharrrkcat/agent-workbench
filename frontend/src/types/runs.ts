@@ -13,7 +13,7 @@ export type RunStatus =
   | 'CANCELLED'
   | 'INTERRUPTED';
 
-export type RunKind = 'chat' | 'tool';
+export type RunKind = 'chat' | 'tool' | 'compaction';
 
 export type RunStepKind = 'context' | 'model' | 'compaction' | 'save' | 'approval' | 'tool';
 
@@ -56,6 +56,8 @@ export type Run = {
   error?: string | null;
   metadata?: Record<string, unknown> & {
     qq_reply?: { sent_count: number; message_limit: number; limit_reached: boolean; skipped: boolean };
+    compaction?: { status: 'compacted' | 'not_needed'; reason: 'no_history' | 'below_target' | null;
+      input_tokens_before: number | null; input_tokens_after: number | null };
   };
   created_at: string;
   updated_at: string;

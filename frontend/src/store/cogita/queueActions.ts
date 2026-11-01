@@ -4,6 +4,7 @@ import { runsApi } from '../../api/runs';
 import type { CogitaActions } from './state';
 import { emptyQueue, mergeQueueRuntime, type MessageQueue } from './messageQueue';
 import { errorText, terminal } from './mergeState';
+import { compactCommand } from './compactCommand';
 
 export const createQueueActions: CogitaActions<
   'enqueueMessage' | 'beginQueuedEdit' | 'saveQueuedEdit' | 'setQueuedEditAttachments' | 'deleteQueuedMessage' |
@@ -17,6 +18,7 @@ export const createQueueActions: CogitaActions<
   }
   return {
     enqueueMessage: (content, attachments = []) => {
+      if (['compact', 'invalid'].includes(compactCommand(content))) return false;
       const state = get(), session = state.currentSession;
       if (!session || state.awaitingAcceptance || state.mutatingHistory ||
           state.sessionLoad && state.sessionLoad.status !== 'ready' || (!content.trim() && !attachments.length)) return false;
@@ -41,6 +43,7 @@ export const createQueueActions: CogitaActions<
       const state = get(), sessionId = state.currentSession?.session_id;
       const queue = sessionId ? state.messageQueues[sessionId] : undefined;
       const edit = queue?.editing;
+      if (edit && ['compact', 'invalid'].includes(compactCommand(edit.content))) return false;
       if (!sessionId || !queue || !edit || edit.attachments.some((item) => item.status !== 'ready') ||
           (!edit.content.trim() && !edit.attachments.length)) return false;
       const attachments = edit.attachments.flatMap((item) => item.attachment ? [item.attachment] : []);
@@ -71,8 +74,8 @@ export const createQueueActions: CogitaActions<
           let page = await chatApi.getHistory(sessionId);
           // Search only pages since the last item known before submission; keep one page in memory.
           for (;;) {
-            const messages = page.items.flatMap((item) => item.kind === 'message' ? [item.message] : item.messages);
-            const runs = page.items.flatMap((item) => item.kind === 'reply' ? [item.run] : []);
+            const messages = page.items.flatMap((item) => item.kind === 'message' ? [item.message] : item.kind === 'reply' ? item.messages : []);
+            const runs = page.items.flatMap((item) => item.kind !== 'message' ? [item.run] : []);
             if (page.active_run) runs.push(page.active_run);
             set((state) => ({ messageQueues: mergeQueueRuntime(state.messageQueues, runs, messages) }));
             const current = get().messageQueues[sessionId]?.submission;

@@ -12,7 +12,7 @@ from datetime import date
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop, request_tools
-from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.context import ContextBuilder, add_chat_instructions
 from ai_workbench.core.context_compaction import ContextCompactionService
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.models.context_budget import ChatContextBudget
@@ -25,7 +25,6 @@ from ai_workbench.core.models.images import has_context_images, resolve_context_
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
-from ai_workbench.core.user_persona_context import build_user_persona_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
@@ -393,20 +392,7 @@ class ChatRunner:
             "warnings": result.warnings,
             "persona_id": config.persona_id,
         }
-        if config.system_prompt:
-            messages.insert(0, {"role": "system", "content": config.system_prompt})
-            for source in trace.sources:
-                source.message_index += 1
-            trace.sources[:0] = [ContextSource(id="system:0", kind="system", message_index=0, role="system"),
-                ContextSource(id="agent_persona", kind="agent_persona", parent_id="system:0", message_index=0,
-                    end=len(config.system_prompt), reference_id=config.persona_id, role="system")]
-        else:
-            trace.exclusions.append(ContextExclusion(kind="agent_persona", reason="empty", reference_id=config.persona_id))
-        if session.project_id:
-            messages, _ = append_system_block(messages, trace, config.project_system_prompt.strip(), "project_prompt", session.project_id)
-        user_context = build_user_persona_context(persona_id=config.user_persona_id, content=config.user_persona_prompt)
-        messages, _ = append_system_block(messages, trace, user_context.rendered_text, "cogita_persona", config.user_persona_id)
-        metadata["user_persona"] = user_context.metadata
+        messages, metadata["user_persona"] = add_chat_instructions(config, messages, trace)
         if self.knowledge_service is not None:
             knowledge = await build_session_knowledge_context(
                 knowledge_service=self.knowledge_service, query=text, session_id=session.session_id, source="chat",

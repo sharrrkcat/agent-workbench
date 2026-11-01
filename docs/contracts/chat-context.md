@@ -138,8 +138,7 @@ compaction={enabled:true, trigger_percent:80, target_percent:55, max_summary_tok
 strategy accepts token_budget or message_window; the message count is a strict integer from 1 to 10000.
 Percentages are strict integers satisfying 0 < target < trigger < 100; a summary cap is null or a positive integer.
 Top-level max_messages/max_chars, mode and source_message_id are rejected. Workspace inherits/overrides the whole policy.
-History off skips history/checkpoint reads and injection, retaining the saved checkpoint. Automatic compaction off
-reuses the checkpoint and permits token pruning of recent raw turns. QQ/Timeline retain their independent bounded policy.
+History off skips history/checkpoint reads and injection, retaining the checkpoint. Automatic compaction off reuses it and permits token pruning. QQ/Timeline retain their independent bounded policy.
 Message-window strategy selects up to N eligible projected historical messages, excluding current input. If its oldest boundary
 splits a turn, that entire turn is omitted; final token pruning can retain fewer messages. It neither reads, injects nor updates a checkpoint.
 Switching back to token_budget validates and reuses the checkpoint. No summary failure automatically changes strategy.
@@ -166,10 +165,9 @@ these request failures do not mark the model broken. Sources, token_limit exclus
 references describe the retained request.
 
 For token-budget strategy, before the first answer call ContextCompactionService evaluates B = window - output reserve - margin.
-Above trigger_percent of B it selects a complete recent-turn suffix toward target_percent of B, allowing a soft target.
-It releases counting admission before calling core/models with the selected chat model, non-streaming, temperature zero,
-no tools and capability-aware reasoning off. Summary output defaults to min(2048, max(128, floor(B / 10)));
-explicit caps are never reduced. At most four calls share existing model timeouts and the Harness active-time budget.
+Above trigger_percent of B it selects a complete recent-turn suffix toward the soft target_percent of B.
+It releases counting admission before calling core/models with the selected model, non-streaming, temperature zero, no tools and capability-aware reasoning off.
+Summary output defaults to min(2048, max(128, floor(B / 10))); explicit caps are never reduced. At most four calls share existing model timeouts and the Harness active-time budget.
 The role-labelled input combines the previous summary and newly covered history, splitting oversized text by summary budget.
 Reasoning, system prompts and injected Knowledge are omitted; images contribute only existing text/descriptions/references.
 Structured Markdown preserves goals, constraints, corrections, facts, open work and sources. It enters as user-role historical data.
@@ -181,9 +179,15 @@ Empty, length, tool-calling, timed-out, over-four-call or non-shrinking summarie
 If the original request fits, context_compaction_failed is retained as a diagnostic and answering continues; otherwise
 CONTEXT_COMPACTION_FAILED stops the run. Cancellation always terminates. [Context detail](runs-streaming.md#context-detail)
 retains each dispatched summary request and the summary actually used by the answer.
-Manual compaction, active-tool transcript summaries, QQ/Timeline compaction, overflow retry and draft previews are deferred.
+`/compact` manually evaluates idle ordinary/Workspace history with history enabled and token_budget selected, even when automatic compaction is off. It bypasses the trigger, retaining the target, cap and four-call limit.
+The selected configuration and inclusive eligible-history boundary are captured before execution. Counts include fixed Persona/Project prompts, effective tools and answer reserve, without composer input or Knowledge retrieval. Fixed-only native counting uses an empty protocol user frame that is never retained or sent for inference. The next chat recounts its complete request.
+Empty history or input already below target returns not_needed; successful reduction commits the checkpoint, while actual summary failures fail the run even when the original context fits. [Runs/streaming](runs-streaming.md#run-lifecycle) owns the dedicated API, event and cancellation.
+Typing a slash prefix opens the sole /compact completion: click/Enter executes, Tab completes, Escape dismisses; Shift+Enter and IME confirmation do not execute. Only a standalone command with optional surrounding whitespace is accepted, without arguments or attachments.
+The command bypasses message creation, queue insertion, answers and title generation. Drafts, loading, active/approval runs, pending submissions, queued/editing messages and configuration saves block execution, retaining input. Accepted execution clears only the submitted draft.
+Ordinary messages may queue during compaction: success permits dispatch; failure/cancellation/interruption pauses it. Queues remain browser-local. No command registry or additional tools are introduced.
+Active-tool transcript summaries, QQ/Timeline compaction, overflow retry and draft previews are deferred.
 Summaries are lossy; model-specific factual retention and accumulated drift require representative real-model acceptance.
-Qwen3.5-0.8B GGUF can exhaust a 512-token summary cap; three consecutive successful summaries with factual-retention
+Qwen3.5-0.8B GGUF can exhaust a 512-token summary cap or copy summary instructions into its memory; three consecutive successful summaries with factual-retention
 acceptance remain outstanding. A successful individual compression or mocked test does not establish that model's long-conversation quality.
 
 The [context meter](runs-streaming.md#context-detail) displays actual per-call input plus output usage beside the model selector. Input reflects history limits and token trimming; policy edits affect the next request, not recorded usage.

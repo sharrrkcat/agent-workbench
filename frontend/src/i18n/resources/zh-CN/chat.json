@@ -50,6 +50,19 @@
     "removed": "移除历史轮次",
     "compacting": "正在压缩"
   },
+  "compactCommand": {
+    "menu": "会话命令",
+    "execute": "立即压缩",
+    "draft": "发送消息创建会话后再压缩。",
+    "loading": "请等待会话加载完成。",
+    "busy": "请等待当前操作结束。",
+    "queued": "请先发送或移除排队消息。",
+    "saving": "请等待设置保存完成。",
+    "policy": "请先开启历史并选择 Token 预算。",
+    "model": "请先选择模型。",
+    "arguments": "/compact 不接受参数。",
+    "attachments": "使用 /compact 前请先移除附件。"
+  },
   "loadEarlier": "加载更早的消息",
   "loadLater": "加载后续消息"
 }

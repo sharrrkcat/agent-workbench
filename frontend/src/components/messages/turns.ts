@@ -24,7 +24,7 @@ export type Reply = {
 
 export type ConversationItem =
   | { kind: 'message'; id: string; createdAt: string; message: Message }
-  | { kind: 'reply'; id: string; createdAt: string; reply: Reply };
+  | { kind: 'reply' | 'compaction'; id: string; createdAt: string; reply: Reply };
 
 export function buildReply(run: Run, messages: Message[], steps: RunStep[]): Reply {
   const ordered = [...messages].sort((a, b) => compareTime(a.created_at, b.created_at));
@@ -68,7 +68,7 @@ export function buildConversation(sessionId: string, messages: Message[], runs: 
   const items: ConversationItem[] = currentMessages.filter((message) => message.role === 'user' || !message.run_id)
     .map((message) => ({ kind: 'message', id: message.message_id, createdAt: message.created_at, message }));
   for (const run of currentRuns) {
-    items.push({ kind: 'reply', id: run.run_id, createdAt: run.created_at,
+    items.push({ kind: run.kind === 'compaction' ? 'compaction' : 'reply', id: run.run_id, createdAt: run.created_at,
       reply: buildReply(run, byRun.get(run.run_id) || [], stepsByRunId[run.run_id] || run.steps || []),
     });
   }

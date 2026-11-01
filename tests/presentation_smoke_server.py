@@ -73,7 +73,12 @@ class PresentationOpenAI(ToolOpenAI):
         self.calls.append(data)
         from ai_workbench.core.context_compaction import SUMMARY_INSTRUCTION
         if data['messages'][0]['content'] == SUMMARY_INSTRUCTION:
+            if 'HOLD_COMPACTION' in data['messages'][1]['content']:
+                await self.compaction_release.wait()
             await asyncio.sleep(1)
+            if 'FAIL_COMPACTION' in data['messages'][1]['content']:
+                return httpx.Response(200, json={'choices': [{'index': 0, 'message': {
+                    'role': 'assistant', 'content': ''}, 'finish_reason': 'length'}]})
             return httpx.Response(200, json={'choices': [{'index': 0, 'message': {
                 'role': 'assistant', 'content': '## Confirmed facts\nThe budget is 42 EUR. Do not send email.'}, 'finish_reason': 'stop'}],
                 'usage': {'prompt_tokens': 1400, 'completion_tokens': 24, 'total_tokens': 1424}})
@@ -175,6 +180,7 @@ def create_fixture_app(repository: Path, root: Path):
     @app.post("/__test__/session")
     async def fixture_session(values: dict = Body(default={})):
         await state.active_runs.cancel_all()
+        upstream.compaction_release = asyncio.Event()
         state.model_profiles.update(profile['id'], {'context_window_tokens': 4096 if values.get('compaction') else profile['context_window_tokens']})
         state.app_settings.patch({"show_full_processing": bool(values.get("show_full_processing", False))})
         if values.get("web_tools"):
@@ -185,7 +191,8 @@ def create_fixture_app(repository: Path, root: Path):
             session = state.chat_service.update_session(session.session_id, {'harness_enabled': False,
                 'context_policy': {'compaction': {'trigger_percent': 50, 'target_percent': 35, 'max_summary_tokens': 512}}})
             for index in range(14):
-                user = state.messages.add_message(session.session_id, 'user', 'The budget is 42 EUR. Do not send email. ' + 'Background information. ' * 85)
+                marker = {'hold': 'HOLD_COMPACTION ', 'fail': 'HOLD_COMPACTION FAIL_COMPACTION '}.get(values.get('compaction'), '')
+                user = state.messages.add_message(session.session_id, 'user', marker + 'The budget is 42 EUR. Do not send email. ' + 'Background information. ' * 85)
                 state.messages.add_message(session.session_id, 'assistant', 'Recorded.', parent_message_id=user.message_id)
         if values.get("long_history"):
             config = state.chat_service.resolve(session)
@@ -207,6 +214,11 @@ def create_fixture_app(repository: Path, root: Path):
             final.persist()
             state.runs.update_status(run.run_id, RunStatus.DONE)
         return state.chat_service.session_response(state.sessions.get_session(session.session_id))
+
+    @app.post("/__test__/release-compaction")
+    async def release_compaction():
+        upstream.compaction_release.set()
+        return {"released": True}
 
     return app
 

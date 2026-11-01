@@ -15,6 +15,8 @@ from ai_workbench.api.errors import raise_error
 from ai_workbench.api.routes.sessions import _get_session_or_404
 from ai_workbench.core.attachments import validate_attachments
 from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.schema.result import RunResult
+from ai_workbench.core.manual_compaction import is_compaction_command
 
 
 router = APIRouter(prefix="/api/sessions/{session_id}", tags=["messages"])
@@ -53,6 +55,9 @@ async def create_message(
     ui_language: UiLanguage = Depends(get_ui_language),
 ) -> dict:
     session = _get_session_or_404(state, session_id)
+    if is_compaction_command(payload.content, payload.attachments):
+        run = state.runtime.manual_compaction.start(session, ui_language=ui_language)
+        return _result_payload(state, session_id, RunResult(success=True, run_id=run.run_id))
     try:
         attachments = validate_attachments(payload.attachments, settings=state.app_settings.get())
     except ValueError as exc:

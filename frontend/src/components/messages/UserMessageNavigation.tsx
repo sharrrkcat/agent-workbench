@@ -44,7 +44,7 @@ export function UserMessageNavigation() {
   }, [sessionId, historyVersion]);
   useEffect(() => { if (page && !page.has_after) void load(); }, [lastId]);
   useEffect(() => {
-    if (visible && page && (visible.number < (page.items[0]?.number ?? 0) && page.has_before ||
+    if (visible?.number != null && page && (visible.number < (page.items[0]?.number ?? 0) && page.has_before ||
       visible.number > (page.items[page.items.length - 1]?.number ?? 0) && page.has_after)) void load({ around: visible.cursor });
   }, [visible?.number]);
   async function jump(id: string, cursor: string) {

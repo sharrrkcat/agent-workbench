@@ -50,6 +50,19 @@
     "removed": "History turns removed",
     "compacting": "Compacting context"
   },
+  "compactCommand": {
+    "menu": "Conversation commands",
+    "execute": "Compact now",
+    "draft": "Send a message before compacting this conversation.",
+    "loading": "Wait for the conversation to finish loading.",
+    "busy": "Wait for the active operation to finish.",
+    "queued": "Finish or remove queued messages first.",
+    "saving": "Wait for settings to finish saving.",
+    "policy": "Enable history and select Token budget first.",
+    "model": "Select a model first.",
+    "arguments": "/compact does not accept arguments.",
+    "attachments": "Remove attachments before using /compact."
+  },
   "loadEarlier": "Load earlier messages",
   "loadLater": "Load later messages"
 }

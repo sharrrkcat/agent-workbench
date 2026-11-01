@@ -1,13 +1,14 @@
 export function historyPage(messages = [], runs = [], query = {}) {
+  let number = 0;
   const time = (value) => value || '2026-01-01T00:00:00.000000Z';
   const cursor = (item) => Buffer.from(JSON.stringify({ session_id: item.kind === 'message' ? item.message.session_id : item.run.session_id,
     created_at: item.created_at, kind: item.kind === 'message' ? 0 : 1, id: item.id })).toString('base64url');
   const items = [
     ...messages.filter((m) => m.role === 'user' || !m.run_id).map((message) => ({ kind: 'message', id: message.message_id, created_at: time(message.created_at), message })),
-    ...runs.map((run) => ({ kind: 'reply', id: run.run_id, created_at: time(run.created_at), run,
-      messages: messages.filter((m) => m.run_id === run.run_id) })),
-  ].sort((a, b) => a.created_at.localeCompare(b.created_at) || (a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind === 'message' ? -1 : 1))
-    .map((item, index) => ({ ...item, number: index + 1, cursor: cursor(item) }));
+    ...runs.map((run) => ({ id: run.run_id, created_at: time(run.created_at), run,
+      ...(run.kind === 'compaction' ? { kind: 'compaction' } : { kind: 'reply', messages: messages.filter((m) => m.run_id === run.run_id) }) })),
+  ].sort((a, b) => a.created_at.localeCompare(b.created_at) || ((a.kind === 'message' ? 0 : 1) - (b.kind === 'message' ? 0 : 1)) || a.id.localeCompare(b.id))
+    .map((item) => ({ ...item, number: item.kind === 'compaction' ? null : ++number, cursor: cursor(item) }));
   const limit = query.limit ?? 50;
   const anchor = items.findIndex((i) => i.cursor === (query.before || query.after || query.around));
   const start = query.before ? Math.max(0, anchor - limit) : query.after ? anchor + 1

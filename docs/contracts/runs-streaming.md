@@ -10,9 +10,9 @@ Frontend message, queue, upload and API-key IDs use cryptographic randomness ava
 
 ## Run lifecycle
 
-Run.kind is chat or tool and stores its Agent persona_id (empty for QQ without an Agent). Statuses are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and INTERRUPTED. Terminal runs never return to running.
+Run.kind is chat, tool or compaction and stores its Agent persona_id (empty for QQ without an Agent). Statuses are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and INTERRUPTED. Terminal runs never return to running.
 
-RunStep.kind is context/model/save/approval/tool; statuses are pending/running/completed/failed/skipped.
+RunStep.kind is context/model/compaction/save/approval/tool; statuses are pending/running/completed/failed/skipped.
 Steps have stable order, optional parent ids, timing, compact messages and structured errors.
 Both locales label stable kinds, never implementation progress strings.
 
@@ -35,13 +35,16 @@ Run reads/cancellation are `/api/runs/{id}`, `/{id}/events`, `/{id}/cancel` and
 `/api/sessions/{id}/history`. Tool responses and explicit approvals are defined by
 the harness contract. Direct tool runs never create model summaries or auxiliary titles;
 explicit chat tool input receives the basic input title described in the chat contract.
+POST `/api/sessions/{id}/compact` accepts an empty body and returns 202 RunResponse. It captures configuration/history and creates a compaction run before yielding, then registers its task for ordinary cancellation and restart interruption. Unsupported policies/session kinds and busy sessions return 409; arguments return 422. The internal message input also recognizes standalone /compact before creating any message.
+Compaction metadata records compacted or not_needed (no_history/below_target), checkpoint identity and nullable before/after counts. Summary text remains private. Failed manual generation has a failed run; it cannot be retried/deleted as a reply. History edits still remove later runs and invalidate checkpoints.
 
-Visible conversation items have consecutive session-local numbers starting at #1 beside their timestamps.
+Messages and replies have consecutive session-local numbers starting at #1 beside their timestamps.
 Each standalone message or whole reply occupies one number, including active, failed, cancelled and
 direct-tool replies. Processing messages share their reply's number. Numbers follow current display
 order, are computed by database counts after history mutations and are not persisted. User-message navigation uses
 these same numbers while continuing to target only user messages.
-The chat view presents each run inside its reply, without a separate footer
+Compaction history items have kind=compaction and number=null: they participate in paging/cursors, never numbering or model history. Marker separators show current status, known reduction counts, cancel while active and private call/usage details afterward; no avatar, answer, Restore or reply actions. Their usage belongs to that run; the context ring retains answer usage.
+The chat view presents chat/tool runs inside their replies, without a separate footer
 RunPanel or context/model/save step list. Elapsed seconds use started_at (or
 created_at) through finished_at, including approval waits; active clocks update
 locally and terminal clocks freeze. General show_full_processing controls initial
@@ -156,7 +159,7 @@ Deleted ids block late messages, steps, runs and REST results; session epochs
 reject requests from earlier visits even after switching back. Authoritative
 refresh removes records absent from the window without regressing newer events.
 History pages use before/after/around cursors (mutually exclusive), default 50/max 100,
-ordered by created_at, kind (message before reply), id. Replies remain whole.
+ordered by created_at, kind (message before run), id. Replies remain whole.
 Responses provide numbers, boundary cursors, has_before/has_after, history_version and a compact active_run.
 The UI retains at most 200 items and their associated messages/steps, preserving scroll anchors on eviction.
 Automatic pagination responds to user scrolling; programmatic jumps do not load adjacent pages.

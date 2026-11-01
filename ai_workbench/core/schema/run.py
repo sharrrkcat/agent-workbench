@@ -26,7 +26,7 @@ class RunStepStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-RunKind = Literal["chat", "tool"]
+RunKind = Literal["chat", "tool", "compaction"]
 RunStepKind = Literal["context", "model", "compaction", "save", "approval", "tool"]
 
 

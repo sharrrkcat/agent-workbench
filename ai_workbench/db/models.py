@@ -108,7 +108,7 @@ class MessageRecord(SQLModel, table=True):
 
 class RunRecord(SQLModel, table=True):
     __table_args__ = (
-        CheckConstraint("kind IN ('chat', 'tool')", name="ck_runrecord_kind"),
+        CheckConstraint("kind IN ('chat', 'tool', 'compaction')", name="ck_runrecord_kind"),
         Index("ix_run_session_order", "session_id", "created_at", "run_id"),
         Index("ix_run_session_status", "session_id", "status"),
     )

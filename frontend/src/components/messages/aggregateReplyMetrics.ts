@@ -3,7 +3,7 @@ import type { Reply } from './turns';
 import { terminal } from '../../store/cogita/mergeState';
 
 export function buildReplyMetrics(reply: Reply, now = Date.now()) {
-  if (reply.run.kind !== 'chat') return null;
+  if (reply.run.kind === 'tool') return null;
   const steps = reply.steps.filter((step) => step.kind === 'model' || step.kind === 'compaction').sort((a, b) => a.order - b.order);
   const calls = steps.flatMap((step) => step.metadata?.llm ? [step.metadata.llm] : []);
   const answerCalls = steps.filter((step) => step.kind === 'model').flatMap((step) => step.metadata?.llm ? [step.metadata.llm] : []);

@@ -1,4 +1,5 @@
 from itertools import islice
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -57,6 +58,26 @@ def test_history_pages_keep_replies_whole_and_number_globally(history_stores):
     assert next(i for i in around["items"] if i["id"] == anchor["id"])["number"] == anchor["number"]
     with pytest.raises(ValueError):
         state.reader.page(state.sessions.create_session().session_id, HistoryQuery(before=anchor["cursor"]))
+
+
+def test_compaction_events_page_without_consuming_reference_numbers(history_stores):
+    state = history_stores
+    sid = state.sessions.create_session().session_id
+    user = state.messages.add_message(sid, "user", "before")
+    run = state.runs.create_run("compaction", "persona", sid)
+    state.runs.update_status(run.run_id, RunStatus.DONE)
+    after = state.messages.add_message(sid, "user", "after")
+    after.created_at = run.created_at + timedelta(microseconds=1)
+    state.messages.update_message(after)
+    latest = state.reader.page(sid, HistoryQuery(limit=2))
+    assert [(i['kind'], i['number']) for i in latest['items']] == [('compaction', None), ('message', 2)]
+    prior = state.reader.page(sid, HistoryQuery(before=latest['before_cursor'], limit=2))
+    assert [(i['id'], i['number']) for i in prior['items']] == [(user.message_id, 1)]
+    around = state.reader.page(sid, HistoryQuery(around=latest['before_cursor'], limit=3))
+    assert [i['number'] for i in around['items']] == [1, None, 2]
+    assert state.reader.reference_numbers(sid, {user.message_id, run.run_id, after.message_id}) == {
+        user.message_id: 1, after.message_id: 2}
+    assert [i['number'] for i in state.reader.page(sid, HistoryQuery(), users=True)['items']] == [1, 2]
 
 
 def test_bounded_context_does_not_call_full_history_and_preserves_parent(history_stores, monkeypatch):

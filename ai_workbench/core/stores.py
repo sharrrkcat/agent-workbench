@@ -206,19 +206,21 @@ class MessageStore:
         return sorted((self._messages[item] for item in self._session_ids.get(session_id, []) if item in self._messages),
                       key=lambda m: (m.created_at, m.message_id))
 
-    def iter_context_history(self, session_id: str, exclude_id: str | None, *, after=None, before=None, ascending=False):
+    def iter_context_history(self, session_id: str, exclude_id: str | None, *, after=None, before=None, through=None, ascending=False):
         from ai_workbench.core.context import _eligible
         ordered = sorted((self._messages[i] for i in self._session_ids.get(session_id, [])),
                          key=lambda m: (m.created_at, m.message_id), reverse=not ascending)
         return (m for m in ordered if m.message_id != exclude_id and _eligible(m)
                 and (after is None or (m.created_at, m.message_id) > after)
-                and (before is None or (m.created_at, m.message_id) < before))
+                and (before is None or (m.created_at, m.message_id) < before)
+                and (through is None or (m.created_at, m.message_id) <= through))
 
-    def context_history_counts(self, session_id: str, exclude_id: str | None) -> tuple[int, int]:
+    def context_history_counts(self, session_id: str, exclude_id: str | None, *, through=None) -> tuple[int, int]:
         from ai_workbench.core.context import _eligible
         total = eligible = 0
         for message_id in self._session_ids.get(session_id, []):
-            if message_id != exclude_id:
+            message = self._messages[message_id]
+            if message_id != exclude_id and (through is None or (message.created_at, message_id) <= through):
                 total += 1
                 eligible += int(_eligible(self._messages[message_id]))
         return total, eligible

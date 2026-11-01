@@ -1,12 +1,14 @@
 import { ComposerSurface, ComposerTextarea, ComposerToolbar } from './ComposerSurface';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { InputGroupButton } from '@/components/ui/input-group';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent } from '@/components/ui/popover';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { cn } from '@/lib/utils';
 import { Paperclip, Plus, ArrowUp, Square } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
@@ -18,6 +20,7 @@ import { ChatModelMenu } from './ChatModelMenu';
 import { ContextWindowMeter } from './ContextWindowMeter';
 import { configuredContextWindow } from './contextUsage';
 import { MessageQueue } from './MessageQueue';
+import { compactCommand, compactUnavailable } from '../store/cogita/compactCommand';
 
 export function ChatInput() {
   const { t } = useTranslation('personas');
@@ -31,6 +34,8 @@ export function ChatInput() {
   const dispatchQueue = useCogitaStore((state) => state.dispatchQueuedMessage);
   const queue = useCogitaStore((state) => state.currentSession ? state.messageQueues[state.currentSession.session_id] : undefined);
   const cancelRun = useCogitaStore((state) => state.cancelRun);
+  const compact = useCogitaStore((state) => state.compactContext);
+  const compactBlocked = useCogitaStore(compactUnavailable);
   const sending = useCogitaStore((state) => state.sending);
   const awaitingAcceptance = useCogitaStore((state) => state.awaitingAcceptance);
   const mutatingHistory = useCogitaStore((state) => state.mutatingHistory);
@@ -57,6 +62,8 @@ export function ChatInput() {
   const submittedItems = useRef<ReturnType<typeof take> | null>(null);
   const [dragging, setDragging] = useState(false);
   const [configurationBusy, setConfigurationBusy] = useState(false);
+  const [dismissedCommand, setDismissedCommand] = useState<string | null>(null);
+  const commandMenuId = useId();
   const [queueReady, setQueueReady] = useState<string | null>(null);
   const queueKey = session ? `${sessionEpoch}:${session.session_id}` : null;
   useEffect(() => {
@@ -70,6 +77,7 @@ export function ChatInput() {
     submittedItems.current = null;
     setDragging(false);
     setConfigurationBusy(false);
+    setDismissedCommand(null);
     if (fileRef.current) fileRef.current.value = '';
   }, [sessionEpoch]);
   useLayoutEffect(() => {
@@ -100,7 +108,12 @@ export function ChatInput() {
     resolvingApprovals, windowIssue, queueImageIssue]);
   const queueMode = !!session && (!!activeRun || sending || !!queue?.items.length || !!queue?.paused || !!queue?.submission);
   const acceptanceLocked = awaitingAcceptance || (!!queue?.submission && !queue.submission.itemId && !queue.submission.accepted);
-  const submitLabel = queue?.editing ? t('chat:queue.save') : queueMode ? t('chat:queue.add') : t('send');
+  const command = compactCommand(draft);
+  const commandOpen = (command === 'prefix' || command === 'compact') && dismissedCommand !== draft;
+  const commandInput = command === 'compact' || command === 'invalid' || commandOpen;
+  const commandReason = command === 'invalid' ? 'arguments' : items.length ? 'attachments'
+    : configurationBusy || configurationSaving ? 'saving' : session && queueReady !== queueKey ? 'loading' : compactBlocked;
+  const submitLabel = commandInput ? t('chat:compactCommand.execute') : queue?.editing ? t('chat:queue.save') : queueMode ? t('chat:queue.add') : t('send');
   const cannotSend =
     !ready ||
     acceptanceLocked ||
@@ -111,10 +124,18 @@ export function ChatInput() {
     uploadFailed ||
     !!imageIssue ||
     !!windowIssue ||
-    (!draft.trim() && attachments.length === 0);
+    (!draft.trim() && attachments.length === 0) || (commandInput && !!commandReason);
+
+  async function executeCompact() {
+    if (commandReason || cannotSend) return;
+    setDismissedCommand(draft);
+    await compact();
+    textareaRef.current?.focus();
+  }
 
   async function submit() {
     if (cannotSend) return;
+    if (commandInput) { await executeCompact(); return; }
     if (queue?.editing) { if (saveEdit()) textareaRef.current?.focus(); return; }
     if (queueMode) {
       if (enqueue(draft, attachments)) discard(take());
@@ -167,6 +188,17 @@ export function ChatInput() {
         </Marker>
       ) : null}
       <ComposerSurface ref={composerRef} expanded={expanded} textHeight={textHeight}>
+        <Popover open={commandOpen} onOpenChange={(open) => { if (!open) setDismissedCommand(draft); }}>
+          <PopoverContent anchor={composerRef} side="top" align="start" initialFocus={false} finalFocus={false}
+            id={commandMenuId} role="listbox" aria-label={t('chat:compactCommand.menu')} className="gap-1">
+            <Button id={`${commandMenuId}-compact`} role="option" aria-selected="true" disabled={!!commandReason}
+              variant="ghost" className="justify-start" onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void executeCompact()}>
+              <span>/compact</span><span>{t('chat:compactCommand.execute')}</span>
+            </Button>
+            {commandOpen && commandReason ? <span>{t(`chat:compactCommand.${commandReason}`)}</span> : null}
+          </PopoverContent>
+        </Popover>
         <input
           ref={fileRef}
           type="file"
@@ -184,7 +216,10 @@ export function ChatInput() {
           rows={1}
           placeholder={placeholder}
           aria-label={fullPlaceholder}
-          onChange={(event) => setDraft(event.currentTarget.value)}
+          aria-controls={commandOpen ? commandMenuId : undefined}
+          aria-expanded={commandOpen}
+          aria-activedescendant={commandOpen ? `${commandMenuId}-compact` : undefined}
+          onChange={(event) => { setDismissedCommand(null); setDraft(event.currentTarget.value); }}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
             if (files.length) {
@@ -193,6 +228,13 @@ export function ChatInput() {
             }
           }}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
+            if (commandOpen && ['ArrowDown', 'ArrowUp', 'Escape', 'Tab'].includes(event.key)) {
+              event.preventDefault();
+              if (event.key === 'Escape') setDismissedCommand(draft);
+              if (event.key === 'Tab') { setDraft('/compact'); setDismissedCommand('/compact'); }
+              return;
+            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               void submit();
@@ -261,6 +303,9 @@ export function ChatInput() {
           </div>
         </ComposerToolbar>
       </ComposerSurface>
+      {commandInput && commandReason && !commandOpen ? <Marker className="composer-hint">
+        <MarkerContent>{t(`chat:compactCommand.${commandReason}`)}</MarkerContent>
+      </Marker> : null}
       <div ref={measureRef} className="composer-measure" aria-hidden="true" />
       {dragging || (hasImages && profile?.source?.type === 'local' && normalizedRequestLimit !== undefined) ? <Marker className="composer-hint">
         <MarkerContent>

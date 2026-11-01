@@ -69,7 +69,9 @@ class MemoryHistoryReader:
         runs = self.runs.list_runs(session_id)
         all_items = sorted([(ensure_utc(m.created_at), 0, m.message_id) for m in messages if m.role == "user" or not m.run_id]
                            + [(ensure_utc(r.created_at), 1, r.run_id) for r in runs])
-        numbers = {key: index + 1 for index, key in enumerate(all_items)}
+        compactions = {r.run_id for r in runs if r.kind == "compaction"}
+        numbered = [key for key in all_items if key[2] not in compactions]
+        numbers = {key: index + 1 for index, key in enumerate(numbered)}
         user_ids = {m.message_id for m in messages if m.role == "user"}
         candidates = [key for key in all_items if not users or key[1] == 0 and key[2] in user_ids]
         value = query.before or query.after or query.around
@@ -91,10 +93,12 @@ class MemoryHistoryReader:
                 else:
                     items.append({"kind": "message", "message": message.model_dump(mode="json")})
             else:
-                items.append({"kind": "reply", "run": self._run(key[2]),
-                              "messages": [m.model_dump(mode="json") for m in self.messages.messages_for_run(key[2])]})
+                run = self._run(key[2])
+                items.append({"kind": "compaction", "run": run} if run["kind"] == "compaction" else
+                    {"kind": "reply", "run": run,
+                     "messages": [m.model_dump(mode="json") for m in self.messages.messages_for_run(key[2])]})
         active = next((r for r in reversed(runs) if r.status.value in {"PENDING", "RUNNING", "CANCELLING", "WAITING_FOR_USER"}), None)
-        return page_envelope(session_id, chosen, [numbers[key] for key in chosen], items, session.history_version,
+        return page_envelope(session_id, chosen, [numbers.get(key) for key in chosen], items, session.history_version,
             bool(chosen and candidates[0] < chosen[0]), bool(chosen and candidates[-1] > chosen[-1]),
             active.model_dump(mode="json") if active and not users else None)
 
@@ -106,7 +110,7 @@ class MemoryHistoryReader:
         messages = self.messages.list_messages(session_id)
         runs = self.runs.list_runs(session_id)
         keys = sorted([(ensure_utc(m.created_at), 0, m.message_id) for m in messages if m.role == "user" or not m.run_id]
-                      + [(ensure_utc(r.created_at), 1, r.run_id) for r in runs])
+                      + [(ensure_utc(r.created_at), 1, r.run_id) for r in runs if r.kind != "compaction"])
         numbers = {key[2]: index + 1 for index, key in enumerate(keys)}
         result = {id: number for id, number in numbers.items() if id in ids}
         for message in messages:

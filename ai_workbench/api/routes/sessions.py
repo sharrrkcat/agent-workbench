@@ -3,9 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictBool
 
-from ai_workbench.api.deps import RuntimeState, get_state
+from ai_workbench.api.deps import RuntimeState, get_state, get_ui_language
+from ai_workbench.core.instructions import UiLanguage
 from ai_workbench.api.schemas.chat import (
-    SessionResponse, SessionDeleted,
+    RunResponse, SessionResponse, SessionDeleted,
     SessionKnowledgeResponse,
 )
 from ai_workbench.api.openapi import request_body
@@ -41,6 +42,10 @@ class SessionKnowledgePatch(BaseModel):
     knowledge_base_ids: list[str] = Field(max_length=128)
 
 
+class CompactSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 OrdinarySessionPatch = patch_model("OrdinarySessionPatch", CreateSessionRequest, fields={
     "title": (str, Field(default_factory=lambda: None, min_length=1, max_length=MAX_SESSION_TITLE_LENGTH,
         description="A nonempty title after trimming; updates mark the title as manually set.")),
@@ -62,6 +67,14 @@ class SessionPatchRequest(RootModel[OrdinarySessionPatch | WorkspaceSessionPatch
 async def create_session(payload: CreateSessionRequest, state: RuntimeState = Depends(get_state)) -> dict:
     session = state.chat_service.create_session(payload.model_dump(exclude_unset=True))
     return state.chat_service.session_response(session)
+
+
+@router.post("/{session_id}/compact", status_code=202, response_model=RunResponse, response_model_exclude_unset=True,
+    responses=error_responses(404, 409, 422, 503))
+async def compact_session(session_id: str, payload: CompactSessionRequest = CompactSessionRequest(),
+                          state: RuntimeState = Depends(get_state), ui_language: UiLanguage = Depends(get_ui_language)) -> dict:
+    session = _get_session_or_404(state, session_id)
+    return state.runtime.manual_compaction.start(session, ui_language=ui_language).model_dump(mode="json")
 
 
 @router.get("", response_model=list[SessionResponse], response_model_exclude_unset=True)

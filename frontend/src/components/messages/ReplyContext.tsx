@@ -40,7 +40,7 @@ export function ReplyContext({ reply }: { reply: Reply }) {
   const historyVersion = useCogitaStore((state) => state.historyWindow?.history_version);
   useEffect(() => { setOpen(false); }, [reply.run.run_id, reply.run.session_id, reply.run.status]);
   const calls = contextCalls(reply);
-  if (reply.run.kind !== 'chat' || !calls.length || (!terminal(reply.run.status) && reply.run.status !== 'WAITING_FOR_USER')) return null;
+  if (reply.run.kind === 'tool' || !calls.length || (!terminal(reply.run.status) && reply.run.status !== 'WAITING_FOR_USER')) return null;
   return <Dialog open={open} onOpenChange={setOpen}>
     <Tooltip>
       <TooltipTrigger render={<DialogTrigger render={<Button variant="ghost" size="icon" aria-label={t('context.details')} />} />}>

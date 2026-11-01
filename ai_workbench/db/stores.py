@@ -194,7 +194,7 @@ class SqlMessageStore:
     def list_messages(self, session_id: str) -> list[MessageSchema]:
         with DbSession(self.engine) as db: return [_message(row) for row in db.exec(select(MessageRecord).where(MessageRecord.session_id == session_id).order_by(MessageRecord.created_at, MessageRecord.message_id)).all()]
 
-    def iter_context_history(self, session_id: str, exclude_id: str | None, *, after=None, before=None, ascending=False):
+    def iter_context_history(self, session_id: str, exclude_id: str | None, *, after=None, before=None, through=None, ascending=False):
         statement = select(MessageRecord).where(MessageRecord.session_id == session_id, eligible_history())
         if exclude_id:
             statement = statement.where(MessageRecord.message_id != exclude_id)
@@ -202,6 +202,8 @@ class SqlMessageStore:
             statement = statement.where(message_key() > after)
         if before is not None:
             statement = statement.where(message_key() < before)
+        if through is not None:
+            statement = statement.where(message_key() <= through)
         cursor = None
         while True:
             query = statement if cursor is None else statement.where(message_key() > cursor if ascending else message_key() < cursor)
@@ -216,11 +218,13 @@ class SqlMessageStore:
                 yield message
             cursor = (batch[-1].created_at, batch[-1].message_id)
 
-    def context_history_counts(self, session_id: str, exclude_id: str | None) -> tuple[int, int]:
+    def context_history_counts(self, session_id: str, exclude_id: str | None, *, through=None) -> tuple[int, int]:
         statement = select(func.count(), func.coalesce(func.sum(cast(eligible_history(), Integer)), 0)).select_from(MessageRecord).where(
             MessageRecord.session_id == session_id)
         if exclude_id:
             statement = statement.where(MessageRecord.message_id != exclude_id)
+        if through is not None:
+            statement = statement.where(message_key() <= through)
         with DbSession(self.engine) as db:
             total, eligible = db.exec(statement).one()
             return int(total), int(eligible)

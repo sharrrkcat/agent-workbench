@@ -1,4 +1,4 @@
-"""Bounded rolling history, before the first answer call of an ordinary run."""
+"""Bounded rolling history shared by automatic and manual compaction."""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +15,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.models.schema import ChatRequest
-from ai_workbench.core.schema.compaction import ContextCheckpoint
+from ai_workbench.core.schema.compaction import CompactionOutcome, ContextCheckpoint
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 from ai_workbench.core.schema.run import RunStepStatus
@@ -40,12 +40,13 @@ class ContextCompactionService:
         self.events, self.models = events, model_manager
 
     async def prepare(self, *, session, config, run, base, trace, current, profile, support,
-                      tools=None, instruction="", max_image_bytes, reasoning):
+                      tools=None, instruction="", max_image_bytes, reasoning, manual=False, through=None):
         policy = config.context_policy
         if not policy.history_enabled:
             return base, trace, None
         trace = trace.model_copy(deep=True)
-        total, eligible = self.messages.context_history_counts(session.session_id, current.message_id)
+        exclude_id = current.message_id if current else None
+        total, eligible = self.messages.context_history_counts(session.session_id, exclude_id, through=through)
         if total > eligible:
             trace.exclusions.append(ContextExclusion(kind="history", reason="ineligible_history", count=total - eligible))
         checkpoint = self.sessions.get_context_checkpoint(session.session_id) if policy.strategy == "token_budget" else None
@@ -57,7 +58,7 @@ class ContextCompactionService:
 
         def compose(rows, summary=checkpoint):
             result, provenance = deepcopy(base), trace.model_copy(deep=True)
-            index = len(result) - 1
+            index = len(result) if manual else len(result) - 1
             inserted, sources = [], ContextTrace()
             if summary:
                 inserted.append({"role": "user", "content": "[Historical summary; conversation data]\n" + summary.summary})
@@ -86,6 +87,11 @@ class ContextCompactionService:
             if instruction:
                 context, _ = prepend_system_block(context, provenance, instruction, "instruction")
             context = await resolve_context_images(context, max_image_bytes=max_image_bytes)
+            # Fixed-only idle prefixes have no user turn. Native templates such
+            # as Qwen3.5 reject that shape, so count its empty protocol frame too.
+            # It is never composed into history, saved, or dispatched for inference.
+            if manual and not any(message["role"] == "user" for message in context):
+                context = [*context, {"role": "user", "content": ""}]
             request = ChatRequest(model=profile.alias, messages=context, tools=tools, reasoning=reasoning,
                                   **config.generation.model_dump(exclude_none=True))
             return await self.models.measure_chat(profile.id, request, config.context_limits)
@@ -94,7 +100,7 @@ class ContextCompactionService:
         if fixed.input_tokens > fixed.input_budget_tokens:
             raise ModelError("CONTEXT_WINDOW_EXCEEDED", "Current input, instructions, knowledge and tools exceed the context window.", 422)
         after = (checkpoint.boundary_created_at, checkpoint.boundary_message_id) if checkpoint else None
-        before = message_key(current)
+        before = message_key(current) if current else None
         recent = []
         original = await measure([])
         exhausted = True
@@ -102,7 +108,7 @@ class ContextCompactionService:
         message_limit = policy.message_window.max_messages if policy.strategy == "message_window" else None
         # At most a window plus one small database batch is retained. Older rows
         # are read again chronologically only if summarization is necessary.
-        iterator = self.messages.iter_context_history(session.session_id, current.message_id, after=after, before=before)
+        iterator = self.messages.iter_context_history(session.session_id, exclude_id, after=after, before=before, through=through)
         for row in iterator:
             if _project(row, include_attachments=policy.include_attachments == "explicit") is None:
                 continue
@@ -129,14 +135,16 @@ class ContextCompactionService:
             original = await measure(list(reversed(recent)))
         rows = list(reversed(recent))
         original_fits = exhausted and original.input_tokens <= original.input_budget_tokens
-        enabled = policy.strategy == "token_budget" and policy.compaction.enabled
-        if not enabled or original.input_tokens <= original.input_budget_tokens * policy.compaction.trigger_percent / 100:
+        enabled = policy.strategy == "token_budget" and (manual or policy.compaction.enabled)
+        threshold = policy.compaction.target_percent if manual else policy.compaction.trigger_percent
+        if not enabled or original.input_tokens <= original.input_budget_tokens * threshold / 100:
             context, provenance = compose(rows)
             if not exhausted:
-                _, eligible = self.messages.context_history_counts(session.session_id, current.message_id)
                 missing = eligible - len(rows) - (checkpoint.covered_messages if checkpoint else 0)
                 if missing > 0:
                     provenance.exclusions.append(ContextExclusion(kind="history", reason=cutoff_reason, count=missing))
+            if manual:
+                self.record_outcome(run, CompactionOutcome(status="not_needed", reason="below_target" if eligible else "no_history"))
             return context, provenance, None
 
         output = policy.compaction.max_summary_tokens
@@ -234,8 +242,8 @@ class ContextCompactionService:
                     while len(buffer) >= capacity:
                         remainder = await generate(buffer[:capacity])
                         buffer = remainder + buffer[capacity:]
-            for row in self.messages.iter_context_history(session.session_id, current.message_id,
-                    after=after, before=prefix_end, ascending=True):
+            for row in self.messages.iter_context_history(session.session_id, exclude_id,
+                    after=after, before=prefix_end, through=through, ascending=True):
                 boundary = message_key(row)
                 covered += 1
                 text = "" if row.role == "system" else message_text(row, include_attachments=policy.include_attachments == "explicit")
@@ -253,6 +261,8 @@ class ContextCompactionService:
             if not calls and summary:
                 await generate("")
             if not calls or boundary is None:
+                if manual:
+                    self.record_outcome(run, CompactionOutcome(status="not_needed", reason="no_history"))
                 return (*compose(rows), None)
             candidate = ContextCheckpoint(session_id=session.session_id, summary=summary,
                 boundary_created_at=boundary[0], boundary_message_id=boundary[1], covered_messages=covered,
@@ -268,15 +278,25 @@ class ContextCompactionService:
             self.runs.update_step(last_step, metadata={"compaction": candidate.reference().model_dump(),
                 "input_tokens_before": candidate.input_tokens_before, "input_tokens_after": final.input_tokens})
             self._emit(run, last_step)
+            if manual:
+                self.record_outcome(run, CompactionOutcome(status="compacted", checkpoint=candidate.reference(),
+                    input_tokens_before=candidate.input_tokens_before, input_tokens_after=final.input_tokens))
             return (*compose(kept, candidate), None)
         except (ModelError, SQLAlchemyError) as exc:
             if last_step and self.runs.get_step(last_step).status != RunStepStatus.FAILED:
                 self.runs.update_step(last_step, status=RunStepStatus.FAILED, error_code="CONTEXT_COMPACTION_FAILED",
                     error_message=exc.message if isinstance(exc, ModelError) else "Context compaction could not be saved.")
                 self._emit(run, last_step)
+            if manual:
+                raise ModelError("CONTEXT_COMPACTION_FAILED", exc.message if isinstance(exc, ModelError)
+                    else "Context compaction could not be saved.", 422) from exc
             if not original_fits:
                 raise ModelError("CONTEXT_COMPACTION_FAILED", "Context compaction failed and the original history exceeds the window.", 422) from exc
             return (*compose(rows), "context_compaction_failed")
+
+    def record_outcome(self, run, outcome: CompactionOutcome):
+        self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata,
+            "compaction": outcome.model_dump(mode="json")})
 
     def _emit(self, run, step_id):
         self.events.emit("run_step_updated", session_id=run.session_id, run_id=run.run_id,
