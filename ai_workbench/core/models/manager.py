@@ -631,6 +631,13 @@ class ModelManager:
         async with self._lease(profile, release=False) as adapter:
             return await ChatContextBudget(limits, ContextTrace()).measure(profile, request, adapter)
 
+    async def select_chat_context(self, profile_id: str, request: ChatRequest, budget):
+        """Select a fitting historical suffix without dispatch or retaining admission."""
+        profile = self.profile(profile_id, "llm")
+        request = await self._prepare_chat(profile, request)
+        async with self._lease(profile, release=False) as adapter:
+            return await budget.prepare(profile, request, adapter)
+
     async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None, budget=None):
         metrics = metrics or LLMCallMetrics()
         if metrics.started_at is None:

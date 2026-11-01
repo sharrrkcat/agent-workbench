@@ -102,7 +102,7 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
       const number = numbers.get(source.reference_id!) ?? detail?.reference_numbers?.[source.reference_id!];
       return number == null ? t('context.deletedMessage') : t('context.messageNumber', { number });
     }
-    return t(`context.sources.${source.kind}`);
+    return source.run_compaction ? t('compaction.runSummary') : t(`context.sources.${source.kind}`);
   }
   function sourceNode(source: DisplayContextSource) {
     const children = byParent.get(source.id) || [];
@@ -225,6 +225,17 @@ function SourceInfo({ source, tokenLabel }: { source: DisplayContextSource; toke
           <div><dt>{t('compaction.checkpoint')}</dt><dd>{source.compaction.checkpoint_id}</dd></div>
           <div><dt>{t('compaction.covered')}</dt><dd>{source.compaction.covered_messages}</dd></div>
           <div><dt>{t('compaction.boundary')}</dt><dd>{source.compaction.boundary_message_id}</dd></div>
+          {source.compaction.boundary_qq_batch_id != null ? <div><dt>{t('compaction.batchBoundary')}</dt><dd>{source.compaction.boundary_qq_batch_id}</dd></div> : null}
+        </> : null}
+        {source.run_compaction ? <>
+          <div><dt>{t('compaction.checkpoint')}</dt><dd>{source.run_compaction.checkpoint_id}</dd></div>
+          <div><dt>{t('compaction.run')}</dt><dd>{source.run_compaction.run_id}</dd></div>
+          <div><dt>{t('compaction.throughRound')}</dt><dd>{source.run_compaction.through_round}</dd></div>
+          <div><dt>{t('compaction.coveredTools')}</dt><dd>{source.run_compaction.covered_tool_calls}</dd></div>
+        </> : null}
+        {source.compaction || source.run_compaction ? <>
+          <div><dt>{t('compaction.model')}</dt><dd>{(source.compaction || source.run_compaction)?.model_profile_id}</dd></div>
+          <div><dt>{t('compaction.step')}</dt><dd>{(source.compaction || source.run_compaction)?.step_id}</dd></div>
         </> : null}
       </dl>
     </HoverCardContent>

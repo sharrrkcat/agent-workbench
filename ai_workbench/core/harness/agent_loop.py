@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.harness.registry import TOOL_NAME_RE, ToolRegistry
 from ai_workbench.core.harness.schema import HarnessState, ToolExecutionContext, ToolExecutionError, ToolOutcome
+from ai_workbench.core.harness.compaction import HarnessCompaction
 from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part
 from ai_workbench.core.models.errors import ModelError
@@ -81,17 +82,21 @@ class HarnessAgentLoop:
         self.active_runs = active_runs
         self.allowed_tools = allowed_tools
         self.web_tools = web_tools
+        self.compaction = HarnessCompaction(model_manager, runs, events)
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                   user: MessageSchema, context: list[dict[str, Any]], trace, max_image_bytes: int, active_seconds: float = 0.0,
                   reasoning: bool = True, ui_language: UiLanguage = "en",
-                  first_metrics: LLMCallMetrics | None = None, web_date: str | None = None) -> RunResult:
+                  first_metrics: LLMCallMetrics | None = None, web_date: str | None = None,
+                  summary_reasoning: bool = False, on_dispatch=None) -> RunResult:
         state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
                              qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
                              max_image_bytes=max_image_bytes,
+                             summary_reasoning=summary_reasoning,
                              web_budget=self.web_tools.new_budget() if self.web_tools else WebRunBudget(),
                              web_date=web_date or utc_now().astimezone().date().isoformat())
-        return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
+        return await self._drive(session=session, config=config, run=run, user=user, state=state,
+            first_metrics=first_metrics, on_dispatch=on_dispatch)
 
     async def direct(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                      tool_name: str, arguments: dict[str, Any]) -> RunResult:
@@ -122,6 +127,8 @@ class HarnessAgentLoop:
             config = ResolvedChatConfig.model_validate(self.runs.get_config_snapshot(run.run_id))
             if not state.awaiting_approval:
                 raise ValueError("Missing approval")
+            if state.compaction is not None and state.compaction.run_id != run.run_id:
+                raise ValueError("Run summary belongs to another run")
             user = None if state.direct else self.messages.get_message(run.metadata["input_message_id"])
             if user is not None and user.session_id != session.session_id:
                 raise ValueError("Mismatched input")
@@ -145,7 +152,7 @@ class HarnessAgentLoop:
 
     async def _drive(self, *, session, config, run, user, state: HarnessState,
                      approved_call_id: str | None = None, rejected_call_id: str | None = None,
-                     first_metrics: LLMCallMetrics | None = None) -> RunResult:
+                     first_metrics: LLMCallMetrics | None = None, on_dispatch=None) -> RunResult:
         task = asyncio.current_task()
         if task is not None and self.active_runs is not None:
             self.active_runs.register(run.run_id, task)
@@ -211,7 +218,7 @@ class HarnessAgentLoop:
                         return self._terminate(run, state, RunStatus.FAILED, outcome.error_code, outcome.error_message)
                     self._complete(run.run_id)
                     return RunResult(success=True, run_id=run.run_id, data=outcome.data)
-                content = await self._model_round(session, config, run, user, state, budget, first_metrics)
+                content = await self._model_round(session, config, run, user, state, budget, first_metrics, on_dispatch)
                 first_metrics = None
                 if self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     return RunResult(success=True, run_id=run.run_id, data=content)
@@ -235,8 +242,7 @@ class HarnessAgentLoop:
                 self.active_runs.unregister(run.run_id)
 
     async def _model_round(self, session, config, run, user, state: HarnessState, budget: _Budget,
-                           first_metrics: LLMCallMetrics | None = None) -> str | None:
-        step = self._start_step(run.run_id, "model", "Generating response", {"round": state.rounds + 1})
+                           first_metrics: LLMCallMetrics | None = None, on_dispatch=None) -> str | None:
         if not config.model_profile_id:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
@@ -253,11 +259,26 @@ class HarnessAgentLoop:
             trace = trace.model_copy(deep=True)
             base_messages, _ = append_system_block(base_messages, trace,
                 runtime_prompt(config, user.metadata["qq_batch_id"], state.qq_sent_count, state.qq_trigger_kind), "qq_runtime")
-        request = ChatRequest(model=profile.alias, messages=[*base_messages, *state.transcript],
+        request = ChatRequest(model=profile.alias, messages=base_messages,
                               tools=tools, stream=profile.request_options.streaming, reasoning=state.reasoning,
                               **({"tool_choice": "required" if state.rounds == 0 else "auto"} if session.kind == "qqbot" else {}),
                               **config.generation.model_dump(exclude_none=True))
         self.model_manager.validate_chat(profile, request)
+        try:
+            request, trace, warning = await asyncio.wait_for(self.compaction.prepare(base=request, trace=trace,
+                config=config, profile=profile, run=run, state=state, on_dispatch=on_dispatch), timeout=budget.check())
+        except asyncio.TimeoutError as exc:
+            raise ToolExecutionError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.") from exc
+        self._check_cancelled(run.run_id)
+        budget.check()
+        self._save_state(run.run_id, state)
+        if warning:
+            codes = list(dict.fromkeys([*user.metadata.get("request_warnings", {}).get("codes", []), warning]))
+            user.metadata["request_warnings"] = {"run_id": run.run_id, "codes": codes}
+            self.messages.update_message(user)
+            self.events.emit("message_updated", session_id=session.session_id, run_id=run.run_id,
+                message_id=user.message_id, payload={"message": user.model_dump(mode="json")})
+        step = self._start_step(run.run_id, "model", "Generating response", {"round": state.rounds + 1})
         resolution = {"model_profile_id": profile.id, "alias": profile.alias,
                       "source_type": profile.source.type if profile.source else None,
                       "provider_profile_id": profile.source.provider_profile_id if profile.source and profile.source.type == "provider" else None, "model_ref": profile.model_ref}
@@ -269,9 +290,10 @@ class HarnessAgentLoop:
         try:
             try:
                 context_budget = ChatContextBudget(config.context_limits, trace,
-                    allow_pruning=session.kind == "qqbot" or state.rounds > 0 or config.context_policy.strategy == "message_window"
+                    allow_pruning=state.rounds > 0 or config.context_policy.strategy == "message_window"
                     or not config.context_policy.compaction.enabled)
-                capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy, budget=context_budget)
+                capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy,
+                    budget=context_budget, on_dispatch=on_dispatch)
                 calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture, context_budget),
                                                timeout=budget.check())
             except asyncio.TimeoutError as exc:

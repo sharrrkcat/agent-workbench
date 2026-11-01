@@ -142,6 +142,8 @@ def test_tool_growth_and_approval_resume_recheck_saved_limits(presentation_clien
     client, upstream = presentation_client
     register_approval_tool(client.app.state.runtime_state.tool_registry, content='tool result ' * 5000)
     session = configure(client, harness=True, streaming=False)
+    ok(client.patch(f"/api/sessions/{session['session_id']}",
+        json={'context_policy': ContextPolicy(compaction={'enabled': False}).model_dump()}))
     ok(client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 4096}))
     upstream.turns = [completion(tool_call('test_approval', {'value': 'large result'})), completion(content='must not execute')]
     result = send(client, session, 'produce a large result')

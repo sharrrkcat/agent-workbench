@@ -5,8 +5,8 @@ import pytest
 from sqlmodel import Session, select
 
 from ai_workbench.core.attachments import resolve_attachment_uri
-from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from tests.qq_context_fixture import project_qq_context
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMessage
 from tests.model_fixtures import configure_model
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest
@@ -64,7 +64,7 @@ def test_resume_merges_windows_and_uses_one_project_reply_budget(qq_client, cloc
     assert len(connection.calls) == reply_limit and len(upstream.calls) == 1
     assert state.qq.store.next_batch(p["id"]) is None
     assert freeze(state, session, 1000) is None
-    context = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
+    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     assert "input-1" not in context and "input-2" not in context
     assert all(f"input-{n}" in context for n in (3, 4, 5))
     ingest(client, state, p, event(6, "bot fresh input"), 30)

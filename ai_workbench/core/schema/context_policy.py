@@ -35,7 +35,7 @@ class ContextPolicy(BaseModel):
 
 
 class BoundedContextPolicy(BaseModel):
-    """QQ and reserved Timeline history; these domains do not compact."""
+    """Reserved Timeline history; this domain does not compact."""
     model_config = ConfigDict(extra="forbid", strict=True)
 
     max_messages: Optional[int] = Field(default=100, ge=0, le=10000,

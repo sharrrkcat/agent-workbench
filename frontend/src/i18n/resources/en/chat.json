@@ -36,7 +36,7 @@
     "tools_ignored": "This model does not support tool calls. This request was handled as ordinary chat.",
     "reasoning_enabled": "This model requires reasoning. Reasoning is enabled for this reply; your saved selection is unchanged.",
     "reasoning_disabled": "This model supports instant mode only. Reasoning is disabled for this reply; your saved selection is unchanged.",
-    "context_compaction_failed": "The history summary could not be updated. This reply uses the original context."
+    "context_compaction_failed": "The context summary could not be updated. This call uses the previous context."
   },
   "contextWindowRequired": "Set the context window in model settings before chatting.",
   "contextMeter": {

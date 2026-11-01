@@ -8,11 +8,12 @@ import httpx
 import pytest
 
 from ai_workbench.core.anysearch import AnySearchProvider
+from ai_workbench.core import chat_runner
 from ai_workbench.core.harness import agent_loop
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.instructions import date_instruction
-from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from tests.qq_context_fixture import project_qq_context
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db.qq_models import QQBinding
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest
@@ -47,7 +48,7 @@ def test_shared_settings_requests_snapshots_and_history(qq_client, qq_web, monke
         session = child(client, p, "9999", "friend")
     assert {"web_search", "web_fetch"}.issubset(session["effective"]["tools_allowed"])
     day = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
-    monkeypatch.setattr(agent_loop, "utc_now", lambda: day)
+    monkeypatch.setattr(chat_runner, "utc_now", lambda: day)
     upstream.turns = [completion(tool_call("web_search", {"searches": [{"query": "current facts"}]}, "search")),
         completion(tool_call("web_fetch", {"url": URL}, "fetch")),
         completion(tool_call("qq_send_message", {"text": "Here are the current facts."}, "send")),
@@ -80,7 +81,7 @@ def test_shared_settings_requests_snapshots_and_history(qq_client, qq_web, monke
     assert "source_id" not in json.dumps(web_results)
     live_results = [message["content"] for message in upstream.calls[2]["messages"] if message["role"] == "tool"]
     assert "source_id" not in json.dumps(live_results) and "Evidence" in json.dumps(live_results)
-    history = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
+    history = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     assert "Here are the current facts." in history
     assert all(value not in history for value in ("web_search", "web_fetch", "Untrusted page", "Internal completion"))
 

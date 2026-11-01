@@ -56,6 +56,10 @@ class FixtureStream(httpx.AsyncByteStream):
 
 
 class PresentationOpenAI(ToolOpenAI):
+    def __init__(self):
+        super().__init__()
+        self.loop_rounds = {}
+
     async def handle(self, request):
         if request.url.path.endswith("/images/generations"):
             payload = json.loads(request.content)
@@ -71,8 +75,8 @@ class PresentationOpenAI(ToolOpenAI):
             return await super().handle(request)
         data = json.loads(request.content)
         self.calls.append(data)
-        from ai_workbench.core.context_compaction import SUMMARY_INSTRUCTION
-        if data['messages'][0]['content'] == SUMMARY_INSTRUCTION:
+        from ai_workbench.core.compaction_generation import SUMMARY_INSTRUCTION, RUN_SUMMARY_INSTRUCTION
+        if data['messages'][0]['content'] in {SUMMARY_INSTRUCTION, RUN_SUMMARY_INSTRUCTION}:
             if 'HOLD_COMPACTION' in data['messages'][1]['content']:
                 await self.compaction_release.wait()
             await asyncio.sleep(1)
@@ -83,13 +87,23 @@ class PresentationOpenAI(ToolOpenAI):
                 'role': 'assistant', 'content': '## Confirmed facts\nThe budget is 42 EUR. Do not send email.'}, 'finish_reason': 'stop'}],
                 'usage': {'prompt_tokens': 1400, 'completion_tokens': 24, 'total_tokens': 1424}})
         history = data["messages"]
-        user_index = max(i for i, item in enumerate(history) if item["role"] == "user")
+        user_index = max(i for i, item in enumerate(history) if item["role"] == "user" and not (
+            isinstance(item["content"], str) and item["content"].startswith(("[Historical summary;", "[Current run summary;"))))
         command = history[user_index]["content"]
         if isinstance(command, list):
             command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
-        if "qq-resource-image-fixture" in command:
+        if command.startswith("loop-compaction-fixture"):
+            number = self.loop_rounds.get(command, 0)
+            self.loop_rounds[command] = number + 1
+            stream = FixtureStream([{"tool_calls": [{"index": 0, **tool_call("test_echo", {
+                "value": "The budget is 42 EUR. Do not send email. " + "padding " * 450}, f"loop_{number}")}]}],
+                "tool_calls", delay=.02) if number < 4 else FixtureStream([{"content": "Browser final answer."}])
+        elif "qq-compaction-fixture" in command:
+            stream = FixtureStream([{"tool_calls": [{"index": 0, **tool_call("qq_send_message", {"text": "Budget noted: 42 EUR."})}]}],
+                "tool_calls", delay=.02)
+        elif "qq-resource-image-fixture" in command:
             runtime = next(item['content'] for item in history if item['role'] == 'system' and 'Favorite image candidates: ' in item['content'])
             candidate = json.loads(runtime.split('Favorite image candidates: ', 1)[1].split('\n', 1)[0])[0]
             stream = FixtureStream([{'tool_calls': [{'index': 0, **tool_call('qq_send_image', {'asset_id': candidate['asset_id']})}]}],
@@ -181,12 +195,16 @@ def create_fixture_app(repository: Path, root: Path):
     async def fixture_session(values: dict = Body(default={})):
         await state.active_runs.cancel_all()
         upstream.compaction_release = asyncio.Event()
-        state.model_profiles.update(profile['id'], {'context_window_tokens': 4096 if values.get('compaction') else profile['context_window_tokens']})
+        state.model_profiles.update(profile['id'], {'context_window_tokens': 4096 if values.get('compaction') or values.get('loop_compaction') else profile['context_window_tokens']})
         state.app_settings.patch({"show_full_processing": bool(values.get("show_full_processing", False))})
         if values.get("web_tools"):
             state.web_tools.settings.patch(WebToolsSettingsPatch(api_key="browser-web-key"))
         session = state.chat_service.create_session({"title": "Presentation fixture", "harness_enabled": True,
                                                      "model_profile_id": profile["id"]})
+        if values.get("loop_compaction"):
+            session = state.chat_service.update_session(session.session_id, {'tools_allowed': ['test_echo'],
+                'context_policy': {'history_enabled': False, 'compaction': {
+                    'trigger_percent': 70, 'target_percent': 45, 'max_summary_tokens': 512}}})
         if values.get("compaction"):
             session = state.chat_service.update_session(session.session_id, {'harness_enabled': False,
                 'context_policy': {'compaction': {'trigger_percent': 50, 'target_percent': 35, 'max_summary_tokens': 512}}})

@@ -23,7 +23,7 @@ Paths below are under [ai_workbench/](../../ai_workbench/):
 - core/qq_store.py owns durable batches, participants, receipts and restart recovery;
   db/qq_models.py defines QQ records. core/qq_icebreaker.py owns group activity,
   observations, cancellation eligibility and cooldowns.
-- core/qq_context.py builds current/historical input and per-call QQ runtime data;
+- core/qq_context.py builds current input, paged batch history and per-call QQ runtime data;
   core/qq_history.py owns local deletion, input reconstruction and history invalidation.
   Shared token budgets and request inspection use core/context.py and core/context_snapshot.py.
 - core/qq_media.py acquires/decodes originals and static model frames;
@@ -79,6 +79,7 @@ Backend tests under [tests/](../../tests/):
   eligibility grants, cooldown isolation and lifecycle recovery.
 - test_qq_context.py, test_qq_cards.py and test_qq_history_deletion.py: paired history,
   context pruning, prompt snapshots, normalized cards and local deletion semantics.
+- test_qq_compaction.py and test_qq_compaction_migration.py: rolling/window history, loop delivery invariants, bounded paging, invalidation, icebreaker dispatch and migration preservation.
 - test_qq_media.py, test_qq_media_assets.py and test_qq_resources.py: ordered media,
   current-batch selection, acquisition/captions, shared retention, gallery edits/deletion.
 - test_qq_image_tools.py and test_qq_image_generation.py: candidate snapshots,

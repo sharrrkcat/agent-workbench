@@ -195,7 +195,7 @@ def test_groups_are_independent_and_friends_keep_mandatory_replies(qq_client, cl
     assert friend["session_id"] not in state.qq.icebreaker.groups
 
 
-@pytest.mark.parametrize("stage", ["media", "names", "context", "model"])
+@pytest.mark.parametrize("stage", ["media", "names", "context", "count", "model"])
 def test_other_speaker_cancels_pre_send_work_without_pausing(qq_client, clock, monkeypatch, stage):
     client, state, upstream = qq_client
     p, session, connection, batch = queued(qq_client, clock, image_input_enabled=True)
@@ -212,6 +212,8 @@ def test_other_speaker_cancels_pre_send_work_without_pausing(qq_client, clock, m
             monkeypatch.setattr(state.qq.names, "project", hold)
         elif stage == "context":
             monkeypatch.setattr(state.chat_runner, "_build_context", hold)
+        elif stage == "count":
+            monkeypatch.setattr(state.model_manager, "measure_chat", hold)
         else:
             async def handle(request):
                 if blocked:

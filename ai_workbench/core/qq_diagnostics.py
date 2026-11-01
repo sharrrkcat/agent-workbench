@@ -70,7 +70,9 @@ def check_report(service, binding, resources):
         return "暂无" if value is None else f"{value:.1f}%"
 
     policy = project.context_policy
-    limit = lambda value: "不限" if value is None else str(value)
+    history = "开启" if policy.history_enabled else "关闭"
+    strategy = (f"消息窗口 {policy.message_window.max_messages} 条" if policy.strategy == "message_window"
+        else "Token 预算；自动压缩" + ("开启" if policy.compaction.enabled else "关闭"))
     return "\n".join([
         f"Cogita {__version__} · health: ok · 数据库: ok",
         f"活动任务：{state.active_runs.active_count()}",
@@ -79,7 +81,7 @@ def check_report(service, binding, resources):
         f"CPU：{percent(cpu.get('percent'))}",
         f"会话：{binding.target_kind}:{binding.target_id} · {status}",
         f"当前任务：{active.run_id or '准备中' if active else '无'}；待执行批次：{queued}；待聚合消息：{pending}",
-        f"上下文限制：{limit(policy.max_messages)} 条 / {limit(policy.max_chars)} 字符",
+        f"上下文策略：{strategy}；历史{history}",
         latest_context(state, store, binding.session_id, profile),
         f"NapCat：{connection_status}；机器人：{project.bot_account}",
         f"模型：{profile.alias if profile else '未配置'} · {model_status}（本地状态，未发起推理探测）",

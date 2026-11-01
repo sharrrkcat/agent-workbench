@@ -5,9 +5,9 @@ import pytest
 
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.models.schema import ChatRequest
-from ai_workbench.core.qq_context import build_qq_context
+from tests.qq_context_fixture import project_qq_context, prepare_qq_context
 from ai_workbench.core.schema.context_budget import ContextLimits
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.project import QQ_DEFAULT_PROMPT
 from tests.test_qqbot import qq_client, configure_execution, project
 from tests.test_qq_reply_policy import execute_batch
@@ -40,19 +40,16 @@ def test_whole_batch_history_limits_and_token_pruning(qq_client, monkeypatch):
         batch, run = execute_batch(client, state, p, session, number)
         assert run.status == "DONE"
     def build(**policy):
-        return build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(**policy), None)
+        return prepare_qq_context(client, state, session["session_id"], ContextPolicy(**policy))
     full = build()
     wire = full.model_dump()["messages"]
     assert len(wire) == 16 and "PRIVATE" not in json.dumps(wire)
     assert_pairs(wire)
-    for limit, size in ((0, 1), (2, 1), (3, 6), (5, 6), (6, 11), (None, 16)):
-        built = build(max_messages=limit)
+    for limit, size in ((1, 1), (2, 1), (3, 6), (5, 6), (6, 11), (100, 16)):
+        built = build(strategy="message_window", message_window={"max_messages": limit})
         assert len(built.messages) == size
         assert_pairs(built.model_dump()["messages"])
-    last = wire[-6:-1]
-    length = len("next") + len(last[0]["content"]) + sum(len(json.dumps(m, ensure_ascii=False)) for m in last[1:])
-    assert len(build(max_chars=length).messages) == 6
-    assert len(build(max_chars=length - 1).messages) == 1
+    assert len(build(history_enabled=False).messages) == 1
     monkeypatch.setattr("ai_workbench.core.models.context_budget.estimate_input_tokens", lambda payload: 30 * len(payload["messages"]))
     budget = ChatContextBudget(ContextLimits(window_tokens=512, output_tokens=128), full.trace)
     profile = state.model_profiles.get(p["model_profile_id"])
@@ -82,7 +79,7 @@ def test_partial_sends_survive_run_failure_in_history(qq_client, failure):
                                 tool_call("qq_send_message", {"text": "not confirmed"}, "second"), content="PRIVATE")]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status != "done"
-    context = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     wire = context.model_dump()["messages"]
     assert [m["role"] for m in wire] == ["user", "assistant", "tool", "user"]
     assert_pairs(wire)

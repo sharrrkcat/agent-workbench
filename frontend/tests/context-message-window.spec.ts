@@ -28,7 +28,7 @@ for (const locale of ['en', 'zh-CN']) {
         const history = settings.getByRole('switch', { name: labels.historyEnabled, exact: true });
         await history.uncheck();
         await expect(limit).toBeDisabled();
-        await expect(token).toBeDisabled();
+        await expect(token).toBeEnabled();
         await history.check();
         await token.click();
         await settings.getByRole('button', { name: labels.compactionAdvanced, exact: true }).click();

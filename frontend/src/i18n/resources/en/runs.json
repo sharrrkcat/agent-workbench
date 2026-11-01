@@ -212,7 +212,7 @@
     "required": "Set the model context window before retrying.",
     "exceeded": "Input, instructions, knowledge or active tool data plus the output reserve exceed the context window. Shorten the input, reduce injected content or adjust model settings.",
     "countFailed": "The model input could not be counted. Generation was not sent. Check the local model and retry.",
-    "compactionFailed": "Context compaction failed and the original history exceeds the model window. Adjust compaction settings and retry."
+    "compactionFailed": "Context compaction failed and the previous context exceeds the model window. Adjust compaction settings and retry."
   },
   "compaction": {
     "call": "Call {{count}} · Compaction",
@@ -225,6 +225,13 @@
     "interrupted": "Compaction interrupted",
     "checkpoint": "Checkpoint",
     "covered": "Covered messages",
-    "boundary": "Coverage boundary"
+    "boundary": "Coverage boundary",
+    "batchBoundary": "Last covered QQ batch",
+    "runSummary": "Current task summary",
+    "run": "Run",
+    "throughRound": "Last covered tool round",
+    "coveredTools": "Covered tool calls",
+    "model": "Model profile",
+    "step": "Summary step"
   }
 }

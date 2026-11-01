@@ -212,7 +212,7 @@
     "required": "请在模型设置中填写上下文窗口大小后重试。",
     "exceeded": "当前输入、指令、知识或工具记录与输出预留超过上下文窗口。请缩短输入、减少注入内容或调整模型设置。",
     "countFailed": "无法统计模型输入，未发送生成请求。请检查本地模型运行状态后重试。",
-    "compactionFailed": "上下文压缩失败，原始历史超出模型窗口。可调整压缩设置后重试。"
+    "compactionFailed": "上下文压缩失败，此前的上下文超出模型窗口。可调整压缩设置后重试。"
   },
   "compaction": {
     "call": "第 {{count}} 次调用 · 压缩",
@@ -225,6 +225,13 @@
     "interrupted": "压缩已中断",
     "checkpoint": "检查点",
     "covered": "已覆盖消息",
-    "boundary": "覆盖边界"
+    "boundary": "覆盖边界",
+    "batchBoundary": "最后覆盖的 QQ 批次",
+    "runSummary": "当前任务摘要",
+    "run": "运行",
+    "throughRound": "最后覆盖的工具轮次",
+    "coveredTools": "已覆盖工具调用",
+    "model": "模型配置",
+    "step": "摘要步骤"
   }
 }

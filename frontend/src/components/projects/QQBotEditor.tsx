@@ -19,7 +19,8 @@ import { useProjectsStore } from '../../store/useProjectsStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { qqApi } from '../../api/qq';
 import type { Project, QQBotProject, QQBotInput } from '../../types/projects';
-import { BoundedContextFields, GenerationFields, ModelField, ModelSelect } from '../personas/ConfigurationFields';
+import { ContextFields, GenerationFields, ModelField, ModelSelect } from '../personas/ConfigurationFields';
+import { defaultContextPolicy } from '../../types/chat';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 import { QQImageGenerationFields } from './QQImageGenerationFields';
 
@@ -34,7 +35,7 @@ export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput 
     icebreaker_enabled: false, icebreaker_cold_seconds: 7200, icebreaker_wait_seconds: 120, icebreaker_cooldown_seconds: 10800,
     image_description_model_profile_id: null,
     image_generation_model_profile_id: null, image_generation_options: { size: null, quality: null, style: null },
-    context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'none' } };
+    context_policy: { ...defaultContextPolicy(), include_attachments: 'none' } };
 }
 
 export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = false }: {
@@ -179,7 +180,7 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
         </FieldGroup> : null}
         </FieldGroup></FieldSet>
         <FieldSet aria-describedby={id + '-context-hint'}><FieldLegend>{t('qq.sections.context')}</FieldLegend>
-          <BoundedContextFields showAttachments={false} showDescriptions={false} className="grid qq-settings-grid" value={draft.context_policy}
+          <ContextFields showAttachments={false} value={draft.context_policy}
             onChange={(context_policy) => update({ context_policy: { ...context_policy, include_attachments: 'none' } })} />
           <Field><FieldDescription id={id + '-context-hint'}>{t('qq.contextHint')}</FieldDescription></Field>
         </FieldSet>

@@ -156,7 +156,7 @@ def install_qq_fixture(app):
         return {"batch_id": batch.id, "run_id": batch.run_id}
 
     @app.post("/__test__/qq/{session_id}/reply/{mode}")
-    async def reply(session_id: str, mode: Literal["limit", "missing", "skip", "image-generated", "image-failure", "image-hold", "resource-image", "web-research", "web-failure"]):
+    async def reply(session_id: str, mode: Literal["limit", "missing", "skip", "image-generated", "image-failure", "image-hold", "resource-image", "web-research", "web-failure", "compaction"]):
         session = state.sessions.get_session(session_id)
         project = state.projects.get(session.project_id)
         now = time.time()
@@ -165,7 +165,8 @@ def install_qq_fixture(app):
             "group_id": session.target_id, "user_id": "9999", "message_id": time.time_ns(), "time": int(now),
             "sender": {"nickname": "QQ participant"},
             "message": [{"type": "text", "data": {"text": f"qq-{mode}-fixture" + (" 画一张图" if mode.startswith("image-") else "")
-                + ("" if mode == "skip" else " bot")}}],
+                + ("" if mode == "skip" else " bot")
+                + (" The budget is 42 EUR. Do not send email. " + "padding " * 650 if mode == "compaction" else "")}}],
         }, now=now)
         return await execute(session, state.qq.store.freeze(session_id, project.batch_message_limit, now + 5))
 

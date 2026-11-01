@@ -11,7 +11,8 @@ export type ToolEntry = {
 
 export type ProcessingItem =
   | { kind: 'content'; id: string; part: MessagePart; message: Message }
-  | { kind: 'tool'; id: string; entry: ToolEntry };
+  | { kind: 'tool'; id: string; entry: ToolEntry; createdAt: string }
+  | { kind: 'compaction'; id: string; step: RunStep };
 
 export type Reply = {
   run: Run;
@@ -45,13 +46,19 @@ export function buildReply(run: Run, messages: Message[], steps: RunStep[]): Rep
           step: steps.find((step) => step.kind === 'tool' && step.metadata?.tool_call_id === part.tool_call_id),
           approval: [...steps].reverse().find((step) => step.kind === 'approval' && step.metadata?.tool_call_id === part.tool_call_id),
         };
-        process.push({ kind: 'tool', id: part.tool_call_id, entry });
+        process.push({ kind: 'tool', id: part.tool_call_id, entry, createdAt: message.created_at });
       } else if (part.type !== 'tool_result' && (part.type === 'reasoning' || message !== answer)) {
         if ((part.type === 'text' || part.type === 'reasoning') && !part.text.trim()) continue;
         process.push({ kind: 'content', id: part.id, part, message });
       }
     }
   }
+  for (const step of steps.filter((item) => item.kind === 'compaction')) {
+    process.push({ kind: 'compaction', id: step.step_id, step });
+  }
+  const processingTime = (item: ProcessingItem) => item.kind === 'content' ? item.message.created_at
+    : item.kind === 'tool' ? item.createdAt : item.step.created_at;
+  process.sort((a, b) => compareTime(processingTime(a), processingTime(b)));
   return { run, messages: ordered, steps, process, answer,
     answerParts: answer?.parts.filter((part) => !['reasoning', 'tool_call', 'tool_result'].includes(part.type)) || [],
   };

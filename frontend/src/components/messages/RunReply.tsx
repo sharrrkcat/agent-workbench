@@ -28,7 +28,6 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
   const webSources = useMemo(() => webSourcesForReply(reply.messages), [reply.messages]);
   const citedSources = useMemo(() => citedWebSources(answerParts, webSources), [answerParts, webSources]);
   const ended = terminal(run.status);
-  const compactions = reply.steps.filter((step) => step.kind === 'compaction');
   const [expanded, setExpanded] = useState(() => !ended && showFullProcessing);
   useEffect(() => {
     setExpanded(!ended && showFullProcessing);
@@ -67,7 +66,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
           <MessageScrollerItem messageId={'disclosure-' + processId} data-scroll-pause>
             <div className={`reply-processing-header status-${run.status.toLowerCase()}`}>
               <TraceCollapsibleTrigger
-                disabled={ended && process.length === 0 && compactions.length === 0}
+                disabled={ended && process.length === 0}
                 className="processing-toggle"
               >
                 <TraceLine status={!ended ? 'running' : undefined}>
@@ -84,11 +83,12 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
           <TraceCollapsibleContent id={processId} className="ml-0 border-l-0 px-0"
             keepMounted={process.some((item) => item.kind === 'tool' && isWebTool(item.entry.call.tool_name))}>
             <div className="processing-list">
-              {compactions.map((step) => <TraceLine key={step.step_id} status={step.status === 'running' ? 'running' : undefined}>
-                <TraceTitle>{t(step.status === 'running' ? 'compaction.running' : step.status === 'completed' ? 'compaction.completed' : 'compaction.failed')}</TraceTitle>
-              </TraceLine>)}
               {process.map((item) =>
-                item.kind === 'tool' ? (
+                item.kind === 'compaction' ? <TraceLine key={item.id} data-compaction-step={item.id}
+                  status={item.step.status === 'running' ? 'running' : undefined}>
+                  <TraceTitle>{t(item.step.status === 'running' ? 'compaction.running' : item.step.status === 'completed' ? 'compaction.completed'
+                    : item.step.error_code === 'RUN_CANCELLED' ? 'compaction.cancelled' : 'compaction.failed')}</TraceTitle>
+                </TraceLine> : item.kind === 'tool' ? (
                   isWebTool(item.entry.call.tool_name)
                     ? <WebToolCall key={item.id} entry={item.entry} run={run} />
                     : <ToolCall key={item.id} entry={item.entry} run={run} />
@@ -107,7 +107,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
                   </div>
                 ),
               )}
-              {!process.length && !compactions.length && !ended ? <span>{t('preparing')}</span> : null}
+              {!process.length && !ended ? <span>{t('preparing')}</span> : null}
             </div>
           </TraceCollapsibleContent>
         </TraceCollapsible>

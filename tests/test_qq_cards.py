@@ -3,10 +3,10 @@ import json
 
 import pytest
 
-from ai_workbench.core.qq_context import build_qq_context
+from tests.qq_context_fixture import project_qq_context
 from ai_workbench.core.qq_protocol import normalize
 from ai_workbench.core.qq_segments import ordered_segments, public_segments
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQMedia
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest
 from tests.tool_fixtures import completion, ok, tool_call
@@ -156,7 +156,7 @@ def test_card_text_reaches_api_batch_model_and_history_without_keyword_trigger(q
     assert len(connection.calls) == 1
     model_input = upstream.calls[0]["messages"][-1]["content"]
     assert expected in model_input
-    history = build_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None)
+    history = project_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None)
     assert any(message["role"] == "user" and message["content"] == model_input for message in history.messages)
     refreshed = ok(client.get(f"/api/qq/sessions/{sid}/messages"))["items"]
     assert next(item for item in refreshed if item["external_id"] == "1")["segments"] == row["segments"]

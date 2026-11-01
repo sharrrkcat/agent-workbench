@@ -6,8 +6,8 @@ import time
 import pytest
 from sqlmodel import Session, select
 
-from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from tests.qq_context_fixture import project_qq_context
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQNotification
 from tests.test_qqbot import qq_client, configure_execution, project, child, event, ingest, freeze
 from tests.tool_fixtures import completion, tool_call, ok
@@ -86,7 +86,7 @@ def test_pause_check_resume_are_visible_but_excluded_from_batches_and_context(qq
     assert [m.external_id for m in state.qq.store.batch_messages(merged.id)] == ["2"]
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "ordinary reply"}, "one"))]
     client.portal.call(state.qq.execute, merged)
-    context = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     for payload in (context.model_dump_json(), json.dumps(upstream.calls, ensure_ascii=False)):
         assert "/cogita" not in payload and "health: ok" not in payload
         assert "ordinary input" in payload

@@ -8,11 +8,11 @@ import pytest
 
 from ai_workbench.core.attachments import attachments_root, resolve_attachment_uri, save_attachment_from_upload
 from ai_workbench.core.harness.schema import ToolExecutionError
-from ai_workbench.core.qq_context import build_qq_context
+from tests.qq_context_fixture import project_qq_context
 from ai_workbench.core.qq_media import QQMediaService, decode_image
 from ai_workbench.core.qq_protocol import normalize
 from ai_workbench.core.qq_segments import public_segments
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMedia
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
 from tests.test_qq_reply_policy import execute_batch
@@ -160,7 +160,7 @@ def test_saved_images_join_only_current_model_requests(qq_client, monkeypatch, c
     sources = [s for s in detail["sources"] if s["kind"] == "attachment"]
     assert [s["part_index"] for s in sources] == [1, 3]
     assert "data:image" not in json.dumps(detail)
-    trimmed = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(max_messages=2), None)
+    trimmed = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert not any(s.kind == "attachment" for s in trimmed.trace.sources)
     assert ok(client.post("/api/data/attachments/scan-orphans"))["orphan_count"] == 0
     assert client.delete('/api/attachments/' + images[0]["attachment"]["id"]).status_code == 409

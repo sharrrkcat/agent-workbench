@@ -65,7 +65,7 @@ QQ_DEFAULT_PROMPT = (
 
 class QQBotInput(ProjectInput):
     kind: Literal["qqbot"]
-    context_policy: BoundedContextPolicy
+    context_policy: ContextPolicy
     bot_account: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
     admin_qq: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$", strict=True)
     websocket_url: str = Field(max_length=2048)

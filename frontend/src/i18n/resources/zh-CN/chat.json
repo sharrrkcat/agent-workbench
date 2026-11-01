@@ -36,7 +36,7 @@
     "tools_ignored": "该模型不支持工具调用，本次已按普通聊天处理。",
     "reasoning_enabled": "该模型需要开启 reasoning，本次回复已开启，会话保存的选择不变。",
     "reasoning_disabled": "该模型仅支持 instant 模式，本次回复已关闭 reasoning，会话保存的选择不变。",
-    "context_compaction_failed": "历史摘要未能更新，本次继续使用原始上下文。"
+    "context_compaction_failed": "上下文摘要未能更新，本次调用继续使用此前的上下文。"
   },
   "contextWindowRequired": "请先在模型设置中填写上下文窗口大小。",
   "contextMeter": {

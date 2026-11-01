@@ -44,6 +44,9 @@ assert.deepEqual(reply.process[2].entry.result, output.parts[0]);
 assert.equal(toolEntryStatus(reply.process[2].entry, done), 'success');
 const separated = buildReply(run, [calls, { ...moreCalls, parts: [text('separator', 'next step'), call('c', 'test_other')] }, answer], []);
 assert.deepEqual(separated.process.map((p) => p.kind), ['content', 'content', 'tool', 'tool', 'content', 'tool', 'content']);
+const interleaved = buildReply(done, [answer, output, moreCalls, calls], [{ step_id: 'compact', kind: 'compaction',
+  created_at: at(4), order: 3, status: 'completed' }]);
+assert.deepEqual(interleaved.process.map((item) => item.kind), ['content', 'content', 'tool', 'tool', 'compaction', 'tool', 'content']);
 const direct = buildReply({ ...done, kind: 'tool' }, [calls, output], []);
 assert.equal(direct.answer, undefined);
 const items = buildConversation('s', [user, calls, output, moreCalls, answer, { ...user, session_id: 'other', message_id: 'other' }], [done], {});

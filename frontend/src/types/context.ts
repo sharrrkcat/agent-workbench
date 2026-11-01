@@ -12,7 +12,10 @@ export type ContextSourceKind = 'system' | 'instruction' | 'agent_persona' | 'pr
   'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary';
 export type ContextAttachment = Pick<Attachment, 'id' | 'name' | 'type' | 'mime_type' | 'size' | 'uri'>;
 export type ContextSource = {
-  compaction?: { checkpoint_id: string; boundary_message_id: string; covered_messages: number; model_profile_id: string; step_id: string } | null;
+  compaction?: { checkpoint_id: string; boundary_message_id: string; boundary_qq_batch_id?: number | null;
+    covered_messages: number; model_profile_id: string; step_id: string } | null;
+  run_compaction?: { checkpoint_id: string; run_id: string; through_round: number; covered_tool_calls: number;
+    model_profile_id: string; step_id: string } | null;
   id: string; kind: ContextSourceKind; parent_id?: string | null;
   message_index?: number | null; part_index?: number | null;
   field?: 'message' | 'content' | 'tools'; start?: number; end?: number | null;

@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import pytest
 from sqlmodel import Session, select
 
-from ai_workbench.core.qq_context import build_qq_context
+from tests.qq_context_fixture import project_qq_context
 from ai_workbench.core.qq_store import QQStore
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQParticipant
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
 from tests.tool_fixtures import completion, ok, tool_call
@@ -176,7 +176,7 @@ def test_skip_is_a_single_successful_round_and_preserves_history(qq_client, cloc
     assert "follow-up batch" in upstream.calls[0]["messages"][0]["content"]
     assert not state.qq.store.get(QQBinding, session["session_id"]).paused
     assert state.runs.get_harness_state(run.run_id) == {}
-    context = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert any("a follow-up" in str(m.get("content")) for m in context.messages)
     assert not any(call.function.name == "qq_skip_reply" for m in context.messages for call in m.get("tool_calls", []))
     public_batch = ok(client.get(f"/api/qq/sessions/{session['session_id']}/batches"))["items"][0]

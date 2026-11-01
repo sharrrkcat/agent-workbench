@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from ai_workbench.core.context_compaction import SUMMARY_INSTRUCTION
+from ai_workbench.core.compaction_generation import SUMMARY_INSTRUCTION
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from tests.test_chat_presentation import presentation_client, configure, send
 from tests.tool_fixtures import completion, ok, tool_call

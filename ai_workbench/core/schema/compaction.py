@@ -13,6 +13,7 @@ class CompactionReference(BaseModel):
 
     checkpoint_id: str
     boundary_message_id: str
+    boundary_qq_batch_id: int | None = Field(default=None, ge=1)
     covered_messages: int = Field(ge=1)
     model_profile_id: str
     step_id: str
@@ -43,3 +44,23 @@ class CompactionOutcome(BaseModel):
     checkpoint: CompactionReference | None = None
     input_tokens_before: int | None = Field(default=None, ge=0)
     input_tokens_after: int | None = Field(default=None, ge=0)
+
+
+class RunCompactionReference(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    checkpoint_id: str
+    run_id: str
+    through_round: int = Field(ge=1, le=8)
+    covered_tool_calls: int = Field(ge=1)
+    model_profile_id: str
+    step_id: str
+
+
+class RunCompactionState(RunCompactionReference):
+    checkpoint_id: str = Field(default_factory=lambda: str(uuid4()))
+    summary: str = Field(min_length=1)
+    transcript_end: int = Field(ge=2)
+
+    def reference(self) -> RunCompactionReference:
+        return RunCompactionReference.model_validate(self.model_dump(include=set(RunCompactionReference.model_fields)))

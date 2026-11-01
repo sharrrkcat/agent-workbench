@@ -5,8 +5,8 @@ import pytest
 from sqlalchemy import event as sql_event, inspect, text
 
 from ai_workbench.core.context import message_text
-from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from tests.qq_context_fixture import project_qq_context
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
@@ -23,7 +23,7 @@ def replies(upstream):
 
 
 def context(state, sid, **policy):
-    return build_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(**policy), None).model_dump()["messages"]
+    return project_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(**policy), None).model_dump()["messages"]
 
 
 def test_incoming_deletion_rebuilds_only_selected_input_and_next_request(qq_client):
@@ -85,8 +85,8 @@ def test_delivery_and_reply_deletion_preserve_inputs_and_other_statuses(qq_clien
     wire = context(state, sid)
     assert_pairs(wire)
     assert "first reply" not in json.dumps(wire) and "second reply" in json.dumps(wire)
-    assert state.qq.store.history_message_count(sid, None) == 2
-    assert len(context(state, sid, max_messages=2)) == 4
+    assert state.qq.store.history_message_count(sid) == 2
+    assert len(context(state, sid)) == 4
     change = ok(client.delete(f"/api/runs/{run.run_id}"))
     assert change["deleted_qq_delivery_ids"] == [second["id"]] and change["deleted_run_ids"] == [run.run_id]
     assert change["history_version"] == 2
@@ -109,16 +109,13 @@ def test_empty_submitted_input_keeps_delivery_pairs_and_empty_groups_cost_nothin
     batch, run = execute_batch(client, state, p, session)
     incoming, = state.qq.store.batch_messages(batch.id)
     ok(client.delete(f"/api/qq/sessions/{sid}/messages/{incoming.id}"))
-    wire = context(state, sid, max_messages=2)
+    wire = context(state, sid)
     assert [m["role"] for m in wire] == ["assistant", "tool", "assistant", "tool", "user"]
     assert_pairs(wire)
-    length = len("next") + sum(len(json.dumps(m, ensure_ascii=False)) for m in wire[:-1])
-    assert len(context(state, sid, max_chars=length)) == 5
-    assert len(context(state, sid, max_chars=length - 1)) == 1
-    assert state.qq.store.history_message_count(sid, None) == 2
+    assert state.qq.store.history_message_count(sid) == 2
     ok(client.delete(f"/api/runs/{run.run_id}"))
-    assert context(state, sid, max_messages=1) == [{"role": "user", "content": "next"}]
-    assert state.qq.store.history_message_count(sid, None) == 0
+    assert context(state, sid) == [{"role": "user", "content": "next"}]
+    assert state.qq.store.history_message_count(sid) == 0
 
 
 @pytest.mark.parametrize("stage", ["pending", "queued", "skipped"])

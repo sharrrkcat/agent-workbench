@@ -9,6 +9,7 @@ from ai_workbench.core.json_data import validate_json_data
 from ai_workbench.core.models.schema import ToolCall, ImageGenerationControls
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
+from ai_workbench.core.schema.compaction import RunCompactionState
 from ai_workbench.core.schema.qq import QQTriggerKind, QQImageCandidate
 from ai_workbench.core.web_schemas import WebRunBudget, WebSource
 from ai_workbench.core.instructions import UiLanguage
@@ -91,11 +92,13 @@ class HarnessState(BaseModel):
 
     direct: bool = False
     reasoning: bool = True
+    summary_reasoning: bool = False
     ui_language: UiLanguage = "en"
     base_messages: list[ContextMessage] = Field(default_factory=list)
     context_trace: ContextTrace = Field(default_factory=ContextTrace)
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
     transcript: list[dict[str, Any]] = Field(default_factory=list)
+    compaction: RunCompactionState | None = None
     pending_calls: list[ToolCall] = Field(default_factory=list)
     awaiting_approval: str | None = None
     approval_step_id: str | None = None
@@ -114,6 +117,18 @@ class HarnessState(BaseModel):
         if self.awaiting_approval is not None:
             if not self.pending_calls or self.pending_calls[0].id != self.awaiting_approval or not self.approval_step_id:
                 raise ValueError("Approval must reference the first pending call and its step")
+        if self.compaction is not None:
+            end = self.compaction.transcript_end
+            prefix = self.transcript[:end]
+            calls = [call["id"] for message in prefix for call in message.get("tool_calls", [])]
+            results = [message.get("tool_call_id") for message in prefix if message.get("role") == "tool"]
+            rounds = sum(bool(message.get("tool_calls")) for message in prefix)
+            if (end > len(self.transcript) or not prefix or prefix[-1].get("role") != "tool"
+                    or (end < len(self.transcript) and self.transcript[end].get("role") != "assistant")
+                    or rounds != self.compaction.through_round or rounds > self.rounds
+                    or len(calls) != self.compaction.covered_tool_calls or len(calls) != len(results)
+                    or set(calls) != set(results)):
+                raise ValueError("Run summary must cover a complete tool-round prefix")
         return self
 
 

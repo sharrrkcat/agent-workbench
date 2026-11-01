@@ -285,7 +285,7 @@
       "imageGeneration": "图片生成"
     },
     "imageSizeHint": "auto 或 宽x高，如 1024x1024。",
-    "contextHint": "留空不限；历史条数为 0 时不使用历史。"
+    "contextHint": "当前批次始终保留。关闭历史后，当前任务仍可自动压缩。"
   },
   "historyEnabled": "使用历史",
   "historyStrategy": "历史策略",

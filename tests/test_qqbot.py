@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session as DbSession, select
 
 from tests.tool_fixtures import create_tool_app as create_app
-from ai_workbench.core.qq_context import build_qq_context
+from tests.qq_context_fixture import project_qq_context
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.qq_service import QQService
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant
 from tests.model_fixtures import configure_model
@@ -179,7 +179,7 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert "AGENT_PROMPT" in request and "PROJECT_PROMPT" in request and "PRIVATE_USER_PROMPT" not in request
     assert upstream.calls[0]["messages"][-1]["role"] == "user"
     assert "/test_echo bot" in upstream.calls[0]["messages"][-1]["content"]
-    context = build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     contents = context.model_dump_json()
     assert "first" in contents and "[CQ:at,qq=all]" in contents
     assert "PRIVATE_THOUGHT" not in contents and "PRIVATE_FINAL" not in contents
@@ -271,7 +271,7 @@ def test_missing_reply_fails_and_pauses_without_replaying(qq_client, streaming, 
     if content:
         messages = state.messages.list_messages(session["session_id"])
         assert any(m.metadata.get("qq_internal") and content in json.dumps(m.parts) for m in messages)
-        assert content not in build_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
+        assert content not in project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
     resumed = state.qq.store.next_batch(p["id"])
     assert resumed.id > queued.id and state.qq.store.get(QQBatch, queued.id) is None
@@ -401,7 +401,7 @@ def test_stop_during_send_keeps_confirmed_reply_and_merges_queued_windows(qq_cli
         await state.qq.execute(queued)
         assert state.qq.store.next_batch(p["id"]) is None
     client.portal.call(scenario)
-    context = build_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None).model_dump_json()
+    context = project_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None).model_dump_json()
     assert "confirmed" in context and "uncertain" not in context
     assert len(connection.calls) == 3
 

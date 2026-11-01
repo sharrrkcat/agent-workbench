@@ -285,7 +285,7 @@
       "imageGeneration": "Image generation"
     },
     "imageSizeHint": "auto or widthxheight, e.g. 1024x1024.",
-    "contextHint": "Blank means unlimited; 0 messages excludes history."
+    "contextHint": "The current batch is always retained. Turning history off still allows automatic compaction of the current task."
   },
   "historyEnabled": "Use history",
   "historyStrategy": "History strategy",

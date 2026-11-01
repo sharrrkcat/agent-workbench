@@ -89,9 +89,10 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await prompt.fill('Keep replies brief.');
         await keywords.fill('BOT\n@12345');
         await field(models.params.temperature).fill('0');
-        await field(labels.maxMessages).fill('');
-        await field(labels.maxChars).fill('12345');
-        await expectColumns([field(labels.maxMessages), field(labels.maxChars)], width === 390 ? 1 : 2);
+        await expect(editor.getByRole('button', { name: labels.tokenBudget, exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await editor.getByRole('button', { name: labels.messageWindow, exact: true }).click();
+        await field(labels.maxMessages).fill('123');
+        await expect(editor.getByLabel(labels.maxChars, { exact: true })).toHaveCount(0);
         await expect(editor.getByText(labels.maxMessagesDescription, { exact: true })).toHaveCount(0);
         await editor.getByRole('switch', { name: labels.qq.icebreakerEnabled, exact: true }).click();
         const timing = [field(labels.qq.icebreakerCold), field(labels.qq.icebreakerWait), field(labels.qq.icebreakerCooldown)];
@@ -164,7 +165,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(header.getByRole('button', { name: labels.newSession, exact: true })).toHaveCount(0);
         await expect(tab('connection')).toHaveAttribute('aria-selected', 'true');
         const saved = await json(request.get(`/api/projects/${projectId}`));
-        expect(saved).toMatchObject({ temperature: 0, context_policy: { max_messages: null, max_chars: 12345 },
+        expect(saved).toMatchObject({ temperature: 0, context_policy: { strategy: 'message_window', message_window: { max_messages: 123 } },
           keywords: ['bot', '@12345'], icebreaker_wait_seconds: 7, image_input_enabled: true,
           image_generation_options: { size: '512x512', quality: 'high', style: 'vivid' }, has_access_token: true });
         await expect(field(labels.qq.token)).toHaveValue('');
@@ -175,7 +176,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await field(labels.projectName).fill('QQ edited layout');
         await tab('reply').click();
         await expect(prompt).toHaveValue('Keep replies brief.');
-        await field(labels.maxMessages).fill('0');
+        await field(labels.maxMessages).fill('7');
         await expectColumns(timing, width === 390 ? 1 : 3);
         if (width === 1366) {
           await page.setViewportSize({ width: 900, height: 900 });
@@ -198,7 +199,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await tab('connection').click();
         await expect(field(labels.projectName)).toHaveValue('QQ edited layout');
         await tab('reply').click();
-        await expect(field(labels.maxMessages)).toHaveValue('0');
+        await expect(field(labels.maxMessages)).toHaveValue('7');
         await tab('images').click();
         await expect(size).toHaveValue('1024x1024');
         await page.unroute(`**/api/projects/${projectId}`);
@@ -206,7 +207,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(editor.getByRole('status')).toHaveText(labels.projectSaved);
         await expect(save).toBeDisabled();
         expect(await json(request.get(`/api/projects/${projectId}`))).toMatchObject({ name: 'QQ edited layout',
-          context_policy: { max_messages: 0 }, image_generation_options: { size: '1024x1024' }, has_access_token: true });
+          context_policy: { message_window: { max_messages: 7 } }, image_generation_options: { size: '1024x1024' }, has_access_token: true });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         expect(errors).toEqual([]);
       } finally {

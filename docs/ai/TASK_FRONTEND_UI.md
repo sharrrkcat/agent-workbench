@@ -74,6 +74,7 @@ inherited resources, sparse overrides, guarded history and scoped deletion; test
 context-detail.spec.ts covers lazy call selection, exact request views, stale reads, error retry, deletion and modal focus/scroll in both locales/viewports.
 context-message-window.spec.ts covers strategy switching, retained inactive settings, count validation, raw request boundaries and immutable detail; projects.spec.ts covers whole-policy inheritance.
 manual-compaction.spec.ts and test-manual-compaction.mjs cover slash completion, dedicated submission, unnumbered Checkpoint events, details, refresh, command rejection and queue success/failure/cancellation.
+harness-qq-compaction.spec.ts covers ordered loop steps, private run/QQ summary sources and retained QQ delivery presentation in both locales on desktop/touch.
 image-generation.spec.ts covers provider-only sources, disabled Local Runtime, discovery/manual IDs, parameter defaults and CRUD in both locales/viewports.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.

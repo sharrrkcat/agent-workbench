@@ -10,7 +10,7 @@ from ai_workbench.core.models.schema import (
     ChatRequestOptions, GenerationParameters, ResponseFormat, StreamOptions, TextPart, ToolCall, ToolChoice, ToolSpec,
 )
 from ai_workbench.core.schema.context_policy import ContextPolicy, BoundedContextPolicy
-from ai_workbench.core.schema.compaction import CompactionReference
+from ai_workbench.core.schema.compaction import CompactionReference, RunCompactionReference
 from ai_workbench.core.schema.context_budget import ContextBudgetStats
 from ai_workbench.core.time import isoformat_utc
 
@@ -92,6 +92,7 @@ class ContextSource(SnapshotModel):
     role: str | None = None
     attachment: ContextAttachment | None = None
     compaction: CompactionReference | None = None
+    run_compaction: RunCompactionReference | None = None
 
 
 class ContextExclusion(SnapshotModel):

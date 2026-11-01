@@ -14,7 +14,7 @@ from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop, request_tools
 from ai_workbench.core.context import ContextBuilder, add_chat_instructions
 from ai_workbench.core.context_compaction import ContextCompactionService
-from ai_workbench.core.qq_context import build_qq_context
+from ai_workbench.core.qq_context import QQContextHistory, build_qq_context, runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.knowledge_context import build_session_knowledge_context
 from ai_workbench.core.context_snapshot import append_system_block, capture_context, omit_context_images, snapshot_attachment
@@ -82,6 +82,7 @@ class ChatRunner:
         persona_id: str | None = None,
         on_run_created: Callable[[str], None] | None = None,
         on_context_ready: Callable[[ContextTrace], None] | None = None,
+        on_dispatch: Callable[[], None] | None = None,
         resolved_config: ResolvedChatConfig | None = None,
         ui_language: UiLanguage = "en",
     ) -> RunResult:
@@ -196,27 +197,32 @@ class ChatRunner:
             if image_only:
                 raise ModelError("UNSUPPORTED_CAPABILITY", "This model cannot read images. Add text or select another model.", 422)
             web_date = utc_now().astimezone().date().isoformat()
-            if session.kind != "qqbot":
-                allowed = self.chat_service.tools_for_run(config) if use_harness else []
-                tools = request_tools(self.harness_loop.registry, allowed) if use_harness else None
-                instruction = date_instruction(ui_language, date.fromisoformat(web_date)) if WEB_TOOL_NAMES.intersection(allowed) else ""
-                prepare = self.compaction.prepare(session=session, config=config, run=run, base=context,
-                    trace=context_trace, current=user, profile=profile, support=support, tools=tools,
-                    instruction=instruction, max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
-                    reasoning=reasoning)
-                try:
-                    context, context_trace, warning = (await asyncio.wait_for(prepare,
-                        timeout=max(0, ACTIVE_BUDGET_SECONDS - (time.monotonic() - context_started))) if use_harness else await prepare)
-                except asyncio.TimeoutError as exc:
-                    raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
-                if warning:
-                    warnings.append(warning)
-                if any(item.reason == "images_unsupported" for item in context_trace.exclusions) and "images_ignored" not in warnings:
-                    warnings.append("images_ignored")
-                if warnings:
-                    self._input_warnings(user, run.run_id, warnings)
-                context_meta["message_count"] = len(context)
-                first_metrics.start()
+            allowed = self.chat_service.tools_for_run(config) if use_harness else []
+            qq = session.kind == "qqbot"
+            if qq and user.metadata["qq_trigger_kind"] not in {"followup", "icebreaker"}:
+                allowed = [name for name in allowed if name != "qq_skip_reply"]
+            tools = request_tools(self.harness_loop.registry, allowed, qq=qq) if use_harness else None
+            instruction = date_instruction(ui_language, date.fromisoformat(web_date)) if WEB_TOOL_NAMES.intersection(allowed) else ""
+            max_image_bytes = self.app_settings.get().max_image_size_mb * 1024 * 1024
+            prepare = self.compaction.prepare(session=session, config=config, run=run, base=context,
+                trace=context_trace, current=user, profile=profile, support=support, tools=tools,
+                instruction=instruction, runtime_instruction=runtime_prompt(config, user.metadata["qq_batch_id"], 0,
+                    user.metadata["qq_trigger_kind"]) if qq else "", max_image_bytes=max_image_bytes,
+                history=QQContextHistory(self.qq_store, self.messages, session_id, config.context_policy, user,
+                    max_image_bytes) if qq else None, reasoning=reasoning, on_dispatch=on_dispatch)
+            try:
+                context, context_trace, warning = (await asyncio.wait_for(prepare,
+                    timeout=max(0, ACTIVE_BUDGET_SECONDS - (time.monotonic() - context_started))) if use_harness else await prepare)
+            except asyncio.TimeoutError as exc:
+                raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
+            if warning:
+                warnings.append(warning)
+            if any(item.reason == "images_unsupported" for item in context_trace.exclusions) and "images_ignored" not in warnings:
+                warnings.append("images_ignored")
+            if warnings:
+                self._input_warnings(user, run.run_id, warnings)
+            context_meta["message_count"] = len(context)
+            first_metrics.start()
             self.runs.update_step(
                 context_step.step_id,
                 status=RunStepStatus.COMPLETED,
@@ -235,7 +241,8 @@ class ChatRunner:
                                                      reasoning=reasoning, ui_language=ui_language,
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
                                                      active_seconds=time.monotonic() - context_started, first_metrics=first_metrics,
-                                                     web_date=web_date if session.kind != "qqbot" else None)
+                                                     web_date=web_date, summary_reasoning=chat_reasoning_mode(profile, support, False),
+                                                     on_dispatch=on_dispatch)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     await self.maybe_title(session_id, raw_text, user.message_id)
                 return result

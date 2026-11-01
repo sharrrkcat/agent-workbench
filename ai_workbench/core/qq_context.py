@@ -2,6 +2,7 @@
 import json
 
 from ai_workbench.core.context import ContextBuildResult, message_text
+from ai_workbench.core.context_history import HistoryItem
 from ai_workbench.core.attachments import MAX_IMAGE_ATTACHMENT_BYTES, resolve_attachment_uri
 from ai_workbench.core.context_snapshot import snapshot_attachment
 from ai_workbench.core.qq_media import model_media_label
@@ -116,24 +117,30 @@ def _input_content(store, batch_id, text, policy, source_id, max_image_bytes, *,
     return parts if trace.sources else "".join(part["text"] for part in parts), trace, chars
 
 
-def build_qq_context(store, messages, session_id, text, policy, current_message_id, *, max_image_bytes=MAX_IMAGE_ATTACHMENT_BYTES):
-    trace, groups, used = ContextTrace(), [], 0
-    current_id = f"message:{current_message_id}"
-    batch_id = messages.get_message(current_message_id).metadata.get("qq_batch_id") if current_message_id else None
-    current, current_trace, current_chars = _input_content(store, batch_id, text, policy, current_id, max_image_bytes)
-    remaining = None if policy.max_chars is None else max(0, policy.max_chars - current_chars)
-    if policy.max_messages != 0:
-        total = store.history_message_count(session_id, current_message_id)
-        for batch, deliveries in store.iter_history(session_id, current_message_id):
-            input_text = message_text(messages.get_message(batch.input_message_id), include_attachments=False)
+class QQContextHistory:
+    def __init__(self, store, messages, session_id, policy, current, max_image_bytes=MAX_IMAGE_ATTACHMENT_BYTES):
+        self.store, self.messages, self.session_id, self.policy = store, messages, session_id, policy
+        self.before = current.metadata["qq_batch_id"] if current else None
+        self.max_image_bytes = max_image_bytes
+
+    def counts(self):
+        count = self.store.history_message_count(self.session_id, before=self.before)
+        return count, count
+
+    def checkpoint_key(self, checkpoint):
+        return checkpoint.boundary_qq_batch_id
+
+    def iterate(self, *, after=None, before=None, ascending=False):
+        for batch, deliveries in self.store.iter_history(self.session_id, after=after,
+                before=self.before if before is None else before, ascending=ascending):
+            row = self.messages.get_message(batch.input_message_id)
+            input_text = message_text(row, include_attachments=False)
             count = bool(input_text) + len(deliveries)
             if not count:
                 continue
-            if policy.max_messages is not None and used + count > policy.max_messages:
-                trace.exclusions.append(ContextExclusion(kind="history", reason="message_limit", count=total - used))
-                break
             source_id = f"message:{batch.input_message_id}"
-            content, input_trace, input_chars = _input_content(store, batch.id, input_text, policy, source_id, max_image_bytes, historical=True)
+            content, input_trace, _ = _input_content(self.store, batch.id, input_text, self.policy,
+                source_id, self.max_image_bytes, historical=True)
             group = [(source_id, {"role": "user", "content": content})] if input_text else []
             for delivery in deliveries:
                 if delivery.kind != "text" and delivery.asset_id is None:
@@ -152,29 +159,27 @@ def build_qq_context(store, messages, session_id, text, policy, current_message_
                             "message_id": delivery.external_id,
                             **({"content": delivery.text} if delivery.kind != "text" else {})}, ensure_ascii=False)}),
                 ])
-            length = input_chars + sum(len(json.dumps(item, ensure_ascii=False)) for _, item in group if item["role"] != "user")
-            if remaining is not None:
-                if length > remaining:
-                    trace.exclusions.append(ContextExclusion(kind="history", reason="character_limit", count=total - used))
-                    break
-                remaining -= length
-            used += count
-            groups.append((batch.input_message_id, group, input_trace))
-    projected = []
-    for turn_id, group, input_trace in reversed(groups):
-        for source_id, item in group:
-            trace.sources.append(ContextSource(id=source_id, kind="history", message_index=len(projected),
-                reference_id=turn_id, turn_id=turn_id, role=item["role"], field="message"))
-            if item["role"] == "user":
-                trace.sources.extend(source.model_copy(update={"message_index": len(projected), "turn_id": turn_id})
-                    for source in input_trace.sources)
-                trace.exclusions.extend(input_trace.exclusions)
-            projected.append(item)
+            trace = ContextTrace(exclusions=input_trace.exclusions)
+            for index, (source_id, item) in enumerate(group):
+                trace.sources.append(ContextSource(id=source_id, kind="history", message_index=index,
+                    reference_id=row.message_id, turn_id=row.message_id, role=item["role"], field="message"))
+                if item["role"] == "user":
+                    trace.sources.extend(source.model_copy(update={"message_index": index, "turn_id": row.message_id})
+                        for source in input_trace.sources)
+            projected = [item for _, item in group]
+            text = f"\n[QQ batch={batch.id}; input={row.message_id}]\n" + "\n".join(
+                json.dumps(item, ensure_ascii=False) for item in projected) + "\n"
+            yield HistoryItem(row.message_id, row.created_at, row.message_id, projected, trace, text,
+                count=count, qq_batch_id=batch.id)
+
+
+def build_qq_context(store, messages, session_id, text, policy, current_message_id, *, max_image_bytes=MAX_IMAGE_ATTACHMENT_BYTES):
+    trace = ContextTrace()
+    current_id = f"message:{current_message_id}"
+    batch_id = messages.get_message(current_message_id).metadata.get("qq_batch_id") if current_message_id else None
+    current, current_trace, _ = _input_content(store, batch_id, text, policy, current_id, max_image_bytes)
     trace.sources.append(ContextSource(id=current_id, kind="current_input",
-        message_index=len(projected), reference_id=current_message_id, role="user", field="message"))
-    trace.sources.extend(source.model_copy(update={"message_index": len(projected)}) for source in current_trace.sources)
+        message_index=0, reference_id=current_message_id, role="user", field="message"))
+    trace.sources.extend(source.model_copy(update={"message_index": 0}) for source in current_trace.sources)
     trace.exclusions.extend(current_trace.exclusions)
-    projected.append({"role": "user", "content": current})
-    warnings = (["Current message exceeds the history character budget; current input is retained."]
-                if policy.max_chars is not None and current_chars > policy.max_chars else [])
-    return ContextBuildResult(messages=projected, trace=trace, warnings=warnings)
+    return ContextBuildResult(messages=[{"role": "user", "content": current}], trace=trace)

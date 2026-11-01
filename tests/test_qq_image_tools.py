@@ -8,10 +8,10 @@ import pytest
 from ai_workbench.core.attachments import resolve_attachment_uri, save_attachment_from_upload
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.chat_service import ChatError
-from ai_workbench.core.qq_context import build_qq_context
+from tests.qq_context_fixture import project_qq_context
 from ai_workbench.core.qq_media import decode_image
 from ai_workbench.core.qq_protocol import normalize
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.qq import QQImageAttachment
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMediaAsset
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project, FakeConnection
@@ -69,13 +69,13 @@ def test_original_animation_delivery_and_stable_text_history(qq_client, private,
     assert 'Favorite image candidates:' in system and asset.description in system
     assert 'local://' not in system and 'base64://' not in system
     state.qq.resources.update(asset.id, {'description': 'New shared description'})
-    context = build_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
     call = context.messages[1]['tool_calls'][0]
     assert call.function.name == 'qq_send_image' and json.loads(call.function.arguments) == {'asset_id': asset.id}
     assert f'[图片:{asset.description}]' in context.model_dump_json()
     assert 'New shared description' not in context.model_dump_json() and 'attachment_image' not in context.model_dump_json()
     state.qq.resources.delete(asset.id)
-    context = build_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
     assert 'qq_send_image' not in context.model_dump_json() and asset.description not in context.model_dump_json()
     assert any(m.get('content') == '[图片]' for m in context.messages)
     assert state.runs.get_config_snapshot(run.run_id) == snapshot

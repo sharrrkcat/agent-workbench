@@ -136,21 +136,23 @@ export function PersonaField({ label, personas, value, onChange, invalid = false
   );
 }
 
-export function ContextFields({ value, onChange }: { value: ContextPolicy; onChange: (value: ContextPolicy) => void }) {
+export function ContextFields({ value, onChange, showAttachments = true, className }: {
+  value: ContextPolicy; onChange: (value: ContextPolicy) => void; showAttachments?: boolean; className?: string;
+}) {
   const { t } = useTranslation('personas');
   const id = useId();
   const disabled = !value.history_enabled;
   const messageLimit = value.message_window.max_messages;
   const invalidMessageLimit = !Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 10000;
   const patch = (change: Partial<ContextPolicy['compaction']>) => onChange({ ...value, compaction: { ...value.compaction, ...change } });
-  return <FieldGroup>
+  return <FieldGroup className={className}>
     <Field orientation="horizontal">
       <Switch id={id + '-history'} checked={value.history_enabled} onCheckedChange={(history_enabled) => onChange({ ...value, history_enabled })} />
       <FieldLabel htmlFor={id + '-history'}>{t('historyEnabled')}</FieldLabel>
     </Field>
-    <Field data-disabled={disabled}>
+    <Field>
       <FieldLabel id={id + '-strategy-label'}>{t('historyStrategy')}</FieldLabel>
-      <ToggleGroup variant="segmented" value={[value.strategy]} disabled={disabled} aria-labelledby={id + '-strategy-label'}
+      <ToggleGroup variant="segmented" value={[value.strategy]} aria-labelledby={id + '-strategy-label'}
         onValueChange={(next) => { if (next[0]) onChange({ ...value, strategy: next[0] as ContextPolicy['strategy'] }); }}>
         <ToggleGroupItem value="token_budget">{t('tokenBudget')}</ToggleGroupItem>
         <ToggleGroupItem value="message_window">{t('messageWindow')}</ToggleGroupItem>
@@ -162,29 +164,29 @@ export function ContextFields({ value, onChange }: { value: ContextPolicy; onCha
         aria-invalid={invalidMessageLimit} value={Number.isNaN(messageLimit) ? '' : messageLimit}
         onChange={(event) => onChange({ ...value, message_window: { max_messages: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) } })} />
     </Field> : <>
-    <Field orientation="horizontal" data-disabled={disabled}>
-      <Switch id={id + '-compaction'} disabled={disabled} checked={value.compaction.enabled} onCheckedChange={(enabled) => patch({ enabled })} />
+    <Field orientation="horizontal">
+      <Switch id={id + '-compaction'} checked={value.compaction.enabled} onCheckedChange={(enabled) => patch({ enabled })} />
       <FieldLabel htmlFor={id + '-compaction'}>{t('autoCompaction')}</FieldLabel>
     </Field>
     <Collapsible>
-      <CollapsibleTrigger render={<Button variant="ghost" size="sm" />} disabled={disabled}>{t('compactionAdvanced')}</CollapsibleTrigger>
+      <CollapsibleTrigger render={<Button variant="ghost" size="sm" />}>{t('compactionAdvanced')}</CollapsibleTrigger>
       <CollapsibleContent>
         <FieldGroup className="grid gap-4 sm:grid-cols-2">
           {(['trigger_percent', 'target_percent'] as const).map((key) => {
             const number = value.compaction[key];
             const invalid = !Number.isInteger(number) || number <= 0 || number >= 100
               || value.compaction.target_percent >= value.compaction.trigger_percent;
-            return <Field key={key} data-invalid={invalid || undefined} data-disabled={disabled}>
+            return <Field key={key} data-invalid={invalid || undefined}>
               <FieldLabel htmlFor={id + key}>{t(key === 'trigger_percent' ? 'compactionTrigger' : 'compactionTarget')}</FieldLabel>
               <Input id={id + key} type="number" required min={key === 'trigger_percent' ? value.compaction.target_percent + 1 : 1}
-                max={key === 'target_percent' ? value.compaction.trigger_percent - 1 : 99} step={1} disabled={disabled}
+                max={key === 'target_percent' ? value.compaction.trigger_percent - 1 : 99} step={1}
                 aria-invalid={invalid} value={Number.isNaN(number) ? '' : number}
                 onChange={(event) => patch({ [key]: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) })} />
             </Field>;
           })}
-          <Field data-disabled={disabled}>
+          <Field>
             <FieldLabel htmlFor={id + '-summary'}>{t('compactionSummaryTokens')}</FieldLabel>
-            <Input id={id + '-summary'} type="number" min={1} step={1} disabled={disabled} placeholder={t('compactionAutomatic')}
+            <Input id={id + '-summary'} type="number" min={1} step={1} placeholder={t('compactionAutomatic')}
               value={value.compaction.max_summary_tokens ?? ''}
               onChange={(event) => patch({ max_summary_tokens: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })} />
           </Field>
@@ -192,11 +194,11 @@ export function ContextFields({ value, onChange }: { value: ContextPolicy; onCha
       </CollapsibleContent>
     </Collapsible>
     </>}
-    <Field orientation="horizontal">
+    {showAttachments ? <Field orientation="horizontal">
       <Switch id={id + '-attachments'} checked={value.include_attachments === 'explicit'}
         onCheckedChange={(enabled) => onChange({ ...value, include_attachments: enabled ? 'explicit' : 'none' })} />
       <FieldLabel htmlFor={id + '-attachments'}>{t('includeAttachments')}</FieldLabel>
-    </Field>
+    </Field> : null}
   </FieldGroup>;
 }
 

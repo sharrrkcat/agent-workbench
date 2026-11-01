@@ -10,8 +10,8 @@ from sqlmodel import Session, select
 
 from ai_workbench.core.attachments import attachments_root, resolve_attachment_uri
 from ai_workbench.core.harness.schema import ToolExecutionError
-from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from tests.qq_context_fixture import project_qq_context
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQMediaAsset
 from tests.model_fixtures import configure_model
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
@@ -124,7 +124,7 @@ def test_generate_send_store_and_text_only_history(qq_client, image_provider, mo
     assert delivery["kind"] == "generated_image" and delivery["asset_id"] == asset.id
     assert delivery["prompt"] == delivery["description"] == asset.description == prompt
     assert resolve_attachment_uri(delivery["attachment"]["uri"]).read_bytes() == image_provider.image
-    context = build_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(include_attachments="explicit"), None)
+    context = project_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(include_attachments="explicit"), None)
     history = context.model_dump_json()
     assert "[生成的图片:" in history and "枝头的一只红鸟" in history
     assert "Provider rewrite" not in history and "base64" not in history and "image_url" not in history and "attachment_image" not in history
@@ -280,7 +280,7 @@ def test_deduplication_keeps_each_prompt_and_releases_last_reference(qq_client, 
     assert len(assets(state)) == 1 and len(attachment_files()) == 1
     assert first_delivery['asset_id'] == second_delivery['asset_id']
     assert assets(state)[0].description == 'Second prompt'
-    history = build_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None).model_dump_json()
+    history = project_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None).model_dump_json()
     assert '[生成的图片:First prompt]' in history and '[生成的图片:Second prompt]' in history
     other = child(client, p, '8877')
     incoming = image_event(3, images=[{'type': 'image', 'data': {'url': 'https://image.test/generated'}}])

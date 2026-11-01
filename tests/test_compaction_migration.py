@@ -28,8 +28,8 @@ def test_compaction_migration_resets_only_owned_conversation_state(tmp_path):
     for path in files:
         path.parent.mkdir(parents=True)
         path.write_bytes(b'unchanged')
-    migrations.upgrade(engine)
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.CONTEXT_COMPACTION_REVISION)
+    migrations.upgrade(engine, migrations.CONTEXT_COMPACTION_REVISION)
     with Session(engine) as db:
         for model, key in ((SessionRecord, 'session_id'), (RunRecord, 'run_id'), (RunStepRecord, 'step_id'), (MessageRecord, 'message_id')):
             assert list(db.execute(text(f'SELECT {key} FROM {model.__tablename__}')).scalars()) == ['qqbot']

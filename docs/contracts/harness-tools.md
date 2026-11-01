@@ -161,11 +161,11 @@ Waiting for approval consumes no active time and holds no model lease.
 
 Each model round, including after approval, applies the shared
 [chat token budget](chat-context.md#configuration-snapshots-and-context) to its final request.
-Ordinary/Workspace token-budget runs can compact completed history before their first answer; summary time counts toward the five-minute active budget. Message-window runs use only selected raw history.
-Only prior raw conversation turns may be removed afterwards; the frozen summary and entire active tool transcript stay paired and
-intact. Oversized tool results can end a run with CONTEXT_WINDOW_EXCEEDED before its next model
-dispatch. Saved base context/configuration remain stable through approval; each call captures
-its own retained request and budget. Web results use the bounded evidence projection above.
+Ordinary/Workspace/QQ token-budget runs can compact completed history before their first answer. Before later calls, automatic compaction can summarize a complete tool-round prefix, including error/rejected results; pending calls and approvals are excluded. History off does not disable loop compaction; message-window and automatic-off runs never generate loop summaries.
+The model receives frozen base context, a user-role run summary and uncovered tool rounds. Full transcript records remain append-only for execution and duplicate-ID checks. Prefer retaining the latest complete round; include it only if old-history pruning still cannot fit the request. Large rounds may require chunks, committed together only after actual token reduction and a fitting final recount.
+Run summaries preserve tool outcomes, uncertainty and existing web citation IDs/URLs. Current input/images, instructions, Knowledge, web-source maps/budgets and QQ send state remain separate. They never become conversation checkpoints; later runs project original eligible history.
+All history/loop summary calls share a four-call run limit and the five-minute active budget. Counting admission ends before generation. Failed candidates preserve the prior projection; if ordinary old-history pruning fits it, answering continues with a diagnostic, otherwise CONTEXT_COMPACTION_FAILED ends the run. Fixed-only overflow remains CONTEXT_WINDOW_EXCEEDED; no overflow retry or tool replay occurs.
+Saved base/configuration, summary and completed-prefix boundary survive approval. Each call captures its retained request and budget; web results retain their bounded evidence projection.
 
 Streaming call fragments are merged by index. IDs, names and JSON are validated
 before execution; duplicate IDs across a run and incomplete calls are terminal
@@ -185,8 +185,8 @@ Every attempted call has a tool step, including validation failures.
 
 A sensitive call creates an approval step and sets WAITING_FOR_USER and the
 session's waiting_run_id. Private harness_state_json preserves the original
-input, transcript, ordered remaining calls, approval ID, round count, settings
-and active time. It also preserves the effective reasoning mode selected before the first model round, including automatic adjustment; all rounds and approval resumptions keep that mode despite session edits. config_snapshot_json preserves the requested chat configuration. Retry resolves both modes again.
+input, full transcript, run summary/coverage, ordered remaining calls, approval ID, round count, settings
+and active time. It also preserves effective answer and summary reasoning modes, including capability adjustments; rounds and approval resumptions keep them despite session edits. config_snapshot_json preserves the requested chat configuration. Retry resolves modes again.
 Neither private state appears in public run metadata, responses or events.
 Base context stores typed attachment-image references, never image data URLs/base64. Every model round,
 including approval resumption, reads only those references and applies the model's image capability/request limits.

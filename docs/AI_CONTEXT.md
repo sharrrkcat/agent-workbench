@@ -35,7 +35,7 @@ Personas own identity, prompts and resource bindings. Ordinary sessions own conf
 Workspace sessions continuously inherit Project defaults with sparse overrides. Chat combines singleton Cogita Persona, selected Agent, Project and session Knowledge. Each chat/tool run has one visible
 reply, processing history and whole-reply actions. Model steps retain LLM usage/timing and private input snapshots for per-call context/source/request inspection.
 External chat optionally returns performance metrics.
-Internal chat budgets every model call; ordinary/Workspace chat defaults to rolling summaries plus recent turns, optionally selects a raw message-count window, and displays answer context usage beside model selection.
+Internal chat budgets every model call; ordinary/Workspace/QQ chat defaults to rolling summaries plus recent turns, optionally selects a raw message-count window, and displays answer context usage beside model selection. Harness can summarize completed tool rounds while retaining original execution state.
 Idle ordinary/Workspace `/compact` creates an independent cancellable run and an unnumbered Checkpoint event, with slash completion and existing queue handling.
 Built-in tools share direct and model invocation with bounded execution and durable approvals; `/v1` forwards
 tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.

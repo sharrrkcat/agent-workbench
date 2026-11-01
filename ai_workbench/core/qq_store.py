@@ -309,13 +309,15 @@ class QQStore:
 
     def advance_history(self, db, sessions):
         if hasattr(self.sessions, "engine"):
-            from ai_workbench.db.models import SessionRecord
+            from ai_workbench.db.models import SessionRecord, ContextCheckpointRecord
             db.exec(update(SessionRecord).where(SessionRecord.session_id.in_(sessions))
                 .values(history_version=SessionRecord.history_version + 1))
+            db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id.in_(sessions)))
         else:
             for session_id in sessions:
                 current = self.sessions.get_session(session_id)
                 self.sessions.update_session(session_id, {"history_version": current.history_version + 1})
+                self.sessions.discard_context_checkpoint(session_id)
 
     def confirm_generated_asset(self, db, candidate, prompt, session_id):
         asset = db.exec(select(QQMediaAsset).where(QQMediaAsset.sha256 == candidate.sha256)).first()
@@ -395,14 +397,16 @@ class QQStore:
             db.commit()
 
     @staticmethod
-    def _history_filter(session_id, current_message_id):
+    def _history_filter(session_id, before=None, after=None):
         conditions = [QQBatch.session_id == session_id, QQBatch.input_message_id.is_not(None)]
-        if current_message_id is not None:
-            conditions.append(QQBatch.input_message_id != current_message_id)
+        if before is not None:
+            conditions.append(QQBatch.id < before)
+        if after is not None:
+            conditions.append(QQBatch.id > after)
         return conditions
 
-    def history_message_count(self, session_id, current_message_id):
-        conditions = self._history_filter(session_id, current_message_id)
+    def history_message_count(self, session_id, *, before=None):
+        conditions = self._history_filter(session_id, before)
         with Session(self.engine) as db:
             visible_input = select(QQMessage.id).where(QQMessage.batch_id == QQBatch.id, QQMessage.deleted == False).exists()
             batches = db.exec(select(func.count()).select_from(QQBatch).where(*conditions, visible_input)).one()
@@ -410,15 +414,15 @@ class QQStore:
                 .where(*conditions, QQDelivery.status == "sent", QQDelivery.origin == "model", QQDelivery.deleted == False)).one()
             return batches + deliveries
 
-    def iter_history(self, session_id, current_message_id):
-        conditions = self._history_filter(session_id, current_message_id)
-        before = None
+    def iter_history(self, session_id, *, before=None, after=None, ascending=False):
+        conditions = self._history_filter(session_id, before, after)
+        cursor = None
         while True:
             with Session(self.engine) as db:
                 query = select(QQBatch.id, QQBatch.input_message_id, QQBatch.run_id).where(*conditions)
-                if before is not None:
-                    query = query.where(QQBatch.id < before)
-                batches = db.exec(query.order_by(QQBatch.id.desc()).limit(64)).all()
+                if cursor is not None:
+                    query = query.where(QQBatch.id > cursor if ascending else QQBatch.id < cursor)
+                batches = db.exec(query.order_by(QQBatch.id.asc() if ascending else QQBatch.id.desc()).limit(64)).all()
             if not batches:
                 return
             for batch in batches:
@@ -427,7 +431,7 @@ class QQStore:
                         QQDelivery.session_id == session_id, QQDelivery.status == "sent", QQDelivery.origin == "model", QQDelivery.deleted == False)
                         .order_by(QQDelivery.id)).all()
                 yield batch, deliveries
-            before = batches[-1].id
+            cursor = batches[-1].id
 
     def reconcile_echo(self, session_id, external_id):
         with Session(self.engine) as db:

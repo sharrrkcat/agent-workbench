@@ -11,7 +11,7 @@ Projects select an optional Agent, Project prompt, explicit external LLM, temper
 Accounts belong to one Project and cannot change while Sessions are bound. WebSocket URLs require ws/wss without credentials, query or fragment.
 An omitted access_token preserves it; an empty token removes it. Public reads expose only has_access_token; private storage follows Data layout.
 Sessions bind an immutable group|friend and positive decimal-string target_id, unique per Project; only title is editable.
-Sessions use Project settings at execution time and Agent identity/prompt only. Cogita Persona, Knowledge, Worldbook, manual attachments and overrides are excluded; resource-binding APIs reject QQ targets.
+Sessions use Project settings at execution time and Agent identity/prompt only. Cogita Persona, Knowledge, Worldbook, manual attachments and overrides are excluded; resource-binding APIs reject QQ targets. context_policy uses the shared strict token/message-window schema and defaults; old top-level max_messages/max_chars return 422. Image input still derives include_attachments from image_input_enabled.
 
 | Setting | Default and contract |
 | --- | --- |
@@ -74,7 +74,7 @@ Keywords, existing follow-up eligibility and outstanding ordinary reply work tak
 At expiry, the newest configured count of visible observation messages forms an immutable icebreaker batch with its lone speaker and last submitted message as grant source; older pending inputs are skipped.
 Later supplements do not rewrite frozen inputs. Icebreaker run snapshots and public metadata use message_limit=1, shared by text and both image tools.
 
-Cooldown starts on entering inference after context preparation; queue/preparation cancellation consumes none, while skips/later cancellation/failures retain it. Confirmed icebreaker replies atomically grant speaker eligibility until max(current expiry, confirmation time + 60 seconds).
+Cooldown starts at the first actual summary or answer dispatch; queue/preparation/counting cancellation consumes none, while skips/later cancellation/failures retain it. Every dispatch rechecks the unsent icebreaker. Confirmed icebreaker replies atomically grant speaker eligibility until max(current expiry, confirmation time + 60 seconds).
 Grant sources use the submitted message id; newer sources and existing windows are preserved. Pending nickname decisions retain pre-confirmation eligibility for already-received messages.
 Skips, failures, unknown sends and pre-send cancellation grant nothing; repeated receipts/restart never extend a grant. Skipping an icebreaker does not change participant eligibility.
 Cooldown does not block ordinary follow-ups; another icebreaker requires a new message after cooldown and sufficient silence.
@@ -99,7 +99,9 @@ Confirmed deliveries project as native assistant qq_send_message/qq_send_image/q
 Generation calls retain their original prompt and [生成的图片:prompt] receipt; favorite calls use asset_id and [图片:description] saved at sending. Neither returns bytes, attachments or URLs to history.
 Later shared-description changes do not alter delivery text/prompt. Earlier confirmed sends survive failed/cancelled runs. Skips retain submitted input but exclude the skip tool.
 Unsubmitted/truncated inputs, internal prose and failed/unknown sends are excluded. Retained inputs and confirmed sends are selected/pruned together; historical pairs never execute.
-max_messages counts nonempty saved inputs/sends, not expanded protocol records; character/token budgets include expanded tool data. Historical sends share a turn for pruning and retain whole-message excerpts.
+message_window.max_messages counts nonempty saved inputs/sends, not expanded protocol records; token budgets include expanded tool data. Batches stay whole for window selection and pruning.
+Token strategy uses shared rolling summaries before the first model call, with bounded bidirectional batch-ID paging before the current submitted batch. Checkpoints are isolated per Session and cover complete batches of submitted input and confirmed deliveries, preserving speaker/time/text and existing descriptions. Internal prose/web traces, failed/unknown sends and unsubmitted inputs never enter historical summaries.
+History/media edits invalidate checkpoints with history_version in the same transaction; summary commit rechecks that version, while existing request snapshots stay immutable. Runtime/date prompts, candidates, send counts and effective tools participate in each budget. Harness run summaries only change model projection; delivery identities, quotas and skip rules remain authoritative. QQ manual compaction is unavailable.
 
 ### Acquisition and shared assets
 
@@ -262,7 +264,7 @@ Creation/settings share Connection (initial, including Administrator QQ), Replie
 The settings header has only name/sidebar toggle; immediate group/friend binding stays in the sidebar. Editor width is at most 48rem; container widths 32rem/40rem enable two/three columns for timing/image fields.
 Prompt/keywords use four/three internally scrolling rows, inline token clearing and essential hints. Failed saves preserve drafts; prompts use the opening language, survive language changes and preserve empty edits without reapplying defaults.
 The image-description selector sits beside image input with Do not use. Generation uses a separate provider-only selector, Disabled initially, with model-default size/quality/style overrides; disabling retains controls.
-Icebreaker duration fields retain values while hidden. Helpers explain trigger names/account matching/follow-up, context blank/unlimited and zero/no-history, five current images/captions, generation count/size, and shared text/image reply allowance.
+Icebreaker duration fields retain values while hidden. Context uses the shared history switch, strategy selector and automatic-compaction controls without a duplicate attachment switch. Message mode shows its count; history off still permits loop compaction. Helpers explain trigger matching/follow-up, five current images/captions, generation controls and the shared reply allowance.
 
 Each incoming message has a right-side secondary bubble. Same-sender rows group for 120 seconds from group start, interrupted by another sender or reply; only the first has avatar/name/time and continuations use 6px gaps. Status icons include pending/batched/skipped and command pending/done without changing timestamps.
 Resume overflow becomes skipped without batch association, preserving text/media. Retained inputs move to the replacement; old unsubmitted queues disappear and history_version refreshes loaded states/associations without altering submitted history.
@@ -291,7 +293,7 @@ Media/provider fixtures cover shared assets, ordering/current-batch selection, n
 Live NapCat delivery/member lookup/card reception, media URLs/system faces, vision-model round trips, real Provider-to-NapCat generated images, original-animation presentation and restrained real-model image frequency remain unverified.
 The 60-second native timeout, 90-second response wait and native-timeout classification have simulated coverage only. Live acceptance must use explicitly designated targets, compare actual QQ receipt with recorded outcome and check duplicate prevention.
 Self reports without a successful matching action response do not establish delivery; longer timeouts cannot repair an absent native success event.
-QQ/NapCat installation/login management, reconnect history backfill, manual sends, candidate search and memory integration are unimplemented. Worldbook/memory needs explicit bot/conversation isolation and a separate injection design.
+QQ/NapCat installation/login management, reconnect history backfill, manual sends, candidate search and integration with Worldbook or external memory sources are unimplemented. Those resources need explicit bot/conversation isolation and a separate injection design.
 Linux Local Runtime is outside this integration. [Run guide](../../README_RUN.md#qqbot-deployment) owns deployment conclusions; detailed historical experiments remain in Git and external operational records.
 Short Linux login/health/idle evidence does not establish inference, first-use tokenizer cost, long histories, concurrent generation, media workloads, reconnect, cached-login restart, 24–72-hour stability or a RAM guarantee.
-QQ shutdown behavior still needs operational acceptance. Paginated history/context and bounded subscriber queues do not establish long-running QQ memory acceptance; both context limits null still permit growth.
+QQ shutdown behavior still needs operational acceptance. Bounded history/context and subscriber queues do not establish long-running QQ memory acceptance across the complete service.

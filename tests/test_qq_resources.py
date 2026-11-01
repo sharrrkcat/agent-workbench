@@ -6,8 +6,8 @@ import pytest
 from sqlmodel import Session
 
 from ai_workbench.core.attachments import resolve_attachment_uri
-from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
+from tests.qq_context_fixture import project_qq_context
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.time import utc_now
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
@@ -161,7 +161,7 @@ def test_deletion_preserves_recorded_snapshots_but_removes_future_image_context(
     assert model_path.name in snapshot_ids
     ok(client.delete(f"/api/qq/resources/{image['id']}"))
     assert model_path.is_file() and state.runs.context_attachment_ids({batch.run_id}) == snapshot_ids
-    context = build_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
     assert "deleted-description" not in context.model_dump_json() and "[图片]" in context.model_dump_json()
     ok(client.delete(f"/api/runs/{batch.run_id}"))
     assert not model_path.exists()
@@ -178,7 +178,7 @@ def test_deleted_generated_images_do_not_inject_original_prompts(qq_client, imag
     ok(client.delete(f"/api/qq/resources/{image['id']}"))
     delivery = deliveries(client, session)[0]
     assert delivery["status"] == "sent" and delivery["asset_id"] is None and delivery["attachment"] is None
-    context = build_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
+    context = project_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
     assert "secret drawing prompt" not in context.model_dump_json()
     assert any(m.get("role") == "assistant" and m.get("content") == "[图片]" for m in context.messages)
 

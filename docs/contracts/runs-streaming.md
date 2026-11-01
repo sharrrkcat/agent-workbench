@@ -185,7 +185,7 @@ New sessions and model/window
 mismatches are neutral until a matching call completes. Run/step events and refresh restore the
 display; pruning removes deleted calls. No polling or draft preview API is used.
 
-Internal ordinary/Workspace/QQBot and Harness model calls, plus ordinary/Workspace compaction calls, save one immutable private `context_snapshot_json`
+Internal ordinary/Workspace/QQBot and Harness model/compaction calls save one immutable private `context_snapshot_json`
 on their model/compaction step immediately before transport dispatch. Preparation failures have no snapshot;
 failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
 do not record context. Reads never reconstruct missing inputs from current configuration or history.
@@ -222,7 +222,7 @@ without the request-position prefix. Their labels stay on one line; attachment/c
 Context detail supplies current reference_numbers even outside the loaded window; multiple sources from one reply share its number. Deleted references show Deleted message; sources
 without a message reference retain their category label. Tool sources retain tool labels.
 Context and usage dialogs are sibling roots, so Context detail receives the standard dimmed, blurred backdrop.
-Summary sources show checkpoint/model/step identities and covered-message boundary/count. Summary text appears only in private detail, never ordinary metadata/events.
+Historical summary sources show checkpoint/model/step identities and covered-message boundary/count, plus QQ batch boundary where applicable. Current-task summaries expose separate run/step/model identities and covered tool-round/call counts. Summary text appears only in private detail, never ordinary metadata/events.
 An Info Hover Card beside the source name/role contains characters, approximate tokens and captured identifiers;
 keyboard focus and touch press also open it. Changing the source or closing the modal dismisses it.
 Approximate source counts use the bundled gpt-tokenizer o200k_base reference encoding in a lazily loaded Web Worker,
@@ -248,7 +248,7 @@ first-output-to-finish duration. Estimation needs two output chunks and a succes
 Replies sum answer and compaction usage, excluding auxiliary titles. Compaction steps have message_id=null and create no chat message.
 Speed and first response use answer calls only; speed uses summed generation tokens/time. Missing counts mark totals incomplete; incomplete answers suppress speed.
 Reply first response starts at Run start; reply total retains the whole Run clock including tools/approval waits. Neither clock measures client rendering.
-Processing history shows localized Compacting context / Context compacted / Compaction failed steps; usage detail distinguishes their calls.
+Processing history interleaves localized compaction steps with the tool/content sequence; usage detail distinguishes their calls. Automatic history/loop compaction stays inside its reply, without a separate Checkpoint timeline event.
 At terminal status or approval waiting, input/output, first response and speed follow the reply action buttons.
 Each summary metric pairs an icon with its value and retains a localized screen-reader label and hover/focus tooltip.
 The usage icon opens a controlled modal with aggregate total time, call count and per-call counts, cache/reasoning, timing and source.

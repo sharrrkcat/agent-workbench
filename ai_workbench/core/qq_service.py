@@ -352,16 +352,21 @@ class QQService:
                 metadata={"input_source": "qq", "qq_batch_id": batch.id, "qq_trigger_kind": batch.trigger_kind})
             batch.input_message_id = user.message_id
             self.store.save(batch)
-            def context_ready(trace):
+            inference_started = False
+            def inference_dispatch():
+                nonlocal inference_started
                 if attempt is not None:
                     self.check_icebreaker(batch)
-                    project = self.state.projects.get(binding.project_id)
-                    self.store.start_icebreaker_cooldown(batch.session_id, time.time() + project.icebreaker_cooldown_seconds)
+                    if not inference_started:
+                        project = self.state.projects.get(binding.project_id)
+                        self.store.start_icebreaker_cooldown(batch.session_id, time.time() + project.icebreaker_cooldown_seconds)
+                inference_started = True
+            def context_ready(trace):
                 self.descriptions.submit(config.qq_image_description_model_profile_id,
                     trace, self.state.app_settings.get().max_image_size_mb * 1024 * 1024)
             result = await self.state.chat_runner.run(session_id=batch.session_id, text=text,
                 input_message_id=user.message_id, on_run_created=run_created, resolved_config=config,
-                on_context_ready=context_ready)
+                on_context_ready=context_ready, on_dispatch=inference_dispatch)
             batch.run_id = result.run_id
             batch.status = "done" if result.success else (
                 "cancelled" if result.error_code == "RUN_CANCELLED" else "failed")

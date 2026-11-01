@@ -95,7 +95,7 @@ def prepend_system_block(messages, trace: ContextTrace, text: str, kind):
     return result, source
 
 
-def capture_context(runs, step_id, trace: ContextTrace, profile, policy, *, budget=None):
+def capture_context(runs, step_id, trace: ContextTrace, profile, policy, *, budget=None, on_dispatch=None):
     """Bind one chat call to its step; the transport supplies the body it sends."""
     def capture(payload: dict) -> None:
         body = deepcopy(payload)
@@ -127,6 +127,8 @@ def capture_context(runs, step_id, trace: ContextTrace, profile, policy, *, budg
             runs.save_context_snapshot(step_id, snapshot)
         except (ValidationError, SQLAlchemyError) as exc:
             raise ModelError("CONTEXT_SAVE_FAILED", "The model input could not be saved.", 500) from exc
+        if on_dispatch is not None:
+            on_dispatch()
     return capture
 
 
