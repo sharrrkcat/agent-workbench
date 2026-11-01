@@ -24,12 +24,13 @@ import type { Reply } from './turns';
 import { useCogitaStore } from '../../store/useCogitaStore';
 
 export function contextCalls(reply: Reply): RunStep[] {
-  return reply.steps.filter((step) => step.kind === 'model' && step.metadata?.context?.available)
+  return reply.steps.filter((step) => (step.kind === 'model' || step.kind === 'compaction') && step.metadata?.context?.available)
     .sort((a, b) => a.order - b.order);
 }
 
 export function defaultContextCall(reply: Reply, calls = contextCalls(reply)): string | undefined {
   return calls.find((step) => reply.answer && step.metadata?.llm?.message_id === reply.answer.message_id)?.step_id
+    || [...calls].reverse().find((step) => step.kind === 'model')?.step_id
     || calls[calls.length - 1]?.step_id;
 }
 
@@ -86,8 +87,8 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
   const estimates = useContextTokens(detail);
   const number = new Intl.NumberFormat(i18n.language);
   const count = (value: number | null | undefined) => value == null ? '—' : number.format(value);
-  const callsInRun = reply.steps.filter((call) => call.kind === 'model').sort((a, b) => a.order - b.order);
-  const items = calls.map((call) => ({ value: call.step_id, label: t('metrics.call', { count: callsInRun.indexOf(call) + 1 }) +
+  const callsInRun = reply.steps.filter((call) => call.kind === 'model' || call.kind === 'compaction').sort((a, b) => a.order - b.order);
+  const items = calls.map((call) => ({ value: call.step_id, label: t(call.kind === 'compaction' ? 'compaction.call' : 'metrics.call', { count: callsInRun.indexOf(call) + 1 }) +
     (reply.answer && call.metadata?.llm?.message_id === reply.answer.message_id ? ` · ${t('context.finalAnswer')}` : '') }));
   const byParent = presentation?.byParent || new Map<string | null, DisplayContextSource[]>();
   const exclusions = presentation?.exclusions || [];
@@ -189,7 +190,9 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
     </div>
     {detail ? <div className="context-footer">
       <span><LockKeyhole aria-hidden="true" />{t('context.snapshot')} · {new Date(detail.captured_at).toLocaleString(i18n.language)}</span>
-      <span>{t('context.policy', {
+      <span>{'history_enabled' in detail.policy ? t(!detail.policy.history_enabled ? 'context.historyDisabled'
+        : detail.policy.strategy === 'message_window' ? 'context.messageWindowPolicy' : 'context.tokenPolicy',
+        { limit: detail.policy.message_window.max_messages }) : t('context.policy', {
         messages: detail.policy.max_messages == null ? t('context.unlimited') : count(detail.policy.max_messages),
         chars: detail.policy.max_chars == null ? t('context.unlimited') : count(detail.policy.max_chars),
       })}</span>
@@ -218,6 +221,11 @@ function SourceInfo({ source, tokenLabel }: { source: DisplayContextSource; toke
         {source.citation ? <div><dt>{t('context.citation')}</dt><dd>{source.citation}</dd></div> : null}
         {source.source_id ? <div><dt>{t('context.sourceId')}</dt><dd>{source.source_id}</dd></div> : null}
         {source.knowledge_base_id ? <div><dt>{t('context.baseId')}</dt><dd>{source.knowledge_base_id}</dd></div> : null}
+        {source.compaction ? <>
+          <div><dt>{t('compaction.checkpoint')}</dt><dd>{source.compaction.checkpoint_id}</dd></div>
+          <div><dt>{t('compaction.covered')}</dt><dd>{source.compaction.covered_messages}</dd></div>
+          <div><dt>{t('compaction.boundary')}</dt><dd>{source.compaction.boundary_message_id}</dd></div>
+        </> : null}
       </dl>
     </HoverCardContent>
   </HoverCard>;

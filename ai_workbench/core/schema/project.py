@@ -7,7 +7,7 @@ from uuid import uuid4
 from pydantic import Field, StrictBool, TypeAdapter, field_serializer, field_validator
 
 from ai_workbench.core.models.schema import StrictModel, ImageGenerationControls
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy, BoundedContextPolicy
 from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.core.session import ChatSettings
 from ai_workbench.core.time import isoformat_utc, utc_now
@@ -15,7 +15,6 @@ from ai_workbench.core.time import isoformat_utc, utc_now
 
 class ProjectInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
-    context_policy: ContextPolicy
     model_profile_id: str | None = None
     temperature: float | None = Field(default=None, ge=0, le=2)
 
@@ -29,6 +28,7 @@ class ProjectInput(StrictModel):
 
 class WorkspaceInput(ProjectInput):
     kind: Literal["workspace"]
+    context_policy: ContextPolicy
     agent_persona_id: str
     cogita_persona_id: Literal[USER_PERSONA_ID]
     harness_enabled: StrictBool
@@ -44,6 +44,7 @@ class WorkspaceInput(ProjectInput):
 
 class TimelineInput(ProjectInput):
     kind: Literal["timeline"]
+    context_policy: BoundedContextPolicy
     character_persona_id: str
     user_persona_id: str
     worldbook_ids: list[str] = Field(default_factory=list, max_length=128)
@@ -64,6 +65,7 @@ QQ_DEFAULT_PROMPT = (
 
 class QQBotInput(ProjectInput):
     kind: Literal["qqbot"]
+    context_policy: BoundedContextPolicy
     bot_account: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
     admin_qq: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$", strict=True)
     websocket_url: str = Field(max_length=2048)

@@ -72,6 +72,7 @@ agent-identity.spec.ts covers Agent history, avatars, deletion, reconnects, stre
 test-persona-identity.mjs covers list/event races and deleted identities. projects.spec.ts covers Project creation, type restrictions,
 inherited resources, sparse overrides, guarded history and scoped deletion; test-projects.mjs covers selection/deletion races.
 context-detail.spec.ts covers lazy call selection, exact request views, stale reads, error retry, deletion and modal focus/scroll in both locales/viewports.
+context-message-window.spec.ts covers strategy switching, retained inactive settings, count validation, raw request boundaries and immutable detail; projects.spec.ts covers whole-policy inheritance.
 image-generation.spec.ts covers provider-only sources, disabled Local Runtime, discovery/manual IDs, parameter defaults and CRUD in both locales/viewports.
 Browser cases providers.spec.ts, model-sources.spec.ts, qwen-tts.spec.ts and runtime-maintenance.spec.ts
 cover provider keys/sources, optional discovery, architecture defaults and installation/cache workflows.

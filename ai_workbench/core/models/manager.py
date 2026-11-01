@@ -546,11 +546,10 @@ class ModelManager:
         needs_worker = (is_transformers(profile) and (
             tools and not options.skip_tool_capability_check or vision and not options.skip_vision_capability_check)
             or isinstance(profile.source, LocalSource) and reasoning is not None and not skips_reasoning(profile, reasoning))
-        if not needs_worker:
-            yield local_chat_support(profile)
-            return
-        async with self._lease(profile, release=False, metrics=metrics) as adapter:
-            support = local_chat_support(profile, adapter)
+        support = local_chat_support(profile)
+        if needs_worker:
+            async with self._lease(profile, release=False, metrics=metrics) as adapter:
+                support = local_chat_support(profile, adapter)
         try:
             yield support
         finally:
@@ -620,6 +619,17 @@ class ModelManager:
         if request.stream and (collect or request.cogita.include_metrics):
             return request.model_copy(update={"stream_options": StreamOptions(include_usage=True)})
         return request
+
+    async def measure_chat(self, profile_id: str, request: ChatRequest, limits):
+        """Measure a complete request without dispatch or holding admission for a later call."""
+        from ai_workbench.core.models.context_budget import ChatContextBudget
+        from ai_workbench.core.schema.context_snapshot import ContextTrace
+        profile = self.profile(profile_id, "llm")
+        request = await self._prepare_chat(profile, request)
+        # Counting is preparation, not a completed inference request. The chat
+        # input scope applies release policy on a preparation failure.
+        async with self._lease(profile, release=False) as adapter:
+            return await ChatContextBudget(limits, ContextTrace()).measure(profile, request, adapter)
 
     async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None, budget=None):
         metrics = metrics or LLMCallMetrics()

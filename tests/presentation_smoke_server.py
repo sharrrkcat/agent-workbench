@@ -71,6 +71,12 @@ class PresentationOpenAI(ToolOpenAI):
             return await super().handle(request)
         data = json.loads(request.content)
         self.calls.append(data)
+        from ai_workbench.core.context_compaction import SUMMARY_INSTRUCTION
+        if data['messages'][0]['content'] == SUMMARY_INSTRUCTION:
+            await asyncio.sleep(1)
+            return httpx.Response(200, json={'choices': [{'index': 0, 'message': {
+                'role': 'assistant', 'content': '## Confirmed facts\nThe budget is 42 EUR. Do not send email.'}, 'finish_reason': 'stop'}],
+                'usage': {'prompt_tokens': 1400, 'completion_tokens': 24, 'total_tokens': 1424}})
         history = data["messages"]
         user_index = max(i for i, item in enumerate(history) if item["role"] == "user")
         command = history[user_index]["content"]
@@ -169,11 +175,18 @@ def create_fixture_app(repository: Path, root: Path):
     @app.post("/__test__/session")
     async def fixture_session(values: dict = Body(default={})):
         await state.active_runs.cancel_all()
+        state.model_profiles.update(profile['id'], {'context_window_tokens': 4096 if values.get('compaction') else profile['context_window_tokens']})
         state.app_settings.patch({"show_full_processing": bool(values.get("show_full_processing", False))})
         if values.get("web_tools"):
             state.web_tools.settings.patch(WebToolsSettingsPatch(api_key="browser-web-key"))
         session = state.chat_service.create_session({"title": "Presentation fixture", "harness_enabled": True,
                                                      "model_profile_id": profile["id"]})
+        if values.get("compaction"):
+            session = state.chat_service.update_session(session.session_id, {'harness_enabled': False,
+                'context_policy': {'compaction': {'trigger_percent': 50, 'target_percent': 35, 'max_summary_tokens': 512}}})
+            for index in range(14):
+                user = state.messages.add_message(session.session_id, 'user', 'The budget is 42 EUR. Do not send email. ' + 'Background information. ' * 85)
+                state.messages.add_message(session.session_id, 'assistant', 'Recorded.', parent_message_id=user.message_id)
         if values.get("long_history"):
             config = state.chat_service.resolve(session)
             user = state.messages.add_message(session.session_id, role="user", content="Inspect the conversion results")

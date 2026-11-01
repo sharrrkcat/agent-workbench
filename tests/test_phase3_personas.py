@@ -130,7 +130,7 @@ def test_model_generation_and_context_precedence(chat_client):
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": global_model["id"]}))
     role = persona(client)
     session = session_for(client, role["id"], model_profile_id=selected_model["id"], generation={"temperature": 0.6},
-                          context_policy={"max_messages": 0}, harness_enabled=True, tools_allowed=["test_echo"])
+                          context_policy={"history_enabled": False}, harness_enabled=True, tools_allowed=["test_echo"])
     response = send(client, session)
     assert response["run"]["persona_id"] == role["id"]
     assert upstream.calls[-1]["model"] == "other"
@@ -146,7 +146,7 @@ def test_model_generation_and_context_precedence(chat_client):
     assert "PRIVATE_PERSONA_PROMPT" not in json.dumps(events)
     assert client.delete(f"/api/models/profiles/{selected_model['id']}").status_code == 409
     path = f"/api/sessions/{session['session_id']}"
-    ok(client.patch(path, json={"model_profile_id": override_model["id"], "generation": {"temperature": 0.9}, "context_policy": {"max_messages": 0}}))
+    ok(client.patch(path, json={"model_profile_id": override_model["id"], "generation": {"temperature": 0.9}, "context_policy": {"history_enabled": False}}))
     assert send(client, session, "second")["success"]
     assert upstream.calls[-1]["model"] == "fake" and upstream.calls[-1]["temperature"] == 0.9
     assert upstream.calls[-1]["messages"] == [{"role": "system", "content": "PRIVATE_PERSONA_PROMPT"}, {"role": "user", "content": "second"}]
@@ -283,7 +283,7 @@ def test_explicit_approval_retains_saved_persona_configuration(chat_client):
     configure_model(client, request_options={"streaming": True})
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "USER_BEFORE"}))
     role = persona(client, "Waiting persona")
-    session = session_for(client, role['id'], context_policy={"max_messages": 0}, generation={'temperature': 0.25}, harness_enabled=True, tools_allowed=['test_approval'])
+    session = session_for(client, role['id'], context_policy={"history_enabled": False}, generation={'temperature': 0.25}, harness_enabled=True, tools_allowed=['test_approval'])
     upstream.stream_events = [
         {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call1", "type": "function", "function": {"name": "test_approval", "arguments": '{"value":"confirm"}'}}]}, "finish_reason": None}]},
         {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
@@ -324,13 +324,13 @@ def test_history_budget_and_attachment_policy():
     for index in range(25):
         messages.add_message("s", "user", f"history-{index}", metadata={"attachments": [{"type": "file", "name": "note", "text": "PRIVATE_ATTACHMENT"}]})
     builder = ContextBuilder(messages)
-    result = builder.build("s", "current", ContextPolicy(max_messages=20, include_attachments="none"))
+    result = builder.build("s", "current", ContextPolicy(include_attachments="none"), history=messages.list_messages("s")[-20:])
     contents = [item["content"] for item in result.messages]
     assert "PRIVATE_ATTACHMENT" not in json.dumps(contents)
     assert "history-4" not in contents and "history-5" in contents
-    limited = builder.build("s", "current", ContextPolicy(max_chars=3))
+    limited = builder.build("s", "current", ContextPolicy(history_enabled=False))
     assert limited.messages == [{"role": "user", "content": "current"}]
-    assert limited.warnings
+    assert not limited.warnings
 
 
 def test_running_snapshot_survives_persona_edit_and_selection_change(tmp_path):

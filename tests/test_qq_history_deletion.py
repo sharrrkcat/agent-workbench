@@ -6,7 +6,7 @@ from sqlalchemy import event as sql_event, inspect, text
 
 from ai_workbench.core.context import message_text
 from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine

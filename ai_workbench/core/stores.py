@@ -19,12 +19,27 @@ from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepSchema, Ru
 from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session, parse_session
 from ai_workbench.core.time import utc_now
+from ai_workbench.core.schema.compaction import ContextCheckpoint
 
 
 class SessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
         self.web_cache = None
+        self._checkpoints: dict[str, ContextCheckpoint] = {}
+
+    def get_context_checkpoint(self, session_id: str) -> ContextCheckpoint | None:
+        value = self._checkpoints.get(session_id)
+        return value.model_copy(deep=True) if value else None
+
+    def save_context_checkpoint(self, checkpoint: ContextCheckpoint) -> bool:
+        if self.get_session(checkpoint.session_id).history_version != checkpoint.history_version:
+            return False
+        self._checkpoints[checkpoint.session_id] = checkpoint.model_copy(deep=True)
+        return True
+
+    def discard_context_checkpoint(self, session_id: str) -> None:
+        self._checkpoints.pop(session_id, None)
 
     def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
         session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
@@ -67,6 +82,7 @@ class SessionStore:
         if self.web_cache is not None:
             self.web_cache.delete_session(session_id)
         del self._sessions[session_id]
+        self.discard_context_checkpoint(session_id)
 
     def list_sessions(self) -> list[Session]:
         return sorted(self._sessions.values(), key=lambda item: (item.updated_at, item.created_at), reverse=True)
@@ -190,9 +206,13 @@ class MessageStore:
         return sorted((self._messages[item] for item in self._session_ids.get(session_id, []) if item in self._messages),
                       key=lambda m: (m.created_at, m.message_id))
 
-    def iter_context_history(self, session_id: str, exclude_id: str | None):
+    def iter_context_history(self, session_id: str, exclude_id: str | None, *, after=None, before=None, ascending=False):
         from ai_workbench.core.context import _eligible
-        return (m for m in reversed(self.list_messages(session_id)) if m.message_id != exclude_id and _eligible(m))
+        ordered = sorted((self._messages[i] for i in self._session_ids.get(session_id, [])),
+                         key=lambda m: (m.created_at, m.message_id), reverse=not ascending)
+        return (m for m in ordered if m.message_id != exclude_id and _eligible(m)
+                and (after is None or (m.created_at, m.message_id) > after)
+                and (before is None or (m.created_at, m.message_id) < before))
 
     def context_history_counts(self, session_id: str, exclude_id: str | None) -> tuple[int, int]:
         from ai_workbench.core.context import _eligible
@@ -206,7 +226,8 @@ class MessageStore:
     def context_turn_id(self, message: MessageSchema) -> str:
         from ai_workbench.core.context import _eligible
         turns, current = {}, None
-        for item in self.list_messages(message.session_id):
+        for item in sorted((m for m in self._messages.values() if m.session_id == message.session_id),
+                           key=lambda m: (m.created_at, m.message_id)):
             if not _eligible(item):
                 continue
             if item.role == "user":
@@ -285,7 +306,7 @@ class RunStore:
 
     def save_context_snapshot(self, step_id, snapshot) -> None:
         step = self.get_step(step_id)
-        if step.kind != "model" or step_id in self._context_snapshots:
+        if step.kind not in {"model", "compaction"} or step_id in self._context_snapshots:
             raise ValueError("Context requires a model step without an existing snapshot")
         self._context_snapshots[step_id] = snapshot.model_dump_json(exclude_unset=True, by_alias=True)
         self.update_step(step_id, metadata={"context": snapshot.summary().model_dump()})

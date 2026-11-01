@@ -7,11 +7,13 @@ import time
 from typing import Any, Callable
 from uuid import uuid4
 from contextlib import AsyncExitStack, aclosing
+from datetime import date
 
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
-from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop
+from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop, request_tools
 from ai_workbench.core.context import ContextBuilder
+from ai_workbench.core.context_compaction import ContextCompactionService
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.knowledge_context import build_session_knowledge_context
@@ -27,7 +29,9 @@ from ai_workbench.core.user_persona_context import build_user_persona_context
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
-from ai_workbench.core.instructions import UiLanguage
+from ai_workbench.core.instructions import UiLanguage, date_instruction
+from ai_workbench.core.time import utc_now
+from ai_workbench.core.web_tools import WEB_TOOL_NAMES
 
 
 class ChatRunner:
@@ -65,6 +69,8 @@ class ChatRunner:
             allowed_tools=chat_service.tools_for_run,
         ) if tool_registry is not None else None
         self.context_builder = ContextBuilder(messages)
+        self.compaction = ContextCompactionService(sessions=sessions, messages=messages, runs=runs,
+            events=events, model_manager=model_manager)
 
     async def run(
         self,
@@ -161,7 +167,9 @@ class ChatRunner:
                               and local_chat_support(profile).vision.state == "unsupported")
             first_metrics.start()
             preflight = checks.enter_async_context(self.model_manager.check_chat_inputs(
-                profile, tools=use_harness, vision=has_images, reasoning=None if rejected_image else config.reasoning, metrics=first_metrics))
+                profile, tools=use_harness, vision=has_images or (session.kind != "qqbot" and config.context_policy.history_enabled
+                    and config.context_policy.include_attachments == "explicit"),
+                reasoning=None if rejected_image else config.reasoning, metrics=first_metrics))
             if use_harness:
                 try:
                     support = await asyncio.wait_for(preflight, timeout=ACTIVE_BUDGET_SECONDS - (time.monotonic() - context_started))
@@ -188,6 +196,28 @@ class ChatRunner:
                 "reasoning": {"requested": config.reasoning, "effective": reasoning}})
             if image_only:
                 raise ModelError("UNSUPPORTED_CAPABILITY", "This model cannot read images. Add text or select another model.", 422)
+            web_date = utc_now().astimezone().date().isoformat()
+            if session.kind != "qqbot":
+                allowed = self.chat_service.tools_for_run(config) if use_harness else []
+                tools = request_tools(self.harness_loop.registry, allowed) if use_harness else None
+                instruction = date_instruction(ui_language, date.fromisoformat(web_date)) if WEB_TOOL_NAMES.intersection(allowed) else ""
+                prepare = self.compaction.prepare(session=session, config=config, run=run, base=context,
+                    trace=context_trace, current=user, profile=profile, support=support, tools=tools,
+                    instruction=instruction, max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
+                    reasoning=reasoning)
+                try:
+                    context, context_trace, warning = (await asyncio.wait_for(prepare,
+                        timeout=max(0, ACTIVE_BUDGET_SECONDS - (time.monotonic() - context_started))) if use_harness else await prepare)
+                except asyncio.TimeoutError as exc:
+                    raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
+                if warning:
+                    warnings.append(warning)
+                if any(item.reason == "images_unsupported" for item in context_trace.exclusions) and "images_ignored" not in warnings:
+                    warnings.append("images_ignored")
+                if warnings:
+                    self._input_warnings(user, run.run_id, warnings)
+                context_meta["message_count"] = len(context)
+                first_metrics.start()
             self.runs.update_step(
                 context_step.step_id,
                 status=RunStepStatus.COMPLETED,
@@ -205,7 +235,8 @@ class ChatRunner:
                 result = await self.harness_loop.run(session=session, config=config, run=run, user=user, context=context, trace=context_trace,
                                                      reasoning=reasoning, ui_language=ui_language,
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
-                                                     active_seconds=time.monotonic() - context_started, first_metrics=first_metrics)
+                                                     active_seconds=time.monotonic() - context_started, first_metrics=first_metrics,
+                                                     web_date=web_date if session.kind != "qqbot" else None)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     await self.maybe_title(session_id, raw_text, user.message_id)
                 return result
@@ -234,7 +265,8 @@ class ChatRunner:
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,
                                    parent_message_id=user.message_id, streamed=streamed)
             metrics = first_metrics
-            budget = ChatContextBudget(config.context_limits, context_trace)
+            budget = ChatContextBudget(config.context_limits, context_trace,
+                allow_pruning=config.context_policy.strategy == "message_window" or not config.context_policy.compaction.enabled)
             capture = capture_context(self.runs, model_step.step_id, budget.trace, profile, config.context_policy, budget=budget)
             try:
                 if streamed:

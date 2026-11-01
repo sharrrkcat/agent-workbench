@@ -11,6 +11,7 @@ const step = (order, input = 8126, status = 'completed', output = 10) => ({ orde
       prompt_tokens_details: { cached_tokens: 1000 }, completion_tokens_details: { reasoning_tokens: 3 } } } } });
 const run = (steps, session_id = 's') => ({ kind: 'chat', session_id, created_at: '2026-10-03', steps });
 assert.equal(latestContextUsage([], 's', profile), null);
+assert.equal(latestContextUsage([run([step(1), { ...step(2, 25000), kind: 'compaction' }])], 's', profile).used, 8136);
 assert.equal(latestContextUsage([run([step(1)])], 'other', profile), null);
 assert.equal(latestContextUsage([run([step(1)])], undefined, profile), null);
 let result = latestContextUsage([run([step(1), step(2, 10000, 'running')])], 's', profile);

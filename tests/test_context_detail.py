@@ -84,7 +84,7 @@ def test_sources_preserve_workspace_order_unicode_and_selection(presentation_cli
     ok(client.patch(f"/api/personas/{COGITA_PERSONA_ID}", json={"system_prompt": "  AGENT😀 private  "}))
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "用户背景😀"}))
     project = workspace(client, system_prompt="PROJECT private", knowledge_base_ids=[base["id"]],
-                        context_policy={"max_messages": 2, "max_chars": 16})
+                        context_policy={"compaction": {"enabled": False}})
     session = child(client, project)
     state = client.app.state.runtime_state
     async def search(**_):
@@ -108,7 +108,7 @@ def test_sources_preserve_workspace_order_unicode_and_selection(presentation_cli
     assert [sources[kind]["start"] for kind in ("agent_persona", "project_prompt", "cogita_persona", "knowledge")] == sorted(
         sources[kind]["start"] for kind in ("agent_persona", "project_prompt", "cogita_persona", "knowledge"))
     assert sources["history"]["text"] == "recent"
-    assert {item["reason"] for item in snapshot["exclusions"]} == {"ineligible_history", "message_limit", "character_limit"}
+    assert {item["reason"] for item in snapshot["exclusions"]} == {"ineligible_history"}
     assert all(source["char_count"] == len(source["text"]) for source in snapshot["sources"])
     ok(client.patch(f"/api/personas/{COGITA_PERSONA_ID}", json={"system_prompt": "CHANGED"}))
     ok(client.patch(f"/api/projects/{project['id']}", json={"system_prompt": "CHANGED"}))
@@ -216,7 +216,7 @@ def test_ignored_images_remap_sources_and_do_not_retain_attachments():
     messages.add_message("s", "user", "", metadata={"attachments": [image("old")]})
     messages.add_message("s", "assistant", "retained")
     current = messages.add_message("s", "user", "current", metadata={"attachments": [image("new")]})
-    built = ContextBuilder(messages).build("s", "current", current_message_id=current.message_id)
+    built = ContextBuilder(messages).build("s", "current", current_message_id=current.message_id, history=messages.list_messages("s"))
     prepared = omit_context_images(built.messages, built.trace)
     assert prepared == [{"role": "assistant", "content": "retained"}, {"role": "user", "content": "current"}]
     run = runs.create_run("chat", COGITA_PERSONA_ID, "s")

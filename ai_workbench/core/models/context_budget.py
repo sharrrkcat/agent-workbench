@@ -19,12 +19,13 @@ def configured_limits(profile: ModelProfile) -> ContextLimits:
 
 
 class ChatContextBudget:
-    def __init__(self, limits: ContextLimits, trace: ContextTrace):
+    def __init__(self, limits: ContextLimits, trace: ContextTrace, *, allow_pruning: bool = True):
         self.limits = limits
         self.trace = trace.model_copy(deep=True)
         self.stats: ContextBudgetStats | None = None
+        self.allow_pruning = allow_pruning
 
-    async def prepare(self, profile, request, adapter):
+    async def _counter(self, profile, request, adapter):
         configured = self.limits.window_tokens
         if configured is None:
             raise ModelError("CONTEXT_WINDOW_REQUIRED", "Set this model's context window before chatting.", 422)
@@ -39,14 +40,9 @@ class ChatContextBudget:
         request = request.model_copy(update={"max_tokens": output})
         wire_profile = profile.model_copy(update={"model_ref": "managed"}) if local else profile
         payload = OpenAIAdapter._payload(wire_profile, request)
-        groups = self._history_groups()
-        group_positions = {index: position for position, group in enumerate(groups) for index in group}
 
-        def retained_indices(cut):
-            return [i for i in range(len(request.messages)) if group_positions.get(i, len(groups)) >= cut]
-
-        async def count(cut):
-            body = {**payload, "messages": [payload["messages"][i] for i in retained_indices(cut)]}
+        async def count(indices):
+            body = {**payload, "messages": [payload["messages"][i] for i in indices]}
             if local:
                 return await adapter.count_input_tokens(body)
             try:
@@ -54,14 +50,38 @@ class ChatContextBudget:
             except (OSError, ValueError) as exc:
                 raise ModelError("CONTEXT_COUNT_FAILED", "The offline reference tokenizer could not count this input.", 500) from exc
 
+        stats = ContextBudgetStats(configured_window_tokens=configured, window_tokens=window,
+            input_budget_tokens=available, input_tokens=0, counting="native" if local else "estimated",
+            output_tokens=output, margin_tokens=margin, removed_turns=0)
+        return request, count, stats
+
+    async def measure(self, profile, request, adapter):
+        request, count, stats = await self._counter(profile, request, adapter)
+        return stats.model_copy(update={"input_tokens": await count(range(len(request.messages)))})
+
+    async def prepare(self, profile, request, adapter):
+        request, count_indices, stats = await self._counter(profile, request, adapter)
+        available = stats.input_budget_tokens
+        groups = self._history_groups()
+        group_positions = {index: position for position, group in enumerate(groups) for index in group}
+
+        def retained_indices(cut):
+            return [i for i in range(len(request.messages)) if group_positions.get(i, len(groups)) >= cut]
+
+        async def count(cut):
+            return await count_indices(retained_indices(cut))
+
         cut, tokens = 0, await count(0)
         if tokens > available:
+            if not self.allow_pruning:
+                raise ModelError("CONTEXT_WINDOW_EXCEEDED", "This input exceeds the context budget.", 422)
             last = len(groups)
             tokens = await count(last) if last else tokens
             if tokens > available:
                 raise ModelError("CONTEXT_WINDOW_EXCEEDED",
                     "Current input, instructions, knowledge and active tool data exceed the context window even without history.",
-                    422, {"window_tokens": window, "input_tokens": tokens, "output_tokens": output, "margin_tokens": margin})
+                    422, {"window_tokens": stats.window_tokens, "input_tokens": tokens,
+                          "output_tokens": stats.output_tokens, "margin_tokens": stats.margin_tokens})
             low, high = 0, last
             while low + 1 < high:
                 middle = (low + high) // 2
@@ -76,9 +96,7 @@ class ChatContextBudget:
                 raise ModelError("CONTEXT_WINDOW_EXCEEDED", "The final input exceeds the context budget.", 422)
         retained = retained_indices(cut)
         self._remap_trace(retained)
-        self.stats = ContextBudgetStats(configured_window_tokens=configured, window_tokens=window,
-            input_budget_tokens=available, input_tokens=tokens, counting="native" if local else "estimated",
-            output_tokens=output, margin_tokens=margin, removed_turns=cut)
+        self.stats = stats.model_copy(update={"input_tokens": tokens, "removed_turns": cut})
         return request.model_copy(update={"messages": [request.messages[i] for i in retained]})
 
     def _history_groups(self):

@@ -81,7 +81,7 @@ class LLMTiming(MetricsModel):
 class LLMCallSnapshot(MetricsModel):
     model_profile_id: str
     model: str
-    message_id: str
+    message_id: str | None
     started_at: datetime
     first_response_at: datetime | None = None
     completed: bool
@@ -158,7 +158,7 @@ class LLMCallMetrics:
             tokens_per_second=generation_tokens * 1000 / generation_ms if generation_ms else None,
         )
 
-    def snapshot(self, profile_id: str, model: str, message_id: str) -> LLMCallSnapshot:
+    def snapshot(self, profile_id: str, model: str, message_id: str | None) -> LLMCallSnapshot:
         return LLMCallSnapshot(
             model_profile_id=profile_id, model=model, message_id=message_id, started_at=self.started_at,
             first_response_at=self.started_at + timedelta(seconds=self.first - self.started) if self.first is not None else None,

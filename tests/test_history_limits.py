@@ -12,34 +12,26 @@ from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import MessageRecord, ProjectRecord, RunRecord, SessionRecord
 
 
-@pytest.mark.parametrize("limit,start", [(None, 0), (0, 25), (1, 24), (20, 5), (10000, 0)])
-def test_history_limits_keep_newest_eligible_messages_and_current_input(limit, start):
+@pytest.mark.parametrize("enabled", [True, False])
+def test_projection_uses_selected_eligible_history_and_keeps_current(enabled):
     store = MessageStore()
     for index in range(25):
         store.add_message("s", "user" if index % 2 == 0 else "assistant", f"history-{index}")
-    store.add_message("other", "user", "OTHER_SESSION")
-    for flag in ("streaming", "incomplete", "event_type"):
-        store.add_message("s", "assistant", "EXCLUDED", metadata={flag: True})
+    selected = store.list_messages("s")[-5:]
+    selected.append(store.add_message("s", "assistant", "EXCLUDED", metadata={"incomplete": True}))
     current = store.add_message("s", "user", "current")
-    result = ContextBuilder(store).build("s", "current", ContextPolicy(max_messages=limit),
-                                         current_message_id=current.message_id)
-    assert result.messages == [
-        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"history-{i}"} for i in range(start, 25)],
-        {"role": "user", "content": "current"},
-    ]
-    assert not result.warnings
-    if limit is None:
-        assert ContextBuilder(store).build("s", "current", current_message_id=current.message_id) == result
+    result = ContextBuilder(store).build("s", "current", ContextPolicy(history_enabled=enabled),
+        current_message_id=current.message_id, history=selected)
+    assert [m["content"] for m in result.messages] == ([f"history-{i}" for i in range(20, 25)] if enabled else []) + ["current"]
 
 
-@pytest.mark.parametrize("budget,expected", [(None, ["old", "longer", "new"]), (9, ["new"]), (15, ["longer", "new"]), (2, [])])
-def test_character_budget_preserves_whole_recent_messages_and_current_input(budget, expected):
-    store = MessageStore()
-    for text in ("old", "longer", "new"):
-        store.add_message("s", "user", text)
-    result = ContextBuilder(store).build("s", "input!", ContextPolicy(max_chars=budget))
-    assert [message["content"] for message in result.messages] == [*expected, "input!"]
-    assert bool(result.warnings) == (budget == 2)
+def test_history_disabled_never_consumes_history_iterator():
+    def unreadable():
+        pytest.fail("History disabled must not read history")
+        yield
+    result = ContextBuilder(MessageStore()).build("s", "large current" * 1000,
+        ContextPolicy(history_enabled=False), history=unreadable())
+    assert len(result.messages) == 1 and result.messages[0]["content"] == "large current" * 1000
 
 
 @pytest.mark.parametrize("mode", ["session", "recent_messages", "current_message", "selected_message", "none"])
@@ -75,7 +67,7 @@ def test_migration_removes_only_retired_fields_without_mapping_modes(tmp_path, m
                          harness_state_json=json.dumps(continuation)))
         db.add(MessageRecord(message_id="message", session_id="ordinary", role="user", parts_json='[]'))
         db.commit()
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.QQ_COMMANDS_REVISION)
     with DbSession(engine) as db:
         for kind in ("workspace", "timeline"):
             assert json.loads(db.get(ProjectRecord, kind).configuration_json) == expected_config
@@ -92,8 +84,8 @@ def test_migration_removes_only_retired_fields_without_mapping_modes(tmp_path, m
         ordinary.configuration_json = json.dumps({**expected_config, "context_policy": {"max_messages": 0}})
         db.add(ordinary)
         db.commit()
-    migrations.upgrade(engine)
-    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
+    migrations.upgrade(engine, migrations.QQ_COMMANDS_REVISION)
+    assert migrations.current_revision(engine) == migrations.QQ_COMMANDS_REVISION
     with DbSession(engine) as db:
         assert json.loads(db.get(SessionRecord, "ordinary").configuration_json)["context_policy"] == {"max_messages": 0}
     assert all(path.read_bytes() == b"keep" for path in files)

@@ -11,7 +11,7 @@ from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.qq_media import decode_image
 from ai_workbench.core.qq_protocol import normalize
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.core.schema.qq import QQImageAttachment
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMediaAsset
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project, FakeConnection

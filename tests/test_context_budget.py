@@ -33,7 +33,7 @@ def test_native_budget_keeps_whole_recent_turns_and_remaps_sources():
         for index in range(16):
             user = store.add_message('s', 'user', f'user-{index}', message_id=f'{index:03}-user')
             store.add_message('s', 'assistant', f'answer-{index}', run_id=f'run-{index}', parent_message_id=user.message_id, message_id=f'{index:03}-zanswer')
-        built = ContextBuilder(store).build('s', 'current')
+        built = ContextBuilder(store).build('s', 'current', history=store.list_messages('s'))
         original = deepcopy(built)
         payloads = []
         async def count(payload):
@@ -70,7 +70,7 @@ def test_history_limits_preserve_original_turn_identity():
     user = store.add_message('s', 'user', 'question')
     store.add_message('s', 'assistant', 'answer', run_id='r', parent_message_id=user.message_id)
     store.add_message('s', 'assistant', 'continued', run_id='r')
-    built = ContextBuilder(store).build('s', 'next', ContextPolicy(max_messages=2))
+    built = ContextBuilder(store).build('s', 'next', history=store.list_messages('s')[-2:])
     assert {s.turn_id for s in built.trace.sources if s.kind == 'history'} == {user.message_id}
     assert ChatContextBudget(ContextLimits(), built.trace)._history_groups() == [[0, 1]]
 
@@ -120,6 +120,7 @@ def test_provider_trims_history_and_preserves_snapshot_attachment_indices(presen
     session = configure(client, harness=False, streaming=streaming)
     ok(client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 512}))
     state = client.app.state.runtime_state
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': {'compaction': {'enabled': False}}}))
     old = state.messages.add_message(session['session_id'], 'user', 'old ' * 600,
         metadata={'attachments': [{'id': 'old-file', 'type': 'file', 'name': 'old.txt', 'uri': 'local://attachments/old.txt'}]})
     state.messages.add_message(session['session_id'], 'assistant', 'old answer', parent_message_id=old.message_id)

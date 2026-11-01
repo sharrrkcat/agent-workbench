@@ -161,7 +161,8 @@ Waiting for approval consumes no active time and holds no model lease.
 
 Each model round, including after approval, applies the shared
 [chat token budget](chat-context.md#configuration-snapshots-and-context) to its final request.
-Only prior conversation turns may be removed; the entire active tool transcript stays paired and
+Ordinary/Workspace token-budget runs can compact completed history before their first answer; summary time counts toward the five-minute active budget. Message-window runs use only selected raw history.
+Only prior raw conversation turns may be removed afterwards; the frozen summary and entire active tool transcript stay paired and
 intact. Oversized tool results can end a run with CONTEXT_WINDOW_EXCEEDED before its next model
 dispatch. Saved base context/configuration remain stable through approval; each call captures
 its own retained request and budget. Web results use the bounded evidence projection above.

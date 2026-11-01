@@ -11,7 +11,10 @@ export function ContextWindowMeter({ profile, generating, runs: suppliedRuns }: 
   const { t, i18n } = useTranslation('chat');
   const sessionId = useCogitaStore((state) => state.currentSession?.session_id);
   const runs = useCogitaStore((state) => state.runs);
+  const stepsByRunId = useCogitaStore((state) => state.stepsByRunId);
   const usage = latestContextUsage(suppliedRuns ?? runs, sessionId, profile);
+  const compacting = (suppliedRuns ?? runs).some((run) => run.session_id === sessionId && run.status === 'RUNNING'
+    && (suppliedRuns ? run.steps : stepsByRunId[run.run_id] ?? run.steps)?.some((step) => step.kind === 'compaction' && step.status === 'running'));
   const configured = configuredContextWindow(profile);
   const [open, setOpen] = useState(false);
   const pressed = useRef(false);
@@ -38,7 +41,7 @@ export function ContextWindowMeter({ profile, generating, runs: suppliedRuns }: 
     </HoverCardTrigger>
     <HoverCardContent side="top" align="end" className="context-meter-card">
       <p className="font-medium">{t('contextMeter.title')}</p>
-      {generating ? <p className="text-muted-foreground">{t('contextMeter.generating')}</p> : null}
+      {generating ? <p className="text-muted-foreground">{t(compacting ? 'contextMeter.compacting' : 'contextMeter.generating')}</p> : null}
       <p className="context-meter-value">{label}</p>
       <dl>
         <div><dt>{t('contextMeter.output')}</dt><dd>{usage ? number(usage.budget.output_tokens) : '—'}</dd></div>

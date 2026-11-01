@@ -15,7 +15,7 @@ export type RunStatus =
 
 export type RunKind = 'chat' | 'tool';
 
-export type RunStepKind = 'context' | 'model' | 'save' | 'approval' | 'tool';
+export type RunStepKind = 'context' | 'model' | 'compaction' | 'save' | 'approval' | 'tool';
 
 export type RunStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 

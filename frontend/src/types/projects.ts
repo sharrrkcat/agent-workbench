@@ -1,13 +1,13 @@
-import type { ContextPolicy } from './chat';
+import type { ContextPolicy, BoundedContextPolicy } from './chat';
 
 type ProjectSettings = {
   name: string;
-  context_policy: ContextPolicy;
   model_profile_id: string | null;
   temperature: number | null;
 };
 
 export type WorkspaceInput = ProjectSettings & {
+  context_policy: ContextPolicy;
   kind: 'workspace';
   agent_persona_id: string;
   cogita_persona_id: string;
@@ -18,6 +18,7 @@ export type WorkspaceInput = ProjectSettings & {
 };
 
 export type TimelineInput = ProjectSettings & {
+  context_policy: BoundedContextPolicy;
   kind: 'timeline';
   character_persona_id: string;
   user_persona_id: string;
@@ -25,6 +26,7 @@ export type TimelineInput = ProjectSettings & {
 };
 
 export type QQBotInput = ProjectSettings & {
+  context_policy: BoundedContextPolicy;
   kind: 'qqbot'; bot_account: string; admin_qq: string | null; websocket_url: string; access_token?: string;
   connection_enabled: boolean; agent_persona_id: string | null; system_prompt: string;
   reasoning: boolean; group_reply_mode: 'keyword'; keywords: string[]; batch_message_limit: number;

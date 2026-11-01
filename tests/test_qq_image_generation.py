@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from ai_workbench.core.attachments import attachments_root, resolve_attachment_uri
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQMediaAsset
 from tests.model_fixtures import configure_model
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project

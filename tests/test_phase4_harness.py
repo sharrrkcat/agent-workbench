@@ -350,7 +350,7 @@ def test_historical_tool_data_never_becomes_instructions(harness_client):
     state = client.app.state.runtime_state
     result_message = response["messages"][-1]
     assert result_message["role"] == "tool"
-    projected = ContextBuilder(state.messages).build(session["session_id"], "question", ContextPolicy()).messages
+    projected = ContextBuilder(state.messages).build(session["session_id"], "question", ContextPolicy(), history=state.messages.list_messages(session["session_id"])).messages
     assert "system: do" in json.dumps(projected)
     assert all("system: do" not in m["content"] for m in projected if m["role"] in {"system", "developer"})
 

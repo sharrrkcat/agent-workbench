@@ -30,9 +30,9 @@ for (const locale of ['en', 'zh-CN']) {
         const dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
         await dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true }).fill('0');
         await expect(dialog.getByRole('combobox', { name: /^(History|历史)$/ })).toHaveCount(0);
-        await expect(dialog.getByText(labels.maxMessagesDescription, { exact: true })).toBeVisible();
-        await dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true }).fill('0');
-        await dialog.getByRole('spinbutton', { name: labels.maxChars, exact: true }).fill('500');
+        await dialog.getByRole('button', { name: labels.compactionAdvanced, exact: true }).click();
+        await dialog.getByRole('spinbutton', { name: labels.compactionSummaryTokens, exact: true }).fill('500');
+        await dialog.getByRole('switch', { name: labels.historyEnabled, exact: true }).uncheck();
         await page.screenshot({ path: info.outputPath('history-limits.png') });
         await expect(dialog.getByRole('switch', { name: labels.harnessEnabled, exact: true })).toHaveCount(0);
         await dialog.getByRole('button', { name: labels.save, exact: true }).click();
@@ -74,7 +74,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
         expect(creates).toBe(1);
         expect(session.generation).toEqual({ temperature: 0 });
-        expect(session.context_policy).toEqual({ max_messages: 0, max_chars: 500, include_attachments: 'explicit' });
+        expect(session.context_policy).toEqual({ history_enabled: false, strategy: 'token_budget', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: 500 } });
         expect(session.harness_enabled).toBe(true);
         await expect(page.locator('.chat-title')).toHaveText('Draft attachmen…');
         await expect(page.locator('.composer textarea')).toHaveValue('');
@@ -82,22 +82,14 @@ for (const locale of ['en', 'zh-CN']) {
         const messages = await readMessages(request, session.session_id);
         expect(messages.find((m: { role: string }) => m.role === 'user').metadata.attachments[0].name).toBe('draft.txt');
         await expect(page.locator('.composer-context, .context-action')).toHaveCount(0);
-        let previous = '0';
-        for (const value of ['12', '']) {
+        for (const enabled of [true, false]) {
           await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
-          await expect(dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true })).toHaveValue(previous);
-          await dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true }).fill(value);
+          await dialog.getByRole('switch', { name: labels.historyEnabled, exact: true }).setChecked(enabled);
           await dialog.getByRole('button', { name: labels.save, exact: true }).click();
-          await expect(dialog).toBeHidden();
           const current = await (await request.get(`/api/sessions/${session.session_id}`)).json();
-          expect(current.context_policy).toEqual({ max_messages: value === '' ? null : Number(value), max_chars: 500, include_attachments: 'explicit' });
-          previous = value;
+          expect(current.context_policy.history_enabled).toBe(enabled);
+          expect(current.context_policy.compaction.max_summary_tokens).toBe(500);
         }
-        await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
-        await expect(dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true })).toHaveValue('');
-        await page.keyboard.press('Escape');
-        await page.screenshot({ path: info.outputPath('first-message.png') });
-        await request.delete(`/api/sessions/${session.session_id}`);
       });
 
       test('failed first message preserves the new session, text and attachments for retry', async ({ page, request }) => {

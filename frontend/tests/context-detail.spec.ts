@@ -104,7 +104,7 @@ for (const locale of ['en', 'zh-CN']) {
         const firstRunId = await page.locator('article[data-run-id]').first().getAttribute('data-run-id');
         const firstRun = await (await request.get(`/api/runs/${firstRunId}`)).json();
         expect((await request.patch(`/api/sessions/${firstRun.session_id}`, { data: { context_policy: {
-          max_messages: 1, max_chars: null, include_attachments: 'explicit',
+          history_enabled: true, include_attachments: 'explicit', compaction: { enabled: false },
         } } })).ok()).toBe(true);
         await input.fill('second context');
         await input.press('Enter');
@@ -114,7 +114,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('article[data-run-id]').last().getByRole('button', { name: title, exact: true })).toBeVisible();
         await trigger.click();
         const dialog = page.getByRole('dialog', { name: title });
-        const history = dialog.locator('[data-context-source=history]');
+        const history = dialog.locator('[data-context-source=history]').last();
         await expect(history.locator('.context-message-label')).toHaveText(zh ? '消息 #2' : 'Message #2');
         await expect(dialog.locator('[data-context-source=current_input] .context-message-label')).toHaveText(zh ? '消息 #3' : 'Message #3');
         await history.click();

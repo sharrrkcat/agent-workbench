@@ -133,14 +133,23 @@ associated replies; user edit removes later conversation and associated runs, re
 History mutations require an idle session. Edits require content and attachment_ids (the unique subset of original attachments to retain, in original order); [] removes all attachments. Empty text with no retained attachments returns EMPTY_MESSAGE; invalid ids return INVALID_ATTACHMENTS. Editing cannot add attachments.
 SQLite pruning, text, attachments, timestamps and history_version commit together. Responses and history_pruned events return deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
 
-ContextBuilder projects current-session history with max_messages (0..10000), max_chars (1..1000000), defaulting to 100 messages / 100000 characters, and include_attachments=explicit. Explicit null retains all
-eligible history; zero messages excludes history; positive N keeps newest N excluding current input.
-These character limits govern history, not the active tool loop. Web tool history uses the same bounded plain-text evidence projection as live tool results; full page caches never enter context.
-Characters deduct current input first and retain whole recent messages; oversized current input
-stays with a warning. mode/source_message_id return 422; Workspace inherits/overrides the whole
-policy. Agent prompts are inserted independently of history limits. Provenance follows projection;
-[context snapshots](runs-streaming.md#context-detail) preserve each call privately, outside metadata.
-SQLite reads eligible history in batches of 128 and stops at count/character limits; zero skips history reads. Window-external exclusions aggregate counts, including empty projections with no message limit; turn identities use identity-only lookups. Existing explicit policies are unchanged. Both limits null may grow memory with history; character-only limits do not bound image-only history, and row counts do not bound single-message size.
+Ordinary/Workspace context_policy defaults to history_enabled=true, strategy=token_budget, include_attachments=explicit,
+compaction={enabled:true, trigger_percent:80, target_percent:55, max_summary_tokens:null} and message_window={max_messages:100}.
+strategy accepts token_budget or message_window; the message count is a strict integer from 1 to 10000.
+Percentages are strict integers satisfying 0 < target < trigger < 100; a summary cap is null or a positive integer.
+Top-level max_messages/max_chars, mode and source_message_id are rejected. Workspace inherits/overrides the whole policy.
+History off skips history/checkpoint reads and injection, retaining the saved checkpoint. Automatic compaction off
+reuses the checkpoint and permits token pruning of recent raw turns. QQ/Timeline retain their independent bounded policy.
+Message-window strategy selects up to N eligible projected historical messages, excluding current input. If its oldest boundary
+splits a turn, that entire turn is omitted; final token pruning can retain fewer messages. It neither reads, injects nor updates a checkpoint.
+Switching back to token_budget validates and reuses the checkpoint. No summary failure automatically changes strategy.
+Session, draft and Workspace settings share a strategy selector; message mode shows its count, token mode shows compaction controls.
+Inactive values are retained; advanced values are collapsed and history controls are disabled with history off.
+Instructions, Persona, Project and Knowledge remain independent of historical projection.
+SQLite reads eligible history in pages of 128 using stable timestamp/message-id boundaries and identity-only turn lookups.
+Only candidate recent history and a summary batch are retained; a single stored message can still be large.
+Eligible user input from failed/cancelled turns remains; errors and incomplete assistant output are excluded.
+Web history reuses bounded evidence text; full page caches never enter context. Original messages/attachments are unchanged.
 
 Every internal model call enforces input tokens + output reserve + margin <= effective window.
 Runs snapshot the configured window and output reserve. Unset maximum output reserves
@@ -148,14 +157,34 @@ min(4096, floor(configured window / 4)) and sends it as max_tokens; explicit lim
 For providers that count reasoning within completion tokens, that reserve covers reasoning and answer together.
 Local native counts reserve 32 tokens; provider estimates reserve max(128, ceil(window * 0.1)).
 Missing provider windows return CONTEXT_WINDOW_REQUIRED. Counting covers the final translated
-request, including images and tool definitions, within the existing model lease. Oldest history
-turns are removed as complete groups after message/character filters, without restoring exclusions
-or changing stored messages. A bounded suffix search recounts the final selection. Current input,
+request, including images and tool definitions, within the existing model lease. Oldest raw history
+turns can be removed as complete groups in message-window mode, when automatic compaction is off or during later Harness calls.
+A bounded suffix search recounts the final selection. Summaries, current input,
 configured instructions, Knowledge and active run tool records stay intact. If they do not fit,
 CONTEXT_WINDOW_EXCEEDED ends the call before dispatch. Counting failures return CONTEXT_COUNT_FAILED;
 these request failures do not mark the model broken. Sources, token_limit exclusions and attachment
-references describe the retained request. Summaries, tool-result compression and draft previews
-remain unimplemented.
+references describe the retained request.
+
+For token-budget strategy, before the first answer call ContextCompactionService evaluates B = window - output reserve - margin.
+Above trigger_percent of B it selects a complete recent-turn suffix toward target_percent of B, allowing a soft target.
+It releases counting admission before calling core/models with the selected chat model, non-streaming, temperature zero,
+no tools and capability-aware reasoning off. Summary output defaults to min(2048, max(128, floor(B / 10)));
+explicit caps are never reduced. At most four calls share existing model timeouts and the Harness active-time budget.
+The role-labelled input combines the previous summary and newly covered history, splitting oversized text by summary budget.
+Reasoning, system prompts and injected Knowledge are omitted; images contribute only existing text/descriptions/references.
+Structured Markdown preserves goals, constraints, corrections, facts, open work and sources. It enters as user-role historical data.
+Only after all batches finish, final recount fits and tokens decrease is one private checkpoint atomically replaced.
+It stores stable coverage, history_version, attachment policy, model/step identity, format, time and counts.
+Generation holds no database transaction; commit checks history_version. Edit/delete/retry invalidation shares the history transaction.
+Attachment-policy mismatch discards the checkpoint; model/percentage changes re-evaluate the same memory.
+Empty, length, tool-calling, timed-out, over-four-call or non-shrinking summaries preserve the prior checkpoint.
+If the original request fits, context_compaction_failed is retained as a diagnostic and answering continues; otherwise
+CONTEXT_COMPACTION_FAILED stops the run. Cancellation always terminates. [Context detail](runs-streaming.md#context-detail)
+retains each dispatched summary request and the summary actually used by the answer.
+Manual compaction, active-tool transcript summaries, QQ/Timeline compaction, overflow retry and draft previews are deferred.
+Summaries are lossy; model-specific factual retention and accumulated drift require representative real-model acceptance.
+Qwen3.5-0.8B GGUF can exhaust a 512-token summary cap; three consecutive successful summaries with factual-retention
+acceptance remain outstanding. A successful individual compression or mocked test does not establish that model's long-conversation quality.
 
 The [context meter](runs-streaming.md#context-detail) displays actual per-call input plus output usage beside the model selector. Input reflects history limits and token trimming; policy edits affect the next request, not recorded usage.
 
@@ -205,13 +234,13 @@ name, size and compact metadata, never image data URLs. Orphan cleanup is an
 explicit separate operation and considers current Persona avatars, not message/run avatar snapshots.
 
 User images persist only as metadata.attachments references; message parts do not duplicate them.
-ContextBuilder selects history by message count and character budget before reading images.
-Image bytes do not consume the text budget. History projection keeps images with their user message. Image-only messages remain eligible history.
+History selection uses the configured strategy; image inputs participate in final token counting.
+History projection keeps images with their user message. Image-only messages remain eligible history.
 Included references become OpenAI image_url parts immediately before inference, including historical follow-ups.
 Before first inference, local image support is checked unless skipped in request_options. Unknown support and provider inputs pass through.
 Explicitly unsupported images are omitted from this request, including retained history; empty historical image messages are omitted. Original messages/attachments stay intact. The current user bubble receives an images_ignored warning; if the current input has no remaining text, images_require_text ends the run as FAILED without main/auxiliary generation.
 Missing retained images return ATTACHMENT_NOT_FOUND; corrupt local images and request limits follow
-[models](models.md#external-inference-api). Excluded or pruned images are never read.
+[models](models.md#external-inference-api). Images outside history/attachment/capability selection are not read; token counting can inspect candidate images that are later pruned.
 
 Text-file context obeys the enable switch and per-file/per-message bounds.
 Other attachments contribute bounded descriptive markers. include_attachments=none excludes all image inputs.

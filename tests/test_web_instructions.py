@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from ai_workbench.core.harness import agent_loop
+from ai_workbench.core import chat_runner
 from ai_workbench.core.instructions import date_instruction
 from ai_workbench.core.context_snapshot import append_system_block, prepend_system_block
 from ai_workbench.core.models.context_budget import ChatContextBudget
@@ -33,7 +33,7 @@ def test_date_and_weekday_language(day, english, chinese):
 def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypatch, language, project, streaming, tools):
     client, upstream, _ = web_env
     configure_model(client, request_options={"streaming": streaming})
-    monkeypatch.setattr(agent_loop, "utc_now", lambda: datetime(2026, 10, 29, 12, tzinfo=timezone.utc))
+    monkeypatch.setattr(chat_runner, "utc_now", lambda: datetime(2026, 10, 29, 12, tzinfo=timezone.utc))
     ok(client.patch(f"/api/personas/{COGITA_PERSONA_ID}", json={"system_prompt": "AGENT😀\nSecond line"}))
     ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "USER background"}))
     if project:
@@ -86,7 +86,7 @@ def test_date_and_language_remain_fixed_across_approval(web_env, monkeypatch):
     register_approval_tool(state.tool_registry)
     session = configure(client, harness_enabled=True)
     clock = [datetime(2026, 10, 29, 12, tzinfo=timezone.utc)]
-    monkeypatch.setattr(agent_loop, "utc_now", lambda: clock[0])
+    monkeypatch.setattr(chat_runner, "utc_now", lambda: clock[0])
     upstream.turns = [completion(tool_call("test_approval", {"value": "pause"})), completion(content="resumed")]
     payload = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Research"}, headers={"X-UI-Language": "zh-CN"}))
     assert payload["run"]["status"] == "WAITING_FOR_USER"

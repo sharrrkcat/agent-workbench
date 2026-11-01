@@ -82,7 +82,7 @@ class WorkspaceSession(SessionBase):
 
     @field_serializer("overrides")
     def serialize_overrides(self, value: WorkspaceOverrides) -> dict[str, Any]:
-        return value.model_dump(exclude_none=True)
+        return {key: item for key, item in value.model_dump().items() if item is not None}
 
 
 # Timeline is a reserved identity, not a constructible conversation in this release.

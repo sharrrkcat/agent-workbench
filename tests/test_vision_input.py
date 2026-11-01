@@ -184,8 +184,8 @@ def test_history_limits_keep_images_with_their_messages(limit, history_images):
     first = store.add_message("s", "user", "first", metadata={"attachments": [{"type": "image", "uri": "local://attachments/aaaa.png"}]})
     store.add_message("s", "assistant", "answer", speaker_name="Alice")
     current = store.add_message("s", "user", "", metadata={"attachments": [{"type": "image", "uri": "local://attachments/bbbb.png"}]})
-    policy = ContextPolicy(max_messages=limit)
-    built = ContextBuilder(store).build("s", "", policy, current_message_id=current.message_id)
+    policy = ContextPolicy(history_enabled=limit != 0)
+    built = ContextBuilder(store).build("s", "", policy, current_message_id=current.message_id, history=([first, store.list_messages("s")[1]] if limit is None else [first, store.list_messages("s")[1]][-limit:] if limit else []))
     serialized = json.dumps(built.messages)
     assert serialized.count('"attachment_image"') == history_images + 1
     assert "bbbb.png" in serialized
@@ -199,14 +199,14 @@ def test_budgeting_and_attachment_switch_happen_before_reading_images(tmp_path, 
     store = MessageStore()
     first = store.add_message("s", "user", "describe picture", metadata={"attachments": [saved]})
     builder = ContextBuilder(store)
-    selected = builder.build("s", "again", ContextPolicy(max_messages=1, max_chars=200))
+    selected = builder.build("s", "again", ContextPolicy(), history=[first])
     resolved = asyncio.run(resolve_context_images(selected.messages, max_image_bytes=10000))
     assert resolved[0]["content"][-1]["image_url"]["url"].startswith("data:image/png;base64,")
     path = resolve_attachment_uri(saved["uri"])
     path.unlink()
     # Neither a character-pruned image nor excluded attachments should be opened.
-    for policy in (ContextPolicy(max_messages=0), ContextPolicy(max_chars=5), ContextPolicy(include_attachments="none")):
-        messages = builder.build("s", "again", policy).messages
+    for policy in (ContextPolicy(history_enabled=False), ContextPolicy(include_attachments="none")):
+        messages = builder.build("s", "again", policy, history=[first]).messages
         assert asyncio.run(resolve_context_images(messages, max_image_bytes=10000)) == messages
     with pytest.raises(ModelError) as error:
         asyncio.run(resolve_context_images(selected.messages, max_image_bytes=10000))

@@ -1,5 +1,5 @@
 import type { Attachment } from './messages';
-import type { ContextPolicy } from './chat';
+import type { ContextPolicy, BoundedContextPolicy } from './chat';
 
 export type ContextBudgetStats = {
   configured_window_tokens: number; window_tokens: number; input_budget_tokens: number;
@@ -9,9 +9,10 @@ export type ContextBudgetStats = {
 export type ContextSummary = { available: true; message_count: number; tool_count: number; image_count: number;
   budget?: ContextBudgetStats | null };
 export type ContextSourceKind = 'system' | 'instruction' | 'agent_persona' | 'project_prompt' | 'cogita_persona' | 'knowledge' |
-  'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime';
+  'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary';
 export type ContextAttachment = Pick<Attachment, 'id' | 'name' | 'type' | 'mime_type' | 'size' | 'uri'>;
 export type ContextSource = {
+  compaction?: { checkpoint_id: string; boundary_message_id: string; covered_messages: number; model_profile_id: string; step_id: string } | null;
   id: string; kind: ContextSourceKind; parent_id?: string | null;
   message_index?: number | null; part_index?: number | null;
   field?: 'message' | 'content' | 'tools'; start?: number; end?: number | null;
@@ -23,7 +24,7 @@ export type ContextExclusion = {
   kind: ContextSourceKind;
   reason: 'ineligible_history' | 'message_limit' | 'character_limit' | 'token_limit' | 'empty' | 'attachments_disabled' |
     'images_unsupported' | 'qq_image_unavailable' | 'qq_history_image' | 'qq_system_face' | 'qq_image_limit' |
-    'file_text_disabled' | 'file_text_limit' | 'no_bindings' | 'no_results' | 'retrieval_failed';
+    'file_text_disabled' | 'file_text_limit' | 'no_bindings' | 'no_results' | 'retrieval_failed' | 'compacted';
   reference_id?: string | null; name?: string | null; count?: number;
 };
 type FunctionCall = { id: string; type?: 'function'; function: { name: string; arguments: string } };
@@ -49,7 +50,7 @@ export type ContextRequest = {
 export type ContextDetail = {
   reference_numbers?: Record<string, number>;
   run_id: string; step_id: string; captured_at: string; model_profile_id: string; model_alias: string;
-  source_type: 'local' | 'provider'; request: ContextRequest; policy: ContextPolicy;
+  source_type: 'local' | 'provider'; request: ContextRequest; policy: ContextPolicy | BoundedContextPolicy;
   sources: ContextSource[]; exclusions: ContextExclusion[]; attachment_ids: string[];
   budget?: ContextBudgetStats | null;
 };

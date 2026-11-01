@@ -9,7 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from ai_workbench.core.models.schema import (
     ChatRequestOptions, GenerationParameters, ResponseFormat, StreamOptions, TextPart, ToolCall, ToolChoice, ToolSpec,
 )
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy, BoundedContextPolicy
+from ai_workbench.core.schema.compaction import CompactionReference
 from ai_workbench.core.schema.context_budget import ContextBudgetStats
 from ai_workbench.core.time import isoformat_utc
 
@@ -69,7 +70,7 @@ class SnapshotRequest(GenerationParameters):
 
 SourceKind = Literal[
     "system", "instruction", "agent_persona", "project_prompt", "cogita_persona", "knowledge", "knowledge_snippet",
-    "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime",
+    "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime", "summary",
 ]
 
 
@@ -90,6 +91,7 @@ class ContextSource(SnapshotModel):
     source_id: str | None = None
     role: str | None = None
     attachment: ContextAttachment | None = None
+    compaction: CompactionReference | None = None
 
 
 class ContextExclusion(SnapshotModel):
@@ -97,7 +99,7 @@ class ContextExclusion(SnapshotModel):
     reason: Literal[
         "ineligible_history", "message_limit", "character_limit", "token_limit", "empty", "attachments_disabled",
         "images_unsupported", "qq_image_unavailable", "qq_history_image", "qq_system_face", "qq_image_limit",
-        "file_text_disabled", "file_text_limit", "no_bindings", "no_results", "retrieval_failed",
+        "file_text_disabled", "file_text_limit", "no_bindings", "no_results", "retrieval_failed", "compacted",
     ]
     reference_id: str | None = None
     name: str | None = None
@@ -125,7 +127,7 @@ class ContextSnapshot(SnapshotModel):
     model_alias: str
     source_type: Literal["local", "provider"]
     request: SnapshotRequest
-    policy: ContextPolicy
+    policy: ContextPolicy | BoundedContextPolicy
     sources: list[ContextSource]
     exclusions: list[ContextExclusion]
     attachment_ids: list[str]

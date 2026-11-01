@@ -42,6 +42,18 @@ ACTIVE_BUDGET_SECONDS = 300
 TERMINAL_STATUSES = {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}
 
 
+def request_tools(registry, allowed, *, qq=False):
+    tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
+             for spec in (registry.get(name) for name in allowed)]
+    for tool in tools:
+        if tool["function"]["name"] in WEB_TOOL_NAMES:
+            tool["function"]["description"] += " " + WEB_CONTENT_INSTRUCTION
+            if not qq:
+                tool["function"]["description"] += " " + CITATION_INSTRUCTION
+            break
+    return tools
+
+
 @dataclass
 class _Budget:
     spent: float
@@ -73,12 +85,12 @@ class HarnessAgentLoop:
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
                   user: MessageSchema, context: list[dict[str, Any]], trace, max_image_bytes: int, active_seconds: float = 0.0,
                   reasoning: bool = True, ui_language: UiLanguage = "en",
-                  first_metrics: LLMCallMetrics | None = None) -> RunResult:
+                  first_metrics: LLMCallMetrics | None = None, web_date: str | None = None) -> RunResult:
         state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
                              qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
                              max_image_bytes=max_image_bytes,
                              web_budget=self.web_tools.new_budget() if self.web_tools else WebRunBudget(),
-                             web_date=utc_now().astimezone().date().isoformat())
+                             web_date=web_date or utc_now().astimezone().date().isoformat())
         return await self._drive(session=session, config=config, run=run, user=user, state=state, first_metrics=first_metrics)
 
     async def direct(self, *, session: Any, config: ResolvedChatConfig, run: Any,
@@ -229,14 +241,7 @@ class HarnessAgentLoop:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
         allowed = self._allowed_tools(config, state)
-        tools = [{"type": "function", "function": {"name": spec.name, "description": spec.description, "parameters": spec.parameters}}
-                 for spec in (self.registry.get(name) for name in allowed)]
-        for tool in tools:
-            if tool["function"]["name"] in WEB_TOOL_NAMES:
-                tool["function"]["description"] += " " + WEB_CONTENT_INSTRUCTION
-                if session.kind != "qqbot":
-                    tool["function"]["description"] += " " + CITATION_INSTRUCTION
-                break
+        tools = request_tools(self.registry, allowed, qq=session.kind == "qqbot")
         base_messages = await resolve_context_images(state.base_messages,
                                                      max_image_bytes=state.max_image_bytes)
         trace = state.context_trace
@@ -263,7 +268,9 @@ class HarnessAgentLoop:
         metrics = first_metrics or LLMCallMetrics()
         try:
             try:
-                context_budget = ChatContextBudget(config.context_limits, trace)
+                context_budget = ChatContextBudget(config.context_limits, trace,
+                    allow_pruning=session.kind == "qqbot" or state.rounds > 0 or config.context_policy.strategy == "message_window"
+                    or not config.context_policy.compaction.enabled)
                 capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy, budget=context_budget)
                 calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture, context_budget),
                                                timeout=budget.check())

@@ -1,4 +1,16 @@
 export type ContextPolicy = {
+  history_enabled: boolean;
+  strategy: 'token_budget' | 'message_window';
+  include_attachments: 'none' | 'explicit';
+  compaction: { enabled: boolean; trigger_percent: number; target_percent: number; max_summary_tokens: number | null };
+  message_window: { max_messages: number };
+};
+
+export const defaultContextPolicy = (): ContextPolicy => ({ history_enabled: true, strategy: 'token_budget', include_attachments: 'explicit',
+  message_window: { max_messages: 100 },
+  compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: null } });
+
+export type BoundedContextPolicy = {
   max_messages: number | null;
   max_chars: number | null;
   include_attachments: 'none' | 'explicit';
@@ -70,7 +82,7 @@ export type EffectiveChatConfig = {
   model_profile_id: string | null;
   model_source: 'session' | 'project' | 'global';
   user_persona_id: string;
-  context_policy: ContextPolicy;
+  context_policy: ContextPolicy | BoundedContextPolicy;
   generation: GenerationParameters;
   reasoning: boolean;
   harness_enabled: boolean;

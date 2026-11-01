@@ -219,8 +219,8 @@ def test_migration_removes_only_retired_selections_and_derived_cache(tmp_path):
     sentinel = tmp_path / "data" / "attachments" / "keep.txt"
     sentinel.parent.mkdir(parents=True)
     sentinel.write_text("keep")
-    migrations.upgrade(engine)
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.WEB_QUALITY_REVISION)
+    migrations.upgrade(engine, migrations.WEB_QUALITY_REVISION)
     with Session(engine) as db:
         assert json.loads(db.get(SessionRecord, "ordinary").configuration_json)["tools_allowed"] == ["web_search"]
         assert json.loads(db.get(ProjectRecord, "p").configuration_json)["tools_allowed"] == ["web_search"]

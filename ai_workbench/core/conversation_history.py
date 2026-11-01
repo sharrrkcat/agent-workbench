@@ -45,6 +45,7 @@ class MemoryHistoryStore:
             self.messages.update_message(updated)
         session = self.sessions.get_session(session_id)
         self.sessions.update_session(session_id, {"history_version": session.history_version + 1})
+        self.sessions.discard_context_checkpoint(session_id)
 
 
 class ConversationHistory:

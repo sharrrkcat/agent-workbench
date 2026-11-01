@@ -9,7 +9,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from sqlmodel import Session as DbSession, delete, select
-from sqlalchemy import func, cast, Integer, or_, tuple_
+from sqlalchemy import func, cast, Integer, or_, tuple_, update
 from sqlalchemy.orm import defer
 from ai_workbench.db.history_queries import eligible_history, message_key
 
@@ -23,12 +23,13 @@ from ai_workbench.core.session import Session, SessionBase, parse_session
 from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settings_patch_updates
 from ai_workbench.core.time import utc_now, ensure_utc
 from ai_workbench.core.models.schema import ModelProfile
+from ai_workbench.core.schema.compaction import ContextCheckpoint
 from ai_workbench.core.worldbook import Worldbook, WorldbookEntry, WorldbookSettings, sync_worldbook_settings_patch
 from ai_workbench.db.models import (
     AppMetadataRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord,
     KnowledgeSettingsRecord, KnowledgeSourceRecord, MessageRecord,
     RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord,
-    WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord,
+    WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord, ContextCheckpointRecord,
 )
 
 
@@ -46,6 +47,26 @@ def _load(value: str | None, fallback: Any) -> Any:
 class SqlSessionStore:
     def __init__(self, engine) -> None:
         self.engine = engine
+
+    def get_context_checkpoint(self, session_id: str) -> ContextCheckpoint | None:
+        with DbSession(self.engine) as db:
+            row = db.get(ContextCheckpointRecord, session_id)
+            return ContextCheckpoint.model_validate_json(row.checkpoint_json) if row else None
+
+    def save_context_checkpoint(self, checkpoint: ContextCheckpoint) -> bool:
+        with DbSession(self.engine) as db:
+            matched = db.execute(update(SessionRecord).where(SessionRecord.session_id == checkpoint.session_id,
+                SessionRecord.history_version == checkpoint.history_version).values(history_version=SessionRecord.history_version))
+            if matched.rowcount != 1:
+                return False
+            db.merge(ContextCheckpointRecord(session_id=checkpoint.session_id, checkpoint_json=checkpoint.model_dump_json()))
+            db.commit()
+        return True
+
+    def discard_context_checkpoint(self, session_id: str) -> None:
+        with DbSession(self.engine) as db:
+            db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id == session_id))
+            db.commit()
 
     def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
         session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
@@ -96,6 +117,7 @@ class SqlSessionStore:
             row = db.get(SessionRecord, session_id)
             if row is None: raise KeyError(f"unknown session id: {session_id}")
             delete_session_web_pages(db, session_id)
+            db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id == session_id))
             db.delete(row); db.commit()
 
     def list_sessions(self) -> list[Session]:
@@ -172,21 +194,27 @@ class SqlMessageStore:
     def list_messages(self, session_id: str) -> list[MessageSchema]:
         with DbSession(self.engine) as db: return [_message(row) for row in db.exec(select(MessageRecord).where(MessageRecord.session_id == session_id).order_by(MessageRecord.created_at, MessageRecord.message_id)).all()]
 
-    def iter_context_history(self, session_id: str, exclude_id: str | None):
+    def iter_context_history(self, session_id: str, exclude_id: str | None, *, after=None, before=None, ascending=False):
         statement = select(MessageRecord).where(MessageRecord.session_id == session_id, eligible_history())
         if exclude_id:
             statement = statement.where(MessageRecord.message_id != exclude_id)
-        before = None
+        if after is not None:
+            statement = statement.where(message_key() > after)
+        if before is not None:
+            statement = statement.where(message_key() < before)
+        cursor = None
         while True:
-            query = statement if before is None else statement.where(message_key() < before)
+            query = statement if cursor is None else statement.where(message_key() > cursor if ascending else message_key() < cursor)
             with DbSession(self.engine) as db:
-                rows = db.exec(query.order_by(MessageRecord.created_at.desc(), MessageRecord.message_id.desc()).limit(128)).all()
+                order = (MessageRecord.created_at, MessageRecord.message_id) if ascending else (
+                    MessageRecord.created_at.desc(), MessageRecord.message_id.desc())
+                rows = db.exec(query.order_by(*order).limit(128)).all()
                 batch = [_message(row) for row in rows]
             if not batch:
                 return
             for message in batch:
                 yield message
-            before = (batch[-1].created_at, batch[-1].message_id)
+            cursor = (batch[-1].created_at, batch[-1].message_id)
 
     def context_history_counts(self, session_id: str, exclude_id: str | None) -> tuple[int, int]:
         statement = select(func.count(), func.coalesce(func.sum(cast(eligible_history(), Integer)), 0)).select_from(MessageRecord).where(
@@ -267,6 +295,7 @@ class SqlHistoryStore:
                 db.add(row)
             session.updated_at = utc_now()
             session.history_version += 1
+            db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id == session_id))
             db.add(session)
             if transaction is None:
                 db.commit()
@@ -325,7 +354,7 @@ class SqlRunStore:
             row = db.get(RunStepRecord, step_id)
             if row is None:
                 raise KeyError(step_id)
-            if row.kind != "model" or row.context_snapshot_json is not None:
+            if row.kind not in {"model", "compaction"} or row.context_snapshot_json is not None:
                 raise ValueError("Context requires a model step without an existing snapshot")
             row.context_snapshot_json = snapshot.model_dump_json(exclude_unset=True, by_alias=True)
             row.metadata_json = _dump({**json.loads(row.metadata_json), "context": snapshot.summary().model_dump()})

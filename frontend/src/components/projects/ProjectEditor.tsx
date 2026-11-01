@@ -16,9 +16,10 @@ import { usePersonasStore } from '../../store/usePersonasStore';
 import { useProjectsStore } from '../../store/useProjectsStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Persona, PersonaCollection } from '../../types/chat';
+import { defaultContextPolicy } from '../../types/chat';
 import type { Project as AnyProject, ProjectInput as AnyProjectInput, ProjectKind as AnyProjectKind } from '../../types/projects';
 import type { HarnessTool } from '../../types/tools';
-import { BindingsField, ContextFields, GenerationFields, ModelField, PersonaAvatar, PersonaField, ToolsField } from '../personas/ConfigurationFields';
+import { BindingsField, ContextFields, BoundedContextFields, GenerationFields, ModelField, PersonaAvatar, PersonaField, ToolsField } from '../personas/ConfigurationFields';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 import { settingsRouteUrl, type SettingsNavigate } from '../settings/navigation';
 
@@ -44,6 +45,7 @@ export function newProjectInput(kind: ProjectKind, personas: Persona[], tools: H
   const common = { name: '', model_profile_id: null, temperature: null,
     context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'explicit' as const } };
   return kind === 'workspace' ? { ...common, kind,
+    context_policy: defaultContextPolicy(),
     agent_persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)?.id || '',
     cogita_persona_id: personas.find((p) => p.collection === 'user')?.id || '',
     harness_enabled: false, tools_allowed: tools.filter((tool) => tool.scope === 'general').map((tool) => tool.name), system_prompt: '', knowledge_base_ids: [],
@@ -187,7 +189,9 @@ function StandardProjectEditor({ project, kind, onSaved, onNavigate, onLeaveGuar
               </>}
               <ModelField profiles={profiles} value={draft.model_profile_id} inheritLabel={t('inheritGlobalModel')}
                 onChange={(id) => setDraft({ ...draft, model_profile_id: id || null })} />
-              <ContextFields value={draft.context_policy} onChange={(value) => setDraft({ ...draft, context_policy: value })} />
+              {draft.kind === 'workspace'
+                ? <ContextFields value={draft.context_policy} onChange={(value) => setDraft({ ...draft, context_policy: value })} />
+                : <BoundedContextFields value={draft.context_policy} onChange={(value) => setDraft({ ...draft, context_policy: value })} />}
               <GenerationFields value={{ temperature: draft.temperature }} onChange={(value) => setDraft({ ...draft, temperature: value.temperature ?? null })} />
               {draft.kind === 'workspace' ? <>
                 <Field orientation="horizontal">

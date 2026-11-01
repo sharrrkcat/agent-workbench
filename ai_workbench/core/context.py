@@ -26,7 +26,7 @@ class ContextBuilder:
         self.message_store = message_store
 
     def build(self, session_id: str, text: str, policy: ContextPolicy | None = None, *,
-              current_message_id: str | None = None) -> ContextBuildResult:
+              current_message_id: str | None = None, history=()) -> ContextBuildResult:
         policy = policy or ContextPolicy()
         current = self._current_text(text, current_message_id)
         current_refs = []
@@ -36,37 +36,18 @@ class ContextBuilder:
         trace = ContextTrace()
         warnings = []
         pairs = []
-        if policy.max_messages != 0:
-            total, eligible = self.message_store.context_history_counts(session_id, current_message_id)
-            allowed = eligible if policy.max_messages is None else min(eligible, policy.max_messages)
-            if total > eligible:
-                trace.exclusions.append(ContextExclusion(kind="history", reason="ineligible_history", count=total - eligible))
-            if eligible > allowed:
-                trace.exclusions.append(ContextExclusion(kind="history", reason="message_limit", count=eligible - allowed))
-            remaining = None if policy.max_chars is None else max(0, policy.max_chars - len(current))
-            history = iter(self.message_store.iter_context_history(session_id, current_message_id))
-            empty_count = 0
-            for position in range(allowed):
-                message = next(history)
+        empty_count = 0
+        if policy.history_enabled:
+            for message in history:
+                if message.message_id == current_message_id or not _eligible(message):
+                    continue
                 projected = _project(message, include_attachments=policy.include_attachments == "explicit")
                 if projected is None:
-                    if policy.max_messages is None:
-                        empty_count += 1
-                    else:
-                        trace.exclusions.append(ContextExclusion(kind="history", reason="empty", reference_id=message.message_id))
+                    empty_count += 1
                     continue
-                length = sum(len(part["text"]) for part in _parts(projected["content"]) if part["type"] == "text")
-                if remaining is not None:
-                    if length > remaining:
-                        trace.exclusions.append(ContextExclusion(kind="history", reason="character_limit", count=allowed - position))
-                        break
-                    remaining -= length
                 pairs.append((message, projected))
-            if empty_count:
-                trace.exclusions.append(ContextExclusion(kind="history", reason="empty", count=empty_count))
-            pairs.reverse()
-        if policy.max_chars is not None and len(current) > policy.max_chars:
-            warnings.append("Current message exceeds the history character budget; current input is retained.")
+        if empty_count:
+            trace.exclusions.append(ContextExclusion(kind="history", reason="empty", count=empty_count))
         projected = [item for _, item in pairs]
         for index, (message, item) in enumerate(pairs):
             _trace_message(trace, message, index, item, "history", policy.include_attachments == "explicit",

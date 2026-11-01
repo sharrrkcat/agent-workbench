@@ -141,7 +141,8 @@
       "attachment": "Attachment",
       "tool_call": "Tool call",
       "tool_result": "Tool result",
-      "tools": "Tool definitions"
+      "tools": "Tool definitions",
+      "summary": "History summary"
     },
     "reasons": {
       "ineligible_history": "Ineligible history message",
@@ -159,14 +160,18 @@
       "token_limit": "Outside the context token budget",
       "qq_history_image": "Historical QQ image replaced with text",
       "qq_system_face": "QQ system face represented by name",
-      "qq_image_limit": "QQ batch image limit reached"
+      "qq_image_limit": "QQ batch image limit reached",
+      "compacted": "Included in summary"
     },
     "empty": "Empty",
     "sourceInfo": "Source information",
     "characters": "Characters",
     "citation": "Citation",
     "sourceId": "Source ID",
-    "baseId": "Knowledge base ID"
+    "baseId": "Knowledge base ID",
+    "tokenPolicy": "History uses the token budget",
+    "messageWindowPolicy": "History message limit: {{limit}} · Token budget enforced",
+    "historyDisabled": "History disabled"
   },
   "commandStatus": {
     "pending": "Queued {{name}}",
@@ -182,7 +187,8 @@
     "model": "Model",
     "save": "Save",
     "approval": "Approval",
-    "tool": "Tool"
+    "tool": "Tool",
+    "compaction": "Compaction"
   },
   "stepStatus": {
     "pending": "Pending",
@@ -205,6 +211,16 @@
   "contextErrors": {
     "required": "Set the model context window before retrying.",
     "exceeded": "Input, instructions, knowledge or active tool data plus the output reserve exceed the context window. Shorten the input, reduce injected content or adjust model settings.",
-    "countFailed": "The model input could not be counted. Generation was not sent. Check the local model and retry."
+    "countFailed": "The model input could not be counted. Generation was not sent. Check the local model and retry.",
+    "compactionFailed": "Context compaction failed and the original history exceeds the model window. Adjust compaction settings and retry."
+  },
+  "compaction": {
+    "call": "Call {{count}} · Compaction",
+    "running": "Compacting context",
+    "completed": "Context compacted",
+    "failed": "Context compaction failed",
+    "checkpoint": "Checkpoint",
+    "covered": "Covered messages",
+    "boundary": "Coverage boundary"
   }
 }

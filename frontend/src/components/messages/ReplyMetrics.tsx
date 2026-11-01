@@ -82,7 +82,7 @@ export function ReplyMetrics({ reply, readOnly = false, deleteAction }: { reply:
                 <li key={step.step_id}>
                   <Separator className="mb-4" />
                   <div className="reply-metrics-call">
-                    <span>{t('metrics.call', { count: index + 1 })}</span>
+                    <span>{t(step.kind === 'compaction' ? 'compaction.call' : 'metrics.call', { count: index + 1 })}</span>
                     <strong>{call?.model || '—'}</strong>
                     {!call?.completed ? <Badge variant="outline">{t('metrics.incomplete')}</Badge> : null}
                   </div>

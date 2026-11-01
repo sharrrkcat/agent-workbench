@@ -1,3 +1,4 @@
+import { defaultContextPolicy } from '../../types/chat';
 import type { CogitaActions, CogitaState } from './state';
 import type { Session } from '../../types/chat';
 import { errorText } from './mergeState';
@@ -148,7 +149,7 @@ export const createSessionActions: CogitaActions<
         : { ...base, kind: 'ordinary', project_id: null,
           persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)!.id,
           model_profile_id: defaultModelId(models.profiles, models.settings?.default_model_profile_id),
-          context_policy: { max_messages: 100, max_chars: 100000, include_attachments: 'explicit' },
+          context_policy: defaultContextPolicy(),
           generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.filter((tool) => tool.scope === 'general').map((tool) => tool.name) } });
     } catch (error) {
       if (get().sessionEpoch === epoch) set({ error: errorText(error) });

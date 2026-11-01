@@ -1,3 +1,4 @@
+from itertools import islice
 from types import SimpleNamespace
 
 import pytest
@@ -69,12 +70,12 @@ def test_bounded_context_does_not_call_full_history_and_preserves_parent(history
         state.messages.add_message(sid, "assistant", "skip", metadata={"incomplete": True})
     if state.engine:
         monkeypatch.setattr(state.messages, "list_messages", lambda _: pytest.fail("Full history read"))
-    built = ContextBuilder(state.messages).build(sid, "current", ContextPolicy(max_messages=2))
+    built = ContextBuilder(state.messages).build(sid, "current", ContextPolicy(), history=reversed(list(islice(state.messages.iter_context_history(sid, None), 2))))
     assert [m["content"] for m in built.messages] == ["148", "149", "current"]
     assert {s.turn_id for s in built.trace.sources if s.kind == "history"} == {parent.message_id}
-    assert {e.reason: e.count for e in built.trace.exclusions} == {"message_limit": 149, "ineligible_history": 5}
+    assert not built.trace.exclusions
     monkeypatch.setattr(state.messages, "context_history_counts", lambda *_: pytest.fail("Zero limit queried history"))
-    assert ContextBuilder(state.messages).build(sid, "current", ContextPolicy(max_messages=0)).messages == [{"role": "user", "content": "current"}]
+    assert ContextBuilder(state.messages).build(sid, "current", ContextPolicy(history_enabled=False)).messages == [{"role": "user", "content": "current"}]
 
 
 def test_sql_reads_are_limited_and_do_not_select_private_snapshots(history_stores):
@@ -93,7 +94,7 @@ def test_sql_reads_are_limited_and_do_not_select_private_snapshots(history_store
         state.reader.page(sid, HistoryQuery(limit=1))
         state.runs.get_run(run.run_id)
         state.runs.list_steps(run.run_id)
-        ContextBuilder(state.messages).build(sid, "next")
+        ContextBuilder(state.messages).build(sid, "next", history=state.messages.iter_context_history(sid, None))
     finally:
         event.remove(state.engine, "before_cursor_execute", capture)
     assert any("LIMIT" in sql and "messagerecord" in sql for sql, _ in captured)
@@ -109,7 +110,7 @@ def test_character_only_window_aggregates_empty_history(history_stores):
     state.messages.add_message(sid, "user", "retained")
     for index in range(260):
         state.messages.add_message(sid, "assistant", parts=[{"id": "r", "type": "reasoning", "text": "private"}])
-    result = ContextBuilder(state.messages).build(sid, "current", ContextPolicy(max_messages=None, max_chars=100))
+    result = ContextBuilder(state.messages).build(sid, "current", ContextPolicy(), history=reversed(list(state.messages.iter_context_history(sid, None))))
     assert [message["content"] for message in result.messages] == ["retained", "current"]
     assert [(item.reason, item.count, item.reference_id) for item in result.trace.exclusions] == [("empty", 260, None)]
 

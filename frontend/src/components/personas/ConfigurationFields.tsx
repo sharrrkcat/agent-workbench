@@ -9,15 +9,17 @@ import {
 import { FieldGroup, Field, FieldLabel, FieldContent, FieldDescription } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { ArrowDown, ArrowUp, ShieldCheck, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useId } from 'react';
 
-import type { ContextPolicy, Persona, SessionGenerationParameters } from '../../types/chat';
+import type { ContextPolicy, BoundedContextPolicy, Persona, SessionGenerationParameters } from '../../types/chat';
 import type { ModelProfile } from '../../types/models';
 import type { HarnessTool } from '../../types/tools';
 import { API_BASE_URL } from '../../api/url';
@@ -134,18 +136,82 @@ export function PersonaField({ label, personas, value, onChange, invalid = false
   );
 }
 
-export function ContextFields({
+export function ContextFields({ value, onChange }: { value: ContextPolicy; onChange: (value: ContextPolicy) => void }) {
+  const { t } = useTranslation('personas');
+  const id = useId();
+  const disabled = !value.history_enabled;
+  const messageLimit = value.message_window.max_messages;
+  const invalidMessageLimit = !Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 10000;
+  const patch = (change: Partial<ContextPolicy['compaction']>) => onChange({ ...value, compaction: { ...value.compaction, ...change } });
+  return <FieldGroup>
+    <Field orientation="horizontal">
+      <Switch id={id + '-history'} checked={value.history_enabled} onCheckedChange={(history_enabled) => onChange({ ...value, history_enabled })} />
+      <FieldLabel htmlFor={id + '-history'}>{t('historyEnabled')}</FieldLabel>
+    </Field>
+    <Field data-disabled={disabled}>
+      <FieldLabel id={id + '-strategy-label'}>{t('historyStrategy')}</FieldLabel>
+      <ToggleGroup variant="segmented" value={[value.strategy]} disabled={disabled} aria-labelledby={id + '-strategy-label'}
+        onValueChange={(next) => { if (next[0]) onChange({ ...value, strategy: next[0] as ContextPolicy['strategy'] }); }}>
+        <ToggleGroupItem value="token_budget">{t('tokenBudget')}</ToggleGroupItem>
+        <ToggleGroupItem value="message_window">{t('messageWindow')}</ToggleGroupItem>
+      </ToggleGroup>
+    </Field>
+    {value.strategy === 'message_window' ? <Field data-invalid={invalidMessageLimit || undefined} data-disabled={disabled}>
+      <FieldLabel htmlFor={id + '-message-limit'}>{t('maxMessages')}</FieldLabel>
+      <Input id={id + '-message-limit'} type="number" required min={1} max={10000} step={1} disabled={disabled}
+        aria-invalid={invalidMessageLimit} value={Number.isNaN(messageLimit) ? '' : messageLimit}
+        onChange={(event) => onChange({ ...value, message_window: { max_messages: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) } })} />
+    </Field> : <>
+    <Field orientation="horizontal" data-disabled={disabled}>
+      <Switch id={id + '-compaction'} disabled={disabled} checked={value.compaction.enabled} onCheckedChange={(enabled) => patch({ enabled })} />
+      <FieldLabel htmlFor={id + '-compaction'}>{t('autoCompaction')}</FieldLabel>
+    </Field>
+    <Collapsible>
+      <CollapsibleTrigger render={<Button variant="ghost" size="sm" />} disabled={disabled}>{t('compactionAdvanced')}</CollapsibleTrigger>
+      <CollapsibleContent>
+        <FieldGroup className="grid gap-4 sm:grid-cols-2">
+          {(['trigger_percent', 'target_percent'] as const).map((key) => {
+            const number = value.compaction[key];
+            const invalid = !Number.isInteger(number) || number <= 0 || number >= 100
+              || value.compaction.target_percent >= value.compaction.trigger_percent;
+            return <Field key={key} data-invalid={invalid || undefined} data-disabled={disabled}>
+              <FieldLabel htmlFor={id + key}>{t(key === 'trigger_percent' ? 'compactionTrigger' : 'compactionTarget')}</FieldLabel>
+              <Input id={id + key} type="number" required min={key === 'trigger_percent' ? value.compaction.target_percent + 1 : 1}
+                max={key === 'target_percent' ? value.compaction.trigger_percent - 1 : 99} step={1} disabled={disabled}
+                aria-invalid={invalid} value={Number.isNaN(number) ? '' : number}
+                onChange={(event) => patch({ [key]: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) })} />
+            </Field>;
+          })}
+          <Field data-disabled={disabled}>
+            <FieldLabel htmlFor={id + '-summary'}>{t('compactionSummaryTokens')}</FieldLabel>
+            <Input id={id + '-summary'} type="number" min={1} step={1} disabled={disabled} placeholder={t('compactionAutomatic')}
+              value={value.compaction.max_summary_tokens ?? ''}
+              onChange={(event) => patch({ max_summary_tokens: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })} />
+          </Field>
+        </FieldGroup>
+      </CollapsibleContent>
+    </Collapsible>
+    </>}
+    <Field orientation="horizontal">
+      <Switch id={id + '-attachments'} checked={value.include_attachments === 'explicit'}
+        onCheckedChange={(enabled) => onChange({ ...value, include_attachments: enabled ? 'explicit' : 'none' })} />
+      <FieldLabel htmlFor={id + '-attachments'}>{t('includeAttachments')}</FieldLabel>
+    </Field>
+  </FieldGroup>;
+}
+
+export function BoundedContextFields({
   value,
   onChange,
   showAttachments = true,
   showDescriptions = true,
   className,
 }: {
-  value: ContextPolicy;
+  value: BoundedContextPolicy;
   showAttachments?: boolean;
   showDescriptions?: boolean;
   className?: string;
-  onChange: (value: ContextPolicy) => void;
+  onChange: (value: BoundedContextPolicy) => void;
 }) {
   const { t } = useTranslation('personas');
   return (

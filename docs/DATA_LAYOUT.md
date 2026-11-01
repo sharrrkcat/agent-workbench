@@ -35,7 +35,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0045_web_filters`; current tables follow the SQLModel schema.
+Alembic head is `0047_context_compaction`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -150,6 +150,12 @@ Attachment checks extract only reference values in SQLite; single-file checks st
 Storage statistics and cleanup process 128 files at a time, without a full orphan list; explicit scan
 responses still contain the requested complete orphan list. Cleanup rechecks references before deletion.
 Large history mutations retain affected ids/attachment names, rather than message bodies.
+
+Revision `0047_context_compaction` adds private context_checkpoints (one JSON checkpoint per session) and the compaction step kind.
+It deletes ordinary/Workspace sessions and their messages, runs, steps, events, bindings and web-cache associations, and resets only
+Workspace context_policy to current defaults. QQ/Timeline configuration, other Project fields, Personas, models/providers and all files survive.
+No old context policy is converted. Checkpoints are excluded from ordinary history reads and invalidate atomically with history mutations.
+Repeating upgrade preserves subsequently created conversations and checkpoints.
 
 ## Runtime files
 

@@ -93,16 +93,17 @@ def test_live_inheritance_overrides_reset_and_model_sources(client_pair):
     assert ok(client.get(f"/api/sessions/{ordinary['session_id']}"))["model_profile_id"] == first["id"]
     persona = ok(client.post("/api/personas", json={"collection": "agent", "name": "Project Agent"}))
     ok(client.patch(f"/api/projects/{project['id']}", json={"agent_persona_id": persona["id"],
-        "model_profile_id": first["id"], "harness_enabled": True, "context_policy": {"max_messages": 0}}))
+        "model_profile_id": first["id"], "harness_enabled": True, "context_policy": {"history_enabled": False}}))
     resolved = ok(client.get(path))["effective"]
-    assert resolved["persona_id"] == persona["id"] and resolved["context_policy"]["max_messages"] == 0
+    assert resolved["persona_id"] == persona["id"] and resolved["context_policy"]["history_enabled"] is False
     assert resolved["model_source"] == "project" and resolved["harness_enabled"]
     assert resolved["generation"]["temperature"] == 0.7 and resolved["generation"]["top_p"] == 0.8
-    overrides = {"persona_id": COGITA_PERSONA_ID, "model_profile_id": second["id"], "context_policy": {"max_messages": 0},
+    overrides = {"persona_id": COGITA_PERSONA_ID, "model_profile_id": second["id"], "context_policy": {"history_enabled": False},
                  "temperature": 0, "harness_enabled": False, "tools_allowed": []}
     overridden = ok(client.patch(path, json={"overrides": overrides}))
-    assert overridden["overrides"]["context_policy"]["max_messages"] == 0
-    assert overridden["effective"]["context_policy"]["max_messages"] == 0
+    assert overridden["overrides"]["context_policy"]["history_enabled"] is False
+    assert overridden["overrides"]["context_policy"]["compaction"]["max_summary_tokens"] is None
+    assert overridden["effective"]["context_policy"]["history_enabled"] is False
     assert overridden["overrides"]["temperature"] == 0
     assert overridden["effective"]["model_source"] == "session"
     assert overridden["effective"]["generation"]["temperature"] == 0
@@ -113,7 +114,7 @@ def test_live_inheritance_overrides_reset_and_model_sources(client_pair):
     reset = ok(client.patch(path, json={"overrides": {key: None for key in overrides}}))
     assert reset["overrides"] == {} and reset["effective"]["generation"]["temperature"] == 1.2
     assert reset["effective"]["sources"]["context"] == "project"
-    assert reset["effective"]["context_policy"]["max_messages"] == 100
+    assert reset["effective"]["context_policy"]["history_enabled"] is True
     ok(client.patch(f"/api/projects/{project['id']}", json={"model_profile_id": None, "temperature": None}))
     resolved = ok(client.get(path))["effective"]
     assert resolved["model_profile_id"] == second["id"] and resolved["generation"]["temperature"] == 0.4
@@ -169,8 +170,8 @@ def test_project_knowledge_context_order_and_session_isolation(client_pair):
     assert bindings["project_knowledge_base_ids"] == ids[1:3] and bindings["effective_knowledge_base_ids"] == ids[:4]
     assert client.delete(f"/api/knowledge/bases/{ids[2]}").status_code == 409
     result = ok(client.post(path + "/messages", json={"content": "artifact"}))
-    for limit in (None, 0, 1, 20):
-        ok(client.patch(path, json={"overrides": {"context_policy": {"max_messages": limit}}}))
+    for enabled in (False, True):
+        ok(client.patch(path, json={"overrides": {"context_policy": {"history_enabled": enabled}}}))
         result = ok(client.post(path + "/messages", json={"content": "artifact"}))
         assert result["success"]
         system = upstream.calls[-1]["messages"][0]["content"]

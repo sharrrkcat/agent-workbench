@@ -176,18 +176,18 @@ full token numbers, output reserve, input budget and removed turns. Cached and r
 are already included in their respective counts; output reserve is not actual usage. The card omits
 the latest-call subtitle and separate model, window and input rows. Totals above the effective window
 use the overflow color; the ring caps at 100% while numbers retain the actual total.
-During generation it retains the previous reported call and labels generation in progress. Missing
+During generation/compaction it retains the previous answer call and labels the current state; compaction usage never drives the ring. Missing
 input or output usage stays unknown without substituting estimates or earlier calls; zero is valid.
 New sessions and model/window
 mismatches are neutral until a matching call completes. Run/step events and refresh restore the
 display; pruning removes deleted calls. No polling or draft preview API is used.
 
-Internal ordinary/Workspace/QQBot and Harness model calls save one immutable private `context_snapshot_json`
-on their model step immediately before transport dispatch. Preparation failures have no snapshot;
+Internal ordinary/Workspace/QQBot and Harness model calls, plus ordinary/Workspace compaction calls, save one immutable private `context_snapshot_json`
+on their model/compaction step immediately before transport dispatch. Preparation failures have no snapshot;
 failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
 do not record context. Reads never reconstruct missing inputs from current configuration or history.
 Snapshots preserve the outbound body, source positions, exclusions, model identity, capture time and
-context policy. Images use attachment-store references instead of binary data URLs. [QQBot](qqbot.md#context-and-media) owns its media source/exclusion and history-pair semantics. Source excerpts
+context policy, including the selected history strategy/count displayed in the detail footer. Images use attachment-store references instead of binary data URLs. [QQBot](qqbot.md#context-and-media) owns its media source/exclusion and history-pair semantics. Source excerpts
 and Unicode character counts are resolved on the backend; usage stays in `metadata.llm`.
 Step `metadata.context` exposes availability, message/tool/image counts and a strict budget: configured
 and effective window_tokens, input_budget_tokens, pre-call input_tokens, counting=native|estimated,
@@ -199,7 +199,7 @@ Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and
 
 The Layers action sits between retry and usage, independent of recorded usage. It appears on chat replies
 at terminal status or approval waiting when a snapshot exists. Its read-only modal defaults to the final
-answer's call, otherwise the latest captured call; a single call has no selector. Input structure follows
+answer's call, otherwise the latest answer call then latest capture; compaction calls are selectable. Input structure follows
 send order, with system sources nested as Instruction (when a web tool is enabled), Agent, Project, QQ runtime (QQ only), Cogita Persona and Knowledge, and tools separate. Instruction contains only the localized fixed run-start date/weekday sent before Agent content, with exact source offsets and normal token budgeting. Shared web evidence/citation rules appear once in tool descriptions. System groups use System without a request-position prefix.
 Empty system sources recorded as empty/no-bindings/no-results appear muted in Agent/Project/Cogita/Knowledge order,
 with an Empty label and no transmitted-message number for a synthetic system group. They do not change request data
@@ -219,6 +219,7 @@ without the request-position prefix. Their labels stay on one line; attachment/c
 Context detail supplies current reference_numbers even outside the loaded window; multiple sources from one reply share its number. Deleted references show Deleted message; sources
 without a message reference retain their category label. Tool sources retain tool labels.
 Context and usage dialogs are sibling roots, so Context detail receives the standard dimmed, blurred backdrop.
+Summary sources show checkpoint/model/step identities and covered-message boundary/count. Summary text appears only in private detail, never ordinary metadata/events.
 An Info Hover Card beside the source name/role contains characters, approximate tokens and captured identifiers;
 keyboard focus and touch press also open it. Changing the source or closing the modal dismisses it.
 Approximate source counts use the bundled gpt-tokenizer o200k_base reference encoding in a lazily loaded Web Worker,
@@ -230,7 +231,7 @@ snapshots with their steps and cleans newly unreferenced attachments after commi
 
 ## LLM statistics
 
-Each attempted model call saves one typed `metadata.llm` snapshot on its model step, including model/profile and assistant message ids,
+Each attempted answer/compaction call saves one typed `metadata.llm` snapshot on its model/compaction step, including model/profile and nullable assistant message ids,
 UTC start/first-response times, completion state, usage and timing. Ordinary chat and Harness use the same ModelManager collector.
 Snapshots survive completed, failed and controlled-cancelled calls, including calls without a saved assistant message. Existing step events/REST
 carry them; messages and runs do not duplicate counts. Approval restoration reuses saved steps. Hard interruption preserves only saved snapshots.
@@ -241,9 +242,10 @@ Role, tool id and empty frames do not qualify. Non-streaming has no observed fir
 loading through upstream completion, excluding post-call release. Queue/load are only locally observed; provider load time is unknown.
 Durations use a monotonic clock. Native speed uses `timings.predicted_n/predicted_ms`; estimated speed uses final output tokens divided by
 first-output-to-finish duration. Estimation needs two output chunks and a successful stop/tool finish; length/filter/cancel/truncation cannot estimate.
-Replies sum all model-call usage, excluding auxiliary titles. Speed uses summed generation tokens/time, never averaged rates or tool/approval time.
-Missing/incomplete call counts mark known totals incomplete and suppress aggregate speed. A mix including estimates remains labelled estimated.
+Replies sum answer and compaction usage, excluding auxiliary titles. Compaction steps have message_id=null and create no chat message.
+Speed and first response use answer calls only; speed uses summed generation tokens/time. Missing counts mark totals incomplete; incomplete answers suppress speed.
 Reply first response starts at Run start; reply total retains the whole Run clock including tools/approval waits. Neither clock measures client rendering.
+Processing history shows localized Compacting context / Context compacted / Compaction failed steps; usage detail distinguishes their calls.
 At terminal status or approval waiting, input/output, first response and speed follow the reply action buttons.
 Each summary metric pairs an icon with its value and retains a localized screen-reader label and hover/focus tooltip.
 The usage icon opens a controlled modal with aggregate total time, call count and per-call counts, cache/reasoning, timing and source.

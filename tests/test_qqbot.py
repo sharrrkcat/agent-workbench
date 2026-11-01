@@ -14,7 +14,7 @@ from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.qq_service import QQService
 from ai_workbench.core.qq_protocol import OneBotConnection, normalize
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant
 from tests.model_fixtures import configure_model

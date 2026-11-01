@@ -141,7 +141,8 @@
       "attachment": "附件",
       "tool_call": "工具调用",
       "tool_result": "工具返回",
-      "tools": "工具定义"
+      "tools": "工具定义",
+      "summary": "历史摘要"
     },
     "reasons": {
       "ineligible_history": "不符合历史消息纳入条件",
@@ -159,14 +160,18 @@
       "token_limit": "超出上下文 token 预算",
       "qq_history_image": "历史QQ图片使用文本占位",
       "qq_system_face": "QQ系统表情使用名称占位",
-      "qq_image_limit": "超出本批QQ图片数量上限"
+      "qq_image_limit": "超出本批QQ图片数量上限",
+      "compacted": "已纳入摘要"
     },
     "empty": "空",
     "sourceInfo": "来源信息",
     "characters": "字符数",
     "citation": "引用",
     "sourceId": "来源 ID",
-    "baseId": "知识库 ID"
+    "baseId": "知识库 ID",
+    "tokenPolicy": "历史按 token 预算管理",
+    "messageWindowPolicy": "历史消息上限：{{limit}} · 同时遵守 token 预算",
+    "historyDisabled": "未使用历史"
   },
   "commandStatus": {
     "pending": "等待运行 {{name}}",
@@ -182,7 +187,8 @@
     "model": "模型",
     "save": "保存",
     "approval": "审批",
-    "tool": "工具"
+    "tool": "工具",
+    "compaction": "压缩"
   },
   "stepStatus": {
     "pending": "待执行",
@@ -205,6 +211,16 @@
   "contextErrors": {
     "required": "请在模型设置中填写上下文窗口大小后重试。",
     "exceeded": "当前输入、指令、知识或工具记录与输出预留超过上下文窗口。请缩短输入、减少注入内容或调整模型设置。",
-    "countFailed": "无法统计模型输入，未发送生成请求。请检查本地模型运行状态后重试。"
+    "countFailed": "无法统计模型输入，未发送生成请求。请检查本地模型运行状态后重试。",
+    "compactionFailed": "上下文压缩失败，原始历史超出模型窗口。可调整压缩设置后重试。"
+  },
+  "compaction": {
+    "call": "第 {{count}} 次调用 · 压缩",
+    "running": "正在压缩上下文",
+    "completed": "上下文已压缩",
+    "failed": "上下文压缩失败",
+    "checkpoint": "检查点",
+    "covered": "已覆盖消息",
+    "boundary": "覆盖边界"
   }
 }

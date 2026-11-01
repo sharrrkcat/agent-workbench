@@ -135,10 +135,16 @@ class RunRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class ContextCheckpointRecord(SQLModel, table=True):
+    __tablename__ = "context_checkpoints"
+    session_id: str = Field(primary_key=True, foreign_key="sessionrecord.session_id")
+    checkpoint_json: str = Field(sa_column=Column(Text, nullable=False))
+
+
 class RunStepRecord(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('context', 'model', 'save', 'approval', 'tool')",
+            "kind IN ('context', 'model', 'compaction', 'save', 'approval', 'tool')",
             name="ck_runsteprecord_kind",
         ),
     )

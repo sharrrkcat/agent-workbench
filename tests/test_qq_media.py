@@ -12,7 +12,7 @@ from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.qq_media import QQMediaService, decode_image
 from ai_workbench.core.qq_protocol import normalize
 from ai_workbench.core.qq_segments import public_segments
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMedia
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
 from tests.test_qq_reply_policy import execute_batch

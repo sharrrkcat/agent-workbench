@@ -18,7 +18,7 @@ def test_context_sql_matches_python_eligibility(history_stores, value):
     state = history_stores
     sid = state.sessions.create_session().session_id
     state.messages.add_message(sid, "user", "history", metadata={"event_type": value})
-    built = ContextBuilder(state.messages).build(sid, "current", ContextPolicy(max_messages=1))
+    built = ContextBuilder(state.messages).build(sid, "current", ContextPolicy(), history=reversed(list(state.messages.iter_context_history(sid, None))))
     assert len(built.messages) == (1 if value else 2)
 
 
@@ -85,8 +85,8 @@ def test_history_migration_preserves_configuration_and_files(tmp_path):
             VALUES ('s', 'ordinary', '', ?, 'pending', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""", (configuration,))
     attachment = tmp_path / "attachment.txt"
     attachment.write_text("retained")
-    migrations.upgrade(engine)
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.BOUNDED_HISTORY_REVISION)
+    migrations.upgrade(engine, migrations.BOUNDED_HISTORY_REVISION)
     with engine.connect() as connection:
         assert connection.exec_driver_sql("SELECT configuration_json, history_version FROM sessionrecord").one() == (configuration, 0)
     assert attachment.read_text() == "retained"

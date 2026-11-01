@@ -7,7 +7,7 @@ from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.schema.context_budget import ContextLimits
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.core.schema.project import QQ_DEFAULT_PROMPT
 from tests.test_qqbot import qq_client, configure_execution, project
 from tests.test_qq_reply_policy import execute_batch

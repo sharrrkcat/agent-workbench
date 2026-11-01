@@ -27,7 +27,7 @@ class RunStepStatus(str, Enum):
 
 
 RunKind = Literal["chat", "tool"]
-RunStepKind = Literal["context", "model", "save", "approval", "tool"]
+RunStepKind = Literal["context", "model", "compaction", "save", "approval", "tool"]
 
 
 class RunSchema(BaseModel):

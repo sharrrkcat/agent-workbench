@@ -6,7 +6,7 @@ import pytest
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.qq_protocol import normalize
 from ai_workbench.core.qq_segments import ordered_segments, public_segments
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQMedia
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest
 from tests.tool_fixtures import completion, ok, tool_call

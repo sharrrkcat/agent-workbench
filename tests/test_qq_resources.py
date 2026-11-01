@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from ai_workbench.core.attachments import resolve_attachment_uri
 from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.core.time import utc_now
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine

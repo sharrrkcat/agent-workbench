@@ -1,3 +1,4 @@
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from tests.history_helpers import history_messages
 import json
 
@@ -36,13 +37,13 @@ def test_strict_persona_and_session_configuration(client_pair):
     client, _ = client_pair
     persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Minimal', 'system_prompt': 'Prompt'}))
     assert set(persona) == {"id", "collection", "is_protected", "name", "avatar_attachment_id", "system_prompt", "created_at", "updated_at"}
-    for field, value in {"model_profile_id": None, "generation": {}, "context_policy": {"max_messages": 0},
+    for field, value in {"model_profile_id": None, "generation": {}, "context_policy": {"history_enabled": False},
                          "harness_enabled": True, "tools_allowed": []}.items():
         assert client.post("/api/personas", json={'collection': 'agent', 'name': 'Invalid', field: value}).status_code == 422
         assert client.patch(f"/api/personas/{persona['id']}", json={field: value}).status_code == 422
     session = ok(client.post("/api/sessions", json={}))
     path = f"/api/sessions/{session['session_id']}"
-    assert session["generation"] == {} and session["context_policy"] == {"max_messages": 100, "max_chars": 100000, "include_attachments": "explicit"}
+    assert session["generation"] == {} and session["context_policy"] == ContextPolicy().model_dump()
     assert session["harness_enabled"] is False
     for field in ("generation", "context_policy", "harness_enabled", "tools_allowed"):
         assert client.post("/api/sessions", json={field: None}).status_code == 422
@@ -60,19 +61,19 @@ def test_strict_persona_and_session_configuration(client_pair):
 def test_history_limits_round_trip_and_reject_retired_fields(client_pair):
     client, upstream = client_pair
     configure_model(client)
-    session = ok(client.post("/api/sessions", json={"context_policy": {"max_messages": 0}}))
+    session = ok(client.post("/api/sessions", json={"context_policy": {"history_enabled": False}}))
     path = f"/api/sessions/{session['session_id']}"
     for mode in ("session", "recent_messages", "current_message", "selected_message", "none"):
         assert client.post("/api/sessions", json={"context_policy": {"mode": mode}}).status_code == 422
         assert client.patch(path, json={"context_policy": {"mode": mode}}).status_code == 422
-    for limit in (-1, 10001):
-        assert client.patch(path, json={"context_policy": {"max_messages": limit}}).status_code == 422
+    for enabled in (-1, 10001):
+        assert client.patch(path, json={"context_policy": {"history_enabled": enabled}}).status_code == 422
     for source in (None, "message"):
         assert client.post(path + "/messages", json={"content": "rejected", "source_message_id": source}).status_code == 422
     assert history_messages(ok(client.get(path + "/history"))) == [] and upstream.calls == []
     ok(client.post(path + "/messages", json={"content": "FIRST_INPUT"}))
-    for limit in (0, 1, None):
-        policy = {"max_messages": limit, "max_chars": None, "include_attachments": "explicit"}
+    for enabled in (False, True):
+        policy = ContextPolicy(history_enabled=enabled).model_dump()
         ok(client.patch(path, json={"context_policy": policy}))
         assert ok(client.get(path))["context_policy"] == policy
         prior = history_messages(ok(client.get(path + "/history")))
@@ -81,7 +82,7 @@ def test_history_limits_round_trip_and_reject_retired_fields(client_pair):
         assert "context_source_message_id" not in result["run"]["metadata"]
         assert "mode" not in result["session"]["effective"]["context_policy"]
         sent = [message for message in upstream.calls[-1]["messages"] if message["role"] != "system"]
-        assert len(sent) == (len(prior) if limit is None else limit) + 1
+        assert len(sent) == (len(prior) if enabled else 0) + 1
         assert sent[-1] == {"role": "user", "content": "NEXT_INPUT"}
 
 
@@ -203,8 +204,8 @@ def test_prompt_is_always_included_once_with_every_history_limit(client_pair):
     session = ok(client.post("/api/sessions", json={'persona_id': persona['id']}))
     path = f"/api/sessions/{session['session_id']}"
     ok(client.post(path + "/messages", json={"content": "history"}))
-    for limit in (None, 0, 1, 20):
-        ok(client.patch(path, json={"context_policy": {"max_messages": limit}}))
+    for enabled in (False, True):
+        ok(client.patch(path, json={"context_policy": {"history_enabled": enabled}}))
         result = ok(client.post(path + "/messages", json={"content": "current"}))
         assert result["success"]
         assert sum(message["content"].count("FIXED_PERSONA_PROMPT") for message in upstream.calls[-1]["messages"]) == 1

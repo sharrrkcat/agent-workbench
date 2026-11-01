@@ -60,6 +60,9 @@ def validate_step_metadata(value: dict) -> dict:
         LLMCallSnapshot.model_validate(value["llm"])
     if "context" in value:
         ContextSummary.model_validate(value["context"])
+    if "compaction" in value:
+        from ai_workbench.core.schema.compaction import CompactionReference
+        CompactionReference.model_validate(value["compaction"])
     return value
 
 

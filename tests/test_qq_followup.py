@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from ai_workbench.core.qq_context import build_qq_context
 from ai_workbench.core.qq_store import QQStore
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQParticipant
 from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
 from tests.tool_fixtures import completion, ok, tool_call

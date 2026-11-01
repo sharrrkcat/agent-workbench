@@ -7,7 +7,7 @@ import pytest
 from sqlmodel import Session, select
 
 from ai_workbench.core.qq_context import build_qq_context
-from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.context_policy import BoundedContextPolicy as ContextPolicy
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQNotification
 from tests.test_qqbot import qq_client, configure_execution, project, child, event, ingest, freeze
 from tests.tool_fixtures import completion, tool_call, ok

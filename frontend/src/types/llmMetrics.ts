@@ -20,7 +20,7 @@ export type LLMTiming = {
 export type LLMCallSnapshot = {
   model_profile_id: string;
   model: string;
-  message_id: string;
+  message_id: string | null;
   started_at: string;
   first_response_at: string | null;
   completed: boolean;

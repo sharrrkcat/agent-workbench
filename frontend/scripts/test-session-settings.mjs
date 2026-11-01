@@ -12,6 +12,7 @@ const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale,
 const i18n = i18next.createInstance();
 await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { escapeValue: false } });
 const load = createModuleLoader({
+  'react': mockModule({ ...React, default: React, useId: () => 'context-test' }),
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
 const { ToolsField, ContextFields, GenerationFields, ModelField, ModelSelect } = (
@@ -46,23 +47,44 @@ for (const name of [...selected])
 assert.deepEqual(selected, []);
 assert.ok(descendants(renderTools()).filter((node) => node.type === Checkbox).every((node) => !node.props.checked));
 
-const policy = { max_messages: null, max_chars: null, include_attachments: 'explicit' };
+const policy = { history_enabled: true, strategy: 'token_budget', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: {
+  enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: null } };
 let changedPolicy;
 const fields = ContextFields({ value: policy, onChange: (value) => { changedPolicy = value; } });
 const policySwitches = descendants(fields).filter((node) => node.type === Switch);
-assert.equal(policySwitches.length, 1);
+assert.equal(policySwitches.length, 3);
 policySwitches[0].props.onCheckedChange(false);
-assert.deepEqual(changedPolicy, { ...policy, include_attachments: 'none' });
+assert.equal(changedPolicy.history_enabled, false);
+policySwitches[1].props.onCheckedChange(false);
+assert.equal(changedPolicy.compaction.enabled, false);
+policySwitches[2].props.onCheckedChange(false);
+assert.equal(changedPolicy.include_attachments, 'none');
 const { Input: ContextInput } = (await load('../src/components/ui/input.tsx')).exports;
-assert.equal(descendants(fields).filter((node) => node.type === Select).length, 0);
-const limitInput = descendants(fields).find((node) => node.type === ContextInput);
-assert.equal(limitInput.props.min, 0);
-for (const [input, limit] of [['', null], ['0', 0], ['20', 20]]) {
-  limitInput.props.onChange({ currentTarget: { value: input } });
-  assert.deepEqual(changedPolicy, { ...policy, max_messages: limit });
-  const updated = ContextFields({ value: changedPolicy, onChange: () => {} });
-  assert.equal(descendants(updated).find((node) => node.type === ContextInput).props.value, limit ?? '');
-}
+const inputs = descendants(fields).filter((node) => node.type === ContextInput);
+assert.equal(inputs.length, 3);
+inputs[0].props.onChange({ currentTarget: { value: '90' } });
+assert.deepEqual(changedPolicy.compaction, { ...policy.compaction, trigger_percent: 90 });
+inputs[2].props.onChange({ currentTarget: { value: '256' } });
+assert.equal(changedPolicy.compaction.max_summary_tokens, 256);
+inputs[2].props.onChange({ currentTarget: { value: '' } });
+assert.equal(changedPolicy.compaction.max_summary_tokens, null);
+const disabledFields = ContextFields({ value: { ...policy, history_enabled: false }, onChange: () => {} });
+assert.ok(descendants(disabledFields).filter((node) => node.type === ContextInput).every((node) => node.props.disabled));
+const { ToggleGroup } = (await load('../src/components/ui/toggle-group.tsx')).exports;
+const strategy = descendants(fields).find((node) => node.type === ToggleGroup);
+strategy.props.onValueChange(['message_window']);
+assert.equal(changedPolicy.strategy, 'message_window');
+assert.deepEqual(changedPolicy.compaction, policy.compaction);
+const windowFields = ContextFields({ value: changedPolicy, onChange: (value) => { changedPolicy = value; } });
+const windowInputs = descendants(windowFields).filter((node) => node.type === ContextInput);
+assert.equal(windowInputs.length, 1);
+assert.equal(descendants(windowFields).filter((node) => node.type === Switch).length, 2);
+windowInputs[0].props.onChange({ currentTarget: { value: '20' } });
+assert.equal(changedPolicy.message_window.max_messages, 20);
+const invalidWindow = ContextFields({ value: { ...changedPolicy, message_window: { max_messages: 0 } }, onChange: () => {} });
+assert.equal(descendants(invalidWindow).find((node) => node.type === ContextInput).props['aria-invalid'], true);
+const disabledWindow = ContextFields({ value: { ...changedPolicy, history_enabled: false }, onChange: () => {} });
+assert.equal(descendants(disabledWindow).find((node) => node.type === ContextInput).props.disabled, true);
 
 const profiles = [
   { id: 'embedding', name: 'Embedding', kind: 'embedding', enabled: true },
@@ -109,9 +131,9 @@ for (const [locale, labels] of [
     React.createElement(ModelField, { profiles: [], value: null, onChange: () => {} }),
   ));
   for (const label of labels) assert.ok(html.includes(label), label);
-  assert.ok(html.includes(resources[locale].personas.maxMessagesDescription));
+  assert.ok(html.includes(resources[locale].personas.historyEnabled));
   assert.doesNotMatch(html, /include_system_prompt|inheritPersona|overrideHarness|toolRisk\.|Global default|全局默认/);
-  assert.equal((html.match(/aria-checked="true"/g) || []).length, 2);
+  assert.equal((html.match(/aria-checked="true"/g) || []).length, 4);
   for (const modelId of ['preferred', 'first']) {
     headerSession = { ...headerSession, model_profile_id: modelId, effective: { model_profile_id: modelId } };
     const header = renderToStaticMarkup(React.createElement(SidebarProvider, null,

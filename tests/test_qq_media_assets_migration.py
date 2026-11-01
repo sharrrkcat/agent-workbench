@@ -37,7 +37,7 @@ def test_media_assets_migration_resets_only_qq_history(tmp_path):
         db.execute(text("INSERT INTO qq_batches (session_id, project_id, status, text, created_at) VALUES ('qq', 'p', 'queued', 'old', 1)"))
         db.execute(text("INSERT INTO qq_deliveries (session_id, run_id, tool_call_id, text, status, created_at, echoed) "
             "VALUES ('qq', 'qq', 'call', 'old', 'sent', 1, 0)"))
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.QQ_MEDIA_ASSETS_REVISION)
     assert "qq_media_assets" in inspect(engine).get_table_names()
     columns = {column["name"] for column in inspect(engine).get_columns("qq_media")}
     assert "asset_id" in columns and not columns.intersection({"attachment_json", "model_attachment_json"})
@@ -52,7 +52,7 @@ def test_media_assets_migration_resets_only_qq_history(tmp_path):
         assert db.execute(text("SELECT COUNT(*) FROM projects WHERE id = 'p'")).scalar_one() == 1
         db.execute(text("INSERT INTO qq_messages (session_id, external_id, sender_id, sender_name, timestamp, text, references_json, disposition) "
             "VALUES ('qq', '2', '2', 'sender', 'now', 'new', '[]', 'pending')"))
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.QQ_MEDIA_ASSETS_REVISION)
     with engine.connect() as db:
         assert db.execute(text("SELECT text FROM qq_messages")).scalar_one() == "new"
     assert all(path.read_bytes() == b"preserved" for path in files)

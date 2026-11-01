@@ -203,7 +203,7 @@ def test_reasoning_body_deltas_and_native_tool_transcript(presentation_client, h
         native = upstream.calls[-1]["messages"][-2]
         assert native["reasoning_content"] == "structured reasoning; "
         assert native["content"] == "<think>tool reason</think>working"
-    history = ContextBuilder(state.messages).build(session["session_id"], "next", ContextPolicy())
+    history = ContextBuilder(state.messages).build(session["session_id"], "next", ContextPolicy(), history=state.messages.list_messages(session["session_id"]))
     assert "structured reasoning" not in json.dumps(history.messages)
     assert "tag reasoning" not in json.dumps(history.messages)
     assert "answer" in json.dumps(history.messages)
@@ -223,7 +223,7 @@ def test_failed_stream_persists_partial_content(presentation_client, harness):
     history = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))
     assert history[-1]["message_id"] == partial["message_id"] and history[-1]["metadata"]["incomplete"]
     state = client.app.state.runtime_state
-    context = ContextBuilder(state.messages).build(session["session_id"], "next", ContextPolicy())
+    context = ContextBuilder(state.messages).build(session["session_id"], "next", ContextPolicy(), history=state.messages.list_messages(session["session_id"]))
     assert "partial answer" not in json.dumps(context.messages)
     events = state.events.list_events()
     saved = next(i for i, e in enumerate(events) if e.type == "message_completed" and e.message_id == partial["message_id"])
