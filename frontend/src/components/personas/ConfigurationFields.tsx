@@ -136,15 +136,18 @@ export function PersonaField({ label, personas, value, onChange, invalid = false
   );
 }
 
-export function ContextFields({ value, onChange, showAttachments = true, className }: {
-  value: ContextPolicy; onChange: (value: ContextPolicy) => void; showAttachments?: boolean; className?: string;
+export function ContextFields({ value, onChange, showAttachments = true, harnessEnabled = false, className }: {
+  value: ContextPolicy; onChange: (value: ContextPolicy) => void; showAttachments?: boolean; harnessEnabled?: boolean; className?: string;
 }) {
   const { t } = useTranslation('personas');
   const id = useId();
   const disabled = !value.history_enabled;
   const messageLimit = value.message_window.max_messages;
   const invalidMessageLimit = !Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 10000;
-  const patch = (change: Partial<ContextPolicy['compaction']>) => onChange({ ...value, compaction: { ...value.compaction, ...change } });
+  const retrieval = value.strategy === 'history_retrieval';
+  const budget = retrieval ? value.retrieval : value.compaction;
+  const patch = (change: Partial<ContextPolicy['compaction'] & ContextPolicy['retrieval']>) =>
+    onChange(retrieval ? { ...value, retrieval: { ...value.retrieval, ...change } } : { ...value, compaction: { ...value.compaction, ...change } });
   return <FieldGroup className={className}>
     <Field orientation="horizontal">
       <Switch id={id + '-history'} checked={value.history_enabled} onCheckedChange={(history_enabled) => onChange({ ...value, history_enabled })} />
@@ -152,11 +155,13 @@ export function ContextFields({ value, onChange, showAttachments = true, classNa
     </Field>
     <Field>
       <FieldLabel id={id + '-strategy-label'}>{t('historyStrategy')}</FieldLabel>
-      <ToggleGroup variant="segmented" value={[value.strategy]} aria-labelledby={id + '-strategy-label'}
+      <ToggleGroup variant="segmented" className="flex-wrap" value={[value.strategy]} aria-labelledby={id + '-strategy-label'}
         onValueChange={(next) => { if (next[0]) onChange({ ...value, strategy: next[0] as ContextPolicy['strategy'] }); }}>
         <ToggleGroupItem value="token_budget">{t('tokenBudget')}</ToggleGroupItem>
         <ToggleGroupItem value="message_window">{t('messageWindow')}</ToggleGroupItem>
+        <ToggleGroupItem value="history_retrieval" disabled={!harnessEnabled}>{t('historyRetrieval')}</ToggleGroupItem>
       </ToggleGroup>
+      {!harnessEnabled ? <FieldDescription>{t('retrievalHarnessRequired')}</FieldDescription> : null}
     </Field>
     {value.strategy === 'message_window' ? <Field data-invalid={invalidMessageLimit || undefined} data-disabled={disabled}>
       <FieldLabel htmlFor={id + '-message-limit'}>{t('maxMessages')}</FieldLabel>
@@ -164,31 +169,31 @@ export function ContextFields({ value, onChange, showAttachments = true, classNa
         aria-invalid={invalidMessageLimit} value={Number.isNaN(messageLimit) ? '' : messageLimit}
         onChange={(event) => onChange({ ...value, message_window: { max_messages: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) } })} />
     </Field> : <>
-    <Field orientation="horizontal">
+    {!retrieval ? <Field orientation="horizontal">
       <Switch id={id + '-compaction'} checked={value.compaction.enabled} onCheckedChange={(enabled) => patch({ enabled })} />
       <FieldLabel htmlFor={id + '-compaction'}>{t('autoCompaction')}</FieldLabel>
-    </Field>
+    </Field> : null}
     <Collapsible>
       <CollapsibleTrigger render={<Button variant="ghost" size="sm" />}>{t('compactionAdvanced')}</CollapsibleTrigger>
       <CollapsibleContent>
         <FieldGroup className="grid gap-4 sm:grid-cols-2">
           {(['trigger_percent', 'target_percent'] as const).map((key) => {
-            const number = value.compaction[key];
+            const number = budget[key];
             const invalid = !Number.isInteger(number) || number <= 0 || number >= 100
-              || value.compaction.target_percent >= value.compaction.trigger_percent;
+              || budget.target_percent >= budget.trigger_percent;
             return <Field key={key} data-invalid={invalid || undefined}>
-              <FieldLabel htmlFor={id + key}>{t(key === 'trigger_percent' ? 'compactionTrigger' : 'compactionTarget')}</FieldLabel>
-              <Input id={id + key} type="number" required min={key === 'trigger_percent' ? value.compaction.target_percent + 1 : 1}
-                max={key === 'target_percent' ? value.compaction.trigger_percent - 1 : 99} step={1}
+              <FieldLabel htmlFor={id + key}>{t(key === 'trigger_percent' ? (retrieval ? 'retrievalTrigger' : 'compactionTrigger') : (retrieval ? 'retrievalTarget' : 'compactionTarget'))}</FieldLabel>
+              <Input id={id + key} type="number" required min={key === 'trigger_percent' ? budget.target_percent + 1 : 1}
+                max={key === 'target_percent' ? budget.trigger_percent - 1 : 99} step={1}
                 aria-invalid={invalid} value={Number.isNaN(number) ? '' : number}
                 onChange={(event) => patch({ [key]: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) })} />
             </Field>;
           })}
           <Field>
-            <FieldLabel htmlFor={id + '-summary'}>{t('compactionSummaryTokens')}</FieldLabel>
+            <FieldLabel htmlFor={id + '-summary'}>{t(retrieval ? 'checkpointTokens' : 'compactionSummaryTokens')}</FieldLabel>
             <Input id={id + '-summary'} type="number" min={1} step={1} placeholder={t('compactionAutomatic')}
-              value={value.compaction.max_summary_tokens ?? ''}
-              onChange={(event) => patch({ max_summary_tokens: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })} />
+              value={(retrieval ? value.retrieval.max_checkpoint_tokens : value.compaction.max_summary_tokens) ?? ''}
+              onChange={(event) => patch({ [retrieval ? 'max_checkpoint_tokens' : 'max_summary_tokens']: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })} />
           </Field>
         </FieldGroup>
       </CollapsibleContent>

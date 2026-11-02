@@ -133,22 +133,20 @@ associated replies; user edit removes later conversation and associated runs, re
 History mutations require an idle session. Edits require content and attachment_ids (the unique subset of original attachments to retain, in original order); [] removes all attachments. Empty text with no retained attachments returns EMPTY_MESSAGE; invalid ids return INVALID_ATTACHMENTS. Editing cannot add attachments.
 SQLite pruning, text, attachments, timestamps and history_version commit together. Responses and history_pruned events return deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
 
-Ordinary/Workspace/QQ context_policy defaults to history_enabled=true, strategy=token_budget, include_attachments=explicit,
-compaction={enabled:true, trigger_percent:80, target_percent:55, max_summary_tokens:null} and message_window={max_messages:100}.
-strategy accepts token_budget or message_window; the message count is a strict integer from 1 to 10000.
-Percentages are strict integers satisfying 0 < target < trigger < 100; a summary cap is null or a positive integer.
-Top-level max_messages/max_chars, mode and source_message_id are rejected. Workspace inherits/overrides the whole policy.
-History off skips prior history/checkpoint reads and injection, retaining the checkpoint; current Harness rounds may still compact. Automatic compaction off reuses historical checkpoints and permits token pruning. Timeline retains its bounded policy; QQ owns image selection and batch projection.
-Message-window strategy selects up to N eligible projected historical messages, excluding current input. If its oldest boundary
-splits a turn, that entire turn is omitted; final token pruning can retain fewer messages. It neither reads, injects nor updates a checkpoint.
-Switching back to token_budget validates and reuses the checkpoint. No summary failure automatically changes strategy.
-Session, draft, Workspace and QQ settings share a strategy selector; message mode shows its count, token mode shows compaction controls. Strategy and automatic controls remain editable with history off; only the historical message count is disabled. Message-window runs never summarize active tool rounds.
-Inactive values are retained; advanced values are collapsed initially.
-Instructions, Persona, Project and Knowledge remain independent of historical projection.
-SQLite reads eligible history in pages of 128 using stable timestamp/message-id boundaries and identity-only turn lookups.
-Only candidate recent history and a summary batch are retained; a single stored message can still be large.
-Eligible user input from failed/cancelled turns remains; errors and incomplete assistant output are excluded.
-Web history reuses bounded evidence text; full page caches never enter context. Original messages/attachments are unchanged.
+Ordinary/Workspace/QQ context_policy defaults to history_enabled=true, strategy=token_budget and include_attachments=explicit.
+Its parameter groups are compaction={enabled:true,trigger_percent:80,target_percent:55,max_summary_tokens:null}, message_window={max_messages:100}, and retrieval={trigger_percent:80,target_percent:55,max_checkpoint_tokens:null}.
+Strategies are token_budget, message_window and history_retrieval. Counts are strict integers (message limit 1..10000); percentages satisfy 0 < target < trigger < 100; token caps are null or positive integers.
+Top-level max_messages/max_chars, mode and source_message_id are rejected. Workspace inherits/overrides the whole policy; inactive parameter groups remain saved.
+History off omits old history and checkpoints; current Harness work can still compact/reset. Automatic compaction off reuses summaries and permits token pruning. Timeline retains its bounded policy.
+Message-window mode keeps up to N eligible historical messages, omits a split oldest turn, and can retain fewer after token counting. It never reads, injects or updates summaries or retrieval memory.
+Token-budget mode validates and reuses its saved summary. No strategy silently falls back to another.
+On-demand history requires Harness, including with an empty business-tool list, and always maintains its window automatically. It uses working checkpoints and bounded original-history retrieval instead of summary inference; [Harness](harness-tools.md#on-demand-history) owns its tools, windows, recovery and limits.
+Its checkpoint allowance defaults to min(2048,max(128,floor(B/10))), shared by conversation memory and run progress. Model counting includes referenced text; oversized existing memory remains stored and is available by reference.
+Settings share a strategy selector: message mode shows its count, token mode its compaction controls, and on-demand mode its trigger/target/checkpoint cap. The third option requires effective Harness; execution rechecks the requirement without changing the saved strategy.
+Controls remain editable with history off except the historical message count; advanced controls start collapsed. Instructions, Persona, Project and Knowledge remain independent of history selection.
+SQLite reads history in pages of 128 with stable timestamp/message-id boundaries and identity-only turn lookups. Only candidate recent history and a summary batch are retained; a single stored message can still be large.
+Eligible user input from failed/cancelled turns remains; errors, incomplete assistant output and internal context-tool records are excluded. Mixed tool messages retain their business data.
+Web history uses bounded evidence, never full page caches. Original messages and attachments remain unchanged.
 
 Every internal model call enforces input tokens + output reserve + margin <= effective window.
 Runs snapshot the configured window and output reserve. Unset maximum output reserves
@@ -179,16 +177,17 @@ Empty, length, tool-calling, timed-out, over-four-call or non-shrinking summarie
 If the original request fits, context_compaction_failed is retained as a diagnostic and answering continues; otherwise
 CONTEXT_COMPACTION_FAILED stops the run. Cancellation always terminates. [Context detail](runs-streaming.md#context-detail)
 retains each dispatched summary request and the summary actually used by the answer.
-`/compact` manually evaluates idle ordinary/Workspace history with history enabled and token_budget selected, even when automatic compaction is off. It bypasses the trigger, retaining the target, cap and four-call limit.
+`/compact` manually evaluates idle ordinary/Workspace history with history enabled and token_budget or history_retrieval selected. Token mode works even with automatic compaction off; on-demand mode performs a local reset without generation. It bypasses the trigger, retaining the target, cap and four-call limit.
 The selected configuration and inclusive eligible-history boundary are captured before execution. Counts include fixed Persona/Project prompts, effective tools and answer reserve, without composer input or Knowledge retrieval. Fixed-only native counting uses an empty protocol user frame that is never retained or sent for inference. The next chat recounts its complete request.
 Empty history or input already below target returns not_needed; successful reduction commits the checkpoint, while actual summary failures fail the run even when the original context fits. [Runs/streaming](runs-streaming.md#run-lifecycle) owns the dedicated API, event and cancellation.
 Typing a slash prefix opens the sole /compact completion: click/Enter executes, Tab completes, Escape dismisses; Shift+Enter and IME confirmation do not execute. Only a standalone command with optional surrounding whitespace is accepted, without arguments or attachments.
 The command bypasses message creation, queue insertion, answers and title generation. Drafts, loading, active/approval runs, pending submissions, queued/editing messages and configuration saves block execution, retaining input. Accepted execution clears only the submitted draft.
-Ordinary messages may queue during compaction: success permits dispatch; failure/cancellation/interruption pauses it. Queues remain browser-local. No command registry or additional tools are introduced.
+Ordinary messages may queue during compaction: success permits dispatch; failure/cancellation/interruption pauses it. Queues remain browser-local. No slash command registry is introduced.
 QQ uses the same automatic preparation with its [batch history](qqbot.md#context-and-media). QQ manual compaction, Timeline compaction, overflow retry and draft previews are deferred.
 Summaries are lossy; model-specific factual retention and accumulated drift require representative real-model acceptance.
 Qwen3.5-0.8B GGUF can exhaust a 512-token summary cap in conversation and active-tool summaries, or copy summary instructions into its memory; three consecutive successful summaries with factual-retention
 acceptance remain outstanding. A successful individual compression or mocked test does not establish that model's long-conversation quality.
+Autonomous on-demand checkpoint/recovery quality requires model-specific acceptance: Qwen3.5-0.8B repeats rejected checkpoint-source updates; tested provider configurations can omit native tool calls, invent tool results in prose or time out. The tested 9B GGUF on CPU reaches the five-minute run limit before recovery. These outcomes do not establish successful multi-reset recovery.
 
 The [context meter](runs-streaming.md#context-detail) displays actual per-call input plus output usage beside the model selector. Input reflects history limits and token trimming; policy edits affect the next request, not recorded usage.
 

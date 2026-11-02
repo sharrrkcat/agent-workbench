@@ -8,6 +8,7 @@ import base64
 import json
 from io import BytesIO
 import os
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -94,7 +95,22 @@ class PresentationOpenAI(ToolOpenAI):
             command = "".join(part["text"] for part in command if part["type"] == "text")
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
-        if command.startswith("loop-compaction-fixture"):
+        if command.startswith("history-retrieval-fixture"):
+            number = self.loop_rounds.get(command, 0)
+            self.loop_rounds[command] = number + 1
+            if number == 0:
+                source = re.search(r"Current input: (message:[\w-]+)", json.dumps(history))[1]
+                call = tool_call('context_checkpoint_update', {'scope': 'memory', 'text': 'Budget: 47 EUR.', 'references': [source]}, 'remember')
+            elif number < 5:
+                call = tool_call('test_echo', {'value': 'Budget: 47 EUR. ' + 'padding ' * 1800}, f'history_{number}')
+            elif number == 5:
+                call = tool_call('context_read', {'source_id': 'call:history_1', 'max_tokens': 100}, 'recall')
+            else:
+                assert '47 EUR' in history[-1]['content']
+                call = None
+            stream = (FixtureStream([{'tool_calls': [{'index': 0, **call}]}], 'tool_calls', delay=.01)
+                if call else FixtureStream([{'content': 'Recovered budget: 47 EUR.'}], delay=.01))
+        elif command.startswith("loop-compaction-fixture"):
             number = self.loop_rounds.get(command, 0)
             self.loop_rounds[command] = number + 1
             stream = FixtureStream([{"tool_calls": [{"index": 0, **tool_call("test_echo", {
@@ -194,6 +210,7 @@ def create_fixture_app(repository: Path, root: Path):
     @app.post("/__test__/session")
     async def fixture_session(values: dict = Body(default={})):
         await state.active_runs.cancel_all()
+        upstream.loop_rounds.clear()
         upstream.compaction_release = asyncio.Event()
         state.model_profiles.update(profile['id'], {'context_window_tokens': 4096 if values.get('compaction') or values.get('loop_compaction') else profile['context_window_tokens']})
         state.app_settings.patch({"show_full_processing": bool(values.get("show_full_processing", False))})
@@ -201,6 +218,11 @@ def create_fixture_app(repository: Path, root: Path):
             state.web_tools.settings.patch(WebToolsSettingsPatch(api_key="browser-web-key"))
         session = state.chat_service.create_session({"title": "Presentation fixture", "harness_enabled": True,
                                                      "model_profile_id": profile["id"]})
+        if values.get('history_retrieval'):
+            state.model_profiles.update(profile['id'], {'context_window_tokens': 8192})
+            session = state.chat_service.update_session(session.session_id, {'tools_allowed': ['test_echo'],
+                'context_policy': {'strategy': 'history_retrieval', 'retrieval': {
+                    'trigger_percent': 40, 'target_percent': 25, 'max_checkpoint_tokens': 512}}})
         if values.get("loop_compaction"):
             session = state.chat_service.update_session(session.session_id, {'tools_allowed': ['test_echo'],
                 'context_policy': {'history_enabled': False, 'compaction': {

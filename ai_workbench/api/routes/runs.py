@@ -67,7 +67,7 @@ def get_run_context(run_id: str, step_id: str, state: RuntimeState = Depends(get
     try:
         state.runs.get_run(run_id)
         step = state.runs.get_step(step_id)
-        if step.run_id != run_id or step.kind not in {"model", "compaction"}:
+        if step.run_id != run_id or step.kind not in {"model", "compaction", "context"}:
             raise KeyError(step_id)
         snapshot = state.runs.get_context_snapshot(step_id)
     except KeyError:

@@ -339,7 +339,9 @@ class QQService:
                 "tools_allowed": [name for name in (*QQ_TOOLS, *sorted(WEB_TOOL_NAMES))
                     if name != "qq_skip_reply" or binding.target_kind == "group"],
             })
-            config = config.model_copy(update={"tools_allowed": self.state.chat_service.tools_for_run(config)})
+            from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
+            config = config.model_copy(update={"tools_allowed": [name for name in self.state.chat_service.tools_for_run(config)
+                if name not in CONTEXT_TOOL_NAMES]})
             rows = await self.names.project(binding, config.qq_bot_account,
                 [row.model_dump() for row in records], freeze=True, for_model=True)
             self.store.save_references(rows)

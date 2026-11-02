@@ -61,6 +61,8 @@ class ChatService:
             try:
                 self.tool_registry.validate_allowlist(tools)
             except ToolExecutionError as exc:
+                if exc.code == "TOOL_NOT_ALLOWED":
+                    raise ChatError(exc.code, exc.message, 422) from exc
                 raise ChatError("TOOL_NOT_FOUND", "Session references an unknown tool.") from exc
 
     def workspace(self, project_id: str) -> WorkspaceProject:
@@ -261,15 +263,20 @@ class ChatService:
         )
 
     def tools_for_run(self, config: ResolvedChatConfig) -> list[str]:
+        from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
         if config.session_kind == "qqbot":
-            return [name for name in config.tools_allowed
+            allowed = [name for name in config.tools_allowed
                 if (name != "qq_skip_reply" or config.qq_target_kind == "group")
                 and (name != "qq_send_image" or config.qq_image_candidates)
                 and (name != "qq_generate_image" or config.qq_image_generation_allowed)]
-        if config.project_id is None:
-            return config.tools_allowed
-        allowed = self.workspace(config.project_id).tools_allowed
-        return [name for name in config.tools_allowed if name in allowed]
+        elif config.project_id is None:
+            allowed = list(config.tools_allowed)
+        else:
+            project_tools = self.workspace(config.project_id).tools_allowed
+            allowed = [name for name in config.tools_allowed if name in project_tools]
+        if config.context_policy.strategy == "history_retrieval" and config.harness_enabled:
+            allowed.extend(sorted(CONTEXT_TOOL_NAMES))
+        return allowed
 
     def session_response(self, session: Session) -> dict:
         payload = session.model_dump(mode="json")

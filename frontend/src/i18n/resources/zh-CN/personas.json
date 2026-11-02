@@ -296,5 +296,10 @@
   "compactionTrigger": "触发比例（%）",
   "compactionTarget": "目标比例（%）",
   "compactionSummaryTokens": "摘要 token 上限",
-  "compactionAutomatic": "自动"
+  "compactionAutomatic": "自动",
+  "historyRetrieval": "按需回溯",
+  "retrievalHarnessRequired": "按需回溯需要开启 Harness。",
+  "retrievalTrigger": "重置触发比例（%）",
+  "retrievalTarget": "重置目标比例（%）",
+  "checkpointTokens": "检查点 Token 上限"
 }

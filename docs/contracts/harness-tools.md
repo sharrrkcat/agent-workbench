@@ -173,6 +173,17 @@ protocol errors. Assistant text streams incrementally over the existing message
 events. A tool error or rejected approval is returned to the model as data;
 model refusal, cancellation and the total time limit terminate the run.
 
+### On-demand history
+
+history_retrieval adds context_list, context_search, context_read and context_checkpoint_update only to model requests. They are absent from public catalogs, direct execution and business allowlists; the active run supplies identity. Existing capability/skip checks apply, without ordinary-chat fallback.
+Lists return at most 20 previews; literal search scans at most 128 eligible projected entries and returns a continuation even for empty partial pages. Reads use source IDs and character offsets. Text output is limited by request capacity and at most 4096 tokens. Old images return existing text/descriptions only.
+History reads obey the current Session, history switch and attachment policy. Run reads expose completed tool outcomes (including errors), never pending calls or reasoning. Context-tool records never become historical search results; original records remain intact.
+Normal tool calls update bounded memory/progress checkpoints and source references. Updates use the model counting API without generation; rejected candidates preserve the prior checkpoint. Conversation memory commits only on successful run completion and matching history_version; progress stays in private continuation and is cleared at termination.
+The model receives fixed context/current input, checkpoints, a recent complete history suffix and uncovered tool batches. Threshold resets remove the oldest complete groups toward the target, preferring to keep the newest tool batch. An oversized last batch can leave with identifiers for retrieval. There is no model-driven reset tool or dedicated checkpoint inference.
+Window identity, inclusive historical boundary and transcript offset remain separate from full execution state. Archived history is not automatically reloaded. Checkpoints too large for the current model are represented by IDs for bounded reads. Fixed-only overflow fails with CONTEXT_WINDOW_EXCEEDED; resets never retry tools or reset side-effect budgets.
+Eight business batches and eight context-only batches share the existing active-time budget. Mixed batches count as business; all counters and window/checkpoint state survive approval. Other strategies retain eight total tool rounds.
+Edit/delete/retry and relevant media changes invalidate private retrieval state transactionally. Stale commits discard candidate memory/boundaries without invalidating the completed reply. History off permits run recovery but prevents old-history access and session commits. Strategy changes keep separate, independently validated states.
+
 Each model round records one assistant message with distinct tool_call parts.
 Its model step stores one LLM statistics snapshot, including failed/cancelled calls; restored approvals retain earlier call statistics.
 Each dispatched model call also retains its private input snapshot. Base-source provenance and exclusions

@@ -38,7 +38,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
   const error = run.error_message || run.error || '';
   const contextErrors: Record<string, string> = { CONTEXT_WINDOW_REQUIRED: 'contextErrors.required',
     CONTEXT_WINDOW_EXCEEDED: 'contextErrors.exceeded', CONTEXT_COUNT_FAILED: 'contextErrors.countFailed',
-    CONTEXT_COMPACTION_FAILED: 'contextErrors.compactionFailed' };
+    CONTEXT_COMPACTION_FAILED: 'contextErrors.compactionFailed', HISTORY_RETRIEVAL_REQUIRES_HARNESS: 'contextErrors.harnessRequired' };
   const errorKey = run.error_code === 'QQ_REPLY_REQUIRED' ? 'personas:qq.status.QQ_REPLY_REQUIRED'
     : run.error_code?.startsWith('WEB_') ? `web.errors.${run.error_code}`
     : contextErrors[run.error_code ?? ''] ?? imageErrorKey(run.error_code, error);
@@ -86,7 +86,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
               {process.map((item) =>
                 item.kind === 'compaction' ? <TraceLine key={item.id} data-compaction-step={item.id}
                   status={item.step.status === 'running' ? 'running' : undefined}>
-                  <TraceTitle>{t(item.step.status === 'running' ? 'compaction.running' : item.step.status === 'completed' ? 'compaction.completed'
+                  <TraceTitle>{t(item.step.metadata?.operation === 'reset' ? 'retrieval.reset' : item.step.status === 'running' ? 'compaction.running' : item.step.status === 'completed' ? 'compaction.completed'
                     : item.step.error_code === 'RUN_CANCELLED' ? 'compaction.cancelled' : 'compaction.failed')}</TraceTitle>
                 </TraceLine> : item.kind === 'tool' ? (
                   isWebTool(item.entry.call.tool_name)

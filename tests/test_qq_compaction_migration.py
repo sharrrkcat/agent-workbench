@@ -40,7 +40,7 @@ def test_qq_policy_reset_preserves_configuration_records_and_files(tmp_path):
     migrations.upgrade(engine)
     with Session(engine) as db:
         value = json.loads(db.get(ProjectRecord, "qqbot").configuration_json)
-        assert value["context_policy"] == ContextPolicy(include_attachments="none").model_dump()
+        assert ContextPolicy.model_validate(value["context_policy"]) == ContextPolicy(include_attachments="none")
         assert {key: value[key] for key in old if key != "context_policy"} == {key: old[key] for key in old if key != "context_policy"}
         assert all(db.get(ProjectRecord, kind).configuration_json == raw for kind, raw in others.items())
         for table, rows in saved.items():

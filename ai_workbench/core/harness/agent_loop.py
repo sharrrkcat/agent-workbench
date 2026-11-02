@@ -27,6 +27,7 @@ from ai_workbench.core.time import utc_now
 from ai_workbench.core.qq_context import runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.schema.message import MessageSchema
+from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES, RunRetrievalState
 from ai_workbench.core.schema.persona import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
@@ -82,6 +83,7 @@ class HarnessAgentLoop:
         self.active_runs = active_runs
         self.allowed_tools = allowed_tools
         self.web_tools = web_tools
+        self.retrieval = None
         self.compaction = HarnessCompaction(model_manager, runs, events)
 
     async def run(self, *, session: Any, config: ResolvedChatConfig, run: Any,
@@ -89,7 +91,8 @@ class HarnessAgentLoop:
                   reasoning: bool = True, ui_language: UiLanguage = "en",
                   first_metrics: LLMCallMetrics | None = None, web_date: str | None = None,
                   summary_reasoning: bool = False, on_dispatch=None) -> RunResult:
-        state = HarnessState(base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
+        saved = self.runs.get_harness_state(run.run_id).get("retrieval")
+        state = HarnessState(retrieval=RunRetrievalState.model_validate(saved) if saved else None, base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
                              qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
                              max_image_bytes=max_image_bytes,
                              summary_reasoning=summary_reasoning,
@@ -127,6 +130,9 @@ class HarnessAgentLoop:
             config = ResolvedChatConfig.model_validate(self.runs.get_config_snapshot(run.run_id))
             if not state.awaiting_approval:
                 raise ValueError("Missing approval")
+            if state.retrieval is not None and (state.retrieval.session.session_id != session.session_id
+                    or state.retrieval.input_id != run.metadata["input_message_id"]):
+                raise ValueError("Retrieval state belongs to another run")
             if state.compaction is not None and state.compaction.run_id != run.run_id:
                 raise ValueError("Run summary belongs to another run")
             user = None if state.direct else self.messages.get_message(run.metadata["input_message_id"])
@@ -169,6 +175,11 @@ class HarnessAgentLoop:
                     self._check_cancelled(run.run_id)
                     budget.check()
                     call = state.pending_calls[0]
+                    if state.retrieval and (state.qq_skipped or (session.kind == "qqbot" and state.qq_sent_count >= config.qq_reply_message_limit)) and call.function.name not in CONTEXT_TOOL_NAMES:
+                        self._record_result(session, run, state, call, ToolOutcome(status="rejected",
+                            error_code="QQ_REPLY_LIMIT_REACHED", error_message="The QQ batch has finished sending."))
+                        state.pending_calls.pop(0)
+                        continue
                     try:
                         spec = self.registry.get(call.function.name)
                         if call.function.name not in self._allowed_tools(config, state):
@@ -189,7 +200,7 @@ class HarnessAgentLoop:
                     await self._execute_one(session, config, run, state, call, arguments, budget)
                     state.pending_calls.pop(0)
                     self._save_state(run.run_id, state)
-                    if state.qq_skipped:
+                    if state.qq_skipped and state.retrieval is None:
                         self._check_cancelled(run.run_id)
                         budget.check()
                         for remaining in state.pending_calls:
@@ -199,7 +210,7 @@ class HarnessAgentLoop:
                         state.pending_calls = []
                         self._complete(run.run_id)
                         return RunResult(success=True, run_id=run.run_id)
-                    if session.kind == "qqbot" and state.qq_sent_count >= config.qq_reply_message_limit:
+                    if session.kind == "qqbot" and state.qq_sent_count >= config.qq_reply_message_limit and state.retrieval is None:
                         self._check_cancelled(run.run_id)
                         budget.check()
                         for remaining in state.pending_calls:
@@ -210,6 +221,13 @@ class HarnessAgentLoop:
                         self._update_qq_reply(run.run_id, config, state, limit_reached=True)
                         self._complete(run.run_id)
                         return RunResult(success=True, run_id=run.run_id)
+                if state.retrieval and session.kind == "qqbot" and (state.qq_skipped or state.qq_sent_count >= config.qq_reply_message_limit):
+                    self._check_cancelled(run.run_id)
+                    budget.check()
+                    self._update_qq_reply(run.run_id, config, state,
+                        limit_reached=state.qq_sent_count >= config.qq_reply_message_limit)
+                    self._complete(run.run_id, state)
+                    return RunResult(success=True, run_id=run.run_id)
                 if state.direct:
                     outcome = state.last_result
                     if outcome is None:
@@ -265,8 +283,9 @@ class HarnessAgentLoop:
                               **config.generation.model_dump(exclude_none=True))
         self.model_manager.validate_chat(profile, request)
         try:
-            request, trace, warning = await asyncio.wait_for(self.compaction.prepare(base=request, trace=trace,
-                config=config, profile=profile, run=run, state=state, on_dispatch=on_dispatch), timeout=budget.check())
+            preparation = (self.retrieval.prepare_loop(request, trace, config, profile, run, state) if state.retrieval else
+                self.compaction.prepare(base=request, trace=trace, config=config, profile=profile, run=run, state=state, on_dispatch=on_dispatch))
+            request, trace, warning = await asyncio.wait_for(preparation, timeout=budget.check())
         except asyncio.TimeoutError as exc:
             raise ToolExecutionError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.") from exc
         self._check_cancelled(run.run_id)
@@ -290,8 +309,8 @@ class HarnessAgentLoop:
         try:
             try:
                 context_budget = ChatContextBudget(config.context_limits, trace,
-                    allow_pruning=state.rounds > 0 or config.context_policy.strategy == "message_window"
-                    or not config.context_policy.compaction.enabled)
+                    allow_pruning=state.retrieval is None and (state.rounds > 0 or config.context_policy.strategy == "message_window"
+                    or not config.context_policy.compaction.enabled))
                 capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy,
                     budget=context_budget, on_dispatch=on_dispatch)
                 calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture, context_budget),
@@ -303,7 +322,7 @@ class HarnessAgentLoop:
             self._validate_calls(calls, state)
             if not calls and session.kind == "qqbot" and state.qq_sent_count == 0:
                 raise ToolExecutionError("QQ_REPLY_REQUIRED", "The model ended without a confirmed QQ reply or an allowed skip.")
-            if calls and state.rounds >= MAX_TOOL_ROUNDS:
+            if calls and state.retrieval is None and state.rounds >= MAX_TOOL_ROUNDS:
                 raise ToolExecutionError("TOOL_LOOP_LIMIT", "Tool loop reached the maximum of 8 rounds.")
         except (Exception, asyncio.CancelledError):
             draft.persist(incomplete=True)
@@ -317,8 +336,14 @@ class HarnessAgentLoop:
                               metadata={"streamed": request.stream, "tool_calls": len(calls)})
         self._emit_step(run.run_id, step.step_id)
         if not calls:
-            self._save_final(run, draft)
+            self._save_final(run, draft, state)
             return draft.text
+        if state.retrieval:
+            counter = "context_rounds" if all(call.function.name in CONTEXT_TOOL_NAMES for call in calls) else "business_rounds"
+            used = getattr(state.retrieval, counter)
+            if used >= MAX_TOOL_ROUNDS:
+                raise ToolExecutionError("TOOL_LOOP_LIMIT", "The context or business tool round allowance is exhausted.")
+            setattr(state.retrieval, counter, used + 1)
         state.rounds += 1
         self._persist_calls(draft, calls)
         state.transcript.append({"role": "assistant", "content": draft.raw_content or None,
@@ -398,7 +423,7 @@ class HarnessAgentLoop:
         step = self._start_step(run.run_id, "tool", call.function.name,
                                 {"tool_name": call.function.name, "tool_call_id": call.id})
         context = ToolExecutionContext(session_id=session.session_id,
-                                       run_id=run.run_id, tool_call_id=call.id,
+                                       run_id=run.run_id, tool_call_id=call.id, harness_state=state,
                                        web_budget=state.web_budget,
                                        web_sources=None if session.kind == "qqbot" else state.web_sources,
                                        qq_image_generation_model_profile_id=config.qq_image_generation_model_profile_id,
@@ -465,12 +490,15 @@ class HarnessAgentLoop:
                 outcome.error_code, outcome.error_message)
         else:
             model_text = json.dumps(outcome.model_dump(exclude_none=True), ensure_ascii=False, allow_nan=False)
-        part = make_tool_result_part(call.id, call.function.name, outcome.status, outcome.data,
+        private = call.function.name in CONTEXT_TOOL_NAMES
+        public_data = ({"private_context": True, "count": len((outcome.data or {}).get("items", [])),
+                        "truncated": bool((outcome.data or {}).get("truncated"))} if private else outcome.data)
+        part = make_tool_result_part(call.id, call.function.name, outcome.status, public_data,
                                     error_code=outcome.error_code, error_message=outcome.error_message,
                                     truncated=projected_truncation or bool((outcome.data or {}).get("truncated")))
         message = self.messages.add_message(session.session_id, role="tool", parts=[part], run_id=run.run_id,
                                             parent_message_id=run.metadata.get("input_message_id"),
-                                            metadata={"tool": call.function.name, "tool_call_id": call.id,
+                                            metadata={"tool": call.function.name, "tool_call_id": call.id, "context_internal": private,
                                                       **({"qq_internal": True} if session.kind == "qqbot" else {})})
         self.events.emit("tool_result_created", session_id=session.session_id, run_id=run.run_id, message_id=message.message_id,
                          payload={"message": message.model_dump(mode="json"), "status": outcome.status,
@@ -497,8 +525,9 @@ class HarnessAgentLoop:
             except ToolExecutionError:
                 arguments = {}
             parts.append(make_tool_call_part(call.id, call.function.name,
-                         arguments, part_id=f"call_{index}"))
-        message = draft.persist(extra_parts=parts, metadata={"tool_calls": True, "direct": direct})
+                         {} if call.function.name in CONTEXT_TOOL_NAMES else arguments, part_id=f"call_{index}"))
+        message = draft.persist(extra_parts=parts, metadata={"tool_calls": True, "direct": direct,
+            "context_internal": all(call.function.name in CONTEXT_TOOL_NAMES for call in calls)})
         payload = {"message": message.model_dump(mode="json")}
         self.events.emit("tool_call_created", session_id=message.session_id, run_id=message.run_id, message_id=message.message_id,
                          payload={**payload, "tool_calls": [{"id": call.id, "name": call.function.name} for call in calls]})
@@ -515,12 +544,12 @@ class HarnessAgentLoop:
                        "arguments": arguments, "step_id": step.step_id, "risk": risk})
         return RunResult(success=True, run_id=run.run_id)
 
-    def _save_final(self, run, draft: AssistantDraft) -> None:
+    def _save_final(self, run, draft: AssistantDraft, state: HarnessState) -> None:
         step = self._start_step(run.run_id, "save", "Saving response")
         draft.persist()
         self.runs.update_step(step.step_id, status=RunStepStatus.COMPLETED, message="Response saved")
         self._emit_step(run.run_id, step.step_id)
-        self._complete(run.run_id)
+        self._complete(run.run_id, state)
 
     def cancel(self, run) -> RunResult:
         state = HarnessState.model_validate(self.runs.get_harness_state(run.run_id))
@@ -557,7 +586,9 @@ class HarnessAgentLoop:
         if run.cancel_requested or run.status == RunStatus.CANCELLED:
             raise asyncio.CancelledError()
 
-    def _complete(self, run_id):
+    def _complete(self, run_id, state=None):
+        if state is not None and state.retrieval is not None:
+            self.retrieval.commit(state.retrieval)
         self.runs.update_harness_state(run_id, {})
         self.runs.update_status(run_id, RunStatus.DONE, current_step="done")
         self._emit_run("run_completed", run_id)

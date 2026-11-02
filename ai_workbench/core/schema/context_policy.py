@@ -24,14 +24,29 @@ class MessageWindowPolicy(BaseModel):
     max_messages: int = Field(default=100, ge=1, le=10000)
 
 
+class RetrievalPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    trigger_percent: int = Field(default=80, gt=0, lt=100)
+    target_percent: int = Field(default=55, gt=0, lt=100)
+    max_checkpoint_tokens: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def ordered_thresholds(self):
+        if self.target_percent >= self.trigger_percent:
+            raise ValueError("The retrieval target must be below its trigger.")
+        return self
+
+
 class ContextPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     history_enabled: bool = True
-    strategy: Literal["token_budget", "message_window"] = "token_budget"
+    strategy: Literal["token_budget", "message_window", "history_retrieval"] = "token_budget"
     include_attachments: Literal["none", "explicit"] = "explicit"
     compaction: CompactionPolicy = Field(default_factory=CompactionPolicy)
     message_window: MessageWindowPolicy = Field(default_factory=MessageWindowPolicy)
+    retrieval: RetrievalPolicy = Field(default_factory=RetrievalPolicy)
 
 
 class BoundedContextPolicy(BaseModel):

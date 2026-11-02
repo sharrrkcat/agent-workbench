@@ -13,6 +13,7 @@ from ai_workbench.core.context_snapshot import append_system_block, snapshot_att
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 from ai_workbench.core.user_persona_context import build_user_persona_context
 from ai_workbench.core.web_render import web_model_text
+from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
 
 
 class ContextBuildResult(BaseModel):
@@ -110,6 +111,8 @@ def message_text(message: Any, *, include_attachments: bool = True, attachment_s
     for part in getattr(message,"parts",[]) or []:
         if not isinstance(part,dict): continue
         kind=part.get("type")
+        if kind in {"tool_call", "tool_result"} and part.get("tool_name") in CONTEXT_TOOL_NAMES:
+            continue
         if not include_attachments and kind in {"file", "image", "audio", "video", "media_group"}:
             continue
         if kind=="text": rendered.append(str(part.get("text") or ""))
@@ -180,4 +183,4 @@ def _eligible(message: Any) -> bool:
     if getattr(message,"role","") not in {"system","user","assistant","tool"}: return False
     if any(isinstance(part,dict) and part.get("type")=="error" for part in getattr(message,"parts",[]) or []): return False
     metadata=getattr(message,"metadata",{}) or {}
-    return not bool(metadata.get("qq_internal") or metadata.get("event_type") or metadata.get("incomplete") or metadata.get("streaming"))
+    return not bool(metadata.get("qq_internal") or metadata.get("context_internal") or metadata.get("event_type") or metadata.get("incomplete") or metadata.get("streaming"))

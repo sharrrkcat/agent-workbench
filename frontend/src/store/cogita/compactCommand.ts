@@ -18,7 +18,8 @@ export function compactUnavailable(state: CogitaState): string | null {
   if (queue?.items.length || queue?.editing || queue?.submission) return 'queued';
   if (state.savingSessionIds.includes(session.session_id)) return 'saving';
   const policy = session.effective.context_policy;
-  if (!('history_enabled' in policy) || !policy.history_enabled || policy.strategy !== 'token_budget') return 'policy';
+  if (!('history_enabled' in policy) || !policy.history_enabled || !['token_budget', 'history_retrieval'].includes(policy.strategy)) return 'policy';
+  if (policy.strategy === 'history_retrieval' && !session.effective.harness_enabled) return 'harness';
   if (!session.effective.model_profile_id) return 'model';
   return null;
 }

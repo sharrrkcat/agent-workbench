@@ -37,8 +37,10 @@ class ManualCompactionRunner:
             raise ChatError("COMPACTION_UNAVAILABLE", "This conversation does not support manual compaction.", 409)
         self.chat.chat_service.assert_idle(session.session_id)
         config = self.chat.chat_service.resolve(session)
-        if not config.context_policy.history_enabled or config.context_policy.strategy != "token_budget":
+        if not config.context_policy.history_enabled or config.context_policy.strategy not in {"token_budget", "history_retrieval"}:
             raise ChatError("COMPACTION_UNAVAILABLE", "Enable history and select the token-budget strategy first.", 409)
+        if config.context_policy.strategy == "history_retrieval" and not config.harness_enabled:
+            raise ChatError("HISTORY_RETRIEVAL_REQUIRES_HARNESS", "Enable Harness to use on-demand history.", 422)
         if not config.model_profile_id:
             raise ChatError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.chat.model_manager.profile(config.model_profile_id, "llm")
@@ -55,7 +57,7 @@ class ManualCompactionRunner:
 
     async def _execute(self, session, config, profile, run, through, ui_language):
         self.lifecycle.start_run(run.run_id, "compaction")
-        if through is None:
+        if through is None and config.context_policy.strategy != "history_retrieval":
             self.chat.compaction.record_outcome(run, CompactionOutcome(status="not_needed", reason="no_history"))
             self.lifecycle.complete_run(run.run_id)
             return
@@ -67,10 +69,13 @@ class ManualCompactionRunner:
             async with self.chat.model_manager.check_chat_inputs(profile, tools=bool(allowed),
                     vision=config.context_policy.include_attachments == "explicit", reasoning=config.reasoning) as support:
                 if not profile.request_options.skip_tool_capability_check and support.tools.state == "unsupported":
+                    if config.context_policy.strategy == "history_retrieval":
+                        raise ModelError("UNSUPPORTED_CAPABILITY", "On-demand history requires model tool support.", 422)
                     allowed = []
                 tools = request_tools(self.chat.harness_loop.registry, allowed) if allowed else None
                 instruction = date_instruction(ui_language, utc_now().astimezone().date()) if WEB_TOOL_NAMES.intersection(allowed) else ""
-                await self.chat.compaction.prepare(session=session, config=config, run=run, base=base, trace=trace,
+                service = self.chat.retrieval if config.context_policy.strategy == "history_retrieval" else self.chat.compaction
+                await service.prepare(session=session, config=config, run=run, base=base, trace=trace,
                     current=None, profile=profile, support=support, tools=tools, instruction=instruction,
                     max_image_bytes=self.chat.app_settings.get().max_image_size_mb * 1024 * 1024,
                     reasoning=chat_reasoning_mode(profile, support, config.reasoning), manual=True, through=through)

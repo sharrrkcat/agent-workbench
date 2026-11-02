@@ -309,15 +309,17 @@ class QQStore:
 
     def advance_history(self, db, sessions):
         if hasattr(self.sessions, "engine"):
-            from ai_workbench.db.models import SessionRecord, ContextCheckpointRecord
+            from ai_workbench.db.models import SessionRecord, ContextCheckpointRecord, ContextRetrievalRecord
             db.exec(update(SessionRecord).where(SessionRecord.session_id.in_(sessions))
                 .values(history_version=SessionRecord.history_version + 1))
             db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id.in_(sessions)))
+            db.exec(delete(ContextRetrievalRecord).where(ContextRetrievalRecord.session_id.in_(sessions)))
         else:
             for session_id in sessions:
                 current = self.sessions.get_session(session_id)
                 self.sessions.update_session(session_id, {"history_version": current.history_version + 1})
                 self.sessions.discard_context_checkpoint(session_id)
+                self.sessions.discard_retrieval_state(session_id)
 
     def confirm_generated_asset(self, db, candidate, prompt, session_id):
         asset = db.exec(select(QQMediaAsset).where(QQMediaAsset.sha256 == candidate.sha256)).first()

@@ -58,10 +58,11 @@
     "busy": "请等待当前操作结束。",
     "queued": "请先发送或移除排队消息。",
     "saving": "请等待设置保存完成。",
-    "policy": "请先开启历史并选择 Token 预算。",
+    "policy": "请开启历史，并选择 Token 预算或按需回溯。",
     "model": "请先选择模型。",
     "arguments": "/compact 不接受参数。",
-    "attachments": "使用 /compact 前请先移除附件。"
+    "attachments": "使用 /compact 前请先移除附件。",
+    "harness": "请先开启 Harness。"
   },
   "loadEarlier": "加载更早的消息",
   "loadLater": "加载后续消息"

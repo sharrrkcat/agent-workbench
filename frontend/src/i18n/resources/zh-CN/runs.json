@@ -142,7 +142,9 @@
       "tool_call": "工具调用",
       "tool_result": "工具返回",
       "tools": "工具定义",
-      "summary": "历史摘要"
+      "summary": "历史摘要",
+      "context_memory": "工作检查点",
+      "context_retrieval": "回溯结果"
     },
     "reasons": {
       "ineligible_history": "不符合历史消息纳入条件",
@@ -161,7 +163,8 @@
       "qq_history_image": "历史QQ图片使用文本占位",
       "qq_system_face": "QQ系统表情使用名称占位",
       "qq_image_limit": "超出本批QQ图片数量上限",
-      "compacted": "已纳入摘要"
+      "compacted": "已纳入摘要",
+      "window_reset": "已移出活动窗口，可按需回读"
     },
     "empty": "空",
     "sourceInfo": "来源信息",
@@ -171,7 +174,8 @@
     "baseId": "知识库 ID",
     "tokenPolicy": "历史按 token 预算管理",
     "messageWindowPolicy": "历史消息上限：{{limit}} · 同时遵守 token 预算",
-    "historyDisabled": "未使用历史"
+    "historyDisabled": "未使用历史",
+    "retrievalPolicy": "按需回溯"
   },
   "commandStatus": {
     "pending": "等待运行 {{name}}",
@@ -212,7 +216,8 @@
     "required": "请在模型设置中填写上下文窗口大小后重试。",
     "exceeded": "当前输入、指令、知识或工具记录与输出预留超过上下文窗口。请缩短输入、减少注入内容或调整模型设置。",
     "countFailed": "无法统计模型输入，未发送生成请求。请检查本地模型运行状态后重试。",
-    "compactionFailed": "上下文压缩失败，此前的上下文超出模型窗口。可调整压缩设置后重试。"
+    "compactionFailed": "上下文压缩失败，此前的上下文超出模型窗口。可调整压缩设置后重试。",
+    "harnessRequired": "按需回溯需要开启 Harness。"
   },
   "compaction": {
     "call": "第 {{count}} 次调用 · 压缩",
@@ -233,5 +238,15 @@
     "coveredTools": "已覆盖工具调用",
     "model": "模型配置",
     "step": "摘要步骤"
+  },
+  "retrieval": {
+    "reset": "重置上下文",
+    "window": "上下文窗口",
+    "tools": {
+      "context_list": "列出历史",
+      "context_search": "搜索历史",
+      "context_read": "读取历史",
+      "context_checkpoint_update": "更新检查点"
+    }
   }
 }

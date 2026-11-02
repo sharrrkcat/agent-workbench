@@ -11,6 +11,7 @@ from ai_workbench.core.models.schema import (
 )
 from ai_workbench.core.schema.context_policy import ContextPolicy, BoundedContextPolicy
 from ai_workbench.core.schema.compaction import CompactionReference, RunCompactionReference
+from ai_workbench.core.schema.retrieval import RetrievalReference
 from ai_workbench.core.schema.context_budget import ContextBudgetStats
 from ai_workbench.core.time import isoformat_utc
 
@@ -70,7 +71,7 @@ class SnapshotRequest(GenerationParameters):
 
 SourceKind = Literal[
     "system", "instruction", "agent_persona", "project_prompt", "cogita_persona", "knowledge", "knowledge_snippet",
-    "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime", "summary",
+    "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime", "summary", "context_memory", "context_retrieval",
 ]
 
 
@@ -93,6 +94,7 @@ class ContextSource(SnapshotModel):
     attachment: ContextAttachment | None = None
     compaction: CompactionReference | None = None
     run_compaction: RunCompactionReference | None = None
+    retrieval: RetrievalReference | None = None
 
 
 class ContextExclusion(SnapshotModel):
@@ -100,7 +102,7 @@ class ContextExclusion(SnapshotModel):
     reason: Literal[
         "ineligible_history", "message_limit", "character_limit", "token_limit", "empty", "attachments_disabled",
         "images_unsupported", "qq_image_unavailable", "qq_history_image", "qq_system_face", "qq_image_limit",
-        "file_text_disabled", "file_text_limit", "no_bindings", "no_results", "retrieval_failed", "compacted",
+        "file_text_disabled", "file_text_limit", "no_bindings", "no_results", "retrieval_failed", "compacted", "window_reset",
     ]
     reference_id: str | None = None
     name: str | None = None

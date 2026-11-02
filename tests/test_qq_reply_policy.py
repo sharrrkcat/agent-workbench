@@ -169,9 +169,10 @@ def test_other_tool_success_does_not_count_as_qq_delivery(qq_client, monkeypatch
 
 
 @pytest.mark.parametrize("failure,status", [(ToolExecutionError("QQ_ACTION_FAILED", "Rejected"), "failed"), (TimeoutError(), "unknown")])
-def test_partial_delivery_failure_preserves_count_and_stops(qq_client, failure, status):
+@pytest.mark.parametrize("strategy", ["token_budget", "history_retrieval"])
+def test_partial_delivery_failure_preserves_count_and_stops(qq_client, failure, status, strategy):
     client, state, upstream = qq_client
-    p, session, connection = configure_execution(client, state, reply_message_limit=2)
+    p, session, connection = configure_execution(client, state, reply_message_limit=2, context_policy={'strategy': strategy})
     original = connection.call
     async def fail_second(action, params, *, timeout=20):
         if connection.calls:
@@ -204,9 +205,10 @@ def test_provider_error_does_not_retry_or_hide_confirmed_sends(qq_client, stream
     assert state.qq.store.get(QQBinding, session["session_id"]).paused
 
 
-def test_cancellation_wins_over_reaching_limit(qq_client):
+@pytest.mark.parametrize("strategy", ["token_budget", "history_retrieval"])
+def test_cancellation_wins_over_reaching_limit(qq_client, strategy):
     client, state, upstream = qq_client
-    p, session, connection = configure_execution(client, state, reply_message_limit=1)
+    p, session, connection = configure_execution(client, state, reply_message_limit=1, context_policy={'strategy': strategy})
     original = connection.call
     async def cancel_with_receipt(action, params, *, timeout=20):
         receipt = await original(action, params, timeout=timeout)

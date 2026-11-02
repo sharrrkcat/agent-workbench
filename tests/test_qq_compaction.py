@@ -111,9 +111,13 @@ def test_qq_window_omits_memory_and_switch_back_reuses_it(qq_client):
     assert len(connection.calls) == 4
 
 
-def test_loop_compaction_preserves_qq_delivery_count_and_web_budget(qq_client):
+@pytest.mark.parametrize('strategy', ['token_budget', 'history_retrieval'])
+def test_loop_compaction_preserves_qq_delivery_count_and_web_budget(qq_client, strategy):
     client, state, upstream = qq_client
     p, session, connection = setup(client, state)
+    if strategy == 'history_retrieval':
+        ok(client.patch(f"/api/projects/{p['id']}", json={'context_policy': {'strategy': strategy,
+            'retrieval': {'trigger_percent': 25, 'target_percent': 15}}}))
     ok(client.patch(f"/api/projects/{p['id']}", json={"reply_message_limit": 2}))
     calls = []
     async def fetch(arguments, context):
@@ -135,7 +139,8 @@ def test_loop_compaction_preserves_qq_delivery_count_and_web_budget(qq_client):
     assert run.status == "DONE", run
     assert calls == ["fetch_0", "fetch_2"] and len(connection.calls) == 2
     assert run.metadata["qq_reply"]["sent_count"] == 2 and run.metadata["qq_reply"]["limit_reached"]
-    assert any(step.kind == "compaction" and step.status == "completed" for step in state.runs.list_steps(run.run_id))
+    assert any((step.kind == 'compaction' if strategy == 'token_budget' else step.metadata.get('operation') == 'reset')
+        and step.status == 'completed' for step in state.runs.list_steps(run.run_id))
     assert "confirmed sends=1/2" in json.dumps(answers[-1])
     web_steps = [step for step in state.runs.list_steps(run.run_id) if step.metadata.get("tool_name") == "web_fetch"]
     assert [step.metadata["web"]["remaining"]["fetch"] for step in web_steps] == [5, 4]

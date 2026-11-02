@@ -24,7 +24,7 @@ import type { Reply } from './turns';
 import { useCogitaStore } from '../../store/useCogitaStore';
 
 export function contextCalls(reply: Reply): RunStep[] {
-  return reply.steps.filter((step) => (step.kind === 'model' || step.kind === 'compaction') && step.metadata?.context?.available)
+  return reply.steps.filter((step) => (step.kind === 'model' || step.kind === 'compaction' || step.metadata?.operation === 'reset') && step.metadata?.context?.available)
     .sort((a, b) => a.order - b.order);
 }
 
@@ -88,7 +88,7 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
   const number = new Intl.NumberFormat(i18n.language);
   const count = (value: number | null | undefined) => value == null ? '—' : number.format(value);
   const callsInRun = reply.steps.filter((call) => call.kind === 'model' || call.kind === 'compaction').sort((a, b) => a.order - b.order);
-  const items = calls.map((call) => ({ value: call.step_id, label: t(call.kind === 'compaction' ? 'compaction.call' : 'metrics.call', { count: callsInRun.indexOf(call) + 1 }) +
+  const items = calls.map((call) => ({ value: call.step_id, label: (call.metadata?.operation === 'reset' ? t('retrieval.reset') : t(call.kind === 'compaction' ? 'compaction.call' : 'metrics.call', { count: callsInRun.indexOf(call) + 1 })) +
     (reply.answer && call.metadata?.llm?.message_id === reply.answer.message_id ? ` · ${t('context.finalAnswer')}` : '') }));
   const byParent = presentation?.byParent || new Map<string | null, DisplayContextSource[]>();
   const exclusions = presentation?.exclusions || [];
@@ -191,7 +191,7 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
     {detail ? <div className="context-footer">
       <span><LockKeyhole aria-hidden="true" />{t('context.snapshot')} · {new Date(detail.captured_at).toLocaleString(i18n.language)}</span>
       <span>{'history_enabled' in detail.policy ? t(!detail.policy.history_enabled ? 'context.historyDisabled'
-        : detail.policy.strategy === 'message_window' ? 'context.messageWindowPolicy' : 'context.tokenPolicy',
+        : detail.policy.strategy === 'message_window' ? 'context.messageWindowPolicy' : detail.policy.strategy === 'history_retrieval' ? 'context.retrievalPolicy' : 'context.tokenPolicy',
         { limit: detail.policy.message_window.max_messages }) : t('context.policy', {
         messages: detail.policy.max_messages == null ? t('context.unlimited') : count(detail.policy.max_messages),
         chars: detail.policy.max_chars == null ? t('context.unlimited') : count(detail.policy.max_chars),
@@ -221,6 +221,11 @@ function SourceInfo({ source, tokenLabel }: { source: DisplayContextSource; toke
         {source.citation ? <div><dt>{t('context.citation')}</dt><dd>{source.citation}</dd></div> : null}
         {source.source_id ? <div><dt>{t('context.sourceId')}</dt><dd>{source.source_id}</dd></div> : null}
         {source.knowledge_base_id ? <div><dt>{t('context.baseId')}</dt><dd>{source.knowledge_base_id}</dd></div> : null}
+        {source.retrieval ? <>
+          <div><dt>{t('retrieval.window')}</dt><dd>{source.retrieval.window_id}</dd></div>
+          <div><dt>{t('compaction.checkpoint')}</dt><dd>{source.retrieval.memory_id}</dd></div>
+          <div><dt>{t('compaction.boundary')}</dt><dd>{source.retrieval.boundary_message_id ?? '—'}</dd></div>
+        </> : null}
         {source.compaction ? <>
           <div><dt>{t('compaction.checkpoint')}</dt><dd>{source.compaction.checkpoint_id}</dd></div>
           <div><dt>{t('compaction.covered')}</dt><dd>{source.compaction.covered_messages}</dd></div>

@@ -100,9 +100,9 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
           const sessionId = new URL(page.url()).searchParams.get('session')!;
           expect((await json(request.get(`/api/sessions/${sessionId}`))).overrides).toEqual({ harness_enabled: true, temperature: 0,
-            context_policy: { history_enabled: false, strategy: 'message_window', message_window: { max_messages: 14 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: null } } });
+            context_policy: { history_enabled: false, strategy: 'message_window', message_window: { max_messages: 14 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: null }, retrieval: { trigger_percent: 80, target_percent: 55, max_checkpoint_tokens: null } } });
           await page.locator('.composer textarea').fill('Retained draft');
-          await json(request.patch(`/api/projects/${projectId}`, { data: { temperature: 0.85, context_policy: { history_enabled: true } } }));
+          await json(request.patch(`/api/projects/${projectId}`, { data: { temperature: 0.85, context_policy: { history_enabled: true, strategy: 'history_retrieval' } } }));
           await expect(page.locator('.composer textarea')).toHaveValue('Retained draft');
           await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
           dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
@@ -110,7 +110,7 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(dialog.getByRole('switch', { name: labels.historyEnabled, exact: true })).not.toBeChecked();
           await dialog.getByRole('button', { name: labels.restoreInheritanceFor.replace('{{field}}', labels.context), exact: true }).click();
           await expect(dialog.getByRole('switch', { name: labels.historyEnabled, exact: true })).toBeChecked();
-          await expect(dialog.getByRole('button', { name: labels.tokenBudget, exact: true })).toHaveAttribute('aria-pressed', 'true');
+          await expect(dialog.getByRole('button', { name: labels.historyRetrieval, exact: true })).toHaveAttribute('aria-pressed', 'true');
           await dialog.getByRole('button', { name: labels.restoreInheritanceFor.replace('{{field}}', llm.params.temperature), exact: true }).click();
           await expect(dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true })).toHaveValue('0.85');
           await json(request.patch(`/api/projects/${projectId}/knowledge-bases`, { data: { knowledge_base_ids: bases.map((base) => base.id) } }));
@@ -144,6 +144,7 @@ for (const locale of ['en', 'zh-CN']) {
           await harness.getByRole('button', { name: labels.save, exact: true }).click();
           await expect(harness).toBeHidden();
           expect((await json(request.get(`/api/sessions/${sessionId}`))).overrides).toEqual({});
+          expect((await json(request.get(`/api/sessions/${sessionId}`))).effective.context_policy.strategy).toBe('history_retrieval');
           await page.reload();
           await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
           await openSidebar(page);

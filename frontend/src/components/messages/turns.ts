@@ -53,7 +53,7 @@ export function buildReply(run: Run, messages: Message[], steps: RunStep[]): Rep
       }
     }
   }
-  for (const step of steps.filter((item) => item.kind === 'compaction')) {
+  for (const step of steps.filter((item) => item.kind === 'compaction' || item.metadata?.operation === 'reset')) {
     process.push({ kind: 'compaction', id: step.step_id, step });
   }
   const processingTime = (item: ProcessingItem) => item.kind === 'content' ? item.message.created_at

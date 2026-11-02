@@ -13,7 +13,7 @@ Frontend message, queue, upload and API-key IDs use cryptographic randomness ava
 Run.kind is chat, tool or compaction and stores its Agent persona_id (empty for QQ without an Agent). Statuses are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and INTERRUPTED. Terminal runs never return to running.
 
 RunStep.kind is context/model/compaction/save/approval/tool; statuses are pending/running/completed/failed/skipped.
-Steps have stable order, optional parent ids, timing, compact messages and structured errors.
+Steps have stable order, optional parent ids, timing, compact messages and structured errors. Local resets use context steps with operation=reset and private snapshots, without LLM statistics.
 Both locales label stable kinds, never implementation progress strings.
 
 The optional Pet foundation selects session statuses/steps/progress without a UI, separate stream or polling.
@@ -36,7 +36,7 @@ Run reads/cancellation are `/api/runs/{id}`, `/{id}/events`, `/{id}/cancel` and
 the harness contract. Direct tool runs never create model summaries or auxiliary titles;
 explicit chat tool input receives the basic input title described in the chat contract.
 POST `/api/sessions/{id}/compact` accepts an empty body and returns 202 RunResponse. It captures configuration/history and creates a compaction run before yielding, then registers its task for ordinary cancellation and restart interruption. Unsupported policies/session kinds and busy sessions return 409; arguments return 422. The internal message input also recognizes standalone /compact before creating any message.
-Compaction metadata records compacted or not_needed (no_history/below_target), checkpoint identity and nullable before/after counts. Summary text remains private. Failed manual generation has a failed run; it cannot be retried/deleted as a reply. History edits still remove later runs and invalidate checkpoints.
+Compaction metadata records compacted/reset/not_needed (no_history/below_target), source identity and nullable before/after counts. Local resets add operation=reset and body-free window references. Summary text remains private. Failed manual generation has a failed run; it cannot be retried/deleted as a reply. History edits still remove later runs and invalidate checkpoints.
 
 Messages and replies have consecutive session-local numbers starting at #1 beside their timestamps.
 Each standalone message or whole reply occupies one number, including active, failed, cancelled and
@@ -45,7 +45,7 @@ order, are computed by database counts after history mutations and are not persi
 these same numbers while continuing to target only user messages.
 Compaction history items have kind=compaction and number=null: they participate in paging/cursors, never numbering or model history. Marker separators show current status, known reduction counts, cancel while active and private call/usage details afterward; no avatar, answer, Restore or reply actions. Their usage belongs to that run; the context ring retains answer usage.
 The chat view presents chat/tool runs inside their replies, without a separate footer
-RunPanel or context/model/save step list. Elapsed seconds use started_at (or
+RunPanel or general context/model/save step list; local context resets appear inside processing history. Elapsed seconds use started_at (or
 created_at) through finished_at, including approval waits; active clocks update
 locally and terminal clocks freeze. General show_full_processing controls initial
 active expansion. User toggles survive incoming deltas; entering a terminal state
@@ -59,7 +59,7 @@ The processing header has no cancel button; cancellation remains in the composer
 (ceiling seconds, including zero), or Thought when timing is unknown, in both locales.
 Expansion shows full Markdown. Incoming deltas preserve manual expansion; an expanded
 live segment closes once, one second after thinking ends. Reopening it stays open.
-General tool titles include their name and arguments: one value or compact key=value pairs, with nested JSON. Long titles truncate; pending confirmation retains full arguments.
+Internal context tools show localized operation/status only; arguments/results remain in private context details. General tool titles include their name and arguments: one value or compact key=value pairs, with nested JSON. Long titles truncate; pending confirmation retains full arguments.
 Running/queued calls are plain Trace lines; general results start collapsed and show bounded output/errors and truncation notices.
 Web tools use specialized Trace steps: search titles contain the queries and successful details show only linked `title | hostname` Badges. Long page titles truncate while hostnames stay visible; missing titles show only the hostname. Tooltips and accessible labels retain the full label. Fetch details show bounded page text in a Code Block or an empty-content notice. Dates, query summaries, filter counts, cache/page metadata, separate related-link lists and remaining budgets are omitted from Trace. Titles reflect pending/running/failed/cancelled states in both locales; tool failures retain localized errors and empty searches show No results found.
 Web details start expanded inside processing history and remain independently collapsible. Replies containing web tools keep the processing content mounted so closing the outer clock preserves step choices. Fetched content remains scrollable text, bounded to 160px on desktop and 120px below 768px.
@@ -222,7 +222,7 @@ without the request-position prefix. Their labels stay on one line; attachment/c
 Context detail supplies current reference_numbers even outside the loaded window; multiple sources from one reply share its number. Deleted references show Deleted message; sources
 without a message reference retain their category label. Tool sources retain tool labels.
 Context and usage dialogs are sibling roots, so Context detail receives the standard dimmed, blurred backdrop.
-Historical summary sources show checkpoint/model/step identities and covered-message boundary/count, plus QQ batch boundary where applicable. Current-task summaries expose separate run/step/model identities and covered tool-round/call counts. Summary text appears only in private detail, never ordinary metadata/events.
+Working-checkpoint/retrieval sources show window, checkpoint and boundary identities. Historical summary sources show checkpoint/model/step identities and covered-message boundary/count, plus QQ batch boundary where applicable. Current-task summaries expose separate run/step/model identities and covered tool-round/call counts. Summary text appears only in private detail, never ordinary metadata/events.
 An Info Hover Card beside the source name/role contains characters, approximate tokens and captured identifiers;
 keyboard focus and touch press also open it. Changing the source or closing the modal dismisses it.
 Approximate source counts use the bundled gpt-tokenizer o200k_base reference encoding in a lazily loaded Web Worker,

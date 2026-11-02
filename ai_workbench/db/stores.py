@@ -24,12 +24,13 @@ from ai_workbench.core.settings import AppSettings, AppSettingsPatch, app_settin
 from ai_workbench.core.time import utc_now, ensure_utc
 from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.schema.compaction import ContextCheckpoint
+from ai_workbench.core.schema.retrieval import SessionRetrievalState
 from ai_workbench.core.worldbook import Worldbook, WorldbookEntry, WorldbookSettings, sync_worldbook_settings_patch
 from ai_workbench.db.models import (
     AppMetadataRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord,
     KnowledgeSettingsRecord, KnowledgeSourceRecord, MessageRecord,
     RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord,
-    WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord, ContextCheckpointRecord,
+    WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord, ContextCheckpointRecord, ContextRetrievalRecord,
 )
 
 
@@ -47,6 +48,26 @@ def _load(value: str | None, fallback: Any) -> Any:
 class SqlSessionStore:
     def __init__(self, engine) -> None:
         self.engine = engine
+
+    def get_retrieval_state(self, session_id):
+        with DbSession(self.engine) as db:
+            row = db.get(ContextRetrievalRecord, session_id)
+            return SessionRetrievalState.model_validate_json(row.state_json) if row else None
+
+    def save_retrieval_state(self, value):
+        with DbSession(self.engine) as db:
+            matched = db.execute(update(SessionRecord).where(SessionRecord.session_id == value.session_id,
+                SessionRecord.history_version == value.history_version).values(history_version=SessionRecord.history_version))
+            if matched.rowcount != 1:
+                return False
+            db.merge(ContextRetrievalRecord(session_id=value.session_id, state_json=value.model_dump_json()))
+            db.commit()
+        return True
+
+    def discard_retrieval_state(self, session_id):
+        with DbSession(self.engine) as db:
+            db.exec(delete(ContextRetrievalRecord).where(ContextRetrievalRecord.session_id == session_id))
+            db.commit()
 
     def get_context_checkpoint(self, session_id: str) -> ContextCheckpoint | None:
         with DbSession(self.engine) as db:
@@ -118,6 +139,7 @@ class SqlSessionStore:
             if row is None: raise KeyError(f"unknown session id: {session_id}")
             delete_session_web_pages(db, session_id)
             db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id == session_id))
+            db.exec(delete(ContextRetrievalRecord).where(ContextRetrievalRecord.session_id == session_id))
             db.delete(row); db.commit()
 
     def list_sessions(self) -> list[Session]:
@@ -300,6 +322,7 @@ class SqlHistoryStore:
             session.updated_at = utc_now()
             session.history_version += 1
             db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id == session_id))
+            db.exec(delete(ContextRetrievalRecord).where(ContextRetrievalRecord.session_id == session_id))
             db.add(session)
             if transaction is None:
                 db.commit()
@@ -358,7 +381,7 @@ class SqlRunStore:
             row = db.get(RunStepRecord, step_id)
             if row is None:
                 raise KeyError(step_id)
-            if row.kind not in {"model", "compaction"} or row.context_snapshot_json is not None:
+            if row.kind not in {"model", "compaction", "context"} or row.context_snapshot_json is not None:
                 raise ValueError("Context requires a model step without an existing snapshot")
             row.context_snapshot_json = snapshot.model_dump_json(exclude_unset=True, by_alias=True)
             row.metadata_json = _dump({**json.loads(row.metadata_json), "context": snapshot.summary().model_dump()})

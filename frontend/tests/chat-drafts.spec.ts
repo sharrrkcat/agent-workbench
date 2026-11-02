@@ -28,6 +28,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.attachment-chip')).toContainText('draft.txt');
         await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
         const dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
+        await expect(dialog.getByRole('button', { name: labels.historyRetrieval, exact: true })).toBeDisabled();
         await dialog.getByRole('spinbutton', { name: llm.params.temperature, exact: true }).fill('0');
         await expect(dialog.getByRole('combobox', { name: /^(History|历史)$/ })).toHaveCount(0);
         await dialog.getByRole('button', { name: labels.compactionAdvanced, exact: true }).click();
@@ -41,6 +42,11 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true }).click();
         await expect(page.getByRole('menuitemcheckbox', { name: labels.harness, exact: true })).toBeChecked();
         await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
+        await dialog.getByRole('button', { name: labels.historyRetrieval, exact: true }).click();
+        await dialog.getByRole('button', { name: labels.compactionAdvanced, exact: true }).click();
+        await dialog.getByRole('spinbutton', { name: labels.checkpointTokens, exact: true }).fill('256');
+        await dialog.getByRole('button', { name: labels.save, exact: true }).click();
         await openSidebar(page);
         const sidebar = page.locator('.session-sidebar');
         const heading = sidebar.locator('[data-sidebar=group-label]').filter({ hasText: new RegExp(`^${labels.sessions}$`) }).locator('..');
@@ -74,7 +80,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
         expect(creates).toBe(1);
         expect(session.generation).toEqual({ temperature: 0 });
-        expect(session.context_policy).toEqual({ history_enabled: false, strategy: 'token_budget', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: 500 } });
+        expect(session.context_policy).toEqual({ history_enabled: false, strategy: 'history_retrieval', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: 500 }, retrieval: { trigger_percent: 80, target_percent: 55, max_checkpoint_tokens: 256 } });
         expect(session.harness_enabled).toBe(true);
         await expect(page.locator('.chat-title')).toHaveText('Draft attachmen…');
         await expect(page.locator('.composer textarea')).toHaveValue('');
@@ -89,6 +95,7 @@ for (const locale of ['en', 'zh-CN']) {
           const current = await (await request.get(`/api/sessions/${session.session_id}`)).json();
           expect(current.context_policy.history_enabled).toBe(enabled);
           expect(current.context_policy.compaction.max_summary_tokens).toBe(500);
+          expect(current.context_policy.retrieval.max_checkpoint_tokens).toBe(256);
         }
       });
 

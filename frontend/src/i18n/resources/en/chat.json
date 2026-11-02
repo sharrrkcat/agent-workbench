@@ -58,10 +58,11 @@
     "busy": "Wait for the active operation to finish.",
     "queued": "Finish or remove queued messages first.",
     "saving": "Wait for settings to finish saving.",
-    "policy": "Enable history and select Token budget first.",
+    "policy": "Enable history and select Token budget or On-demand history.",
     "model": "Select a model first.",
     "arguments": "/compact does not accept arguments.",
-    "attachments": "Remove attachments before using /compact."
+    "attachments": "Remove attachments before using /compact.",
+    "harness": "Enable Harness first."
   },
   "loadEarlier": "Load earlier messages",
   "loadLater": "Load later messages"

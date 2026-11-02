@@ -296,5 +296,10 @@
   "compactionTrigger": "Trigger (%)",
   "compactionTarget": "Target (%)",
   "compactionSummaryTokens": "Summary token limit",
-  "compactionAutomatic": "Automatic"
+  "compactionAutomatic": "Automatic",
+  "historyRetrieval": "On-demand history",
+  "retrievalHarnessRequired": "On-demand history requires Harness.",
+  "retrievalTrigger": "Reset trigger (%)",
+  "retrievalTarget": "Reset target (%)",
+  "checkpointTokens": "Checkpoint token limit"
 }

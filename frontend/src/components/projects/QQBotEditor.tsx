@@ -180,7 +180,7 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
         </FieldGroup> : null}
         </FieldGroup></FieldSet>
         <FieldSet aria-describedby={id + '-context-hint'}><FieldLegend>{t('qq.sections.context')}</FieldLegend>
-          <ContextFields showAttachments={false} value={draft.context_policy}
+          <ContextFields harnessEnabled showAttachments={false} value={draft.context_policy}
             onChange={(context_policy) => update({ context_policy: { ...context_policy, include_attachments: 'none' } })} />
           <Field><FieldDescription id={id + '-context-hint'}>{t('qq.contextHint')}</FieldDescription></Field>
         </FieldSet>

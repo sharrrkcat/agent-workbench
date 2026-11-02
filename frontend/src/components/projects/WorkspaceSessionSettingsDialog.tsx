@@ -138,7 +138,7 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
                   <Button type="button" variant="outline" onClick={async () => { if (await canLeave()) onManagePersonas(); }}>{t('manage')}</Button>
                   {inheritance('model_profile_id', t('model'), <ModelField profiles={profiles} value={overrides.model_profile_id ?? null}
                     inheritLabel={t('inheritProjectModel', { name: inheritedModelName })} onChange={(id) => change('model_profile_id', id || null)} />)}
-                  {inheritance('context_policy', t('context'), <ContextFields value={overrides.context_policy ?? project.context_policy}
+                  {inheritance('context_policy', t('context'), <ContextFields harnessEnabled={overrides.harness_enabled ?? project.harness_enabled} value={overrides.context_policy ?? project.context_policy}
                     onChange={(value) => change('context_policy', value)} />)}
                   {inheritance('temperature', t('llm:params.temperature'), <GenerationFields value={{ temperature: overrides.temperature ?? project.temperature }}
                     onChange={(value) => change('temperature', value.temperature ?? null)} />)}

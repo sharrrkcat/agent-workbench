@@ -14,6 +14,8 @@ from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop, request_tools
 from ai_workbench.core.context import ContextBuilder, add_chat_instructions
 from ai_workbench.core.context_compaction import ContextCompactionService
+from ai_workbench.core.history_retrieval import HistoryRetrieval
+from ai_workbench.core.retrieval_tools import RetrievalTools
 from ai_workbench.core.qq_context import QQContextHistory, build_qq_context, runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.knowledge_context import build_session_knowledge_context
@@ -67,6 +69,10 @@ class ChatRunner:
             registry=tool_registry, active_runs=active_runs, web_tools=web_tools,
             allowed_tools=chat_service.tools_for_run,
         ) if tool_registry is not None else None
+        self.retrieval = HistoryRetrieval(sessions, messages, runs, events, model_manager)
+        if tool_registry is not None:
+            RetrievalTools(sessions, messages, runs, qq_store, self.retrieval).register(tool_registry)
+            self.harness_loop.retrieval = self.retrieval
         self.context_builder = ContextBuilder(messages)
         self.compaction = ContextCompactionService(sessions=sessions, messages=messages, runs=runs,
             events=events, model_manager=model_manager)
@@ -158,6 +164,8 @@ class ChatRunner:
             profile = self.model_manager.profile(config.model_profile_id, "llm")
             if session.kind == "qqbot" and (not profile.source or profile.source.type != "provider"):
                 raise ModelError("QQ_EXTERNAL_MODEL_REQUIRED", "QQBot requires an external LLM profile.", 422)
+            if config.context_policy.strategy == "history_retrieval" and not config.harness_enabled:
+                raise ModelError("HISTORY_RETRIEVAL_REQUIRES_HARNESS", "Enable Harness to use on-demand history.", 422)
             use_harness = bool(config.harness_enabled and self.chat_service.tools_for_run(config) and self.harness_loop)
             has_images = has_context_images(context)
             current = context[-1]["content"]
@@ -187,8 +195,8 @@ class ChatRunner:
                 context = omit_context_images(context, context_trace)
                 warnings.append("images_require_text" if image_only else "images_ignored")
             if use_harness and not profile.request_options.skip_tool_capability_check and support.tools.state == "unsupported":
-                if session.kind == "qqbot":
-                    raise ModelError("UNSUPPORTED_CAPABILITY", "QQBot requires model tool support.", 422)
+                if session.kind == "qqbot" or config.context_policy.strategy == "history_retrieval":
+                    raise ModelError("UNSUPPORTED_CAPABILITY", "This context strategy requires model tool support.", 422)
                 use_harness = False
                 warnings.append("tools_ignored")
             self._input_warnings(user, run.run_id, warnings)
@@ -204,7 +212,8 @@ class ChatRunner:
             tools = request_tools(self.harness_loop.registry, allowed, qq=qq) if use_harness else None
             instruction = date_instruction(ui_language, date.fromisoformat(web_date)) if WEB_TOOL_NAMES.intersection(allowed) else ""
             max_image_bytes = self.app_settings.get().max_image_size_mb * 1024 * 1024
-            prepare = self.compaction.prepare(session=session, config=config, run=run, base=context,
+            context_service = self.retrieval if config.context_policy.strategy == "history_retrieval" else self.compaction
+            prepare = context_service.prepare(session=session, config=config, run=run, base=context,
                 trace=context_trace, current=user, profile=profile, support=support, tools=tools,
                 instruction=instruction, runtime_instruction=runtime_prompt(config, user.metadata["qq_batch_id"], 0,
                     user.metadata["qq_trigger_kind"]) if qq else "", max_image_bytes=max_image_bytes,

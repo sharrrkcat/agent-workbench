@@ -141,6 +141,13 @@ class ContextCheckpointRecord(SQLModel, table=True):
     checkpoint_json: str = Field(sa_column=Column(Text, nullable=False))
 
 
+class ContextRetrievalRecord(SQLModel, table=True):
+    __tablename__ = "context_retrieval"
+
+    session_id: str = Field(primary_key=True, foreign_key="sessionrecord.session_id")
+    state_json: str = Field(sa_column=Column(Text, nullable=False))
+
+
 class RunStepRecord(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint(

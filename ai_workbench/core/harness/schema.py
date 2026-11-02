@@ -10,12 +10,13 @@ from ai_workbench.core.models.schema import ToolCall, ImageGenerationControls
 from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 from ai_workbench.core.schema.compaction import RunCompactionState
+from ai_workbench.core.schema.retrieval import RunRetrievalState
 from ai_workbench.core.schema.qq import QQTriggerKind, QQImageCandidate
 from ai_workbench.core.web_schemas import WebRunBudget, WebSource
 from ai_workbench.core.instructions import UiLanguage
 
 ToolRisk = Literal["safe", "file", "network"]
-ToolScope = Literal["general", "qqbot"]
+ToolScope = Literal["general", "qqbot", "context"]
 ToolHandler = Callable[[dict[str, Any], "ToolExecutionContext"], Awaitable[dict[str, Any]]]
 
 
@@ -55,6 +56,7 @@ class ToolExecutionContext:
     session_id: str | None = None
     run_id: str | None = None
     tool_call_id: str | None = None
+    harness_state: Any = None
     web_budget: WebRunBudget = field(default_factory=WebRunBudget)
     web_sources: dict[str, WebSource] | None = None
     qq_image_generation_model_profile_id: str | None = None
@@ -99,6 +101,7 @@ class HarnessState(BaseModel):
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
     transcript: list[dict[str, Any]] = Field(default_factory=list)
     compaction: RunCompactionState | None = None
+    retrieval: RunRetrievalState | None = None
     pending_calls: list[ToolCall] = Field(default_factory=list)
     awaiting_approval: str | None = None
     approval_step_id: str | None = None
@@ -129,6 +132,16 @@ class HarnessState(BaseModel):
                     or len(calls) != self.compaction.covered_tool_calls or len(calls) != len(results)
                     or set(calls) != set(results)):
                 raise ValueError("Run summary must cover a complete tool-round prefix")
+        if self.retrieval is not None:
+            end = self.retrieval.transcript_end
+            prefix = self.transcript[:end]
+            calls = [call["id"] for item in prefix for call in item.get("tool_calls", [])]
+            results = [item.get("tool_call_id") for item in prefix if item.get("role") == "tool"]
+            if (end > len(self.transcript) or (end and prefix[-1].get("role") != "tool")
+                    or (end and end < len(self.transcript) and self.transcript[end].get("role") != "assistant")
+                    or len(calls) != len(results) or set(calls) != set(results)
+                    or self.retrieval.business_rounds + self.retrieval.context_rounds != self.rounds):
+                raise ValueError("Retrieval must retain complete execution batches and round counters")
         return self
 
 

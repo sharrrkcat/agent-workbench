@@ -17,12 +17,12 @@ export function CompactionEvent({ reply }: { reply: Reply }) {
   const key = run.status === 'DONE' ? result?.status === 'not_needed' ? 'notNeeded' : 'completed'
     : run.status === 'FAILED' ? 'failed' : run.status === 'CANCELLED' ? 'cancelled'
     : run.status === 'INTERRUPTED' ? 'interrupted' : run.status === 'CANCELLING' ? 'cancelling' : 'running';
-  const label = <span role="status">{t(`compaction.${key}`)}</span>;
+  const label = <span role="status">{t(result?.operation === 'reset' && key === 'completed' ? 'retrieval.reset' : `compaction.${key}`)}</span>;
   return <Marker variant="separator" className="my-4" data-compaction-run={run.run_id}>
     <MarkerContent className="inline-flex flex-wrap items-center justify-center gap-2">
       {run.error_message ? <Tooltip><TooltipTrigger render={<span tabIndex={0} />}>{label}</TooltipTrigger>
         <TooltipContent>{run.error_message}</TooltipContent></Tooltip> : label}
-      {result?.status === 'compacted' && result.input_tokens_before != null && result.input_tokens_after != null ?
+      {(result?.status === 'compacted' || result?.status === 'reset') && result.input_tokens_before != null && result.input_tokens_after != null ?
         <span>{result.input_tokens_before.toLocaleString(i18n.language)} → {result.input_tokens_after.toLocaleString(i18n.language)} tokens</span> : null}
       {!ended ? <Button size="xs" variant="outline" disabled={run.status === 'CANCELLING'}
         onClick={() => void cancel(run.run_id)}>{t('cancel')}</Button> : <><ReplyContext reply={reply} /><ReplyMetrics reply={reply} /></>}

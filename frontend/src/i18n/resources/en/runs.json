@@ -142,7 +142,9 @@
       "tool_call": "Tool call",
       "tool_result": "Tool result",
       "tools": "Tool definitions",
-      "summary": "History summary"
+      "summary": "History summary",
+      "context_memory": "Working checkpoint",
+      "context_retrieval": "Retrieved history"
     },
     "reasons": {
       "ineligible_history": "Ineligible history message",
@@ -161,7 +163,8 @@
       "qq_history_image": "Historical QQ image replaced with text",
       "qq_system_face": "QQ system face represented by name",
       "qq_image_limit": "QQ batch image limit reached",
-      "compacted": "Included in summary"
+      "compacted": "Included in summary",
+      "window_reset": "Outside the active window; available for retrieval"
     },
     "empty": "Empty",
     "sourceInfo": "Source information",
@@ -171,7 +174,8 @@
     "baseId": "Knowledge base ID",
     "tokenPolicy": "History uses the token budget",
     "messageWindowPolicy": "History message limit: {{limit}} · Token budget enforced",
-    "historyDisabled": "History disabled"
+    "historyDisabled": "History disabled",
+    "retrievalPolicy": "On-demand history"
   },
   "commandStatus": {
     "pending": "Queued {{name}}",
@@ -212,7 +216,8 @@
     "required": "Set the model context window before retrying.",
     "exceeded": "Input, instructions, knowledge or active tool data plus the output reserve exceed the context window. Shorten the input, reduce injected content or adjust model settings.",
     "countFailed": "The model input could not be counted. Generation was not sent. Check the local model and retry.",
-    "compactionFailed": "Context compaction failed and the previous context exceeds the model window. Adjust compaction settings and retry."
+    "compactionFailed": "Context compaction failed and the previous context exceeds the model window. Adjust compaction settings and retry.",
+    "harnessRequired": "Enable Harness to use on-demand history."
   },
   "compaction": {
     "call": "Call {{count}} · Compaction",
@@ -233,5 +238,15 @@
     "coveredTools": "Covered tool calls",
     "model": "Model profile",
     "step": "Summary step"
+  },
+  "retrieval": {
+    "reset": "Reset context",
+    "window": "Context window",
+    "tools": {
+      "context_list": "List history",
+      "context_search": "Search history",
+      "context_read": "Read history",
+      "context_checkpoint_update": "Update checkpoint"
+    }
   }
 }

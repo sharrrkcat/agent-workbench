@@ -35,7 +35,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0049_qq_context_compaction`; current tables follow the SQLModel schema.
+Alembic head is `0050_history_retrieval`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -159,6 +159,8 @@ Repeating upgrade preserves subsequently created conversations and checkpoints.
 Revision `0048_manual_compaction` adds compaction to the runrecord kind constraint. It preserves all existing records,
 configuration, checkpoints and files; no session reset or policy conversion occurs. Manual events use existing run/step/event storage.
 Revision `0049_qq_context_compaction` resets only QQ Project context policies to token-budget defaults without converting prior limits. All other settings, sessions, messages, deliveries, checkpoints and files survive. QQ checkpoints add a batch-ID boundary to existing private JSON storage. Run summaries and completed transcript boundaries use harness_state_json, are cleared at termination and remain inspectable through immutable call snapshots.
+
+Revision `0050_history_retrieval` adds private context_retrieval state per Session, independently of summary checkpoints. It preserves all configuration, messages, deliveries and files. Successful runs commit conversation memory/window boundaries using history_version; working progress and approval counters live in harness_state_json. History mutations invalidate both derived stores in the same transaction.
 
 ## Runtime files
 

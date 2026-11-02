@@ -139,7 +139,7 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
                       if (await confirm(t('discardChanges'))) onManagePersonas();
                     }}>{t('manage')}</Button>
                     <ModelField profiles={profiles} value={draft.model_profile_id} onChange={(id) => patch({ model_profile_id: id })} />
-                    <ContextFields value={draft.context_policy} onChange={(value) => patch({ context_policy: value })} />
+                    <ContextFields harnessEnabled={draft.harness_enabled} value={draft.context_policy} onChange={(value) => patch({ context_policy: value })} />
                     <GenerationFields value={draft.generation} onChange={(value) => patch({ generation: value })} />
                   </FieldGroup>
                 </TabsContent>

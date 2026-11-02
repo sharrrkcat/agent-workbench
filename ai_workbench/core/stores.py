@@ -20,6 +20,7 @@ from ai_workbench.core.schema.run_event import RunEventSchema
 from ai_workbench.core.session import Session, parse_session
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.schema.compaction import ContextCheckpoint
+from ai_workbench.core.schema.retrieval import SessionRetrievalState
 
 
 class SessionStore:
@@ -27,6 +28,20 @@ class SessionStore:
         self._sessions: dict[str, Session] = {}
         self.web_cache = None
         self._checkpoints: dict[str, ContextCheckpoint] = {}
+        self._retrieval_states: dict[str, SessionRetrievalState] = {}
+
+    def get_retrieval_state(self, session_id):
+        value = self._retrieval_states.get(session_id)
+        return value.model_copy(deep=True) if value else None
+
+    def save_retrieval_state(self, value):
+        if self.get_session(value.session_id).history_version != value.history_version:
+            return False
+        self._retrieval_states[value.session_id] = value.model_copy(deep=True)
+        return True
+
+    def discard_retrieval_state(self, session_id):
+        self._retrieval_states.pop(session_id, None)
 
     def get_context_checkpoint(self, session_id: str) -> ContextCheckpoint | None:
         value = self._checkpoints.get(session_id)
@@ -83,6 +98,7 @@ class SessionStore:
             self.web_cache.delete_session(session_id)
         del self._sessions[session_id]
         self.discard_context_checkpoint(session_id)
+        self.discard_retrieval_state(session_id)
 
     def list_sessions(self) -> list[Session]:
         return sorted(self._sessions.values(), key=lambda item: (item.updated_at, item.created_at), reverse=True)
@@ -308,7 +324,7 @@ class RunStore:
 
     def save_context_snapshot(self, step_id, snapshot) -> None:
         step = self.get_step(step_id)
-        if step.kind not in {"model", "compaction"} or step_id in self._context_snapshots:
+        if step.kind not in {"model", "compaction", "context"} or step_id in self._context_snapshots:
             raise ValueError("Context requires a model step without an existing snapshot")
         self._context_snapshots[step_id] = snapshot.model_dump_json(exclude_unset=True, by_alias=True)
         self.update_step(step_id, metadata={"context": snapshot.summary().model_dump()})

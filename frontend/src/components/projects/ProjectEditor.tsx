@@ -190,7 +190,7 @@ function StandardProjectEditor({ project, kind, onSaved, onNavigate, onLeaveGuar
               <ModelField profiles={profiles} value={draft.model_profile_id} inheritLabel={t('inheritGlobalModel')}
                 onChange={(id) => setDraft({ ...draft, model_profile_id: id || null })} />
               {draft.kind === 'workspace'
-                ? <ContextFields value={draft.context_policy} onChange={(value) => setDraft({ ...draft, context_policy: value })} />
+                ? <ContextFields harnessEnabled={draft.harness_enabled} value={draft.context_policy} onChange={(value) => setDraft({ ...draft, context_policy: value })} />
                 : <BoundedContextFields value={draft.context_policy} onChange={(value) => setDraft({ ...draft, context_policy: value })} />}
               <GenerationFields value={{ temperature: draft.temperature }} onChange={(value) => setDraft({ ...draft, temperature: value.temperature ?? null })} />
               {draft.kind === 'workspace' ? <>

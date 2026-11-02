@@ -12,8 +12,10 @@ export function ToolCall({ entry, run }: { entry: ToolEntry; run: Run }) {
   const { t } = useTranslation('runs');
   const [expanded, setExpanded] = useState(false);
   const status = toolEntryStatus(entry, run);
-  const title = [t(`commandStatus.${status}`, { name: entry.call.tool_name }), toolArgumentsSummary(entry.call.arguments)].filter(Boolean).join(' ');
+  const internal = ['context_list', 'context_search', 'context_read', 'context_checkpoint_update'].includes(entry.call.tool_name);
+  const title = [t(`commandStatus.${status}`, { name: internal ? t(`retrieval.tools.${entry.call.tool_name}`) : entry.call.tool_name }), toolArgumentsSummary(entry.call.arguments)].filter(Boolean).join(' ');
   if (status === 'waiting') return null;
+  if (internal) return <TraceLine status={status === 'running' ? 'running' : undefined}><TraceTitle>{title}</TraceTitle></TraceLine>;
   const line = (
     <TraceLine status={status === 'running' ? 'running' : status === 'pending' ? 'pending'
       : status === 'error' || status === 'cancelled' ? 'error' : undefined}>

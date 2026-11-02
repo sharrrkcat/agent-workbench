@@ -39,13 +39,14 @@ class ToolRegistry:
         return [self._tools[name] for name in sorted(self._tools)]
 
     def catalog(self) -> list[dict[str, Any]]:
-        return [deepcopy(item.public()) for item in self.list()]
+        return [deepcopy(item.public()) for item in self.list() if item.scope != "context"]
 
     def validate_allowlist(self, names: list[str]) -> list[str]:
         if len(names) != len(set(names)):
             raise ValueError("Tool names must be unique")
         for name in names:
-            self.get(name)
+            if self.get(name).scope == "context":
+                raise ToolExecutionError("TOOL_NOT_ALLOWED", "Context tools are selected by the context strategy.")
         return names
 
     def validate_arguments(self, name: str, arguments: dict[str, Any]) -> None:

@@ -1,13 +1,15 @@
 export type ContextPolicy = {
   history_enabled: boolean;
-  strategy: 'token_budget' | 'message_window';
+  strategy: 'token_budget' | 'message_window' | 'history_retrieval';
   include_attachments: 'none' | 'explicit';
   compaction: { enabled: boolean; trigger_percent: number; target_percent: number; max_summary_tokens: number | null };
   message_window: { max_messages: number };
+  retrieval: { trigger_percent: number; target_percent: number; max_checkpoint_tokens: number | null };
 };
 
 export const defaultContextPolicy = (): ContextPolicy => ({ history_enabled: true, strategy: 'token_budget', include_attachments: 'explicit',
   message_window: { max_messages: 100 },
+  retrieval: { trigger_percent: 80, target_percent: 55, max_checkpoint_tokens: null },
   compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: null } });
 
 export type BoundedContextPolicy = {

@@ -9,9 +9,12 @@ export type ContextBudgetStats = {
 export type ContextSummary = { available: true; message_count: number; tool_count: number; image_count: number;
   budget?: ContextBudgetStats | null };
 export type ContextSourceKind = 'system' | 'instruction' | 'agent_persona' | 'project_prompt' | 'cogita_persona' | 'knowledge' |
-  'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary';
+  'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary' | 'context_memory' | 'context_retrieval';
 export type ContextAttachment = Pick<Attachment, 'id' | 'name' | 'type' | 'mime_type' | 'size' | 'uri'>;
+export type RetrievalReference = { window_id: string; previous_window_id?: string | null; boundary_message_id?: string | null;
+  boundary_qq_batch_id?: number | null; transcript_end: number; memory_id: string; progress_id?: string | null };
 export type ContextSource = {
+  retrieval?: RetrievalReference | null;
   compaction?: { checkpoint_id: string; boundary_message_id: string; boundary_qq_batch_id?: number | null;
     covered_messages: number; model_profile_id: string; step_id: string } | null;
   run_compaction?: { checkpoint_id: string; run_id: string; through_round: number; covered_tool_calls: number;
@@ -27,7 +30,7 @@ export type ContextExclusion = {
   kind: ContextSourceKind;
   reason: 'ineligible_history' | 'message_limit' | 'character_limit' | 'token_limit' | 'empty' | 'attachments_disabled' |
     'images_unsupported' | 'qq_image_unavailable' | 'qq_history_image' | 'qq_system_face' | 'qq_image_limit' |
-    'file_text_disabled' | 'file_text_limit' | 'no_bindings' | 'no_results' | 'retrieval_failed' | 'compacted';
+    'file_text_disabled' | 'file_text_limit' | 'no_bindings' | 'no_results' | 'retrieval_failed' | 'compacted' | 'window_reset';
   reference_id?: string | null; name?: string | null; count?: number;
 };
 type FunctionCall = { id: string; type?: 'function'; function: { name: string; arguments: string } };

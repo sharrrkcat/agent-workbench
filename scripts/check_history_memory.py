@@ -22,6 +22,7 @@ def measure(rows: int, strategy: str = 'token_budget'):
     from sqlmodel import SQLModel
     from ai_workbench.core.context import ContextBuilder
     from ai_workbench.core.context_compaction import ContextCompactionService
+    from ai_workbench.core.history_retrieval import HistoryRetrieval
     from ai_workbench.core.schema.context_budget import ContextBudgetStats
     from ai_workbench.core.schema.context_policy import ContextPolicy
     from ai_workbench.core.history_page import HistoryQuery
@@ -51,15 +52,21 @@ def measure(rows: int, strategy: str = 'token_budget'):
                     input_budget_tokens=2662, input_tokens=len(request.model_dump_json()) // 4,
                     counting='estimated', output_tokens=1024, margin_tokens=410, removed_turns=0)
         compaction = ContextCompactionService(sessions=sessions, messages=messages, runs=None, events=None, model_manager=CountOnly())
+        if strategy == 'history_retrieval':
+            class MeasuredRetrieval(HistoryRetrieval):
+                def record_reset(self, *args, **kwargs):
+                    pass  # Measure selection memory independently of snapshot persistence.
+            compaction = MeasuredRetrieval(sessions, messages,
+                SimpleNamespace(update_harness_state=lambda *_: None), None, CountOnly())
         policy = ContextPolicy(strategy=strategy, message_window={'max_messages': 5}, compaction={'enabled': False})
-        config = SimpleNamespace(context_policy=policy, context_limits=None,
+        config = SimpleNamespace(context_policy=policy, context_limits=None, harness_enabled=True,
             generation=SimpleNamespace(model_dump=lambda **_: {}))
         profile = SimpleNamespace(id='count-only', alias='count-only',
             request_options=SimpleNamespace(skip_vision_capability_check=False))
         support = SimpleNamespace(vision=SimpleNamespace(state='unsupported'))
         def read():
             built = ContextBuilder(messages).build(sid, 'current', current_message_id=current.message_id)
-            context, trace, _ = asyncio.run(compaction.prepare(session=session, config=config, run=None,
+            context, trace, _ = asyncio.run(compaction.prepare(session=session, config=config, run=SimpleNamespace(run_id='memory-check'),
                 base=built.messages, trace=built.trace, current=current, profile=profile, support=support,
                 max_image_bytes=1024, reasoning=False))
             page = reader.page(sid, HistoryQuery())
@@ -88,7 +95,7 @@ def measure(rows: int, strategy: str = 'token_budget'):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rows", type=int)
-    parser.add_argument("--strategy", choices=('token_budget', 'message_window'), default='token_budget')
+    parser.add_argument("--strategy", choices=('token_budget', 'message_window', 'history_retrieval'), default='token_budget')
     parser.add_argument("--output", type=Path, default=Path("build/history-memory.json"))
     args = parser.parse_args()
     if args.rows:
