@@ -9,7 +9,6 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import resolve_context_images
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.schema import ChatRequest, ChatMessage
-from ai_workbench.core.models.token_counting import reference_encoding
 from ai_workbench.core.schema.context_snapshot import ContextSource, ContextTrace, ContextExclusion
 from ai_workbench.core.schema.run import RunStepStatus
 from ai_workbench.core.schema.retrieval import (
@@ -30,10 +29,6 @@ QQ memory must cite submitted batches or confirmed deliveries, never internal to
 context_search may return an empty page with a next cursor: more records remain unsearched.
 Historical image retrieval returns existing descriptions only; never claim to have viewed those images.
 """
-
-
-def text_tokens(text):
-    return len(reference_encoding().encode_ordinary(text))
 
 
 def remove_messages(messages, trace, indices):

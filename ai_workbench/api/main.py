@@ -28,6 +28,7 @@ from pydantic import ValidationError
 @asynccontextmanager
 async def runtime_lifespan(app: FastAPI):
     import asyncio
+    counter_task = asyncio.create_task(app.state.runtime_state.model_manager.reference_tokens.expire_idle())
     try:
         web = app.state.runtime_state.web_tools
         web.cache.prune(web.settings.get().cache_retention_days)
@@ -36,6 +37,8 @@ async def runtime_lifespan(app: FastAPI):
         app.state.runtime_state.qq.start()
         yield
     finally:
+        counter_task.cancel()
+        await asyncio.gather(counter_task, return_exceptions=True)
         state = app.state.runtime_state
         await state.web_tools.filters.close()
         await state.qq.close()

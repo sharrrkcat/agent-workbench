@@ -10,7 +10,6 @@ from pathlib import Path
 import re
 import warnings
 
-from PIL import Image, ImageOps, UnidentifiedImageError
 from websockets.exceptions import WebSocketException
 
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced, save_attachment_from_upload
@@ -69,6 +68,8 @@ def media_url(media):
 
 def decode_image(data):
     """Decode only the first frame; original animated bytes remain untouched."""
+    from PIL import Image, ImageOps
+
     with warnings.catch_warnings():
         warnings.simplefilter("error", Image.DecompressionBombWarning)
         with Image.open(BytesIO(data)) as image:
@@ -154,6 +155,8 @@ class QQMediaService:
                 qq_store=self.store)
 
     async def acquire(self, media, project_id):
+        from PIL import Image, UnidentifiedImageError
+
         created = set()
         try:
             settings = self.state.app_settings.get()

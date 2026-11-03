@@ -87,7 +87,7 @@ def _read_database(path: Path) -> tuple[str | None, str | None, int | None, int 
                 revision = str(rows[0][0])
             elif rows:
                 errors.append("alembic_version_multiple_rows")
-        from ai_workbench.db.migrations import HEAD_REVISION
+        from ai_workbench.db.revision import HEAD_REVISION
         from ai_workbench.db.models import SQLModel
 
         expected = SQLModel.metadata.tables

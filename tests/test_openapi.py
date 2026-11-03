@@ -84,7 +84,7 @@ def test_response_validation_failure_omits_internal_values(tmp_path):
 
 
 def test_isolated_schema_generation_is_deterministic_and_skips_database_and_inference():
-    with patch("ai_workbench.api.deps.init_db", side_effect=AssertionError("database access")), \
+    with patch("ai_workbench.api.deps.get_initialized_engine", side_effect=AssertionError("database access")), \
          patch("ai_workbench.core.models.manager.ModelManager.load", side_effect=AssertionError("model load")), \
          patch("httpx.AsyncClient.send", side_effect=AssertionError("network access")):
         first, first_routes = asyncio.run(build_document())

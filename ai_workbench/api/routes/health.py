@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from ai_workbench import __version__
 from ai_workbench.api.deps import RuntimeState, get_state
 from ai_workbench.api.schemas.system import HealthResponse, HealthDetails
-from ai_workbench.db.migrations import HEAD_REVISION
+from ai_workbench.db.revision import HEAD_REVISION
 
 
 router = APIRouter(tags=["health"])

@@ -1,8 +1,6 @@
 """Static image preparation at the public/internal service boundary."""
 import io
 
-from PIL import Image, ImageOps, UnidentifiedImageError
-
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.schema import model_path
 from ai_workbench.core.models.schema import ImageOutput
@@ -22,6 +20,8 @@ def processor_resource(root, reference):
 
 
 def prepare_process_image(data: bytes) -> ImageOutput:
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
     try:
         with Image.open(io.BytesIO(data)) as source:
             if source.format not in {"PNG", "JPEG", "WEBP"} or getattr(source, "is_animated", False):
@@ -40,6 +40,8 @@ def prepare_process_image(data: bytes) -> ImageOutput:
 
 
 def validate_process_output(data: bytes, original: ImageOutput) -> ImageOutput:
+    from PIL import Image
+
     with Image.open(io.BytesIO(data)) as output, Image.open(io.BytesIO(original.data)) as source:
         if (output.format != "PNG" or output.mode != "RGBA" or output.size != source.size
                 or getattr(output, "is_animated", False)

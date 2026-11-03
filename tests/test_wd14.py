@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import ValidationError
 import pytest
 
@@ -208,7 +208,7 @@ def test_square_pixel_limit_rejects_thin_images_before_decode_and_admission(api,
     client, _ = api
     manager = client.app.state.runtime_state.model_manager
     monkeypatch.setattr(images, "MAX_TAGGING_PIXELS", 64)
-    monkeypatch.setattr(images.ImageOps, "exif_transpose", MagicMock(side_effect=AssertionError("Oversized image decoded")))
+    monkeypatch.setattr(ImageOps, "exif_transpose", MagicMock(side_effect=AssertionError("Oversized image decoded")))
     monkeypatch.setattr(manager, "_lease", MagicMock(side_effect=AssertionError("Oversized image reached queue")))
     response = client.post("/v1/images/tags", headers=HEADERS, json={
         "model": "tagger", "images": [data_url(Image.new("RGB", (9, 1)))]})

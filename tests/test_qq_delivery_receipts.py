@@ -234,6 +234,8 @@ def test_self_echo_order_scope_and_bound_do_not_duplicate_confirmation(qq_client
 def test_qq_sends_use_response_deadline_but_remain_within_run_budget(qq_client, monkeypatch, image, exhaust_budget):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=1)
+    # Exercise the send deadline, independently of the reference tokenizer's cold load.
+    monkeypatch.setattr(state.model_manager.reference_tokens, "estimate_input_tokens", lambda _payload: 100)
     call = send_image(favorite(state)[0].id) if image else tool_call("qq_send_message", {"text": "reply"})
     monkeypatch.setattr(agent_loop, "TOOL_TIMEOUT_SECONDS", .01)
     if exhaust_budget:

@@ -4,7 +4,6 @@ import base64
 import hashlib
 from dataclasses import dataclass, replace
 
-from PIL import Image, UnidentifiedImageError
 
 from ai_workbench.core.attachments import save_attachment_from_upload
 from ai_workbench.core.harness.network import fetch_bytes
@@ -27,6 +26,8 @@ class PreparedQQImage:
 
 
 async def prepare_image(state, prompt, context):
+    from PIL import Image, UnidentifiedImageError
+
     created = set()
     try:
         settings = state.app_settings.get()

@@ -37,7 +37,7 @@ from ai_workbench.core.time import utc_now
 from ai_workbench.core.utility_llm import UtilityLLMService
 from ai_workbench.core.worldbook import MemoryWorldbookStore
 from ai_workbench.core.web_tools import WebToolsService, WebToolsSettingsStore
-from ai_workbench.db.database import get_engine, get_database_url, init_db
+from ai_workbench.db.database import get_initialized_engine, get_database_url
 from ai_workbench.db.stores import (
     SqlAppSettingsStore, SqlKnowledgeStore, SqlMessageStore,
     SqlRunEventStore, SqlRunStore, SqlSessionStore, SqlWorldbookStore, SqlHistoryStore,
@@ -96,8 +96,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         worldbooks = MemoryWorldbookStore()
         resolved_database_url = "sqlite:///:memory:"
     else:
-        engine = get_engine(database_url)
-        init_db(engine)
+        engine = get_initialized_engine(database_url)
         sessions = SqlSessionStore(engine)
         messages = SqlMessageStore(engine)
         runs = SqlRunStore(engine)

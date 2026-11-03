@@ -68,7 +68,15 @@ They exclude `.env`, databases, model weights, installed runtimes, attachments,
 API keys and dependency/cache directories. Python dependencies are installed by
 uv on first launch.
 
-The default database is `data/cogita.db`. Startup applies Alembic
-revisions. Test database records may be reset by a revision; model, runtime,
+The default database is `data/cogita.db`. File-backed SQLite startup applies Alembic
+revisions in a short-lived process using the current Python environment, before opening
+service connections. Relative database paths resolve in the caller's working directory;
+launcher and direct ASGI startup share this behavior. Migration failure stops startup.
+Alembic is not kept in the API process. Test database records may be reset by a revision; model, runtime,
 attachment and other data files are outside migration ownership. See
 [data layout](docs/DATA_LAYOUT.md) for environment paths and reset behavior.
+
+Reference token counting loads its vocabulary on demand and releases it after 60 idle
+seconds, checked every five seconds. The next count reloads it and may take longer.
+This preserves all features and model release settings; it does not establish a RAM limit.
+The [verification guide](README.md#verification) owns isolated idle-memory acceptance.

@@ -15,6 +15,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine
 from sqlalchemy.engine import Connection
+from ai_workbench.db.revision import HEAD_REVISION
 
 
 BASELINE_REVISION = "0001_current_schema"
@@ -68,7 +69,6 @@ MANUAL_COMPACTION_REVISION = "0048_manual_compaction"
 QQ_CONTEXT_COMPACTION_REVISION = "0049_qq_context_compaction"
 HISTORY_RETRIEVAL_REVISION = "0050_history_retrieval"
 QQ_TIMELINE_REVISION = "0051_qq_timeline"
-HEAD_REVISION = QQ_TIMELINE_REVISION
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

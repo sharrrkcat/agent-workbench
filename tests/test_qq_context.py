@@ -50,10 +50,11 @@ def test_whole_batch_history_limits_and_token_pruning(qq_client, monkeypatch):
         assert len(built.messages) == size
         assert_pairs(built.model_dump()["messages"])
     assert len(build(history_enabled=False).messages) == 1
-    monkeypatch.setattr("ai_workbench.core.models.context_budget.estimate_input_tokens", lambda payload: 30 * len(payload["messages"]))
+    counter = state.model_manager.reference_tokens
+    monkeypatch.setattr(counter, "estimate_input_tokens", lambda payload: 30 * len(payload["messages"]))
     budget = ChatContextBudget(ContextLimits(window_tokens=512, output_tokens=128), full.trace)
     profile = state.model_profiles.get(p["model_profile_id"])
-    request = client.portal.call(budget.prepare, profile, ChatRequest(model=profile.alias, messages=full.messages), None)
+    request = client.portal.call(budget.prepare, profile, ChatRequest(model=profile.alias, messages=full.messages), None, counter)
     assert len(request.messages) == 6 and budget.stats.removed_turns == 2
     assert [s.message_index for s in budget.trace.sources] == list(range(6))
     assert {s.turn_id for s in budget.trace.sources if s.kind == "history"} == {batch.input_message_id}

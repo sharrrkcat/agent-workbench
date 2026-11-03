@@ -7,7 +7,7 @@ from typing import Any
 from ai_workbench.core.attachments import attachments_root, referenced_attachment_filenames, delete_attachment_if_unreferenced
 from ai_workbench.core.time import isoformat_utc, utc_now
 from ai_workbench.db.database import get_database_url
-from ai_workbench.db.migrations import HEAD_REVISION
+from ai_workbench.db.revision import HEAD_REVISION
 
 
 def sqlite_database_path(database_url: str | None = None) -> Path | None:

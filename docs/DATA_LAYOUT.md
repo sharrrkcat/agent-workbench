@@ -207,6 +207,13 @@ These inputs have no TTL, voice IDs or persistent transcript records and do not 
 
 ## Environment and maintenance
 
+File-backed SQLite application startup resolves the database path before running
+`python -m ai_workbench.db.bootstrap --database-url ...` in a short-lived process.
+That process applies the existing Alembic revisions and exits before service connections
+open; any failure aborts startup. In-memory SQLite initializes on its original connection.
+Schema identity is available separately from migration tooling for health/storage reads.
+This changes no schema revision or filesystem-data ownership.
+
 - COGITA_DATABASE_URL overrides the SQLite path.
 - COGITA_ATTACHMENTS_DIR overrides attachment storage.
 - COGITA_FRONTEND_DIST selects frontend assets for direct ASGI startup;

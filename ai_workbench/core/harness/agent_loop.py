@@ -35,7 +35,6 @@ from ai_workbench.core.schema.qq import QQ_SEND_TOOLS, QQ_TOOLS
 from ai_workbench.core.web_tools import CITATION_INSTRUCTION, WEB_CONTENT_INSTRUCTION, WEB_TOOL_NAMES
 from ai_workbench.core.web_schemas import WebRunBudget
 from ai_workbench.core.web_render import web_model_text
-from ai_workbench.core.models.token_counting import reference_encoding
 
 
 MAX_TOOL_ROUNDS = 8
@@ -511,7 +510,7 @@ class HarnessAgentLoop:
                               message="Tool " + outcome.status, error_code=outcome.error_code, error_message=outcome.error_message,
                               metadata={"result_status": outcome.status, **({"web": {
                                   "output_chars": len(model_text),
-                                  "estimated_tokens": len(reference_encoding().encode_ordinary(model_text)),
+                                  "estimated_tokens": self.model_manager.reference_tokens.count_text(model_text),
                                   "remaining": state.web_budget.remaining(),
                                   **{key: outcome.data[key] for key in ("stats", "cache_hit", "content_chars") if key in outcome.data},
                               }} if web else {})})

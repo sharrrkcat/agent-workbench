@@ -12,7 +12,7 @@ from ai_workbench.core.models.context_budget import ChatContextBudget, configure
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.runtimes.adapters import LlamaServerAdapter, TransformersServerAdapter
 from ai_workbench.core.models.schema import ChatRequest, ModelProfile
-from ai_workbench.core.models.token_counting import estimate_input_tokens, reference_encoding
+from ai_workbench.core.models.token_counting import ReferenceTokenCounter
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.context_snapshot import ContextSource, ContextTrace
@@ -41,7 +41,7 @@ def test_native_budget_keeps_whole_recent_turns_and_remaps_sources():
             return len(payload['messages']) * 60
         adapter = SimpleNamespace(context_window=AsyncMock(return_value=512), count_input_tokens=count)
         budget = ChatContextBudget(ContextLimits(window_tokens=1024, output_tokens=60), built.trace)
-        request = await budget.prepare(local(), ChatRequest(model='local', messages=built.messages, reasoning=False), adapter)
+        request = await budget.prepare(local(), ChatRequest(model='local', messages=built.messages, reasoning=False), adapter, ReferenceTokenCounter())
         assert [m.content for m in request.messages] == ['user-13', 'answer-13', 'user-14', 'answer-14', 'user-15', 'answer-15', 'current']
         assert budget.stats.input_tokens == budget.stats.input_budget_tokens == 420
         assert budget.stats.removed_turns == 13 and budget.stats.window_tokens == 512
@@ -59,7 +59,7 @@ def test_fixed_content_cannot_be_removed(section):
         budget = ChatContextBudget(ContextLimits(window_tokens=512, output_tokens=100), trace)
         adapter = SimpleNamespace(context_window=AsyncMock(return_value=512), count_input_tokens=AsyncMock(return_value=381))
         with pytest.raises(ModelError) as exc:
-            await budget.prepare(local(), ChatRequest(model='local', messages=[{'role': 'user', 'content': 'fixed'}]), adapter)
+            await budget.prepare(local(), ChatRequest(model='local', messages=[{'role': 'user', 'content': 'fixed'}]), adapter, ReferenceTokenCounter())
         assert exc.value.code == 'CONTEXT_WINDOW_EXCEEDED'
         assert budget.stats is None and not budget.trace.exclusions
     asyncio.run(scenario())
@@ -76,13 +76,18 @@ def test_history_limits_preserve_original_turn_identity():
 
 
 def test_reference_vocabulary_counts_unicode_and_images_without_base64():
-    assert len(reference_encoding().encode_ordinary('你好，世界！')) == 4
-    payload = {'messages': [{'role': 'user', 'content': [{'type': 'text', 'text': 'hello'}]}]}
-    text_count = estimate_input_tokens(payload)
-    payload['messages'][0]['content'].append({'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,' + 'x' * 100000}})
-    assert estimate_input_tokens(payload) == text_count + 4096
-    payload['tools'] = [{'type': 'function', 'function': {'name': 'test', 'parameters': {'type': 'object'}}}]
-    assert estimate_input_tokens(payload) > text_count + 4096
+    counter = ReferenceTokenCounter()
+    try:
+        assert counter.count_text('你好，世界！') == 4
+        assert counter.count_text('hello world') == 2
+        payload = {'messages': [{'role': 'user', 'content': [{'type': 'text', 'text': 'hello'}]}]}
+        text_count = counter.estimate_input_tokens(payload)
+        payload['messages'][0]['content'].append({'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,' + 'x' * 100000}})
+        assert counter.estimate_input_tokens(payload) == text_count + 4096
+        payload['tools'] = [{'type': 'function', 'function': {'name': 'test', 'parameters': {'type': 'object'}}}]
+        assert counter.estimate_input_tokens(payload) > text_count + 4096
+    finally:
+        counter.close()
 
 
 @pytest.mark.parametrize('window,output,expected', [(512, None, 128), (32768, None, 4096), (512, 400, 400)])

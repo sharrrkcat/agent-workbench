@@ -5,19 +5,18 @@ from itertools import islice
 from ai_workbench.core.context import _eligible, message_text
 from ai_workbench.core.context_history import ConversationHistory
 from ai_workbench.core.harness.schema import ToolExecutionError, ToolSpec
-from ai_workbench.core.history_retrieval import text_tokens
 from ai_workbench.core.qq_context import QQContextHistory
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES, RetrievalCheckpoint
 
 
-def clip_text(text, offset, limit):
+def clip_text(text, offset, limit, count_tokens):
     high = min(len(text), offset + limit * 8)
     low = offset
     while low < high:
         middle = (low + high + 1) // 2
-        if text_tokens(text[offset:middle]) <= limit:
+        if count_tokens(text[offset:middle]) <= limit:
             low = middle
         else:
             high = middle - 1
@@ -53,6 +52,7 @@ class RetrievalTools:
                 handler=handler, direct_callable=False, scope="context"))
 
     async def execute(self, operation, args, context):
+        count_tokens = self.retrieval.models.reference_tokens.count_text
         state = context.harness_state
         if state is None or state.retrieval is None or context.session_id != state.retrieval.session.session_id:
             raise ToolExecutionError("CONTEXT_TOOL_UNAVAILABLE", "Context tools require an active on-demand history run.")
@@ -64,7 +64,7 @@ class RetrievalTools:
         if operation == "context_read":
             record = reader.read(args["source_id"])
             offset = args.get("offset", 0)
-            text, next_offset = clip_text(record["text"], offset, min(allowance, args.get("max_tokens", 4096)))
+            text, next_offset = clip_text(record["text"], offset, min(allowance, args.get("max_tokens", 4096)), count_tokens)
             return {"source_id": record["source_id"], "text": text, "offset": offset,
                 "next_offset": next_offset, "truncated": next_offset is not None}
         if operation == "context_checkpoint_update":
@@ -90,7 +90,7 @@ class RetrievalTools:
             else:
                 work.progress = checkpoint
             return {"source_id": "checkpoint:" + checkpoint.checkpoint_id, "scope": args["scope"],
-                "tokens": text_tokens(checkpoint.text), "max_tokens": work.checkpoint_tokens}
+                "tokens": count_tokens(checkpoint.text), "max_tokens": work.checkpoint_tokens}
         search = operation == "context_search"
         count = 128 if search else args.get("limit", 20)
         entries = iter(reader.iterate(args["scope"], args.get("cursor")))
@@ -102,9 +102,9 @@ class RetrievalTools:
             found = record["text"].find(needle)
             if found >= 0:
                 offset = max(0, found - 80)
-                preview, _ = clip_text(record["text"], offset, min(120, allowance))
+                preview, _ = clip_text(record["text"], offset, min(120, allowance), count_tokens)
                 item = {"source_id": record["source_id"], "time": record.get("time"), "preview": preview, "offset": offset}
-                if len(items) >= 20 or text_tokens(json.dumps([*items, item], ensure_ascii=False)) > allowance:
+                if len(items) >= 20 or count_tokens(json.dumps([*items, item], ensure_ascii=False)) > allowance:
                     return {"items": items, "scanned": scanned - 1, "next_cursor": last, "has_more": True}
                 items.append(item)
             last = record["source_id"]

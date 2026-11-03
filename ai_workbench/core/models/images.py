@@ -9,7 +9,6 @@ import json
 import warnings
 from typing import Annotated, Any, Literal
 
-from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ConfigDict, Field
 from typing_extensions import NotRequired, TypedDict
 
@@ -155,6 +154,8 @@ def prepare_image_embedding_inputs(tower: str, inputs: list[str], max_bytes: int
 
 
 def _normalized_image(url: str, *, max_pixels: int | None = None, square_pixels: bool = False) -> str:
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
     header, separator, encoded = url.partition(",")
     mime = header.removeprefix("data:").removesuffix(";base64")
     if not separator or header != f"data:{mime};base64" or mime not in IMAGE_FORMATS:

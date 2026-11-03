@@ -4,7 +4,7 @@ import asyncio
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.schema import LocalSource, ModelProfile
-from ai_workbench.core.models.token_counting import estimate_input_tokens
+from ai_workbench.core.models.token_counting import ReferenceTokenCounter
 from ai_workbench.core.schema.context_budget import ContextBudgetStats, ContextLimits
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextTrace
 
@@ -25,7 +25,7 @@ class ChatContextBudget:
         self.stats: ContextBudgetStats | None = None
         self.allow_pruning = allow_pruning
 
-    async def _counter(self, profile, request, adapter):
+    async def _counter(self, profile, request, adapter, reference_tokens: ReferenceTokenCounter):
         configured = self.limits.window_tokens
         if configured is None:
             raise ModelError("CONTEXT_WINDOW_REQUIRED", "Set this model's context window before chatting.", 422)
@@ -46,7 +46,7 @@ class ChatContextBudget:
             if local:
                 return await adapter.count_input_tokens(body)
             try:
-                return await asyncio.to_thread(estimate_input_tokens, body)
+                return await asyncio.to_thread(reference_tokens.estimate_input_tokens, body)
             except (OSError, ValueError) as exc:
                 raise ModelError("CONTEXT_COUNT_FAILED", "The offline reference tokenizer could not count this input.", 500) from exc
 
@@ -55,12 +55,12 @@ class ChatContextBudget:
             output_tokens=output, margin_tokens=margin, removed_turns=0)
         return request, count, stats
 
-    async def measure(self, profile, request, adapter):
-        request, count, stats = await self._counter(profile, request, adapter)
+    async def measure(self, profile, request, adapter, reference_tokens: ReferenceTokenCounter):
+        request, count, stats = await self._counter(profile, request, adapter, reference_tokens)
         return stats.model_copy(update={"input_tokens": await count(range(len(request.messages)))})
 
-    async def prepare(self, profile, request, adapter):
-        request, count_indices, stats = await self._counter(profile, request, adapter)
+    async def prepare(self, profile, request, adapter, reference_tokens: ReferenceTokenCounter):
+        request, count_indices, stats = await self._counter(profile, request, adapter, reference_tokens)
         available = stats.input_budget_tokens
         groups = self._history_groups()
         group_positions = {index: position for position, group in enumerate(groups) for index in group}

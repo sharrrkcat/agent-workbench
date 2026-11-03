@@ -119,8 +119,7 @@ def install_fake_worker(app, client, tmp_path, monkeypatch, *, engine="transform
 
     monkeypatch.setattr(adapter, "load", AsyncMock(side_effect=load))
     monkeypatch.setattr(adapter, "context_window", AsyncMock(return_value=4096))
-    from ai_workbench.core.models.token_counting import estimate_input_tokens
-    monkeypatch.setattr(adapter, "count_input_tokens", AsyncMock(side_effect=estimate_input_tokens))
+    monkeypatch.setattr(adapter, "count_input_tokens", AsyncMock(side_effect=manager.reference_tokens.estimate_input_tokens))
     ok(client.patch("/api/models/settings", json={"default_model_profile_id": profile["id"],
         "external_enabled": True, "external_api_key": "test-key"}))
     return profile, adapter, upstream

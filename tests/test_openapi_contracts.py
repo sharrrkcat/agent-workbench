@@ -115,7 +115,7 @@ def test_hidden_routes_and_documented_only_response_models_fail_gate(api):
 
 def test_cli_exports_are_isolated_deterministic_and_equal_to_served_schema(tmp_path, capsys):
     first, second = tmp_path / "one.json", tmp_path / "nested/two.json"
-    with patch("ai_workbench.api.deps.init_db", side_effect=AssertionError("real database access")), \
+    with patch("ai_workbench.api.deps.get_initialized_engine", side_effect=AssertionError("real database access")), \
          patch("ai_workbench.core.models.manager.ModelManager.load", side_effect=AssertionError("model load")), \
          patch("httpx.AsyncClient.send", side_effect=AssertionError("network access")):
         assert main(["export", "--output", str(first)]) == 0

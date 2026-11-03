@@ -24,7 +24,7 @@ from datetime import datetime
 from ai_workbench.core.harness.schema import ToolExecutionContext
 from ai_workbench.core.instructions import date_instruction
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore
-from ai_workbench.core.models.token_counting import estimate_input_tokens
+from ai_workbench.core.models.token_counting import ReferenceTokenCounter
 from ai_workbench.core.personas import PersonaStore
 from ai_workbench.core.schema.persona import PersonaCreate, USER_PERSONA_ID
 from ai_workbench.core.time import utc_now
@@ -105,6 +105,7 @@ def rankings(provider, arguments, acquired):
 
 
 async def replay(question, saved):
+    counter = ReferenceTokenCounter()
     provider = ReplayProvider(saved)
     settings = WebToolsSettingsStore()
     settings.patch(WebToolsSettingsPatch(api_key="offline-replay"))
@@ -139,7 +140,8 @@ async def replay(question, saved):
         if name == "web_search":
             record["rankings"] = rankings(provider, arguments, acquired)
         records.append(record)
-        peaks.append(estimate_input_tokens(request))
+        peaks.append(counter.estimate_input_tokens(request))
+    counter.close()
     return {"limitation": "Only saved displayed results are replayed; the original discarded provider candidates are unavailable. "
             "Ranking diagnostics use that reduced corpus; fixed tests separately cover complete candidate sets.",
             "estimated_input_tokens_by_call": peaks, "estimated_peak_input_tokens": max(peaks),

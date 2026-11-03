@@ -15,6 +15,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.chat_support import local_chat_support, require_chat_support, skips_reasoning
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
+from ai_workbench.core.models.token_counting import ReferenceTokenCounter
 from ai_workbench.core.models.images import prepare_image_embedding_inputs, prepare_local_images, prepare_tagging_images, validate_local_image_options
 from ai_workbench.core.models.runtimes.schema import engine_options, is_transformers, local_engine
 from ai_workbench.core.models.resolution import configure_profile, require_directory, resolve_profile
@@ -67,6 +68,7 @@ class ModelManager:
         self._closed = False
         self._voice_references = None
         self._asr_inputs = None
+        self.reference_tokens = ReferenceTokenCounter()
 
     @property
     def asr_inputs(self):
@@ -629,14 +631,14 @@ class ModelManager:
         # Counting is preparation, not a completed inference request. The chat
         # input scope applies release policy on a preparation failure.
         async with self._lease(profile, release=False) as adapter:
-            return await ChatContextBudget(limits, ContextTrace()).measure(profile, request, adapter)
+            return await ChatContextBudget(limits, ContextTrace()).measure(profile, request, adapter, self.reference_tokens)
 
     async def select_chat_context(self, profile_id: str, request: ChatRequest, budget):
         """Select a fitting historical suffix without dispatch or retaining admission."""
         profile = self.profile(profile_id, "llm")
         request = await self._prepare_chat(profile, request)
         async with self._lease(profile, release=False) as adapter:
-            return await budget.prepare(profile, request, adapter)
+            return await budget.prepare(profile, request, adapter, self.reference_tokens)
 
     async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None, budget=None):
         metrics = metrics or LLMCallMetrics()
@@ -653,7 +655,7 @@ class ModelManager:
                 try:
                     self.validate_chat(profile, request)
                     if budget is not None:
-                        request = await budget.prepare(profile, request, adapter)
+                        request = await budget.prepare(profile, request, adapter, self.reference_tokens)
                     result = await adapter.chat(profile, request, capture=capture)
                     metrics.observe_result(result)
                     return result
@@ -686,7 +688,7 @@ class ModelManager:
                 try:
                     self.validate_chat(profile, request)
                     if budget is not None:
-                        request = await budget.prepare(profile, request, adapter)
+                        request = await budget.prepare(profile, request, adapter, self.reference_tokens)
                     async with aclosing(adapter.chat_stream(profile, request, capture=capture)) as stream:
                         async for chunk in stream:
                             metrics.observe(chunk)
@@ -1099,6 +1101,7 @@ class ModelManager:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.to_thread(self.reference_tokens.close)
         for slot in self._slots.values():
             await slot.adapter.close()
         self._slots.clear()
