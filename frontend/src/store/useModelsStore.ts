@@ -6,7 +6,13 @@ import type { RuntimeEvent } from '../types/runs';
 type ModelsState = {
   profiles: ModelProfile[]; providers: ProviderProfile[]; settings: ModelSettings | null;
   statuses: Record<string, ModelStatus>; loading: boolean; error: string;
-  reload: () => Promise<void>;
+  reloadProfiles: (force?: boolean) => Promise<void>;
+  reloadProviders: (force?: boolean) => Promise<void>;
+  reloadSettings: (force?: boolean) => Promise<void>;
+  reloadStatuses: (ids: string[], signal?: AbortSignal) => Promise<void>;
+  statusErrors: Record<string, string>;
+  connectionVersion: number;
+  reconnected: () => void;
   setStatus: (id: string, status: ModelStatus) => void;
   localRuntimeSettings: LocalRuntimeSettings | null;
   catalog: RuntimeCatalog | null; installation: RuntimeInstallation | null; components: RuntimeComponent[]; jobs: RuntimeJob[];
@@ -27,14 +33,44 @@ export function mergeRuntimeJobs(current: RuntimeJob[], incoming: RuntimeJob[]):
 }
 
 export const useModelsStore = create<ModelsState>((set, get) => {
-  let reloadVersion = 0;
+  type Domain = 'profiles' | 'providers' | 'settings';
+  const reads = new Map<Domain, { promise: Promise<void>; again: boolean }>();
+  const errors: Partial<Record<Domain, string>> = {};
+  function read(domain: Domain, fetch: () => Promise<Partial<ModelsState>>, force = false): Promise<void> {
+    const pending = reads.get(domain);
+    if (pending) { pending.again ||= force; return pending.promise; }
+    const job = { promise: Promise.resolve(), again: false };
+    reads.set(domain, job); delete errors[domain];
+    set({ loading: true, error: Object.values(errors)[0] ?? '' });
+    job.promise = (async () => {
+      try {
+        do {
+          job.again = false;
+          const value = await fetch();
+          if (!job.again) set(value);
+        } while (job.again);
+      } catch (reason) {
+        errors[domain] = reason instanceof Error ? reason.message : String(reason);
+        set({ error: Object.values(errors)[0] ?? '' });
+        throw reason;
+      } finally { reads.delete(domain); set({ loading: reads.size > 0 }); }
+    })();
+    return job.promise;
+  }
+  let activeStatuses = 0;
+  const statusQueue: (() => void)[] = [];
+  const statusReads = new Map<string, { promise: Promise<void>; signal?: AbortSignal }>();
+  function drainStatuses() {
+    while (activeStatuses < 4 && statusQueue.length) statusQueue.shift()!();
+  }
   const statusVersions = new Map<string, number>();
   let runtimeVersion = 0;
   let installationVersion = 0;
   let componentVersion = 0;
   let storageVersion = 0;
   return {
-  profiles: [], providers: [], settings: null, statuses: {}, loading: false, error: '',
+  profiles: [], providers: [], settings: null, statuses: {}, statusErrors: {}, loading: false, error: '',
+  connectionVersion: 0, reconnected: () => set((state) => ({ connectionVersion: state.connectionVersion + 1 })),
   localRuntimeSettings: null, catalog: null, installation: null, components: [], jobs: [], runtimeLoading: false, runtimeError: '',
   storage: null, storageLoading: false, storageError: '',
   reloadStorage: async () => {
@@ -80,28 +116,37 @@ export const useModelsStore = create<ModelsState>((set, get) => {
       const component = payload.component as RuntimeComponent;
       componentVersion++;
       set({ components: [component] });
-      if (component.state === 'installed') void get().reload().catch(() => undefined);
+      if (component.state === 'installed') {
+        get().reconnected();
+        void get().reloadProfiles(true).catch(() => undefined);
+      }
     }
   },
-  reload: async () => {
-    const version = ++reloadVersion;
-    const initialStatusVersions = new Map(statusVersions);
-    set({ loading: true, error: '' });
-    try {
-      const [profiles, providers, settings] = await Promise.all([modelsApi.listModelProfiles(), modelsApi.listProviderProfiles(), modelsApi.getModelSettings()]);
-      const statuses = Object.fromEntries(await Promise.all(profiles.map(async (p) => [p.id, await modelsApi.getModelStatus(p.id)])));
-      if (version !== reloadVersion) return;
-      for (const profile of profiles) {
-        if (statusVersions.get(profile.id) !== initialStatusVersions.get(profile.id) && get().statuses[profile.id]) {
-          statuses[profile.id] = get().statuses[profile.id];
-        }
-      }
-      set({ profiles, providers, settings, statuses });
-    } catch (error) {
-      if (version !== reloadVersion) return;
-      set({ error: error instanceof Error ? error.message : String(error) });
-      throw error;
-    } finally { if (version === reloadVersion) set({ loading: false }); }
+  reloadProfiles: (force = false) => read('profiles', async () => ({ profiles: await modelsApi.listModelProfiles() }), force),
+  reloadProviders: (force = false) => read('providers', async () => ({ providers: await modelsApi.listProviderProfiles() }), force),
+  reloadSettings: (force = false) => read('settings', async () => ({ settings: await modelsApi.getModelSettings() }), force),
+  reloadStatuses: async (ids, signal) => {
+    await Promise.all([...new Set(ids)].map((id) => {
+      const existing = statusReads.get(id);
+      if (existing) return existing.signal?.aborted ? existing.promise.then(() => get().reloadStatuses([id], signal)) : existing.promise;
+      let done!: () => void;
+      const promise = new Promise<void>((resolve) => { done = resolve; });
+      statusReads.set(id, { promise, signal });
+      statusQueue.push(() => {
+        if (signal?.aborted) { statusReads.delete(id); done(); return; }
+        activeStatuses++;
+        const version = statusVersions.get(id);
+        set((state) => ({ statusErrors: Object.fromEntries(Object.entries(state.statusErrors).filter(([key]) => key !== id)) }));
+        void modelsApi.getModelStatus(id, signal).then((status) => {
+          if (!signal?.aborted && statusVersions.get(id) === version) get().setStatus(id, status);
+        }).catch((reason) => {
+          if (!signal?.aborted && statusVersions.get(id) === version)
+            set((state) => ({ statusErrors: { ...state.statusErrors, [id]: reason instanceof Error ? reason.message : String(reason) } }));
+        }).finally(() => { activeStatuses--; statusReads.delete(id); done(); drainStatuses(); });
+      });
+      drainStatuses();
+      return promise;
+    }));
   },
   setStatus: (id, status) => {
     statusVersions.set(id, (statusVersions.get(id) || 0) + 1);

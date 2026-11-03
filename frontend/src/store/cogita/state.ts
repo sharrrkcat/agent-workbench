@@ -17,6 +17,8 @@ export type CogitaState = {
   currentProjectId: string | null;
   lastOrdinarySessionId: string | null;
   initialized: boolean;
+  conversationVisible: boolean;
+  setConversationVisible: (visible: boolean) => void;
   messages: Message[];
   historyWindow: HistoryWindow | null;
   historyLoading: boolean;
@@ -30,6 +32,7 @@ export type CogitaState = {
   settings: GeneralSettings | null;
   messageVersion: number;
   runVersion: number;
+  qqRefreshVersion: number;
   sessionVersion: number;
   sessionEpoch: number;
   settingsVersion: number;

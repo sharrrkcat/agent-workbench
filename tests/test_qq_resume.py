@@ -1,4 +1,5 @@
 """Manual QQ recovery coalesces unsubmitted inputs without replaying old replies."""
+from tests.qq_transcript_helpers import stored_qq_rows
 import asyncio
 
 import pytest
@@ -20,7 +21,7 @@ def control(client, session, action):
 
 
 def messages(state, session):
-    return {row["external_id"]: row for row in state.qq.store.page(QQMessage, session["session_id"], limit=100)["items"]}
+    return {row["external_id"]: row for row in stored_qq_rows(state.qq.store, QQMessage, session["session_id"], limit=100)}
 
 
 @pytest.mark.parametrize("reply_limit", [1, 4])
@@ -149,7 +150,7 @@ def test_resume_without_trigger_or_with_deleted_window_does_not_create_work(qq_c
     result = control(client, session, "resume")
     assert result["deadline"] is None and result["history_version"] == 2
     assert not participant(state, session).in_window
-    assert state.qq.store.page(QQBatch, session["session_id"])["items"] == []
+    assert stored_qq_rows(state.qq.store, QQBatch, session["session_id"]) == []
     control(client, session, "pause")
     ingest(client, state, p, event(3, "bot previously truncated"), 20)
     ingest(client, state, p, event(4, "retained context"), 21)
@@ -350,5 +351,5 @@ def test_failed_resume_transaction_preserves_pause_queue_and_window(qq_client, m
     assert messages(state, session) == before_messages
     assert participant(state, session).model_dump() == before_participant
     assert state.qq.store.get(QQBatch, batch.id).model_dump() == batch.model_dump()
-    assert len(state.qq.store.page(QQBatch, session["session_id"])["items"]) == 1
+    assert len(stored_qq_rows(state.qq.store, QQBatch, session["session_id"])) == 1
     assert state.sessions.get_session(session["session_id"]).history_version == 0

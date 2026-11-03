@@ -1,5 +1,5 @@
 """Durable QQ ingress, batching and delivery records."""
-from sqlalchemy import UniqueConstraint, ForeignKeyConstraint, Index, false, func
+from sqlalchemy import UniqueConstraint, ForeignKeyConstraint, Index, false, func, text
 from sqlmodel import SQLModel, Field
 from pydantic import PrivateAttr
 from ai_workbench.core.schema.qq import QQImageAttachment, QQMediaSource, participant_epochs
@@ -35,6 +35,7 @@ class QQMessage(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("session_id", "external_id"),
         Index("ix_qq_message_pending", "session_id", "disposition", "id"),
         Index("ix_qq_command_queue", "command_status", "id"),
+        Index("ix_qq_message_timeline", "session_id", "timestamp", "id", sqlite_where=text("deleted = 0")),
         Index("ix_qq_message_batch", "batch_id", "deleted", "id"))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)
@@ -54,7 +55,8 @@ class QQMessage(SQLModel, table=True):
 
 class QQBatch(SQLModel, table=True):
     __tablename__ = "qq_batches"
-    __table_args__ = (Index("ix_qq_batch_queue", "project_id", "status", "id"),)
+    __table_args__ = (Index("ix_qq_batch_queue", "project_id", "status", "id"),
+        Index("ix_qq_batch_active_session", "session_id", sqlite_where=text("status = 'running'")))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)
     project_id: str
@@ -132,6 +134,8 @@ class QQDelivery(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("run_id", "tool_call_id"),
         UniqueConstraint("command_message_id"), UniqueConstraint("notification_id"),
         Index("ix_qq_delivery_external", "session_id", "external_id"),
+        Index("ix_qq_program_timeline", "session_id", "created_at", "id", sqlite_where=text("deleted = 0 AND origin != 'model'")),
+        Index("ix_qq_program_delivery_pending", "session_id", "id", sqlite_where=text("status = 'pending' AND deleted = 0 AND origin != 'model'")),
         ForeignKeyConstraint(["asset_id"], ["qq_media_assets.id"], name="fk_qq_delivery_asset"))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)

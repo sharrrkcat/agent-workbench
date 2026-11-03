@@ -18,10 +18,12 @@ import { imageErrorKey } from './messageContent';
 import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
 import { WebToolCall } from './WebToolCall';
 import { WebSources } from './WebSourcesList';
+import { ResourceLoading } from '../settings/resources/ResourceUI';
 import { citedWebSources, isWebTool, webSourcesForReply } from './webSources';
 
-export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = false, deleteAction }: {
+export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = false, deleteAction, processing }: {
   reply: Reply; messageNumber?: number; showFullProcessing: boolean; readOnly?: boolean; deleteAction?: ReplyDeleteAction;
+  processing?: { ready: boolean; error?: string; onOpenChange: (open: boolean) => void; onRetry: () => void };
 }) {
   const { t } = useTranslation(['runs', 'personas']);
   const { run, process, answer, answerParts } = reply;
@@ -32,6 +34,10 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
   useEffect(() => {
     setExpanded(!ended && showFullProcessing);
   }, [ended, showFullProcessing]);
+  useEffect(() => {
+    processing?.onOpenChange(expanded);
+    return () => processing?.onOpenChange(false);
+  }, [expanded, run.run_id]);
   const seconds = useRunSeconds(run);
   const identity = usePersonaIdentity()(run.persona_id);
   const processId = `processing-${run.run_id}`;
@@ -66,7 +72,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
           <MessageScrollerItem messageId={'disclosure-' + processId} data-scroll-pause>
             <div className={`reply-processing-header status-${run.status.toLowerCase()}`}>
               <TraceCollapsibleTrigger
-                disabled={ended && process.length === 0}
+                disabled={ended && process.length === 0 && (!processing || processing.ready)}
                 className="processing-toggle"
               >
                 <TraceLine status={!ended ? 'running' : undefined}>
@@ -83,7 +89,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
           <TraceCollapsibleContent id={processId} className="ml-0 border-l-0 px-0"
             keepMounted={process.some((item) => item.kind === 'tool' && isWebTool(item.entry.call.tool_name))}>
             <div className="processing-list">
-              {process.map((item) =>
+              {processing && !processing.ready ? <ResourceLoading error={processing.error} retry={processing.onRetry} /> : process.map((item) =>
                 item.kind === 'compaction' ? <TraceLine key={item.id} data-compaction-step={item.id}
                   status={item.step.status === 'running' ? 'running' : undefined}>
                   <TraceTitle>{t(item.step.metadata?.operation === 'reset' ? 'retrieval.reset' : item.step.status === 'running' ? 'compaction.running' : item.step.status === 'completed' ? 'compaction.completed'
@@ -107,7 +113,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
                   </div>
                 ),
               )}
-              {!process.length && !ended ? <span>{t('preparing')}</span> : null}
+              {!process.length && !ended && !processing ? <span>{t('preparing')}</span> : null}
             </div>
           </TraceCollapsibleContent>
         </TraceCollapsible>

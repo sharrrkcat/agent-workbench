@@ -35,7 +35,7 @@ export function KnowledgePanel({ view }: { view: ResourceView }) {
   const [detailState, setDetailState] = useState({ dirty: false, busy: false });
   const [settingsState, setSettingsState] = useState({ dirty: false, busy: false });
   const modelsError = useModelsStore((state) => state.error);
-  const reloadModels = useModelsStore((state) => state.reload);
+  const reloadModels = useModelsStore((state) => state.reloadProfiles);
   const task = useResourceTask();
   const leaveDetail = useCallback(() => {
     setSelected('');

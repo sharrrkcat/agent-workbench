@@ -8,7 +8,7 @@ export const chatApi = {
   listSessions: () => request<Session[]>('/api/sessions'),
   createSession: (values: OrdinarySessionPatch = {}) =>
     request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(values) }),
-  getSession: (sessionId: string) => request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`),
+  getSession: (sessionId: string, signal?: AbortSignal) => request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`, { signal }),
   updateSession: (sessionId: string, patch: SessionPatch) =>
     request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'PATCH',
@@ -18,8 +18,8 @@ export const chatApi = {
     request<{ deleted: boolean; session_id: string }>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
     }),
-  getHistory: (sessionId: string, query: HistoryQuery = {}) =>
-    request<HistoryPage>(`/api/sessions/${encodeURIComponent(sessionId)}/history?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`),
+  getHistory: (sessionId: string, query: HistoryQuery = {}, signal?: AbortSignal) =>
+    request<HistoryPage>(`/api/sessions/${encodeURIComponent(sessionId)}/history?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`, { signal }),
   getHistoryUsers: (sessionId: string, query: HistoryQuery = {}) =>
     request<HistoryUsersPage>(`/api/sessions/${encodeURIComponent(sessionId)}/history/users?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`),
   sendMessage: (

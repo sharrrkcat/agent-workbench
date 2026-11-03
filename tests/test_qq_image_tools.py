@@ -1,4 +1,5 @@
 """Favorite-image delivery and immutable, text-only generation permissions."""
+from tests.qq_transcript_helpers import qq_incoming, qq_outgoing
 import asyncio
 import base64
 import hashlib
@@ -284,7 +285,7 @@ def test_generation_gate_uses_batch_text(qq_client, image_provider, source, expe
     assert ('qq_generate_image' in upstream.calls[0]['messages'][0]['content']) == expected
     assert state.runs.get_config_snapshot(run.run_id)['qq_image_generation_allowed'] == expected
     assert len(image_provider.calls) == int(expected)
-    assert 'image_generation_keyword' not in ok(client.get(f"/api/qq/sessions/{session['session_id']}/messages"))['items'][0]
+    assert 'image_generation_keyword' not in qq_incoming(client, session['session_id'])[0]
 
 
 @pytest.mark.parametrize('kind', ['at', 'reply', 'share', 'json', 'lightapp', 'image'])

@@ -15,7 +15,7 @@ const api = {};
 const load = createModuleLoader({
   ...apiMocks(api),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({
-    useModelsStore: { getState: () => ({ reload: async () => {} }) },
+    useModelsStore: { getState: () => ({ reloadProfiles: async () => {}, reloadSettings: async () => {} }) },
   }),
 });
 const storeModule = await load('../src/store/useCogitaStore.ts');

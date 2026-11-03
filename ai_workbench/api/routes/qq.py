@@ -1,63 +1,20 @@
 """QQ transcript, local deletion and explicit execution controls."""
+import asyncio
 from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 from ai_workbench.api.deps import get_state, RuntimeState
-from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, DeletedResponse, public_model, error_responses
+from ai_workbench.api.schemas.common import ApiModel, ApiTimestamp, DeletedResponse, error_responses
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.qq_history import QQHistoryPruned
-from ai_workbench.core.schema.qq import QQTriggerKind, QQSegment, QQImageAttachment
+from ai_workbench.core.schema.qq import QQImageAttachment
+from ai_workbench.core.history_page import HistoryQuery
+from ai_workbench.core.qq_transcript import BINDING_PRIVATE
+from ai_workbench.api.schemas.qq import BindingResponse, QQHistoryPage
 from ai_workbench.core.qq_segments import public_segments
-from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
+from ai_workbench.db.qq_models import QQBinding
 
 router = APIRouter(prefix="/api/qq", tags=["qq"])
-_BINDING_INTERNAL = {"window_kind", "icebreaker_cooldown_until"}
-BindingResponse = public_model("QQBindingResponse", QQBinding, omit=_BINDING_INTERNAL, fields={
-    "target_kind": (Literal["group", "friend"], ...), "history_version": (int, ...), "busy": (bool, ...)})
-
-
-class QQReference(ApiModel):
-    type: Literal["at", "reply"]
-    id: str
-    name: str | None = None
-    is_self: bool = False
-
-
-MessageResponse = public_model("QQMessageResponse", QQMessage, omit={"references_json", "deleted", "image_generation_keyword"}, fields={
-    "id": (int, ...), "references": (list[QQReference], ...), "segments": (list[QQSegment], ...),
-    "disposition": (Literal["pending", "batched", "skipped", "command"], ...),
-    "kind": (Literal["chat", "command"], ...), "command_status": (Literal["pending", "done"] | None, ...),
-})
-BatchResponse = public_model("QQBatchResponse", QQBatch, omit={"participants_json"}, fields={"id": (int, ...),
-    "trigger_kind": (QQTriggerKind, ...),
-    "status": (Literal["queued", "running", "done", "failed", "cancelled", "interrupted"], ...),
-})
-DeliveryResponse = public_model("QQDeliveryResponse", QQDelivery, omit={"deleted"}, fields={"id": (int, ...),
-    "status": (Literal["pending", "sending", "sent", "failed", "unknown", "cancelled"], ...),
-    "origin": (Literal["model", "command", "notification"], ...),
-    "kind": (Literal["text", "generated_image", "resource_image"], ...),
-    "attachment": (QQImageAttachment | None, ...), "description": (str | None, ...),
-})
-
-
-class MessagePage(ApiModel):
-    items: list[MessageResponse]
-    next_cursor: int | None
-    history_version: int
-
-
-class BatchPage(ApiModel):
-    items: list[BatchResponse]
-    next_cursor: int | None
-    history_version: int
-
-
-class DeliveryPage(ApiModel):
-    items: list[DeliveryResponse]
-    next_cursor: int | None
-    history_version: int
-
-
 class ConnectionStatus(ApiModel):
     status: Literal["disabled", "connecting", "connected", "QQ_ACCOUNT_MISMATCH", "QQ_ACTION_FAILED", "QQ_AUTH_FAILED", "QQ_CONNECTION_FAILED"]
     connected: bool
@@ -134,15 +91,9 @@ async def get_binding(session_id: str, state: RuntimeState = Depends(get_state))
 
 
 def binding_response(state, bound):
-    return {**bound.model_dump(exclude=_BINDING_INTERNAL),
+    return {**bound.model_dump(exclude=BINDING_PRIVATE),
         "history_version": state.sessions.get_session(bound.session_id).history_version,
         "busy": state.qq.history.busy(bound.session_id)}
-
-
-def transcript_page(state, kind, session_id, before, limit):
-    # These reads and local deletion run on the event loop without an intervening await.
-    return {**state.qq.store.page(kind, session_id, before, limit),
-        "history_version": state.sessions.get_session(session_id).history_version}
 
 
 @router.post("/sessions/{session_id}/control", response_model=BindingResponse, responses=error_responses(404, 409))
@@ -150,40 +101,26 @@ async def control(session_id: str, payload: Control, state: RuntimeState = Depen
     return binding_response(state, await state.qq.control(session_id, payload.action))
 
 
-@router.get("/sessions/{session_id}/messages", response_model=MessagePage, responses=error_responses(404))
-async def messages(session_id: str, before: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
-             state: RuntimeState = Depends(get_state)):
-    bound = binding(state, session_id)
-    page = transcript_page(state, QQMessage, session_id, before, limit)
-    original_text = {row["id"]: row["text"] for row in page["items"]}
-    media = state.qq.store.message_media(list(original_text))
-    await state.qq.names.project(bound, state.projects.get(bound.project_id).bot_account, page["items"])
-    for row in page["items"]:
-        row["segments"] = public_segments(original_text[row["id"]], row["references_json"], media[row["id"]])
-        row.pop("references_json")
-    return page
-
-
-@router.get("/sessions/{session_id}/batches", response_model=BatchPage, responses=error_responses(404))
-async def batches(session_id: str, before: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
-            state: RuntimeState = Depends(get_state)):
-    binding(state, session_id)
-    page = transcript_page(state, QQBatch, session_id, before, limit)
-    for row in page["items"]:
-        row.pop("participants_json")
-    return page
-
-
-@router.get("/sessions/{session_id}/deliveries", response_model=DeliveryPage, responses=error_responses(404))
-async def deliveries(session_id: str, before: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
-               state: RuntimeState = Depends(get_state)):
-    binding(state, session_id)
-    page = transcript_page(state, QQDelivery, session_id, before, limit)
-    assets = state.qq.store.delivery_assets({row["asset_id"] for row in page["items"] if row["asset_id"] is not None})
-    for row in page["items"]:
-        asset = assets.get(row["asset_id"])
-        row["attachment"] = asset.attachment.model_dump() if asset is not None else None
-        row["description"] = asset.description if asset is not None else None
+@router.get("/sessions/{session_id}/history", response_model=QQHistoryPage,
+    responses=error_responses(404, 422))
+async def history(session_id: str, query: Annotated[HistoryQuery, Query()], state: RuntimeState = Depends(get_state)):
+    from ai_workbench.api.errors import raise_error
+    program_busy = state.qq.programs.busy(session_id)
+    def read():
+        page, bound, media = state.qq.transcript.page(session_id, query, program_busy=program_busy)
+        return page, bound, media, state.projects.get(bound.project_id).bot_account
+    try:
+        # The in-memory test backend shares one SQLite connection and event-loop-owned run stores.
+        page, bound, media, bot_account = await asyncio.to_thread(read) if state.qq.transcript.sql_runs else read()
+    except ValueError as exc:
+        raise_error(422, "INVALID_HISTORY_CURSOR", str(exc))
+    except KeyError:
+        raise_error(404, "SESSION_NOT_FOUND", "QQ Session does not exist.")
+    rows = [item["message"] for item in page["items"] if item["kind"] == "incoming"]
+    original = {row["id"]: row["text"] for row in rows}
+    state.qq.names.display(bound, bot_account, rows)
+    for row in rows:
+        row["segments"] = public_segments(original[row["id"]], row.pop("references_json"), media[row["id"]])
     return page
 
 

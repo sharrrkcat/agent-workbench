@@ -72,7 +72,7 @@ export function WorkspaceSessionSettingsDialog({ session, onClose, onManagePerso
     void Promise.all([
       useProjectsStore.getState().load(session.project_id), usePersonasStore.getState().reload(),
       sessionId ? knowledgeApi.listSessionKnowledgeBases(sessionId) : Promise.resolve({ knowledge_base_ids: (session as WorkspaceChatDraft).knowledge_base_ids }), knowledgeApi.listKnowledgeBases(),
-      useModelsStore.getState().reload(),
+      useModelsStore.getState().reloadProfiles(),
     ]).then(([project, , bindings, bases]) => {
       if (!live) return;
       if (project.kind !== 'workspace') throw new Error(t('timelineCreationOnly'));

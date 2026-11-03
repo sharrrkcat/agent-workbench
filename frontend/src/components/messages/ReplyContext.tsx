@@ -14,7 +14,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { contextPresentation, type DisplayContextSource } from './contextPresentation';
 import { useContextTokens } from './useContextTokens';
-import { MessageNumbersContext } from './MessageNumbersContext';
+import { HistoryVersionContext, MessageNumbersContext } from './MessageNumbersContext';
 import { runsApi } from '../../api/runs';
 import type { ContextDetail, ContextSource } from '../../types/context';
 import type { RunStep } from '../../types/runs';
@@ -37,7 +37,9 @@ export function defaultContextCall(reply: Reply, calls = contextCalls(reply)): s
 export function ReplyContext({ reply }: { reply: Reply }) {
   const { t } = useTranslation('runs');
   const [open, setOpen] = useState(false);
-  const historyVersion = useCogitaStore((state) => state.historyWindow?.history_version);
+  const sharedVersion = useContext(HistoryVersionContext);
+  const storedVersion = useCogitaStore((state) => state.historyWindow?.history_version);
+  const historyVersion = sharedVersion ?? storedVersion;
   useEffect(() => { setOpen(false); }, [reply.run.run_id, reply.run.session_id, reply.run.status]);
   const calls = contextCalls(reply);
   if (reply.run.kind === 'tool' || !calls.length || (!terminal(reply.run.status) && reply.run.status !== 'WAITING_FOR_USER')) return null;

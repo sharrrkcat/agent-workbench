@@ -1,4 +1,5 @@
 """NapCat card text survives ingress, positional projection and model history."""
+from tests.qq_transcript_helpers import qq_incoming, qq_outgoing
 import json
 
 import pytest
@@ -140,7 +141,7 @@ def test_card_text_reaches_api_batch_model_and_history_without_keyword_trigger(q
     expected = "".join(text for _, text in CARDS)
     incoming = {**event(kind="private" if private else "group"), "message": cards}
     ingest(client, state, p, incoming, 0)
-    row = ok(client.get(f"/api/qq/sessions/{sid}/messages"))["items"][0]
+    row = qq_incoming(client, sid)[0]
     assert row["text"] == expected
     assert row["segments"] == [{"type": "text", "text": expected}]
     if not private:
@@ -158,5 +159,5 @@ def test_card_text_reaches_api_batch_model_and_history_without_keyword_trigger(q
     assert expected in model_input
     history = project_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None)
     assert any(message["role"] == "user" and message["content"] == model_input for message in history.messages)
-    refreshed = ok(client.get(f"/api/qq/sessions/{sid}/messages"))["items"]
+    refreshed = qq_incoming(client, sid)
     assert next(item for item in refreshed if item["external_id"] == "1")["segments"] == row["segments"]

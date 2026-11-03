@@ -1,3 +1,4 @@
+import { qqHistory, qqDeliveries } from './qq-history';
 import { readFileSync } from 'node:fs';
 import { test, expect, type APIResponse } from '@playwright/test';
 
@@ -23,10 +24,10 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         const firstRun = await json(request.post(`/__test__/qq/${sid}`));
         const secondRun = await json(request.post(`/__test__/qq/${sid}/reply/limit`));
         await page.goto(`/projects/${project.id}?session=${sid}`);
-        await expect(page.locator('[data-qq-incoming]')).toHaveCount(50);
+        await expect(page.locator('[data-qq-incoming]')).toHaveCount(48);
         await page.getByRole('button', { name: chat.loadEarlier, exact: true }).click();
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(66);
-        const messages = (await json(request.get(base + '/messages?limit=100'))).items;
+        const messages = (await qqHistory(request, sid)).items.flatMap((item) => item.kind === 'incoming' ? [item.message] : []).reverse();
         const selected = messages[0], kept = messages[1];
         const incoming = page.locator(`[data-qq-incoming="${selected.id}"]`);
         const remove = incoming.getByRole('button', { name: labels.qq.deleteMessage, exact: true });
@@ -71,7 +72,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.locator(`[data-qq-incoming="${kept.id}"]`).getByRole('button', { name: labels.qq.status[kept.disposition], exact: true })).toBeAttached();
         await expect(page.locator(`[data-run-id="${secondRun.run_id}"]`)).toHaveCount(1);
 
-        const deliveries = (await json(request.get(base + '/deliveries'))).items;
+        const deliveries = await qqDeliveries(request, sid);
         const targets = deliveries.filter((row: { run_id: string }) => row.run_id === secondRun.run_id);
         const outgoing = page.locator(`[data-qq-delivery="${targets[0].id}"]`);
         await outgoing.scrollIntoViewIfNeeded();
@@ -85,11 +86,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.locator(`[data-run-id="${secondRun.run_id}"]`)).toHaveCount(1);
 
         // A busy response disables every delete entry without enabling regeneration.
-        await page.route(`**${base}`, async (route) => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), busy: true } }); });
+        await page.route(`**${base}/history*`, async (route) => { const response = await route.fetch(); await route.fulfill({ response, json: await response.json().then((value) => ({ ...value, binding: { ...value.binding, busy: true } })) }); });
         const replyDelete = page.locator(`[data-run-id="${secondRun.run_id}"]`).getByRole('button', { name: runs.deleteReply, exact: true });
         await expect(replyDelete).toBeDisabled();
         await expect(page.locator('[data-qq-delete]:not(:disabled)')).toHaveCount(0);
-        await page.unroute(`**${base}`);
+        await page.unroute(`**${base}/history*`);
         await expect(replyDelete).toBeEnabled();
         await expect(page.getByRole('button', { name: runs.retryReply, exact: true })).toHaveCount(0);
         await replyDelete.click();
@@ -106,11 +107,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.locator(`[data-qq-incoming="${oldest.id}"]`)).toHaveCount(0);
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(64);
         await page.reload();
-        await expect(page.locator('[data-qq-incoming]')).toHaveCount(50);
+        await expect(page.locator('[data-qq-incoming]')).toHaveCount(49);
         await page.getByRole('button', { name: chat.loadEarlier, exact: true }).click();
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(64);
         await expect(page.locator('[data-qq-delivery]')).toHaveCount(1);
-        const remaining = (await json(request.get(base + '/messages?limit=100'))).items;
+        const remaining = (await qqHistory(request, sid)).items.flatMap((item) => item.kind === 'incoming' ? [item.message] : []).reverse();
         for (const row of remaining) expect(row.disposition).toBe(messages.find((old: { id: number }) => old.id === row.id).disposition);
         await page.screenshot({ path: info.outputPath('qq-delete-result.png') });
         expect(errors).toEqual([]);

@@ -58,7 +58,7 @@ function OrdinarySessionSettingsDialog({ session, onClose, onManagePersonas }: {
       usePersonasStore.getState().reload(),
       sessionId ? knowledgeApi.listSessionKnowledgeBases(sessionId) : Promise.resolve({ knowledge_base_ids: (session as OrdinaryChatDraft).knowledge_base_ids }),
       knowledgeApi.listKnowledgeBases(),
-      useModelsStore.getState().reload(),
+      useModelsStore.getState().reloadProfiles(),
     ]).then(([, kb, availableBases]) => {
       if (live) {
         const pending = useCogitaStore.getState().pendingKnowledge;

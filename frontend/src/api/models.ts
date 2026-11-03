@@ -65,7 +65,7 @@ export const modelsApi = {
     }),
   deleteModelProfile: (id: string) =>
     request<{ deleted: boolean }>(`/api/models/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  getModelStatus: (id: string) => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/status`),
+  getModelStatus: (id: string, signal?: AbortSignal) => request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/status`, { signal }),
   getModelVoices: (id: string) => request<PresetVoice[]>(`/api/models/profiles/${encodeURIComponent(id)}/voices`),
   modelAction: (id: string, action: 'load' | 'unload' | 'health', tower?: SiglipTower) =>
     request<ModelStatus>(`/api/models/profiles/${encodeURIComponent(id)}/${action}`, {

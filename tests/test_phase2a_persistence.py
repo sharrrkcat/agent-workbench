@@ -36,7 +36,10 @@ def test_phase2a_recreates_all_test_data_and_matches_orm(tmp_path):
     for table in SQLModel.metadata.tables:
         columns = lambda bind: [{**column, "type": str(column["type"])} for column in inspect(bind).get_columns(table)]
         assert columns(engine) == columns(expected)
-        assert inspect(engine).get_indexes(table) == inspect(expected).get_indexes(table)
+        def indexes(source):
+            return [{**row, "dialect_options": {key: str(value) for key, value in row.get("dialect_options", {}).items()}}
+                for row in inspect(source).get_indexes(table)]
+        assert indexes(engine) == indexes(expected)
         assert inspect(engine).get_foreign_keys(table) == inspect(expected).get_foreign_keys(table)
     before = signature.as_dict()
     init_db(engine)

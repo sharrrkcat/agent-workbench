@@ -6,6 +6,7 @@ import type { RuntimeEvent } from '../types/runs';
 export function useModelEvents() {
   useEffect(() => {
     let closed = false;
+    let connected = false;
     let socket: WebSocket;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
     function connect() {
@@ -14,8 +15,11 @@ export function useModelEvents() {
       socket = new WebSocket(url);
       const next = () => { if (!closed && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'next_event' })); };
       socket.addEventListener('open', () => {
-        void useModelsStore.getState().reloadRuntimes().catch(() => undefined);
-        void useModelsStore.getState().reload().catch(() => undefined);
+        const store = useModelsStore.getState();
+        if (connected) store.reconnected();
+        connected = true;
+        void store.reloadProfiles().catch(() => undefined);
+        void store.reloadSettings().catch(() => undefined);
         next();
       });
       socket.addEventListener('message', (event) => {

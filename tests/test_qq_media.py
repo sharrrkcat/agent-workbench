@@ -1,4 +1,5 @@
 """QQ media ordering, acquisition, model requests and attachment ownership."""
+from tests.qq_transcript_helpers import qq_incoming, qq_outgoing
 import asyncio
 from io import BytesIO
 import json
@@ -41,7 +42,7 @@ def image_event(number=1, *, text="bot A", images=None):
 
 
 def page(client, session):
-    return ok(client.get(f"/api/qq/sessions/{session['session_id']}/messages"))["items"]
+    return qq_incoming(client, session['session_id'])
 
 
 async def finish_pending(state):

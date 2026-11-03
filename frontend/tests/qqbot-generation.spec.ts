@@ -1,3 +1,4 @@
+import { qqDeliveries } from './qq-history';
 import { readFileSync } from 'node:fs';
 import { test, expect, type APIResponse } from '@playwright/test';
 import { chooseOption } from './controls';
@@ -63,7 +64,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(preview).toBeHidden();
         await expect(bubble.locator('.qq-image-button')).toBeFocused();
         await page.screenshot({ path: info.outputPath('qq-generated-image.png') });
-        const delivery = (await json(request.get(`/api/qq/sessions/${sid}/deliveries`))).items[0];
+        const delivery = (await qqDeliveries(request, sid))[0];
         expect(delivery.kind).toBe('generated_image');
         await json(request.delete(`/api/qq/sessions/${sid}/deliveries/${delivery.id}`));
         await expect(page.locator('[data-qq-delivery]')).toHaveCount(0);
@@ -77,7 +78,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.getByRole('button', { name: labels.qq.stop, exact: true }).click();
         await held;
         await expect.poll(async () => (await json(request.get(`/api/qq/sessions/${sid}`))).busy).toBe(false);
-        expect((await json(request.get(`/api/qq/sessions/${sid}/deliveries`))).items).toHaveLength(1);
+        expect((await qqDeliveries(request, sid))).toHaveLength(1);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         await page.goto(`/projects/${project.id}`);
         await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();

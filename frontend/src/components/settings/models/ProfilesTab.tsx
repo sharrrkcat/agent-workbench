@@ -1,13 +1,13 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { ResourceEmpty } from '../resources/ResourceUI';
+import { Feedback, ResourceEmpty } from '../resources/ResourceUI';
 import { useSettingsView } from '../SettingsView';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Activity, Copy, FileText, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useTranslation } from 'react-i18next';
 import { modelsApi } from '../../../api/models';
@@ -31,7 +31,14 @@ export function ProfilesTab({
 }: ModelFeedbackProps & { kind: ModelKind; onOpenLocalRuntime: () => void; editorVisible: boolean; onOpenEditor: () => void }) {
   const { t } = useTranslation('llm');
   const activeView = useSettingsView();
-  const { profiles, providers, statuses, setStatus, loading, reload } = useModelsStore();
+  const { profiles, providers, statuses, statusErrors, setStatus, loading, reloadProfiles, reloadProviders, reloadStatuses, connectionVersion } = useModelsStore();
+  useEffect(() => {
+    if (!activeView) return;
+    const controller = new AbortController();
+    void reloadStatuses(profiles.filter((profile) => profile.kind === kind).map((profile) => profile.id), controller.signal);
+    return () => controller.abort();
+  }, [activeView, profiles, kind, reloadStatuses, connectionVersion]);
+  const reload = async () => { await Promise.all([reloadProfiles(true), reloadProviders(true)]); };
   const [model, setModel] = useState<ProfileDraft | null>(null);
   const disabled = busy || loading;
   const [processLog, setProcessLog] = useState<{ title: string; text: string } | null>(null);
@@ -260,6 +267,7 @@ export function ProfilesTab({
                   </CardAction>
                 </CardHeader>
                 <CardContent className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+                  <Feedback error={statusErrors[p.id]} />
                   {p.source?.type === 'provider' ? <small>{t('recentRequestState')}</small> : null}
                   {p.source?.type === 'local' ? <small>
                     {t('residency')}: {t('residencies.' + (status?.residency || 'unknown'))}

@@ -1,5 +1,6 @@
 """Local QQ transcript fixtures for browser workflows; no external connection."""
 
+from tests.qq_transcript_helpers import stored_qq_rows
 from types import SimpleNamespace
 from typing import Literal
 from io import BytesIO
@@ -71,7 +72,7 @@ def install_qq_fixture(app):
                 image.save(data, "PNG")
             return data.getvalue()
         service.download = download
-        for row in sorted(state.qq.store.page(QQMessage, session_id, limit=100)["items"], key=lambda item: item["id"]):
+        for row in sorted(stored_qq_rows(state.qq.store, QQMessage, session_id, limit=100), key=lambda item: item["id"]):
             for media in state.qq.store.message_media([row["id"]])[row["id"]]:
                 if media.status == "pending" and (include_old or media.source.file != "fixture:old"):
                     await service.acquire(media, state.sessions.get_session(session_id).project_id)
@@ -83,7 +84,7 @@ def install_qq_fixture(app):
 
     @app.post("/__test__/qq/{session_id}/media/description")
     async def media_description(session_id: str, description: str = Body(embed=True)):
-        rows = state.qq.store.page(QQMessage, session_id, limit=100)["items"]
+        rows = stored_qq_rows(state.qq.store, QQMessage, session_id, limit=100)
         assets = {media.asset_id for items in state.qq.store.message_media([row["id"] for row in rows]).values()
             for media in items if media.asset_id is not None and media.kind != "face"}
         for asset_id in assets:
@@ -102,7 +103,7 @@ def install_qq_fixture(app):
                 "message_id": 10000 + number, "time": 1700000000 + number,
                 "sender": {"nickname": "Gallery participant"}, "message": [segment]}, now=number / 100)
         await complete_media(session_id, include_old=True)
-        rows = sorted(state.qq.store.page(QQMessage, session_id, limit=100)["items"], key=lambda row: row["id"])
+        rows = sorted(stored_qq_rows(state.qq.store, QQMessage, session_id, limit=100), key=lambda row: row["id"])
         resources = []
         for row in rows:
             for media in state.qq.store.message_media([row["id"]])[row["id"]]:
@@ -133,7 +134,7 @@ def install_qq_fixture(app):
                 "message": contents.get(number, [text(f"Record {number} bot")])}, now=number / 100)
         state.qq.store.freeze(session_id, 3, 10)
         await complete_media(session_id, include_old=False)
-        return {"ids": {row["external_id"]: row["id"] for row in state.qq.store.page(QQMessage, session_id, limit=100)["items"]}}
+        return {"ids": {row["external_id"]: row["id"] for row in stored_qq_rows(state.qq.store, QQMessage, session_id, limit=100)}}
 
     async def execute(session, batch):
         project = state.projects.get(session.project_id)

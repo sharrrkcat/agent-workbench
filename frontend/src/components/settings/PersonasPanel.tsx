@@ -103,7 +103,7 @@ export function PersonasPanel({ collection }: { collection: PersonaCollection })
       if (saved.avatar_attachment_id) temporaryAvatars.current.delete(saved.avatar_attachment_id);
       if (kind === 'knowledge') await chatApi.patchPersonaKnowledge(saved.id, editor.bindings);
       else await chatApi.patchPersonaWorldbooks(saved.id, editor.bindings);
-      await usePersonasStore.getState().reload();
+      await usePersonasStore.getState().reload(true);
       await useCogitaStore.getState().reloadSessions();
       await cleanupUploads();
       if (singleton) beginEdit(next);
@@ -162,7 +162,7 @@ export function PersonasPanel({ collection }: { collection: PersonaCollection })
                         void task.run('delete', async () => {
                           await chatApi.deletePersona(persona.id);
                           usePersonasStore.getState().remove(persona.id);
-                          await usePersonasStore.getState().reload();
+                          await usePersonasStore.getState().reload(true);
                         });
                     }} />
                 }><Trash2 data-icon="inline-start" /></TooltipTrigger><TooltipContent>{t('deleteNamed', { name: persona.name })}</TooltipContent></Tooltip> : null}

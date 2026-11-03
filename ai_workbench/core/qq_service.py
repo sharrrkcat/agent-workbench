@@ -15,6 +15,7 @@ from ai_workbench.core.harness.schema import ToolSpec, ToolExecutionError
 from ai_workbench.core.qq_protocol import OneBotConnection, OneBotReceipt, normalize
 from ai_workbench.core.qq_names import QQNames, model_batch_text, references_adapter
 from ai_workbench.core.qq_history import QQHistory
+from ai_workbench.core.qq_transcript import QQTranscriptReader
 from ai_workbench.core.qq_media import QQMediaService
 from ai_workbench.core.qq_descriptions import QQDescriptionService
 from ai_workbench.core.qq_resources import QQResources
@@ -47,6 +48,7 @@ class QQService:
         self.state = state
         self.store = store
         self.history = QQHistory(state, store)
+        self.transcript = QQTranscriptReader(state, store)
         self.connections = {}
         self.media = QQMediaService(state, store, self.connections)
         self.descriptions = QQDescriptionService(store, state.model_manager)
@@ -124,7 +126,8 @@ class QQService:
                     self.workers.pop(key).result()
             for key, project in projects.items():
                 if key not in self.tasks:
-                    connection = OneBotConnection(project, lambda event, pid=key: self.ingest(pid, event))
+                    connection = OneBotConnection(project, lambda event, pid=key: self.ingest(pid, event),
+                        on_connected=lambda pid=key: self.programs.connection_restored(pid))
                     self.connections[key] = connection
                     self.tasks[key] = asyncio.create_task(self.connect(connection))
                 for binding in self.store.bindings(key):

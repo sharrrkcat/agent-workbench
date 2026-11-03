@@ -21,6 +21,7 @@ Paths below are under [ai_workbench/](../../ai_workbench/):
   classification. core/qq_names.py owns mention spans, identity lookup/cache and
   frozen model-facing names; core/qq_segments.py projects ordered display/model segments.
 - core/qq_store.py owns durable batches, participants, receipts and restart recovery;
+  core/qq_transcript.py reads bounded timeline snapshots; api/schemas/qq.py owns their strict public shape.
   db/qq_models.py defines QQ records. core/qq_icebreaker.py owns group activity,
   observations, cancellation eligibility and cooldowns.
 - core/qq_context.py builds current input, paged batch history and per-call QQ runtime data;
@@ -38,6 +39,8 @@ Paths below are under [ai_workbench/](../../ai_workbench/):
   executable migrations live in [alembic/versions/](../../alembic/versions/).
 
 ## Frontend source map
+
+Paging regressions: tests/test_qq_transcript.py, tests/test_qq_timeline_migration.py and frontend/tests/qqbot-loading.spec.ts. Run `uv run python -m scripts.benchmark_qq_history` for isolated 10k/100k HTTP/SQL comparisons (output: build/qq-history-benchmark.json).
 
 Paths below are under [frontend/src/](../../frontend/src/):
 

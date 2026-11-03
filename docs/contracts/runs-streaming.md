@@ -38,7 +38,7 @@ explicit chat tool input receives the basic input title described in the chat co
 POST `/api/sessions/{id}/compact` accepts an empty body and returns 202 RunResponse. It captures configuration/history and creates a compaction run before yielding, then registers its task for ordinary cancellation and restart interruption. Unsupported policies/session kinds and busy sessions return 409; arguments return 422. The internal message input also recognizes standalone /compact before creating any message.
 Compaction metadata records compacted/reset/not_needed (no_history/below_target), source identity and nullable before/after counts. Local resets add operation=reset and body-free window references. Summary text remains private. Failed manual generation has a failed run; it cannot be retried/deleted as a reply. History edits still remove later runs and invalidate checkpoints.
 
-Messages and replies have consecutive session-local numbers starting at #1 beside their timestamps.
+Ordinary/Workspace messages and replies have consecutive session-local numbers starting at #1 beside their timestamps.
 Each standalone message or whole reply occupies one number, including active, failed, cancelled and
 direct-tool replies. Processing messages share their reply's number. Numbers follow current display
 order, are computed by database counts after history mutations and are not persisted. User-message navigation uses
@@ -50,7 +50,7 @@ created_at) through finished_at, including approval waits; active clocks update
 locally and terminal clocks freeze. General show_full_processing controls initial
 active expansion. User toggles survive incoming deltas; entering a terminal state
 collapses the outer history, and reopened conversations start terminal histories
-collapsed. Final answers and approval controls stay outside that history.
+collapsed. Final answers and approval controls stay outside that history. QQ lists carry compact metrics and load full processing only on expansion; QQ internal prose stays inside that disclosure, with confirmed/outstanding sends rendered separately by the QQ timeline.
 User message metadata.request_warnings contains run_id and deduplicated images_ignored/images_require_text/tools_ignored codes. Chat emits message_updated on change, including clearing prior warnings on retry. Warnings render as localized warning-colored text below the current user bubble, survive refresh, and never enter model context; historical messages are not rewritten.
 Processing uses shadcn Base UI AI Elements compositions: Trace for the outer clock, reasoning and individual tool calls, Code Block for tool output, and Item/Button for pending confirmation. The clock's content has no left rule or inset, keeping reasoning/tool rows aligned with it and the answer. Child disclosures retain their left rule/inset. Trace titles, content and code use 14px text. The clock is a plain
 text disclosure. Trace owns the right-chevron rotation, height transition and running title shimmer; reduced motion disables animation. Touch disclosures retain 44px targets.
@@ -143,8 +143,8 @@ Refreshes preserve newer content/approvals. Microsecond run/step ordering preven
 approvals or regressing terminal status. REST direct-call/approval results share reconciliation and session isolation;
 concurrent approval submission is blocked by run id. Previous-session results cannot change the visible conversation.
 Session navigation tracks its target and loading/ready/error state separately from initialization;
-no target is idle. Required session/history/run reads commit together before opening the WebSocket.
-Connection-time reconciliation then preserves live events using the existing version checks.
+no target is idle. Ordinary/Workspace required session/history/run reads commit together before opening the WebSocket; QQ activates after Session configuration and independently loads its own history.
+Initial connection does not repeat history; reconnect reconciliation preserves live events using existing version checks and routes QQ events only to QQ history. Persona refresh failure retains identity data.
 Real switches increment the epoch once and reset composer/attachment/dialog state, while
 only the message scroller remounts. Explicit failed-load retry preserves the epoch; repeated target
 selection is a no-op. Background refresh retains content and never re-enters navigation loading.

@@ -155,8 +155,9 @@ def normalize(event):
 
 
 class OneBotConnection:
-    def __init__(self, project, receive):
+    def __init__(self, project, receive, *, on_connected=None):
         self.project, self.receive = project, receive
+        self.on_connected = on_connected
         self.socket = None
         self.pending = {}
         self.ready = False
@@ -174,6 +175,8 @@ class OneBotConnection:
                     raise ToolExecutionError("QQ_ACCOUNT_MISMATCH", "Connected account differs from the Project.")
                 self.login_name = login.nickname
                 self.ready, self.status = True, "connected"
+                if self.on_connected is not None:
+                    self.on_connected()
                 await self.read()
             finally:
                 self.ready = False

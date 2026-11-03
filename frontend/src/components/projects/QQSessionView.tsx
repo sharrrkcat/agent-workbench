@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCheck, Clock, CircleHelp, CircleX, LoaderCircle, SkipForward, Pause, Play, Square, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, Clock, CircleHelp, CircleX, ArrowDown, LoaderCircle, SkipForward, Pause, Play, Square, Trash2 } from 'lucide-react';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Marker, MarkerContent } from '@/components/ui/marker';
 import { InputGroupButton } from '@/components/ui/input-group';
-import { MessageScrollerButton, MessageScrollerItem, MessageScrollerProvider, useMessageScroller } from '@/components/ui/message-scroller';
+import { MessageScrollerButton, MessageScrollerItem, MessageScrollerProvider, useMessageScroller, useMessageScrollerVisibility } from '@/components/ui/message-scroller';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import type { QQMessage, QQDelivery, QQDeleteTarget } from '../../api/qq';
 import type { ReplyDeleteAction } from '../messages/ReplyActions';
@@ -17,7 +17,7 @@ import type { Run } from '../../types/runs';
 import { Feedback, ResourceLoading } from '../settings/resources/ResourceUI';
 import { MessageFrame } from '../messages/MessageFrame';
 import { RunReply } from '../messages/RunReply';
-import { MessageNumbersContext } from '../messages/MessageNumbersContext';
+import { HistoryVersionContext, MessageNumbersContext } from '../messages/MessageNumbersContext';
 import { ConversationScroller, ConversationViewport, ConversationContent } from '../ConversationSurface';
 import { ComposerSurface, ComposerTextarea, ComposerToolbar } from '../ComposerSurface';
 import { ContextWindowMeter } from '../ContextWindowMeter';
@@ -41,17 +41,46 @@ export function QQSessionView({ session }: { session: QQSession }) {
 function QQConversation({ session }: { session: QQSession }) {
   const { t } = useTranslation(['personas', 'chat']);
   const data = useQQConversation(session.session_id);
+  const binding = data.page?.binding;
   const { confirm, confirmation } = useConfirmDialog();
-  const deletionDisabled = !data.binding || data.binding.busy || data.deleting || data.controlling;
+  const deletionDisabled = !binding || binding.busy || data.deleting || data.controlling;
   async function remove(target: QQDeleteTarget) {
     if (await confirm(t(target.kind === 'reply' ? 'qq.deleteReplyConfirm' : 'qq.deleteMessageConfirm'), { destructive: true }))
       await data.remove(target);
   }
-  const { scrollToMessage } = useMessageScroller();
+  const { scrollToMessage, scrollToEnd } = useMessageScroller();
+  const { visibleMessageIds } = useMessageScrollerVisibility();
+  const userScrolling = useRef(false);
   const viewport = useRef<HTMLDivElement>(null);
+  const scrollTarget = useRef<{ id: string; margin: number } | 'latest' | null>(null);
+  const readingPosition = useRef<{ id: string; margin: number } | null>(null);
+  const following = useRef(true);
+  function position(node: HTMLDivElement | null) {
+    if (!node) return null;
+    const top = node.getBoundingClientRect().top;
+    const row = Array.from(node.querySelectorAll<HTMLElement>('[data-qq-item]')).find((item) => item.getBoundingClientRect().bottom > top);
+    return row?.dataset.messageId ? { id: row.dataset.messageId, margin: row.getBoundingClientRect().top - top } : null;
+  }
   const showFullProcessing = useCogitaStore((state) => state.settings?.show_full_processing === true);
-  const items = useMemo(() => buildQQConversation(data.messages.items, data.batches.items, data.deliveries.items, data.runs),
-    [data.messages, data.batches, data.deliveries, data.runs]);
+  const detailData = useMemo(() => Object.fromEntries(Object.entries(data.details).flatMap(([id, value]) => value.data ? [[id, value.data]] : [])), [data.details]);
+  const items = useMemo(() => buildQQConversation(data.page?.items ?? [], detailData), [data.page, detailData]);
+  useEffect(() => {
+    const visible = data.page?.items.find((item) => item.id === visibleMessageIds[0]);
+    if (visible) data.setAnchor(visible.cursor);
+  }, [data.page, visibleMessageIds]);
+  useEffect(() => { if (data.paging) userScrolling.current = false; }, [data.paging]);
+  useLayoutEffect(() => {
+    const target = scrollTarget.current ?? (!following.current ? readingPosition.current : null), node = viewport.current;
+    if (!target || !node) return;
+    userScrolling.current = false;
+    const frame = requestAnimationFrame(() => {
+      if (viewport.current !== node) return;
+      if (target === 'latest') scrollToEnd({ behavior: 'instant' });
+      else scrollToMessage(target.id, { align: 'start', behavior: 'instant', scrollMargin: target.margin });
+      scrollTarget.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [data.page, scrollToMessage, scrollToEnd]);
   const numbers = useMemo(() => {
     const values = new Map<string, number>();
     let number = 0;
@@ -61,39 +90,67 @@ function QQConversation({ session }: { session: QQSession }) {
     }
     return values;
   }, [items]);
-  async function older() {
-    const node = viewport.current;
-    const anchor = Array.from(node?.querySelectorAll<HTMLElement>('[data-qq-item]') ?? [])
-      .find((row) => row.getBoundingClientRect().bottom > node!.getBoundingClientRect().top);
-    const id = anchor?.dataset.messageId;
-    const margin = anchor && node ? anchor.getBoundingClientRect().top - node.getBoundingClientRect().top : 0;
-    await data.loadOlder();
-    if (id) requestAnimationFrame(() => scrollToMessage(id, { align: 'start', behavior: 'instant', scrollMargin: margin }));
+  async function load(direction: 'before' | 'after') {
+    if (data.paging) return;
+    scrollTarget.current = position(viewport.current);
+    following.current = false;
+    data.setFollowing(false);
+    if (!await data.loadHistory(direction)) scrollTarget.current = null;
+  }
+  async function latest() {
+    userScrolling.current = false;
+    following.current = true;
+    scrollTarget.current = 'latest';
+    if (!await data.loadHistory('latest')) scrollTarget.current = null;
   }
   return <>
     <header className="topbar"><SidebarTrigger className="sidebar-toggle" />
       <h1 className="chat-title flex-1" title={session.title}>{session.title || `${t('qq.' + session.target_kind)} ${session.target_id}`}</h1>
     </header>
     <ErrorBanner />
-    {data.error || data.binding?.paused ? <div className="px-4 py-2 text-sm">
+    {data.error || binding?.paused ? <div className="px-4 py-2 text-sm">
       <Feedback error={data.error} />
       {data.error && !data.loading ? <Button variant="ghost" size="sm" onClick={() => void data.refresh()}>{t('retry')}</Button> : null}
-      {data.binding?.paused ? <p role="status">{t('qq.paused')}: {t('qq.status.' + data.binding.pause_reason, { defaultValue: data.binding.pause_reason })}</p> : null}
+      {binding?.paused ? <p role="status">{t('qq.paused')}: {t('qq.status.' + binding.pause_reason, { defaultValue: binding.pause_reason })}</p> : null}
     </div> : null}
-    <MessageNumbersContext.Provider value={numbers}>
+    <HistoryVersionContext.Provider value={data.page?.history_version}><MessageNumbersContext.Provider value={numbers}>
       <ConversationScroller>
-        <ConversationViewport ref={viewport} aria-label={t('chat:messages')}
+        <ConversationViewport ref={viewport} preserveScrollOnPrepend={false} aria-label={t('chat:messages')}
+          onWheel={() => { userScrolling.current = true; }}
+          onTouchMove={() => { userScrolling.current = true; }}
+          onPointerDown={(event) => { userScrolling.current = event.target === event.currentTarget; }}
+          onKeyDown={(event) => {
+            if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) userScrolling.current = true;
+          }}
+          onScroll={(event) => {
+            const node = event.currentTarget;
+            readingPosition.current = position(node);
+            const atEnd = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
+            if (userScrolling.current) {
+              following.current = atEnd && !data.page?.has_after;
+              data.setFollowing(following.current);
+            }
+            if (data.paging || !userScrolling.current) return;
+            if (node.scrollTop < 160 && data.page?.has_before) {
+              userScrolling.current = false; void load('before');
+            } else if (atEnd && data.page?.has_after) {
+              userScrolling.current = false; void load('after');
+            }
+          }}
           onClickCapture={(event) => {
             const anchor = (event.target as Element).closest('button[aria-expanded]')?.closest<HTMLElement>('[data-scroll-pause]');
-            if (anchor?.dataset.messageId) scrollToMessage(anchor.dataset.messageId, { align: 'nearest', behavior: 'instant' });
+            if (anchor?.dataset.messageId) {
+              userScrolling.current = false;
+              scrollToMessage(anchor.dataset.messageId, { align: 'nearest', behavior: 'instant' });
+            }
           }}>
           <ConversationContent className="qq-conversation gap-0" aria-live="polite">
-            {data.hasOlder ? <MessageScrollerItem messageId="qq-older"><Button variant="ghost" size="sm" disabled={data.historyLoading} onClick={() => void older()}>{t('chat:loadEarlier')}</Button></MessageScrollerItem> : null}
+            {data.page?.has_before ? <MessageScrollerItem messageId="qq-older"><Button variant="ghost" size="sm" disabled={data.paging} onClick={() => void load('before')}>{t('chat:loadEarlier')}</Button></MessageScrollerItem> : null}
             {data.loading ? <MessageScrollerItem messageId="qq-loading"><ResourceLoading error={data.error} retry={() => void data.refresh()} /></MessageScrollerItem>
               : !items.length ? <MessageScrollerItem messageId="qq-empty"><Empty><EmptyHeader><EmptyTitle>{t('qq.empty')}</EmptyTitle></EmptyHeader></Empty></MessageScrollerItem> : null}
             {items.map((item) => <MessageScrollerItem key={item.id} messageId={item.id} data-qq-item
               data-qq-continuation={item.kind === 'incoming' && !item.showIdentity ? '' : undefined}
-              scrollAnchor={item.kind === 'incoming'}>
+              scrollAnchor>
               {item.kind === 'incoming' ? <QQIncoming message={item.message} showIdentity={item.showIdentity}
                 deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'message', id: item.message.id }) }} />
                 : item.kind === 'program' ? <div className="my-2" data-qq-program={item.delivery.origin}>
@@ -101,6 +158,9 @@ function QQConversation({ session }: { session: QQSession }) {
                     deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'delivery', id: item.delivery.id }) }} />
                 </div> : <>
                 <RunReply reply={item.reply} readOnly showFullProcessing={showFullProcessing}
+                  processing={{ ready: !!detailData[item.reply.run.run_id], error: data.details[item.reply.run.run_id]?.error,
+                    onOpenChange: (open) => data.setProcessing(item.reply.run.run_id, open),
+                    onRetry: () => void data.loadDetail(item.reply.run.run_id) }}
                   deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'reply', id: item.reply.run.run_id }) }} />
                 {item.reply.run.metadata?.qq_reply?.skipped ? <Marker className="mt-2" data-qq-reply-skipped>
                   <MarkerContent>{t('qq.replySkipped')}</MarkerContent>
@@ -115,13 +175,21 @@ function QQConversation({ session }: { session: QQSession }) {
                 </Marker> : null}
               </>}
             </MessageScrollerItem>)}
+            {data.page?.has_after ? <MessageScrollerItem messageId="qq-newer"><Button variant="ghost" size="sm" disabled={data.paging}
+              onClick={() => void load('after')}>{t('chat:loadLater')}</Button></MessageScrollerItem> : null}
           </ConversationContent>
         </ConversationViewport>
-        <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')} />
+        {data.page?.has_after ? <Button variant="secondary" size="icon-sm" className="latest-message-button absolute bottom-4 left-1/2 -translate-x-1/2"
+          aria-label={t('chat:scrollToEnd')} disabled={data.paging} onClick={() => void latest()}><ArrowDown /></Button>
+          : <MessageScrollerButton className="latest-message-button" aria-label={t('chat:scrollToEnd')}
+            onClick={(event) => { event.preventDefault(); void latest(); }} />}
       </ConversationScroller>
-    </MessageNumbersContext.Provider>
-    <div className="chat-bottom"><QQComposer session={session} runs={Object.values(data.runs).map((value) => value.run)}
-      paused={data.binding?.paused === true} controlling={data.controlling || data.deleting || !data.binding} onControl={data.control} /></div>
+    </MessageNumbersContext.Provider></HistoryVersionContext.Provider>
+    <div className="chat-bottom"><QQComposer session={session} runs={[...new Map([
+      ...(data.page?.items.flatMap((item) => item.kind === 'reply' ? [item.run] : []) ?? []),
+      ...[data.page?.active_run, data.page?.latest_run].filter((run): run is Run => !!run),
+    ].map((run) => [run.run_id, run])).values()]}
+      paused={binding?.paused === true} controlling={data.controlling || data.deleting || !binding} onControl={data.control} /></div>
     {confirmation}
   </>;
 }
@@ -133,7 +201,7 @@ function QQStatus({ status, detail }: { status: QQMessage['disposition'] | QQDel
     sent: CheckCheck, failed: CircleX, unknown: CircleHelp, cancelled: Square,
     command: Check, command_pending: Clock, command_done: Check }[status];
   const label = t('qq.status.' + status);
-  return <Tooltip open={open} onOpenChange={setOpen}><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} onClick={() => setOpen(true)}
+  return <Tooltip open={open} onOpenChange={setOpen}><TooltipTrigger closeOnClick={false} render={<Button variant="ghost" size="icon-sm" aria-label={label} onClick={() => setOpen(true)}
     className={status === 'failed' ? 'shrink-0 text-destructive' : 'shrink-0 text-muted-foreground'} />}>
     <Icon className={status === 'sending' ? 'animate-spin motion-reduce:animate-none' : undefined} />
   </TooltipTrigger><TooltipContent>{label}{detail ? ` · ${detail}` : ''}</TooltipContent></Tooltip>;

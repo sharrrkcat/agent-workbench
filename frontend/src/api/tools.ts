@@ -24,5 +24,5 @@ export const toolsApi = {
       method: 'POST',
       body: JSON.stringify({ decision }),
     }),
-  getToolRun: (runId: string) => request<ToolRunResponse>(`/api/tools/runs/${encodeURIComponent(runId)}`),
+  getToolRun: (runId: string, signal?: AbortSignal) => request<ToolRunResponse>(`/api/tools/runs/${encodeURIComponent(runId)}`, { signal }),
 };

@@ -1,3 +1,5 @@
+from tests.qq_transcript_helpers import stored_qq_rows
+from tests.qq_transcript_helpers import qq_incoming, qq_outgoing, qq_transcript
 import asyncio
 import json
 import time
@@ -19,6 +21,23 @@ from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, completion, tool_call, ok
+
+
+def test_history_query_validation_and_removed_routes(qq_client):
+    import base64
+    client, state, _ = qq_client
+    p = project(client)
+    session = child(client, p)
+    ingest(client, state, p, event(1), 0)
+    sid = session["session_id"]
+    cursor = qq_transcript(client, sid)["items"][0]["cursor"]
+    impossible = base64.urlsafe_b64encode(json.dumps({"session_id": sid, "time": 1e300, "kind": 0, "id": 1}).encode()).decode()
+    for params in ({"before": ""}, {"before": "!"}, {"before": impossible}, {"before": cursor, "after": cursor}, {"limit": 101}, {"unknown": "x"}):
+        assert client.get(f"/api/qq/sessions/{sid}/history", params=params).status_code == 422
+    other = child(client, p, "7799")
+    assert client.get(f"/api/qq/sessions/{other['session_id']}/history", params={"after": cursor}).status_code == 422
+    for endpoint in ("messages", "batches", "deliveries"):
+        assert client.get(f"/api/qq/sessions/{sid}/{endpoint}").status_code == 404
 
 
 @pytest.fixture(params=[True, False], ids=["memory", "sqlite"])
@@ -187,15 +206,15 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert [m["role"] for m in context.messages] == ["user", "assistant", "tool", "assistant", "tool", "user"]
     assert state.chat_service.resolve(state.sessions.get_session(session["session_id"])).knowledge_base_ids == []
     ingest(client, state, p, {**event(1001, sender="12345"), "post_type": "message_sent"}, 20)
-    records = state.qq.store.page(QQDelivery, session["session_id"])["items"]
+    records = stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])
     assert next(row for row in records if row["external_id"] == "1001")["echoed"]
-    assert len(state.qq.store.page(QQMessage, session["session_id"])["items"]) == 1
+    assert len(stored_qq_rows(state.qq.store, QQMessage, session["session_id"])) == 1
     assert client.post(f"/api/runs/{batch.run_id}/retry").status_code in (404, 409)
     assert client.delete(f"/api/messages/{batch.input_message_id}").status_code == 409
-    assert ok(client.get(f"/api/qq/sessions/{session['session_id']}/deliveries"))["items"][0]["status"] == "sent"
+    assert qq_outgoing(client, session['session_id'])[0]["status"] == "sent"
     ok(client.delete(f"/api/projects/{p['id']}"))
     assert state.qq.store.get(QQBinding, session["session_id"]) is None
-    assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+    assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"]) == []
 
 
 @pytest.mark.parametrize("failure,status", [(ToolExecutionError("QQ_ACTION_FAILED", "Rejected"), "failed"),
@@ -215,7 +234,7 @@ def test_failed_delivery_pauses_and_never_runs_second_tool(qq_client, failure, s
     assert len(connection.calls) == 1
     assert state.qq.store.get(QQBatch, batch.id).status == "failed"
     assert state.qq.store.get(QQBinding, session["session_id"]).paused
-    assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == status
+    assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]["status"] == status
     assert state.qq.send_echoes == {}
     assert state.qq.store.next_batch(p["id"]) is None
     ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
@@ -240,7 +259,7 @@ def test_restart_preserves_queue_and_debounce_without_replaying(qq_client):
     assert state.qq.store.get(QQBatch, interrupted.id).status == "interrupted"
     assert state.qq.store.get(QQBatch, queued.id).status == "queued"
     assert state.qq.store.get(QQBinding, session["session_id"]).deadline == 18
-    assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == "unknown"
+    assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]["status"] == "unknown"
     assert connection.calls == [] and upstream.calls == []
 
 
@@ -281,7 +300,7 @@ def test_missing_reply_fails_and_pauses_without_replaying(qq_client, streaming, 
 def test_onebot_websocket_identity_and_plain_text_roundtrip():
     from websockets.asyncio.server import serve
     async def scenario():
-        received, sent = [], []
+        received, sent, connected = [], [], []
         async def server(socket):
             async for raw in socket:
                 request = json.loads(raw)
@@ -294,7 +313,7 @@ def test_onebot_websocket_identity_and_plain_text_roundtrip():
             async def receive(value):
                 received.append(value)
             p = SimpleNamespace(websocket_url=f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}", access_token="", bot_account="12345")
-            connection = OneBotConnection(p, receive)
+            connection = OneBotConnection(p, receive, on_connected=lambda: connected.append(True))
             task = asyncio.create_task(connection.run())
             try:
                 async def ready():
@@ -305,6 +324,7 @@ def test_onebot_websocket_identity_and_plain_text_roundtrip():
                 assert response["message_id"] == 987
                 assert sent[-1]["params"]["message"][0]["type"] == "text"
                 assert received == [event()]
+                assert connected == [True], "One verified connection emits one recovery event"
             finally:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
@@ -337,13 +357,14 @@ def test_exact_deadline_references_media_and_pagination(qq_client):
     ingest(client, state, p, {**event(5), "message": [{"data": {}}]}, 9)
     second = freeze(state, session, 10)
     assert second.text.count("[Group name]") == 2
-    page = ok(client.get(f"/api/qq/sessions/{sid}/messages?limit=2"))
-    assert [r["external_id"] for r in page["items"]] == ["4", "3"]
-    assert page["items"][0]["references"] == [
+    page = qq_transcript(client, sid, limit=2)
+    rows = [item["message"] for item in reversed(page["items"])]
+    assert [r["external_id"] for r in rows] == ["4", "3"]
+    assert rows[0]["references"] == [
         {"type": "at", "id": "7777", "name": None, "is_self": False},
         {"type": "reply", "id": "bot", "name": None, "is_self": False}]
-    older = ok(client.get(f"/api/qq/sessions/{sid}/messages?limit=2&before={page['next_cursor']}"))
-    assert [r["external_id"] for r in older["items"]] == ["2", "1"] and older["next_cursor"] is None
+    older = qq_transcript(client, sid, limit=2, before=page["before_cursor"])
+    assert [r["message"]["external_id"] for r in reversed(older["items"])] == ["2", "1"] and not older["has_before"]
     ok(client.patch(f"/api/projects/{p['id']}", json={"keywords": []}))
     ingest(client, state, p, event(6, sender="8888"), 11)
     assert freeze(state, session, 20) is None
@@ -388,7 +409,7 @@ def test_stop_during_send_keeps_confirmed_reply_and_merges_queued_windows(qq_cli
         assert state.qq.store.get(QQBatch, batch.id).status == "cancelled"
         run = state.runs.get_run(state.qq.store.get(QQBatch, batch.id).run_id)
         assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 4, "limit_reached": False, "skipped": False}
-        records = state.qq.store.page(QQDelivery, sid)["items"]
+        records = stored_qq_rows(state.qq.store, QQDelivery, sid)
         assert [row["status"] for row in records] == ["unknown", "sent"]
         assert state.qq.send_echoes == {}
         assert state.qq.store.get(QQBinding, sid).paused
@@ -481,7 +502,7 @@ def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, mo
         assert restored.expires_at == participant.expires_at and restored.in_window
         assert restored.grant_message_id == participant.grant_message_id
         assert state.qq.store.get(QQBatch, queued.id).participants == queued.participants
-        assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == "unknown"
+        assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]["status"] == "unknown"
         assert state.qq.store.next_batch(p["id"]) is None
         ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
         resumed = state.qq.store.next_batch(p["id"])
@@ -507,7 +528,8 @@ def test_authentication_failure_and_transport_reconnect(qq_client):
                 await socket.send(json.dumps({"status": "ok", "retcode": 0, "data": {"user_id": 12345}, "echo": request["echo"]}))
         async with serve(server, "127.0.0.1", 0, process_request=authorize) as host:
             saved = state.project_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
-            connection = OneBotConnection(saved, lambda _: None)
+            authenticated = []
+            connection = OneBotConnection(saved, lambda _: None, on_connected=lambda: authenticated.append(attempts))
             task = asyncio.create_task(state.qq.connect(connection))
             async def until(predicate):
                 while not predicate():
@@ -515,9 +537,11 @@ def test_authentication_failure_and_transport_reconnect(qq_client):
             try:
                 await asyncio.wait_for(until(lambda: connection.status == "QQ_AUTH_FAILED"), 3)
                 await asyncio.wait_for(until(lambda: connection.ready), 5)
+                assert authenticated == [2]
                 await connection.socket.close()
                 await asyncio.wait_for(until(lambda: not connection.ready), 3)
                 await asyncio.wait_for(until(lambda: attempts >= 3 and connection.ready), 5)
+                assert authenticated == [2, 3]
             finally:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
@@ -547,7 +571,7 @@ def test_real_service_with_fake_onebot_and_model(qq_client):
             state.qq.supervisor = asyncio.create_task(state.qq.run())
             async def finished():
                 while True:
-                    rows = state.qq.store.page(QQBatch, session["session_id"])["items"]
+                    rows = stored_qq_rows(state.qq.store, QQBatch, session["session_id"])
                     if rows and rows[0]["status"] == "done":
                         return rows[0]
                     await asyncio.sleep(.05)

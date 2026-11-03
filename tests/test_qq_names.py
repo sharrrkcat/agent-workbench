@@ -1,4 +1,6 @@
 """OneBot mention identity, immutable inputs and bounded asynchronous enrichment."""
+from tests.qq_transcript_helpers import stored_qq_rows
+from tests.qq_transcript_helpers import qq_incoming, qq_outgoing
 import asyncio
 import json
 from types import SimpleNamespace
@@ -32,8 +34,9 @@ def test_mentions_share_display_and_frozen_model_identity(qq_client, cq):
             {"type": "reply", "data": {"id": "77"}}, {"type": "text", "data": {"text": " bot"}}])
     ingest(client, state, p, data, 1)
     before = state.qq.store.get(QQBinding, sid).deadline
-    page = ok(client.get(f"/api/qq/sessions/{sid}/messages"))
-    row = page["items"][0]
+    qq_incoming(client, sid)
+    client.portal.call(settle_names, state)
+    row = qq_incoming(client, sid)[0]
     assert row["text"] == "😀正文 @12345 @哈基米 & @小明@小明@哈基米@全体成员[引用:77] bot"
     assert row["references"][0] == {"type": "at", "id": "12345", "name": "哈基米", "is_self": True}
     assert len(queries) == 2 and all(q[0] == "get_group_member_info" for q in queries)
@@ -49,8 +52,8 @@ def test_mentions_share_display_and_frozen_model_identity(qq_client, cq):
     assert "😀正文 @12345 @哈基米（QQ:12345，你）" in sent_input
     assert "@小明（QQ:8888）@小明（QQ:7777）" in sent_input
     state.qq.names.cache.clear()
-    page = ok(client.get(f"/api/qq/sessions/{sid}/messages"))
-    assert page["items"][0]["text"] == row["text"] and len(queries) == 2
+    rows = qq_incoming(client, sid)
+    assert rows[0]["text"] == row["text"] and len(queries) == 2
     assert all(ref.frozen for ref in references_adapter.validate_json(state.qq.store.batch_messages(batch.id)[1].references_json) if ref.type == "at")
 
 
@@ -69,7 +72,10 @@ def test_names_are_conversation_scoped_and_private_uses_nickname(qq_client):
         data = event(i, target=session["target_id"], kind="private" if session == private else "group")
         data["message"] = "[CQ:at,qq=8888]"
         ingest(client, state, p, data, 1)
-    values = [ok(client.get(f"/api/qq/sessions/{s['session_id']}/messages"))["items"][0]["text"] for s in [group, other, private]]
+    for session in [group, other, private]:
+        qq_incoming(client, session["session_id"])
+    client.portal.call(settle_names, state)
+    values = [qq_incoming(client, s['session_id'])[0]["text"] for s in [group, other, private]]
     assert values == ["@First card", "@Other card", "@Private name"]
     assert calls == [("get_group_member_info", {"user_id": 8888, "group_id": 6677}), ("get_stranger_info", {"user_id": 8888})]
 
@@ -194,7 +200,7 @@ def test_member_queries_do_not_block_ingress_or_receipt_deadlines(qq_client):
             try:
                 await asyncio.wait_for(received.wait(), 5)
                 binding = state.qq.store.get(QQBinding, sid)
-                rows = state.qq.store.page(QQMessage, sid)["items"]
+                rows = stored_qq_rows(state.qq.store, QQMessage, sid)
                 projected = await state.qq.names.project(binding, p["bot_account"], rows)
                 assert projected[0]["text"] == "bot@Bot card"
                 batch = state.qq.store.next_batch(p["id"])
@@ -217,8 +223,12 @@ def test_unusable_lookup_retains_ids_and_never_pauses(qq_client, response):
     connection.call = lookup
     ingest(client, state, p, {**event(1), "message": "[CQ:at,qq=12345]"}, 0)
     for _ in range(2):
-        row = ok(client.get(f"/api/qq/sessions/{session['session_id']}/messages"))["items"][0]
+        row = qq_incoming(client, session['session_id'])[0]
         assert row["text"] == "@12345" and row["references"][0]["is_self"]
     assert len(calls) == 1
     binding = state.qq.store.get(QQBinding, session["session_id"])
     assert not binding.paused and binding.deadline == 5  # The built-in self mention works without a name.
+
+
+async def settle_names(state):
+    await asyncio.gather(*list(state.qq.names.display_tasks.values()))

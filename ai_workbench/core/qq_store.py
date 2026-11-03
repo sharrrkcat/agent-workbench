@@ -206,17 +206,6 @@ class QQStore:
                 db.refresh(binding)
             return binding
 
-    def page(self, kind, session_id, before=None, limit=50):
-        with Session(self.engine) as db:
-            query = select(kind).where(kind.session_id == session_id)
-            if kind in (QQMessage, QQDelivery):
-                query = query.where(kind.deleted == False)
-            if before is not None:
-                query = query.where(kind.id < before)
-            rows = db.exec(query.order_by(kind.id.desc()).limit(limit + 1)).all()
-            return {"items": [r.model_dump(exclude={"deleted", "image_generation_keyword"}) for r in rows[:limit]],
-                "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
-
     def delivery(self, run_id, call_id):
         with Session(self.engine) as db:
             return db.exec(select(QQDelivery).where(QQDelivery.run_id == run_id,

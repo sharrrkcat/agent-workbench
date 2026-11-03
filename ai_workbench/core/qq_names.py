@@ -68,6 +68,7 @@ class QQNames:
         self.connections = connections
         self.cache = {}
         self.inflight = {}
+        self.display_tasks = {}
         self.slots = asyncio.Semaphore(4)
 
     def _cached(self, project_id, key):
@@ -164,12 +165,31 @@ class QQNames:
             await asyncio.wait_for(asyncio.gather(*(worker() for _ in range(4))), LOOKUP_SECONDS)
         except asyncio.TimeoutError:
             pass  # Use completed lookups; the bounded shared requests may still fill the cache.
+        return self._render(binding, bot_account, rows, references, freeze=freeze, for_model=for_model)
+
+    def display(self, binding, bot_account, rows):
+        """Render immediately; bounded, shared lookups enrich a subsequent refresh."""
+        references = [references_adapter.validate_json(row["references_json"]) for row in rows]
+        missing = any(ref.type == "at" and not ref.frozen and ref.start is not None and ref.end is not None
+            and re.fullmatch(r"[1-9][0-9]{0,19}", ref.id)
+            and self._cached(binding.project_id, (binding.session_id, ref.id)) is None for refs in references for ref in refs)
+        if missing and binding.session_id not in self.display_tasks:
+            task = asyncio.create_task(self.project(binding, bot_account, [dict(row) for row in rows]))
+            self.display_tasks[binding.session_id] = task
+            def finished(value):
+                self.display_tasks.pop(binding.session_id, None)
+                if not value.cancelled():
+                    value.result()
+            task.add_done_callback(finished)
+        return self._render(binding, bot_account, rows, references)
+
+    def _render(self, binding, bot_account, rows, references, *, freeze=False, for_model=False):
         for row, refs in zip(rows, references):
             for ref in refs:
                 if ref.type == "at" and ref.start is not None and ref.end is not None and not ref.frozen:
                     ref.is_self = ref.id == bot_account
                     cached = self._cached(binding.project_id, (binding.session_id, ref.id))
-                    ref.name = cached[1] if cached is not None else None
+                    ref.name = cached[1] if cached is not None else ref.name
                     ref.frozen = freeze
             row["text"] = render_mentions(row["text"], refs, for_model=for_model)
             row["references"] = [ref.model_dump(include={"type", "id", "name", "is_self"}) for ref in refs]
@@ -181,7 +201,7 @@ class QQNames:
             del self.cache[project_id]
 
     async def close(self):
-        tasks = list(self.inflight.values())
+        tasks = [*self.display_tasks.values(), *self.inflight.values()]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

@@ -196,7 +196,8 @@ class PresentationOpenAI(ToolOpenAI):
 
 def create_fixture_app(repository: Path, root: Path):
     upstream = PresentationOpenAI()
-    app = create_app(root=root, use_memory=True, adapter_factory=upstream.factory, frontend_dist=repository / "frontend/dist")
+    app = create_app(root=root, database_url=f"sqlite:///{root / 'browser.db'}", adapter_factory=upstream.factory,
+        frontend_dist=repository / "frontend/dist")
     client = TestClient(app)
     profile = configure_model(client, alias="chat-model", request_options={"streaming": True})
     configure_model(client, kind="embedding", alias="resource-embedding", parameters={"dimensions": 2})

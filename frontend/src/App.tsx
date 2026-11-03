@@ -33,6 +33,8 @@ const readLocation = (): Location => ({
 });
 const guarded = (location: Location) => location.pathname === '/settings' ||
   (!isDraftRoute(location) && !!readProjectRoute(location).projectId && !readProjectRoute(location).sessionId);
+const conversationRoute = (location: Location) => location.pathname !== '/settings' && !readPlaygroundRoute(location)
+  && !isResourcesRoute(location) && (!readProjectRoute(location).projectId || !!readProjectRoute(location).sessionId || isDraftRoute(location));
 
 export default function App() {
   useModelEvents();
@@ -53,11 +55,13 @@ export default function App() {
   const navigating = useRef(false);
   const leaveSettings = useRef<LeaveGuard>(async () => true);
   const draftEpoch = useRef<number | null>(null);
+  const socketSession = useRef<string | null>(null);
   const setLeaveSettings = useCallback((guard: LeaveGuard) => {
     leaveSettings.current = guard;
   }, []);
   const commit = useCallback((next: Location) => {
     committed.current = next;
+    useCogitaStore.getState().setConversationVisible(conversationRoute(next));
     if (readPlaygroundRoute(next)) useCogitaStore.getState().deactivateConversation();
     if (next.pathname !== '/settings') lastHome.current = next.url;
     setLocation(next);
@@ -92,10 +96,11 @@ export default function App() {
     [commitUrl],
   );
   useEffect(() => {
-    void initialize(!readProjectRoute(committed.current).projectId && !isDraftRoute(committed.current) && !readPlaygroundRoute(committed.current));
+    void initialize(committed.current.pathname !== '/settings' && !readProjectRoute(committed.current).projectId && !isDraftRoute(committed.current) && !readPlaygroundRoute(committed.current));
     void useProjectsStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
   }, [initialize]);
   useLayoutEffect(() => {
+    useCogitaStore.getState().setConversationVisible(conversationRoute(location));
     if (!initialized || location.pathname === '/settings' || readPlaygroundRoute(location)) return;
     const route = readProjectRoute(location);
     if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(route.projectId);
@@ -152,7 +157,7 @@ export default function App() {
     }
   }, [commitUrl]);
   useEffect(() => {
-    if (!currentSession || (sessionLoad && sessionLoad.status !== 'ready')) return;
+    if (!conversationRoute(location) || !currentSession || (sessionLoad && sessionLoad.status !== 'ready')) return;
     let closed = false;
     let socket: WebSocket;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -163,8 +168,12 @@ export default function App() {
           socket.send(JSON.stringify({ type: 'next_event' }));
       };
       socket.addEventListener('open', () => {
-        void refreshCurrent();
-        void usePersonasStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
+        const first = socketSession.current !== currentSession!.session_id;
+        socketSession.current = currentSession!.session_id;
+        if (currentSession!.kind !== 'qqbot' || !first) {
+          void refreshCurrent();
+          void usePersonasStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
+        }
         next();
       });
       socket.addEventListener('message', (event) => {
@@ -189,7 +198,7 @@ export default function App() {
       clearTimeout(reconnect);
       socket.close();
     };
-  }, [currentSession?.session_id, sessionLoad?.status, sessionEpoch, applyRuntimeEvent, refreshCurrent]);
+  }, [currentSession?.session_id, sessionLoad?.status, sessionEpoch, location.pathname, location.search, applyRuntimeEvent, refreshCurrent]);
   useEffect(() => {
     window.history.replaceState({ cogitaIndex: committed.current.index }, '', committed.current.url);
     let transition: {

@@ -27,9 +27,9 @@ export type ConversationItem =
   | { kind: 'message'; id: string; createdAt: string; message: Message }
   | { kind: 'reply' | 'compaction'; id: string; createdAt: string; reply: Reply };
 
-export function buildReply(run: Run, messages: Message[], steps: RunStep[]): Reply {
+export function buildReply(run: Run, messages: Message[], steps: RunStep[], internal = false): Reply {
   const ordered = [...messages].sort((a, b) => compareTime(a.created_at, b.created_at));
-  const answer = run.kind === 'chat' ? [...ordered].reverse().find((message) => message.role === 'assistant' &&
+  const answer = !internal && run.kind === 'chat' ? [...ordered].reverse().find((message) => message.role === 'assistant' &&
     !message.parts.some((part) => part.type === 'tool_call')) : undefined;
   const results = new Map<string, ToolResultPart>();
   for (const message of ordered) {

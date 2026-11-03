@@ -176,6 +176,6 @@ assert.deepEqual(requests.at(-1), { url: '/api/projects/qq%2Fa/sessions', method
   body: { title: '', target_kind: 'friend', target_id: '12345678901234567' } });
 await qqApi.control('session/a', 'stop');
 assert.deepEqual(requests.at(-1), { url: '/api/qq/sessions/session%2Fa/control', method: 'POST', body: { action: 'stop' } });
-await qqApi.messages('session/a', 42);
-assert.equal(requests.at(-1).url, '/api/qq/sessions/session%2Fa/messages?before=42');
+await qqApi.history('session/a', { before: 'cursor/42' });
+assert.equal(requests.at(-1).url, '/api/qq/sessions/session%2Fa/history?before=cursor%2F42');
 console.log('Project routing, scope isolation, delayed selection/deletion and sparse override payloads: ok');

@@ -71,7 +71,6 @@ class QQPrograms:
             if project.id not in self.commands and self.next_command(project.id) is not None:
                 self.commands[project.id] = asyncio.create_task(self.process_commands(project.id))
             if self.service.connected(project.id):
-                self.connection_restored(project.id)
                 self.prepare_notifications(project)
                 if project.id not in self.senders and self.next_delivery(project.id) is not None:
                     self.senders[project.id] = asyncio.create_task(self.send_pending(project.id))

@@ -1,4 +1,5 @@
 """QQ send deadlines, unconfirmed outcomes and exact self-echo correlation."""
+from tests.qq_transcript_helpers import stored_qq_rows
 import asyncio
 import json
 from types import SimpleNamespace
@@ -140,7 +141,7 @@ def test_native_timeout_keeps_image_unconfirmed_even_with_matching_self_messages
     assert run.metadata["qq_reply"]["sent_count"] == 0
     binding = state.qq.store.get(QQBinding, session["session_id"])
     assert binding.paused and binding.pause_reason == "QQ_SEND_ACK_TIMEOUT"
-    records = lambda: state.qq.store.page(QQDelivery, session["session_id"])["items"]
+    records = lambda: stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])
     before = records()
     assert len(before) == 1 and before[0]["status"] == "unknown" and before[0]["external_id"] is None
     ingest(client, state, p, own, 100)
@@ -166,7 +167,7 @@ def test_invalid_receipt_never_confirms_or_runs_another_send(qq_client, result):
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "first"}, "first"),
         tool_call("qq_send_message", {"text": "second"}, "second"))]
     batch, run = execute_batch(client, state, p, session)
-    delivery, = state.qq.store.page(QQDelivery, session["session_id"])["items"]
+    delivery, = stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])
     assert delivery["status"] == "unknown" and delivery["external_id"] is None
     assert run.error_code == "QQ_DELIVERY_UNKNOWN" and run.metadata["qq_reply"]["sent_count"] == 0
     assert batch.status == "failed" and state.qq.store.get(QQBinding, session["session_id"]).paused
@@ -208,7 +209,7 @@ def test_self_echo_order_scope_and_bound_do_not_duplicate_confirmation(qq_client
     connection.call = send
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "same content"}))]
     _, run = execute_batch(client, state, p, session, private=private)
-    record = lambda: state.qq.store.page(QQDelivery, session["session_id"])["items"][0]
+    record = lambda: stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]
     assert record()["echoed"] == (echoed and mode != "late")
     before = participant(state, session)
     before = before.model_dump() if before is not None else None
@@ -220,9 +221,9 @@ def test_self_echo_order_scope_and_bound_do_not_duplicate_confirmation(qq_client
     after = participant(state, session)
     assert (after.model_dump() if after is not None else None) == before
     assert run.status == "DONE" and run.metadata["qq_reply"]["sent_count"] == 1
-    assert len(state.qq.store.page(QQDelivery, session["session_id"])["items"]) == 1
-    assert len(state.qq.store.page(QQMessage, session["session_id"])["items"]) == 1
-    assert state.qq.store.page(QQMessage, other["session_id"])["items"] == []
+    assert len(stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])) == 1
+    assert len(stored_qq_rows(state.qq.store, QQMessage, session["session_id"])) == 1
+    assert stored_qq_rows(state.qq.store, QQMessage, other["session_id"]) == []
     context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert sum(m["role"] == "assistant" for m in context.messages) == 1
     assert state.qq.send_echoes == {}
@@ -247,7 +248,7 @@ def test_qq_sends_use_response_deadline_but_remain_within_run_budget(qq_client, 
     connection.call = send
     upstream.turns = [completion(call)]
     batch, run = execute_batch(client, state, p, session)
-    delivery, = state.qq.store.page(QQDelivery, session["session_id"])["items"]
+    delivery, = stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])
     assert len(connection.calls) == 1 and connection.timeouts == [90]
     assert delivery["status"] == ("unknown" if exhaust_budget else "sent")
     assert run.error_code == ("TOOL_RUN_TIMEOUT" if exhaust_budget else None)

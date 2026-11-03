@@ -56,10 +56,12 @@ mockApi.getModelStatus = async () => idle;
 const oldProfiles = deferred();
 let profileReads = 0;
 mockApi.listModelProfiles = () => (++profileReads === 1 ? oldProfiles.promise : Promise.resolve([{ id: 'new' }]));
-const firstReload = modelsStore.getState().reload();
-await modelsStore.getState().reload();
+const firstReload = modelsStore.getState().reloadProfiles();
+assert.equal(modelsStore.getState().reloadProfiles(), firstReload, 'Concurrent directory reads coalesce');
+const forcedReload = modelsStore.getState().reloadProfiles(true);
 oldProfiles.resolve([{ id: 'old' }]);
-await firstReload;
+await Promise.all([firstReload, forcedReload]);
+assert.equal(profileReads, 2, 'A mutation refresh is not satisfied by a pre-mutation read');
 assert.equal(modelsStore.getState().profiles[0].id, 'new');
 
 const statusRead = deferred();
@@ -68,12 +70,27 @@ mockApi.getModelStatus = () => {
   statusStarted.resolve();
   return statusRead.promise;
 };
-const statusReload = modelsStore.getState().reload();
+const statusReload = modelsStore.getState().reloadStatuses(['new']);
 await statusStarted.promise;
 modelsStore.getState().setStatus('new', { ...idle, active: 2 });
 statusRead.resolve(idle);
 await statusReload;
 assert.equal(modelsStore.getState().statuses.new.active, 2);
+
+let activeStatus = 0, peakStatus = 0, statusRequests = 0;
+mockApi.getModelStatus = async (id) => {
+  activeStatus++; statusRequests++; peakStatus = Math.max(peakStatus, activeStatus);
+  await new Promise(setImmediate); activeStatus--;
+  if (id === 'bad') throw new Error('One status unavailable');
+  return idle;
+};
+await modelsStore.getState().reloadStatuses(['bad', ...Array.from({ length: 11 }, (_, i) => 'model-' + i)]);
+assert.equal(peakStatus, 4);
+assert.equal(statusRequests, 12);
+assert.equal(modelsStore.getState().statusErrors.bad, 'One status unavailable');
+assert.equal(modelsStore.getState().statuses['model-10'].state, 'ready');
+assert.equal(modelsStore.getState().error, '');
+console.log('Directory reads are independent of statuses; status concurrency and failures are bounded: ok');
 
 mockApi.runtimeCatalog = async () => ({ version: '1.0.0', engines: [] });
 mockApi.runtimeComponents = async () => [];

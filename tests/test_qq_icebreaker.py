@@ -1,4 +1,5 @@
 """Quiet-group observation, optional replies and cancellation before dispatch."""
+from tests.qq_transcript_helpers import stored_qq_rows
 import asyncio
 import json
 
@@ -71,7 +72,7 @@ def test_settings_defaults_strict_patch_and_private_state(qq_client):
     assert "icebreaker_cooldown_until" not in public
     schemas = client.get('/openapi.json').json()['components']['schemas']
     assert "icebreaker_cooldown_until" not in schemas["QQBindingResponse"]["properties"]
-    assert "icebreaker" in schemas["QQBatchResponse"]["properties"]["trigger_kind"]["enum"]
+    assert "QQBatchResponse" not in schemas and "QQHistoryPage" in schemas
 
 
 def test_cold_threshold_is_strict_and_supplements_restart_wait(qq_client, clock):
@@ -90,7 +91,7 @@ def test_cold_threshold_is_strict_and_supplements_restart_wait(qq_client, clock)
     ingest(client, state, p, event(5, "after freezing"), 34)
     assert tick(qq_client, session, clock, 50).id == batch.id
     assert [m.external_id for m in state.qq.store.batch_messages(batch.id)] == ["3", "4"]
-    assert len(state.qq.store.page(QQBatch, session["session_id"])["items"]) == 1
+    assert len(stored_qq_rows(state.qq.store, QQBatch, session["session_id"])) == 1
 
 
 @pytest.mark.parametrize("when", [13, 16, 20])
@@ -102,7 +103,7 @@ def test_second_speaker_cancels_observation_or_queue_without_cooldown(qq_client,
         tick(qq_client, session, clock, 16)
     ingest(client, state, p, event(2, "someone joins", sender="8888"), when)
     assert tick(qq_client, session, clock, 25) is None
-    assert all(row["status"] == "cancelled" for row in state.qq.store.page(QQBatch, session["session_id"])["items"])
+    assert all(row["status"] == "cancelled" for row in stored_qq_rows(state.qq.store, QQBatch, session["session_id"]))
     assert binding(state, session).icebreaker_cooldown_until is None
     assert not binding(state, session).paused
     ingest(client, state, p, event(3, "fresh quiet period"), 36)
@@ -229,7 +230,7 @@ def test_other_speaker_cancels_pre_send_work_without_pausing(qq_client, clock, m
     current = state.qq.store.get(QQBatch, batch.id)
     assert current.status == "cancelled" and current.error_code == "QQ_ICEBREAKER_CANCELLED"
     assert not binding(state, session).paused and connection.calls == []
-    assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+    assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"]) == []
     if current.run_id:
         assert state.runs.get_run(current.run_id).status == "CANCELLED"
     # A regular reply still works after automatic cancellation.
@@ -304,7 +305,7 @@ def test_recovery_cancels_unsent_attempts_but_preserves_uncertain_delivery_polic
     assert binding(state, session).icebreaker_cooldown_until == 46
     assert state.qq.store.next_batch(session["project_id"]) is None
     if send_intent:
-        assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == "unknown"
+        assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]["status"] == "unknown"
 
 
 @pytest.mark.parametrize("frozen", [False, True])
@@ -337,7 +338,7 @@ def test_generated_image_shares_the_one_reply_limit(qq_client, clock, image_prov
     batch, run = execute(qq_client, batch)
     assert batch.status == "done" and run.metadata["qq_reply"]["sent_count"] == 1
     assert len(connection.calls) == len(image_provider.calls) == 1
-    assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["kind"] == "generated_image"
+    assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]["kind"] == "generated_image"
     assert participant(state, session).expires_at == 76
 
 
@@ -377,7 +378,7 @@ def test_last_send_check_cancels_before_intent_and_cleans_prepared_images(
     assert batch.status == "cancelled" and run.status == "CANCELLED"
     assert not binding(state, session).paused and binding(state, session).icebreaker_cooldown_until == 46
     assert connection.calls == [] and assets(state) == [] and attachment_files() == []
-    assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+    assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"]) == []
 
 
 @pytest.mark.parametrize("arrival,eligible", [(75.99, True), (76, False)])
@@ -428,7 +429,7 @@ def test_unconfirmed_icebreaker_send_does_not_grant_eligibility(qq_client, clock
     reply(upstream)
     execute(qq_client, batch)
     assert participant(state, session) is None
-    assert state.qq.store.page(QQDelivery, session["session_id"])["items"][0]["status"] == status
+    assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]["status"] == status
 
 
 def test_icebreaker_confirmation_preserves_a_newer_keyword_epoch(qq_client, clock):
@@ -490,12 +491,12 @@ def test_icebreaker_waits_for_prior_nickname_decision_before_sending(qq_client, 
         monkeypatch.setattr(state.qq, "deliver", before_send)
         task = asyncio.create_task(state.qq.execute(batch))
         await asyncio.wait_for(entered.wait(), 2)
-        assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+        assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"]) == []
         release.set()
         await asyncio.wait_for(task, 2)
         current = state.qq.store.get(QQBatch, batch.id)
         assert current.error_code == "QQ_ICEBREAKER_CANCELLED"
-        assert state.qq.store.page(QQDelivery, session["session_id"])["items"] == []
+        assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"]) == []
         assert participant(state, session).expires_at == 77  # Only the incoming nickname granted eligibility.
     client.portal.call(scenario)
 

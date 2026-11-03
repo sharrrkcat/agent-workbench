@@ -1,3 +1,4 @@
+import { qqDeliveries } from './qq-history';
 import { readFileSync } from 'node:fs';
 import { test, expect, type APIResponse } from '@playwright/test';
 
@@ -55,7 +56,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.reload();
         await expect(page.locator('[data-qq-program]')).toHaveCount(3);
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(2);
-        const deliveries = (await json(request.get(`/api/qq/sessions/${session.session_id}/deliveries`))).items;
+        const deliveries = (await qqDeliveries(request, session.session_id));
         expect(deliveries.every((row: { run_id: string | null; status: string }) => row.run_id === null && row.status === 'sent')).toBe(true);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.locator('[data-qq-program="notification"]').scrollIntoViewIfNeeded();

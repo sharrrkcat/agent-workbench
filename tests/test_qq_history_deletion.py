@@ -1,4 +1,6 @@
 """QQ local deletion preserves transport outcomes and removes future context."""
+from tests.qq_transcript_helpers import stored_qq_rows
+from tests.qq_transcript_helpers import qq_incoming, qq_transcript
 import json
 
 import pytest
@@ -53,12 +55,13 @@ def test_incoming_deletion_rebuilds_only_selected_input_and_next_request(qq_clie
     assert state.qq.store.get(QQParticipant, (sid, first.sender_id)).model_dump() == participant
     assert state.qq.store.get(QQMessage, second.id).disposition == "batched"
     assert "POISON" not in state.qq.store.get(QQBatch, batch.id).text
-    assert len(state.qq.store.page(QQDelivery, sid)["items"]) == 2
-    page = ok(client.get(f"/api/qq/sessions/{sid}/messages"))
-    assert [r["id"] for r in page["items"]] == [second.id] and page["history_version"] == 1
-    assert "deleted" not in page["items"][0]
+    assert len(stored_qq_rows(state.qq.store, QQDelivery, sid)) == 2
+    page = qq_transcript(client, sid)
+    rows = [item["message"] for item in page["items"] if item["kind"] == "incoming"]
+    assert [r["id"] for r in rows] == [second.id] and page["history_version"] == 1
+    assert "deleted" not in rows[0]
     ingest(client, state, p, event(1, poison), 8)
-    assert len(state.qq.store.page(QQMessage, sid)["items"]) == 1, "Duplicate ingress cannot restore a deleted bubble"
+    assert len(stored_qq_rows(state.qq.store, QQMessage, sid)) == 1, "Duplicate ingress cannot restore a deleted bubble"
     replies(upstream)
     execute_batch(client, state, p, session, 3)
     assert "POISON" not in json.dumps(upstream.calls[-2]["messages"])
@@ -73,14 +76,14 @@ def test_delivery_and_reply_deletion_preserve_inputs_and_other_statuses(qq_clien
     replies(upstream)
     batch, run = execute_batch(client, state, p, session)
     incoming = state.qq.store.batch_messages(batch.id)[0].model_dump()
-    deliveries = sorted(state.qq.store.page(QQDelivery, sid)["items"], key=lambda r: r["id"])
+    deliveries = sorted(stored_qq_rows(state.qq.store, QQDelivery, sid), key=lambda r: r["id"])
     first, second = deliveries
     run_before = run.model_dump()
     change = ok(client.delete(f"/api/qq/sessions/{sid}/deliveries/{first['id']}"))
     assert change["deleted_qq_delivery_ids"] == [first["id"]]
     assert len(change["deleted_message_ids"]) == 1 and change["deleted_run_ids"] == []
     assert state.runs.get_run(run.run_id).model_dump() == run_before
-    assert state.qq.store.page(QQDelivery, sid)["items"] == [second]
+    assert stored_qq_rows(state.qq.store, QQDelivery, sid) == [second]
     assert state.qq.store.get(QQMessage, incoming["id"]).model_dump() == incoming
     wire = context(state, sid)
     assert_pairs(wire)
@@ -90,7 +93,7 @@ def test_delivery_and_reply_deletion_preserve_inputs_and_other_statuses(qq_clien
     change = ok(client.delete(f"/api/runs/{run.run_id}"))
     assert change["deleted_qq_delivery_ids"] == [second["id"]] and change["deleted_run_ids"] == [run.run_id]
     assert change["history_version"] == 2
-    assert state.qq.store.page(QQDelivery, sid)["items"] == []
+    assert stored_qq_rows(state.qq.store, QQDelivery, sid) == []
     assert state.qq.store.get(QQBatch, batch.id).run_id is None
     assert state.qq.store.get(QQMessage, incoming["id"]).model_dump() == incoming
     assert state.runs.list_steps(run.run_id) == [] and state.run_events.list_events(run.run_id) == []
@@ -124,7 +127,7 @@ def test_unsubmitted_deletion_never_executes_removed_content(qq_client, stage):
     p, session, _ = configure_execution(client, state)
     sid = session["session_id"]
     ingest(client, state, p, event(1, "bot REMOVE"), 1)
-    incoming = state.qq.store.page(QQMessage, sid)["items"][0]
+    incoming = stored_qq_rows(state.qq.store, QQMessage, sid)[0]
     batch = None
     if stage != "pending":
         if stage == "skipped":
@@ -154,7 +157,7 @@ def test_deletion_requires_matching_idle_session(qq_client):
     replies(upstream)
     batch, run = execute_batch(client, state, p, session)
     incoming = state.qq.store.batch_messages(batch.id)[0]
-    delivery = state.qq.store.page(QQDelivery, sid)["items"][0]
+    delivery = stored_qq_rows(state.qq.store, QQDelivery, sid)[0]
     for kind, key in (("messages", incoming.id), ("deliveries", delivery["id"])):
         assert client.delete(f"/api/qq/sessions/{other['session_id']}/{kind}/{key}").status_code == 404
     paths = [f"/api/qq/sessions/{sid}/messages/{incoming.id}",
@@ -201,14 +204,14 @@ def test_sql_deletion_rolls_back_and_survives_store_recreation(qq_client):
         sql_event.remove(engine, "before_cursor_execute", fail_version)
     assert not state.qq.store.get(QQMessage, incoming.id).deleted
     assert state.qq.store.get(QQBatch, batch.id).run_id == run.run_id
-    assert len(state.qq.store.page(QQDelivery, sid)["items"]) == 2
+    assert len(stored_qq_rows(state.qq.store, QQDelivery, sid)) == 2
     assert state.runs.list_steps(run.run_id)
     assert state.sessions.get_session(sid).history_version == 0
     ok(client.delete(f"/api/qq/sessions/{sid}/messages/{incoming.id}"))
     from ai_workbench.core.qq_store import QQStore
     restarted = QQStore(engine)
     restarted.recover()
-    assert restarted.page(QQMessage, sid)["items"] == []
+    assert stored_qq_rows(restarted, QQMessage, sid) == []
     assert restarted.get(QQMessage, incoming.id).deleted
     assert "bot" not in json.dumps(context(state, sid))
 

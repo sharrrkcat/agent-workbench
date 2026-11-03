@@ -1,4 +1,5 @@
 """Nickname triggers keep receipt ordering without blocking OneBot responses."""
+from tests.qq_transcript_helpers import stored_qq_rows
 import asyncio
 import json
 
@@ -59,7 +60,7 @@ def test_real_mentions_match_group_card_before_nickname(qq_client, cq, card, nic
     batch = freeze(state, session, 5)
     assert (batch is not None) == expected
     assert calls == [("get_group_member_info", {"user_id": 7777, "group_id": 7788})]
-    row, = state.qq.store.page(QQMessage, session["session_id"])["items"]
+    row, = stored_qq_rows(state.qq.store, QQMessage, session["session_id"])
     assert row["text"] == "@7777" and not json.loads(row["references_json"])[0]["frozen"]
 
 
@@ -81,7 +82,7 @@ def test_pending_names_preserve_silence_and_other_groups_progress(qq_client):
         await state.qq.ingest(p["id"], event(4, "a bystander", sender="8888"), now=7)
         state.qq.tick_binding(state.projects.get(p["id"]), state.qq.store.get(QQBinding, session["session_id"]), 10)
         assert state.qq.store.next_batch(p["id"]) is None
-        assert len(state.qq.store.page(QQMessage, session["session_id"])["items"]) == 4
+        assert len(stored_qq_rows(state.qq.store, QQMessage, session["session_id"])) == 4
         await state.qq.ingest(p["id"], event(5, "buddy", target="6677"), now=1)
         state.qq.tick_binding(state.projects.get(p["id"]), state.qq.store.get(QQBinding, other["session_id"]), 6)
         assert state.qq.store.next_batch(p["id"]).session_id == other["session_id"]
@@ -90,7 +91,7 @@ def test_pending_names_preserve_silence_and_other_groups_progress(qq_client):
         binding = state.qq.store.get(QQBinding, session["session_id"])
         assert binding.deadline == 11
         state.qq.tick_binding(state.projects.get(p["id"]), binding, 11)
-        batch, = state.qq.store.page(QQBatch, session["session_id"])["items"]
+        batch, = stored_qq_rows(state.qq.store, QQBatch, session["session_id"])
         assert batch["trigger_kind"] == "keyword"
         assert [row.external_id for row in state.qq.store.batch_messages(batch["id"])] == ["1", "2", "3", "4"]
         assert state.qq.store.get(QQParticipant, (session["session_id"], "9999")).expires_at == 64
@@ -165,7 +166,7 @@ def test_connection_changes_discard_unfinished_trigger_decisions(qq_client):
         assert not state.qq.pending_ingress
         assert state.qq.store.get(QQParticipant, (session["session_id"], "9999")) is None
         assert freeze(state, session, 100) is None
-        assert len(state.qq.store.page(QQMessage, session["session_id"])["items"]) == 1
+        assert len(stored_qq_rows(state.qq.store, QQMessage, session["session_id"])) == 1
     client.portal.call(scenario)
 
 

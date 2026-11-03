@@ -96,7 +96,7 @@ function StandardProjectEditor({ project, kind, onSaved, onNavigate, onLeaveGuar
     setLoading(true);
     setError('');
     void Promise.all([
-      usePersonasStore.getState().reload(), useModelsStore.getState().reload(),
+      usePersonasStore.getState().reload(), useModelsStore.getState().reloadProfiles(),
       kind === 'workspace' ? knowledgeApi.listKnowledgeBases() : worldbookApi.listWorldbooks(),
       kind === 'workspace' ? toolsApi.listTools() : Promise.resolve([] as HarnessTool[]),
     ]).then(([, , available, catalog]) => {

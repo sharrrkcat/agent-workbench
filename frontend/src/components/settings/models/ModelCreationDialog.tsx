@@ -15,7 +15,10 @@ export function ModelCreationDialog({ kind, onClose, onCreated, onBusyChange, re
   returnFocus: () => HTMLElement | null;
 }) {
   const [model, setModel] = useState<ProfileDraft | null>(() => ({ value: newModel(kind) }));
-  const reload = useModelsStore((state) => state.reload);
+  const reloadProfiles = useModelsStore((state) => state.reloadProfiles);
+  const reloadProviders = useModelsStore((state) => state.reloadProviders);
+  const reload = () => reloadProfiles(true);
+  useEffect(() => { void reloadProviders().catch(() => undefined); }, [reloadProviders]);
   const { busy, error, notice, run, setError } = useModelFeedback(reload);
   useEffect(() => { if (!model && !busy) onClose(); }, [model, busy, onClose]);
   const save: ModelTask = async (task, refresh) => {

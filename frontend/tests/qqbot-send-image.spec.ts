@@ -1,3 +1,4 @@
+import { qqDeliveries } from './qq-history';
 import { readFileSync } from 'node:fs';
 import { test, expect, type APIResponse } from '@playwright/test';
 
@@ -38,7 +39,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.keyboard.press('Escape');
         await expect(preview).toBeHidden();
         await expect(bubble.locator('.qq-image-button')).toBeFocused();
-        const delivery = (await json(request.get(`/api/qq/sessions/${sid}/deliveries`))).items[0];
+        const delivery = (await qqDeliveries(request, sid))[0];
         expect(delivery.kind).toBe('resource_image');
         expect(delivery.asset_id).toBe(assetId);
         expect(delivery.prompt).toBeNull();

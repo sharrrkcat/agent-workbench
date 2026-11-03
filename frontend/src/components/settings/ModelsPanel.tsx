@@ -30,15 +30,18 @@ export function ModelsPanel({ view, onNavigate, listOnlyKind, onOpenEditor }: {
   view: ModelView; onNavigate: SettingsNavigate; listOnlyKind: ModelKind | null; onOpenEditor: () => void;
 }) {
   const { t } = useTranslation('llm');
-  const { profiles, settings, reloadRuntimes, loading, error: loadError, reload } = useModelsStore();
+  const { profiles, settings, reloadProfiles, reloadProviders, reloadSettings, reloadRuntimes, connectionVersion, loading, error: loadError } = useModelsStore();
+  const readPage = useCallback(async (force = false) => {
+    if (view === 'localRuntime') { await reloadRuntimes(); return; }
+    if (view === 'providers') { await reloadProviders(force); return; }
+    await Promise.all([reloadProfiles(force), view === 'dashboard' ? reloadSettings(force) : reloadProviders(force)]);
+  }, [view, reloadProfiles, reloadProviders, reloadSettings, reloadRuntimes]);
+  const reload = useCallback(() => readPage(true), [readPage]);
   const { busy, error, notice, run, setError } = useModelFeedback(reload);
   useSettingsLeaveGuard(useCallback(async () => !busy, [busy]));
   useEffect(() => {
-    void reload().catch(() => undefined);
-  }, [reload]);
-  useEffect(() => {
-    void reloadRuntimes().catch(() => undefined);
-  }, [reloadRuntimes]);
+    void readPage().catch(() => undefined);
+  }, [readPage, connectionVersion]);
   const chatProfiles = profiles.filter((profile) => profile.kind === 'llm' && profile.enabled);
   const feedback = <Feedback error={error || loadError} notice={notice} />;
   const editorProps = { busy, run, feedback, setError };

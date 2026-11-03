@@ -15,7 +15,8 @@ import { ProviderEditor, type ProviderDraft } from './ProviderEditor';
 
 export function ProvidersTab({ run, busy, feedback, setError }: ModelFeedbackProps) {
   const { t } = useTranslation('llm');
-  const { providers, loading, reload } = useModelsStore();
+  const { providers, loading, reloadProviders } = useModelsStore();
+  const reload = () => reloadProviders(true);
   const [provider, setProvider] = useState<ProviderDraft | null>(null);
   const disabled = busy || loading;
   return (

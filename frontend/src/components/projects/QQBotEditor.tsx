@@ -21,7 +21,7 @@ import { qqApi } from '../../api/qq';
 import type { Project, QQBotProject, QQBotInput } from '../../types/projects';
 import { ContextFields, GenerationFields, ModelField, ModelSelect } from '../personas/ConfigurationFields';
 import { defaultContextPolicy } from '../../types/chat';
-import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
+import { Feedback, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 import { QQImageGenerationFields } from './QQImageGenerationFields';
 
 export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput {
@@ -48,7 +48,7 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
   const [draft, setDraft] = useState(() => qqInput(project, t('qq.defaultPrompt')));
   const [baseline, setBaseline] = useState(() => JSON.stringify(draft));
   const [keywords, setKeywords] = useState(() => draft.keywords.join('\n'));
-  const [loading, setLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState('');
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -72,17 +72,24 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
   }, []);
   useEffect(() => {
     let active = true;
-    void Promise.all([useModelsStore.getState().reload(), usePersonasStore.getState().reload()])
-      .then(() => { if (active) setLoading(false); }).catch((reason) => { if (active) setError(errorText(reason)); });
+    setOptionsError('');
+    void Promise.all([useModelsStore.getState().reloadProfiles(), useModelsStore.getState().reloadProviders(), usePersonasStore.getState().reload()])
+      .catch((reason) => { if (active) setOptionsError(errorText(reason)); });
     return () => { active = false; };
   }, [reload]);
   useEffect(() => {
     if (!project) return;
     let active = true;
-    const refresh = () => void qqApi.status(project.id).then((value) => { if (active) setConnection(value.status); })
-      .catch((reason) => { if (active) setError(errorText(reason)); });
-    refresh(); const timer = setInterval(refresh, 3000);
-    return () => { active = false; clearInterval(timer); };
+    let pending: AbortController | null = null;
+    const refresh = async () => {
+      if (pending) return;
+      const controller = new AbortController(); pending = controller;
+      try { const value = await qqApi.status(project.id, controller.signal); if (active) setConnection(value.status); }
+      catch (reason) { if (active && !controller.signal.aborted) setError(errorText(reason)); }
+      finally { pending = null; }
+    };
+    void refresh(); const timer = setInterval(() => void refresh(), 3000);
+    return () => { active = false; clearInterval(timer); pending?.abort(); };
   }, [project?.id]);
   const update = (values: Partial<QQBotInput>) => setDraft((current) => ({ ...current, ...values }));
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -113,10 +120,10 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
     } catch (reason) { if (live.current) setError(errorText(reason)); }
     finally { status.current.busy = false; if (live.current) setBusy(false); }
   }
-  if (loading) return <ResourceLoading error={error} retry={() => setReload((n) => n + 1)} />;
   return <Tabs value={tab} onValueChange={setTab} render={<form noValidate
     className={cn('qq-settings', dialog ? 'settings-dialog-form' : 'flex min-w-0 flex-col gap-5')} onSubmit={submit} />}>
-    <Feedback error={error} notice={notice} />
+    <Feedback error={error || optionsError} notice={notice} />
+    {optionsError ? <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => setReload((n) => n + 1)}>{t('retry')}</Button> : null}
     <TabsList className="shrink-0" aria-label={t('projectSettings')} activateOnFocus={false}>
       <TabsTrigger value="connection">{t('qq.tabs.connection')}</TabsTrigger>
       <TabsTrigger value="reply">{t('qq.tabs.reply')}</TabsTrigger>

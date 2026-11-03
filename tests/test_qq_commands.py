@@ -1,4 +1,5 @@
 """Direct commands remain durable and never become model input or history."""
+from tests.qq_transcript_helpers import stored_qq_rows
 import asyncio
 import json
 import time
@@ -18,7 +19,7 @@ def commands(client, state, p):
 
 
 def replies(state, session):
-    return sorted(state.qq.store.page(QQDelivery, session["session_id"], limit=100)["items"], key=lambda row: row["id"])
+    return sorted(stored_qq_rows(state.qq.store, QQDelivery, session["session_id"], limit=100), key=lambda row: row["id"])
 
 
 def resources(monkeypatch, state):
@@ -55,7 +56,7 @@ def test_prefix_uses_only_actual_leading_text(qq_client):
         message = event(number)
         message["message"] = body
         ingest(client, state, p, message, number)
-        row = state.qq.store.page(QQMessage, session["session_id"])["items"][0]
+        row = stored_qq_rows(state.qq.store, QQMessage, session["session_id"])[0]
         assert (row["kind"] == "command") == expected, body
         assert (row["command_status"] == "pending") == expected, body
 
@@ -91,7 +92,7 @@ def test_pause_check_resume_are_visible_but_excluded_from_batches_and_context(qq
         assert "/cogita" not in payload and "health: ok" not in payload
         assert "ordinary input" in payload
     assert "ordinary reply" in context.model_dump_json()
-    rows = state.qq.store.page(QQMessage, session["session_id"])["items"]
+    rows = stored_qq_rows(state.qq.store, QQMessage, session["session_id"])
     assert len(rows) == 4 and all(r["batch_id"] is None for r in rows if r["kind"] == "command")
     assert sum(r["origin"] == "command" and r["run_id"] is None for r in replies(state, session)) == 3
 
@@ -272,7 +273,7 @@ def test_socket_reader_keeps_receiving_command_acknowledgements(qq_client, monke
             try:
                 await asyncio.wait_for(received.wait(), 5)
                 for _ in range(50):
-                    rows = state.qq.store.page(QQDelivery, state.qq.store.bindings(p["id"])[0].session_id)["items"]
+                    rows = stored_qq_rows(state.qq.store, QQDelivery, state.qq.store.bindings(p["id"])[0].session_id)
                     if rows and rows[0]["status"] == "sent":
                         break
                     await asyncio.sleep(0.01)

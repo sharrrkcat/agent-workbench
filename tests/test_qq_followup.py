@@ -1,4 +1,6 @@
 """QQ participant clocks, immutable batches and explicit no-reply decisions."""
+from tests.qq_transcript_helpers import stored_qq_rows
+from tests.qq_transcript_helpers import qq_transcript
 import json
 from types import SimpleNamespace
 
@@ -107,7 +109,7 @@ def test_silence_latches_participants_past_expiry_and_exact_cutoff(qq_client):
     assert freeze(state, session, 75.99) is None
     # The exact cutoff freezes first; the expired sender cannot open a new window.
     ingest(client, state, p, event(7, "too late"), 76)
-    batches = state.qq.store.page(QQBatch, session["session_id"])["items"]
+    batches = stored_qq_rows(state.qq.store, QQBatch, session["session_id"])
     assert len(batches) == 2 and batches[0]["trigger_kind"] == "followup"
     assert [m.external_id for m in state.qq.store.batch_messages(batches[0]["id"])] == ["2", "3", "4", "5", "6"]
     assert state.qq.store.get(QQBinding, session["session_id"]).deadline is None
@@ -179,8 +181,9 @@ def test_skip_is_a_single_successful_round_and_preserves_history(qq_client, cloc
     context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert any("a follow-up" in str(m.get("content")) for m in context.messages)
     assert not any(call.function.name == "qq_skip_reply" for m in context.messages for call in m.get("tool_calls", []))
-    public_batch = ok(client.get(f"/api/qq/sessions/{session['session_id']}/batches"))["items"][0]
-    assert public_batch["trigger_kind"] == "followup" and "participants_json" not in public_batch
+    public = qq_transcript(client, session["session_id"])
+    assert "participants_json" not in str(public)
+    assert any(item["kind"] == "reply" and item["run"]["run_id"] == run.run_id for item in public["items"])
     assert "window_kind" not in ok(client.get(f"/api/qq/sessions/{session['session_id']}"))
 
 
@@ -320,8 +323,9 @@ def test_skip_stays_out_of_general_tools_and_public_snapshot_state(qq_client):
     assert client.patch(f"/api/sessions/{session['session_id']}", json={"tools_allowed": ["qq_skip_reply"]}).status_code == 422
     assert client.post("/api/tools/qq_skip_reply/call", json={"session_id": session["session_id"], "arguments": {}}).status_code == 400
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
-    assert schemas["QQBatchResponse"]["properties"]["trigger_kind"]["enum"] == ["keyword", "followup", "private", "icebreaker"]
-    assert "participants_json" not in schemas["QQBatchResponse"]["properties"]
+    assert "QQBatchResponse" not in schemas
+    assert schemas["QQHistoryPage"]["properties"]["items"]["items"]["discriminator"]["propertyName"] == "kind"
+    assert "participants_json" not in str(schemas["QQReply"])
     assert "window_kind" not in schemas["QQBindingResponse"]["properties"]
 
 

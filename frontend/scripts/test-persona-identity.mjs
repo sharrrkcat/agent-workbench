@@ -29,18 +29,18 @@ await initial;
 assert.deepEqual(personas.getState().personas, [{ ...first, name: 'Renamed', avatar_attachment_id: 'latest.png' }]);
 assert.equal(personas.getState().loaded, true);
 
-// A newer list request supersedes the old one; events still win over the newer list.
+// A post-mutation refresh follows the in-flight read; live events still win.
 const old = deferred(), newer = deferred();
 api.listPersonas = () => old.promise;
 const oldRead = personas.getState().reload();
 api.listPersonas = () => newer.promise;
-const newRead = personas.getState().reload();
+const newRead = personas.getState().reload(true);
 event('persona_updated', { persona: { ...first, name: 'Final', avatar_attachment_id: null } });
 old.resolve([first]);
-await oldRead;
+await new Promise(setImmediate);
 assert.equal(personas.getState().loading, true);
 newer.resolve([first, second]);
-await newRead;
+await Promise.all([oldRead, newRead]);
 assert.equal(personas.getState().personas.find((item) => item.id === first.id).name, 'Final');
 assert.equal(personas.getState().personas.find((item) => item.id === first.id).avatar_attachment_id, null);
 

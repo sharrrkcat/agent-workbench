@@ -1,5 +1,6 @@
 """QQ reply requirements and per-batch limits through the real harness and stores."""
 
+from tests.qq_transcript_helpers import stored_qq_rows
 import json
 
 import httpx
@@ -40,7 +41,7 @@ def test_reply_limit_configuration_and_http_contract(qq_client):
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
     limit_schema = schemas["QQBotProjectResponse"]["properties"]["reply_message_limit"]
     assert (limit_schema["type"], limit_schema["minimum"], limit_schema["maximum"], limit_schema["default"]) == ("integer", 1, 20, 4)
-    assert "no_reply" not in schemas["QQBatchResponse"]["properties"]["status"]["enum"]
+    assert "QQBatchResponse" not in schemas and "QQHistoryPage" in schemas
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -90,7 +91,7 @@ def test_single_round_limit_rejects_unsent_calls_and_completes(qq_client, stream
     assert run.metadata["qq_reply"] == {"sent_count": limit, "message_limit": limit, "limit_reached": True, "skipped": False}
     assert len(upstream.calls) == 1 and len(upstream.turns) == 1
     assert [params["message"][0]["data"]["text"] for _, params in connection.calls] == list(map(str, range(limit)))
-    deliveries = state.qq.store.page(QQDelivery, session["session_id"])["items"]
+    deliveries = stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])
     assert len(deliveries) == limit and all(d["status"] == "sent" for d in deliveries)
     tool_steps = [s for s in state.runs.list_steps(run.run_id) if s.kind == "tool"]
     assert [s.status for s in tool_steps] == ["completed"] * limit + ["skipped"] * 2
@@ -184,7 +185,7 @@ def test_partial_delivery_failure_preserves_count_and_stops(qq_client, failure, 
     assert batch.status == "failed" and run.error_code == ("QQ_ACTION_FAILED" if status == "failed" else "QQ_DELIVERY_UNKNOWN")
     assert run.metadata["qq_reply"] == {"sent_count": 1, "message_limit": 2, "limit_reached": False, "skipped": False}
     assert len(connection.calls) == 2
-    assert [d["status"] for d in state.qq.store.page(QQDelivery, session["session_id"])["items"]] == [status, "sent"]
+    assert [d["status"] for d in stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])] == [status, "sent"]
     assert state.qq.store.get(QQBinding, session["session_id"]).paused
 
 

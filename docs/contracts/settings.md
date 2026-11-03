@@ -4,6 +4,7 @@ Settings have explicit domain owners and strict Pydantic inputs with extra=forbi
 The six `/settings?tab=` values are general, models, personas, knowledge, worldbook and tools. Default/unknown tab selects General, including pet.
 
 SettingsPage owns navigation and composition; domain panels own forms, and shared controls are independent of the page.
+Model profiles, providers and settings load independently with per-resource in-flight deduplication; existing directories/drafts remain visible during refresh. Model pages request only their displayed statuses, with at most four concurrent calls and per-entry errors; Runtime data loads only in owning pages. Version checks preserve newer events. Direct settings startup selects no conversation, and hidden conversations stop page reads.
 Domain types/API clients share one HTTP/error implementation. Both locales display Cogita, with matching English/Chinese UI copy; user content and API identifiers retain their values.
 Language uses browser key `cogita.locale`, defaulting to English when absent or invalid.
 

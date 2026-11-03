@@ -1,3 +1,4 @@
+import { qqHistory } from './qq-history';
 import { readFileSync } from 'node:fs';
 import { test, expect, type APIResponse } from '@playwright/test';
 import { chooseOption, openSidebar } from './controls';
@@ -104,7 +105,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(incomingStatusTip).toContainText(`QQ: ${account}`);
         await expect(incomingStatusTip).toContainText(labels.qq.botSelf);
         await page.keyboard.press('Escape');
-        await expect(page.locator('[data-qq-incoming]')).toHaveCount(50);
+        await expect(page.locator('[data-qq-incoming]')).toHaveCount(49);
         await expect(page.locator('.message-row.user [data-slot="message-avatar"]')).toHaveCount(1);
         await expect(page.locator('.message-row.user [data-slot="avatar-fallback"]')).toHaveText('Q');
         await expect(page.getByRole('tab')).toHaveCount(0);
@@ -116,9 +117,10 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.locator('.message-row.user [data-slot="message-avatar"]')).toHaveCount(1);
         await page.getByRole('button', { name: chat.scrollToEnd, exact: true }).click();
         await expect(page.locator('.message-row.user time')).toHaveCount(1);
-        await expect(page.locator('[data-qq-continuation]')).toHaveCount(64);
+        await expect(page.locator('[data-qq-incoming]')).toHaveCount(49);
+        await expect(page.locator('[data-qq-continuation]')).toHaveCount(48);
         await expect(page.locator('[data-qq-continuation] .message-meta')).toHaveCount(0);
-        await expect(page.locator('[data-qq-incoming] button')).toHaveCount(130);
+        await expect(page.locator('[data-qq-incoming] button')).toHaveCount(98);
         const continuationGap = await page.locator('[data-qq-continuation]').first().evaluate((element) =>
           element.getBoundingClientRect().top - element.previousElementSibling!.getBoundingClientRect().bottom);
         expect(continuationGap).toBeCloseTo(6, 1);
@@ -132,6 +134,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(delivery.locator('[data-slot="bubble"]')).toHaveAttribute('data-variant', 'secondary');
         await delivery.getByRole('button', { name: labels.qq.status.sent, exact: true }).click();
         await expect(page.locator('[data-slot="tooltip-content"]').filter({ hasText: labels.qq.status.sent })).toContainText(labels.qq.externalId + ': 9001');
+        await expect(page.getByText('Internal QQ prose', { exact: true })).toHaveCount(0);
+        await page.locator('.processing-toggle').click();
         await expect(page.getByText('Internal QQ prose', { exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: runs.retryReply, exact: true })).toHaveCount(0);
         await expect(page.getByRole('button', { name: runs.deleteReply, exact: true })).toHaveCount(1);
@@ -149,27 +153,24 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
         await page.screenshot({ path: info.outputPath('qq-conversation.png') });
         // The browser fixtures below vary presentation states without changing the QQ service.
-        await page.route(`**/api/qq/sessions/${session.session_id}/messages*`, async (route) => {
-          const response = await route.fetch();
-          const body = await response.json();
-          for (const row of body.items) {
-            if (row.external_id === '64') { row.sender_id = '8888'; row.sender_name = 'Second participant'; }
-            if (row.external_id === '65') { row.disposition = 'pending'; row.text = 'QQ long message\n' + '长文本 / long text '.repeat(30); row.segments = [{ type: 'text', text: row.text }]; }
-          }
-          await route.fulfill({ response, json: body });
-        });
         let echoed = false;
-        await page.route(`**/api/qq/sessions/${session.session_id}/deliveries*`, async (route) => {
+        await page.route(`**/api/qq/sessions/${session.session_id}/history*`, async (route) => {
           const response = await route.fetch();
           const body = await response.json();
-          const sent = body.items[0];
-          if (sent) body.items = [
-            { ...sent, echoed },
-            ...['pending', 'sending', 'failed', 'unknown'].map((status, index) => ({
-              ...sent, id: sent.id + index + 1, status, external_id: null, text: `Delivery ${status}`,
-              error_code: status === 'failed' ? 'QQ_ACTION_FAILED' : status === 'unknown' ? 'QQ_SEND_ACK_TIMEOUT' : null,
-            })),
-          ];
+          for (const item of body.items) {
+            if (item.kind === 'incoming') {
+              const row = item.message;
+              if (row.external_id === '64') { row.sender_id = '8888'; row.sender_name = 'Second participant'; }
+              if (row.external_id === '65') { row.disposition = 'pending'; row.text = 'QQ long message\n' + '长文本 / long text '.repeat(30); row.segments = [{ type: 'text', text: row.text }]; }
+            }
+            if (item.kind === 'reply' && item.deliveries[0]) {
+              const sent = item.deliveries[0];
+              item.deliveries = [{ ...sent, echoed }, ...['pending', 'sending', 'failed', 'unknown'].map((status, index) => ({
+                ...sent, id: sent.id + index + 1, status, external_id: null, text: `Delivery ${status}`,
+                error_code: status === 'failed' ? 'QQ_ACTION_FAILED' : status === 'unknown' ? 'QQ_SEND_ACK_TIMEOUT' : null,
+              }))];
+            }
+          }
           await route.fulfill({ response, json: body });
         });
         await expect(page.locator('[data-qq-delivery]')).toHaveCount(5);
@@ -195,7 +196,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.screenshot({ path: info.outputPath('qq-send-ack-timeout.png') });
         await page.keyboard.press('Escape');
         echoed = true;
-        await page.waitForResponse((response) => response.url().endsWith(`/qq/sessions/${session.session_id}/deliveries`));
+        await page.waitForResponse((response) => response.url().includes(`/qq/sessions/${session.session_id}/history`));
         await expect(page.locator('[data-qq-delivery]')).toHaveCount(5);
         const incoming = page.locator('[data-qq-incoming]').last();
         const incomingBubble = incoming.locator('[data-slot="bubble"]');
@@ -438,8 +439,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         const skippedRun = await json(request.get(`/api/runs/${skipped.run_id}`));
         expect(skippedRun.status).toBe('DONE');
         expect(skippedRun.metadata.qq_reply).toEqual({ sent_count: 0, message_limit: 2, limit_reached: false, skipped: true });
-        const skippedBatch = (await json(request.get(`/api/qq/sessions/${session.session_id}/batches`))).items.find((batch: { id: number }) => batch.id === skipped.batch_id);
-        expect(skippedBatch.trigger_kind).toBe('followup');
+        const skippedItem = (await qqHistory(request, session.session_id)).items.find((item) => item.kind === 'reply' && item.run.run_id === skipped.run_id);
+        expect(skippedItem?.kind).toBe('reply');
         await page.reload();
         await expect(page.locator('[data-qq-reply-skipped]')).toHaveText(labels.qq.replySkipped);
         await page.screenshot({ path: info.outputPath('qq-skipped-reply.png') });

@@ -37,44 +37,56 @@ export const createSessionActions: CogitaActions<
   | 'deactivateConversation'
   | 'forgetProject'
   | 'setError'
-> = (set, get) => {
+> = (set, get, store) => {
   let initializationVersion = 0;
+  let controller: AbortController | null = null;
+  store.subscribe((state, previous) => {
+    if (!state.conversationVisible || state.sessionEpoch !== previous.sessionEpoch) controller?.abort();
+  });
   async function loadSession(id: string, scope: string | null, epoch: number) {
+    controller?.abort();
+    const request = new AbortController(); controller = request;
     let active = true;
     try {
       if (scope && useProjectsStore.getState().projects.find((project) => project.id === scope)?.kind === 'timeline')
         throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
-      const sessionRequest = chatApi.getSession(id).then((session) => {
+      const sessionRequest = chatApi.getSession(id, request.signal).then((session) => {
         if (session.project_id !== scope) throw new Error('SESSION_PROJECT_MISMATCH: Session does not belong to this Project.');
-        if (active && get().sessionEpoch === epoch) set({ currentSession: session });
+        if (active && !request.signal.aborted && get().sessionEpoch === epoch) set({ currentSession: session });
         return session;
       });
+      const kind = scope ? useProjectsStore.getState().projects.find((project) => project.id === scope)?.kind : 'ordinary';
+      const history = kind === 'qqbot' ? Promise.resolve(null) : kind
+        ? chatApi.getHistory(id, {}, request.signal)
+        : sessionRequest.then((session) => session.kind === 'qqbot' || request.signal.aborted ? null : chatApi.getHistory(id, {}, request.signal));
+      const personas = usePersonasStore.getState().reload().catch((error) => {
+        if (!request.signal.aborted && get().sessionEpoch === epoch) set({ error: errorText(error) });
+      });
       const [session, page] = await Promise.all([
-        sessionRequest, chatApi.getHistory(id),
-        usePersonasStore.getState().reload().catch((error) => {
-          if (get().sessionEpoch === epoch) set({ error: errorText(error) });
-        }),
+        sessionRequest, history,
         scope ? Promise.resolve(useProjectsStore.getState().projects.find((project) => project.id === scope)
           ?? useProjectsStore.getState().load(scope)).then((project) => {
           if (project.kind === 'timeline') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
         }) : Promise.resolve(),
       ]);
-      if (get().sessionEpoch !== epoch) return;
+      if (session.kind !== 'qqbot') await personas;
+      if (request.signal.aborted || get().sessionEpoch !== epoch) return;
       set((state) => ({
-        ...historyPageState({ ...state, currentSession: session }, page, 'latest'), currentSession: session,
+        ...(page ? historyPageState({ ...state, currentSession: session }, page, 'latest') : {}), currentSession: session,
         composerDraftText: state.messageQueues[id]?.editing?.content ?? state.composerDraftText,
         lastOrdinarySessionId: session.kind === 'ordinary' ? id : state.lastOrdinarySessionId,
         sessions: state.sessions.some((item) => item.session_id === id)
           ? state.sessions.map((item) => item.session_id === id ? session : item) : [...state.sessions, session],
         messageVersion: state.messageVersion + 1, runVersion: state.runVersion + 1, sessionVersion: state.sessionVersion + 1,
       }));
-      await get().reconcileMessageQueue(id);
+      if (session.kind !== 'qqbot') await get().reconcileMessageQueue(id);
       if (get().sessionEpoch === epoch) set({ sessionLoad: { sessionId: id, projectId: scope, status: 'ready', error: null } });
     } catch (error) {
-      if (get().sessionEpoch === epoch)
+      if (!request.signal.aborted && get().sessionEpoch === epoch)
         set({ sessionLoad: { sessionId: id, projectId: scope, status: 'error', error: errorText(error) } });
     } finally {
       active = false;
+      if (controller === request) controller = null;
     }
   }
   return ({
@@ -83,16 +95,18 @@ export const createSessionActions: CogitaActions<
     const epoch = get().sessionEpoch + 1;
     const settingsVersion = get().settingsVersion;
     set({ loading: true, error: null, sessionEpoch: epoch });
+    void useModelsStore.getState().reloadProfiles().catch((error) => set({ error: errorText(error) }));
+    void useModelsStore.getState().reloadSettings().catch((error) => set({ error: errorText(error) }));
     try {
       const [listed, settings] = await Promise.all([
-        chatApi.listSessions(), settingsApi.getGeneralSettings(), useModelsStore.getState().reload(),
+        chatApi.listSessions(), settingsApi.getGeneralSettings(),
       ]);
       if (request !== initializationVersion) return;
       const sessions = listed;
       const selected = selectOrdinary ? sessions[0] : null;
       set((state) => ({ sessions: [...state.sessions.filter((session) => session.kind !== 'ordinary'), ...sessions] }));
       if (get().settingsVersion === settingsVersion) get().setSettings(settings);
-      if (get().sessionEpoch === epoch) {
+      if (get().sessionEpoch === epoch && get().conversationVisible) {
         if (selectOrdinary && !selected) await get().startDraft();
         else if (selected) await get().selectSession(selected.session_id, null);
       }
@@ -137,7 +151,8 @@ export const createSessionActions: CogitaActions<
       const [, tools, project] = await Promise.all([
         usePersonasStore.getState().reload(), toolsApi.listTools(),
         projectId ? useProjectsStore.getState().load(projectId) : Promise.resolve(null),
-        useModelsStore.getState().reload(),
+        useModelsStore.getState().reloadProfiles(),
+        useModelsStore.getState().reloadSettings(),
       ]);
       if (get().sessionEpoch !== epoch) return;
       if (project && project.kind !== 'workspace') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');

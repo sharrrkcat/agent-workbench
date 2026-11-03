@@ -35,6 +35,11 @@ export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: Runtim
   set((state) => ({ messageQueues: mergeQueueRuntime(state.messageQueues,
     payload.run ? [payload.run as Run] : [], payload.message ? [payload.message as Message] : []) }));
   if (event.session_id !== get().currentSession?.session_id) return;
+  if (get().currentSession?.kind === 'qqbot') {
+    if (['history_pruned', 'run_started', 'run_completed', 'run_failed', 'run_cancelled'].includes(event.type))
+      set((state) => ({ qqRefreshVersion: state.qqRefreshVersion + 1 }));
+    return;
+  }
   if (event.type === 'history_pruned') {
     const messageIds = payload.deleted_message_ids;
     const runIds = payload.deleted_run_ids;

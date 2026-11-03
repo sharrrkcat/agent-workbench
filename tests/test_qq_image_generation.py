@@ -1,4 +1,5 @@
 """QQ generation uses model admission, confirmed delivery and shared image ownership."""
+from tests.qq_transcript_helpers import qq_incoming, qq_outgoing
 import asyncio
 import base64
 import json
@@ -54,7 +55,7 @@ def attachment_files():
 
 
 def deliveries(client, session):
-    return ok(client.get(f"/api/qq/sessions/{session['session_id']}/deliveries"))["items"]
+    return qq_outgoing(client, session['session_id'])
 
 
 def draw(prompt="A red bird", call_id="draw"):

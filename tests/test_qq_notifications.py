@@ -26,6 +26,18 @@ def prepare(client, state, p):
     client.portal.call(state.qq.programs.send_pending, p["id"])
 
 
+def test_idle_ticks_do_not_repeat_connection_recovery(qq_client, monkeypatch):
+    client, state, _ = qq_client
+    p, _, _ = configure_execution(client, state, admin_qq="9999")
+    restored = []
+    monkeypatch.setattr(state.qq.programs, "connection_restored", restored.append)
+    async def tick():
+        for _ in range(10):
+            state.qq.programs.tick([state.projects.get(p["id"])])
+    client.portal.call(tick)
+    assert restored == []
+
+
 def test_final_failure_pause_is_one_private_notification_and_never_model_history(qq_client):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, admin_qq="9999")
