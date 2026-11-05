@@ -80,3 +80,9 @@ generation and verification commands are in the [README](../README.md#http-contr
   ownership and active-plan completion rules.
 - [Future model services](FUTURE_MODEL_SERVICES.md): unimplemented design boundaries.
   Future Pet visuals remain undecided under [Settings](contracts/settings.md#pet-foundations).
+- [AIRI memory research](research/AIRI_MEMORY.md): pinned upstream findings,
+  memory lifecycle comparison and recommendations; not an implementation plan.
+- [Letta memory research](research/LETTA_MEMORY.md): MemFS, reflection, sharing,
+  persistence boundaries and Cogita recommendations; not an implementation plan.
+- [Mem0 memory research](research/MEM0_MEMORY.md): additive fact extraction,
+  retrieval, OSS/Platform lifecycle boundaries and Cogita recommendations; not an implementation plan.
