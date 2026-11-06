@@ -13,6 +13,8 @@ from ai_workbench.api.schemas.characters import (
     NormalCharacterPatch, QQBotCharacterPatch, QQSessionCreate,
 )
 from ai_workbench.core.schema.character import CharacterCreate
+from ai_workbench.core.schema.memory import MemoryDeletionChoice
+from ai_workbench.api.memory_deletion import delete_normal_owner
 
 
 router = APIRouter(prefix="/api/characters", tags=["characters"])
@@ -52,10 +54,14 @@ async def update_character(character_id: str, payload: dict, state: RuntimeState
     return updated.public_response()
 
 
-@router.delete("/{character_id}", response_model=CharacterDeleted, responses=error_responses(404, 409))
-async def delete_character(character_id: str, state: RuntimeState = Depends(get_state)):
+@router.delete("/{character_id}", response_model=CharacterDeleted, responses=error_responses(404, 409, 422))
+async def delete_character(character_id: str, payload: MemoryDeletionChoice | None = None, state: RuntimeState = Depends(get_state)):
     state.character_service.assert_deletable(character_id)
     current = state.character_service.get(character_id)
+    if current.kind == "normal":
+        ids = delete_normal_owner(state, payload or MemoryDeletionChoice(), character_id=character_id)
+        _cleanup_avatar(state, current.avatar_attachment_id)
+        return {"deleted": True, "character_id": character_id, "deleted_session_ids": ids}
     ids = [session.session_id for session in state.character_service.sessions(character_id)]
     for session_id in ids:
         state.qq.assert_idle(session_id)

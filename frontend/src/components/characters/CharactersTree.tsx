@@ -14,6 +14,8 @@ import type { Character } from '../../types/characters';
 import type { SettingsNavigate } from '../settings/navigation';
 import { ResourceLoading, errorText } from '../settings/resources/ResourceUI';
 import { characterUrl, characterSettingsUrl, characterResourcesUrl } from './navigation';
+import { MemoryDeletionDialog } from '../memory/MemoryDeletionDialog';
+import type { MemoryDeletionChoice } from '../../types/memory';
 
 type TreeActions = {
   resourcesCharacterId: string | null;
@@ -50,6 +52,7 @@ function CharacterItem({ character, resourcesCharacterId, onNavigate, onSelectSe
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [memoryDeletion, setMemoryDeletion] = useState<{ kind: 'session' | 'character'; id: string; name: string } | null>(null);
   const sessions = allSessions.filter((session) => session.character_id === character.id);
   const active = currentCharacterId === character.id;
   useEffect(() => { if (active) setExpanded(true); }, [active]);
@@ -63,6 +66,7 @@ function CharacterItem({ character, resourcesCharacterId, onNavigate, onSelectSe
   }, [expanded, character.id, character.kind, reload, reloadSessions]);
   const openSettings = async () => { if (await onNavigate(characterSettingsUrl(character.id))) setOpenMobile(false); };
   async function deleteCharacter() {
+    if (character.kind === 'normal') { setMemoryDeletion({ kind: 'character', id: character.id, name: character.name }); return; }
     if (!(await confirm(t('deleteCharacterConfirm', { name: character.name }), { destructive: true }))) return;
     setDeleting(character.id);
     try {
@@ -72,6 +76,7 @@ function CharacterItem({ character, resourcesCharacterId, onNavigate, onSelectSe
     } catch (reason) { useCogitaStore.getState().setError(errorText(reason)); setDeleting(null); }
   }
   async function deleteSession(id: string) {
+    if (character.kind === 'normal') { setMemoryDeletion({ kind: 'session', id, name: sessions.find((s) => s.session_id === id)?.title || t('newSession') }); return; }
     if (!(await confirm(t('deleteSessionConfirm'), { destructive: true }))) return;
     setDeleting(id);
     await useCogitaStore.getState().deleteSession(id);
@@ -79,6 +84,21 @@ function CharacterItem({ character, resourcesCharacterId, onNavigate, onSelectSe
     setDeleting(null);
   }
   const Icon = character.kind === 'qqbot' ? Bot : MessageCircle;
+  async function deleteWithMemories(choice: MemoryDeletionChoice) {
+    if (!memoryDeletion) return;
+    const selected = memoryDeletion; setDeleting(selected.id);
+    try {
+      if (selected.kind === 'character') {
+        await useCharactersStore.getState().remove(selected.id, choice);
+        useCogitaStore.getState().forgetCharacter(selected.id); onCharacterDeleted(selected.id);
+      } else {
+        await useCogitaStore.getState().deleteSession(selected.id, choice);
+        if (useCogitaStore.getState().sessions.some((s) => s.session_id === selected.id))
+          throw new Error(useCogitaStore.getState().error || t('memory:previewChanged'));
+        onSessionDeleted(selected.id);
+      }
+    } finally { setDeleting(null); }
+  }
   return <SidebarMenuItem data-character-id={character.id}>
     <Collapsible open={expanded}>
       <div className="group/character-heading relative flex items-center">
@@ -139,5 +159,6 @@ function CharacterItem({ character, resourcesCharacterId, onNavigate, onSelectSe
       </CollapsibleContent>
     </Collapsible>
     {confirmation}
+    {memoryDeletion ? <MemoryDeletionDialog {...memoryDeletion} onClose={() => setMemoryDeletion(null)} onDelete={deleteWithMemories} /> : null}
   </SidebarMenuItem>;
 }

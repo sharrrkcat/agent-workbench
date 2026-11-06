@@ -48,6 +48,7 @@ class RetrievalReference(RetrievalModel):
 class SessionRetrievalState(RetrievalModel):
     session_id: str
     history_version: int = Field(ge=0)
+    memory_version: int = Field(default=0, ge=0)
     include_attachments: Literal["none", "explicit"]
     window_id: str = Field(default_factory=lambda: str(uuid4()))
     previous_window_id: str | None = None

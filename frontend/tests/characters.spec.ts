@@ -116,7 +116,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await openSidebar(page);
         await characterRow.getByRole('button', { name: labels.characterActions.replace('{{name}}', character.name), exact: true }).click();
         await page.getByRole('menuitem', { name: labels.deleteCharacter, exact: true }).click();
-        await answerConfirmation(page, true, locale);
+        await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Delete owner' : '删除归属对象', exact: true }).click();
         await expect(characterRow).toHaveCount(0);
         await expect(page).toHaveURL('/');
         expect((await request.get(`/api/sessions/${first.session_id}`)).status()).toBe(404);

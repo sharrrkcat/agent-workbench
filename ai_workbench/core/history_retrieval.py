@@ -58,11 +58,12 @@ class HistoryRetrieval:
 
     def load(self, session, policy, current):
         saved = self.sessions.get_retrieval_state(session.session_id) if policy.history_enabled else None
-        if saved and (saved.history_version != session.history_version or saved.include_attachments != policy.include_attachments):
+        if saved and (saved.history_version != session.history_version or saved.memory_version != getattr(session, "memory_version", 0)
+            or saved.include_attachments != policy.include_attachments):
             self.sessions.discard_retrieval_state(session.session_id)
             saved = None
         saved = saved or SessionRetrievalState(session_id=session.session_id,
-            history_version=session.history_version, include_attachments=policy.include_attachments)
+            history_version=session.history_version, memory_version=getattr(session, "memory_version", 0), include_attachments=policy.include_attachments)
         return RunRetrievalState(session=saved, input_id=current.message_id if current else None,
             history_enabled=policy.history_enabled)
 
@@ -217,6 +218,7 @@ class HistoryRetrieval:
             return base.model_copy(update={"messages": values}), provenance
         async def measure():
             request, provenance = compose()
+            request, provenance = await self.models.limit_memory_context(profile.id, request, config.context_limits, provenance)
             return await self.models.measure_chat(profile.id, request, config.context_limits), request, provenance
         before, _, _ = await measure()
         self.set_limits(work, before, config.context_policy)

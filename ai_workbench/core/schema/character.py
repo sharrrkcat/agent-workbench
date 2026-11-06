@@ -32,6 +32,7 @@ class CharacterInput(StrictModel):
 
 class NormalCharacterInput(CharacterInput, ChatDefaults):
     kind: Literal["normal"]
+    memory_external_isolation: StrictBool = False
 
 
 QQ_DEFAULT_PROMPT = (

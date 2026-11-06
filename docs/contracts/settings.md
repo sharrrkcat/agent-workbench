@@ -1,7 +1,7 @@
 # Settings contract
 
 Settings have explicit domain owners and strict Pydantic inputs with extra=forbid; unknown/removed fields return HTTP 422.
-The six `/settings?tab=` values are general, models, personas, knowledge, worldbook and tools. Default/unknown tab selects General, including pet.
+The seven `/settings?tab=` values are general, models, personas, memory, knowledge, worldbook and tools. Default/unknown tab selects General, including pet.
 
 SettingsPage owns navigation and composition; domain panels own forms, and shared controls are independent of the page.
 Model profiles, providers and settings load independently with per-resource in-flight deduplication; existing directories/drafts remain visible during refresh. Model pages request only their displayed statuses, with at most four concurrent calls and per-entry errors; Runtime data loads only in owning pages. Version checks preserve newer events. Direct settings startup selects no conversation, and hidden conversations stop page reads.
@@ -75,7 +75,7 @@ Both routes support direct loading and guarded history. Repeated selection adds 
 
 [QQBot](qqbot.md#character-editor-and-conversation) owns its creation/settings tabs, field layout and conversation controls; shared navigation remains here.
 
-The fixed chat header stays on one row, including narrow screens, with the sidebar toggle, title and session settings; User Persona selection lives in the session dialog. The composer owns the concrete model menu with Harness and Reasoning on/off controls. Reasoning selects generation mode with session defaults and automatic-adjustment feedback owned by [chat/context](chat-context.md#personas-and-sessions).
+Memory management filters Character/General facts by Persona, original Session ID and status, with details, edit/forget/publish and message-to-memory drafts. Details retain original Character/Session/Run/message IDs and identify deleted sources. Character/Session Memory tabs expose defaults, isolation and own/readable views. Bound Persona is read-only. Deleting a normal owner previews records and requires separate local/General choices; retained private Session facts explicitly become shared. [Chat/context](chat-context.md#durable-memory) owns destinations and conflicts. The one-row chat header contains sidebar toggle, title and session settings; Persona lives in the session dialog. The composer owns model, Harness and Reasoning controls.
 The message column is at most 48rem wide, with an independent scroller and aligned fixed composer/status area.
 Assistant bodies align with both composer edges; user messages align with its right edge. Avatars are 48px square and their top edges align with the entire identity header box. They sit outside
 the body column. Below 61rem of chat width, avatars and names share a row above each body, left-aligned

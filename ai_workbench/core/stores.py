@@ -35,7 +35,8 @@ class SessionStore:
         return value.model_copy(deep=True) if value else None
 
     def save_retrieval_state(self, value):
-        if self.get_session(value.session_id).history_version != value.history_version:
+        session = self.get_session(value.session_id)
+        if session.history_version != value.history_version or getattr(session, "memory_version", 0) != value.memory_version:
             return False
         self._retrieval_states[value.session_id] = value.model_copy(deep=True)
         return True
@@ -48,7 +49,8 @@ class SessionStore:
         return value.model_copy(deep=True) if value else None
 
     def save_context_checkpoint(self, checkpoint: ContextCheckpoint) -> bool:
-        if self.get_session(checkpoint.session_id).history_version != checkpoint.history_version:
+        session = self.get_session(checkpoint.session_id)
+        if session.history_version != checkpoint.history_version or getattr(session, "memory_version", 0) != checkpoint.memory_version:
             return False
         self._checkpoints[checkpoint.session_id] = checkpoint.model_copy(deep=True)
         return True

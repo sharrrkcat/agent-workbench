@@ -42,7 +42,7 @@ def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypat
     assert payload["success"], payload
     snapshot = details(client, payload["run"])[0]
     assert snapshot["request"] == upstream.calls[0]
-    sources = {source["kind"]: source for source in snapshot["sources"]}
+    sources = {source["kind"]: source for source in snapshot["sources"] if source['id'] != 'memory-instruction'}
     expected = date_instruction(language, date(2026, 10, 29))
     assert sources["instruction"]["text"] == expected
     assert sources["instruction"]["parent_id"] == sources["character"]["parent_id"] == sources["system"]["id"]
@@ -69,7 +69,7 @@ def test_instruction_is_absent_without_enabled_web_search(web_env, harness, tool
     upstream.turns = [completion(content="answer")]
     payload = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Hello"}))
     assert payload["success"], payload
-    assert all(source["kind"] != "instruction" for source in details(client, payload["run"])[0]["sources"])
+    assert all(source["id"] != "instruction" for source in details(client, payload["run"])[0]["sources"])
     assert "Current date:" not in str(upstream.calls[-1])
 
 
@@ -92,7 +92,7 @@ def test_date_and_language_remain_fixed_across_approval(web_env, monkeypatch):
     snapshots = details(client, payload["run"])
     assert snapshots[0] == first
     for snapshot, day in zip(snapshots, [29, 29]):
-        instructions = [source for source in snapshot["sources"] if source["kind"] == "instruction"]
+        instructions = [source for source in snapshot["sources"] if source["id"] == "instruction"]
         assert len(instructions) == 1
         assert instructions[0]["text"] == date_instruction("zh-CN", date(2026, 10, day))
         assert snapshot["request"]["messages"][0]["content"].count("当前日期：") == 1

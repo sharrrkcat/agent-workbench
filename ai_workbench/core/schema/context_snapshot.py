@@ -14,6 +14,7 @@ from ai_workbench.core.schema.compaction import CompactionReference, RunCompacti
 from ai_workbench.core.schema.retrieval import RetrievalReference
 from ai_workbench.core.schema.context_budget import ContextBudgetStats
 from ai_workbench.core.time import isoformat_utc
+from ai_workbench.core.schema.memory import MemoryContextReference
 
 
 class SnapshotModel(BaseModel):
@@ -71,7 +72,7 @@ class SnapshotRequest(GenerationParameters):
 
 SourceKind = Literal[
     "system", "instruction", "character", "persona",
-    "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime", "summary", "context_memory", "context_retrieval",
+    "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime", "summary", "context_memory", "context_retrieval", "durable_memory",
 ]
 
 
@@ -95,6 +96,7 @@ class ContextSource(SnapshotModel):
     compaction: CompactionReference | None = None
     run_compaction: RunCompactionReference | None = None
     retrieval: RetrievalReference | None = None
+    memory: MemoryContextReference | None = None
 
 
 class ContextExclusion(SnapshotModel):

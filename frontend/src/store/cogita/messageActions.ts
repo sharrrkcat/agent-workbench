@@ -73,7 +73,8 @@ export const createMessageActions: CogitaActions<
         if (get().sessionEpoch !== epoch || get().error) return false;
       }
       if (!session && draft) {
-        session = await charactersApi.createSession(draft.character_id, { title: draft.title.trim(), overrides: draft.overrides });
+        session = await charactersApi.createSession(draft.character_id, { title: draft.title.trim(), overrides: draft.overrides,
+          ...(draft.memory_isolation ? { memory_isolation: draft.memory_isolation } : {}) });
         rememberSession(session);
         const created = session;
         set((state) => ({

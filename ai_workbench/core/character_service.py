@@ -56,7 +56,16 @@ class CharacterService:
         return self.characters.save(character)
 
     def update(self, character_id: str, values: dict) -> Character:
+        with self.chat.mutation_lock:
+            return self._update(character_id, values)
+
+    def _update(self, character_id: str, values: dict) -> Character:
         current = self.get(character_id)
+        memory_changed = current.kind == "normal" and any(
+            key in values and values[key] != getattr(current, key)
+            for key in ("memory_external_isolation", "memory_enabled", "memory_learning"))
+        if memory_changed and self.chat.memory:
+            self.chat.memory.assert_character_idle(character_id)
         if current.kind == "qqbot" and values.get("bot_account", current.bot_account) != current.bot_account and any(
                 session.character_id == character_id for session in self.chat.sessions.list_sessions()):
             raise ChatError("QQ_ACCOUNT_BOUND", "Delete the bound Sessions before changing the bot account.", 409)
@@ -67,7 +76,10 @@ class CharacterService:
                 **current.image_generation_options.model_dump(), **values["image_generation_options"]}}
         candidate = character_adapter.validate_python({**current.model_dump(), **values, "updated_at": utc_now()})
         self.validate(candidate)
-        return self.characters.save(candidate)
+        saved = self.characters.save(candidate)
+        if memory_changed and self.chat.memory:
+            self.chat.memory.policy_changed(character_id)
+        return saved
 
     def sessions(self, character_id: str):
         self.get(character_id)

@@ -4,7 +4,7 @@ type CharacterSettings = {
   name: string; avatar_attachment_id: string | null; system_prompt: string;
   model_profile_id: string | null; temperature: number | null;
 };
-export type NormalCharacterInput = CharacterSettings & ChatDefaults & { kind: 'normal' };
+export type NormalCharacterInput = CharacterSettings & ChatDefaults & { kind: 'normal'; memory_external_isolation: boolean };
 export type QQBotInput = CharacterSettings & {
   context_policy: ContextPolicy;
   kind: 'qqbot'; bot_account: string; admin_qq: string | null; websocket_url: string; access_token?: string;

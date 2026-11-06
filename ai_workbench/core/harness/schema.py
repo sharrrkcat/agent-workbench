@@ -11,12 +11,13 @@ from ai_workbench.core.models.images import ContextMessage
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 from ai_workbench.core.schema.compaction import RunCompactionState
 from ai_workbench.core.schema.retrieval import RunRetrievalState
+from ai_workbench.core.schema.memory import MemoryRunState
 from ai_workbench.core.schema.qq import QQTriggerKind, QQImageCandidate
 from ai_workbench.core.web_schemas import WebRunBudget, WebSource
 from ai_workbench.core.instructions import UiLanguage
 
 ToolRisk = Literal["safe", "file", "network"]
-ToolScope = Literal["general", "qqbot", "context"]
+ToolScope = Literal["general", "qqbot", "context", "memory"]
 ToolHandler = Callable[[dict[str, Any], "ToolExecutionContext"], Awaitable[dict[str, Any]]]
 
 
@@ -102,6 +103,7 @@ class HarnessState(BaseModel):
     transcript: list[dict[str, Any]] = Field(default_factory=list)
     compaction: RunCompactionState | None = None
     retrieval: RunRetrievalState | None = None
+    memory: MemoryRunState | None = None
     pending_calls: list[ToolCall] = Field(default_factory=list)
     awaiting_approval: str | None = None
     approval_step_id: str | None = None

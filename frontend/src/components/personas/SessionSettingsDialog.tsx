@@ -20,6 +20,10 @@ import type { ChatDraft, SessionOverrides, NormalSession } from '../../types/cha
 import type { HarnessTool } from '../../types/tools';
 import { BindingsField, ContextFields, GenerationFields, ModelField, PersonaField, ToolsField } from './ConfigurationFields';
 import { Feedback, ResourceLoading, errorText } from '../settings/resources/ResourceUI';
+import { MemoryReadField, MemoryLearningField, MemorySelect } from '../memory/MemoryFields';
+import { MemoryManager } from '../memory/MemoryManager';
+import { memoriesApi } from '../../api/memories';
+import type { MemoryIsolation } from '../../types/memory';
 
 function Inheritance({ label, inherited, onReset, children }: {
   label: string; inherited: boolean; onReset: () => void; children: ReactNode;
@@ -52,6 +56,7 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
   const character = owner?.kind === 'normal' ? owner : null;
   const [title, setTitle] = useState(session.title);
   const [changes, setChanges] = useState<SessionOverrides>({});
+  const [isolation, setIsolation] = useState<MemoryIsolation>(session.memory_isolation ?? 'shared');
   const [bases, setBases] = useState<Resource[]>([]);
   const [books, setBooks] = useState<Resource[]>([]);
   const [tools, setTools] = useState<HarnessTool[]>([]);
@@ -71,15 +76,22 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
     }).catch((reason) => { if (live) setError(errorText(reason)); });
     return () => { live = false; };
   }, [session.character_id, reload]);
-  const dirty = title !== session.title || Object.keys(changes).length > 0;
+  const dirty = title !== session.title || Object.keys(changes).length > 0 || isolation !== (session.memory_isolation ?? 'shared');
   const canLeave = async () => !busy && (!dirty || await confirm(t('discardChanges')));
   async function close() { if (await canLeave()) onClose(); }
   async function save() {
     if (busy) return;
+    if (sessionId && isolation !== session.memory_isolation) {
+      try {
+        const preview = await memoriesApi.deletionPreview('session', sessionId);
+        if (!(await confirm(t('memory:isolationChange', { count: preview.local.length })))) return;
+      } catch (reason) { setError(errorText(reason)); return; }
+    }
     setBusy(true); setError('');
     if (sessionId) useCogitaStore.setState((state) => ({ savingSessionIds: [...state.savingSessionIds, sessionId] }));
     try {
       const patch = { ...(title !== session.title ? { title: title.trim() } : {}),
+        ...(isolation !== (session.memory_isolation ?? 'shared') ? { memory_isolation: isolation } : {}),
         ...(Object.keys(changes).length ? { overrides: changes } : {}) };
       if (sessionId) {
         await chatApi.updateSession(sessionId, patch);
@@ -106,12 +118,16 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
           <TabsList aria-label={t('sessionSettings')}>
             <TabsTrigger value="configuration">{t('configuration')}</TabsTrigger>
             <TabsTrigger value="resources">{t('resources')}</TabsTrigger>
+            <TabsTrigger value="memory">{t('memory:title')}</TabsTrigger>
           </TabsList>
           <div className="settings-dialog-body"><FieldSet disabled={busy} className="model-form">
             <TabsContent value="configuration"><FieldGroup>
               <Field><FieldLabel htmlFor={formId + '-title'}>{t('sessionTitle')}</FieldLabel>
                 <Input id={formId + '-title'} value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} /></Field>
-              {inheritance('persona_id', t('persona'), <PersonaField label={t('persona')} personas={personas}
+              {'bound_persona_id' in session && session.bound_persona_id ? <Field>
+                <FieldLabel>{t('persona')}</FieldLabel><p>{personas.find((p) => p.id === session.bound_persona_id)?.name ?? session.persona.name}</p>
+                <FieldDescription>{t('memory:boundPersona')}</FieldDescription>
+              </Field> : inheritance('persona_id', t('persona'), <PersonaField label={t('persona')} personas={personas}
                 value={overrides.persona_id ?? character.persona_id} onChange={(id) => change('persona_id', id)} />)}
               <Button type="button" variant="outline" onClick={async () => { if (await canLeave()) onManagePersonas(); }}>{t('manage')}</Button>
               {inheritance('model_profile_id', t('model'), <ModelField profiles={profiles} value={overrides.model_profile_id ?? null}
@@ -126,6 +142,16 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
                 onChange={(value) => change('tools_allowed', value)} />)}
               {inheritance('context_policy', t('context'), <ContextFields harnessEnabled={overrides.harness_enabled ?? character.harness_enabled}
                 value={overrides.context_policy ?? character.context_policy} onChange={(value) => change('context_policy', value)} />)}
+            </FieldGroup></TabsContent>
+            <TabsContent value="memory"><FieldGroup>
+              {inheritance('memory_enabled', t('memory:readEnabled'), <MemoryReadField hideLabel value={overrides.memory_enabled ?? character.memory_enabled}
+                onChange={(value) => change('memory_enabled', value)} />)}
+              {inheritance('memory_learning', t('memory:learning'), <MemoryLearningField hideLabel value={overrides.memory_learning ?? character.memory_learning}
+                harness={overrides.harness_enabled ?? character.harness_enabled} onChange={(value) => change('memory_learning', value)} />)}
+              <MemorySelect label={t('memory:isolation')} value={isolation}
+                options={(['shared', 'block_outgoing', 'block_incoming', 'isolated'] as const).map((value) => ({ value, label: t(`memory:modes.${value}`) }))}
+                onChange={(value) => setIsolation(value as MemoryIsolation)} />
+              {sessionId && 'session_id' in session ? <MemoryManager session={session} /> : null}
             </FieldGroup></TabsContent>
             <TabsContent value="resources"><FieldGroup>
               <Field><FieldDescription>{t('mountsInactive')}</FieldDescription></Field>

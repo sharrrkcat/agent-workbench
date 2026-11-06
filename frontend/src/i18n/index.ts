@@ -22,14 +22,16 @@ import zhKnowledge from './resources/zh-CN/knowledge.json';
 import zhWorldbook from './resources/zh-CN/worldbook.json';
 import zhRenderers from './resources/zh-CN/renderers.json';
 import zhPersonas from './resources/zh-CN/personas.json';
+import enMemory from './resources/en/memory.json';
+import zhMemory from './resources/zh-CN/memory.json';
 
 export const LOCALE_STORAGE_KEY = 'cogita.locale';
 export const SUPPORTED_LOCALES = ['en', 'zh-CN'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
 const resources = {
-  en: { common: enCommon, settings: enSettings, chat: enChat, errors: enErrors, status: enStatus, runs: enRuns, llm: enLlm, knowledge: enKnowledge, worldbook: enWorldbook, renderers: enRenderers, personas: enPersonas },
-  'zh-CN': { common: zhCommon, settings: zhSettings, chat: zhChat, errors: zhErrors, status: zhStatus, runs: zhRuns, llm: zhLlm, knowledge: zhKnowledge, worldbook: zhWorldbook, renderers: zhRenderers, personas: zhPersonas },
+  en: { common: enCommon, settings: enSettings, chat: enChat, errors: enErrors, status: enStatus, runs: enRuns, llm: enLlm, knowledge: enKnowledge, worldbook: enWorldbook, renderers: enRenderers, personas: enPersonas, memory: enMemory },
+  'zh-CN': { common: zhCommon, settings: zhSettings, chat: zhChat, errors: zhErrors, status: zhStatus, runs: zhRuns, llm: zhLlm, knowledge: zhKnowledge, worldbook: zhWorldbook, renderers: zhRenderers, personas: zhPersonas, memory: zhMemory },
 };
 const stored = typeof window === 'undefined' ? 'en' : window.localStorage.getItem(LOCALE_STORAGE_KEY);
 void i18n.use(initReactI18next).init({ resources, lng: SUPPORTED_LOCALES.includes(stored as SupportedLocale) ? stored || 'en' : 'en', fallbackLng: 'en', defaultNS: 'common', ns: Object.keys(resources.en), interpolation: { escapeValue: false }, returnNull: false });

@@ -1,3 +1,5 @@
+import type { MemoryIsolation } from './memory';
+
 export type ContextPolicy = {
   history_enabled: boolean;
   strategy: 'token_budget' | 'message_window' | 'history_retrieval';
@@ -29,9 +31,10 @@ export type ChatDefaults = {
   persona_id: string; model_profile_id: string | null; temperature: number | null;
   reasoning: boolean; context_policy: ContextPolicy; harness_enabled: boolean; tools_allowed: string[];
   knowledge_base_ids: string[]; worldbook_ids: string[];
+  memory_enabled: boolean; memory_learning: 'manual' | 'automatic';
 };
 export type SessionOverrides = { [K in keyof ChatDefaults]?: ChatDefaults[K] | null };
-export type SessionPatch = { title?: string; overrides?: SessionOverrides };
+export type SessionPatch = { title?: string; overrides?: SessionOverrides; memory_isolation?: MemoryIsolation };
 
 export type EffectiveChatConfig = {
   qq_reply_message_limit: number | null;
@@ -40,7 +43,8 @@ export type EffectiveChatConfig = {
   character_id: string; character_name: string; character_avatar_attachment_id: string | null;
   persona_id: string | null; persona_name: string | null;
   sources: {
-    persona: 'session' | 'character'; context: 'session' | 'character';
+    persona: 'session' | 'character' | 'binding'; context: 'session' | 'character';
+    memory: 'session' | 'character'; memory_learning: 'session' | 'character';
     temperature: 'session' | 'character' | 'model'; reasoning: 'session' | 'character';
     harness: 'session' | 'character'; tools: 'session' | 'character';
     knowledge: 'session' | 'character'; worldbook: 'session' | 'character';
@@ -49,6 +53,7 @@ export type EffectiveChatConfig = {
   context_policy: ContextPolicy; generation: GenerationParameters;
   reasoning: boolean; harness_enabled: boolean; tools_allowed: string[];
   knowledge_base_ids: string[]; worldbook_ids: string[];
+  memory_enabled: boolean; memory_learning: 'manual' | 'automatic';
 };
 
 type SessionBase = {
@@ -56,7 +61,8 @@ type SessionBase = {
   effective: EffectiveChatConfig; title_generation_state?: string; title_generation_metadata?: Record<string, unknown>;
   created_at: string; updated_at: string;
 };
-export type NormalSession = SessionBase & { kind: 'normal'; overrides: SessionOverrides; persona: PersonaIdentity };
+export type NormalSession = SessionBase & { kind: 'normal'; overrides: SessionOverrides; persona: PersonaIdentity;
+  bound_persona_id: string | null; memory_isolation: MemoryIsolation; memory_version: number };
 export type QQSession = SessionBase & { kind: 'qqbot'; persona: null; target_kind: 'group' | 'friend'; target_id: string };
 export type Session = NormalSession | QQSession;
-export type ChatDraft = { kind: 'normal'; character_id: string; title: string; overrides: SessionOverrides };
+export type ChatDraft = { kind: 'normal'; character_id: string; title: string; overrides: SessionOverrides; memory_isolation?: MemoryIsolation };

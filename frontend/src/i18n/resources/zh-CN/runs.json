@@ -140,6 +140,7 @@
       "summary": "历史摘要",
       "context_memory": "工作检查点",
       "context_retrieval": "回溯结果",
+      "durable_memory": "长期记忆",
       "character": "AI 角色",
       "persona": "用户身份"
     },

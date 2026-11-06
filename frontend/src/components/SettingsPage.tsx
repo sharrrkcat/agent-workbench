@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MemoryManager } from './memory/MemoryManager';
 import { useTranslation } from 'react-i18next';
 import { SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { SettingsSidebar } from './SettingsSidebar';
@@ -84,6 +85,7 @@ export function SettingsPage({
             {route.section === 'models' ? <ModelsPanel view={route.view} onNavigate={onNavigate}
               listOnlyKind={modelListKind} onOpenEditor={() => setModelListKind(null)} /> : null}
             {route.section === 'personas' ? <PersonasPanel /> : null}
+            {route.section === 'memory' ? <MemoryManager /> : null}
             {route.section === 'knowledge' ? <KnowledgePanel view={route.view} /> : null}
             {route.section === 'worldbook' ? <WorldbookPanel view={route.view} /> : null}
             {route.section === 'tools' ? route.view === 'web' ? <WebToolsSettings /> : <ToolsPanel scope={route.view} /> : null}

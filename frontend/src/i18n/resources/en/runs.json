@@ -140,6 +140,7 @@
       "summary": "History summary",
       "context_memory": "Working checkpoint",
       "context_retrieval": "Retrieved history",
+      "durable_memory": "Durable memory",
       "character": "Character",
       "persona": "Persona"
     },

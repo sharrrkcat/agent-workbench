@@ -60,6 +60,7 @@ class ChatContextBudget:
         return stats.model_copy(update={"input_tokens": await count(range(len(request.messages)))})
 
     async def prepare(self, profile, request, adapter, reference_tokens: ReferenceTokenCounter):
+        request = await self.limit_memory(profile, request, adapter, reference_tokens)
         request, count_indices, stats = await self._counter(profile, request, adapter, reference_tokens)
         available = stats.input_budget_tokens
         groups = self._history_groups()
@@ -98,6 +99,37 @@ class ChatContextBudget:
         self._remap_trace(retained)
         self.stats = stats.model_copy(update={"input_tokens": tokens, "removed_turns": cut})
         return request.model_copy(update={"messages": [request.messages[i] for i in retained]})
+
+    async def limit_memory(self, profile, request, adapter, reference_tokens):
+        from ai_workbench.core.memory_context import memory_units, remove_memory
+        facts, calls = memory_units(request, self.trace)
+        if not facts and not calls:
+            return request
+        # Old memory tool pairs leave first; low-priority injected facts follow.
+        # A pair is removed as a unit, even inside a mixed tool batch.
+        removals = calls + list(reversed(facts))
+        bare, _ = remove_memory(request, self.trace, removals)
+        base_stats = await self.measure(profile, bare, adapter, reference_tokens)
+        allowance = max(0, min(1024, base_stats.input_budget_tokens // 10,
+            base_stats.input_budget_tokens - base_stats.input_tokens))
+        async def fits(cut):
+            candidate, provenance = remove_memory(request, self.trace, removals[:cut])
+            stats = await self.measure(profile, candidate, adapter, reference_tokens)
+            return stats.input_tokens - base_stats.input_tokens <= allowance, candidate, provenance
+        valid, selected, trace = await fits(0)
+        if not valid:
+            low, high = 1, len(removals)
+            while low < high:
+                middle = (low + high) // 2
+                if (await fits(middle))[0]:
+                    high = middle
+                else:
+                    low = middle + 1
+            valid, selected, trace = await fits(low)
+            if not valid:
+                selected, trace = remove_memory(request, self.trace, removals)
+        self.trace.sources, self.trace.exclusions = trace.sources, trace.exclusions
+        return selected
 
     def _history_groups(self):
         # An old system message can share its slot with newly appended instructions.

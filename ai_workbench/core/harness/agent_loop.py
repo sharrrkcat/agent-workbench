@@ -28,6 +28,9 @@ from ai_workbench.core.qq_context import runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES, RunRetrievalState
+from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
+from ai_workbench.core.memory_completion import complete_memory_run
+from ai_workbench.core.schema.context_snapshot import ContextSource
 from ai_workbench.core.schema.chat_config import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
@@ -72,7 +75,7 @@ class _Budget:
 
 class HarnessAgentLoop:
     def __init__(self, *, sessions, messages, runs, events, model_manager, registry: ToolRegistry,
-                 allowed_tools, active_runs=None, web_tools=None) -> None:
+                 allowed_tools, active_runs=None, web_tools=None, durable_memory=None) -> None:
         self.sessions = sessions
         self.messages = messages
         self.runs = runs
@@ -82,6 +85,7 @@ class HarnessAgentLoop:
         self.active_runs = active_runs
         self.allowed_tools = allowed_tools
         self.web_tools = web_tools
+        self.durable_memory = durable_memory
         self.retrieval = None
         self.compaction = HarnessCompaction(model_manager, runs, events)
 
@@ -89,9 +93,9 @@ class HarnessAgentLoop:
                   user: MessageSchema, context: list[dict[str, Any]], trace, max_image_bytes: int, active_seconds: float = 0.0,
                   reasoning: bool = True, ui_language: UiLanguage = "en",
                   first_metrics: LLMCallMetrics | None = None, web_date: str | None = None,
-                  summary_reasoning: bool = False, on_dispatch=None) -> RunResult:
+                  summary_reasoning: bool = False, on_dispatch=None, memory_work=None) -> RunResult:
         saved = self.runs.get_harness_state(run.run_id).get("retrieval")
-        state = HarnessState(retrieval=RunRetrievalState.model_validate(saved) if saved else None, base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
+        state = HarnessState(memory=memory_work, retrieval=RunRetrievalState.model_validate(saved) if saved else None, base_messages=context, context_trace=trace, active_seconds=active_seconds, reasoning=reasoning, ui_language=ui_language,
                              qq_trigger_kind=user.metadata["qq_trigger_kind"] if session.kind == "qqbot" else None,
                              max_image_bytes=max_image_bytes,
                              summary_reasoning=summary_reasoning,
@@ -170,8 +174,12 @@ class HarnessAgentLoop:
             while True:
                 self._check_cancelled(run.run_id)
                 budget.check()
+                if state.memory is not None:
+                    self.durable_memory.check(state.memory)
                 while state.pending_calls:
                     self._check_cancelled(run.run_id)
+                    if state.memory is not None:
+                        self.durable_memory.check(state.memory)
                     budget.check()
                     call = state.pending_calls[0]
                     if state.retrieval and (state.qq_skipped or (session.kind == "qqbot" and state.qq_sent_count >= config.qq_reply_message_limit)) and call.function.name not in CONTEXT_TOOL_NAMES:
@@ -260,6 +268,8 @@ class HarnessAgentLoop:
 
     async def _model_round(self, session, config, run, user, state: HarnessState, budget: _Budget,
                            first_metrics: LLMCallMetrics | None = None, on_dispatch=None) -> str | None:
+        if state.memory is not None:
+            self.durable_memory.check(state.memory)
         if not config.model_profile_id:
             raise ModelError("MODEL_NOT_CONFIGURED", "Select a model for this session.", 503)
         profile = self.model_manager.profile(config.model_profile_id, "llm")
@@ -297,6 +307,12 @@ class HarnessAgentLoop:
             self.events.emit("message_updated", session_id=session.session_id, run_id=run.run_id,
                 message_id=user.message_id, payload={"message": user.model_dump(mode="json")})
         step = self._start_step(run.run_id, "model", "Generating response", {"round": state.rounds + 1})
+        if state.memory is not None:
+            for index, message in enumerate(request.messages):
+                call_id = message.tool_call_id
+                if call_id and call_id in state.memory.read_calls:
+                    trace.sources.append(ContextSource(id="memory-tool:" + call_id, kind="durable_memory",
+                        role="tool", field="message", message_index=index, reference_id=call_id))
         resolution = {"model_profile_id": profile.id, "alias": profile.alias,
                       "source_type": profile.source.type if profile.source else None,
                       "provider_profile_id": profile.source.provider_profile_id if profile.source and profile.source.type == "provider" else None, "model_ref": profile.model_ref}
@@ -310,8 +326,13 @@ class HarnessAgentLoop:
                 context_budget = ChatContextBudget(config.context_limits, trace,
                     allow_pruning=state.retrieval is None and (state.rounds > 0 or config.context_policy.strategy == "message_window"
                     or not config.context_policy.compaction.enabled))
-                capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy,
+                save_capture = capture_context(self.runs, step.step_id, context_budget.trace, profile, config.context_policy,
                     budget=context_budget, on_dispatch=on_dispatch)
+                def capture(payload):
+                    if state.memory is not None:
+                        self.durable_memory.check(state.memory)
+                        self.durable_memory.capture_evidence(state.memory, context_budget.trace)
+                    save_capture(payload)
                 calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture, context_budget),
                                                timeout=budget.check())
             except asyncio.TimeoutError as exc:
@@ -489,9 +510,11 @@ class HarnessAgentLoop:
                 outcome.error_code, outcome.error_message)
         else:
             model_text = json.dumps(outcome.model_dump(exclude_none=True), ensure_ascii=False, allow_nan=False)
-        private = call.function.name in CONTEXT_TOOL_NAMES
+        private = call.function.name in CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES
         public_data = ({"private_context": True, "count": len((outcome.data or {}).get("items", [])),
                         "truncated": bool((outcome.data or {}).get("truncated"))} if private else outcome.data)
+        if call.function.name in MEMORY_TOOL_NAMES and (outcome.data or {}).get("pending"):
+            public_data["pending"] = True
         part = make_tool_result_part(call.id, call.function.name, outcome.status, public_data,
                                     error_code=outcome.error_code, error_message=outcome.error_message,
                                     truncated=projected_truncation or bool((outcome.data or {}).get("truncated")))
@@ -524,9 +547,9 @@ class HarnessAgentLoop:
             except ToolExecutionError:
                 arguments = {}
             parts.append(make_tool_call_part(call.id, call.function.name,
-                         {} if call.function.name in CONTEXT_TOOL_NAMES else arguments, part_id=f"call_{index}"))
+                         {} if call.function.name in CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES else arguments, part_id=f"call_{index}"))
         message = draft.persist(extra_parts=parts, metadata={"tool_calls": True, "direct": direct,
-            "context_internal": all(call.function.name in CONTEXT_TOOL_NAMES for call in calls)})
+            "context_internal": all(call.function.name in CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES for call in calls)})
         payload = {"message": message.model_dump(mode="json")}
         self.events.emit("tool_call_created", session_id=message.session_id, run_id=message.run_id, message_id=message.message_id,
                          payload={**payload, "tool_calls": [{"id": call.id, "name": call.function.name} for call in calls]})
@@ -586,6 +609,9 @@ class HarnessAgentLoop:
             raise asyncio.CancelledError()
 
     def _complete(self, run_id, state=None):
+        if state is not None and state.memory is not None:
+            complete_memory_run(self, run_id, state)
+            return
         if state is not None and state.retrieval is not None:
             self.retrieval.commit(state.retrieval)
         self.runs.update_harness_state(run_id, {})

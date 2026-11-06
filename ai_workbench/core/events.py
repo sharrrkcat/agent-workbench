@@ -73,6 +73,7 @@ class EventBus:
         run_id: Optional[str] = None,
         message_id: Optional[str] = None,
         payload: Optional[Dict[str, Any]] = None,
+        persisted: bool = False,
     ) -> Event:
         event = Event(
             type=event_type,
@@ -81,7 +82,7 @@ class EventBus:
             message_id=message_id,
             payload=payload or {},
         )
-        if self.run_event_store is not None and event.run_id and self.should_persist_event(event.type):
+        if not persisted and self.run_event_store is not None and event.run_id and self.should_persist_event(event.type):
             self.run_event_store.add_event(
                 run_id=event.run_id,
                 session_id=event.session_id,

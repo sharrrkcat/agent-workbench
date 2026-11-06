@@ -7,6 +7,7 @@ from pydantic import Field, TypeAdapter, field_serializer
 
 from ai_workbench.core.models.schema import StrictModel
 from ai_workbench.core.schema.chat_config import SessionOverrides
+from ai_workbench.core.schema.memory import MemoryIsolation
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
@@ -32,6 +33,9 @@ class SessionBase(StrictModel):
 class NormalSession(SessionBase):
     kind: Literal["normal"] = "normal"
     overrides: SessionOverrides = Field(default_factory=SessionOverrides)
+    bound_persona_id: str | None = None
+    memory_isolation: MemoryIsolation = "shared"
+    memory_version: int = 0
 
     @field_serializer("overrides")
     def serialize_overrides(self, value: SessionOverrides) -> dict[str, Any]:

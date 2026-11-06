@@ -13,12 +13,12 @@ for domain settings; core/models/store.py owns provider and local runtime settin
 Under frontend/src/, components/SettingsPage.tsx composes components/settings/
 panels and domain API/type modules. SettingsSidebar.tsx and settings/navigation.ts
 own grouped page navigation; SettingsView.tsx retains inactive subpages.
-Persona/session controls are in components/personas/; components/characters/ owns Character identity/defaults and components/personas/ owns Session overrides.
+Persona/session controls are in components/personas/; components/characters/ owns Character identity/defaults and components/personas/ owns Session overrides. components/memory/ owns memory managers/editors/deletion choices.
 Storage and revision effects belong to [data layout](../DATA_LAYOUT.md).
 
 ## Verification
 
-Start with tests/test_characters.py, test_characters.py, test_pet_foundation.py,
+Start with tests/test_characters.py, test_durable_memory.py, test_pet_foundation.py,
 test_resource_management.py and test_openapi_contracts.py under tests/ plus
 the affected model/runtime/tool tests. Frontend scripts cover session settings,
 Pet foundations, runtime maintenance, resources and reply presentation.

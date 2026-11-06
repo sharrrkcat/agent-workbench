@@ -153,12 +153,12 @@ export const createSessionActions: CogitaActions<
       return { chatDraft: { ...draft, ...patch, overrides: { ...draft.overrides, ...patch.overrides } } };
     }),
 
-    deleteSession: async (id) => {
+    deleteSession: async (id, memory) => {
       const session = get().sessions.find((item) => item.session_id === id);
       const scope = session?.character_id;
       const epoch = get().sessionEpoch;
       try {
-        await chatApi.deleteSession(id);
+        await chatApi.deleteSession(id, memory);
         if (scope && lastSession(scope) === id) forgetSelection(scope);
         set((state) => ({
           sessions: state.sessions.filter((item) => item.session_id !== id),

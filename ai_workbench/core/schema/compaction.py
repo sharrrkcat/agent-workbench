@@ -25,6 +25,7 @@ class ContextCheckpoint(CompactionReference):
     summary: str = Field(min_length=1)
     boundary_created_at: datetime
     history_version: int = Field(ge=0)
+    memory_version: int = Field(default=0, ge=0)
     include_attachments: Literal["none", "explicit"]
     format_version: Literal[1] = 1
     created_at: datetime = Field(default_factory=utc_now)

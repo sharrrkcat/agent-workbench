@@ -9,6 +9,7 @@ import { terminal } from '../../store/cogita/mergeState';
 import { copyWebAnswer, webSourcesForReply } from './webSources';
 import type { Reply } from './turns';
 import { ReplyContext } from './ReplyContext';
+import { SaveMemoryAction } from '../memory/SaveMemoryAction';
 
 export type ReplyDeleteAction = { onDelete: () => void; disabled: boolean };
 
@@ -79,6 +80,7 @@ export function ReplyActions({ reply, usage, summary, readOnly = false, deleteAc
         </Tooltip>
       ) : null}
       <ReplyContext reply={reply} />
+      {!readOnly && ended && reply.answer ? <SaveMemoryAction messageId={reply.answer.message_id} text={body} /> : null}
       {usage}
       {(!readOnly || deleteAction) && ended ? <Tooltip>
         <TooltipTrigger

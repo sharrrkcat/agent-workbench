@@ -21,6 +21,9 @@ from ai_workbench.core.personas import PersonaStore
 from ai_workbench.core.characters import CharacterStore
 from ai_workbench.core.character_service import CharacterService
 from ai_workbench.core.events import EventBus
+from ai_workbench.core.memory_store import DurableMemoryStore
+from ai_workbench.core.memory_service import MemoryService
+from ai_workbench.core.conversation_acceptance import ConversationAcceptance
 from ai_workbench.core.knowledge_service import KnowledgeService
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
 from ai_workbench.core.models.manager import ModelManager
@@ -76,6 +79,7 @@ class RuntimeState:
     runtime_supervisor: RuntimeSupervisor
     repo_root: Path
     database_url: str
+    memory: MemoryService
     started_at: datetime = field(default_factory=utc_now)
     active_websockets: int = 0
     history_reader: Any = None
@@ -126,6 +130,12 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     characters = CharacterStore(engine)
     chat_service = ChatService(personas=personas, characters=characters, sessions=sessions, runs=runs, model_manager=manager,
         knowledge=knowledge, worldbooks=worldbooks, tool_registry=tool_registry)
+    memory_store = DurableMemoryStore(sessions, engine, messages=messages, runs=runs,
+        run_events=run_events, characters=characters)
+    memory_store.lock = chat_service.mutation_lock
+    memory = MemoryService(memory_store, chat_service, messages)
+    chat_service.memory = memory
+    chat_service.acceptance = ConversationAcceptance(chat_service, messages, memory_store)
     character_service = CharacterService(characters=characters, chat_service=chat_service)
     character_service.ensure_default()
     knowledge_service = KnowledgeService(store=knowledge, model_manager=manager, repo_root=repo_root,
@@ -164,6 +174,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
         runtime_supervisor=supervisor,
         tool_registry=tool_registry,
         database_url=resolved_database_url,
+        memory=memory,
         web_tools=web_tools,
         history_reader=MemoryHistoryReader(sessions, messages, runs) if use_memory else SqlHistoryReader(engine),
     )

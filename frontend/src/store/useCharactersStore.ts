@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { charactersApi } from '../api/characters';
 import type { Character, CharacterInput, CharacterPatch } from '../types/characters';
+import type { MemoryDeletionChoice } from '../types/memory';
 
 type CharactersState = {
   characters: Character[];
@@ -10,7 +11,7 @@ type CharactersState = {
   load: (id: string) => Promise<Character>;
   save: (values: CharacterInput, id?: string) => Promise<Character>;
   patch: (id: string, values: CharacterPatch) => Promise<Character>;
-  remove: (id: string) => Promise<void>;
+  remove: (id: string, memory?: MemoryDeletionChoice) => Promise<void>;
 };
 
 const upsert = (characters: Character[], character: Character) =>
@@ -49,8 +50,8 @@ export const useCharactersStore = create<CharactersState>((set, get) => ({
       set((state) => ({ characters: upsert(state.characters, character), version: state.version + 1 }));
     return character;
   },
-  remove: async (id) => {
-    await charactersApi.remove(id);
+  remove: async (id, memory) => {
+    await charactersApi.remove(id, memory);
     set((state) => ({ characters: state.characters.filter((character) => character.id !== id), version: state.version + 1 }));
   },
 }));

@@ -9,7 +9,7 @@ const resources = Object.fromEntries(
   ['en', 'zh-CN'].map((locale) => [
     locale,
     Object.fromEntries(
-      ['common', 'settings', 'knowledge', 'worldbook', 'personas', 'runs', 'renderers', 'llm'].map((namespace) => [
+      ['common', 'settings', 'knowledge', 'worldbook', 'personas', 'runs', 'renderers', 'llm', 'memory'].map((namespace) => [
         namespace,
         JSON.parse(
           fs.readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'),
@@ -26,9 +26,9 @@ const load = createModuleLoader({
 const { settingsSections, settingsGroups, readSettingsRoute, settingsRouteUrl, settingsPageLabel, settingsMenuLabel } = (
   await load('../src/components/settings/navigation.ts')
 ).exports;
-assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools']);
+assert.deepEqual(settingsSections, ['general', 'models', 'personas', 'memory', 'knowledge', 'worldbook', 'tools']);
 const settingsPages = settingsGroups.flatMap((group) => group.menus.flatMap((menu) => menu.pages));
-assert.equal(settingsPages.length, 21);
+assert.equal(settingsPages.length, 22);
 for (const route of settingsPages)
   assert.deepEqual(readSettingsRoute(new URL(settingsRouteUrl(route), 'http://localhost').search), route);
 for (const tab of ['', '?tab=unknown', '?tab=agents', '?tab=capabilities', '?tab=pet'])
@@ -37,7 +37,7 @@ assert.deepEqual(readSettingsRoute('?tab=personas'), { section: 'personas' });
 assert.deepEqual(readSettingsRoute('?tab=personas&view=unknown'), { section: 'personas' });
 assert.deepEqual(readSettingsRoute('?tab=tools'), { section: 'tools', view: 'general' });
 assert.deepEqual(readSettingsRoute('?tab=tools&view=unknown'), { section: 'tools', view: 'general' });
-assert.equal(new Set(settingsGroups.flatMap((g) => g.menus.map((m) => m.id))).size, 7);
+assert.equal(new Set(settingsGroups.flatMap((g) => g.menus.map((m) => m.id))).size, 8);
 assert.deepEqual(readSettingsRoute('?tab=models'), { section: 'models', view: 'dashboard' });
 for (const view of ['settings', 'profiles', 'service', 'unknown'])
   assert.deepEqual(readSettingsRoute('?tab=models&view=' + view), { section: 'models', view: 'dashboard' });

@@ -24,6 +24,8 @@ class ChatDefaults(StrictModel):
     reasoning: StrictBool = True
     context_policy: ContextPolicy = Field(default_factory=ContextPolicy)
     harness_enabled: StrictBool = False
+    memory_enabled: StrictBool = True
+    memory_learning: Literal["manual", "automatic"] = "manual"
     tools_allowed: list[str] = Field(default_factory=list, max_length=128)
     knowledge_base_ids: list[str] = Field(default_factory=list, max_length=128)
     worldbook_ids: list[str] = Field(default_factory=list, max_length=128)
@@ -40,6 +42,8 @@ class SessionOverrides(StrictModel):
     reasoning: StrictBool | None = None
     context_policy: ContextPolicy | None = None
     harness_enabled: StrictBool | None = None
+    memory_enabled: StrictBool | None = None
+    memory_learning: Literal["manual", "automatic"] | None = None
     tools_allowed: list[str] | None = Field(default=None, max_length=128)
     knowledge_base_ids: list[str] | None = Field(default=None, max_length=128)
     worldbook_ids: list[str] | None = Field(default=None, max_length=128)
@@ -48,7 +52,9 @@ class SessionOverrides(StrictModel):
 
 
 class ConfigurationSources(StrictModel):
-    persona: Literal["session", "character"]
+    persona: Literal["session", "character", "binding"]
+    memory: Literal["session", "character"] = "character"
+    memory_learning: Literal["session", "character"] = "character"
     context: Literal["session", "character"]
     temperature: Literal["session", "character", "model"]
     reasoning: Literal["session", "character"]
@@ -75,6 +81,8 @@ class ResolvedChatConfig(StrictModel):
     generation: GenerationParameters
     reasoning: bool = True
     harness_enabled: bool
+    memory_enabled: bool = False
+    memory_learning: Literal["manual", "automatic"] = "manual"
     tools_allowed: list[str]
     knowledge_base_ids: list[str]
     worldbook_ids: list[str]

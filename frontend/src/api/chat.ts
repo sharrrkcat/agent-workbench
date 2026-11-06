@@ -3,6 +3,7 @@ import type { Persona, PersonaInput, Session, SessionPatch } from '../types/chat
 import type { Attachment } from '../types/messages';
 import type { HistoryPruned, RuntimeResponse } from '../types/runs';
 import { request, requestForm } from './http';
+import type { MemoryDeletionChoice } from '../types/memory';
 
 export const chatApi = {
   getSession: (sessionId: string, signal?: AbortSignal) => request<Session>(`/api/sessions/${encodeURIComponent(sessionId)}`, { signal }),
@@ -11,9 +12,10 @@ export const chatApi = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
-  deleteSession: (sessionId: string) =>
+  deleteSession: (sessionId: string, memory?: MemoryDeletionChoice) =>
     request<{ deleted: boolean; session_id: string }>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
+      body: memory ? JSON.stringify(memory) : undefined,
     }),
   getHistory: (sessionId: string, query: HistoryQuery = {}, signal?: AbortSignal) =>
     request<HistoryPage>(`/api/sessions/${encodeURIComponent(sessionId)}/history?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`, { signal }),

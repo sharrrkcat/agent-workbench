@@ -12,6 +12,7 @@ from ai_workbench.core.time import utc_now
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 from ai_workbench.db.web_models import WebPageRecord, WebSessionPageRecord
 from ai_workbench.db.web_filter_models import WebFilterSettingsRecord, WebSubscriptionRecord
+from ai_workbench.db.memory_models import DurableMemoryRecord, DurableMemoryTerm, DurableMemoryDependency, DurableMemoryEvidence
 
 
 class SessionRecord(SQLModel, table=True):
@@ -29,6 +30,9 @@ class SessionRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     history_version: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
+    bound_persona_id: Optional[str] = None
+    memory_isolation: str = Field(default="shared", sa_column=Column(String, nullable=False, server_default="shared"))
+    memory_version: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
 
 
 class CharacterRecord(SQLModel, table=True):

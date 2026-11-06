@@ -1,5 +1,7 @@
 """Identity validation and two-level Character/Session configuration resolution."""
 
+from threading import RLock
+
 from ai_workbench.core.attachments import attachment_filename_from_id, attachment_mime_type, resolve_attachment_uri
 from ai_workbench.core.models.schema import GenerationParameters
 from ai_workbench.core.harness.schema import ToolExecutionError
@@ -26,6 +28,8 @@ class ChatService:
         self.model_manager = model_manager
         self.knowledge, self.worldbooks = knowledge, worldbooks
         self.tool_registry = tool_registry
+        self.mutation_lock = RLock()
+        self.memory = None
 
     def persona(self, persona_id: str):
         try:
@@ -87,6 +91,7 @@ class ChatService:
         return ChatDefaults.model_validate({
             **character.model_dump(include=set(ChatDefaults.model_fields)),
             **session.overrides.model_dump(exclude_none=True),
+            **({"persona_id": session.bound_persona_id} if session.bound_persona_id else {}),
         })
 
     def saved_model_id(self, session: Session) -> str | None:
@@ -101,24 +106,47 @@ class ChatService:
         return self.sessions.create_session(kind="normal", character_id=character_id, **values)
 
     def update_session(self, session_id: str, values: dict) -> Session:
+        with self.mutation_lock:
+            return self._update_session(session_id, values)
+
+    def _update_session(self, session_id: str, values: dict) -> Session:
         current = self.sessions.get_session(session_id)
+        policy_changed = False
+        if current.kind == "normal":
+            overrides = values.get("overrides", {})
+            if current.bound_persona_id and "persona_id" in overrides and overrides["persona_id"] != current.bound_persona_id:
+                raise ChatError("PERSONA_LOCKED", "This Session is bound to its first Persona. Start a new Session to change identity.", 409)
+            policy_changed = ("memory_isolation" in values and values["memory_isolation"] != current.memory_isolation
+                or any(key in overrides and overrides[key] != getattr(current.overrides, key)
+                    for key in ("memory_enabled", "memory_learning")))
+            if policy_changed and self.memory:
+                self.memory.assert_character_idle(current.character_id)
         if current.kind == "normal" and "overrides" in values:
             values = {**values, "overrides": {**current.overrides.model_dump(exclude_none=True), **values["overrides"]}}
         candidate = parse_session({**current.model_dump(), **values})
         if candidate.kind == "normal":
             self.validate_settings(self.settings(candidate))
-        return self.sessions.update_session(session_id, values)
+        updated = self.sessions.update_session(session_id, values)
+        if policy_changed and self.memory:
+            self.memory.policy_changed(current.character_id)
+            updated = self.sessions.get_session(session_id)
+        return updated
 
     def assert_idle(self, session_id: str) -> None:
         if self.runs.has_unfinished(session_id=session_id):
             raise ChatError("SESSION_BUSY", "Cancel the active run before changing conversation history.", 409)
 
     def delete_persona(self, persona_id: str):
+        with self.mutation_lock:
+            return self._delete_persona(persona_id)
+
+    def _delete_persona(self, persona_id: str):
         persona = self.persona(persona_id)
         if persona.is_protected:
             raise ChatError("PERSONA_PROTECTED", "This Persona can be edited but cannot be deleted.", 409)
         if self.characters.references_persona(persona_id) or any(
-                s.kind == "normal" and s.overrides.persona_id == persona_id for s in self.sessions.list_sessions()):
+                s.kind == "normal" and (s.overrides.persona_id == persona_id or s.bound_persona_id == persona_id)
+                for s in self.sessions.list_sessions()) or (self.memory and self.memory.has_persona(persona_id)):
             raise ChatError("PERSONA_IN_USE", "Select another Persona in its Characters and Sessions first.", 409)
         if self.runs.has_unfinished(persona_id=persona_id):
             raise ChatError("PERSONA_IN_USE", "This Persona is used by an unfinished run.", 409)
@@ -152,12 +180,17 @@ class ChatService:
             return self.resolve_qq(session)
         character = self.normal_character(session.character_id)
         settings = self.settings(session)
+        if session.bound_persona_id and persona_id is not None and persona_id != session.bound_persona_id:
+            raise ChatError("PERSONA_LOCKED", "The original input must match this Session's bound Persona.", 409)
         persona = self.persona(persona_id if persona_id is not None else settings.persona_id)
         overridden = session.overrides.model_dump(exclude_none=True)
         sources = {source: "session" if key in overridden else "character" for source, key in (
             ("persona", "persona_id"), ("context", "context_policy"), ("reasoning", "reasoning"),
             ("harness", "harness_enabled"), ("tools", "tools_allowed"),
-            ("knowledge", "knowledge_base_ids"), ("worldbook", "worldbook_ids"))}
+            ("knowledge", "knowledge_base_ids"), ("worldbook", "worldbook_ids"),
+            ("memory", "memory_enabled"), ("memory_learning", "memory_learning"))}
+        if session.bound_persona_id:
+            sources["persona"] = "binding"
         sources["temperature"] = "session" if "temperature" in overridden else "character" if character.temperature is not None else "model"
         generation, limits = self._model_configuration(settings.model_profile_id, settings.temperature)
         return ResolvedChatConfig(
@@ -168,12 +201,14 @@ class ChatService:
             model_profile_id=settings.model_profile_id,
             model_source="session" if "model_profile_id" in overridden else "character",
             generation=generation, reasoning=settings.reasoning, harness_enabled=settings.harness_enabled,
+            memory_enabled=settings.memory_enabled, memory_learning=settings.memory_learning,
             tools_allowed=settings.tools_allowed, knowledge_base_ids=settings.knowledge_base_ids,
             worldbook_ids=settings.worldbook_ids,
         )
 
     def tools_for_run(self, config: ResolvedChatConfig) -> list[str]:
         from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
+        from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES, MEMORY_READ_TOOLS
         allowed = list(config.tools_allowed)
         if config.session_kind == "qqbot":
             allowed = [name for name in allowed
@@ -182,6 +217,8 @@ class ChatService:
                 and (name != "qq_generate_image" or config.qq_image_generation_allowed)]
         if config.context_policy.strategy == "history_retrieval" and config.harness_enabled:
             allowed.extend(sorted(CONTEXT_TOOL_NAMES))
+        if config.session_kind == "normal" and config.harness_enabled and config.memory_enabled:
+            allowed.extend(sorted(MEMORY_TOOL_NAMES if config.memory_learning == "automatic" else MEMORY_READ_TOOLS))
         return allowed
 
     def session_response(self, session: Session) -> dict:

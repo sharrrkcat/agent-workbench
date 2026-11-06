@@ -640,6 +640,20 @@ class ModelManager:
         async with self._lease(profile, release=False) as adapter:
             return await budget.prepare(profile, request, adapter, self.reference_tokens)
 
+    async def limit_memory_context(self, profile_id, request, limits, trace):
+        """Apply the fact allowance before history reset or summary decisions."""
+        from ai_workbench.core.memory_context import memory_units
+        from ai_workbench.core.models.context_budget import ChatContextBudget
+        facts, calls = memory_units(request, trace)
+        if not facts and not calls:
+            return request, trace
+        profile = self.profile(profile_id, "llm")
+        request = await self._prepare_chat(profile, request)
+        budget = ChatContextBudget(limits, trace)
+        async with self._lease(profile, release=False) as adapter:
+            request = await budget.limit_memory(profile, request, adapter, self.reference_tokens)
+        return request, budget.trace
+
     async def chat(self, profile_id: str, request: ChatRequest, *, metrics: LLMCallMetrics | None = None, capture=None, budget=None):
         metrics = metrics or LLMCallMetrics()
         if metrics.started_at is None:

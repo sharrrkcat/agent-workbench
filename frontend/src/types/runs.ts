@@ -56,6 +56,7 @@ export type Run = {
   error_message?: string | null;
   error?: string | null;
   metadata?: Record<string, unknown> & {
+    memory?: { status: 'saved' | 'not_saved'; count: number; code?: string };
     qq_reply?: { sent_count: number; message_limit: number; limit_reached: boolean; skipped: boolean };
     compaction?: { operation?: 'reset'; status: 'compacted' | 'not_needed' | 'reset'; reason: 'no_history' | 'below_target' | null;
       input_tokens_before: number | null; input_tokens_after: number | null };

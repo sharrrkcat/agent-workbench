@@ -136,7 +136,7 @@ for (const locale of ['en', 'zh-CN']) {
         await row.hover();
         await row.locator('.session-menu').click();
         await page.getByRole('menuitem', { name: labels.deleteSession, exact: true }).click();
-        await answerConfirmation(page, true, locale);
+        await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Delete owner' : '删除归属对象', exact: true }).click();
         if (width === 390) await page.keyboard.press('Escape');
         await expect(page.locator('.chat-title')).toHaveText(labels.newSession);
         await expect(page.locator('.composer textarea')).toHaveValue('');

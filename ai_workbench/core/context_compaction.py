@@ -39,6 +39,7 @@ class ContextCompactionService:
             trace.exclusions.append(ContextExclusion(kind="history", reason="ineligible_history", count=total - eligible))
         checkpoint = self.sessions.get_context_checkpoint(session.session_id) if policy.strategy == "token_budget" else None
         if checkpoint and (checkpoint.history_version != session.history_version
+                           or checkpoint.memory_version != getattr(session, "memory_version", 0)
                            or checkpoint.include_attachments != policy.include_attachments):
             self.sessions.discard_context_checkpoint(session.session_id)
             checkpoint = None
@@ -179,6 +180,7 @@ class ContextCompactionService:
                 boundary_message_id=boundary.message_id if boundary else checkpoint.boundary_message_id,
                 boundary_qq_batch_id=boundary.qq_batch_id if boundary else checkpoint.boundary_qq_batch_id, covered_messages=covered,
                 history_version=session.history_version, include_attachments=policy.include_attachments,
+                memory_version=getattr(session, "memory_version", 0),
                 model_profile_id=profile.id, step_id=generator.last_step, input_tokens_before=original.input_tokens if exhausted else None,
                 input_tokens_after=0, counting=original.counting)
             final = await measure(kept, candidate)

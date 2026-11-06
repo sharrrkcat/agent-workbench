@@ -24,7 +24,7 @@ class MemoryHistoryStore:
         self.runs = runs
         self.run_events = run_events
 
-    def prune(self, session_id: str, change: HistoryPruned, updated: MessageSchema | None = None) -> None:
+    def prune(self, session_id: str, change: HistoryPruned, updated: MessageSchema | None = None, *, transaction=None) -> None:
         self.sessions.get_session(session_id)
         for message_id in change.deleted_message_ids:
             if self.messages.get_message(message_id).session_id != session_id:
@@ -135,7 +135,11 @@ class ConversationHistory:
                                deleted_run_ids=self.runs.existing_run_ids(session_id, run_ids))
         attachments = set(self.messages.attachment_filenames(session_id=session_id, message_ids=set(deleted)))
         snapshot_attachments = self.runs.context_attachment_ids(run_ids)
-        self.store.prune(session_id, change, updated)
+        memory_store = self.chat_service.memory.store
+        with memory_store.transaction(conversation=True) as db:
+            source_ids = set(deleted) | ({updated.message_id} if updated else set())
+            memory_store.invalidate_history(source_ids, run_ids, transaction=db)
+            self.store.prune(session_id, change, updated, transaction=db)
         self.events.emit("history_pruned", session_id=session_id, payload=change.model_dump())
         for attachment_id in snapshot_attachments | attachments:
             delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, self.messages,

@@ -16,11 +16,11 @@ the regular creation service. Neither default implies a personality. Protocol an
 remain application-owned. Persona avatars and Character avatars reference local attachments.
 
 Normal Characters own defaults for persona_id, model_profile_id, temperature, reasoning,
-context_policy, harness_enabled, tools_allowed, knowledge_base_ids and worldbook_ids. Sessions save
+context_policy, harness_enabled, tools_allowed, memory_enabled, memory_learning, knowledge_base_ids and worldbook_ids. Sessions save
 sparse overrides of those fields. PATCH omission preserves a field; null removes its override;
 false, zero and [] are explicit values. Lists and context policies replace whole values. Parent edits
 immediately affect inheriting Sessions, preserving explicit overrides. Responses expose effective
-configuration and character|session sources; temperature may have model source.
+configuration and character|session sources; bound Persona uses binding and temperature may use model.
 
 Default Persona is User, reasoning is true, Harness is false, resources are empty, and the tool list
 captures currently available general tools at Character creation. The tool list is a default,
@@ -36,8 +36,7 @@ model loading or inference.
 
 Knowledge and Worldbook mounts are configuration only. Normal chat, Harness, retry and compaction
 never retrieve, match, inject or budget mounted resources. Independent resource management, indexing,
-explicit Knowledge search and Worldbook match tests remain available. No long-term memory tables,
-isolation flags, extraction jobs or sharing operations are implemented.
+explicit Knowledge search and Worldbook match tests remain available. Durable memory below is independent of these mounts.
 
 New chat opens a local draft under its Character without creating a Session or WebSocket. First send
 creates the Session with all overrides atomically and submits captured input/attachments. Creation
@@ -55,9 +54,11 @@ and IME confirmation does not submit. [Runs/streaming](runs-streaming.md) owns a
 
 New normal user messages store the effective Persona in speaker_id; assistant messages store the
 fixed Character. History resolves current names/avatars by those ids, without per-message identity
-snapshots. Persona changes affect subsequent submissions only. Deleted historical Personas display a
-localized deleted label. Persona deletion is blocked by Character defaults, explicit Session
-selection and unfinished Runs, but historical references alone do not block it.
+snapshots. The first accepted normal input atomically binds bound_persona_id with its message and Run;
+attachment-only input and identity-bearing direct tools also bind. Rejected/unsent input does not.
+Failure, clearing history, default changes and override resets never unlock it. Name/background edits
+remain effective for later Runs. Bound Sessions and live memories block Persona deletion in addition
+to Character defaults, explicit selection and unfinished Runs. Historical labels retain deleted-source handling.
 
 Character deletion requires every execution, approval and QQ operation idle. It removes its Sessions
 and conversation state while preserving shared resources. Deleting the current normal Session selects
@@ -81,6 +82,43 @@ QQ Sessions accept title edits only; no Persona, ordinary overrides, mounts, Har
 Old Project and standalone Session creation/listing paths have no forwarding routes. Unknown/removed
 fields return 422; missing/conflicting references return structured 404/409. Waiting approval blocks
 new input/direct calls; overlapping execution returns SESSION_BUSY. Approval resumes the same Run.
+
+## Durable memory
+
+Each fact belongs to one Character and one Persona, optionally a Session. Character records stay local;
+General retains a source Character and crosses Characters only for the same Persona. There is no
+all-Persona audience. Manual records can omit Session; model records cannot.
+Original attribution is preserved separately from current ownership when records are transferred.
+Defaults are memory_enabled=true, memory_learning=manual, external isolation off and shared Sessions.
+Read/learning preferences follow Character defaults and sparse overrides; memory_isolation is Session state.
+Session modes shared/block_outgoing/block_incoming/isolated independently permit imports/exports.
+Own records remain eligible; incoming blocks exclude General. Character memory_external_isolation
+blocks General without blocking same-Character records. All existing active records follow current
+origin policy dynamically. Every read filters Persona, status and scope before scoring, counts and paging.
+History-off can still read enabled durable memory. Memory-off disables recall/model capture but keeps
+facts and manual management. Persona filters are context boundaries, not authenticated user accounts.
+Administrative /api/memories supports CRUD, origin_session_id filtering and selected-revision /{id}/publish; Session list/search
+and ID reads use /api/sessions/{id}/memories. Unknown/inaccessible IDs return the same unavailable error.
+Manual edits create user-managed records protected from model writes. General publication creates an
+independent version copy; local edits/isolation/deletion do not synchronize it. Repeating a live
+publication of the same source revision reuses it. Summary/body limits are 160/2,000 characters.
+Source edit/delete and producing-Run pruning make dependent model facts needs-review; user-managed
+facts are independent of source lifetime. Forget removes content/indexes, retaining body-free tombstones.
+Deleting normal owners uses memory-deletion-preview and explicit revision-checked choices. Session
+keep detaches Session ownership and makes all kept facts user-managed Character-shared records for
+the same Persona. Character keep requires transfer to another normal Character or publication to
+General. Existing General copies independently require keep/delete. Original IDs survive deleted
+sources; needs-review survives transfer. Memory and owner removal share the persistence transaction.
+Recall prefers pins, literal matches, then bounded recent facts; SQLite-local Latin words/CJK character
+n-grams share normalization with the in-memory store. No embedding or auxiliary extraction is required.
+Injected facts and retained memory-tool content share min(1,024 tokens, 10% of input budget, remaining
+capacity); model counting removes complete facts/tool pairs before history maintenance and dispatch. Memory is user-role evidence.
+[Harness](harness-tools.md#durable-memory-tools) owns model capture; [Runs](runs-streaming.md) owns commit outcomes.
+Memory references invalidate consuming checkpoints; version checks prevent stale summary commits.
+Memory-tool payloads are excluded from ordinary history and compaction. Saved request snapshots are
+inspection records. Old assistant prose can retain repeated facts; forgetting is not transcript erasure.
+Literal recall misses paraphrases; source presence does not prove entailment. QQ, vectors, automatic
+consolidation and auxiliary-model extraction remain deferred. Knowledge/Worldbook mounts stay inactive.
 
 ## Configuration snapshots and context
 

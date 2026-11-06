@@ -126,11 +126,8 @@ class CogitaRuntime:
             registry.validate_arguments(name, arguments)
         except ToolExecutionError as exc:
             raise ChatError(exc.code, exc.message, 404 if exc.code == "TOOL_NOT_FOUND" else 400) from exc
-        run = self.chat_runner.runs.create_run(
-            kind="tool", character_id=config.character_id, persona_id=config.persona_id, session_id=session.session_id,
-            metadata={"tool_name": name, "direct": True, "harness": True, "configuration": config.public_summary()},
-            config_snapshot=config.model_dump(mode="json"),
-        )
+        config, _, run = self.chat_runner.chat_service.acceptance.accept(session.session_id,
+            kind="tool", tool_name=name, resolved_config=config)
         if input_text is not None:
             self.chat_runner.set_input_title(session.session_id, input_text, [], run.run_id, auxiliary=False)
         return await self.chat_runner.harness_loop.direct(

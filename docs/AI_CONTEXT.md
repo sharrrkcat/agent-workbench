@@ -40,7 +40,10 @@ Character, Persona and execution configuration; historical messages retain origi
 Model steps retain LLM usage/timing and private per-call context/source/request snapshots.
 Internal normal/QQ chat budgets each call with rolling summaries, raw message windows or on-demand
 history checkpoints and bounded retrieval. Harness can summarize completed tool rounds. Idle normal
-`/compact` produces a cancellable Checkpoint event. These mechanisms do not implement long-term memory.
+`/compact` produces a cancellable Checkpoint event. Independent durable facts belong to a Character and Persona,
+optionally a Session; current Session isolation controls sharing. General publication is manual and still Persona-specific.
+Normal Sessions bind Persona at first accepted input. Memory supports manual management, bounded literal recall
+and opt-in main-model Harness writes staged until success, without auxiliary inference or embeddings. QQ memory is deferred.
 Built-in tools share direct/model invocation, bounded execution and durable approvals; `/v1` forwards
 tool data without execution. AnySearch search/fetch retain filters, budgets, guarded extraction,
 cached pagination, dates, citations, Sources and dedicated web steps.
@@ -57,7 +60,7 @@ Pet has position, dragging and task-state foundations only, with no mounted UI.
 - [Harness/tools](contracts/harness-tools.md): direct calls, loops, permissions, approval.
 - [Knowledge](contracts/knowledge.md): sources, indexing, hybrid retrieval and rerank.
 - [Runs/streaming](contracts/runs-streaming.md): status, WS/SSE, persistence, reconciliation.
-- [Settings](contracts/settings.md): strict ownership, six sidebar domains, Pet foundations.
+- [Settings](contracts/settings.md): strict ownership, seven sidebar domains, memory management, Pet foundations.
 - [QQBot](contracts/qqbot.md): OneBot conversations, triggers, media, tools, delivery, UI and acceptance limits.
 - [Farkle](contracts/farkle.md): game rules, dice, opponent, economy, browser storage and rendering.
 

@@ -16,7 +16,7 @@ from ai_workbench.api.deps import RuntimeState, build_runtime_state
 from ai_workbench.api.routes import attachments, data, health, knowledge, models, messages, openai_compatible, pets, runs, runtime, sessions, settings, worldbook, tools
 from ai_workbench.api.ws import router as ws_router
 from ai_workbench.api.routes import runtimes
-from ai_workbench.api.routes import personas, characters, history, qq
+from ai_workbench.api.routes import personas, characters, history, qq, memories
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.models.http import InferenceObservabilityMiddleware
 from ai_workbench.core.models.errors import ModelError
@@ -128,6 +128,7 @@ def create_app(
     app.include_router(sessions.router)
     app.include_router(personas.router)
     app.include_router(characters.router)
+    app.include_router(memories.router)
     app.include_router(qq.router)
     app.include_router(tools.router)
     app.include_router(history.router)

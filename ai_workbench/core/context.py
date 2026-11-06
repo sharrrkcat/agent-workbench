@@ -14,6 +14,7 @@ from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextS
 from ai_workbench.core.user_persona_context import build_user_persona_context
 from ai_workbench.core.web_render import web_model_text
 from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
+from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
 
 
 class ContextBuildResult(BaseModel):
@@ -110,7 +111,7 @@ def message_text(message: Any, *, include_attachments: bool = True, attachment_s
     for part in getattr(message,"parts",[]) or []:
         if not isinstance(part,dict): continue
         kind=part.get("type")
-        if kind in {"tool_call", "tool_result"} and part.get("tool_name") in CONTEXT_TOOL_NAMES:
+        if kind in {"tool_call", "tool_result"} and part.get("tool_name") in CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES:
             continue
         if not include_attachments and kind in {"file", "image", "audio", "video", "media_group"}:
             continue

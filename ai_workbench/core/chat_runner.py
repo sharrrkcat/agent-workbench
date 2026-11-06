@@ -32,6 +32,9 @@ from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.instructions import UiLanguage, date_instruction
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.web_tools import WEB_TOOL_NAMES
+from ai_workbench.core.durable_memory import DurableMemory, MEMORY_INSTRUCTION
+from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
+from ai_workbench.core.harness.schema import ToolExecutionError
 
 
 class ChatRunner:
@@ -61,13 +64,16 @@ class ChatRunner:
         self.active_runs = active_runs
         self.chat_service = chat_service
         self.qq_store = qq_store
+        self.durable_memory = DurableMemory(chat_service.memory, runs, model_manager)
         self.harness_loop = HarnessAgentLoop(
             sessions=sessions, messages=messages, runs=runs, events=events, model_manager=model_manager,
             registry=tool_registry, active_runs=active_runs, web_tools=web_tools,
             allowed_tools=chat_service.tools_for_run,
+            durable_memory=self.durable_memory,
         ) if tool_registry is not None else None
         self.retrieval = HistoryRetrieval(sessions, messages, runs, events, model_manager)
         if tool_registry is not None:
+            self.durable_memory.register(tool_registry)
             RetrievalTools(sessions, messages, runs, qq_store, self.retrieval).register(tool_registry)
             self.harness_loop.retrieval = self.retrieval
         self.context_builder = ContextBuilder(messages)
@@ -97,23 +103,10 @@ class ChatRunner:
             if existing.session_id != session_id or existing.role != "user":
                 raise ChatError("MESSAGE_SESSION_MISMATCH", "Input must be a user message from this session.")
 
-        self.chat_service.assert_idle(session_id)
-        config = resolved_config if resolved_config is not None else self.chat_service.resolve(session, persona_id=persona_id)
-        if input_message_id:
-            user = self.messages.get_message(input_message_id)
-        else:
-            user = self.messages.add_message(
-                session_id=session_id, role="user", content=raw_text, speaker_id=config.persona_id,
-                metadata={"attachments": attachments, "client_message_id": client_message_id or None, "input_source": "chat"},
-            )
-        run = self.runs.create_run(
-            kind="chat", character_id=config.character_id, persona_id=config.persona_id, session_id=session_id,
-            metadata={"input_message_id": user.message_id,
-                      "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed),
-                      **({"qq_reply": {"sent_count": 0, "message_limit": config.qq_reply_message_limit,
-                                       "limit_reached": False, "skipped": False}} if session.kind == "qqbot" else {})},
-            config_snapshot=config.model_dump(mode="json"),
-        )
+        config, user, run = self.chat_service.acceptance.accept(session_id, text=raw_text, attachments=attachments,
+            input_message_id=input_message_id, client_message_id=client_message_id,
+            persona_id=persona_id, resolved_config=resolved_config)
+        memory_work = self.durable_memory.start(run, config)
         if on_run_created:
             on_run_created(run.run_id)
         self.set_input_title(session_id, raw_text, attachments, user.message_id)
@@ -208,6 +201,9 @@ class ChatRunner:
             if qq and user.metadata["qq_trigger_kind"] not in {"followup", "icebreaker"}:
                 allowed = [name for name in allowed if name != "qq_skip_reply"]
             tools = request_tools(self.harness_loop.registry, allowed, qq=qq) if use_harness else None
+            if MEMORY_TOOL_NAMES.intersection(allowed):
+                context, memory_source = append_system_block(context, context_trace, MEMORY_INSTRUCTION, "instruction")
+                memory_source.id = "memory-instruction"
             instruction = date_instruction(ui_language, date.fromisoformat(web_date)) if WEB_TOOL_NAMES.intersection(allowed) else ""
             max_image_bytes = self.app_settings.get().max_image_size_mb * 1024 * 1024
             context_service = self.retrieval if config.context_policy.strategy == "history_retrieval" else self.compaction
@@ -224,6 +220,12 @@ class ChatRunner:
                 raise ModelError("TOOL_RUN_TIMEOUT", "Harness execution exceeded 5 minutes.", 408) from exc
             if warning:
                 warnings.append(warning)
+            if memory_work is not None:
+                window = config.context_limits.window_tokens or 0
+                margin = 32 if profile.source.type == "local" else max(128, (window + 9) // 10)
+                capacity = max(0, window - (config.context_limits.output_tokens or 0) - margin)
+                context, context_trace = self.durable_memory.recall(context, context_trace, memory_work, raw_text, capacity,
+                    include_evidence_ids="memory_write" in allowed)
             if any(item.reason == "images_unsupported" for item in context_trace.exclusions) and "images_ignored" not in warnings:
                 warnings.append("images_ignored")
             if warnings:
@@ -249,6 +251,7 @@ class ChatRunner:
                                                      max_image_bytes=self.app_settings.get().max_image_size_mb * 1024 * 1024,
                                                      active_seconds=time.monotonic() - context_started, first_metrics=first_metrics,
                                                      web_date=web_date, summary_reasoning=chat_reasoning_mode(profile, support, False),
+                                                     memory_work=memory_work,
                                                      on_dispatch=on_dispatch)
                 if result.success and self.runs.get_run(run.run_id).status == RunStatus.DONE:
                     await self.maybe_title(session_id, raw_text, user.message_id)
@@ -280,7 +283,11 @@ class ChatRunner:
             metrics = first_metrics
             budget = ChatContextBudget(config.context_limits, context_trace,
                 allow_pruning=config.context_policy.strategy == "message_window" or not config.context_policy.compaction.enabled)
-            capture = capture_context(self.runs, model_step.step_id, budget.trace, profile, config.context_policy, budget=budget)
+            save_capture = capture_context(self.runs, model_step.step_id, budget.trace, profile, config.context_policy, budget=budget)
+            def capture(payload):
+                self.durable_memory.check(memory_work)
+                self.durable_memory.capture_evidence(memory_work, budget.trace)
+                save_capture(payload)
             try:
                 if streamed:
                     async with aclosing(self.model_manager.chat_stream(profile.id, request, metrics=metrics, capture=capture, budget=budget)) as stream:
@@ -339,7 +346,7 @@ class ChatRunner:
             )
             await self.maybe_title(session_id, raw_text, user.message_id)
             return RunResult(success=True, run_id=run.run_id, data=draft.text)
-        except (ModelError, ChatError) as exc:
+        except (ModelError, ChatError, ToolExecutionError) as exc:
             if draft is not None:
                 draft.persist(incomplete=True)
             self._fail_step(active_step_id, exc.code, exc.message)

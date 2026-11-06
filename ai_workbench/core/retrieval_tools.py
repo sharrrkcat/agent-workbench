@@ -9,6 +9,7 @@ from ai_workbench.core.qq_context import QQContextHistory
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES, RetrievalCheckpoint
+from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
 
 
 def clip_text(text, offset, limit, count_tokens):
@@ -65,6 +66,14 @@ class RetrievalTools:
             record = reader.read(args["source_id"])
             offset = args.get("offset", 0)
             text, next_offset = clip_text(record["text"], offset, min(allowance, args.get("max_tokens", 4096)), count_tokens)
+            if state.memory is not None and offset == 0 and next_offset is None and args["source_id"].startswith("message:"):
+                from ai_workbench.core.memory_service import message_digest
+                from ai_workbench.core.schema.memory import MemoryEvidence
+                source = self.messages.get_message(args["source_id"][8:])
+                if (source.role == "user" and source.session_id == context.session_id
+                    and source.speaker_id == state.memory.view.persona_id
+                    and source.message_id not in {item.message_id for item in state.memory.evidence}):
+                    state.memory.evidence.append(MemoryEvidence(message_id=source.message_id, digest=message_digest(source)))
             return {"source_id": record["source_id"], "text": text, "offset": offset,
                 "next_offset": next_offset, "truncated": next_offset is not None}
         if operation == "context_checkpoint_update":
@@ -144,7 +153,7 @@ class RetrievalReader:
         calls = {}
         for item in self.state.transcript:
             for call in item.get("tool_calls", []):
-                if call["function"]["name"] not in CONTEXT_TOOL_NAMES:
+                if call["function"]["name"] not in CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES:
                     calls[call["id"]] = call
             if item.get("role") == "tool" and item.get("tool_call_id") in calls:
                 call = calls[item["tool_call_id"]]
@@ -193,7 +202,7 @@ class RetrievalReader:
                 row = None
             current = not self.qq and row and self.current and row.message_id == self.current.message_id
             completed = row and row.run_id == self.context.run_id and any(m.get("tool_call_id") == row.metadata.get("tool_call_id")
-                for m in self.state.transcript if m.get("role") == "tool") and row.metadata.get("tool") not in CONTEXT_TOOL_NAMES
+                for m in self.state.transcript if m.get("role") == "tool") and row.metadata.get("tool") not in CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES
             if row and row.session_id == self.context.session_id and (current or completed or (not self.qq and self.work.history_enabled
                     and _eligible(row) and (self.current is None or (row.created_at, row.message_id) < (self.current.created_at, self.current.message_id)))):
                 text = message_text(row, include_attachments=self.policy.include_attachments == "explicit")

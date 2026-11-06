@@ -9,6 +9,7 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.schema import ChatMessage
 from ai_workbench.core.schema.compaction import RunCompactionState
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource
+from ai_workbench.core.memory_context import strip_memory_transcript
 
 
 class HarnessCompaction:
@@ -37,6 +38,7 @@ class HarnessCompaction:
             return selected, budget
 
         original, original_trace = compose()
+        original, original_trace = await self.models.limit_memory_context(profile.id, original, config.context_limits, original_trace)
         policy = config.context_policy
         if policy.strategy != "token_budget" or not policy.compaction.enabled or not state.transcript:
             return original, original_trace, None
@@ -67,7 +69,8 @@ class HarnessCompaction:
             # Prefer the smallest completed prefix that leaves a recent suffix.
             end = latest
             for candidate_end in ends:
-                candidate_request, _ = compose(None, candidate_end)
+                candidate_request, candidate_trace = compose(None, candidate_end)
+                candidate_request, _ = await self.models.limit_memory_context(profile.id, candidate_request, config.context_limits, candidate_trace)
                 count = await self.models.measure_chat(profile.id, candidate_request, config.context_limits)
                 if count.input_tokens <= target:
                     end = candidate_end
@@ -78,7 +81,7 @@ class HarnessCompaction:
             output=output, scope="run", on_dispatch=on_dispatch)
 
         def texts(begin, stop):
-            for message in state.transcript[begin:stop]:
+            for message in strip_memory_transcript(state.transcript[begin:stop]):
                 # Tool results already contain the bounded web evidence projection.
                 projected = {key: value for key, value in message.items() if key != "reasoning_content"}
                 if message["role"] == "assistant" and message.get("content"):
@@ -95,6 +98,7 @@ class HarnessCompaction:
                     covered_tool_calls=sum(len(item.get("tool_calls", [])) for item in state.transcript[:end]),
                     model_profile_id=profile.id, step_id=generator.last_step)
                 request, provenance = compose(candidate, end)
+                request, provenance = await self.models.limit_memory_context(profile.id, request, config.context_limits, provenance)
                 full = await self.models.measure_chat(profile.id, request, config.context_limits)
                 if full.input_tokens >= initial.input_tokens:
                     raise ModelError("CONTEXT_COMPACTION_FAILED", "The summary did not reduce this tool transcript.", 422)

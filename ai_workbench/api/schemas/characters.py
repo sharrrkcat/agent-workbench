@@ -7,6 +7,7 @@ from pydantic import Field, RootModel
 from ai_workbench.api.schemas.common import ApiModel, patch_model, public_model
 from ai_workbench.core.schema.character import NormalCharacterInput, NormalCharacter, QQBotInput, QQBotCharacter
 from ai_workbench.core.schema.chat_config import SessionOverrides
+from ai_workbench.core.schema.memory import MemoryIsolation
 
 
 _protected = {"is_protected": (bool, Field(json_schema_extra={"readOnly": True}))}
@@ -31,6 +32,7 @@ class CharacterDeleted(ApiModel):
 class NormalSessionCreate(ApiModel):
     title: str = Field(default="", max_length=120)
     overrides: SessionOverrides = Field(default_factory=SessionOverrides)
+    memory_isolation: MemoryIsolation = "shared"
 
 
 class QQSessionCreate(ApiModel):

@@ -139,6 +139,9 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
         </div>
       ) : null}
       <WebSources sources={citedSources} runId={run.run_id} />
+      {run.metadata?.memory ? <Marker data-memory-outcome={run.metadata.memory.status}><MarkerContent>
+        {t(`memory:outcomes.${run.metadata.memory.status}`, { count: run.metadata.memory.count })}
+      </MarkerContent></Marker> : null}
       {ended || run.status === 'WAITING_FOR_USER' ? <ReplyMetrics reply={reply} readOnly={readOnly} deleteAction={deleteAction} /> : null}
     </MessageFrame>
   );

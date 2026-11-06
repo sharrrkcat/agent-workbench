@@ -57,6 +57,7 @@ class SqlSessionStore:
     def save_retrieval_state(self, value):
         with DbSession(self.engine) as db:
             matched = db.execute(update(SessionRecord).where(SessionRecord.session_id == value.session_id,
+                SessionRecord.memory_version == value.memory_version,
                 SessionRecord.history_version == value.history_version).values(history_version=SessionRecord.history_version))
             if matched.rowcount != 1:
                 return False
@@ -77,6 +78,7 @@ class SqlSessionStore:
     def save_context_checkpoint(self, checkpoint: ContextCheckpoint) -> bool:
         with DbSession(self.engine) as db:
             matched = db.execute(update(SessionRecord).where(SessionRecord.session_id == checkpoint.session_id,
+                SessionRecord.memory_version == checkpoint.memory_version,
                 SessionRecord.history_version == checkpoint.history_version).values(history_version=SessionRecord.history_version))
             if matched.rowcount != 1:
                 return False
@@ -407,9 +409,15 @@ class SqlRunStore:
         with DbSession(self.engine) as db:
             return {attachment for value in db.exec(statement).yield_per(128) for attachment in json.loads(value)}
 
-    def create_run(self, kind: str, character_id: str, persona_id: str | None, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
+    def create_run(self, kind: str, character_id: str, persona_id: str | None, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None, transaction=None) -> RunSchema:
         row = RunRecord(run_id=str(uuid4()), kind=kind, character_id=character_id, persona_id=persona_id, config_snapshot_json=_dump(config_snapshot or {}), harness_state_json=_dump(harness_state or {}), session_id=session_id, status=RunStatus.PENDING.value, metadata_json=_dump(metadata or {}))
-        with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
+        with nullcontext(transaction) if transaction is not None else DbSession(self.engine) as db:
+            db.add(row)
+            if transaction is None:
+                db.commit()
+            else:
+                db.flush()
+            db.refresh(row)
         return _run(row)
 
     def get_config_snapshot(self, run_id: str) -> dict:
@@ -782,6 +790,9 @@ class SqlKnowledgeStore:
 
 def _session(row: SessionRecord) -> Session:
     values = row.model_dump()
+    if row.kind == "qqbot":
+        for key in ("bound_persona_id", "memory_isolation", "memory_version"):
+            values.pop(key)
     values.update(json.loads(values.pop("configuration_json")))
     values["title_generation_metadata"] = json.loads(values.pop("title_generation_metadata_json"))
     return parse_session(values)
@@ -790,7 +801,7 @@ def _session(row: SessionRecord) -> Session:
 def _session_record_values(session: Session) -> dict:
     values = session.model_dump()
     configuration = {key: values.pop(key) for key in list(values)
-                     if key not in SessionBase.model_fields and key not in {"kind", "character_id"}}
+                     if key not in SessionBase.model_fields and key not in {"kind", "character_id", "bound_persona_id", "memory_isolation", "memory_version"}}
     values["configuration_json"] = _dump(configuration)
     values["title_generation_metadata_json"] = _dump(values.pop("title_generation_metadata"))
     return values

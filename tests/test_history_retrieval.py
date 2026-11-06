@@ -37,7 +37,7 @@ def test_empty_business_tools_support_checkpoint_and_private_history(harness_cli
     result = send(client, session, 'The budget is 47 EUR')
     assert result['success'], result
     assert len(seen) == 2
-    assert {tool['function']['name'] for tool in seen[0]['tools']} == CONTEXT_TOOL_NAMES
+    assert {tool['function']['name'] for tool in seen[0]['tools']} == CONTEXT_TOOL_NAMES | {'memory_list', 'memory_read', 'memory_search'}
     saved = state.sessions.get_retrieval_state(session['session_id'])
     assert saved.memory.text == 'SECRET_MEMORY: budget 47 EUR'
     assert state.runs.get_harness_state(result['run']['run_id']) == {}

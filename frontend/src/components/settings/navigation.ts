@@ -1,6 +1,6 @@
 import { modelKinds } from '../../types/models';
 
-export const settingsSections = ['general', 'models', 'personas', 'knowledge', 'worldbook', 'tools'] as const;
+export const settingsSections = ['general', 'models', 'personas', 'memory', 'knowledge', 'worldbook', 'tools'] as const;
 export type SettingsSection = (typeof settingsSections)[number];
 
 export const modelViews = ['dashboard', ...modelKinds, 'providers', 'localRuntime'] as const;
@@ -13,6 +13,7 @@ export type SettingsRoute =
   | { section: 'models'; view: ModelView }
   | { section: 'knowledge' | 'worldbook'; view: ResourceView }
   | { section: 'personas'; view?: never }
+  | { section: 'memory'; view?: never }
   | { section: 'tools'; view: ToolView }
   | { section: 'general'; view?: never };
 export type NavigationTarget = { pathname: string; search: string };
@@ -40,6 +41,7 @@ export const settingsGroups: {
     id: 'content',
     menus: [
       { id: 'personas', section: 'personas', label: 'personas', pages: [{ section: 'personas' }] },
+      { id: 'memory', section: 'memory', label: 'memory:title', pages: [{ section: 'memory' }] },
       { id: 'knowledge', section: 'knowledge', label: 'knowledge', pages: resourceViews.map((view) => ({ section: 'knowledge', view })) },
       { id: 'worldbook', section: 'worldbook', label: 'worldbook', pages: resourceViews.map((view) => ({ section: 'worldbook', view })) },
     ],
@@ -67,6 +69,7 @@ export function settingsPageLabel(route: SettingsRoute): string {
   if (route.section === 'models') return route.view === 'dashboard' || route.view === 'providers' || route.view === 'localRuntime'
     ? `llm:${route.view}` : `llm:kinds.${route.view}`;
   if (route.section === 'personas') return 'personas:personasTitle';
+  if (route.section === 'memory') return 'memory:title';
   if (route.section === 'tools') return `settings:toolGroups.${route.view}`;
   if (route.section === 'knowledge' || route.section === 'worldbook')
     return `settings:resources.${route.view}`;
@@ -74,6 +77,7 @@ export function settingsPageLabel(route: SettingsRoute): string {
 }
 
 export function settingsMenuLabel(route: SettingsRoute): string {
+  if (route.section === 'memory') return 'memory:title';
   return route.section === 'models' && (route.view === 'providers' || route.view === 'localRuntime')
     ? 'providersRuntime' : route.section;
 }

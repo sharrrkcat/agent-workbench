@@ -37,7 +37,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0052_characters_personas`; current tables follow the SQLModel schema.
+Alembic head is `0053_durable_memory`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -50,6 +50,14 @@ columns to character_id. Runs store both identities. It seeds User with empty ba
 bootstrap creates protected Cogita once with empty prompt and one-time model/tool defaults.
 Model/Provider profiles, global settings, Knowledge/Worldbook catalogs, independent sources/indexes,
 shared QQ assets and all data directories remain. There is no conversion or filesystem cleanup.
+
+Revision `0053_durable_memory` recreates only disposable normal conversations that predate permanent
+Persona binding. It removes their messages, Runs/steps/events, working checkpoints and session web
+associations, preserving Character/Persona configuration, QQ state and all data directories. Session
+columns store bound Persona, directional memory policy and view revision. durable_memories owns
+current content/version and body-free deleted markers; durable_memory_terms is a derived local index;
+evidence and dependency relations invalidate facts/checkpoints. Publication copies and original IDs
+survive deleted origins. No mixed-Persona conversion, file deletion or embedding installation occurs.
 
 The default `data/cogita.db` is initialized independently, with fresh settings,
 model/provider profiles and runtime registration. Other database files are not

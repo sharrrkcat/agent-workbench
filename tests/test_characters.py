@@ -88,7 +88,7 @@ def test_model_selection_is_saved_once_and_overrides_replace_defaults(client_pai
     assert client.patch(path, json={"overrides": {"reasoning": "false"}}).status_code == 422
 
 
-def test_persona_switch_and_original_author_retry_edit(client_pair):
+def test_bound_persona_ignores_parent_changes_and_preserves_retry_identity(client_pair):
     client, upstream, state = client_pair
     configure_model(client)
     a = ok(client.post("/api/personas", json={"name": "A", "background": "A_BACKGROUND"}))
@@ -102,15 +102,18 @@ def test_persona_switch_and_original_author_retry_edit(client_pair):
     assert (run["character_id"], run["persona_id"]) == (owner["id"], a["id"])
     user, assistant = history_messages(ok(client.get(path + "/history")))
     assert (user["speaker_id"], assistant["speaker_id"]) == (a["id"], owner["id"])
-    ok(client.patch(path, json={"overrides": {"persona_id": b["id"]}}))
+    assert client.patch(path, json={"overrides": {"persona_id": b["id"]}}).status_code == 409
+    assert client.patch(path, json={"overrides": {"persona_id": None}}).status_code == 409
+    ok(client.patch(f"/api/characters/{owner['id']}", json={"persona_id": b["id"]}))
     ok(client.post(path + "/messages", json={"content": "second"}))
     request = json.dumps(upstream.calls[-1])
-    assert a["id"] in request and b["id"] in request
-    assert "B_BACKGROUND" in request and "A_BACKGROUND" not in request
+    assert a["id"] in request and b["id"] not in request
+    assert "A_BACKGROUND" in request and "B_BACKGROUND" not in request
     ok(client.patch(f"/api/personas/{a['id']}", json={"name": "A renamed", "background": "A_CURRENT"}))
     retried = ok(client.post(f"/api/runs/{run['run_id']}/retry"))
     assert retried["success"] and retried["run"]["persona_id"] == a["id"]
-    assert ok(client.get(path))["persona"]["id"] == b["id"]
+    assert ok(client.get(path))["persona"]["id"] == a["id"]
+    assert child(client, owner)["persona"]["id"] == b["id"]
     assert "A_CURRENT" in json.dumps(upstream.calls[-1])
     assert history_messages(ok(client.get(path + "/history")))[0]["speaker_id"] == a["id"]
     edited = ok(client.post(f"/api/messages/{user['message_id']}/edit", json={"content": "revised", "attachment_ids": []}))
@@ -119,22 +122,23 @@ def test_persona_switch_and_original_author_retry_edit(client_pair):
     assert "A_CURRENT" not in json.dumps(edited)
 
 
-def test_deleted_original_persona_fails_before_pruning(client_pair):
+def test_bound_persona_survives_cleared_history_and_blocks_deletion(client_pair):
     client, _, _ = client_pair
     configure_model(client)
     a = ok(client.post("/api/personas", json={"name": "Temporary"}))
     owner = character(client)
     session = child(client, owner, persona_id=a["id"])
     path = f"/api/sessions/{session['session_id']}"
-    reply = ok(client.post(path + "/messages", json={"content": "first"}))
+    ok(client.post(path + "/messages", json={"content": "first"}))
     user = history_messages(ok(client.get(path + "/history")))[0]
     assert client.delete(f"/api/personas/{a['id']}").status_code == 409
-    ok(client.patch(path, json={"overrides": {"persona_id": None}}))
+    ok(client.delete(f"/api/messages/{user['message_id']}"))
+    assert history_messages(ok(client.get(path + "/history"))) == []
+    assert client.patch(path, json={"overrides": {"persona_id": None}}).status_code == 409
+    assert ok(client.get(path))["bound_persona_id"] == a["id"]
+    assert client.delete(f"/api/personas/{a['id']}").status_code == 409
+    ok(client.delete(path))
     ok(client.delete(f"/api/personas/{a['id']}"))
-    before = ok(client.get(path + "/history"))
-    assert client.post(f"/api/runs/{reply['run']['run_id']}/retry").status_code == 404
-    assert client.post(f"/api/messages/{user['message_id']}/edit", json={"content": "edited", "attachment_ids": []}).status_code == 404
-    assert ok(client.get(path + "/history")) == before
 
 
 def test_resource_mounts_replace_and_never_enter_chat(client_pair, monkeypatch):
@@ -177,7 +181,7 @@ def test_active_run_snapshot_and_tool_defaults_are_not_a_ceiling(client_pair):
     snapshot = state.runs.get_config_snapshot(result["run"]["run_id"])
     ok(client.patch(f"/api/characters/{owner['id']}", json={"system_prompt": "AFTER", "tools_allowed": []}))
     assert state.runs.get_config_snapshot(result["run"]["run_id"]) == snapshot
-    assert state.chat_service.tools_for_run(ResolvedChatConfig.model_validate(snapshot)) == ["test_approval"]
+    assert state.chat_service.tools_for_run(ResolvedChatConfig.model_validate(snapshot)) == ["test_approval", "memory_list", "memory_read", "memory_search"]
     assert client.delete(f"/api/characters/{owner['id']}").status_code == 409
     resumed = ok(client.post(f"/api/tools/approvals/{result['run']['run_id']}", json={"decision": "approve"}))
     assert resumed["run"]["status"] == "DONE"

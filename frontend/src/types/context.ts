@@ -8,7 +8,7 @@ export type ContextBudgetStats = {
 };
 export type ContextSummary = { available: true; message_count: number; tool_count: number; image_count: number;
   budget?: ContextBudgetStats | null };
-export type ContextSourceKind = 'system' | 'instruction' | 'character' | 'persona' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary' | 'context_memory' | 'context_retrieval';
+export type ContextSourceKind = 'system' | 'instruction' | 'character' | 'persona' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary' | 'context_memory' | 'context_retrieval' | 'durable_memory';
 export type ContextAttachment = Pick<Attachment, 'id' | 'name' | 'type' | 'mime_type' | 'size' | 'uri'>;
 export type RetrievalReference = { window_id: string; previous_window_id?: string | null; boundary_message_id?: string | null;
   boundary_qq_batch_id?: number | null; transcript_end: number; memory_id: string; progress_id?: string | null };

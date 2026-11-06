@@ -5,6 +5,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import type { Message } from '../../types/messages';
+import { SaveMemoryAction } from '../memory/SaveMemoryAction';
 
 export function MessageActions({
   message,
@@ -36,6 +37,7 @@ export function MessageActions({
 
   return (
     <div className="message-actions" data-editing={editing}>
+      {!editing ? <SaveMemoryAction messageId={message.message_id} text={message.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n')} disabled={streaming} /> : null}
       {isUser && !editing ? (
         <Tooltip>
           <TooltipTrigger

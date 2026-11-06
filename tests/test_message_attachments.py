@@ -102,7 +102,7 @@ def test_failed_edit_commit_preserves_history_metadata_and_files(chat, monkeypat
     before = history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))
     engine = getattr(state.history.store, "engine", None)
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise RuntimeError("injected edit failure")
 
     def fail_update(_connection, _cursor, statement, _parameters, _context, _many):

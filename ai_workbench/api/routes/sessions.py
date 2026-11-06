@@ -11,6 +11,8 @@ from ai_workbench.api.schemas.common import ApiModel, error_responses, patch_mod
 from ai_workbench.api.openapi import request_body
 from ai_workbench.api.errors import raise_error
 from ai_workbench.core.attachments import delete_attachment_if_unreferenced
+from ai_workbench.core.schema.memory import MemoryDeletionChoice
+from ai_workbench.api.memory_deletion import delete_normal_owner
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -24,7 +26,7 @@ class CompactSessionRequest(ApiModel):
 NormalSessionPatch = patch_model("NormalSessionPatch", NormalSessionCreate, fields={
     "title": (str, Field(default_factory=lambda: None, min_length=1, max_length=MAX_SESSION_TITLE_LENGTH)),
 })
-QQSessionPatch = patch_model("QQSessionPatch", NormalSessionCreate, omit={"overrides"}, fields={
+QQSessionPatch = patch_model("QQSessionPatch", NormalSessionCreate, omit={"overrides", "memory_isolation"}, fields={
     "title": (str, Field(default_factory=lambda: None, min_length=1, max_length=MAX_SESSION_TITLE_LENGTH)),
 })
 
@@ -65,12 +67,15 @@ async def update_session(session_id: str, payload: dict, state: RuntimeState = D
 
 
 @router.delete("/{session_id}", response_model=SessionDeleted, response_model_exclude_unset=True,
-    responses=error_responses(404, 409))
-async def delete_session(session_id: str, state: RuntimeState = Depends(get_state)) -> dict:
+    responses=error_responses(404, 409, 422))
+async def delete_session(session_id: str, payload: MemoryDeletionChoice | None = None, state: RuntimeState = Depends(get_state)) -> dict:
     session = _get_session_or_404(state, session_id)
     state.chat_service.assert_idle(session_id)
     state.qq.assert_idle(session_id)
-    delete_session_data(state, session_id)
+    if session.kind == "normal":
+        delete_normal_owner(state, payload or MemoryDeletionChoice(), session_id=session_id)
+    else:
+        delete_session_data(state, session_id)
     return {"deleted": True, "session_id": session.session_id}
 
 

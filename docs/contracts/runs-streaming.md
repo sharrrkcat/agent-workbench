@@ -21,7 +21,7 @@ QQ uses existing chat runs, inspection and cancellation. [QQBot](qqbot.md#tools-
 
 ChatRunner persists messages, runs, steps and events. Run/message metadata contains public ids, counts, timings, warnings and source refs, never prompts, full history/context, vectors, binaries or keys.
 Model resolution includes source_type and provider_profile_id (null for local/unbound); local worker traces carry source_type=local.
-config_snapshot_json and harness_state_json are private and absent from public responses/events. The latter preserves pending tool execution through approval.
+config_snapshot_json and harness_state_json are private and absent from public responses/events. The latter preserves pending tool execution and staged memory through approval. Successful normal Harness completion commits memory, its saved/not_saved outcome, terminal state and event together; conflicts preserve the answer. Events publish after commit; retries of terminal Runs cannot replay writes.
 
 session.waiting_run_id blocks new input/direct calls until explicit approval, rejection or cancellation. There is no implicit chat-resume path or resume kind.
 Valid pending approvals survive restart with their original configuration, remaining queue and active-time budget.
@@ -59,7 +59,7 @@ The processing header has no cancel button; cancellation remains in the composer
 (ceiling seconds, including zero), or Thought when timing is unknown, in both locales.
 Expansion shows full Markdown. Incoming deltas preserve manual expansion; an expanded
 live segment closes once, one second after thinking ends. Reopening it stays open.
-Internal context tools show localized operation/status only; arguments/results remain in private context details. General tool titles include their name and arguments: one value or compact key=value pairs, with nested JSON. Long titles truncate; pending confirmation retains full arguments.
+Internal context/memory tools show localized operation/status only; arguments/results remain in private context details. Staged memory shows pending, with saved/not_saved outcomes after completion. General tool titles include their name and arguments: one value or compact key=value pairs, with nested JSON. Long titles truncate; pending confirmation retains full arguments.
 Running/queued calls are plain Trace lines; general results start collapsed and show bounded output/errors and truncation notices.
 Web tools use specialized Trace steps: search titles contain the queries and successful details show only linked `title | hostname` Badges. Long page titles truncate while hostnames stay visible; missing titles show only the hostname. Tooltips and accessible labels retain the full label. Fetch details show bounded page text in a Code Block or an empty-content notice. Dates, query summaries, filter counts, cache/page metadata, separate related-link lists and remaining budgets are omitted from Trace. Titles reflect pending/running/failed/cancelled states in both locales; tool failures retain localized errors and empty searches show No results found.
 Web details start expanded inside processing history and remain independently collapsible. Replies containing web tools keep the processing content mounted so closing the outer clock preserves step choices. Fetched content remains scrollable text, bounded to 160px on desktop and 120px below 768px.

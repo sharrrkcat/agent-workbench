@@ -13,14 +13,14 @@ Character tools are defaults, not a permission ceiling; running/approval snapsho
 selection despite later edits. Registry permissions, approvals and scope checks still apply.
 Ordinary chat sends no tools
 and rejects unexpected calls with `UNEXPECTED_TOOL_CALL`. An enabled harness
-with an empty allowlist uses ordinary chat. Before the first model round, explicit local lack of tool support (unless its request_options skip is enabled) falls back to ordinary chat without sending or executing tools. The current user message gets a tools_ignored warning; saved Harness/allowlist settings do not change. Unknown support and providers pass through. Direct tool execution is independent of model checks. Public native-tool requests and incompatible approval continuations fail with UNSUPPORTED_CAPABILITY; existing tool results are never discarded to restart ordinary chat.
+with no business, context or memory tools uses ordinary chat. Before the first model round, explicit local lack of tool support (unless its request_options skip is enabled) falls back to ordinary chat without sending or executing tools. The current user message gets a tools_ignored warning; saved Harness/allowlist settings do not change. Unknown support and providers pass through. Direct tool execution is independent of model checks. Public native-tool requests and incompatible approval continuations fail with UNSUPPORTED_CAPABILITY; existing tool results are never discarded to restart ordinary chat.
 
 ## Registry and tools
 
 The registry contains only explicitly registered built-in Python tools. It
 does not load manifests, plugin directories or dynamic modules. Each ToolSpec
 has a lower snake_case name (at most 64 characters), description, Draft 2020-12
-object schema, handler, risk, requires_approval, direct_callable and scope (general or qqbot).
+object schema, handler, risk, requires_approval, direct_callable and scope (general, qqbot, context or memory).
 Session allowlists are unique and reference registered names.
 General-purpose built-ins support model and direct invocation through the same handler,
 schema, permissions, approval and persistence paths. MCP clients and ComfyUI
@@ -37,6 +37,31 @@ model loop. Invalid direct requests fail before creating a run.
 | web_fetch | url, optional focus/page | Automatic |
 
 [QQBot](qqbot.md) owns QQ-scoped tool arguments, availability, delivery behavior and media downloads.
+
+## Durable memory tools
+
+Normal Harness runs with memory reads enabled include memory_list, memory_search and memory_read,
+including when the business allowlist is empty. Automatic learning additionally includes memory_write
+and memory_forget. Memory tools are internal, absent from the general catalog, not directly/slash
+callable, and unavailable to QQ and public inference. Enabling learning never enables Harness.
+They consume existing business-round/time limits; no separate execution budget or auxiliary call is added.
+List/search return at most 20 summaries; read accepts at most eight IDs. Complete request counting
+bounds retained memory results with the [recall allowance](chat-context.md#durable-memory).
+Tools derive identity from the Run. Writes cite same-Session, same-Persona user text actually supplied
+to that Run; checkpoints, other memories, assistant guesses and unconfirmed tool outcomes are not evidence.
+At most eight mutations stage privately; subsequent own-ID reads see the overlay. New records cannot
+target General. Update/forget requires the expected revision and a model-managed current-Session record.
+Unknown/deleted IDs fail. Exact reuse never crosses origin/audience. Cross-Session corrections need user review.
+Results state pending; success atomically commits the validated batch and terminal outcome. Conflicts
+keep the answer with not_saved; failure/cancellation/interruption discard staging. Approval continuation
+retains candidates, rechecks current access and cannot replay a completed Run. Manual adoption protects
+facts. Tools and dispatch recheck revoked references; already-dispatched requests cannot be withdrawn.
+Private memory call/result payloads never become ordinary quoted history or compaction input.
+Creation omits id/revision; updates require both returned values. Only automatic-learning requests add
+user-message evidence IDs. Local Qwen3.5 0.8B/9B CUDA probes exercised confirmed capture, sibling recall
+and Persona isolation. The 0.8B model can repeatedly propose a transient disclaimer in a suggestion-only
+turn and exhaust the tool limit; failed Runs commit nothing. Same-Run exact duplicates reuse a candidate.
+Model tool reliability and semantic entailment remain limitations; literal recall misses paraphrases.
 
 ## Web tools
 
@@ -127,7 +152,7 @@ The final web-only dispatch guard stays below 6,000 characters even on unexpecte
 Normal results assign W1, W2, etc. only to displayed pages, reusing conservative URL keys within a run.
 Private continuation preserves the source map across approval. Answers cite current-run [W1] identities; QQ uses
 URLs without numbered citations. Existing tool_result parts/events and reply Sources own presentation.
-When either web tool is effective, Instruction contains only the localized run-start date and weekday,
+When either web tool is effective, the web Instruction contains the localized run-start date and weekday,
 before Character instructions; date/language stay fixed through approval. Tool descriptions own concise
 query/focus/recency/privacy guidance and distinguish retrieval from publication/event dates. Shared web
 content and citation rules appear once per request, on the first available web tool, including single-tool
