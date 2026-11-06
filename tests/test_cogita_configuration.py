@@ -1,4 +1,5 @@
 """Configuration cutover, fresh database selection and launcher boundaries."""
+from tests.chat_fixtures import create_chat
 import os
 import sys
 
@@ -96,7 +97,7 @@ def test_lan_web_and_events_are_available_but_public_inference_remains_local(tmp
     with TestClient(app, base_url=origin, client=("192.168.1.20", 40000), headers={"Origin": origin}) as client:
         for path in ("/", "/new", "/settings", "/assets/app.js", "/api/settings/general"):
             assert client.get(path).status_code == 200
-        session = client.post("/api/sessions", json={"title": "LAN chat"}).json()
+        session = create_chat(client, overrides={}, title="LAN chat").json()
         for path in ("/api/models/events", f"/api/ws/{session['session_id']}"):
             with client.websocket_connect(path) as websocket:
                 websocket.send_json({"type": "ping"})

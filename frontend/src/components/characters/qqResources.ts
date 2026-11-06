@@ -1,5 +1,5 @@
 import type { QQResourceQuery } from '../../api/qq';
-import { projectResourcesUrl } from './navigation';
+import { characterResourcesUrl } from './navigation';
 
 export function readResourceQuery(search: string): QQResourceQuery {
   const params = new URLSearchParams(search);
@@ -11,8 +11,8 @@ export function readResourceQuery(search: string): QQResourceQuery {
     favorite: favorite === 'favorites' || favorite === 'unfavorited' ? favorite : 'all' };
 }
 
-export function resourceQueryUrl(projectId: string, query: QQResourceQuery) {
-  return projectResourcesUrl(projectId) + '?' + new URLSearchParams({ ...query, page: String(query.page) });
+export function resourceQueryUrl(characterId: string, query: QQResourceQuery) {
+  return characterResourcesUrl(characterId) + '?' + new URLSearchParams({ ...query, page: String(query.page) });
 }
 
 export function resourcePages(page: number, total: number): Array<number | 'ellipsis'> {

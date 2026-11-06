@@ -1,21 +1,13 @@
-import type { ChatDraft, Persona } from '../../types/chat';
-import type { ModelProfile } from '../../types/models';
-import type { WorkspaceProject } from '../../types/projects';
+import type { ChatDraft, ChatDefaults, Persona } from '../../types/chat';
+import type { NormalCharacter } from '../../types/characters';
 
-export function defaultModelId(profiles: ModelProfile[], preferred: string | null | undefined) {
-  return profiles.find((p) => p.kind === 'llm' && p.enabled && p.id === preferred)?.id
-    ?? profiles.find((p) => p.kind === 'llm' && p.enabled)?.id ?? null;
+export function resolveDraft(draft: ChatDraft, character: NormalCharacter): ChatDefaults {
+  const overrides = Object.fromEntries(Object.entries(draft.overrides).filter(([, value]) => value != null));
+  return { ...character, ...overrides };
 }
 
-export function draftConfiguration(draft: ChatDraft, personas: Persona[], profiles: ModelProfile[],
-  preferred: string | null | undefined, project?: WorkspaceProject) {
-  const personaId = draft.kind === 'ordinary' ? draft.persona_id : draft.overrides.persona_id ?? project?.agent_persona_id;
-  return {
-    persona_name: personas.find((p) => p.id === personaId)?.name ?? '',
-    model_profile_id: draft.kind === 'ordinary' ? draft.model_profile_id
-      : draft.overrides.model_profile_id ?? project?.model_profile_id ?? defaultModelId(profiles, preferred),
-    context_policy: draft.kind === 'ordinary' ? draft.context_policy : draft.overrides.context_policy ?? project?.context_policy,
-    harness_enabled: draft.kind === 'ordinary' ? draft.harness_enabled : draft.overrides.harness_enabled ?? project?.harness_enabled ?? false,
-    reasoning: draft.kind === 'ordinary' ? draft.reasoning : draft.overrides.reasoning ?? true,
-  };
+export function draftConfiguration(draft: ChatDraft, personas: Persona[], character: NormalCharacter) {
+  const effective = resolveDraft(draft, character);
+  return { ...effective, character_name: character.name,
+    persona_name: personas.find((p) => p.id === effective.persona_id)?.name ?? '' };
 }

@@ -10,9 +10,10 @@ from ai_workbench.core.context_snapshot import append_system_block, prepend_syst
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.schema.context_snapshot import ContextSource, ContextTrace
-from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
+from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from tests.test_context_detail import details
-from tests.test_projects import workspace, child
+from tests.chat_fixtures import normal_character, child
 from tests.test_web_tools import web_env, configure
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import completion, ok, register_approval_tool, tool_call
@@ -27,19 +28,14 @@ def test_date_and_weekday_language(day, english, chinese):
 
 
 @pytest.mark.parametrize("language", ["en", "zh-CN"])
-@pytest.mark.parametrize("project", [False, True])
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("tools", [["web_search"], ["web_fetch"], ["web_fetch", "web_search"]])
-def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypatch, language, project, streaming, tools):
+def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypatch, language, streaming, tools):
     client, upstream, _ = web_env
     configure_model(client, request_options={"streaming": streaming})
     monkeypatch.setattr(chat_runner, "utc_now", lambda: datetime(2026, 10, 29, 12, tzinfo=timezone.utc))
-    ok(client.patch(f"/api/personas/{COGITA_PERSONA_ID}", json={"system_prompt": "AGENT😀\nSecond line"}))
-    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "USER background"}))
-    if project:
-        session = child(client, workspace(client, harness_enabled=True, tools_allowed=tools, system_prompt="PROJECT"))
-    else:
-        session = configure(client, harness_enabled=True, tools_allowed=tools)
+    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"background": "USER background"}))
+    session = child(client, normal_character(client, harness_enabled=True, tools_allowed=tools, system_prompt="CHARACTER😀\nSecond line"))
     upstream.turns = [completion(content="answer")]
     payload = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Research"},
                              headers={"X-UI-Language": language}))
@@ -49,15 +45,13 @@ def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypat
     sources = {source["kind"]: source for source in snapshot["sources"]}
     expected = date_instruction(language, date(2026, 10, 29))
     assert sources["instruction"]["text"] == expected
-    assert sources["instruction"]["parent_id"] == sources["agent_persona"]["parent_id"] == sources["system"]["id"]
+    assert sources["instruction"]["parent_id"] == sources["character"]["parent_id"] == sources["system"]["id"]
     assert sources["instruction"]["start"] == 0
-    assert sources["agent_persona"]["start"] == len(expected) + 2
-    assert sources["agent_persona"]["text"] == "AGENT😀\nSecond line"
-    assert "USER background" in sources["cogita_persona"]["text"]
+    assert sources["character"]["start"] == len(expected) + 2
+    assert sources["character"]["text"] == "CHARACTER😀\nSecond line"
+    assert "USER background" in sources["persona"]["text"]
     assert sources["current_input"]["text"] == "Research"
-    if project:
-        assert sources["project_prompt"]["text"] == "PROJECT"
-    assert snapshot["request"]["messages"][0]["content"].startswith(expected + "\n\nAGENT😀")
+    assert snapshot["request"]["messages"][0]["content"].startswith(expected + "\n\nCHARACTER😀")
     assert snapshot["budget"]["input_tokens"] > 0
     assert all(source["char_count"] == len(source["text"]) for source in snapshot["sources"])
     descriptions = "\n".join(tool["function"]["description"] for tool in snapshot["request"]["tools"])
@@ -104,18 +98,18 @@ def test_date_and_language_remain_fixed_across_approval(web_env, monkeypatch):
         assert snapshot["request"]["messages"][0]["content"].count("当前日期：") == 1
 
 
-def test_project_revocation_removes_instruction_from_next_round(web_env):
+def test_character_edits_preserve_instruction_in_running_snapshot(web_env):
     client, upstream, _ = web_env
     configure_model(client, request_options={"streaming": False})
     register_approval_tool(client.app.state.runtime_state.tool_registry)
-    project = workspace(client, harness_enabled=True, tools_allowed=["web_search", "test_approval"])
+    project = normal_character(client, harness_enabled=True, tools_allowed=["web_search", "test_approval"])
     session = child(client, project)
     upstream.turns = [completion(tool_call("test_approval", {"value": "pause"})), completion(content="resumed")]
     payload = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Hello"}))
     assert any(source["kind"] == "instruction" for source in details(client, payload["run"])[0]["sources"])
-    ok(client.patch(f"/api/projects/{project['id']}", json={"tools_allowed": ["test_approval"]}))
+    ok(client.patch(f"/api/characters/{project['id']}", json={"tools_allowed": ["test_approval"]}))
     payload = ok(client.post(f"/api/tools/approvals/{payload['run']['run_id']}", json={"decision": "approve"}))
-    assert all(source["kind"] != "instruction" for source in details(client, payload["run"])[-1]["sources"])
+    assert any(source["kind"] == "instruction" for source in details(client, payload["run"])[-1]["sources"])
 
 
 def test_retry_and_edit_use_current_interface_language(web_env):
@@ -138,14 +132,14 @@ def test_prepend_preserves_nested_offsets_and_fixed_history_slot():
     messages = [{"role": "system", "content": "old history"}, {"role": "user", "content": "question"}]
     trace = ContextTrace(sources=[ContextSource(id="history", kind="history", message_index=0, end=11, turn_id="old"),
                                  ContextSource(id="input", kind="current_input", message_index=1)])
-    messages, _ = append_system_block(messages, trace, "Knowledge", "knowledge")
-    trace.sources.append(ContextSource(id="snippet", kind="knowledge_snippet", parent_id="knowledge", message_index=0, start=13, end=22))
+    messages, _ = append_system_block(messages, trace, "Character", "character")
+    trace.sources.append(ContextSource(id="snippet", kind="persona", parent_id="character", message_index=0, start=13, end=22))
     before = messages[0]["content"]
     result, _ = prepend_system_block(messages, trace, "Today", "instruction")
     assert messages[0]["content"] == before
     for source in trace.sources:
         if source.id == "snippet":
-            assert result[0]["content"][source.start:source.end] == "Knowledge"
+            assert result[0]["content"][source.start:source.end] == "Character"
     budget = ChatContextBudget(ContextLimits(window_tokens=4096, output_tokens=512), trace)
     assert budget._history_groups() == []
     trace = ContextTrace(sources=[ContextSource(id="input", kind="current_input", message_index=0)])

@@ -1,21 +1,13 @@
-"""Persona/session validation and deterministic chat configuration resolution."""
-
-from sqlmodel import Session as DbSession, delete
+"""Identity validation and two-level Character/Session configuration resolution."""
 
 from ai_workbench.core.attachments import attachment_filename_from_id, attachment_mime_type, resolve_attachment_uri
 from ai_workbench.core.models.schema import GenerationParameters
 from ai_workbench.core.harness.schema import ToolExecutionError
-from ai_workbench.core.schema.persona import USER_PERSONA_ID, PersonaInput, ResolvedChatConfig
-from ai_workbench.core.schema.project import WorkspaceProject
+from ai_workbench.core.schema.chat_config import ChatDefaults, ResolvedChatConfig
+from ai_workbench.core.schema.character import NormalCharacter
 from ai_workbench.core.schema.qq import QQ_TOOLS
 from ai_workbench.core.web_tools import WEB_TOOL_NAMES
-from ai_workbench.core.schema.run import RunStatus
-from ai_workbench.core.session import ChatSettings, OrdinarySession, Session, WorkspaceSession, parse_session
-from ai_workbench.core.time import utc_now
-from ai_workbench.db.models import SessionRecord, SessionKnowledgeBindingRecord
-
-
-TERMINAL_RUNS = {RunStatus.DONE, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.INTERRUPTED}
+from ai_workbench.core.session import NormalSession, Session, parse_session
 
 
 class ChatError(Exception):
@@ -28,14 +20,11 @@ class ChatError(Exception):
 
 
 class ChatService:
-    def __init__(self, *, personas, projects, sessions, runs, model_manager, knowledge, worldbooks, tool_registry=None):
-        self.personas = personas
-        self.projects = projects
-        self.sessions = sessions
-        self.runs = runs
+    def __init__(self, *, personas, characters, sessions, runs, model_manager, knowledge, worldbooks, tool_registry=None):
+        self.personas, self.characters = personas, characters
+        self.sessions, self.runs = sessions, runs
         self.model_manager = model_manager
-        self.knowledge = knowledge
-        self.worldbooks = worldbooks
+        self.knowledge, self.worldbooks = knowledge, worldbooks
         self.tool_registry = tool_registry
 
     def persona(self, persona_id: str):
@@ -44,15 +33,28 @@ class ChatService:
         except KeyError as exc:
             raise ChatError("PERSONA_NOT_FOUND", "Persona does not exist.", 404) from exc
 
-    def validate_persona(self, values: PersonaInput) -> None:
-        if values.avatar_attachment_id is not None:
-            try:
-                attachment_filename_from_id(values.avatar_attachment_id)
-                path = resolve_attachment_uri(values.avatar_attachment_id)
-                if not path.is_file() or not attachment_mime_type(values.avatar_attachment_id).startswith("image/"):
-                    raise ValueError()
-            except ValueError as exc:
-                raise ChatError("PERSONA_AVATAR_INVALID", "Choose an existing image attachment.") from exc
+    def character(self, character_id: str):
+        try:
+            return self.characters.get(character_id)
+        except KeyError as exc:
+            raise ChatError("CHARACTER_NOT_FOUND", "Character does not exist.", 404) from exc
+
+    def normal_character(self, character_id: str) -> NormalCharacter:
+        character = self.character(character_id)
+        if character.kind != "normal":
+            raise ChatError("CHARACTER_KIND_INVALID", "Choose a normal Character for this conversation.", 422)
+        return character
+
+    def validate_avatar(self, attachment_id: str | None) -> None:
+        if attachment_id is None:
+            return
+        try:
+            attachment_filename_from_id(attachment_id)
+            path = resolve_attachment_uri(attachment_id)
+            if not path.is_file() or not attachment_mime_type(attachment_id).startswith("image/"):
+                raise ValueError()
+        except ValueError as exc:
+            raise ChatError("AVATAR_INVALID", "Choose an existing image attachment.") from exc
 
     def validate_tools(self, tools: list[str]) -> None:
         if set(tools).intersection(QQ_TOOLS):
@@ -61,84 +63,50 @@ class ChatService:
             try:
                 self.tool_registry.validate_allowlist(tools)
             except ToolExecutionError as exc:
-                if exc.code == "TOOL_NOT_ALLOWED":
-                    raise ChatError(exc.code, exc.message, 422) from exc
-                raise ChatError("TOOL_NOT_FOUND", "Session references an unknown tool.") from exc
+                raise ChatError(exc.code, exc.message, 422) from exc
 
-    def workspace(self, project_id: str) -> WorkspaceProject:
-        try:
-            project = self.projects.get(project_id)
-        except KeyError as exc:
-            raise ChatError("PROJECT_NOT_FOUND", "Project does not exist.", 404) from exc
-        if project.kind != "workspace":
-            raise ChatError("PROJECT_CHAT_UNAVAILABLE", "Timeline conversations are not available yet.", 409)
-        return project
+    def validate_bindings(self, kind: str, ids: list[str]) -> None:
+        store = self.knowledge if kind == "knowledge" else self.worldbooks
+        get = store.get_knowledge_base if kind == "knowledge" else store.get_worldbook
+        for value in ids:
+            try:
+                get(value)
+            except KeyError as exc:
+                raise ChatError("BINDING_NOT_FOUND", "A selected resource does not exist.", 404) from exc
 
-    def settings(self, session: Session) -> ChatSettings:
-        if session.kind == "ordinary":
-            return ChatSettings.model_validate(session.model_dump(include=set(ChatSettings.model_fields)))
-        project = self.workspace(session.project_id)
-        overrides = session.overrides.model_dump(exclude_none=True)
-        temperature = overrides.pop("temperature", project.temperature)
-        values = dict(model_profile_id=project.model_profile_id, persona_id=project.agent_persona_id,
-                      context_policy=project.context_policy, generation={"temperature": temperature},
-                      harness_enabled=project.harness_enabled, tools_allowed=project.tools_allowed)
-        values.update(overrides)
-        if values["model_profile_id"] is None:
-            profile = self.model_manager.default_chat_profile()
-            values["model_profile_id"] = profile.id if profile else None
-        values["tools_allowed"] = [name for name in values["tools_allowed"] if name in project.tools_allowed]
-        return ChatSettings.model_validate(values)
-
-    def selected_agent_id(self, session: Session) -> str:
-        if session.kind == "qqbot":
-            return self.projects.get(session.project_id).agent_persona_id or ""
-        return session.persona_id if session.kind == "ordinary" else (
-            session.overrides.persona_id or self.workspace(session.project_id).agent_persona_id)
-
-    def saved_model_id(self, session: Session) -> str | None:
-        if session.kind == "qqbot":
-            return None
-        return session.model_profile_id if session.kind == "ordinary" else session.overrides.model_profile_id
-
-    def validate_session(self, session: Session) -> None:
-        settings = self.settings(session)
-        self.agent_persona(settings.persona_id)
+    def validate_settings(self, settings: ChatDefaults) -> None:
+        self.persona(settings.persona_id)
         if settings.model_profile_id is not None:
             self.model_manager.profile(settings.model_profile_id, "llm")
         self.validate_tools(settings.tools_allowed)
+        self.validate_bindings("knowledge", settings.knowledge_base_ids)
+        self.validate_bindings("worldbook", settings.worldbook_ids)
 
-    def validate_overrides(self, project_id: str, values: dict) -> None:
-        project = self.workspace(project_id)
-        if values.get("tools_allowed") is not None:
-            self.validate_tools(values["tools_allowed"])
-            if set(values["tools_allowed"]) - set(project.tools_allowed):
-                raise ChatError("TOOL_NOT_ALLOWED", "The Project has disabled one or more selected tools.", 422)
+    def settings(self, session: NormalSession) -> ChatDefaults:
+        character = self.normal_character(session.character_id)
+        return ChatDefaults.model_validate({
+            **character.model_dump(include=set(ChatDefaults.model_fields)),
+            **session.overrides.model_dump(exclude_none=True),
+        })
 
-    def create_session(self, values: dict) -> Session:
-        if values.get("model_profile_id") is None:
-            profile = self.model_manager.default_chat_profile()
-            values = {**values, "model_profile_id": profile.id if profile else None}
-        if "tools_allowed" not in values:
-            values = {**values, "tools_allowed": [tool.name for tool in self.tool_registry.list() if tool.scope == "general"] if self.tool_registry else []}
-        candidate = OrdinarySession(session_id="new", **values)
-        self.validate_session(candidate)
-        return self.sessions.create_session(**values)
+    def saved_model_id(self, session: Session) -> str | None:
+        return session.overrides.model_profile_id if session.kind == "normal" else None
 
-    def create_workspace_session(self, project_id: str, values: dict) -> Session:
-        self.validate_overrides(project_id, values.get("overrides", {}))
-        candidate = WorkspaceSession(session_id="new", project_id=project_id, **values)
-        self.validate_session(candidate)
-        return self.sessions.create_session(kind="workspace", project_id=project_id, **values)
+    def selected_persona_id(self, session: Session) -> str | None:
+        return self.settings(session).persona_id if session.kind == "normal" else None
+
+    def create_session(self, character_id: str, values: dict) -> Session:
+        candidate = NormalSession(session_id="new", character_id=character_id, **values)
+        self.validate_settings(self.settings(candidate))
+        return self.sessions.create_session(kind="normal", character_id=character_id, **values)
 
     def update_session(self, session_id: str, values: dict) -> Session:
         current = self.sessions.get_session(session_id)
-        if current.kind == "workspace" and "overrides" in values:
-            self.validate_overrides(current.project_id, values["overrides"])
+        if current.kind == "normal" and "overrides" in values:
             values = {**values, "overrides": {**current.overrides.model_dump(exclude_none=True), **values["overrides"]}}
         candidate = parse_session({**current.model_dump(), **values})
-        if current.kind != "qqbot":
-            self.validate_session(candidate)
+        if candidate.kind == "normal":
+            self.validate_settings(self.settings(candidate))
         return self.sessions.update_session(session_id, values)
 
     def assert_idle(self, session_id: str) -> None:
@@ -148,178 +116,101 @@ class ChatService:
     def delete_persona(self, persona_id: str):
         persona = self.persona(persona_id)
         if persona.is_protected:
-            raise ChatError("PERSONA_PROTECTED", "This persona can be edited but cannot be deleted.", 409)
-        if self.projects.references_persona(persona_id) or any(self.selected_agent_id(s) == persona_id for s in self.sessions.list_sessions()):
-            raise ChatError("PERSONA_IN_USE", "Select another persona in its sessions before deleting it.", 409)
+            raise ChatError("PERSONA_PROTECTED", "This Persona can be edited but cannot be deleted.", 409)
+        if self.characters.references_persona(persona_id) or any(
+                s.kind == "normal" and s.overrides.persona_id == persona_id for s in self.sessions.list_sessions()):
+            raise ChatError("PERSONA_IN_USE", "Select another Persona in its Characters and Sessions first.", 409)
         if self.runs.has_unfinished(persona_id=persona_id):
-            raise ChatError("PERSONA_IN_USE", "This persona is used by an unfinished run.", 409)
+            raise ChatError("PERSONA_IN_USE", "This Persona is used by an unfinished run.", 409)
         return self.personas.delete(persona_id)
 
-    def agent_persona(self, persona_id: str):
-        persona = self.persona(persona_id)
-        if persona.collection != "agent":
-            raise ChatError("PERSONA_COLLECTION_INVALID", "Ordinary sessions require an Agent Persona.", 422)
-        return persona
+    def effective_knowledge_ids(self, session: Session) -> list[str]:
+        return self.settings(session).knowledge_base_ids if session.kind == "normal" else []
 
-    def persona_for_resource(self, persona_id: str, kind: str):
-        persona = self.persona(persona_id)
-        if persona.resource_kind != kind:
-            raise ChatError("PERSONA_RESOURCE_FORBIDDEN", "This resource is not supported by the persona collection.", 422)
-        return persona
+    def references_resource(self, kind: str, resource_id: str) -> bool:
+        field = "knowledge_base_ids" if kind == "knowledge" else "worldbook_ids"
+        return self.characters.references_resource(kind, resource_id) or any(
+            s.kind == "normal" and resource_id in (getattr(s.overrides, field) or [])
+            for s in self.sessions.list_sessions())
 
-    def validate_bindings(self, kind: str, ids: list[str]) -> None:
-        if len(ids) != len(set(ids)):
-            raise ChatError("BINDING_DUPLICATE", "Context bindings must be unique.")
-        store = self.knowledge if kind == "knowledge" else self.worldbooks
-        get = store.get_knowledge_base if kind == "knowledge" else store.get_worldbook
-        for value in ids:
+    def _model_configuration(self, model_id, temperature):
+        from ai_workbench.core.models.context_budget import configured_limits
+        from ai_workbench.core.schema.context_budget import ContextLimits
+        parameters, limits = {}, ContextLimits()
+        if model_id:
             try:
-                get(value)
-            except KeyError as exc:
-                raise ChatError("BINDING_NOT_FOUND", "A selected context resource does not exist.", 404) from exc
-
-    def session_knowledge_ids(self, session_id: str) -> list[str]:
-        return [b.knowledge_base_id for b in self.knowledge.list_session_bindings(session_id) if b.enabled]
-
-    def effective_knowledge_ids(self, session: Session, persona_id: str | None = None) -> list[str]:
-        if session.kind == "qqbot":
-            return []
-        user_ids = self.personas.binding_ids(USER_PERSONA_ID, "knowledge")
-        agent_ids = self.personas.binding_ids(persona_id or self.selected_agent_id(session), "knowledge")
-        project_ids = self.workspace(session.project_id).knowledge_base_ids if session.kind == "workspace" else []
-        return list(dict.fromkeys([*user_ids, *agent_ids, *project_ids, *self.session_knowledge_ids(session.session_id)]))
-
-    def knowledge_response(self, session_id: str) -> dict:
-        session = self.sessions.get_session(session_id)
-        self.assert_resource_session(session)
-        return {"session_id": session_id,
-            "knowledge_base_ids": self.session_knowledge_ids(session_id),
-            "user_persona_knowledge_base_ids": self.personas.binding_ids(USER_PERSONA_ID, "knowledge"),
-            "agent_persona_knowledge_base_ids": self.personas.binding_ids(self.selected_agent_id(session), "knowledge"),
-            "project_knowledge_base_ids": self.workspace(session.project_id).knowledge_base_ids if session.kind == "workspace" else [],
-            "effective_knowledge_base_ids": self.effective_knowledge_ids(session)}
-
-    def update_knowledge(self, session_id: str, ids: list[str]) -> None:
-        self.assert_resource_session(self.sessions.get_session(session_id))
-        self.validate_bindings("knowledge", ids)
-        engine = getattr(self.sessions, "engine", None)
-        if engine is None:
-            self.knowledge.replace_session_bindings(session_id, ids)
-            self.sessions.touch_session(session_id)
-            return
-        with DbSession(engine) as db:
-            session = db.get(SessionRecord, session_id)
-            session.updated_at = utc_now()
-            db.add(session)
-            db.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id == session_id))
-            for index, resource_id in enumerate(ids):
-                db.add(SessionKnowledgeBindingRecord(knowledge_base_id=resource_id, session_id=session_id, sort_order=index))
-            db.commit()
+                profile = self.model_manager.profiles.get(model_id)
+                parameters, limits = profile.parameters, configured_limits(profile)
+            except KeyError:
+                pass  # A missing model remains visible without substituting another selection.
+        if temperature is not None:
+            parameters = {**parameters, "temperature": temperature}
+        return GenerationParameters.model_validate(parameters), limits
 
     def resolve(self, session: Session, *, persona_id: str | None = None) -> ResolvedChatConfig:
         if session.kind == "qqbot":
             return self.resolve_qq(session)
+        character = self.normal_character(session.character_id)
         settings = self.settings(session)
-        selected_id = persona_id or settings.persona_id
-        persona = self.agent_persona(selected_id)
-        user_persona = self.persona(USER_PERSONA_ID)
-        model_id = settings.model_profile_id
-        sources = dict(persona="session", context="session", harness="session", tools="session",
-                       temperature="session" if settings.generation.temperature is not None else "model")
-        model_source = "session"
-        project_prompt = ""
-        if session.kind == "workspace":
-            project = self.workspace(session.project_id)
-            project_prompt = project.system_prompt
-            overridden = session.overrides.model_dump(exclude_none=True)
-            for source, key in (("persona", "persona_id"), ("context", "context_policy"), ("harness", "harness_enabled"), ("tools", "tools_allowed")):
-                sources[source] = "session" if key in overridden else "project"
-            sources["temperature"] = "session" if "temperature" in overridden else "project" if project.temperature is not None else "model"
-            model_source = "session" if session.overrides.model_profile_id is not None else "project" if project.model_profile_id is not None else "global"
-        from ai_workbench.core.models.context_budget import configured_limits
-        from ai_workbench.core.schema.context_budget import ContextLimits
-        parameters = {}
-        limits = ContextLimits()
-        if model_id:
-            try:
-                profile = self.model_manager.profiles.get(model_id)
-                parameters = profile.parameters
-                limits = configured_limits(profile)
-            except KeyError:
-                pass  # Readable sessions remain editable when a referenced model is unavailable.
-        generation = settings.generation
+        persona = self.persona(persona_id if persona_id is not None else settings.persona_id)
+        overridden = session.overrides.model_dump(exclude_none=True)
+        sources = {source: "session" if key in overridden else "character" for source, key in (
+            ("persona", "persona_id"), ("context", "context_policy"), ("reasoning", "reasoning"),
+            ("harness", "harness_enabled"), ("tools", "tools_allowed"),
+            ("knowledge", "knowledge_base_ids"), ("worldbook", "worldbook_ids"))}
+        sources["temperature"] = "session" if "temperature" in overridden else "character" if character.temperature is not None else "model"
+        generation, limits = self._model_configuration(settings.model_profile_id, settings.temperature)
         return ResolvedChatConfig(
-            session_kind=session.kind, project_id=session.project_id, project_system_prompt=project_prompt, sources=sources,
-            persona_id=persona.id, persona_name=persona.name, avatar_attachment_id=persona.avatar_attachment_id,
-            system_prompt=persona.system_prompt, user_persona_id=user_persona.id, user_persona_prompt=user_persona.system_prompt,
-            context_policy=settings.context_policy,
-            context_limits=limits,
-            model_profile_id=model_id, model_source=model_source,
-            generation=GenerationParameters.model_validate({**parameters, **generation.model_dump(exclude_none=True)}),
-            reasoning=settings.reasoning,
-            harness_enabled=settings.harness_enabled,
-            tools_allowed=settings.tools_allowed,
-            knowledge_base_ids=self.effective_knowledge_ids(session, selected_id),
+            session_kind="normal", character_id=character.id, character_name=character.name,
+            character_avatar_attachment_id=character.avatar_attachment_id, system_prompt=character.system_prompt,
+            persona_id=persona.id, persona_name=persona.name, persona_background=persona.background,
+            sources=sources, context_policy=settings.context_policy, context_limits=limits,
+            model_profile_id=settings.model_profile_id,
+            model_source="session" if "model_profile_id" in overridden else "character",
+            generation=generation, reasoning=settings.reasoning, harness_enabled=settings.harness_enabled,
+            tools_allowed=settings.tools_allowed, knowledge_base_ids=settings.knowledge_base_ids,
+            worldbook_ids=settings.worldbook_ids,
         )
 
     def tools_for_run(self, config: ResolvedChatConfig) -> list[str]:
         from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
+        allowed = list(config.tools_allowed)
         if config.session_kind == "qqbot":
-            allowed = [name for name in config.tools_allowed
+            allowed = [name for name in allowed
                 if (name != "qq_skip_reply" or config.qq_target_kind == "group")
                 and (name != "qq_send_image" or config.qq_image_candidates)
                 and (name != "qq_generate_image" or config.qq_image_generation_allowed)]
-        elif config.project_id is None:
-            allowed = list(config.tools_allowed)
-        else:
-            project_tools = self.workspace(config.project_id).tools_allowed
-            allowed = [name for name in config.tools_allowed if name in project_tools]
         if config.context_policy.strategy == "history_retrieval" and config.harness_enabled:
             allowed.extend(sorted(CONTEXT_TOOL_NAMES))
         return allowed
 
     def session_response(self, session: Session) -> dict:
-        payload = session.model_dump(mode="json")
-        payload["user_persona"] = None if session.kind == "qqbot" else self.persona(USER_PERSONA_ID).identity().model_dump(mode="json")
-        payload["effective"] = self.resolve(session).public_summary()
-        return payload
+        config = self.resolve(session)
+        return {**session.model_dump(mode="json"),
+            "persona": self.persona(config.persona_id).identity().model_dump(mode="json") if config.persona_id else None,
+            "effective": config.public_summary()}
 
-    @staticmethod
-    def assert_resource_session(session):
-        if session.kind == "qqbot":
-            raise ChatError("PROJECT_RESOURCE_FORBIDDEN", "QQBot sessions do not use resources.", 422)
-
-    def resolve_qq(self, session):
-        from ai_workbench.core.schema.context_budget import ContextLimits
-        from ai_workbench.core.models.context_budget import configured_limits
-        project = self.projects.get(session.project_id)
-        persona = self.agent_persona(project.agent_persona_id) if project.agent_persona_id else None
-        parameters, limits = {}, ContextLimits()
-        if project.model_profile_id:
-            try:
-                profile = self.model_manager.profiles.get(project.model_profile_id)
-                parameters, limits = profile.parameters, configured_limits(profile)
-            except KeyError:
-                pass
-        if project.temperature is not None:
-            parameters = {**parameters, "temperature": project.temperature}
-        return ResolvedChatConfig(session_kind="qqbot", project_id=project.id,
-            sources=dict(persona="project", context="project", temperature="project" if project.temperature is not None else "model",
-                         harness="project", tools="project"),
-            persona_id=persona.id if persona else "", persona_name=persona.name if persona else project.name,
-            avatar_attachment_id=persona.avatar_attachment_id if persona else None,
-            system_prompt=persona.system_prompt if persona else "",
-            project_system_prompt=project.system_prompt,
-            user_persona_id="", user_persona_prompt="", context_policy=project.context_policy.model_copy(update={
-                "include_attachments": "explicit" if project.image_input_enabled else "none"}), context_limits=limits,
-            model_profile_id=project.model_profile_id, model_source="project",
-            generation=GenerationParameters.model_validate(parameters), reasoning=project.reasoning,
-            harness_enabled=True, tools_allowed=[name for name in (*QQ_TOOLS, *sorted(WEB_TOOL_NAMES))
+    def resolve_qq(self, session) -> ResolvedChatConfig:
+        character = self.character(session.character_id)
+        generation, limits = self._model_configuration(character.model_profile_id, character.temperature)
+        return ResolvedChatConfig(
+            session_kind="qqbot", character_id=character.id, character_name=character.name,
+            character_avatar_attachment_id=character.avatar_attachment_id, system_prompt=character.system_prompt,
+            persona_id=None, persona_name=None,
+            sources=dict(persona="character", context="character", reasoning="character", harness="character",
+                tools="character", knowledge="character", worldbook="character",
+                temperature="character" if character.temperature is not None else "model"),
+            context_policy=character.context_policy.model_copy(update={
+                "include_attachments": "explicit" if character.image_input_enabled else "none"}),
+            context_limits=limits, model_profile_id=character.model_profile_id, model_source="character",
+            generation=generation, reasoning=character.reasoning, harness_enabled=True,
+            tools_allowed=[name for name in (*QQ_TOOLS, *sorted(WEB_TOOL_NAMES))
                 if (name != "qq_skip_reply" or session.target_kind == "group")
                 and name != "qq_send_image"
-                and (name != "qq_generate_image" or project.image_generation_model_profile_id is not None)], knowledge_base_ids=[],
-            qq_reply_message_limit=project.reply_message_limit, qq_bot_account=project.bot_account,
-            qq_target_kind=session.target_kind, qq_target_id=session.target_id,
-            qq_image_description_model_profile_id=project.image_description_model_profile_id,
-            qq_image_generation_model_profile_id=project.image_generation_model_profile_id,
-            qq_image_generation_options=project.image_generation_options)
+                and (name != "qq_generate_image" or character.image_generation_model_profile_id is not None)],
+            knowledge_base_ids=[], worldbook_ids=[], qq_reply_message_limit=character.reply_message_limit,
+            qq_bot_account=character.bot_account, qq_target_kind=session.target_kind, qq_target_id=session.target_id,
+            qq_image_description_model_profile_id=character.image_description_model_profile_id,
+            qq_image_generation_model_profile_id=character.image_generation_model_profile_id,
+            qq_image_generation_options=character.image_generation_options,
+        )

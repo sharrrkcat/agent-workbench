@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat, create_chat_async
 from tests.history_helpers import history_messages, history_runs
 import asyncio
 import json
@@ -30,7 +31,7 @@ def presentation_client(tmp_path, request):
 
 def configure(client, *, harness=True, streaming=True):
     configure_model(client, request_options={"streaming": streaming})
-    return ok(client.post("/api/sessions", json={"harness_enabled": harness}))
+    return ok(create_chat(client, overrides={"harness_enabled": harness}))
 
 
 def send(client, session, content="encode and decode"):
@@ -101,7 +102,7 @@ def timed_draft(presentation_client, monkeypatch):
     session = configure(client, harness=False)
     state = client.app.state.runtime_state
     config = state.chat_service.resolve(state.sessions.get_session(session['session_id']))
-    run = state.runs.create_run(kind='chat', persona_id=config.persona_id, session_id=session['session_id'])
+    run = state.runs.create_run(kind='chat', persona_id=config.persona_id, session_id=session['session_id'], character_id="00000000-0000-4000-8000-000000000001")
     clock = SimpleNamespace(now=10.0)
     monkeypatch.setattr('ai_workbench.core.assistant_output.monotonic', lambda: clock.now)
     draft = AssistantDraft(messages=state.messages, events=state.events, session_id=session['session_id'],
@@ -336,7 +337,7 @@ def test_cancelled_stream_retains_received_content(tmp_path, use_memory, harness
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'p', 'connection': {'base_url': 'http://provider.test/v1'}}))
             profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "context_window_tokens": 32768, "request_options": {"streaming": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
-            session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": harness}))
+            session = ok(await create_chat_async(client, overrides={"model_profile_id": profile["id"], "harness_enabled": harness}))
             task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "go"}))
             try:
                 await asyncio.wait_for(received.wait(), 3)
@@ -353,7 +354,7 @@ def test_cancelled_stream_retains_received_content(tmp_path, use_memory, harness
                 assert state.runs.get_run(started.run_id).status == "CANCELLED"
                 step = next(step for step in cancelled["run"]["steps"] if step["kind"] == "model")
                 snapshot = ok(await client.get(f"/api/runs/{started.run_id}/steps/{step['step_id']}/context"))
-                assert snapshot["request"]["messages"][-1]["content"] == "go"
+                assert snapshot["request"]["messages"][-1]["content"] == f"[Persona: {session['effective']['persona_id']}]\ngo"
                 assert "partial" not in json.dumps(snapshot)
                 assert state.model_manager.status(profile["id"]).active == 0
             finally:

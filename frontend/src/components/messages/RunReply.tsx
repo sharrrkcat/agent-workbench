@@ -15,7 +15,7 @@ import { ToolCall } from './ToolCall';
 import { ReasoningBlock } from './ReasoningBlock';
 import type { Reply } from './turns';
 import { imageErrorKey } from './messageContent';
-import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
+import { useCharacterIdentity } from '../../hooks/useCharacterIdentity';
 import { WebToolCall } from './WebToolCall';
 import { WebSources } from './WebSourcesList';
 import { ResourceLoading } from '../settings/resources/ResourceUI';
@@ -39,7 +39,7 @@ export function RunReply({ reply, messageNumber, showFullProcessing, readOnly = 
     return () => processing?.onOpenChange(false);
   }, [expanded, run.run_id]);
   const seconds = useRunSeconds(run);
-  const identity = usePersonaIdentity()(run.persona_id);
+  const identity = useCharacterIdentity()(run.character_id);
   const processId = `processing-${run.run_id}`;
   const error = run.error_message || run.error || '';
   const contextErrors: Record<string, string> = { CONTEXT_WINDOW_REQUIRED: 'contextErrors.required',

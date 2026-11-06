@@ -10,10 +10,10 @@ from sqlmodel import Session, select
 
 from ai_workbench.core.attachments import resolve_attachment_uri
 from ai_workbench.core.models.errors import ModelError
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQMediaAsset, QQBatch
-from tests.test_qqbot import qq_client, configure_execution, child, project, event, ingest, freeze
+from tests.test_qqbot import qq_client, configure_execution, child, character, event, ingest, freeze
 from tests.test_qq_media import isolated_attachments, image_event, finish_pending, page, prepare_images, reply
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ok
@@ -27,8 +27,8 @@ def resources(state):
 def test_shared_files_descriptions_and_last_reference_cleanup(qq_client, monkeypatch):
     client, state, _ = qq_client
     prepare_images(monkeypatch)
-    first = project(client)
-    second = project(client, bot_account="54321")
+    first = character(client)
+    second = character(client, bot_account="54321")
     sessions = [child(client, first), child(client, first, "9988", "friend"), child(client, second)]
     for number, (p, session) in enumerate(zip([first, first, second], sessions), 1):
         data = image_event(number)
@@ -53,7 +53,7 @@ def test_shared_files_descriptions_and_last_reference_cleanup(qq_client, monkeyp
     ok(client.delete(f"/api/qq/sessions/{sessions[0]['session_id']}/messages/{rows[0]['id']}"))
     ok(client.delete(f"/api/sessions/{sessions[1]['session_id']}"))
     assert len(resources(state)) == 2 and all(path.exists() for path in paths)
-    ok(client.delete(f"/api/projects/{second['id']}"))
+    ok(client.delete(f"/api/characters/{second['id']}"))
     assert resources(state) == [] and all(not path.exists() for path in paths)
     assert state.qq.store.update_description(asset_id, "late", only_if_empty=True) == set()
 
@@ -81,7 +81,7 @@ def test_current_image_priority_and_live_history_descriptions(qq_client, monkeyp
     batch = freeze(state, session, 6)
     client.portal.call(state.qq.execute, batch)
     assert state.qq.store.get(QQBatch, batch.id).status == "done"
-    selected = project_qq_context(state.qq.store, state.messages, session["session_id"], "input",
+    selected = character_qq_context(state.qq.store, state.messages, session["session_id"], "input",
         ContextPolicy(), batch.input_message_id)
     sources = [source.reference_id for source in selected.trace.sources if source.kind == "attachment"]
     assert sources == [f"qq-media:{media[index].id}" for index in expected]
@@ -94,7 +94,7 @@ def test_current_image_priority_and_live_history_descriptions(qq_client, monkeyp
     snapshots = [state.runs.get_context_snapshot(step.step_id) for step in state.runs.list_steps(batch.run_id) if step.kind == "model"]
     if media:
         state.qq.store.update_description(media[0].asset_id, "最新描述")
-    history = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    history = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert not any(source.kind == "attachment" for source in history.trace.sources)
     assert all(isinstance(message["content"], str) for message in history.messages)
     if media:
@@ -125,8 +125,8 @@ def test_duplicate_occurrences_count_and_faces_never_wait_or_send(qq_client, mon
 
 def test_description_model_setting_validation_and_references(qq_client):
     client, state, _ = qq_client
-    p = project(client)
-    path = f"/api/projects/{p['id']}"
+    p = character(client)
+    path = f"/api/characters/{p['id']}"
     assert p["image_description_model_profile_id"] is None
     model = configure_model(client)
     embedding = configure_model(client, kind="embedding", alias="embed")
@@ -150,7 +150,7 @@ def test_description_tasks_are_optional_coalesced_and_do_not_gate_chat(qq_client
     prepare_images(monkeypatch)
     p, session, _ = configure_execution(client, state, image_input_enabled=True)
     caption = configure_model(client, alias="caption")
-    ok(client.patch(f"/api/projects/{p['id']}", json={"image_description_model_profile_id": caption["id"]}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"image_description_model_profile_id": caption["id"]}))
     original_chat = state.model_manager.chat
     async def scenario():
         started, release = asyncio.Event(), asyncio.Event()
@@ -180,7 +180,7 @@ def test_description_tasks_are_optional_coalesced_and_do_not_gate_chat(qq_client
         assert request.stream is False and not request.tools and request.max_tokens == 64
         assert len(request.messages) == 1 and len(request.messages[0].content) == 2
         assert "QQ:9999" not in request.model_dump_json()
-        context = project_qq_context(state.qq.store, state.messages, session["session_id"], "input", ContextPolicy(), batch.input_message_id)
+        context = character_qq_context(state.qq.store, state.messages, session["session_id"], "input", ContextPolicy(), batch.input_message_id)
         state.qq.descriptions.submit(caption["id"], context.trace, 10_000_000)
         assert len(state.qq.descriptions.tasks) == 1
         asset = resources(state)[0]

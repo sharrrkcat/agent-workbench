@@ -56,7 +56,7 @@ class SessionStore:
     def discard_context_checkpoint(self, session_id: str) -> None:
         self._checkpoints.pop(session_id, None)
 
-    def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
+    def create_session(self, title: str = "", *, kind: str = "normal", **values: Any) -> Session:
         session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
             title_generation_state="pending" if not title.strip() else "manual", **values))
         self._sessions[session.session_id] = session
@@ -79,9 +79,6 @@ class SessionStore:
 
     def set_waiting_run(self, session_id: str, run_id: Optional[str]) -> Session:
         return self._replace(session_id, waiting_run_id=run_id)
-
-    def set_model_profile(self, session_id: str, profile_id: Optional[str]) -> Session:
-        return self._replace(session_id, model_profile_id=profile_id)
 
     def update_session(self, session_id: str, values: dict[str, Any]) -> Session:
         return self._replace(session_id, **values)
@@ -310,8 +307,8 @@ class RunStore:
         self._harness_states: dict[str, dict] = {}
         self._context_snapshots: dict[str, str] = {}
 
-    def create_run(self, kind: str, persona_id: str, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
-        run = RunSchema(run_id=str(uuid4()), kind=kind, persona_id=persona_id, session_id=session_id, metadata=metadata or {})
+    def create_run(self, kind: str, character_id: str, persona_id: str | None, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
+        run = RunSchema(run_id=str(uuid4()), kind=kind, character_id=character_id, persona_id=persona_id, session_id=session_id, metadata=metadata or {})
         self._runs[run.run_id] = run
         self._config_snapshots[run.run_id] = deepcopy(config_snapshot or {})
         self._harness_states[run.run_id] = deepcopy(harness_state or {})

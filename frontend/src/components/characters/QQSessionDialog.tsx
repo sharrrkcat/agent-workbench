@@ -10,8 +10,8 @@ import { Feedback, errorText } from '../settings/resources/ResourceUI';
 import { qqApi } from '../../api/qq';
 import { useCogitaStore } from '../../store/useCogitaStore';
 
-export function QQSessionDialog({ projectId, onClose, onSaved }: {
-  projectId: string; onClose: () => void; onSaved: (id: string) => void;
+export function QQSessionDialog({ characterId, onClose, onSaved }: {
+  characterId: string; onClose: () => void; onSaved: (id: string) => void;
 }) {
   const { t } = useTranslation('personas');
   const id = useId();
@@ -31,8 +31,8 @@ export function QQSessionDialog({ projectId, onClose, onSaved }: {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
     try {
-      const session = await qqApi.createSession(projectId, { title, target_kind: kind, target_id: target });
-      await useCogitaStore.getState().reloadSessions(projectId);
+      const session = await qqApi.createSession(characterId, { title, target_kind: kind, target_id: target });
+      await useCogitaStore.getState().reloadSessions(characterId);
       onSaved(session.session_id);
     } catch (reason) { setError(errorText(reason)); }
     finally { lock.current = false; setBusy(false); }

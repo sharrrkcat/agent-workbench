@@ -5,7 +5,7 @@ import { historyPage } from './history-fixtures.mjs';
 const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
-const session = { session_id: 'history', kind: 'ordinary', project_id: null, updated_at: '2026-01-01T00:00:00Z' };
+const session = { session_id: 'history', kind: 'normal', character_id: null, updated_at: '2026-01-01T00:00:00Z' };
 const messages = Array.from({ length: 650 }, (_, i) => ({ message_id: `m-${String(i).padStart(4, '0')}`, session_id: 'history',
   role: 'user', created_at: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(), parts: [{ type: 'text', id: 't', text: String(i) }] }));
 api.getSession = async () => session;

@@ -130,12 +130,7 @@
     "sources": {
       "instruction": "指令",
       "system": "System",
-      "agent_persona": "Agent Persona",
-      "project_prompt": "项目提示词",
       "qq_runtime": "QQ 运行信息",
-      "cogita_persona": "Cogita Persona",
-      "knowledge": "Knowledge",
-      "knowledge_snippet": "知识片段",
       "history": "历史消息",
       "current_input": "当前输入",
       "attachment": "附件",
@@ -144,7 +139,9 @@
       "tools": "工具定义",
       "summary": "历史摘要",
       "context_memory": "工作检查点",
-      "context_retrieval": "回溯结果"
+      "context_retrieval": "回溯结果",
+      "character": "AI 角色",
+      "persona": "用户身份"
     },
     "reasons": {
       "ineligible_history": "不符合历史消息纳入条件",

@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from ai_workbench.core.qq_icebreaker import QQIcebreaker
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQParticipant
-from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
+from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, character
 from tests.test_qq_followup import clock, execute, reply, participant, followup
 from tests.test_qq_image_generation import image_provider, draw, assets, attachment_files
 from tests.test_qq_media import isolated_attachments
@@ -25,9 +25,9 @@ def tick(qq_client, session, clock, now):
     async def advance():
         clock[0] = now
         bound = binding(state, session)
-        state.qq.tick_binding(state.projects.get(bound.project_id), bound, now)
+        state.qq.tick_binding(state.characters.get(bound.character_id), bound, now)
     client.portal.call(advance)
-    return state.qq.store.next_batch(session["project_id"])
+    return state.qq.store.next_batch(session["character_id"])
 
 
 def setup(qq_client, clock, **values):
@@ -50,11 +50,11 @@ def queued(qq_client, clock, *, text="A quiet thought", **values):
 
 def test_settings_defaults_strict_patch_and_private_state(qq_client):
     client, state, _ = qq_client
-    p = project(client)
+    p = character(client)
     fields = {"icebreaker_enabled": False, "icebreaker_cold_seconds": 7200,
         "icebreaker_wait_seconds": 120, "icebreaker_cooldown_seconds": 10800}
     assert {key: p[key] for key in fields} == fields
-    url = f"/api/projects/{p['id']}"
+    url = f"/api/characters/{p['id']}"
     for key in fields:
         invalid = [None, 0, 1, "true"] if key == "icebreaker_enabled" else [None, 0, -1, True, 1.5, "10"]
         for value in invalid:
@@ -263,7 +263,7 @@ def test_lifecycle_discards_queue_restarts_clock_and_keeps_cooldown(qq_client, c
     p, session, connection, batch = queued(qq_client, clock)
     state.qq.store.start_icebreaker_cooldown(session["session_id"], 20)
     clock[0] = 17
-    url = f"/api/projects/{p['id']}"
+    url = f"/api/characters/{p['id']}"
     if change == "pause":
         ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "pause"}))
         ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
@@ -303,7 +303,7 @@ def test_recovery_cancels_unsent_attempts_but_preserves_uncertain_delivery_polic
     assert current.status == ("interrupted" if send_intent else "cancelled")
     assert binding(state, session).paused == send_intent
     assert binding(state, session).icebreaker_cooldown_until == 46
-    assert state.qq.store.next_batch(session["project_id"]) is None
+    assert state.qq.store.next_batch(session["character_id"]) is None
     if send_intent:
         assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])[0]["status"] == "unknown"
 
@@ -387,7 +387,7 @@ def test_confirmed_icebreaker_grant_has_an_exact_sixty_second_boundary(qq_client
     p, session, _, batch = queued(qq_client, clock)
     reply(upstream)
     execute(qq_client, batch)
-    ok(client.patch(f"/api/projects/{p['id']}", json={"icebreaker_enabled": False}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"icebreaker_enabled": False}))
     ingest(client, state, p, event(2, "a different person", sender="8888"), 17)
     assert freeze(state, session, 22) is None
     ingest(client, state, p, event(3, "the original speaker continues"), arrival)
@@ -447,7 +447,7 @@ def test_icebreaker_confirmation_preserves_a_newer_keyword_epoch(qq_client, cloc
     grant = participant(state, session)
     assert grant.grant_message_id > batch.participants["9999"]
     assert grant.expires_at == 90 and binding(state, session).deadline == 25
-    stale = QQBatch(session_id=session["session_id"], project_id=p["id"], text="old decision", created_at=16,
+    stale = QQBatch(session_id=session["session_id"], character_id=p["id"], text="old decision", created_at=16,
         trigger_kind="followup", participants_json=json.dumps(batch.participants))
     state.qq.store.skip_participants(stale, 31)
     assert participant(state, session).expires_at == 90

@@ -192,12 +192,9 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
     </div>
     {detail ? <div className="context-footer">
       <span><LockKeyhole aria-hidden="true" />{t('context.snapshot')} · {new Date(detail.captured_at).toLocaleString(i18n.language)}</span>
-      <span>{'history_enabled' in detail.policy ? t(!detail.policy.history_enabled ? 'context.historyDisabled'
+      <span>{t(!detail.policy.history_enabled ? 'context.historyDisabled'
         : detail.policy.strategy === 'message_window' ? 'context.messageWindowPolicy' : detail.policy.strategy === 'history_retrieval' ? 'context.retrievalPolicy' : 'context.tokenPolicy',
-        { limit: detail.policy.message_window.max_messages }) : t('context.policy', {
-        messages: detail.policy.max_messages == null ? t('context.unlimited') : count(detail.policy.max_messages),
-        chars: detail.policy.max_chars == null ? t('context.unlimited') : count(detail.policy.max_chars),
-      })}</span>
+        { limit: detail.policy.message_window.max_messages })}</span>
     </div> : null}
   </>;
 }

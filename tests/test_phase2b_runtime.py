@@ -279,7 +279,7 @@ def test_api_install_actions_global_events_and_missing_runtime_details(tmp_path)
             socket.send_json({"type": "next_event"})
             client.app.state.runtime_state.events.emit("runtime_job_updated", session_id="", payload={"job": {"id": "example"}})
             assert socket.receive_json()["payload"]["job"]["id"] == "example"
-        assert client.get("/api/sessions").json() == []
+        assert client.get("/api/characters/00000000-0000-4000-8000-000000000003/sessions").json() == []
         assert not client.app.state.runtime_state.runs.list_all_runs()
 
 

@@ -1,5 +1,6 @@
 """Icebreaker cooldown migration leaves all data directories untouched."""
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
+from tests.migration_fixtures import insert_historical_row
 
 from ai_workbench.core.qq_store import QQStore
 from ai_workbench.db import migrations
@@ -14,12 +15,13 @@ def test_cooldown_upgrade_and_repeated_upgrade(tmp_path):
     for path in files:
         path.parent.mkdir()
         path.write_bytes(b"untouched")
-    migrations.upgrade(engine, "head")
-    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
+    migrations.upgrade(engine, migrations.QQ_ICEBREAKER_REVISION)
+    assert migrations.current_revision(engine) == migrations.QQ_ICEBREAKER_REVISION
     column = next(c for c in inspect(engine).get_columns("qq_bindings") if c["name"] == "icebreaker_cooldown_until")
     assert column["nullable"]
-    store = QQStore(engine)
-    store.save(QQBinding(session_id="s", project_id="p", target_kind="group", target_id="123", icebreaker_cooldown_until=999))
-    migrations.upgrade(engine, "head")
-    assert store.get(QQBinding, "s").icebreaker_cooldown_until == 999
+    with engine.begin() as db:
+        insert_historical_row(db, "qq_bindings", session_id="s", project_id="p", target_kind="group", target_id="123", icebreaker_cooldown_until=999)
+    migrations.upgrade(engine, migrations.QQ_ICEBREAKER_REVISION)
+    with engine.connect() as db:
+        assert db.execute(text("SELECT icebreaker_cooldown_until FROM qq_bindings WHERE session_id='s'")).scalar() == 999
     assert all(path.read_bytes() == b"untouched" for path in files)

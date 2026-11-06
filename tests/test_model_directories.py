@@ -1,3 +1,4 @@
+from tests.migration_fixtures import insert_historical_row
 """Directory discovery, local drafts and derived engine configuration."""
 import asyncio
 import json
@@ -304,8 +305,8 @@ def test_migration_removes_obsolete_profiles_and_preserves_files(tmp_path):
                 VALUES (:id,'','single_assistant',:persona,:model,:waiting,'{}','{}',0,'[]','pending','{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"""), {"id": "session", "persona": "persona", "model": "old-gguf", "waiting": "pending"})
         for identifier, status, model_id in [("pending", "RUNNING", "old-gguf"), ("completed", "DONE", "old-gguf"),
                                               ("unrelated", "RUNNING", "keep")]:
-            db.add(RunRecord(run_id=identifier, kind="chat", persona_id="persona", session_id="session", status=status,
-                config_snapshot_json=json.dumps({"model_profile_id": model_id})))
+            insert_historical_row(db, "runrecord", run_id=identifier, kind="chat", persona_id="persona", session_id="session", status=status,
+                config_snapshot_json=json.dumps({"model_profile_id": model_id}))
             db.add(MessageRecord(message_id=identifier, session_id="session", role="assistant", run_id=identifier))
         db.commit()
     runtime_tables = ("runtime_installations", "runtime_jobs")

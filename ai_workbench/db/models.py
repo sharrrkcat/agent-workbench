@@ -16,12 +16,11 @@ from ai_workbench.db.web_filter_models import WebFilterSettingsRecord, WebSubscr
 
 class SessionRecord(SQLModel, table=True):
     __table_args__ = (
-        CheckConstraint("kind IN ('ordinary', 'workspace', 'qqbot')", name="ck_session_kind"),
-        CheckConstraint("(kind = 'ordinary' AND project_id IS NULL) OR (kind IN ('workspace', 'qqbot') AND project_id IS NOT NULL)", name="ck_session_project"),
+        CheckConstraint("kind IN ('normal', 'qqbot')", name="ck_session_kind"),
     )
     session_id: str = Field(primary_key=True)
     kind: str
-    project_id: Optional[str] = Field(default=None, foreign_key="projects.id", index=True)
+    character_id: str = Field(foreign_key="characters.id", index=True)
     title: str = ""
     waiting_run_id: Optional[str] = None
     configuration_json: str
@@ -32,9 +31,9 @@ class SessionRecord(SQLModel, table=True):
     history_version: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
 
 
-class ProjectRecord(SQLModel, table=True):
-    __tablename__ = "projects"
-    __table_args__ = (CheckConstraint("kind IN ('workspace', 'timeline', 'qqbot')", name="ck_project_kind"),)
+class CharacterRecord(SQLModel, table=True):
+    __tablename__ = "characters"
+    __table_args__ = (CheckConstraint("kind IN ('normal', 'qqbot')", name="ck_character_kind"),)
     id: str = Field(primary_key=True)
     kind: str
     name: str
@@ -43,47 +42,14 @@ class ProjectRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
-class ProjectKnowledgeBindingRecord(SQLModel, table=True):
-    __tablename__ = "project_knowledge_bindings"
-    project_id: str = Field(primary_key=True, foreign_key="projects.id")
-    knowledge_base_id: str = Field(primary_key=True, foreign_key="knowledge_bases.id")
-    sort_order: int = 0
-
-
-class ProjectWorldbookBindingRecord(SQLModel, table=True):
-    __tablename__ = "project_worldbook_bindings"
-    project_id: str = Field(primary_key=True, foreign_key="projects.id")
-    worldbook_id: str = Field(primary_key=True, foreign_key="worldbooks.id")
-    sort_order: int = 0
-
-
 class PersonaRecord(SQLModel, table=True):
     __tablename__ = "personas"
-    __table_args__ = (
-        CheckConstraint("collection IN ('user', 'agent', 'roleplay_user', 'character')", name="ck_persona_collection"),
-        CheckConstraint("collection != 'user' OR id = '00000000-0000-4000-8000-000000000004'", name="ck_user_persona_singleton"),
-    )
     id: str = Field(primary_key=True)
-    collection: str = Field(index=True)
     name: str
     avatar_attachment_id: Optional[str] = None
-    system_prompt: str = ""
+    background: str = ""
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-
-
-class PersonaKnowledgeBindingRecord(SQLModel, table=True):
-    __tablename__ = "persona_knowledge_bindings"
-    persona_id: str = Field(primary_key=True, foreign_key="personas.id")
-    knowledge_base_id: str = Field(primary_key=True, foreign_key="knowledge_bases.id", index=True)
-    sort_order: int = 0
-
-
-class PersonaWorldbookBindingRecord(SQLModel, table=True):
-    __tablename__ = "persona_worldbook_bindings"
-    persona_id: str = Field(primary_key=True, foreign_key="personas.id")
-    worldbook_id: str = Field(primary_key=True, foreign_key="worldbooks.id", index=True)
-    sort_order: int = 0
 
 
 class MessageRecord(SQLModel, table=True):
@@ -114,7 +80,8 @@ class RunRecord(SQLModel, table=True):
     )
     run_id: str = Field(primary_key=True)
     kind: str
-    persona_id: str = Field(index=True)
+    character_id: str = Field(index=True)
+    persona_id: Optional[str] = Field(default=None, index=True)
     config_snapshot_json: str = "{}"
     harness_state_json: str = "{}"
     session_id: str = Field(index=True)
@@ -316,18 +283,6 @@ class KnowledgeBaseRecord(SQLModel, table=True):
     max_context_chars_override: Optional[int] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
-
-
-class SessionKnowledgeBindingRecord(SQLModel, table=True):
-    __tablename__ = "session_knowledge_bindings"
-    __table_args__ = (UniqueConstraint("session_id", "knowledge_base_id"),)
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    session_id: str = Field(index=True)
-    knowledge_base_id: str = Field(index=True)
-    enabled: bool = True
-    sort_order: int = Field(default=0, index=True)
-    created_at: datetime = Field(default_factory=utc_now)
 
 
 class KnowledgeSourceRecord(SQLModel, table=True):

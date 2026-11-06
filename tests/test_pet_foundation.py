@@ -1,3 +1,4 @@
+from tests.migration_fixtures import insert_historical_row
 import json
 
 import pytest
@@ -74,7 +75,7 @@ def test_pet_revision_resets_settings_only_and_new_position_survives_restart(tmp
             "pet": {"pet_enabled": True, "default_pet_id": "old", "bubble_texts": {"done": "Done"}}})))
         db.add(AppMetadataRecord(key="model_settings", value='{"external_enabled":false}'))
         db.execute(text("INSERT INTO personas VALUES ('persona','Keep',NULL,'Keep',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"))
-        db.add(RunRecord(run_id="run", kind="chat", session_id="session", persona_id="persona", status="DONE"))
+        insert_historical_row(db, "runrecord", run_id="run", kind="chat", session_id="session", persona_id="persona", status="DONE")
         db.commit()
     def preserved_rows():
         with engine.connect() as db:

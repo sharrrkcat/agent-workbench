@@ -12,13 +12,12 @@ from datetime import date
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop, request_tools
-from ai_workbench.core.context import ContextBuilder, add_chat_instructions
+from ai_workbench.core.context import ContextBuilder, add_chat_instructions, persona_context_prefix
 from ai_workbench.core.context_compaction import ContextCompactionService
 from ai_workbench.core.history_retrieval import HistoryRetrieval
 from ai_workbench.core.retrieval_tools import RetrievalTools
 from ai_workbench.core.qq_context import QQContextHistory, build_qq_context, runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
-from ai_workbench.core.knowledge_context import build_session_knowledge_context
 from ai_workbench.core.context_snapshot import append_system_block, capture_context, omit_context_images, snapshot_attachment
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 from ai_workbench.core.models.errors import ModelError
@@ -27,7 +26,7 @@ from ai_workbench.core.models.images import has_context_images, resolve_context_
 from ai_workbench.core.models.schema import ChatRequest
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
-from ai_workbench.core.schema.persona import ResolvedChatConfig
+from ai_workbench.core.schema.chat_config import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.instructions import UiLanguage, date_instruction
@@ -47,7 +46,6 @@ class ChatRunner:
         chat_service: Any,
         app_settings: Any = None,
         utility_llm: Any = None,
-        knowledge_service: Any = None,
         active_runs: Any = None,
         tool_registry: Any = None,
         qq_store: Any = None,
@@ -60,7 +58,6 @@ class ChatRunner:
         self.model_manager = model_manager
         self.app_settings = app_settings
         self.utility_llm = utility_llm
-        self.knowledge_service = knowledge_service
         self.active_runs = active_runs
         self.chat_service = chat_service
         self.qq_store = qq_store
@@ -106,11 +103,11 @@ class ChatRunner:
             user = self.messages.get_message(input_message_id)
         else:
             user = self.messages.add_message(
-                session_id=session_id, role="user", content=raw_text,
+                session_id=session_id, role="user", content=raw_text, speaker_id=config.persona_id,
                 metadata={"attachments": attachments, "client_message_id": client_message_id or None, "input_source": "chat"},
             )
         run = self.runs.create_run(
-            kind="chat", persona_id=config.persona_id, session_id=session_id,
+            kind="chat", character_id=config.character_id, persona_id=config.persona_id, session_id=session_id,
             metadata={"input_message_id": user.message_id,
                       "configuration": config.public_summary(), "harness": bool(config.harness_enabled and config.tools_allowed),
                       **({"qq_reply": {"sent_count": 0, "message_limit": config.qq_reply_message_limit,
@@ -171,6 +168,7 @@ class ChatRunner:
             current = context[-1]["content"]
             current_text = current if isinstance(current, str) else "\n".join(
                 part["text"] for part in current if part["type"] == "text")
+            current_text = current_text.removeprefix(persona_context_prefix(user))
             rejected_image = (has_images and not current_text.strip() and not profile.request_options.skip_vision_capability_check
                               and local_chat_support(profile).vision.state == "unsupported")
             first_metrics.start()
@@ -401,31 +399,19 @@ class ChatRunner:
         for source in attachment_trace.sources:
             source.message_index = current_index
             source.parent_id = "message:" + current_message_id
+            prefix_length = len(persona_context_prefix(self.messages.get_message(current_message_id)))
+            if source.start is not None:
+                source.start += prefix_length
+            if source.end is not None:
+                source.end += prefix_length
         trace.sources.extend(attachment_trace.sources)
         trace.exclusions.extend(attachment_trace.exclusions)
         metadata: dict[str, Any] = {
             "message_count": len(messages),
             "warnings": result.warnings,
-            "persona_id": config.persona_id,
+            "character_id": config.character_id, "persona_id": config.persona_id,
         }
         messages, metadata["user_persona"] = add_chat_instructions(config, messages, trace)
-        if self.knowledge_service is not None:
-            knowledge = await build_session_knowledge_context(
-                knowledge_service=self.knowledge_service, query=text, session_id=session.session_id, source="chat",
-                knowledge_base_ids=config.knowledge_base_ids,
-            )
-            if knowledge.rendered_text:
-                messages, source = append_system_block(messages, trace, knowledge.rendered_text, "knowledge")
-                for snippet, (start, end) in zip(knowledge.snippets, knowledge.snippet_spans):
-                    trace.sources.append(ContextSource(id=snippet["index"], kind="knowledge_snippet", parent_id=source.id,
-                        message_index=source.message_index, start=source.start + start, end=source.start + end,
-                        reference_id=snippet.get("chunk_id"), source_id=snippet.get("source_id"),
-                        knowledge_base_id=snippet.get("knowledge_base_id"), name=snippet["source_title"], citation=snippet["index"], role="system"))
-            else:
-                reason = knowledge.metadata.get("reason")
-                trace.exclusions.append(ContextExclusion(kind="knowledge", reason="retrieval_failed" if reason == "retrieval_failed"
-                    else "no_bindings" if reason == "no_active_kbs" else "no_results"))
-            metadata["knowledge"] = knowledge.metadata
         return messages, metadata, trace
 
     def set_input_title(self, session_id: str, text: str, attachments: list[dict[str, Any]],

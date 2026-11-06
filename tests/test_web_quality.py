@@ -196,20 +196,21 @@ def test_migration_removes_only_retired_selections_and_derived_cache(tmp_path):
     from sqlmodel import Session
     from ai_workbench.db import migrations
     from ai_workbench.db.database import get_engine
-    from ai_workbench.db.models import SessionRecord, ProjectRecord, RunRecord, RunStepRecord, MessageRecord
+    from ai_workbench.db.models import RunStepRecord, MessageRecord
+    from tests.migration_fixtures import insert_historical_row, historical_row
     from ai_workbench.db.web_models import WebPageRecord, WebSessionPageRecord
     engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     migrations.upgrade(engine, migrations.WEB_CACHE_REVISION)
     original = json.dumps({"tools_allowed": ["base64_encode", "web_search", "base64_decode"]})
     with Session(engine) as db:
-        db.add(ProjectRecord(id="p", kind="workspace", name="p", configuration_json=original))
+        insert_historical_row(db, "projects", id="p", kind="workspace", name="p", configuration_json=original)
         db.commit()
-        db.add_all([SessionRecord(session_id="ordinary", kind="ordinary", configuration_json=original, waiting_run_id="waiting"),
-            SessionRecord(session_id="child", kind="workspace", project_id="p", configuration_json='{"overrides":{"tools_allowed":["base64_decode"]}}'),
-            SessionRecord(session_id="inherited", kind="workspace", project_id="p", configuration_json='{"overrides":{"tools_allowed":null}}'),
-            RunRecord(run_id="waiting", session_id="ordinary", kind="chat", persona_id="", status="WAITING_FOR_USER",
-                      config_snapshot_json=original, harness_state_json='{"pending_calls":[]}'),
-            RunRecord(run_id="done", session_id="ordinary", kind="chat", persona_id="", status="DONE", config_snapshot_json=original),
+        insert_historical_row(db, "sessionrecord", session_id="ordinary", kind="ordinary", configuration_json=original, waiting_run_id="waiting")
+        insert_historical_row(db, "sessionrecord", session_id="child", kind="workspace", project_id="p", configuration_json='{"overrides":{"tools_allowed":["base64_decode"]}}')
+        insert_historical_row(db, "sessionrecord", session_id="inherited", kind="workspace", project_id="p", configuration_json='{"overrides":{"tools_allowed":null}}')
+        insert_historical_row(db, "runrecord", run_id="waiting", session_id="ordinary", kind="chat", persona_id="", status="WAITING_FOR_USER", config_snapshot_json=original, harness_state_json='{"pending_calls":[]}')
+        insert_historical_row(db, "runrecord", run_id="done", session_id="ordinary", kind="chat", persona_id="", status="DONE", config_snapshot_json=original)
+        db.add_all([
             RunStepRecord(step_id="step", run_id="waiting", kind="model", status="running", context_snapshot_json=original),
             MessageRecord(message_id="message", session_id="ordinary", role="assistant", parts_json='[{"type":"text","text":"history"}]'),
             WebPageRecord(url_key=URL, raw_url=URL, title="page", snippet="", content="old cache", content_hash="hash", content_src="search", links_json="[]")])
@@ -222,14 +223,14 @@ def test_migration_removes_only_retired_selections_and_derived_cache(tmp_path):
     migrations.upgrade(engine, migrations.WEB_QUALITY_REVISION)
     migrations.upgrade(engine, migrations.WEB_QUALITY_REVISION)
     with Session(engine) as db:
-        assert json.loads(db.get(SessionRecord, "ordinary").configuration_json)["tools_allowed"] == ["web_search"]
-        assert json.loads(db.get(ProjectRecord, "p").configuration_json)["tools_allowed"] == ["web_search"]
-        assert json.loads(db.get(SessionRecord, "child").configuration_json)["overrides"]["tools_allowed"] == []
-        assert json.loads(db.get(SessionRecord, "inherited").configuration_json)["overrides"]["tools_allowed"] is None
-        assert db.get(SessionRecord, "ordinary").waiting_run_id is None
-        assert db.get(RunRecord, "waiting").status == "INTERRUPTED"
-        assert db.get(RunRecord, "done").status == "DONE"
-        assert db.get(RunRecord, "done").config_snapshot_json == original
+        assert json.loads(historical_row(db, "sessionrecord", "session_id", "ordinary")["configuration_json"])["tools_allowed"] == ["web_search"]
+        assert json.loads(historical_row(db, "projects", "id", "p")["configuration_json"])["tools_allowed"] == ["web_search"]
+        assert json.loads(historical_row(db, "sessionrecord", "session_id", "child")["configuration_json"])["overrides"]["tools_allowed"] == []
+        assert json.loads(historical_row(db, "sessionrecord", "session_id", "inherited")["configuration_json"])["overrides"]["tools_allowed"] is None
+        assert historical_row(db, "sessionrecord", "session_id", "ordinary")["waiting_run_id"] is None
+        assert historical_row(db, "runrecord", "run_id", "waiting")["status"] == "INTERRUPTED"
+        assert historical_row(db, "runrecord", "run_id", "done")["status"] == "DONE"
+        assert historical_row(db, "runrecord", "run_id", "done")["config_snapshot_json"] == original
         assert db.get(RunStepRecord, "step").context_snapshot_json == original
         assert db.get(MessageRecord, "message").parts_json == '[{"type":"text","text":"history"}]'
         assert db.get(WebPageRecord, URL) is None

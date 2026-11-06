@@ -14,14 +14,14 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       page.on('pageerror', (error) => errors.push(error.message));
       await request.post('/__test__/session');
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
-      const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'QQ images',
+      const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'QQ images',
         bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3001', keywords: ['bot'], context_policy: {} } }));
       try {
-        expect(project.image_input_enabled).toBe(false);
-        const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { title: 'QQ images', target_kind: 'group', target_id: '7788' } }));
+        expect(character.image_input_enabled).toBe(false);
+        const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { title: 'QQ images', target_kind: 'group', target_id: '7788' } }));
         const sid = session.session_id;
         const fixture = await json(request.post(`/__test__/qq/${sid}/media`));
-        await page.goto(`/projects/${project.id}?session=${sid}`);
+        await page.goto(`/characters/${character.id}?session=${sid}`);
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(50);
         const row = (number: number) => page.locator(`[data-qq-incoming="${fixture.ids[number]}"]`);
         const mixed = row(57), pure = row(58), face = row(59), failed = row(60);
@@ -70,7 +70,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(describedPreview.locator('img')).toHaveAttribute('alt', '更新后的图片描述');
         await page.keyboard.press('Escape');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-        await page.goto(`/projects/${project.id}`);
+        await page.goto(`/characters/${character.id}/settings`);
         await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         const toggle = page.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true });
         await expect(toggle).not.toBeChecked();
@@ -82,19 +82,19 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await chooseOption(descriptionModel, model.name);
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
-        expect((await json(request.get(`/api/projects/${project.id}`))).image_input_enabled).toBe(true);
+        expect((await json(request.get(`/api/characters/${character.id}`))).image_input_enabled).toBe(true);
         await page.reload();
         await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await expect(toggle).toBeChecked();
         await expect(descriptionModel).toContainText(model.name);
-        expect((await json(request.get(`/api/projects/${project.id}`))).image_description_model_profile_id).toBe(model.id);
+        expect((await json(request.get(`/api/characters/${character.id}`))).image_description_model_profile_id).toBe(model.id);
         await chooseOption(descriptionModel, labels.qq.noDescriptionModel);
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
-        expect((await json(request.get(`/api/projects/${project.id}`))).image_description_model_profile_id).toBeNull();
+        expect((await json(request.get(`/api/characters/${character.id}`))).image_description_model_profile_id).toBeNull();
         expect(errors).toEqual([]);
       } finally {
-        await request.delete(`/api/projects/${project.id}`);
+        await request.delete(`/api/characters/${character.id}`);
       }
     });
   });

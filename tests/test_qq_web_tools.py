@@ -12,7 +12,7 @@ from ai_workbench.core import chat_runner
 from ai_workbench.core.harness import agent_loop
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.instructions import date_instruction
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db.qq_models import QQBinding
@@ -81,7 +81,7 @@ def test_shared_settings_requests_snapshots_and_history(qq_client, qq_web, monke
     assert "source_id" not in json.dumps(web_results)
     live_results = [message["content"] for message in upstream.calls[2]["messages"] if message["role"] == "tool"]
     assert "source_id" not in json.dumps(live_results) and "Evidence" in json.dumps(live_results)
-    history = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
+    history = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     assert "Here are the current facts." in history
     assert all(value not in history for value in ("web_search", "web_fetch", "Untrusted page", "Internal completion"))
 

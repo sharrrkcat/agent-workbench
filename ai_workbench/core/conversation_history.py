@@ -84,7 +84,7 @@ class ConversationHistory:
         if source.session_id != run.session_id:
             raise ChatError("MESSAGE_SESSION_MISMATCH", "Reply input belongs to another session.", 400)
         session = self.sessions.get_session(run.session_id)
-        self.chat_service.resolve(session, persona_id=run.persona_id)
+        self.chat_service.resolve(session, persona_id=source.speaker_id)
         run_ids = set(self.runs.later_run_ids(run))
         message_ids = self.messages.message_ids_after_run(run, source.message_id)
         change = self._apply(run.session_id, run_ids, message_ids)
@@ -93,6 +93,7 @@ class ConversationHistory:
     def edit_user(self, message_id: str, content: str, attachment_ids: list[str]) -> tuple[MessageSchema, HistoryPruned]:
         message = self._user(message_id)
         self.chat_service.assert_idle(message.session_id)
+        self.chat_service.resolve(self.sessions.get_session(message.session_id), persona_id=message.speaker_id)
         original = message.metadata.get("attachments", [])
         retained_ids = set(attachment_ids)
         if len(retained_ids) != len(attachment_ids) or not retained_ids.issubset({item["id"] for item in original}):
@@ -109,7 +110,7 @@ class ConversationHistory:
         change = self._apply(message.session_id, run_ids, message_ids, updated)
         for attachment in original:
             if attachment["id"] not in retained_ids:
-                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas,
+                delete_attachment_if_unreferenced(attachment, self.messages, persona_store=self.personas, character_store=self.chat_service.characters,
                                                  knowledge_store=self.chat_service.knowledge, run_store=self.runs, qq_store=self.qq_store)
         self.events.emit("message_updated", session_id=message.session_id, message_id=message_id,
                          payload={"message": updated.model_dump(mode="json")})
@@ -138,5 +139,5 @@ class ConversationHistory:
         self.events.emit("history_pruned", session_id=session_id, payload=change.model_dump())
         for attachment_id in snapshot_attachments | attachments:
             delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, self.messages,
-                persona_store=self.personas, knowledge_store=self.chat_service.knowledge, run_store=self.runs, qq_store=self.qq_store)
+                persona_store=self.personas, character_store=self.chat_service.characters, knowledge_store=self.chat_service.knowledge, run_store=self.runs, qq_store=self.qq_store)
         return change

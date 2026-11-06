@@ -45,7 +45,7 @@ def latest_context(state, store, session_id, profile):
 
 def check_report(service, binding, resources):
     state, store = service.state, service.store
-    project = state.projects.get(binding.project_id)
+    character = state.characters.get(binding.character_id)
     # These bounded reads also establish database health without loading all Sessions.
     with Session(store.engine) as db:
         queued = db.exec(select(func.count()).select_from(QQBatch).where(
@@ -57,10 +57,10 @@ def check_report(service, binding, resources):
     status = "已暂停" if binding.paused else "运行中" if active else "空闲"
     if binding.paused:
         status += f"（{binding.pause_reason}）"
-    profile = state.model_manager.profile(project.model_profile_id, "llm") if project.model_profile_id else None
+    profile = state.model_manager.profile(character.model_profile_id, "llm") if character.model_profile_id else None
     model_status = state.model_manager.status(profile.id).state if profile else "未配置"
-    connection = service.connections.get(project.id)
-    connection_status = connection.status if connection else "connecting" if project.connection_enabled else "disabled"
+    connection = service.connections.get(character.id)
+    connection_status = connection.status if connection else "connecting" if character.connection_enabled else "disabled"
     memory, process, cpu = resources["memory"], resources["process"], resources["cpu"]
 
     def mib(value):
@@ -69,7 +69,7 @@ def check_report(service, binding, resources):
     def percent(value):
         return "暂无" if value is None else f"{value:.1f}%"
 
-    policy = project.context_policy
+    policy = character.context_policy
     history = "开启" if policy.history_enabled else "关闭"
     strategy = (f"消息窗口 {policy.message_window.max_messages} 条" if policy.strategy == "message_window"
         else "Token 预算；自动压缩" + ("开启" if policy.compaction.enabled else "关闭"))
@@ -83,6 +83,6 @@ def check_report(service, binding, resources):
         f"当前任务：{active.run_id or '准备中' if active else '无'}；待执行批次：{queued}；待聚合消息：{pending}",
         f"上下文策略：{strategy}；历史{history}",
         latest_context(state, store, binding.session_id, profile),
-        f"NapCat：{connection_status}；机器人：{project.bot_account}",
+        f"NapCat：{connection_status}；机器人：{character.bot_account}",
         f"模型：{profile.alias if profile else '未配置'} · {model_status}（本地状态，未发起推理探测）",
     ])

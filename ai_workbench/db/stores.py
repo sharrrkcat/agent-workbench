@@ -14,7 +14,7 @@ from sqlalchemy.orm import defer
 from ai_workbench.db.history_queries import eligible_history, message_key
 
 from ai_workbench.core.knowledge_settings import KnowledgeSettings, KnowledgeSettingsPatch, knowledge_settings_patch_updates
-from ai_workbench.core.knowledge_store import KnowledgeBase, KnowledgeSource, KnowledgeSourceIndexResult, SessionKnowledgeBinding, base_index_status
+from ai_workbench.core.knowledge_store import KnowledgeBase, KnowledgeSource, KnowledgeSourceIndexResult, base_index_status
 from ai_workbench.core.message_parts import make_text_part, validate_message_parts
 from ai_workbench.core.schema.message import MessageSchema, infer_speaker_identity
 from ai_workbench.core.schema.run import RunSchema, RunStatus, RunStepKind, RunStepSchema, RunStepStatus
@@ -29,7 +29,7 @@ from ai_workbench.core.worldbook import Worldbook, WorldbookEntry, WorldbookSett
 from ai_workbench.db.models import (
     AppMetadataRecord, KnowledgeBaseRecord, KnowledgeChunkRecord, KnowledgeEmbeddingRecord,
     KnowledgeSettingsRecord, KnowledgeSourceRecord, MessageRecord,
-    RunEventRecord, RunRecord, RunStepRecord, SessionKnowledgeBindingRecord, SessionRecord,
+    RunEventRecord, RunRecord, RunStepRecord, SessionRecord,
     WorldbookEntryRecord, WorldbookRecord, WorldbookSettingsRecord, ContextCheckpointRecord, ContextRetrievalRecord,
 )
 
@@ -89,7 +89,7 @@ class SqlSessionStore:
             db.exec(delete(ContextCheckpointRecord).where(ContextCheckpointRecord.session_id == session_id))
             db.commit()
 
-    def create_session(self, title: str = "", *, kind: str = "ordinary", **values: Any) -> Session:
+    def create_session(self, title: str = "", *, kind: str = "normal", **values: Any) -> Session:
         session = parse_session(dict(session_id=str(uuid4()), title=title, kind=kind,
             title_generation_state="pending" if not title.strip() else "manual", **values))
         with DbSession(self.engine) as db:
@@ -123,7 +123,6 @@ class SqlSessionStore:
     def set_generated_title(self, session_id: str, title: str, metadata: Optional[dict[str, Any]] = None) -> Session: return self._update(session_id, title=title, title_generation_state="done", title_generation_metadata_json=_dump(metadata or {}))
     def set_title_generation_state(self, session_id: str, state: str, metadata: Optional[dict[str, Any]] = None) -> Session: return self._update(session_id, title_generation_state=state, title_generation_metadata_json=_dump(metadata or {}))
     def set_waiting_run(self, session_id: str, run_id: Optional[str]) -> Session: return self._update(session_id, waiting_run_id=run_id)
-    def set_model_profile(self, session_id: str, profile_id: Optional[str]) -> Session: return self._update(session_id, model_profile_id=profile_id)
 
     def clear_interrupted_waiting_runs(self, run_ids: list[str]) -> None:
         if not run_ids: return
@@ -408,8 +407,8 @@ class SqlRunStore:
         with DbSession(self.engine) as db:
             return {attachment for value in db.exec(statement).yield_per(128) for attachment in json.loads(value)}
 
-    def create_run(self, kind: str, persona_id: str, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
-        row = RunRecord(run_id=str(uuid4()), kind=kind, persona_id=persona_id, config_snapshot_json=_dump(config_snapshot or {}), harness_state_json=_dump(harness_state or {}), session_id=session_id, status=RunStatus.PENDING.value, metadata_json=_dump(metadata or {}))
+    def create_run(self, kind: str, character_id: str, persona_id: str | None, session_id: str, metadata: dict[str, Any] | None = None, *, config_snapshot: dict | None = None, harness_state: dict | None = None) -> RunSchema:
+        row = RunRecord(run_id=str(uuid4()), kind=kind, character_id=character_id, persona_id=persona_id, config_snapshot_json=_dump(config_snapshot or {}), harness_state_json=_dump(harness_state or {}), session_id=session_id, status=RunStatus.PENDING.value, metadata_json=_dump(metadata or {}))
         with DbSession(self.engine) as db: db.add(row); db.commit(); db.refresh(row)
         return _run(row)
 
@@ -712,19 +711,8 @@ class SqlKnowledgeStore:
                 db.exec(delete(KnowledgeChunkRecord).where(KnowledgeChunkRecord.source_id==source.id)); db.exec(delete(KnowledgeEmbeddingRecord).where(KnowledgeEmbeddingRecord.source_id==source.id))
             if self.engine.dialect.name == "sqlite":
                 db.connection().exec_driver_sql("DELETE FROM kb_chunk_fts WHERE knowledge_base_id = ?", (knowledge_base_id,))
-            db.exec(delete(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id==knowledge_base_id)); db.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.knowledge_base_id==knowledge_base_id)); db.delete(db.get(KnowledgeBaseRecord,knowledge_base_id)); db.commit()
+            db.exec(delete(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id==knowledge_base_id)); db.delete(db.get(KnowledgeBaseRecord,knowledge_base_id)); db.commit()
         return current
-    def list_session_bindings(self, session_id: str) -> list[SessionKnowledgeBinding]:
-        with DbSession(self.engine) as db:
-            rows=db.exec(select(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id==session_id).order_by(SessionKnowledgeBindingRecord.sort_order)).all(); return [SessionKnowledgeBinding(id=row.id,session_id=row.session_id,knowledge_base_id=row.knowledge_base_id,enabled=row.enabled,sort_order=row.sort_order,created_at=row.created_at,knowledge_base=_kb(db.get(KnowledgeBaseRecord,row.knowledge_base_id)) if db.get(KnowledgeBaseRecord,row.knowledge_base_id) else None) for row in rows]
-    def replace_session_bindings(self, session_id: str, knowledge_base_ids: list[str]) -> list[SessionKnowledgeBinding]:
-        with DbSession(self.engine) as db:
-            db.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id==session_id))
-            for index,kb_id in enumerate(dict.fromkeys(knowledge_base_ids)): db.add(SessionKnowledgeBindingRecord(session_id=session_id,knowledge_base_id=kb_id,sort_order=(index+1)*10))
-            db.commit()
-        return self.list_session_bindings(session_id)
-    def delete_session_bindings(self, session_id: str) -> None:
-        with DbSession(self.engine) as db: db.exec(delete(SessionKnowledgeBindingRecord).where(SessionKnowledgeBindingRecord.session_id==session_id)); db.commit()
     def list_sources(self, knowledge_base_id: str) -> list[KnowledgeSource]:
         with DbSession(self.engine) as db: return [_source(row,db) for row in db.exec(select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.knowledge_base_id==knowledge_base_id).order_by(KnowledgeSourceRecord.created_at)).all()]
     def get_source(self, source_id: str) -> KnowledgeSource:
@@ -802,14 +790,14 @@ def _session(row: SessionRecord) -> Session:
 def _session_record_values(session: Session) -> dict:
     values = session.model_dump()
     configuration = {key: values.pop(key) for key in list(values)
-                     if key not in SessionBase.model_fields and key not in {"kind", "project_id"}}
+                     if key not in SessionBase.model_fields and key not in {"kind", "character_id"}}
     values["configuration_json"] = _dump(configuration)
     values["title_generation_metadata_json"] = _dump(values.pop("title_generation_metadata"))
     return values
 def _message(row: MessageRecord) -> MessageSchema:
     return MessageSchema(message_id=row.message_id,session_id=row.session_id,role=row.role,speaker_type=row.speaker_type,speaker_id=row.speaker_id,speaker_name=row.speaker_name,origin=row.origin,content_version=row.content_version,parts=_load(row.parts_json,[]),run_id=row.run_id,parent_message_id=row.parent_message_id,metadata=_load(row.metadata_json,{}),created_at=row.created_at)
 def _run(row: RunRecord) -> RunSchema:
-    return RunSchema(run_id=row.run_id,session_id=row.session_id,kind=row.kind,persona_id=row.persona_id,status=row.status,current_step=row.current_step,stage=row.stage,progress_message=row.progress_message,progress_current=row.progress_current,progress_total=row.progress_total,cancel_requested=row.cancel_requested,started_at=row.started_at,finished_at=row.finished_at,error_code=row.error_code,error_message=row.error_message,error=row.error,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
+    return RunSchema(run_id=row.run_id,session_id=row.session_id,kind=row.kind,character_id=row.character_id,persona_id=row.persona_id,status=row.status,current_step=row.current_step,stage=row.stage,progress_message=row.progress_message,progress_current=row.progress_current,progress_total=row.progress_total,cancel_requested=row.cancel_requested,started_at=row.started_at,finished_at=row.finished_at,error_code=row.error_code,error_message=row.error_message,error=row.error,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
 def _step(row: RunStepRecord) -> RunStepSchema:
     return RunStepSchema(step_id=row.step_id,run_id=row.run_id,kind=row.kind,parent_step_id=row.parent_step_id,label=row.label,status=row.status,message=row.message,order=row.order,started_at=row.started_at,finished_at=row.finished_at,error_code=row.error_code,error_message=row.error_message,metadata=_load(row.metadata_json,{}),created_at=row.created_at,updated_at=row.updated_at)
 def _event(row: RunEventRecord) -> RunEventSchema:

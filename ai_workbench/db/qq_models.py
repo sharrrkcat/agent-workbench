@@ -9,9 +9,9 @@ from datetime import datetime
 
 class QQBinding(SQLModel, table=True):
     __tablename__ = "qq_bindings"
-    __table_args__ = (UniqueConstraint("project_id", "target_kind", "target_id"),)
+    __table_args__ = (UniqueConstraint("character_id", "target_kind", "target_id"),)
     session_id: str = Field(primary_key=True)
-    project_id: str = Field(index=True)
+    character_id: str = Field(index=True)
     target_kind: str
     target_id: str
     paused: bool = False
@@ -55,11 +55,11 @@ class QQMessage(SQLModel, table=True):
 
 class QQBatch(SQLModel, table=True):
     __tablename__ = "qq_batches"
-    __table_args__ = (Index("ix_qq_batch_queue", "project_id", "status", "id"),
+    __table_args__ = (Index("ix_qq_batch_queue", "character_id", "status", "id"),
         Index("ix_qq_batch_active_session", "session_id", sqlite_where=text("status = 'running'")))
     id: int | None = Field(default=None, primary_key=True)
     session_id: str = Field(index=True)
-    project_id: str
+    character_id: str
     status: str = "queued"
     text: str
     created_at: float
@@ -160,7 +160,7 @@ class QQNotification(SQLModel, table=True):
     __tablename__ = "qq_notifications"
     __table_args__ = (UniqueConstraint("event_key"), {"sqlite_autoincrement": True})
     id: int | None = Field(default=None, primary_key=True)
-    project_id: str = Field(index=True)
+    character_id: str = Field(index=True)
     source_session_id: str | None = None
     event_key: str
     kind: str

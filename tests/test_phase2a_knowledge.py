@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 import asyncio
 
 import pytest
@@ -80,14 +81,14 @@ def test_titles_only_use_explicit_auxiliary_after_main_lease_releases(tmp_path):
         main = configure_model(client, alias="chat", parameters={"temperature": 0.7})
         auxiliary = configure_model(client, alias="titles", model_ref="other")
         client.patch("/api/models/settings", json={"default_model_profile_id": main["id"], "utility_model_profile_id": auxiliary["id"]})
-        session = client.post("/api/sessions", json={}).json()
+        session = create_chat(client, overrides={}).json()
         response = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "hello"})
         assert response.json()["success"], response.text
         assert [c["model"] for c in upstream.calls] == ["fake", "other"]
         assert upstream.calls[-1]["max_tokens"] == 64
         assert client.get(f"/api/sessions/{session['session_id']}").json()["title"] == "reply"
         client.patch("/api/models/settings", json={"utility_model_profile_id": None})
-        session = client.post("/api/sessions", json={}).json()
+        session = create_chat(client, overrides={}).json()
         client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "another"})
         assert len(upstream.calls) == 3
         assert client.get(f"/api/sessions/{session['session_id']}").json()["title"] == "another"

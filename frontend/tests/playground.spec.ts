@@ -50,7 +50,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const sidebar = page.locator('.session-sidebar');
       const entry = sidebar.getByRole('button', { name: 'Playground', exact: true });
       await expect(sidebar.locator('.sidebar-header [data-sidebar="menu-button"]')).toHaveText([
-        labels.newSession, labels.newWorkspace, labels.newTimeline, labels.newQQBot, 'Playground',
+        labels.newSession, labels.newCharacter,
       ]);
       await expect(entry).toHaveAttribute('aria-current', 'page');
       await expect(sidebar.locator('.session-select[aria-current="page"]')).toHaveCount(0);
@@ -115,42 +115,46 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
     });
 
     test('leaving discards an unsent chat and its attachments without creating a session', async ({ page, request }) => {
-      const before = await (await request.get('/api/sessions')).json();
+      const before = await (await request.get('/api/characters/00000000-0000-4000-8000-000000000003/sessions')).json();
       let creates = 0;
       page.on('request', (request) => {
-        if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/sessions') creates++;
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/characters/00000000-0000-4000-8000-000000000003/sessions') creates++;
       });
-      await page.goto('/new');
+      await page.goto('/characters/00000000-0000-4000-8000-000000000003/new');
       await page.locator('.composer textarea').fill('Discard this draft');
       await page.locator('.composer input[type=file]').setInputFiles({ name: 'draft.txt', mimeType: 'text/plain', buffer: Buffer.from('Draft') });
       await expect(page.locator('.upload-ready')).toHaveCount(1);
       await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
       const dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
-      const original = await dialog.getByRole('spinbutton', { name: labels.maxChars, exact: true }).inputValue();
-      await dialog.getByRole('spinbutton', { name: labels.maxChars, exact: true }).fill('500');
+      await dialog.getByRole('button', { name: labels.messageWindow, exact: true }).click();
+      const original = await dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true }).inputValue();
+      await dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true }).fill('500');
       await dialog.getByRole('button', { name: labels.save, exact: true }).click();
       await openPlayground(page);
       await expect(page.locator('.composer')).toHaveCount(0);
       await page.goBack();
-      await expect(page).toHaveURL('/new');
+      await expect(page).toHaveURL('/characters/00000000-0000-4000-8000-000000000003/new');
       await expect(page.locator('.composer textarea')).toHaveValue('');
       await expect(page.locator('.attachment-chip')).toHaveCount(0);
       await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
-      await expect(dialog.getByRole('spinbutton', { name: labels.maxChars, exact: true })).toHaveValue(original);
+      await expect(dialog.getByRole('button', { name: labels.tokenBudget, exact: true })).toHaveAttribute('aria-pressed', 'true');
+      await dialog.getByRole('button', { name: labels.messageWindow, exact: true }).click();
+      await expect(dialog.getByRole('spinbutton', { name: labels.maxMessages, exact: true })).toHaveValue(original);
       await page.keyboard.press('Escape');
+      await answerConfirmation(page, true, locale);
       expect(creates).toBe(0);
-      expect((await (await request.get('/api/sessions')).json()).length).toBe(before.length);
+      expect((await (await request.get('/api/characters/00000000-0000-4000-8000-000000000003/sessions')).json()).length).toBe(before.length);
     });
 
     test('late startup and session reads cannot select over Playground', async ({ page }) => {
-      const startup = await holdResponse(page, '**/api/sessions');
+      const startup = await holdResponse(page, '**/api/characters/*/sessions');
       try {
         await page.goto('/');
         await startup.requested;
         await openPlayground(page);
       } finally { await startup.release(); }
       await openSidebar(page);
-      const target = page.locator('.session-sidebar').getByRole('button', { name: session.title, exact: true });
+      const target = page.locator('.session-sidebar .character-select').filter({ hasText: 'Cogita' });
       await expect(target).toBeVisible();
       await expect(page.locator('.session-select[aria-current="page"]')).toHaveCount(0);
       const details = await holdResponse(page, `**/api/sessions/${session.session_id}`);
@@ -168,7 +172,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await expect(page.locator('.composer textarea')).toBeEnabled();
     });
 
-    test('Settings and Project leave guards preserve rejected navigation', async ({ page, request }) => {
+    test('Settings and Character leave guards preserve rejected navigation', async ({ page, request }) => {
       await page.goto('/playground');
       await openSidebar(page);
       await page.locator('.session-sidebar').getByRole('button', { name: labels.settings, exact: true }).click();
@@ -188,41 +192,38 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await answerConfirmation(page, true, locale);
       await expect(page).toHaveURL('/playground');
 
-      const agents = await (await request.get('/api/personas?collection=agent')).json();
-      const users = await (await request.get('/api/personas?collection=user')).json();
-      const response = await request.post('/api/projects', { data: {
-        kind: 'workspace', name: `Playground guard ${session.session_id}`, agent_persona_id: agents[0].id,
-        cogita_persona_id: users[0].id, context_policy: {}, harness_enabled: false, tools_allowed: [],
+      const response = await request.post('/api/characters', { data: {
+        kind: 'normal', name: `Playground guard ${session.session_id}`, harness_enabled: false, tools_allowed: [],
       } });
       expect(response.ok()).toBe(true);
-      const project = await response.json();
+      const character = await response.json();
       try {
-        await page.goto(`/projects/${project.id}`);
-        await page.getByLabel(labels.projectName, { exact: true }).fill('Unsaved Playground guard');
+        await page.goto(`/characters/${character.id}/settings`);
+        await page.getByLabel(labels.characterName, { exact: true }).fill('Unsaved Playground guard');
         await openSidebar(page);
         await page.locator('.session-sidebar').getByRole('button', { name: 'Playground', exact: true }).click();
         await answerConfirmation(page, false, locale);
-        await expect(page).toHaveURL(`/projects/${project.id}`);
+        await expect(page).toHaveURL(`/characters/${character.id}/settings`);
         if (width === 390) {
           await expect(page.locator('[data-sidebar="trigger"]')).toHaveAttribute('aria-expanded', 'true');
           await page.keyboard.press('Escape');
         }
-        await expect(page.getByLabel(labels.projectName, { exact: true })).toHaveValue('Unsaved Playground guard');
+        await expect(page.getByLabel(labels.characterName, { exact: true })).toHaveValue('Unsaved Playground guard');
         await openSidebar(page);
         await page.locator('.session-sidebar').getByRole('button', { name: 'Playground', exact: true }).click();
         await answerConfirmation(page, true, locale);
         await expect(page).toHaveURL('/playground');
         if (width === 390) await expect(page.locator('[data-sidebar="trigger"]')).toHaveAttribute('aria-expanded', 'false');
         await page.goBack();
-        await expect(page.getByLabel(labels.projectName, { exact: true })).toHaveValue(project.name);
-        await page.getByLabel(labels.projectName, { exact: true }).fill('Browser forward guard');
+        await expect(page.getByLabel(labels.characterName, { exact: true })).toHaveValue(character.name);
+        await page.getByLabel(labels.characterName, { exact: true }).fill('Browser forward guard');
         await page.evaluate(() => history.forward());
         await answerConfirmation(page, false, locale);
-        await expect(page).toHaveURL(`/projects/${project.id}`);
+        await expect(page).toHaveURL(`/characters/${character.id}/settings`);
         await page.evaluate(() => history.forward());
         await answerConfirmation(page, true, locale);
         await expect(page).toHaveURL('/playground');
-      } finally { await request.delete(`/api/projects/${project.id}`); }
+      } finally { await request.delete(`/api/characters/${character.id}`); }
     });
 
     test('submitted work continues while queued messages wait for the conversation to reopen', async ({ page, request }) => {
@@ -245,7 +246,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       expect(posts).toEqual(['approval']);
       expect((await readMessages(request, session.session_id)).filter((message: { role: string }) => message.role === 'user')).toHaveLength(1);
       await openSidebar(page);
-      await page.locator('.session-sidebar').getByRole('button', { name: session.title, exact: true }).click();
+      await page.locator('.session-sidebar .character-select').filter({ hasText: 'Cogita' }).click();
       await expect(input).toHaveValue('');
       await expect(page.locator('.status-done')).toHaveCount(2);
       expect(posts).toEqual(['approval', 'queued for return']);

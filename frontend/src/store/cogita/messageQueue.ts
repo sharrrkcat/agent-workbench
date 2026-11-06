@@ -12,7 +12,7 @@ export type ComposerAttachment = Attachment & {
 export type QueuedMessage = { id: string; content: string; attachments: Attachment[] };
 export type QueueRun = Pick<Run, 'run_id' | 'status' | 'created_at' | 'updated_at'>;
 export type MessageQueue = {
-  projectId: string | null;
+  characterId: string | null;
   items: QueuedMessage[];
   editing: { id: string; content: string; attachments: ComposerAttachment[] } | null;
   paused: 'stopped' | 'failed' | 'submission' | 'unconfirmed' | null;
@@ -23,8 +23,8 @@ export type MessageQueue = {
 export const queueRun = ({ run_id, status, created_at, updated_at }: QueueRun): QueueRun =>
   ({ run_id, status, created_at, updated_at });
 
-export function emptyQueue(projectId: string | null, run?: Run): MessageQueue {
-  return { projectId, items: [], editing: null, paused: null, submission: null, run: run ? queueRun(run) : null };
+export function emptyQueue(characterId: string | null, run?: Run): MessageQueue {
+  return { characterId, items: [], editing: null, paused: null, submission: null, run: run ? queueRun(run) : null };
 }
 
 /** Observe before history trimming: acceptance and the last run outlive the visible page. */

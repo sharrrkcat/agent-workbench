@@ -16,7 +16,7 @@ from tests.test_bounded_history import history_stores
 @pytest.mark.parametrize("value", [None, False, 0, "", [], {}, "[]", "{}", "0", [0], {"x": 0}, True, 1])
 def test_context_sql_matches_python_eligibility(history_stores, value):
     state = history_stores
-    sid = state.sessions.create_session().session_id
+    sid = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id
     state.messages.add_message(sid, "user", "history", metadata={"event_type": value})
     built = ContextBuilder(state.messages).build(sid, "current", ContextPolicy(), history=reversed(list(state.messages.iter_context_history(sid, None))))
     assert len(built.messages) == (1 if value else 2)
@@ -24,7 +24,7 @@ def test_context_sql_matches_python_eligibility(history_stores, value):
 
 def test_attachment_reference_queries_cover_parts_gallery_and_metadata(history_stores, monkeypatch):
     state = history_stores
-    sid = state.sessions.create_session().session_id
+    sid = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id
     names = {"aa.png", "bb.txt", "cc.png", "dd.wav", "ee.mp4", "ff.png", "ab.txt", "cd.txt"}
     message = state.messages.add_message(sid, "user", parts=[
         {"type": "image", "attachment_id": "aa.png"},

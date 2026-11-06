@@ -69,6 +69,7 @@ MANUAL_COMPACTION_REVISION = "0048_manual_compaction"
 QQ_CONTEXT_COMPACTION_REVISION = "0049_qq_context_compaction"
 HISTORY_RETRIEVAL_REVISION = "0050_history_retrieval"
 QQ_TIMELINE_REVISION = "0051_qq_timeline"
+CHARACTERS_PERSONAS_REVISION = "0052_characters_personas"
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 

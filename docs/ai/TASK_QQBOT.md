@@ -12,7 +12,7 @@ and the [Frontend task](TASK_FRONTEND_UI.md) own shared UI/navigation foundation
 Paths below are under [ai_workbench/](../../ai_workbench/):
 
 - core/qq_service.py assembles OneBot connections, receipt-ordered trigger decisions,
-  Project FIFO execution, the four QQ tools, delivery confirmation and pause/resume/stop.
+  Character FIFO execution, the four QQ tools, delivery confirmation and pause/resume/stop.
   api/deps.py wires the service; core/harness/agent_loop.py integrates tool visibility,
   reply decisions, quotas, budget exceptions and run metadata.
 - core/qq_programs.py handles direct commands, administrator routing and durable
@@ -31,9 +31,9 @@ Paths below are under [ai_workbench/](../../ai_workbench/):
   core/qq_descriptions.py owns asynchronous captions. core/qq_generation.py prepares
   provider images; core/qq_resources.py owns gallery queries, edits and shared deletion.
   core/harness/network.py owns public-network downloads; core/attachments.py owns files.
-- core/schema/project.py defines Project settings and the default prompt;
+- core/schema/character.py defines Character settings and the default prompt;
   core/schema/qq.py defines tool identities, candidates and ordered media types.
-  api/schemas/projects.py and api/routes/qq.py expose strict Project/QQ APIs.
+  api/schemas/projects.py and api/routes/qq.py expose strict Character/QQ APIs.
 - core/qq_faces.json and [third_party/qface/](../../third_party/qface/) contain
   system-face data/notices. [Data layout](../DATA_LAYOUT.md) owns QQ revision effects;
   executable migrations live in [alembic/versions/](../../alembic/versions/).
@@ -44,29 +44,29 @@ Paging regressions: tests/test_qq_transcript.py, tests/test_qq_timeline_migratio
 
 Paths below are under [frontend/src/](../../frontend/src/):
 
-- components/projects/QQBotEditor.tsx owns shared creation/settings tabs and drafts;
+- components/characters/QQBotEditor.tsx owns shared creation/settings tabs and drafts;
   QQImageGenerationFields.tsx owns generation controls; QQSessionDialog.tsx binds targets.
-- QQSessionView.tsx, QQMessageContent.tsx and useQQConversation.ts in components/projects/
+- QQSessionView.tsx, QQMessageContent.tsx and useQQConversation.ts in components/characters/
   own conversation rendering, model/reasoning controls, delivery states and polling.
   qqConversation.ts owns history/version reconciliation and local deletion state.
 - QQResourcesPage.tsx and qqResources.ts in the same directory own gallery/Sheet
   state, filtering, URL pagination, favorites, descriptions and guarded navigation.
-- api/qq.ts and types/projects.ts define clients/types; store/useProjectsStore.ts
-  owns Project mutations. components/projects/ProjectsTree.tsx, ProjectPage.tsx,
-  NewProjectDialog.tsx and navigation.ts connect QQ views to the shared shell and App.tsx.
+- api/qq.ts and types/characters.ts define clients/types; store/useCharactersStore.ts
+  owns Character mutations. components/characters/CharactersTree.tsx, CharacterPage.tsx,
+  NewCharacterDialog.tsx and navigation.ts connect QQ views to the shared shell and App.tsx.
 - Follow the [i18n guide](../../frontend/src/i18n/README.md) for both locales.
 
 ## Verification map
 
 Use [README verification](../../README.md#verification) and the
-[QQBot browser command](../../README.md#qqbot-projects). Backend tests run only for
+[QQBot browser command](../../README.md#qqbot-characters). Backend tests run only for
 backend changes; docs-only work still runs frontend tests/build and documentation gates.
 The [run guide](../../README_RUN.md#qqbot-deployment) owns deployment conclusions;
 simulated tests do not establish the [outstanding live acceptance](../contracts/qqbot.md#limits-and-acceptance).
 
 Backend tests under [tests/](../../tests/):
 
-- test_qqbot.py: Project/token/binding restrictions, fake OneBot/model integration,
+- test_qqbot.py: Character/token/binding restrictions, fake OneBot/model integration,
   FIFO/dedup, reply failures, stop, reconnect and memory/SQLite recovery.
 - test_qq_triggers.py, test_qq_followup.py and test_qq_names.py: real mentions/account
   keywords, receipt ordering, lookup deadlines, participant epochs and skip/renewal races.
@@ -98,7 +98,7 @@ test-qq-resources.mjs for resource API, URL and pagination contracts.
 Browser suites under [frontend/tests/](../../frontend/tests/) use English/Chinese desktop/touch fixtures:
 
 - qqbot.spec.ts: creation/token/binding, sender grouping, history, delivery/skip,
-  usage/context inspection, composer controls and delayed/failed Project saves.
+  usage/context inspection, composer controls and delayed/failed Character saves.
 - qqbot-web-tools.spec.ts: search/fetch traces without citations, error recovery and reload.
 - qqbot-images.spec.ts and qqbot-send-image.spec.ts: image input, ordered media,
   original animations, previews, pending refresh, placeholders and delivery deletion.
@@ -112,5 +112,5 @@ Browser suites under [frontend/tests/](../../frontend/tests/) use English/Chines
 - qqbot-commands.spec.ts: administrator validation/saves and program-message history.
 
 [tests/qq_browser_fixture.py](../../tests/qq_browser_fixture.py) supplies isolated
-browser APIs/media. Shared Project/navigation and context-detail suites remain
+browser APIs/media. Shared Character/navigation and context-detail suites remain
 listed in the [Frontend task](TASK_FRONTEND_UI.md).

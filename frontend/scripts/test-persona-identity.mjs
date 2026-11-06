@@ -9,8 +9,8 @@ const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { usePersonasStore: personas } = (await load('../src/store/usePersonasStore.ts')).exports;
 const { useCogitaStore: chat } = (await load('../src/store/useCogitaStore.ts')).exports;
-const first = { id: 'first', collection: 'agent', name: 'First', avatar_attachment_id: 'first.png' };
-const second = { id: 'second', collection: 'agent', name: 'Second', avatar_attachment_id: null };
+const first = { id: 'first', name: 'First', avatar_attachment_id: 'first.png' };
+const second = { id: 'second', name: 'Second', avatar_attachment_id: null };
 const event = (type, payload) => chat.getState().applyRuntimeEvent({ type, session_id: 'session', payload });
 function deferred() {
   let resolve, reject;
@@ -70,12 +70,12 @@ for (const locale of ['en', 'zh-CN']) {
   const failed = deferred();
   api.listPersonas = () => failed.promise;
   const reading = personas.getState().reload();
-  assert.ok(render('unknown').includes(i18n.t('personas:assistant')));
+  assert.ok(render('unknown').includes(i18n.t('personas:persona')));
   failed.reject(new Error('List unavailable'));
   await assert.rejects(reading, /List unavailable/);
   assert.equal(personas.getState().error, 'Error: List unavailable');
   assert.match(render(second.id), /Second/);
-  assert.ok(render('unknown').includes(i18n.t('personas:assistant')));
+  assert.ok(render('unknown').includes(i18n.t('personas:persona')));
   api.listPersonas = async () => [{ ...first, name: 'Final', avatar_attachment_id: null }, second];
   await personas.getState().reload();
 }

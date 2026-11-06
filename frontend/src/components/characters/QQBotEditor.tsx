@@ -9,28 +9,27 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useModelsStore } from '../../store/useModelsStore';
-import { usePersonasStore } from '../../store/usePersonasStore';
-import { useProjectsStore } from '../../store/useProjectsStore';
+import { useCharactersStore } from '../../store/useCharactersStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { qqApi } from '../../api/qq';
-import type { Project, QQBotProject, QQBotInput } from '../../types/projects';
+import type { Character, QQBotCharacter, QQBotInput } from '../../types/characters';
 import { ContextFields, GenerationFields, ModelField, ModelSelect } from '../personas/ConfigurationFields';
 import { defaultContextPolicy } from '../../types/chat';
 import { Feedback, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 import { QQImageGenerationFields } from './QQImageGenerationFields';
+import { IdentityAvatarField } from '../personas/IdentityAvatarField';
 
-export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput {
-  if (project) {
-    const { id: _id, created_at: _created, updated_at: _updated, has_access_token: _has, ...values } = project;
+export function qqInput(character?: QQBotCharacter, defaultPrompt = ''): QQBotInput {
+  if (character) {
+    const { id: _id, is_protected: _protected, created_at: _created, updated_at: _updated, has_access_token: _has, ...values } = character;
     return values;
   }
   return { kind: 'qqbot', name: '', bot_account: '', admin_qq: null, websocket_url: 'ws://127.0.0.1:3001',
-    connection_enabled: false, agent_persona_id: null, system_prompt: defaultPrompt, model_profile_id: null,
+    connection_enabled: false, avatar_attachment_id: null, system_prompt: defaultPrompt, model_profile_id: null,
     temperature: null, reasoning: true, group_reply_mode: 'keyword', keywords: [], batch_message_limit: 20, reply_message_limit: 4, image_input_enabled: false,
     icebreaker_enabled: false, icebreaker_cold_seconds: 7200, icebreaker_wait_seconds: 120, icebreaker_cooldown_seconds: 10800,
     image_description_model_profile_id: null,
@@ -38,29 +37,29 @@ export function qqInput(project?: QQBotProject, defaultPrompt = ''): QQBotInput 
     context_policy: { ...defaultContextPolicy(), include_attachments: 'none' } };
 }
 
-export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = false }: {
-  project?: QQBotProject; onSaved: (project: Project) => void;
+export function QQBotEditor({ character, onSaved, onLeaveGuardChange, dialog = false }: {
+  character?: QQBotCharacter; onSaved: (character: Character) => void;
   onLeaveGuardChange: (guard: LeaveGuard) => void; dialog?: boolean;
 }) {
   const { t } = useTranslation('personas');
   const id = useId();
   const { confirm, confirmation } = useConfirmDialog();
-  const [draft, setDraft] = useState(() => qqInput(project, t('qq.defaultPrompt')));
+  const [draft, setDraft] = useState(() => qqInput(character, t('qq.defaultPrompt')));
   const [baseline, setBaseline] = useState(() => JSON.stringify(draft));
   const [keywords, setKeywords] = useState(() => draft.keywords.join('\n'));
   const [optionsError, setOptionsError] = useState('');
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [connection, setConnection] = useState('disabled');
   const [tab, setTab] = useState('connection');
-  const personas = usePersonasStore((s) => s.personas);
   const profiles = useModelsStore((s) => s.profiles);
   const live = useRef(true);
   const dirty = JSON.stringify(draft) !== baseline;
   const status = useRef({ dirty, busy });
-  status.current = { dirty, busy };
+  status.current = { dirty, busy: busy || uploading };
   const guard = useCallback<LeaveGuard>(async () => !status.current.busy &&
     (!status.current.dirty || await confirm(t('discardChanges'))), [confirm, t]);
   useEffect(() => { onLeaveGuardChange(guard); return () => onLeaveGuardChange(async () => true); }, [guard, onLeaveGuardChange]);
@@ -73,24 +72,24 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
   useEffect(() => {
     let active = true;
     setOptionsError('');
-    void Promise.all([useModelsStore.getState().reloadProfiles(), useModelsStore.getState().reloadProviders(), usePersonasStore.getState().reload()])
+    void Promise.all([useModelsStore.getState().reloadProfiles(), useModelsStore.getState().reloadProviders()])
       .catch((reason) => { if (active) setOptionsError(errorText(reason)); });
     return () => { active = false; };
   }, [reload]);
   useEffect(() => {
-    if (!project) return;
+    if (!character) return;
     let active = true;
     let pending: AbortController | null = null;
     const refresh = async () => {
       if (pending) return;
       const controller = new AbortController(); pending = controller;
-      try { const value = await qqApi.status(project.id, controller.signal); if (active) setConnection(value.status); }
+      try { const value = await qqApi.status(character.id, controller.signal); if (active) setConnection(value.status); }
       catch (reason) { if (active && !controller.signal.aborted) setError(errorText(reason)); }
       finally { pending = null; }
     };
     void refresh(); const timer = setInterval(() => void refresh(), 3000);
     return () => { active = false; clearInterval(timer); pending?.abort(); };
-  }, [project?.id]);
+  }, [character?.id]);
   const update = (values: Partial<QQBotInput>) => setDraft((current) => ({ ...current, ...values }));
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -111,11 +110,11 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
     if (status.current.busy) return;
     status.current.busy = true; setBusy(true); setError(''); setNotice('');
     try {
-      const saved = await useProjectsStore.getState().save(draft, project?.id);
+      const saved = await useCharactersStore.getState().save(draft, character?.id);
       if (!live.current || saved.kind !== 'qqbot') return;
       const value = qqInput(saved);
       setDraft(value); setKeywords(value.keywords.join('\n')); setBaseline(JSON.stringify(value));
-      status.current.dirty = false; setNotice(t('projectSaved'));
+      status.current.dirty = false; setNotice(t('characterSaved'));
       void useCogitaStore.getState().refreshCurrent(); onSaved(saved);
     } catch (reason) { if (live.current) setError(errorText(reason)); }
     finally { status.current.busy = false; if (live.current) setBusy(false); }
@@ -124,15 +123,17 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
     className={cn('qq-settings', dialog ? 'settings-dialog-form' : 'flex min-w-0 flex-col gap-5')} onSubmit={submit} />}>
     <Feedback error={error || optionsError} notice={notice} />
     {optionsError ? <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => setReload((n) => n + 1)}>{t('retry')}</Button> : null}
-    <TabsList className="shrink-0" aria-label={t('projectSettings')} activateOnFocus={false}>
+    <TabsList className="shrink-0" aria-label={t('characterSettings')} activateOnFocus={false}>
       <TabsTrigger value="connection">{t('qq.tabs.connection')}</TabsTrigger>
       <TabsTrigger value="reply">{t('qq.tabs.reply')}</TabsTrigger>
       <TabsTrigger value="images">{t('qq.tabs.images')}</TabsTrigger>
     </TabsList>
     <div className={dialog ? 'settings-dialog-body' : 'min-w-0'}><FieldSet disabled={busy}>
       <TabsContent value="connection" keepMounted data-qq-settings-tab="connection">
+        <IdentityAvatarField name={draft.name} value={draft.avatar_attachment_id} disabled={busy}
+          onChange={(avatar_attachment_id) => update({ avatar_attachment_id })} onBusyChange={setUploading} onError={setError} />
         <FieldGroup className="grid qq-settings-grid">
-        <Field><FieldLabel htmlFor={id + '-name'}>{t('projectName')}</FieldLabel><Input id={id + '-name'} required maxLength={128} value={draft.name} onChange={(e) => update({ name: e.target.value })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-name'}>{t('characterName')}</FieldLabel><Input id={id + '-name'} required maxLength={128} value={draft.name} onChange={(e) => update({ name: e.target.value })} /></Field>
         <Field><FieldLabel htmlFor={id + '-account'}>{t('qq.account')}</FieldLabel><Input id={id + '-account'} required inputMode="numeric" pattern="[1-9][0-9]{0,19}" value={draft.bot_account} onChange={(e) => update({ bot_account: e.target.value })} /></Field>
         <Field><FieldLabel htmlFor={id + '-admin'}>{t('qq.adminQQ')}</FieldLabel><Input id={id + '-admin'} inputMode="numeric" pattern="[1-9][0-9]{0,19}" maxLength={20}
           value={draft.admin_qq ?? ''} onChange={(e) => {
@@ -143,9 +144,9 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
         <Field><FieldLabel htmlFor={id + '-token'}>{t('qq.token')}</FieldLabel>
           <InputGroup>
             <InputGroupInput id={id + '-token'} type="password" autoComplete="new-password" value={draft.access_token ?? ''}
-              placeholder={project?.has_access_token && draft.access_token === undefined ? t('qq.tokenSaved') : ''}
+              placeholder={character?.has_access_token && draft.access_token === undefined ? t('qq.tokenSaved') : ''}
               onChange={(e) => update({ access_token: e.target.value })} />
-            {project?.has_access_token ? <InputGroupAddon align="inline-end" className="has-[>button]:mr-0">
+            {character?.has_access_token ? <InputGroupAddon align="inline-end" className="has-[>button]:mr-0">
               <InputGroupButton size="icon-xs" aria-label={t('qq.clearToken')} title={t('qq.clearToken')}
                 disabled={busy || draft.access_token === ''} onClick={() => update({ access_token: '' })}><X aria-hidden="true" /></InputGroupButton>
             </InputGroupAddon> : null}
@@ -159,13 +160,9 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
         <FieldSet><FieldLegend>{t('qq.sections.model')}</FieldLegend><FieldGroup>
         <FieldGroup className="grid qq-settings-grid">
         <ModelField profiles={profiles.filter((p) => p.source?.type === 'provider')} value={draft.model_profile_id} inheritLabel={t('selectModel')} onChange={(value) => update({ model_profile_id: value || null })} />
-        <Field><FieldLabel htmlFor={id + '-persona'}>{t('defaultAgentPersona')}</FieldLabel>
-          <Select value={draft.agent_persona_id ?? ''} onValueChange={(value) => update({ agent_persona_id: value || null })} items={[{ value: '', label: t('qq.noPersona') }, ...personas.filter((p) => p.collection === 'agent').map((p) => ({ value: p.id, label: p.name }))]}>
-            <SelectTrigger id={id + '-persona'}><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="">{t('qq.noPersona')}</SelectItem>{personas.filter((p) => p.collection === 'agent').map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectGroup></SelectContent>
-          </Select>
-        </Field>
+
         </FieldGroup>
-        <Field><FieldLabel htmlFor={id + '-prompt'}>{t('projectPrompt')}</FieldLabel><Textarea className="field-sizing-fixed" id={id + '-prompt'} rows={4} maxLength={100000} value={draft.system_prompt} onChange={(e) => update({ system_prompt: e.target.value })} /></Field>
+        <Field><FieldLabel htmlFor={id + '-prompt'}>{t('characterPrompt')}</FieldLabel><Textarea className="field-sizing-fixed" id={id + '-prompt'} rows={4} maxLength={100000} value={draft.system_prompt} onChange={(e) => update({ system_prompt: e.target.value })} /></Field>
         <FieldGroup className="grid qq-settings-grid items-center">
           <GenerationFields value={{ temperature: draft.temperature }} onChange={(v) => update({ temperature: v.temperature ?? null })} />
           <Field orientation="horizontal"><Switch id={id + '-reasoning'} checked={draft.reasoning} onCheckedChange={(reasoning) => update({ reasoning })} /><FieldLabel htmlFor={id + '-reasoning'}>{t('qq.reasoning')}</FieldLabel></Field>
@@ -209,6 +206,6 @@ export function QQBotEditor({ project, onSaved, onLeaveGuardChange, dialog = fal
         </FieldGroup></FieldSet>
       </TabsContent>
     </FieldSet></div>
-    <div className="settings-form-actions"><Button type="submit" disabled={busy || (!!project && !dirty)}>{t(project ? 'save' : 'createProject')}</Button></div>{confirmation}
+    <div className="settings-form-actions"><Button type="submit" disabled={busy || uploading || (!!character && !dirty)}>{t(character ? 'save' : 'createCharacter')}</Button></div>{confirmation}
   </Tabs>;
 }

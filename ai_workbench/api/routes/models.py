@@ -102,7 +102,7 @@ async def create_profile(payload: ModelInput, state: RuntimeState = Depends(get_
     state.model_manager.validate_binding(profile)
     result = state.model_profiles.create(profile)
     if result.kind == "llm":
-        _notify_workspace_sessions(state)
+        _notify_chat_sessions(state)
     return result.model_dump(mode="json")
 
 
@@ -141,7 +141,7 @@ async def update_profile(profile_id: str, payload: dict, state: RuntimeState = D
     if current.kind == "embedding" and (_binding(current), current.model_ref, current.parameters) != (_binding(result), result.model_ref, result.parameters):
         _invalidate_profile_indexes(state, profile_id)
     if result.kind == "llm":
-        _notify_workspace_sessions(state)
+        _notify_chat_sessions(state)
     return result.model_dump(mode="json")
 
 
@@ -158,9 +158,9 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
     references = [settings.default_model_profile_id, settings.utility_model_profile_id,
                   state.knowledge.get_settings().reranker_model_profile_id]
     references.extend(state.chat_service.saved_model_id(s) for s in state.sessions.list_sessions())
-    references.extend(project.model_profile_id for project in state.projects.list())
-    references.extend(project.image_description_model_profile_id for project in state.projects.list() if project.kind == "qqbot")
-    references.extend(project.image_generation_model_profile_id for project in state.projects.list() if project.kind == "qqbot")
+    references.extend(character.model_profile_id for character in state.characters.list())
+    references.extend(character.image_description_model_profile_id for character in state.characters.list() if character.kind == "qqbot")
+    references.extend(character.image_generation_model_profile_id for character in state.characters.list() if character.kind == "qqbot")
     references.extend(state.runs.get_config_snapshot(r.run_id).get("model_profile_id")
         for r in state.runs.unfinished_runs())
     references.extend(state.runs.get_config_snapshot(r.run_id).get("qq_image_description_model_profile_id")
@@ -169,12 +169,12 @@ async def delete_profile(profile_id: str, state: RuntimeState = Depends(get_stat
         for r in state.runs.unfinished_runs())
     references.extend(b.embedding_model_profile_id for b in state.knowledge.list_knowledge_bases())
     if profile_id in references:
-        raise ModelError("MODEL_IN_USE", "Remove session, Project, unfinished run, default or Knowledge references before deleting this model.", 409)
+        raise ModelError("MODEL_IN_USE", "Remove session, Character, unfinished run, default or Knowledge references before deleting this model.", 409)
     await state.model_manager.invalidate(state.model_manager.execution_key(profile))
     state.model_profiles.delete(profile_id)
     state.model_manager.invalidate_voice_references(profile_id)
     if profile.kind == "llm":
-        _notify_workspace_sessions(state)
+        _notify_chat_sessions(state)
     return {"deleted": True}
 
 
@@ -255,13 +255,11 @@ async def update_model_settings(payload: dict, state: RuntimeState = Depends(get
     result = state.model_settings.patch(payload)
     if result.external_api_key != current.external_api_key or not result.external_enabled:
         state.model_manager.invalidate_voice_references()
-    if result.default_model_profile_id != current.default_model_profile_id:
-        _notify_workspace_sessions(state)
     return public_settings(result)
 
 
-def _notify_workspace_sessions(state: RuntimeState) -> None:
+def _notify_chat_sessions(state: RuntimeState) -> None:
     for session in state.sessions.list_sessions():
-        if session.kind == "workspace":
+        if session.kind == "normal":
             state.events.emit("session_updated", session_id=session.session_id,
                               payload={"session": state.chat_service.session_response(session)})

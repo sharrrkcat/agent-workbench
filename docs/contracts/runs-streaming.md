@@ -10,7 +10,7 @@ Frontend message, queue, upload and API-key IDs use cryptographic randomness ava
 
 ## Run lifecycle
 
-Run.kind is chat, tool or compaction and stores its Agent persona_id (empty for QQ without an Agent). Statuses are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and INTERRUPTED. Terminal runs never return to running.
+Run.kind is chat, tool or compaction and stores character_id and user persona_id (null for QQ). Statuses are PENDING, RUNNING, CANCELLING, WAITING_FOR_USER, DONE, FAILED, CANCELLED and INTERRUPTED. Terminal runs never return to running.
 
 RunStep.kind is context/model/compaction/save/approval/tool; statuses are pending/running/completed/failed/skipped.
 Steps have stable order, optional parent ids, timing, compact messages and structured errors. Local resets use context steps with operation=reset and private snapshots, without LLM statistics.
@@ -38,7 +38,7 @@ explicit chat tool input receives the basic input title described in the chat co
 POST `/api/sessions/{id}/compact` accepts an empty body and returns 202 RunResponse. It captures configuration/history and creates a compaction run before yielding, then registers its task for ordinary cancellation and restart interruption. Unsupported policies/session kinds and busy sessions return 409; arguments return 422. The internal message input also recognizes standalone /compact before creating any message.
 Compaction metadata records compacted/reset/not_needed (no_history/below_target), source identity and nullable before/after counts. Local resets add operation=reset and body-free window references. Summary text remains private. Failed manual generation has a failed run; it cannot be retried/deleted as a reply. History edits still remove later runs and invalidate checkpoints.
 
-Ordinary/Workspace messages and replies have consecutive session-local numbers starting at #1 beside their timestamps.
+Normal messages and replies have consecutive session-local numbers starting at #1 beside their timestamps.
 Each standalone message or whole reply occupies one number, including active, failed, cancelled and
 direct-tool replies. Processing messages share their reply's number. Numbers follow current display
 order, are computed by database counts after history mutations and are not persisted. User-message navigation uses
@@ -70,7 +70,7 @@ The fixed shell and responsive layout belong to [Settings](settings.md#frontend-
 ## WebSocket events
 
 The composer snapshots and clears text/attachments on ordinary submit, locking text until acceptance is observed. A persisted user message's client_message_id confirms acceptance through events or history; the execution response's run also confirms acceptance. Text and attachments can then be drafted and queued while the current request/run settles.
-Creation, binding or unaccepted ordinary send failure restores the snapshot in the same session epoch. Accepted generation failure/cancellation and automatic queue submission never overwrite a newer draft. Session changes discard ordinary UI snapshots and release local previews; queue edits retain their own uploaded references.
+Creation or unaccepted ordinary send failure restores the snapshot in the same session epoch. Accepted generation failure/cancellation and automatic queue submission never overwrite a newer draft. Session changes discard ordinary UI snapshots and release local previews; queue edits retain their own uploaded references.
 
 Queue dispatch requires a mounted, synchronized conversation with valid configuration, completed configuration/history
 saves, no active/waiting run, approval/message submission, pause or head edit. Submission reserves client_message_id
@@ -91,7 +91,8 @@ unsaved streaming drafts recover at completion.
 
 | Event | Meaning |
 | --- | --- |
-| session_updated | Session configuration/title or refreshed inherited Project/Persona/model settings |
+| session_updated | Session configuration/title or refreshed inherited Character/Persona/model settings |
+| character_updated | Current Character identity/defaults for its Sessions |
 | persona_updated/persona_deleted | Current persona in payload.persona, or removed payload.persona_id; includes historical referencing sessions |
 | message_updated | Persisted user message or metadata |
 | message_started | Assistant draft with stable ids |
@@ -109,8 +110,8 @@ Approval requests include arguments, risk and step id. Global events have an
 empty session_id, create no business rows and share alias occupancy. Models
 subscriptions remain active without a session and across settings navigation.
 Runtime jobs use their own store, not chat runs.
-Workspace reads and new runs resolve current defaults; existing run context/model snapshots remain fixed.
-The Harness contract owns live Project tool revocation, including resumed approvals.
+Normal Session reads and new runs resolve current defaults; existing run context/model snapshots remain fixed.
+Character edits never revoke or expand an already captured run tool list; registry permissions and approvals remain enforced.
 The same global runtime_job_updated event carries cache_prune/cache_clean jobs,
 including version=null and optional before/after accounting; jobs carry no provider reference.
 Installation events describe the single local runtime. Cache maintenance never
@@ -119,7 +120,7 @@ storage when a newer terminal maintenance job arrives, without periodic polling.
 
 ## Client reconciliation
 
-Chat loading and socket connection/reconnection refresh the Persona list. Identity events
+Chat loading and socket connection/reconnection refresh the user Persona list. Identity events
 update the shared Persona store; changes received during list reads win over stale responses.
 Loading/failure preserves known identities and never implies deletion; errors use the existing banner.
 
@@ -143,7 +144,7 @@ Refreshes preserve newer content/approvals. Microsecond run/step ordering preven
 approvals or regressing terminal status. REST direct-call/approval results share reconciliation and session isolation;
 concurrent approval submission is blocked by run id. Previous-session results cannot change the visible conversation.
 Session navigation tracks its target and loading/ready/error state separately from initialization;
-no target is idle. Ordinary/Workspace required session/history/run reads commit together before opening the WebSocket; QQ activates after Session configuration and independently loads its own history.
+no target is idle. Normal required session/history/run reads commit together before opening the WebSocket; QQ activates after Session configuration and independently loads its own history.
 Initial connection does not repeat history; reconnect reconciliation preserves live events using existing version checks and routes QQ events only to QQ history. Persona refresh failure retains identity data.
 Real switches increment the epoch once and reset composer/attachment/dialog state, while
 only the message scroller remounts. Explicit failed-load retry preserves the epoch; repeated target
@@ -185,7 +186,7 @@ New sessions and model/window
 mismatches are neutral until a matching call completes. Run/step events and refresh restore the
 display; pruning removes deleted calls. No polling or draft preview API is used.
 
-Internal ordinary/Workspace/QQBot and Harness model/compaction calls save one immutable private `context_snapshot_json`
+Internal normal/QQBot and Harness model/compaction calls save one immutable private `context_snapshot_json`
 on their model/compaction step immediately before transport dispatch. Preparation failures have no snapshot;
 failed/cancelled/interrupted dispatched calls retain theirs. Direct tools, auxiliary titles and `/v1`
 do not record context. Reads never reconstruct missing inputs from current configuration or history.
@@ -203,10 +204,10 @@ Snapshot validation/storage errors prevent dispatch with CONTEXT_SAVE_FAILED and
 The Layers action sits between retry and usage, independent of recorded usage. It appears on chat replies
 at terminal status or approval waiting when a snapshot exists. Its read-only modal defaults to the final
 answer's call, otherwise the latest answer call then latest capture; compaction calls are selectable. Input structure follows
-send order, with system sources nested as Instruction (when a web tool is enabled), Agent, Project, QQ runtime (QQ only), Cogita Persona and Knowledge, and tools separate. Instruction contains only the localized fixed run-start date/weekday sent before Agent content, with exact source offsets and normal token budgeting. Shared web evidence/citation rules appear once in tool descriptions. System groups use System without a request-position prefix.
-Empty system sources recorded as empty/no-bindings/no-results appear muted in Agent/Project/Cogita/Knowledge order,
+send order, with system sources nested as Instruction (when a web tool is enabled), Character, QQ runtime (QQ only) and user Persona, and tools separate. Instruction contains only the localized fixed run-start date/weekday sent before Character content, with exact source offsets and normal token budgeting. Shared web evidence/citation rules appear once in tool descriptions. System groups use System without a request-position prefix.
+Empty system sources recorded as empty appear muted in Character/Persona order,
 with an Empty label and no transmitted-message number for a synthetic system group. They do not change request data
-or counts; other exclusions remain collapsed diagnostics. Ordinary chats do not invent a Project source.
+or counts; other exclusions remain collapsed diagnostics. Mounted resources do not create context sources.
 Request data shows supplied generation parameters; omitted engine defaults and rendered/tokenized native
 prompts are unknown. Each call loads lazily with local caching/error retry;
 late results cannot replace another selection. Navigation, deletion or resumed execution closes the modal.
@@ -229,7 +230,7 @@ Approximate source counts use the bundled gpt-tokenizer o200k_base reference enc
 with special-token strings treated as ordinary text. Counts are cached per call/source only while the dialog is open.
 They remain frontend-only, marked approximately equal and never summed or substituted for actual model usage.
 Empty sources count zero; image, pending and failed estimates are unknown. Tokenization requires no model or network service.
-Included attachments remain referenced by surviving snapshots. History/session/Project pruning removes
+Included attachments remain referenced by surviving snapshots. History/session/Character pruning removes
 snapshots with their steps and cleans newly unreferenced attachments after commit, including snapshot-only references.
 
 ## LLM statistics

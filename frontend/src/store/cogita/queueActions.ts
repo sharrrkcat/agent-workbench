@@ -22,7 +22,7 @@ export const createQueueActions: CogitaActions<
       const state = get(), session = state.currentSession;
       if (!session || state.awaitingAcceptance || state.mutatingHistory ||
           state.sessionLoad && state.sessionLoad.status !== 'ready' || (!content.trim() && !attachments.length)) return false;
-      const queue = state.messageQueues[session.session_id] ?? emptyQueue(session.project_id, state.runs[state.runs.length - 1]);
+      const queue = state.messageQueues[session.session_id] ?? emptyQueue(session.character_id, state.runs[state.runs.length - 1]);
       set({ composerDraftText: '', messageQueues: { ...state.messageQueues, [session.session_id]: {
         ...queue, items: [...queue.items, { id: randomId(), content, attachments }],
       } } });

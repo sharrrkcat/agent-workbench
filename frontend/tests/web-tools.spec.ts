@@ -178,41 +178,47 @@ for (const locale of ['en', 'zh-CN']) {
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
 
-    test('shows localized web instructions before Agent Persona', async ({ page, request }, info) => {
+    test('shows localized web instructions before Character instructions', async ({ page, request }, info) => {
       const session = await (await request.post('/__test__/session', { data: { web_tools: true } })).json();
-      await page.goto('/');
-      await submit(page, 'web-no-call');
-      const reply = page.locator('article[data-run-id]').last();
-      await expect(reply.locator('.status-done')).toBeVisible();
-      await reply.getByRole('button', { name: runs.context.details, exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: runs.context.details, exact: true });
-      const instruction = dialog.locator('[data-context-source=instruction]');
-      await expect(instruction).toContainText(runs.context.sources.instruction);
-      const kinds = await dialog.locator('[data-context-source]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-context-source')));
-      expect(kinds.indexOf('instruction')).toBe(kinds.indexOf('system') + 1);
-      expect(kinds.indexOf('instruction')).toBeLessThan(kinds.indexOf('agent_persona'));
-      await instruction.click();
-      const text = dialog.locator('.context-source-detail .context-text');
-      await expect(text).toHaveText(locale === 'en'
-        ? /^Current date: \d{4}-\d{2}-\d{2} \((Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\)\.$/
-        : /^当前日期：\d{4}年\d{1,2}月\d{1,2}日（星期[一二三四五六日]）。$/);
-      const recordedDate = await text.innerText();
-      await dialog.getByRole('tab', { name: runs.context.request, exact: true }).click();
-      const recordedRequest = JSON.parse(await dialog.locator('.context-request').innerText());
-      expect(recordedRequest.messages[0].content).toContain(recordedDate);
-      const descriptions = recordedRequest.tools.map((tool: { function: { description: string } }) => tool.function.description).join('\n');
-      expect(descriptions.match(/Cite web evidence/g)).toHaveLength(1);
-      expect(descriptions.match(/untrusted evidence/g)).toHaveLength(1);
-      await page.screenshot({ path: info.outputPath('date-instruction.png'), fullPage: true });
-      await page.keyboard.press('Escape');
-      await request.patch(`/api/sessions/${session.session_id}`, { data: { tools_allowed: [] } });
-      await page.reload();
-      await submit(page, 'web-no-call');
-      await expect(page.locator('article[data-run-id]')).toHaveCount(2);
-      await expect(reply.locator('.status-done')).toBeVisible();
-      await reply.getByRole('button', { name: runs.context.details, exact: true }).click();
-      await expect(dialog.locator('[data-context-source=system]')).toBeVisible();
-      await expect(dialog.locator('[data-context-source=instruction]')).toHaveCount(0);
+      const original = await (await request.get(`/api/characters/${session.character_id}`)).json();
+      try {
+        await request.patch(`/api/characters/${session.character_id}`, { data: { system_prompt: 'Character instruction after protocol.' } });
+        await page.goto('/');
+        await submit(page, 'web-no-call');
+        const reply = page.locator('article[data-run-id]').last();
+        await expect(reply.locator('.status-done')).toBeVisible();
+        await reply.getByRole('button', { name: runs.context.details, exact: true }).click();
+        const dialog = page.getByRole('dialog', { name: runs.context.details, exact: true });
+        const instruction = dialog.locator('[data-context-source=instruction]');
+        await expect(instruction).toContainText(runs.context.sources.instruction);
+        const kinds = await dialog.locator('[data-context-source]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-context-source')));
+        expect(kinds.indexOf('instruction')).toBe(kinds.indexOf('system') + 1);
+        expect(kinds.indexOf('instruction')).toBeLessThan(kinds.indexOf('character'));
+        await instruction.click();
+        const text = dialog.locator('.context-source-detail .context-text');
+        await expect(text).toHaveText(locale === 'en'
+          ? /^Current date: \d{4}-\d{2}-\d{2} \((Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\)\.$/
+          : /^当前日期：\d{4}年\d{1,2}月\d{1,2}日（星期[一二三四五六日]）。$/);
+        const recordedDate = await text.innerText();
+        await dialog.getByRole('tab', { name: runs.context.request, exact: true }).click();
+        const recordedRequest = JSON.parse(await dialog.locator('.context-request').innerText());
+        expect(recordedRequest.messages[0].content).toContain(recordedDate);
+        const descriptions = recordedRequest.tools.map((tool: { function: { description: string } }) => tool.function.description).join('\n');
+        expect(descriptions.match(/Cite web evidence/g)).toHaveLength(1);
+        expect(descriptions.match(/untrusted evidence/g)).toHaveLength(1);
+        await page.screenshot({ path: info.outputPath('date-instruction.png'), fullPage: true });
+        await page.keyboard.press('Escape');
+        await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {tools_allowed: []}} });
+        await page.reload();
+        await submit(page, 'web-no-call');
+        await expect(page.locator('article[data-run-id]')).toHaveCount(2);
+        await expect(reply.locator('.status-done')).toBeVisible();
+        await reply.getByRole('button', { name: runs.context.details, exact: true }).click();
+        await expect(dialog.locator('[data-context-source=system]')).toBeVisible();
+        await expect(dialog.locator('[data-context-source=instruction]')).toHaveCount(0);
+      } finally {
+        await request.patch(`/api/characters/${session.character_id}`, { data: { system_prompt: original.system_prompt } });
+      }
     });
   });
 }

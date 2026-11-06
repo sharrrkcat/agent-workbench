@@ -21,7 +21,7 @@ assert.equal(toolArgumentsSummary({ value: false }), 'false');
 assert.equal(toolArgumentsSummary({ value: 0 }), '0');
 assert.equal(toolArgumentsSummary({}), '');
 const at = (n) => `2026-09-07T00:00:00.${String(n).padStart(6, '0')}Z`;
-const run = { run_id: 'r', session_id: 's', persona_id: 'p', kind: 'chat', status: 'RUNNING',
+const run = { run_id: 'r', session_id: 's', character_id: 'p', persona_id: 'user', kind: 'chat', status: 'RUNNING',
   created_at: at(2), started_at: at(2), updated_at: at(3), metadata: { input_message_id: 'u', configuration: { persona_name: 'Original speaker' } } };
 const user = { message_id: 'u', session_id: 's', role: 'user', created_at: at(1), parts: [{ id: 'input', type: 'text', text: 'encode and decode' }] };
 const text = (id, value) => ({ id, type: 'text', text: value });
@@ -106,7 +106,7 @@ assert.equal(classified.answer, undefined);
 assert.ok(classified.process.some((i) => i.kind === 'content' && i.part.text === 'working live'));
 
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { resolve, promise }; }
-const session = { session_id: 's', kind: 'ordinary', project_id: null, title: 'Session', updated_at: at(1), waiting_run_id: null, effective: { context_policy: {} } };
+const session = { session_id: 's', kind: 'normal', character_id: null, title: 'Session', updated_at: at(1), waiting_run_id: null, effective: { context_policy: {} } };
 function reset() {
   store.setState({ historyWindow: null, historyFollowing: true, historyLoading: false, historyAnchor: null, currentSession: session, sessions: [session], messages: [user, calls, output, answer], runs: [done], stepsByRunId: {},
     deletedMessageIds: [], deletedRunIds: [], resolvingApprovals: [], sending: false, mutatingHistory: false,
@@ -175,10 +175,12 @@ const resources = Object.fromEntries(['en', 'zh-CN'].map((locale) => [locale,
 const i18n = i18next.createInstance();
 await i18n.init({ resources, lng: 'en', fallbackLng: 'en', interpolation: { escapeValue: false } });
 let viewState = { ...store.getState(), currentSession: session, runs: [run], messages: [calls], stepsByRunId: {}, resolvingApprovals: [] };
-const personaState = { personas: [{ id: 'p', name: 'Current agent', avatar_attachment_id: null }], loaded: true, loading: false, error: null };
+const characterState = { characters: [{ id: 'p', name: 'Current Character', avatar_attachment_id: null }], loaded: true, loading: false, error: null };
+const personaState = { personas: [{ id: 'user', name: 'Current user', avatar_attachment_id: null }], loaded: true, loading: false, error: null };
 const views = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace), i18n }) }),
   [sourceUrl('store/useCogitaStore.ts')]: mockModule({ useCogitaStore: (selector) => selector(viewState) }),
+  [sourceUrl('store/useCharactersStore.ts')]: mockModule({ useCharactersStore: (selector) => selector(characterState) }),
   [sourceUrl('store/usePersonasStore.ts')]: mockModule({ usePersonasStore: () => personaState }),
 });
 const { RunReply } = (await views('../src/components/messages/RunReply.tsx')).exports;
@@ -188,7 +190,7 @@ const { MessageScrollerProvider } = (await views('../src/components/ui/message-s
 const { MessageBubble } = (await views('../src/components/MessageBubble.tsx')).exports;
 const { ChatAttachments, attachmentSize } = (await views('../src/components/messages/ChatAttachments.tsx')).exports;
 const { messagePreview } = (await views('../src/components/messages/messageContent.ts')).exports;
-const imageOnly = { ...user, parts: [], metadata: { attachments: [
+const imageOnly = { ...user, speaker_id: 'user', parts: [], metadata: { attachments: [
   { id: 'image', type: 'image', name: 'photo.png', size: 1126, uri: 'local://attachments/aaaa.png' },
 ] } };
 assert.equal(messagePreview(imageOnly), 'photo.png');
@@ -196,7 +198,7 @@ assert.equal(attachmentSize(0, 'en'), '0 B');
 assert.equal(attachmentSize(820 * 1024, 'en'), '820 KB');
 assert.equal(attachmentSize(1153434, 'zh-CN'), '1.1 MB');
 const textFile = { id: 'file', type: 'file', name: 'notes.txt', size: 12, mime_type: 'text/plain' };
-const fileOnly = { ...user, parts: [], metadata: { attachments: [textFile] } };
+const fileOnly = { ...user, speaker_id: 'user', parts: [], metadata: { attachments: [textFile] } };
 assert.equal(messagePreview(fileOnly), 'notes.txt');
 const render = (reply, showFullProcessing, readOnly = false) => renderToStaticMarkup(
   React.createElement(MessageScrollerProvider, { autoScroll: true }, React.createElement(RunReply, { reply, showFullProcessing, readOnly })));
@@ -212,7 +214,7 @@ for (const locale of ['en', 'zh-CN']) {
   }
   const active = buildReply(run, [calls, output, answer], []);
   const hidden = render(active, false);
-  assert.match(hidden, /Current agent/);
+  assert.match(hidden, /Current Character/);
   assert.doesNotMatch(hidden, /Original speaker/);
   assert.doesNotMatch(hidden, /first reasoning|test_echo|processing-list/);
   assert.match(hidden, /final answer/);
@@ -232,7 +234,7 @@ for (const locale of ['en', 'zh-CN']) {
   assert.match(completed, /final answer/);
   assert.equal((completed.match(/reply-actions/g) || []).length, 1);
   const waiting = render(buildReply({ ...run, status: 'WAITING_FOR_USER' }, [calls], [approvalStep]), false);
-  assert.match(waiting, /Current agent/);
+  assert.match(waiting, /Current Character/);
   assert.match(waiting, /aGk=/);
   assert.match(waiting, /test_echo/);
   assert.doesNotMatch(waiting, /first reasoning/);
@@ -251,18 +253,18 @@ for (const locale of ['en', 'zh-CN']) {
     assert.ok(result.includes(value === '' ? '&quot;&quot;' : JSON.stringify(value)));
   }
   assert.match(render(buildReply(failedEmpty, [], []), false), /MODEL_NOT_CONFIGURED/);
-  assert.match(render(buildReply(failedEmpty, [], []), false), /Current agent/);
-  personaState.personas[0].name = 'Changed agent';
-  assert.match(render(reply, false), /Changed agent/);
-  assert.match(renderToStaticMarkup(React.createElement(MessageBubble, { message: answer })), /Changed agent/);
-  personaState.personas = [];
-  assert.ok(render(reply, false).includes(i18n.t('personas:deletedPersona')));
-  assert.ok(renderToStaticMarkup(React.createElement(MessageBubble, { message: answer })).includes(i18n.t('personas:deletedPersona')));
-  personaState.personas = [{ id: 'p', name: 'Current agent', avatar_attachment_id: null }];
-  viewState = { ...viewState, currentSession: { ...session, user_persona: { id: 'user', name: 'Current user', avatar_attachment_id: null } } };
+  assert.match(render(buildReply(failedEmpty, [], []), false), /Current Character/);
+  characterState.characters[0].name = 'Changed Character';
+  assert.match(render(reply, false), /Changed Character/);
+  assert.match(renderToStaticMarkup(React.createElement(MessageBubble, { message: answer })), /Changed Character/);
+  characterState.characters = [];
+  assert.ok(render(reply, false).includes(i18n.t('personas:assistant')));
+  assert.ok(renderToStaticMarkup(React.createElement(MessageBubble, { message: answer })).includes(i18n.t('personas:assistant')));
+  characterState.characters = [{ id: 'p', name: 'Current Character', avatar_attachment_id: null }];
+  personaState.personas = [{ id: 'user', name: 'Current user', avatar_attachment_id: null }];
   const imageHtml = renderToStaticMarkup(React.createElement(MessageBubble, { message: imageOnly }));
   assert.match(imageHtml, /Current user/);
-  viewState.currentSession.user_persona.name = 'Updated user';
+  personaState.personas[0].name = 'Updated user';
   const renamedUser = renderToStaticMarkup(React.createElement(MessageBubble, { message: imageOnly }));
   assert.match(renamedUser, /Updated user/);
   assert.doesNotMatch(renamedUser, /Current user/);

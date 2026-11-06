@@ -35,7 +35,7 @@
       "TOOL_TIMEOUT": "The web request timed out.",
       "TOOL_RUN_TIMEOUT": "The run exceeded its time limit.",
       "RUN_CANCELLED": "The web request was cancelled.",
-      "TOOL_NOT_ALLOWED": "This tool is not allowed for the session or Project.",
+      "TOOL_NOT_ALLOWED": "This tool is not allowed for the session or Character.",
       "TOOL_INVALID_ARGUMENTS": "The web tool arguments are invalid.",
       "NETWORK_URL_SCHEME_FORBIDDEN": "Only HTTP and HTTPS URLs are allowed.",
       "NETWORK_URL_HOST_FORBIDDEN": "The URL must have a valid host and must not contain credentials.",
@@ -130,12 +130,7 @@
     "sources": {
       "instruction": "Instruction",
       "system": "System",
-      "agent_persona": "Agent Persona",
-      "project_prompt": "Project prompt",
       "qq_runtime": "QQ runtime",
-      "cogita_persona": "Cogita Persona",
-      "knowledge": "Knowledge",
-      "knowledge_snippet": "Knowledge excerpt",
       "history": "History message",
       "current_input": "Current input",
       "attachment": "Attachment",
@@ -144,7 +139,9 @@
       "tools": "Tool definitions",
       "summary": "History summary",
       "context_memory": "Working checkpoint",
-      "context_retrieval": "Retrieved history"
+      "context_retrieval": "Retrieved history",
+      "character": "Character",
+      "persona": "Persona"
     },
     "reasons": {
       "ineligible_history": "Ineligible history message",

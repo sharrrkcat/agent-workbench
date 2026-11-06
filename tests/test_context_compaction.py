@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 import json
 import re
 import asyncio
@@ -12,10 +13,10 @@ from tests.tool_fixtures import completion, ok, tool_call
 
 def setup(client, *, trigger=50, target=35, summary=512, harness=False):
     session = configure(client, harness=harness, streaming=False)
-    ok(client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 4096}))
+    ok(client.patch(f"/api/models/profiles/{session['effective']['model_profile_id']}", json={'context_window_tokens': 4096}))
     policy = ContextPolicy(compaction={'trigger_percent': trigger, 'target_percent': target,
                                       'max_summary_tokens': summary}).model_dump()
-    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': policy}))
+    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': policy}}))
     return session, client.app.state.runtime_state
 
 
@@ -108,15 +109,15 @@ def test_disable_history_reuse_checkpoint_and_history_mutation(presentation_clie
     first = send(client, session)
     assert first['success'], first
     checkpoint = state.sessions.get_context_checkpoint(session['session_id'])
-    policy = session['context_policy']
+    policy = session['effective']['context_policy']
     policy['history_enabled'] = False
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': policy}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': policy}}))
     assert send(client, session, 'History off')['success']
     assert 'FACT_' not in json.dumps(upstream.calls[-1])
     assert state.sessions.get_context_checkpoint(session['session_id']) == checkpoint
     policy['history_enabled'] = True
     policy['compaction']['enabled'] = False
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': policy}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': policy}}))
     offset = len(upstream.calls)
     assert send(client, session, 'Reuse')['success']
     assert len(upstream.calls) == offset + 1 and checkpoint.summary in json.dumps(upstream.calls[-1], ensure_ascii=False).replace('\\n', '\n')
@@ -130,7 +131,7 @@ def test_disable_history_reuse_checkpoint_and_history_mutation(presentation_clie
     {'compaction': {'max_summary_tokens': 0}}])
 def test_new_policy_rejects_old_or_invalid_values(presentation_client, policy):
     client, _ = presentation_client
-    assert client.post('/api/sessions', json={'context_policy': policy}).status_code == 422
+    assert create_chat(client, overrides={'context_policy': policy}).status_code == 422
 
 
 def test_history_edit_rolls_back_checkpoint_invalidation(presentation_client):
@@ -167,10 +168,10 @@ def test_attachment_policy_and_version_reject_stale_checkpoint(presentation_clie
     checkpoint = state.sessions.get_context_checkpoint(session['session_id'])
     state.sessions.update_session(session['session_id'], {'history_version': checkpoint.history_version + 1})
     assert state.sessions.save_context_checkpoint(checkpoint.model_copy(update={'summary': 'STALE'})) is False
-    policy = session['context_policy']
+    policy = session['effective']['context_policy']
     policy['include_attachments'] = 'none'
     policy['compaction']['enabled'] = False
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': policy}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': policy}}))
     assert send(client, session)['success']
     assert state.sessions.get_context_checkpoint(session['session_id']) is None
     assert '[Historical summary;' not in json.dumps(upstream.calls[-1])
@@ -208,7 +209,7 @@ def test_approval_resume_freezes_compacted_base_and_never_resummarizes(presentat
     client, upstream = presentation_client
     session, state = setup(client, harness=True)
     register_approval_tool(state.tool_registry)
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'tools_allowed': ['test_approval']}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'tools_allowed': ['test_approval']}}))
     seed(state, session)
     def first(data):
         return summarize(data) if summary_call(data) else completion(tool_call('test_approval', {'value': 'go'}))
@@ -219,7 +220,7 @@ def test_approval_resume_freezes_compacted_base_and_never_resummarizes(presentat
     assert cp
     original = state.runs.get_harness_state(paused['run']['run_id'])
     assert cp.summary in json.dumps(original, ensure_ascii=False).replace('\\n', '\n')
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': {'history_enabled': False}}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': {'history_enabled': False}}}))
     offset = len(upstream.calls)
     upstream.turns = [completion(content='Confirmed.')]
     result = ok(client.post(f"/api/tools/approvals/{paused['run']['run_id']}", json={'decision': 'approve'}))
@@ -300,11 +301,11 @@ def test_model_switch_can_shorten_only_the_previous_summary(presentation_client)
     old = state.messages.add_message(session['session_id'], 'user', 'FACT_0=value0;')
     checkpoint = ContextCheckpoint(session_id=session['session_id'], summary='FACT_0=value0; ' + 'padding ' * 1400,
         boundary_created_at=old.created_at, boundary_message_id=old.message_id, covered_messages=1,
-        history_version=0, include_attachments='explicit', model_profile_id=session['model_profile_id'],
+        history_version=0, include_attachments='explicit', model_profile_id=session['effective']['model_profile_id'],
         step_id='old-summary', input_tokens_after=1600, counting='estimated')
     assert state.sessions.save_context_checkpoint(checkpoint)
     smaller = configure_model(client, alias='smaller', context_window_tokens=2048, request_options={'streaming': False})
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'model_profile_id': smaller['id']}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'model_profile_id': smaller['id']}}))
     upstream.turns = [summarize] * 8
     result = send(client, session)
     assert result['success'], result

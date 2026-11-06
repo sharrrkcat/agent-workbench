@@ -4,127 +4,92 @@ Chat uses explicit Personas, ContextBuilder and ChatRunner. Registered `/tool_na
 
 ## Personas and sessions
 
-Personas strictly define id, immutable collection, name, optional avatar_attachment_id, system_prompt and timestamps. All four collections share CRUD and ordered bindings.
-Avatars reference local attachments. Personas never execute agents, scripts, manifests or extension registrations.
+Character is the AI identity and mandatory owner of Sessions. Persona is an independent user identity.
+Personas have name, avatar_attachment_id and background; Characters have name, avatar_attachment_id,
+system_prompt and immutable kind=normal|qqbot, explicitly selected on creation. Each Session has a
+nonempty immutable character_id and derives its normal/QQ type from that owner. Sessions cannot move
+between Characters or select another responding Character.
 
-| Collection | Settings page | Resources | Execution |
-| --- | --- | --- | --- |
-| user | Cogita Persona | Knowledge | Singleton background and display identity |
-| agent | Agent Personas | Knowledge | Ordinary/Workspace assistant; optional QQ identity/prompt |
-| roleplay_user | User Personas | Worldbook | Management and Timeline selection only |
-| character | Character Personas | Worldbook | Management and Timeline selection only |
+User is the editable, protected default Persona with empty background. Cogita is the editable,
+protected normal Character with empty system_prompt. Runtime bootstrap creates Cogita once through
+the regular creation service. Neither default implies a personality. Protocol and context instructions
+remain application-owned. Persona avatars and Character avatars reference local attachments.
 
-Migrations seed User (empty prompt) and Cogita (helpful-assistant prompt), with no roleplay defaults.
-Both are editable but protected from deletion by stable ids and read-only is_protected. POST requires
-a creatable collection; PATCH preserves collection. The Cogita singleton has no creation API, and its
-category name does not replace its editable identity. Referenced Projects, sessions or unfinished runs block deletion.
-Replies resolve current Agent identity from run.persona_id/message.speaker_id, storing ids without name/avatar snapshots.
-Session selection preserves authorship; deleted Personas display a localized label/default avatar.
-SessionResponse.user_persona supplies the singleton for ordinary/Workspace user rows; QQ returns null.
-Identity edits/events refresh historical referencing sessions without rewriting history or captured run configuration.
+Normal Characters own defaults for persona_id, model_profile_id, temperature, reasoning,
+context_policy, harness_enabled, tools_allowed, knowledge_base_ids and worldbook_ids. Sessions save
+sparse overrides of those fields. PATCH omission preserves a field; null removes its override;
+false, zero and [] are explicit values. Lists and context policies replace whole values. Parent edits
+immediately affect inheriting Sessions, preserving explicit overrides. Responses expose effective
+configuration and character|session sources; temperature may have model source.
 
-Ordinary sessions have one persona_id, initially Cogita, accepting only agent records; no members, speaker lists,
-conversation modes or group transcripts. New sessions persist a concrete model selection: omitted/null POST
-model_profile_id selects the enabled global-default LLM, else the first enabled LLM by name/id, else null.
-Explicit ids are validated without substitution. Global-default changes affect later sessions only; execution
-uses the saved id (model_source=session). PATCH omission preserves it; null clears it. Adding a model leaves
-unselected sessions unchanged. Both chat selectors show the saved model or a disabled empty/unavailable state,
-without a Global default entry. Session initialization performs no model discovery, health check or inference.
+Default Persona is User, reasoning is true, Harness is false, resources are empty, and the tool list
+captures currently available general tools at Character creation. The tool list is a default,
+not a permission ceiling. Execution retains tool scope, permissions and approvals.
+Only temperature (0..2) is a conversation-level generation parameter; absent temperature uses the
+selected model's parameters, as do other generation options.
 
-New chat navigation opens a local ordinary/Workspace draft with configuration/Knowledge editing and no record/WebSocket.
-Reopening preserves it; switching conversations/Projects or refreshing discards it. First send creates the session,
-applies additions and submits captured input/attachments. Creation failure restores the draft; binding/send failure
-retains its id for retry. Creation APIs remain immediate; [Runs/streaming](runs-streaming.md) owns input acceptance/restoration.
+Omitting model_profile_id when creating a normal Character selects the enabled global default LLM,
+then the first enabled LLM by name/id, or null. Explicit null means no model. This selection happens
+once; later model creation or global-default changes never replace it. Execution resolves only
+Session > Character. Missing/disabled selections remain unavailable. Creation performs no discovery,
+model loading or inference.
 
-Ordinary/Workspace composers accept FIFO messages with uploaded attachments during replies/approvals.
-Queues are per-session frontend memory: leaving stops dispatch, returning reconciles before continuing;
-refresh/close clears them, and session/Project deletion discards them. Actual send time determines configuration.
-Rows stack above the composer with two-line text, attachment summaries and edit/delete controls, scrolling within
-min(15rem, 25dvh). They have no history number, immediate-send or reorder action. One edit at a time replaces
-the composer's text/attachments and marks the original row Editing. Submit saves its original id/position;
-a head edit blocks until saved/deleted, while a later edit permits earlier dispatch. Deleting an edit clears its composer.
-Edits survive navigation; ordinary drafts retain their lifecycle. Upload results belong to the original session/edit.
-Stop and enqueue coexist; editing labels submit Save queued message. Enter submits, Shift+Enter inserts a line,
-and IME confirmation does not submit. Uploads must finish before enqueue/save. Removal releases local previews;
-uploaded references retain existing cleanup. [Runs/streaming](runs-streaming.md#websocket-events) owns pauses/acceptance.
+Knowledge and Worldbook mounts are configuration only. Normal chat, Harness, retry and compaction
+never retrieve, match, inject or budget mounted resources. Independent resource management, indexing,
+explicit Knowledge search and Worldbook match tests remain available. No long-term memory tables,
+isolation flags, extraction jobs or sharing operations are implemented.
 
-Ordinary context, generation, Harness and tool selection belong to the session. Context defaults to session history with explicit attachments.
-Generation defaults to {} and accepts only optional temperature (0..2); a non-null value overrides the model. {} or temperature:null clears it; PATCH omission preserves it.
-Other model generation parameters remain inherited and available in resolved configuration. Neither context nor generation is nullable.
-The strict session reasoning boolean defaults true. The composer model menu toggles it immediately, preserving confirmed state on save failure; pending saves block sending. Draft selection persists through first send, and model changes preserve the choice.
-Workspace overrides.reasoning accepts a boolean; omission/null selects true, independently of Project defaults. Ordinary PATCH omission preserves reasoning and null is invalid.
-Before the first model round, local preflight may replace an explicitly unsupported mode with an explicitly supported alternative, unless the selected mode's check is skipped. Unknown support passes through. The user message saves reasoning_enabled/reasoning_disabled warnings and run metadata saves requested/effective modes; session selection and reasoning text remain unchanged. Public /v1 never adjusts modes.
-Harness defaults off. Omitted tools_allowed selects all general-purpose built-ins; [] allows none, and saved lists do not change with the catalog. These settings never depend on Persona.
+New chat opens a local draft under its Character without creating a Session or WebSocket. First send
+creates the Session with all overrides atomically and submits captured input/attachments. Creation
+failure restores the draft; an unaccepted send failure retains the created Session for retry.
+Repeated draft navigation preserves it; switching locations or refreshing discards it.
 
-Ordinary/Workspace runs combine Knowledge in Cogita Persona, Agent, Workspace Project, then session-addition order,
-deduplicating by first occurrence. Clearing additions preserves inheritance; Agent changes preserve additions/overlaps.
-Retrieval receives resolved ids and respects resource enablement/limits. Worldbook belongs only to roleplay_user/character
-Personas and Timeline Projects, without ordinary/Workspace injection. Wrong resource combinations return 422.
+Normal composers accept FIFO queued messages and attachments during replies/approvals. Queues live
+in browser memory per Session; leaving stops dispatch and returning reconciles before continuing.
+Refresh/close clears them; deleting their Session or Character discards them. Actual submission time
+determines Persona and configuration. Queue rows keep two-line text, attachment summaries, edit/delete
+controls and no history number. Only one row can be edited; saving retains its id/position. A head edit
+blocks dispatch, while editing a later row permits earlier messages. Uploads retain the original
+session/edit destination and must finish before submission. Enter submits, Shift+Enter inserts a line,
+and IME confirmation does not submit. [Runs/streaming](runs-streaming.md) owns acceptance and pauses.
 
-Projects share global resource catalogs but isolate sessions, history and configuration.
-Project.kind is immutable workspace|timeline|qqbot. Workspace requires agent_persona_id,
-the fixed singleton cogita_persona_id, context_policy, harness_enabled and tools_allowed;
-system_prompt, model_profile_id, temperature (0..2) and ordered knowledge_base_ids are optional.
-Timeline requires character_persona_id, roleplay user_persona_id and context_policy;
-model_profile_id, temperature and ordered worldbook_ids are optional. Harness, Knowledge
-and Project prompts are not Timeline fields. Timeline supports CRUD/settings only;
-session creation/listing returns PROJECT_CHAT_UNAVAILABLE (409). Persona/Worldbook injection
-and per-speaker historical identity for Timeline conversations remain unimplemented.
+New normal user messages store the effective Persona in speaker_id; assistant messages store the
+fixed Character. History resolves current names/avatars by those ids, without per-message identity
+snapshots. Persona changes affect subsequent submissions only. Deleted historical Personas display a
+localized deleted label. Persona deletion is blocked by Character defaults, explicit Session
+selection and unfinished Runs, but historical references alone do not block it.
 
-[QQBot](qqbot.md) owns QQ Project settings, bound conversations, media, delivery and local history management.
+Character deletion requires every execution, approval and QQ operation idle. It removes its Sessions
+and conversation state while preserving shared resources. Deleting the current normal Session selects
+a sibling or opens a draft under the same Character; QQ keeps an empty binding state. Deleting the
+current Character returns to Cogita. Delayed reads/deletions/creations preserve later navigation.
 
-Session.kind and project_id follow the creation location and cannot be changed or moved.
-Ordinary, Workspace and QQBot have distinct schemas; timeline is a reserved session identity.
-Workspace sessions store only sparse overrides for persona_id, context_policy, model_profile_id,
-temperature, reasoning, harness_enabled and tools_allowed. PATCH accepts title/overrides; omission keeps
-values, null removes an override, and false/0/[] are explicit values. Inherited values are
-resolved on reads and runs, never copied into session storage. The fixed Cogita Persona has no override.
-Models resolve session > Project > global default using the ordinary default-selection rule;
-changes to the global default affect inheriting Workspace sessions, including existing ones.
-Temperature resolves session > Project > selected model. Other parameters remain model-owned.
-Responses include effective configuration, model_source=session|project|global and typed sources.
-Project settings and Persona/model edits refresh affected session responses through session_updated.
-Tools are bounded by the current Project list; [Harness](harness-tools.md) owns revocation during runs.
-Project deletion requires all its sessions idle, deletes their conversation state/bindings,
-and preserves shared resources. Persona/model/resource deletion rejects Project references.
+[QQBot](qqbot.md) owns its Character configuration, immutable group/friend bindings and delivery.
+QQ Sessions accept title edits only; no Persona, ordinary overrides, mounts, Harness switch or manual send.
 
 | Endpoint | Ownership |
 | --- | --- |
-| `/api/personas` and `/{id}` | Strict Persona CRUD; optional collection list filter |
-| `/api/personas/{id}/knowledge-bases`, `/worldbooks` | Persona bindings |
-| `/api/projects` and `/{id}` | Typed Project CRUD |
-| `/api/projects/{id}/knowledge-bases`, `/worldbooks` | Type-restricted Project bindings |
-| `/api/projects/{id}/sessions` | Workspace/QQBot creation and scoped listing |
-| `/api/sessions` and `/{id}` | Ordinary creation/listing; individual ordinary/Workspace configuration |
-| `/api/sessions/{id}/knowledge-bases` | Additions, Cogita/Agent/Project bindings and effective ids |
-| `/api/sessions/{id}/messages` | New input |
-| `/api/sessions/{id}/history`, `/history/users` | Bounded conversation and user-navigation pages |
+| `/api/personas` and `/{id}` | User Persona CRUD; no collection or resource endpoints |
+| `/api/characters` and `/{id}` | Strict normal/QQBot Character CRUD |
+| `/api/characters/{id}/sessions` | Owned Session creation and listing |
+| `/api/sessions/{id}` | Individual read/update/delete; normal title/overrides or QQ title |
+| `/api/sessions/{id}/messages` | Normal input |
+| `/api/sessions/{id}/history`, `/history/users` | Bounded conversation and user navigation |
 | `/api/messages/{id}`, `/edit` | User-message deletion and edit |
 | `/api/runs/{id}`, `/{id}/retry` | Whole-reply deletion and chat retry |
 
-References are validated before persistence: unknown/removed fields return 422; missing/conflicting references return structured 404/409.
-Waiting approval blocks new input/direct calls; overlapping execution returns SESSION_BUSY. The approval API resumes the same run.
-
-Deleting a different session from the sidebar preserves the current conversation,
-draft. Deleting the current session selects its first remaining
-sibling. The last ordinary session opens an unsaved draft; the last Workspace session leaves its Project settings/empty tree. Delayed deletion/draft loading
-responses preserve subsequent session selections; delayed creation/selection cannot replace later navigation. Failed deletion leaves the
-displayed state intact and reports the error.
-
-Session binding PATCH accepts only knowledge_base_ids; [] clears additions. Responses
-include user_persona_knowledge_base_ids, agent_persona_knowledge_base_ids, project_knowledge_base_ids and
-effective_knowledge_base_ids. The UI locks inherited sections and edits additions
-separately; it never writes effective ids back as additions. Persona resource endpoints
-accept the matching knowledge_base_ids or worldbook_ids array; [] clears its bindings.
+Old Project and standalone Session creation/listing paths have no forwarding routes. Unknown/removed
+fields return 422; missing/conflicting references return structured 404/409. Waiting approval blocks
+new input/direct calls; overlapping execution returns SESSION_BUSY. Approval resumes the same Run.
 
 ## Configuration snapshots and context
 
 Each run privately stores the resolved chat configuration in
-config_snapshot_json. Agent/Project prompts, Cogita Persona background, model, bindings, generation and context remain stable
-through edits and approval waits; current Project tool revocations still apply. Public metadata exposes
+config_snapshot_json, with explicit character_id and persona_id. Character prompt, Persona background,
+model, mounts, tools, generation and context remain fixed through edits and approval waits. Public metadata exposes
 only identities, model selection, context policy, limits and binding ids.
-Retry resolves a new configuration for the original run's Agent Persona without changing
-the session selection. A missing/deleted Persona fails before pruning. It
+Retry and user-message edit resolve the original user message's Persona using its current background,
+while re-resolving other configuration and preserving the Session's selection. A deleted original Persona fails before pruning. It
 keeps the input user message and deletes the selected run plus all later
 conversation messages/runs. Tool runs cannot be retried as model answers.
 DELETE /api/runs/{id} deletes only that reply's messages, steps, events and
@@ -133,17 +98,17 @@ associated replies; user edit removes later conversation and associated runs, re
 History mutations require an idle session. Edits require content and attachment_ids (the unique subset of original attachments to retain, in original order); [] removes all attachments. Empty text with no retained attachments returns EMPTY_MESSAGE; invalid ids return INVALID_ATTACHMENTS. Editing cannot add attachments.
 SQLite pruning, text, attachments, timestamps and history_version commit together. Responses and history_pruned events return deleted_message_ids/deleted_run_ids. Message-level retry and individual assistant/tool deletion are rejected. Referenced attachment cleanup follows commit.
 
-Ordinary/Workspace/QQ context_policy defaults to history_enabled=true, strategy=token_budget and include_attachments=explicit.
+Normal/QQ context_policy defaults to history_enabled=true, strategy=token_budget and include_attachments=explicit.
 Its parameter groups are compaction={enabled:true,trigger_percent:80,target_percent:55,max_summary_tokens:null}, message_window={max_messages:100}, and retrieval={trigger_percent:80,target_percent:55,max_checkpoint_tokens:null}.
 Strategies are token_budget, message_window and history_retrieval. Counts are strict integers (message limit 1..10000); percentages satisfy 0 < target < trigger < 100; token caps are null or positive integers.
-Top-level max_messages/max_chars, mode and source_message_id are rejected. Workspace inherits/overrides the whole policy; inactive parameter groups remain saved.
-History off omits old history and checkpoints; current Harness work can still compact/reset. Automatic compaction off reuses summaries and permits token pruning. Timeline retains its bounded policy.
+Top-level max_messages/max_chars, mode and source_message_id are rejected. Each normal Session inherits/overrides the whole policy; inactive parameter groups remain saved.
+History off omits old history and checkpoints; current Harness work can still compact/reset. Automatic compaction off reuses summaries and permits token pruning.
 Message-window mode keeps up to N eligible historical messages, omits a split oldest turn, and can retain fewer after token counting. It never reads, injects or updates summaries or retrieval memory.
 Token-budget mode validates and reuses its saved summary. No strategy silently falls back to another.
 On-demand history requires Harness, including with an empty business-tool list, and always maintains its window automatically. It uses working checkpoints and bounded original-history retrieval instead of summary inference; [Harness](harness-tools.md#on-demand-history) owns its tools, windows, recovery and limits.
 Its checkpoint allowance defaults to min(2048,max(128,floor(B/10))), shared by conversation memory and run progress. Model counting includes referenced text; oversized existing memory remains stored and is available by reference.
 Settings share a strategy selector: message mode shows its count, token mode its compaction controls, and on-demand mode its trigger/target/checkpoint cap. The third option requires effective Harness; execution rechecks the requirement without changing the saved strategy.
-Controls remain editable with history off except the historical message count; advanced controls start collapsed. Instructions, Persona, Project and Knowledge remain independent of history selection.
+Controls remain editable with history off except the historical message count; advanced controls start collapsed. Character instructions and Persona background remain independent of history selection.
 SQLite reads history in pages of 128 with stable timestamp/message-id boundaries and identity-only turn lookups. Only candidate recent history and a summary batch are retained; a single stored message can still be large.
 Eligible user input from failed/cancelled turns remains; errors, incomplete assistant output and internal context-tool records are excluded. Mixed tool messages retain their business data.
 Web history uses bounded evidence, never full page caches. Original messages and attachments remain unchanged.
@@ -157,7 +122,7 @@ Missing provider windows return CONTEXT_WINDOW_REQUIRED. Counting covers the fin
 request, including images and tool definitions, within the existing model lease. Oldest raw history
 turns can be removed as complete groups in message-window mode, when automatic compaction is off or during later Harness calls.
 A bounded suffix search recounts the final selection. Summaries, current input,
-configured instructions and Knowledge stay intact. [Harness](harness-tools.md#loop-approval-and-cancellation) may summarize completed tool prefixes before this final selection; remaining tool pairs stay intact. If they do not fit,
+configured instructions stay intact. [Harness](harness-tools.md#loop-approval-and-cancellation) may summarize completed tool prefixes before this final selection; remaining tool pairs stay intact. If they do not fit,
 CONTEXT_WINDOW_EXCEEDED ends the call before dispatch. Counting failures return CONTEXT_COUNT_FAILED;
 these request failures do not mark the model broken. Sources, token_limit exclusions and attachment
 references describe the retained request.
@@ -167,7 +132,7 @@ Above trigger_percent of B it selects a complete recent-turn suffix toward the s
 It releases counting admission before calling core/models with the selected model, non-streaming, temperature zero, no tools and capability-aware reasoning off.
 Summary output defaults to min(2048, max(128, floor(B / 10))); explicit caps are never reduced. Historical and active-run summaries share at most four calls per run, existing model timeouts and the Harness active-time budget.
 The role-labelled input combines the previous summary and newly covered history, splitting oversized text by summary budget.
-Reasoning, system prompts and injected Knowledge are omitted; images contribute only existing text/descriptions/references.
+Reasoning and system prompts are omitted; images contribute only existing text/descriptions/references.
 Structured Markdown preserves goals, constraints, corrections, facts, open work and sources. It enters as user-role historical data.
 Only after all batches finish, final recount fits and tokens decrease is one private checkpoint atomically replaced.
 It stores stable coverage, history_version, attachment policy, model/step identity, format, time and counts.
@@ -177,13 +142,13 @@ Empty, length, tool-calling, timed-out, over-four-call or non-shrinking summarie
 If the original request fits, context_compaction_failed is retained as a diagnostic and answering continues; otherwise
 CONTEXT_COMPACTION_FAILED stops the run. Cancellation always terminates. [Context detail](runs-streaming.md#context-detail)
 retains each dispatched summary request and the summary actually used by the answer.
-`/compact` manually evaluates idle ordinary/Workspace history with history enabled and token_budget or history_retrieval selected. Token mode works even with automatic compaction off; on-demand mode performs a local reset without generation. It bypasses the trigger, retaining the target, cap and four-call limit.
-The selected configuration and inclusive eligible-history boundary are captured before execution. Counts include fixed Persona/Project prompts, effective tools and answer reserve, without composer input or Knowledge retrieval. Fixed-only native counting uses an empty protocol user frame that is never retained or sent for inference. The next chat recounts its complete request.
+`/compact` manually evaluates idle normal history with history enabled and token_budget or history_retrieval selected. Token mode works even with automatic compaction off; on-demand mode performs a local reset without generation. It bypasses the trigger, retaining the target, cap and four-call limit.
+The selected configuration and inclusive eligible-history boundary are captured before execution. Counts include fixed Character/Persona context, effective tools and answer reserve, without composer input or Knowledge retrieval. Fixed-only native counting uses an empty protocol user frame that is never retained or sent for inference. The next chat recounts its complete request.
 Empty history or input already below target returns not_needed; successful reduction commits the checkpoint, while actual summary failures fail the run even when the original context fits. [Runs/streaming](runs-streaming.md#run-lifecycle) owns the dedicated API, event and cancellation.
 Typing a slash prefix opens the sole /compact completion: click/Enter executes, Tab completes, Escape dismisses; Shift+Enter and IME confirmation do not execute. Only a standalone command with optional surrounding whitespace is accepted, without arguments or attachments.
 The command bypasses message creation, queue insertion, answers and title generation. Drafts, loading, active/approval runs, pending submissions, queued/editing messages and configuration saves block execution, retaining input. Accepted execution clears only the submitted draft.
 Ordinary messages may queue during compaction: success permits dispatch; failure/cancellation/interruption pauses it. Queues remain browser-local. No slash command registry is introduced.
-QQ uses the same automatic preparation with its [batch history](qqbot.md#context-and-media). QQ manual compaction, Timeline compaction, overflow retry and draft previews are deferred.
+QQ uses the same automatic preparation with its [batch history](qqbot.md#context-and-media). QQ manual compaction, overflow retry and draft previews are deferred.
 Summaries are lossy; model-specific factual retention and accumulated drift require representative real-model acceptance.
 Qwen3.5-0.8B GGUF can exhaust a 512-token summary cap in conversation and active-tool summaries, or copy summary instructions into its memory; three consecutive successful summaries with factual-retention
 acceptance remain outstanding. A successful individual compression or mocked test does not establish that model's long-conversation quality.
@@ -191,20 +156,19 @@ Autonomous on-demand checkpoint/recovery quality requires model-specific accepta
 
 The [context meter](runs-streaming.md#context-detail) displays actual per-call input plus output usage beside the model selector. Input reflects history limits and token trimming; policy edits affect the next request, not recorded usage.
 
-Workspace inserts its Project prompt after the Agent prompt and before Persona/Knowledge data, independently of history limits.
-The singleton Cogita Persona is active in ordinary/Workspace chat. Its trimmed nonempty system_prompt is
-background data wrapped in <user_persona> tags and appended once to the system context;
-empty text produces no block. The run snapshots this text before execution. Compact
-user_persona metadata contains identity, injection status, length and empty skip reason,
-never the content. General settings contain no Core Memory fields or enable switch.
+Persona background is trimmed, wrapped in <user_persona> tags and appended once as contextual data;
+empty text produces no block. The Run snapshots it before execution. Compact user_persona metadata
+contains identity, injection status, length and empty skip reason, never the content. Normal user
+history and current input carry a Persona-id prefix in model projection; raw messages remain unchanged.
+Summary inputs and on-demand history retain the original Persona attribution. General settings have
+no Core Memory fields or enable switch.
 
 Worldbook is deterministic matching over current user text and configured
 keywords. Enabled entries obey entry/context limits, case sensitivity,
 whole-word matching and recursion depth. Books/entries have explicit CRUD;
 match-test is diagnostic and changes no session/run. It requires explicit worldbook_ids
-and has no session target. Worldbooks have no ordinary-chat binding or injection path;
-roleplay Persona/Timeline bindings are stored for later workflows. Cogita Persona, Worldbook,
-Knowledge and attachment content are data, never routing decisions.
+and has no session target. Character/Session mounts do not invoke Worldbook matching or injection.
+Persona background and attachment content are data, never routing decisions.
 
 Worldbook settings have Configuration, Entries and Match test tabs; existing/newly saved books open Entries.
 Entry headers contain a reorder handle, disclosure, enabled switch, name, dirty marker, mode and delete;
@@ -215,7 +179,7 @@ Worldbook/entry PATCH objects before committing, including regex/name/content. E
 /api/worldbooks/{id}/entries and /api/worldbook-entries/{id}; ordering uses /api/worldbooks/{id}/entries/reorder.
 POST /api/worldbooks/match-test returns counts, triggers, recursion and bounded previews.
 
-[Knowledge](knowledge.md) owns retrieval and injection using the run's resolved bindings; attachment rules below own file/image context.
+[Knowledge](knowledge.md) owns independent indexing and explicit search; saved mounts remain inactive in chat. Attachment rules below own file/image context.
 
 ## Messages and attachments
 
@@ -234,7 +198,7 @@ Large binary data belongs in the attachment store and is referenced by id/URL.
 Uploads and serving use the configured attachment directory; General owns
 size/count and text-context byte limits. Persisted parts retain ids, MIME,
 name, size and compact metadata, never image data URLs. Orphan cleanup is an
-explicit separate operation and considers current Persona avatars, not message/run avatar snapshots.
+explicit separate operation and considers current Persona and Character avatars, not message/run avatar snapshots.
 
 User images persist only as metadata.attachments references; message parts do not duplicate them.
 History selection uses the configured strategy; image inputs participate in final token counting.
@@ -250,21 +214,21 @@ Other attachments contribute bounded descriptive markers. include_attachments=no
 File selection, clipboard images and dropping share per-file status, previews and removal; partial failure keeps successful uploads. Session changes clear ordinary pending attachments; queue edits retain theirs.
 Composer images use 120px vertical Attachment cards with names, types and sizes; other files use horizontal cards, bottom-aligned with image cards. Sizes use uploaded File.size then persisted size, in 1024-based B/KB/MB/GB with at most one decimal. Image removal uses a circular top-right button.
 User metadata.attachments render as right-aligned scrolling groups: files above the text bubble and images below it, preserving order within each group. Images use 160px preview cards without visible names/sizes; file cards retain both. Attachment-only messages have no empty bubble; image/file-only messages remain eligible history.
-Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Cleanup after commit preserves references from messages, Personas, Knowledge and model-input snapshots.
+Editing uses the same file/body/image order with removal buttons; cancellation restores originals and failed saves retain the draft. Regeneration uses only retained attachments. Cleanup after commit preserves references from messages, Personas, Characters, Knowledge and model-input snapshots.
 Thumbnails and zoom previews resolve stored references after refresh. Request warnings, attachment-policy and size errors have English/Chinese guidance; retries retain the message's saved attachments.
 
 Tool calls require assistant role, run-unique call id, name and finite JSON object arguments, with distinct part ids per message. Results require tool role, matching call id, success/error/rejected/cancelled status, optional JSON data/errors and truncation flag.
-Live loops use native assistant/tool pairs. Ordinary/Workspace history quotes tool parts as data, permitting truncation without orphan protocol calls or promoting data to system/developer instructions. [QQBot](qqbot.md#context-and-media) owns its confirmed-delivery history pairs.
+Live loops use native assistant/tool pairs. Normal history quotes tool parts as data, permitting truncation without orphan protocol calls or promoting data to system/developer instructions. [QQBot](qqbot.md#context-and-media) owns its confirmed-delivery history pairs.
 
 Reasoning is assistant-only strict {id,type:reasoning,text} data. The output normalizer accepts reasoning_content and incrementally extracts <think> markers, including split tags; Markdown inline/fenced/indented code and escapes stay literal.
 Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete messages are excluded from history; live tool transcripts retain upstream content/structured reasoning for provider continuation.
 Known provider limitation: [DeepSeek thinking-mode documentation](https://api-docs.deepseek.com/guides/thinking_mode)
 requires earlier-turn reasoning when tools are supplied, including answers without tool calls. Internal history
 currently omits that earlier reasoning; only the active tool loop preserves it. No model-specific history switch exists.
-[Runs/streaming](runs-streaming.md) owns replies, provisional answers, processing/reasoning, command groups and usage. Replies retain original Persona identity; copy uses answer text only, and direct tools never invent a model answer.
+[Runs/streaming](runs-streaming.md) owns replies, provisional answers, processing/reasoning, command groups and usage. Replies retain original Character identity; copy uses answer text only, and direct tools never invent a model answer.
 
 The frontend renders parts as data; edit/retry uses original text. MessageActions owns controls, MessageParts presentation, ChatAttachments cards/URLs, and [runs/streaming](runs-streaming.md) stream merging. Send/edit/retry pass the current UI language through X-UI-Language (en/zh-CN; absent defaults to en, other values return 422) for application-owned instructions. Each new run snapshots that language; model content and saved snapshots are never translated when the UI changes.
-User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Agent identity; user rows use current Cogita Persona identity. Headers use 14px names and 12px timestamps/numbers, ordered number/time/name for users and name/time/number for assistants.
+User messages use right-aligned gray secondary bubbles with 24px corners; assistant replies use open body layout. Assistant replies use current Character identity; user rows use the current profile of their original Persona. Headers use 14px names and 12px timestamps/numbers, ordered number/time/name for users and name/time/number for assistants.
 Assistant action buttons stay visible. On hover-capable fine-pointer devices, timestamps and message numbers, user action buttons and reply usage metrics appear on message hover or keyboard focus,
 fade in and out over 180ms (instantly with reduced motion), and retain layout space. Touch layouts keep them visible; editing keeps save/cancel visible and an open usage modal keeps its owner visible. Message bodies use 16px text with Markdown headings, lists, quotes, code, tables and media.
 Markdown block code uses gray secondary Bubble surfaces with 24px corners and preserves preformatted text; inline code retains its compact styling. Message action tooltips open below their buttons without flipping above, including usage details. Wide code, tables and tool results scroll inside their own bounds; general tool results are limited to 320px height on desktop and 240px below 768px. [Runs/streaming](runs-streaming.md) owns the shorter web-fetch bounds.
@@ -292,7 +256,7 @@ originating input id and successful auxiliary-generation identity.
 
 ## HTTP schemas
 
-OpenAPI covers Personas, configuration, parts, bindings, paginated history and Worldbook; private snapshots remain excluded.
+OpenAPI covers Personas, configuration, parts, mount configuration, paginated history and Worldbook; private snapshots remain excluded.
 Responses preserve optional-field omission, explicit nulls and existing PATCH/error behavior.
 Message/run timestamps retain UTC Z and microseconds; Worldbook keeps +00:00. Uploads document
 one multipart file; downloads document stored-MIME bytes, Range, 200/206 headers and empty 416.

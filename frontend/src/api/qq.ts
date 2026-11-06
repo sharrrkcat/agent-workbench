@@ -2,7 +2,7 @@ import { request } from './http';
 import type { QQSession } from '../types/chat';
 import type { Run } from '../types/runs';
 import type { HistoryQuery } from '../types/history';
-export type QQBinding = { session_id: string; project_id: string; target_kind: 'group' | 'friend'; target_id: string; paused: boolean; pause_reason: string; deadline: number | null; history_version: number; busy: boolean };
+export type QQBinding = { session_id: string; character_id: string; target_kind: 'group' | 'friend'; target_id: string; paused: boolean; pause_reason: string; deadline: number | null; history_version: number; busy: boolean };
 export type QQImageSegment = { type: 'image'; media_id: number; asset_id: number | null; description: string | null; kind: 'image' | 'sticker' | 'face'; status: 'pending' | 'ready' | 'failed' | 'deleted'; label: string; error_code: string | null; attachment: { id: string; type: 'image'; name: string; mime_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; size: number; uri: string; width: number; height: number } | null };
 export type QQSegment = { type: 'text'; text: string } | QQImageSegment;
 export type QQMessage = { id: number; external_id: string; sender_id: string; sender_name: string; timestamp: string; text: string; segments: QQSegment[]; kind: 'chat' | 'command'; command_status: 'pending' | 'done' | null; disposition: 'pending' | 'batched' | 'skipped' | 'command'; batch_id: number | null; references: { type: 'at' | 'reply'; id: string; name: string | null; is_self: boolean }[] };
@@ -30,8 +30,8 @@ export const qqResourcesApi = {
 const path = (id: string) => `/api/qq/sessions/${encodeURIComponent(id)}`;
 export const qqApi = {
   createSession: (id: string, values: { title: string; target_kind: 'group' | 'friend'; target_id: string }) =>
-    request<QQSession>(`/api/projects/${encodeURIComponent(id)}/sessions`, { method: 'POST', body: JSON.stringify(values) }),
-  status: (id: string, signal?: AbortSignal) => request<{ status: string; connected: boolean }>(`/api/qq/projects/${encodeURIComponent(id)}/status`, { signal }),
+    request<QQSession>(`/api/characters/${encodeURIComponent(id)}/sessions`, { method: 'POST', body: JSON.stringify(values) }),
+  status: (id: string, signal?: AbortSignal) => request<{ status: string; connected: boolean }>(`/api/qq/characters/${encodeURIComponent(id)}/status`, { signal }),
   history: (id: string, query: HistoryQuery = {}, signal?: AbortSignal) => request<QQHistoryPage>(path(id) + '/history?' +
     new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)])), { signal }),
   binding: (id: string) => request<QQBinding>(path(id)),

@@ -7,7 +7,7 @@ import pytest
 
 from ai_workbench.core.qq_protocol import OneBotConnection
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMessage, QQParticipant
-from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
+from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, character
 
 
 @pytest.mark.parametrize("message,expected", [
@@ -28,12 +28,12 @@ from tests.test_qqbot import qq_client, child, configure_execution, event, freez
 ])
 def test_builtin_account_trigger_is_complete_and_independent_of_keywords(qq_client, message, expected):
     client, state, _ = qq_client
-    p = project(client)
+    p = character(client)
     session = child(client, p)
     ingest(client, state, p, {**event(), "message": message}, 0)
     batch = freeze(state, session, 5)
     assert (batch is not None) == expected
-    assert state.projects.get(p["id"]).keywords == []
+    assert state.characters.get(p["id"]).keywords == []
     if expected:
         assert batch.trigger_kind == "keyword"
         assert state.qq.store.get(QQParticipant, (session["session_id"], "9999")).expires_at == 60
@@ -80,17 +80,17 @@ def test_pending_names_preserve_silence_and_other_groups_progress(qq_client):
         await asyncio.wait_for(entered.wait(), 1)
         await state.qq.ingest(p["id"], event(3, "a supplement"), now=6)
         await state.qq.ingest(p["id"], event(4, "a bystander", sender="8888"), now=7)
-        state.qq.tick_binding(state.projects.get(p["id"]), state.qq.store.get(QQBinding, session["session_id"]), 10)
+        state.qq.tick_binding(state.characters.get(p["id"]), state.qq.store.get(QQBinding, session["session_id"]), 10)
         assert state.qq.store.next_batch(p["id"]) is None
         assert len(stored_qq_rows(state.qq.store, QQMessage, session["session_id"])) == 4
         await state.qq.ingest(p["id"], event(5, "buddy", target="6677"), now=1)
-        state.qq.tick_binding(state.projects.get(p["id"]), state.qq.store.get(QQBinding, other["session_id"]), 6)
+        state.qq.tick_binding(state.characters.get(p["id"]), state.qq.store.get(QQBinding, other["session_id"]), 6)
         assert state.qq.store.next_batch(p["id"]).session_id == other["session_id"]
         release.set()
         await state.qq.wait_ingress(session["session_id"])
         binding = state.qq.store.get(QQBinding, session["session_id"])
         assert binding.deadline == 11
-        state.qq.tick_binding(state.projects.get(p["id"]), binding, 11)
+        state.qq.tick_binding(state.characters.get(p["id"]), binding, 11)
         batch, = stored_qq_rows(state.qq.store, QQBatch, session["session_id"])
         assert batch["trigger_kind"] == "keyword"
         assert [row.external_id for row in state.qq.store.batch_messages(batch["id"])] == ["1", "2", "3", "4"]
@@ -139,7 +139,7 @@ def test_lookup_timeout_finishes_once_and_later_names_only_affect_new_messages(q
         await state.qq.ingest(p["id"], {**event(1), "message": "[CQ:at,qq=7777]"}, now=0)
         await asyncio.wait_for(state.qq.wait_ingress(session["session_id"]), 1)
         state.qq.names._remember(p["id"], (session["session_id"], "7777"), "Buddy")
-        state.qq.tick_binding(state.projects.get(p["id"]), state.qq.store.get(QQBinding, session["session_id"]), 50)
+        state.qq.tick_binding(state.characters.get(p["id"]), state.qq.store.get(QQBinding, session["session_id"]), 50)
         assert state.qq.store.next_batch(p["id"]) is None
         assert not state.qq.store.get(QQBinding, session["session_id"]).paused
         await state.qq.ingest(p["id"], {**event(2), "message": "[CQ:at,qq=7777]"}, now=51)
@@ -148,7 +148,7 @@ def test_lookup_timeout_finishes_once_and_later_names_only_affect_new_messages(q
 
 
 def test_connection_changes_discard_unfinished_trigger_decisions(qq_client):
-    from ai_workbench.api.routes.projects import update_project
+    from ai_workbench.api.routes.characters import update_character
     client, state, _ = qq_client
     p, session, connection = configure_execution(client, state, keywords=["buddy"])
     async def scenario():
@@ -160,7 +160,7 @@ def test_connection_changes_discard_unfinished_trigger_decisions(qq_client):
         connection.call = lookup
         await state.qq.ingest(p["id"], {**event(1), "message": "[CQ:at,qq=7777]"}, now=0)
         await asyncio.wait_for(entered.wait(), 1)
-        await update_project(p["id"], {"connection_enabled": False}, state)
+        await update_character(p["id"], {"connection_enabled": False}, state)
         release.set()
         await asyncio.gather(*state.qq.names.inflight.values())
         assert not state.qq.pending_ingress
@@ -171,7 +171,7 @@ def test_connection_changes_discard_unfinished_trigger_decisions(qq_client):
 
 
 def test_pending_lookup_cannot_restore_disabled_icebreaker_settings(qq_client):
-    from ai_workbench.api.routes.projects import update_project
+    from ai_workbench.api.routes.characters import update_character
     client, state, _ = qq_client
     p, session, connection = configure_execution(client, state, keywords=["buddy"], icebreaker_enabled=True)
     async def scenario():
@@ -183,7 +183,7 @@ def test_pending_lookup_cannot_restore_disabled_icebreaker_settings(qq_client):
         connection.call = lookup
         await state.qq.ingest(p["id"], {**event(1), "message": "[CQ:at,qq=7777]"}, now=0)
         await asyncio.wait_for(entered.wait(), 1)
-        await update_project(p["id"], {"icebreaker_enabled": False}, state)
+        await update_character(p["id"], {"icebreaker_enabled": False}, state)
         release.set()
         await state.qq.wait_ingress(session["session_id"])
         assert session["session_id"] not in state.qq.icebreaker.groups
@@ -217,7 +217,7 @@ def test_nickname_only_ingress_does_not_block_member_or_send_receipts(qq_client)
         async def receive(value):
             await state.qq.ingest(p["id"], value, now=0 if value["message_id"] == 1 else 4)
         async with serve(server, "127.0.0.1", 0) as host:
-            config = state.projects.get(p["id"]).model_copy(update={
+            config = state.characters.get(p["id"]).model_copy(update={
                 "websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
             connection = OneBotConnection(config, receive)
             state.qq.connections[p["id"]] = connection

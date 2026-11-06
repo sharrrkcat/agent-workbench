@@ -18,16 +18,16 @@ def transcript():
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     sessions, runs = SqlSessionStore(engine), SqlRunStore(engine)
-    session = sessions.create_session(kind="qqbot", project_id="p", target_kind="group", target_id="7788")
+    session = sessions.create_session(kind="qqbot", character_id="p", target_kind="group", target_id="7788")
     state = SimpleNamespace(sessions=sessions, runs=runs)
     reader = QQTranscriptReader(state, SimpleNamespace(engine=engine))
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     with engine.begin() as db:
-        db.execute(insert(QQBinding), dict(session_id=session.session_id, project_id="p", target_kind="group", target_id="7788"))
+        db.execute(insert(QQBinding), dict(session_id=session.session_id, character_id="p", target_kind="group", target_id="7788"))
         db.execute(insert(QQMessage), [dict(id=i, session_id=session.session_id, external_id=str(i), sender_id="7",
             sender_name="Participant", timestamp=(start + timedelta(seconds=i)).isoformat(), text=f"input-{i}",
             disposition="batched", batch_id=(i - 1) // 10 + 1) for i in range(1, 1001)])
-        db.execute(insert(RunRecord), [dict(run_id=f"r{i:03}", session_id=session.session_id, kind="chat", persona_id="",
+        db.execute(insert(RunRecord), [dict(run_id=f"r{i:03}", session_id=session.session_id, kind="chat", character_id="p", persona_id=None,
             status="DONE", created_at=start + timedelta(seconds=i * 10, microseconds=500_000),
             config_snapshot_json='{"private":"not for lists"}', harness_state_json='{"private":"not for lists"}') for i in range(1, 101)])
         db.execute(insert(QQDelivery), [dict(id=i, session_id=session.session_id, run_id=f"r{i:03}", tool_call_id=f"c{i}",
@@ -80,7 +80,7 @@ def test_deleted_anchor_programs_and_equal_times(transcript):
     with engine.begin() as db:
         db.execute(insert(QQMessage), dict(id=2001, session_id=sid, external_id="same", sender_id="7", sender_name="P",
             timestamp=last.isoformat(), text="command", kind="command", disposition="command", command_status="done"))
-        db.execute(insert(RunRecord), dict(run_id="z-run", session_id=sid, kind="chat", persona_id="", status="FAILED", created_at=last))
+        db.execute(insert(RunRecord), dict(run_id="z-run", session_id=sid, kind="chat", character_id="p", persona_id=None, status="FAILED", created_at=last))
         db.execute(insert(QQDelivery), dict(id=2002, session_id=sid, origin="command", command_message_id=2001,
             text="result", status="sent", created_at=last.timestamp()))
     tail, _, _ = reader.page(sid, HistoryQuery(limit=3))
@@ -126,7 +126,7 @@ def test_unequal_inputs_multiple_sends_and_interleaved_sessions(transcript):
             moment = start + timedelta(seconds=3000 + i // 3)
             for session_id in (sid, "unrelated"):
                 run_id = f"mixed-{session_id}-{i:02}"
-                db.execute(insert(RunRecord), dict(run_id=run_id, session_id=session_id, kind="chat", persona_id="",
+                db.execute(insert(RunRecord), dict(run_id=run_id, session_id=session_id, kind="chat", character_id="p", persona_id=None,
                     status=("DONE", "FAILED", "CANCELLED", "RUNNING")[i % 4], created_at=moment,
                     metadata_json='{"qq_reply":{"skipped":true}}' if i % 4 == 0 else '{}'))
                 if session_id == sid:

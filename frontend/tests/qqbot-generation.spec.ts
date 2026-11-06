@@ -19,13 +19,13 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const stamp = Date.now();
       const model = await json(request.post('/api/models/profiles', { data: { name: 'QQ image generator', alias: `qq-draw-${stamp}`,
         kind: 'image_generation', model_ref: 'draw', source: main.source, parameters: { n: 3 } } }));
-      const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'QQ generation',
+      const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'QQ generation',
         model_profile_id: main.id, bot_account: String(stamp), websocket_url: 'ws://127.0.0.1:3001',
         keywords: ['bot'], reply_message_limit: 1, context_policy: {} } }));
       try {
-        const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
+        const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
         const sid = session.session_id;
-        await page.goto(`/projects/${project.id}`);
+        await page.goto(`/characters/${character.id}/settings`);
         await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await expect(page.getByText(labels.qq.imageGenerationHint, { exact: true })).toBeVisible();
         const selector = page.getByLabel(labels.qq.imageGenerationModel, { exact: true });
@@ -37,22 +37,22 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await size.fill('512x512');
         await chooseOption(page.getByLabel(models.imageGeneration.quality, { exact: true }), models.imageGeneration.values.high);
         await chooseOption(page.getByLabel(models.imageGeneration.style, { exact: true }), models.imageGeneration.values.vivid);
-        await page.route(`**/api/projects/${project.id}`, async (route) => {
+        await page.route(`**/api/characters/${character.id}`, async (route) => {
           if (route.request().method() === 'PATCH') await route.fulfill({ status: 500, json: { error: { code: 'TEST_FAILURE', message: 'Fixture save failure' } } });
           else await route.continue();
         });
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByText('Fixture save failure', { exact: false })).toBeVisible();
         await expect(size).toHaveValue('512x512');
-        await page.unroute(`**/api/projects/${project.id}`);
+        await page.unroute(`**/api/characters/${character.id}`);
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
         await page.reload();
         await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await expect(selector).toContainText(model.name);
         await expect(size).toHaveValue('512x512');
-        expect((await json(request.get(`/api/projects/${project.id}`))).image_generation_options).toEqual({ size: '512x512', quality: 'high', style: 'vivid' });
-        await page.goto(`/projects/${project.id}?session=${sid}`);
+        expect((await json(request.get(`/api/characters/${character.id}`))).image_generation_options).toEqual({ size: '512x512', quality: 'high', style: 'vivid' });
+        await page.goto(`/characters/${character.id}?session=${sid}`);
         await json(request.post(`/__test__/qq/${sid}/reply/image-generated`));
         const bubble = page.locator('[data-qq-delivery]').first();
         await expect(bubble.locator('img')).toHaveAttribute('alt', 'Browser generated image');
@@ -80,18 +80,18 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect.poll(async () => (await json(request.get(`/api/qq/sessions/${sid}`))).busy).toBe(false);
         expect((await qqDeliveries(request, sid))).toHaveLength(1);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-        await page.goto(`/projects/${project.id}`);
+        await page.goto(`/characters/${character.id}/settings`);
         await page.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await chooseOption(selector, labels.qq.noImageGeneration);
         await expect(size).toHaveCount(0);
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
-        const saved = await json(request.get(`/api/projects/${project.id}`));
+        const saved = await json(request.get(`/api/characters/${character.id}`));
         expect(saved.image_generation_model_profile_id).toBeNull();
         expect(saved.image_generation_options.size).toBe('512x512');
         expect(errors).toEqual([]);
       } finally {
-        await request.delete(`/api/projects/${project.id}`);
+        await request.delete(`/api/characters/${character.id}`);
         await request.delete(`/api/models/profiles/${model.id}`);
       }
     });

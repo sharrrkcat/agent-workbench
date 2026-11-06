@@ -6,8 +6,8 @@ import { compactCommand } from './compactCommand';
 import i18n from 'i18next';
 
 import { chatApi } from '../../api/chat';
-import { projectsApi } from '../../api/projects';
-import { knowledgeApi } from '../../api/knowledge';
+import { charactersApi } from '../../api/characters';
+import { rememberSession } from './sessionActions';
 
 export const createMessageActions: CogitaActions<
   'sendMessage' | 'deleteMessage' | 'editMessage' | 'setComposerDraftText'
@@ -30,7 +30,6 @@ export const createMessageActions: CogitaActions<
     if (session && get().savingSessionIds.includes(session.session_id) || session?.waiting_run_id ||
         get().runs.some((run) => !terminal(run.status)) || existingQueue?.submission ||
         (!queueItemId && existingQueue?.items.length)) return false;
-    const knowledgeIds = draft?.knowledge_base_ids ?? get().pendingKnowledge?.ids;
     const clientMessageId = randomId();
     let accepted = false;
     let submitted = false;
@@ -38,7 +37,7 @@ export const createMessageActions: CogitaActions<
       if (!session) return;
       const sessionId = session.session_id;
       set((state) => {
-        const queue = state.messageQueues[sessionId] ?? emptyQueue(session!.project_id, state.runs[state.runs.length - 1]);
+        const queue = state.messageQueues[sessionId] ?? emptyQueue(session!.character_id, state.runs[state.runs.length - 1]);
         return { messageQueues: { ...state.messageQueues, [sessionId]: { ...queue,
           ...(!queueItemId ? { paused: null } : {}),
           submission: { clientId: clientMessageId, itemId: queueItemId, accepted: false, pending: true,
@@ -74,29 +73,19 @@ export const createMessageActions: CogitaActions<
         if (get().sessionEpoch !== epoch || get().error) return false;
       }
       if (!session && draft) {
-        if (draft.kind === 'workspace') {
-          session = await projectsApi.createSession(draft.project_id, { title: draft.title.trim(), overrides: draft.overrides });
-        } else {
-          const { kind: _kind, project_id: _projectId, user_persona: _user, knowledge_base_ids: _knowledge, ...values } = draft;
-          session = await chatApi.createSession({ ...values, title: values.title.trim() });
-        }
+        session = await charactersApi.createSession(draft.character_id, { title: draft.title.trim(), overrides: draft.overrides });
+        rememberSession(session);
         const created = session;
         set((state) => ({
           sessions: [created, ...state.sessions.filter((item) => item.session_id !== created.session_id)],
           sessionVersion: state.sessionVersion + 1,
-          ...(state.sessionEpoch === epoch ? { currentSession: created, chatDraft: null,
-            lastOrdinarySessionId: created.kind === 'ordinary' ? created.session_id : state.lastOrdinarySessionId,
-            pendingKnowledge: knowledgeIds?.length ? { sessionId: created.session_id, ids: knowledgeIds } : null } : {}),
+          ...(state.sessionEpoch === epoch ? { currentSession: created, chatDraft: null } : {}),
         }));
       }
       if (!session) return false;
       const sessionId = session.session_id;
       if (queueItemId && (get().sessionEpoch !== epoch || get().queueTarget !== sessionId)) return false;
       if (!get().messageQueues[sessionId]?.submission) reserve();
-      if (knowledgeIds?.length) {
-        await knowledgeApi.updateSessionKnowledgeBases(session.session_id, knowledgeIds);
-        if (get().sessionEpoch === epoch) set({ pendingKnowledge: null });
-      }
       submitted = true;
       const response = await chatApi.sendMessage(
         session.session_id,

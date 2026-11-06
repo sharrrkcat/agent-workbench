@@ -13,11 +13,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       page.on('pageerror', (error) => errors.push(error.message));
       await request.post('/__test__/session');
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
-      const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'Quiet group',
+      const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'Quiet group',
         bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3001', context_policy: {} } }));
-      const url = `/api/projects/${project.id}`;
+      const url = `/api/characters/${character.id}`;
       try {
-        await page.goto(`/projects/${project.id}`);
+        await page.goto(`/characters/${character.id}/settings`);
         await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await expect(page.getByText(labels.qq.triggerHint, { exact: true })).toBeVisible();
         await expect(page.getByText(labels.qq.icebreakerHint, { exact: true })).toBeVisible();

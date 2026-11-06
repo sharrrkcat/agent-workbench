@@ -12,15 +12,16 @@ import { ChatAttachments } from './messages/ChatAttachments';
 import { MessageParts } from './messages/MessageParts';
 import { MessageActions } from './messages/MessageActions';
 import { usePersonaIdentity } from '../hooks/usePersonaIdentity';
+import { useCharacterIdentity } from '../hooks/useCharacterIdentity';
 
 export function MessageBubble({ message, messageNumber, animate = false }: { message: Message; messageNumber?: number; animate?: boolean }) {
   const { t } = useTranslation('personas');
-  const userPersona = useCogitaStore((s) => s.currentSession?.user_persona);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(messageText(message));
   const [attachments, setAttachments] = useState(messageAttachments(message));
   const [busy, setBusy] = useState(false);
-  const identity = usePersonaIdentity()(message.speaker_id);
+  const userIdentity = usePersonaIdentity()(message.speaker_id);
+  const identity = useCharacterIdentity()(message.speaker_id);
   const isUser = message.role === 'user';
   const streaming = message.metadata?.streaming === true;
   const shownAttachments = editing || busy ? attachments : messageAttachments(message);
@@ -43,9 +44,9 @@ export function MessageBubble({ message, messageNumber, animate = false }: { mes
     <MessageFrame
       role={message.role}
       name={
-        isUser ? userPersona?.name || '' : message.role === 'assistant' ? identity.name : message.speaker_name || t('system')
+        isUser ? userIdentity.name : message.role === 'assistant' ? identity.name : message.speaker_name || t('system')
       }
-      avatarId={isUser ? userPersona?.avatar_attachment_id : message.role === 'assistant' ? identity.avatar_attachment_id : null}
+      avatarId={isUser ? userIdentity.avatar_attachment_id : message.role === 'assistant' ? identity.avatar_attachment_id : null}
       createdAt={message.created_at}
       messageId={message.message_id}
       messageNumber={messageNumber}

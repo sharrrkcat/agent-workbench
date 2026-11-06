@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 from tests.qq_transcript_helpers import stored_qq_rows
 from tests.qq_transcript_helpers import qq_incoming, qq_outgoing, qq_transcript
 import asyncio
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session as DbSession, select
 
 from tests.tool_fixtures import create_tool_app as create_app
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.qq_service import QQService
@@ -26,7 +27,7 @@ from tests.tool_fixtures import ToolOpenAI, completion, tool_call, ok
 def test_history_query_validation_and_removed_routes(qq_client):
     import base64
     client, state, _ = qq_client
-    p = project(client)
+    p = character(client)
     session = child(client, p)
     ingest(client, state, p, event(1), 0)
     sid = session["session_id"]
@@ -50,13 +51,13 @@ def qq_client(tmp_path, monkeypatch, request):
         yield client, app.state.runtime_state, upstream
 
 
-def project(client, **values):
-    return ok(client.post("/api/projects", json={"kind": "qqbot", "name": "QQ test", "context_policy": {},
+def character(client, **values):
+    return ok(client.post("/api/characters", json={"kind": "qqbot", "name": "QQ test", "context_policy": {},
         "bot_account": "12345", "websocket_url": "ws://127.0.0.1:3001", **values}))
 
 
 def child(client, p, target="7788", kind="group"):
-    return ok(client.post(f"/api/projects/{p['id']}/sessions", json={"target_kind": kind, "target_id": target}))
+    return ok(client.post(f"/api/characters/{p['id']}/sessions", json={"target_kind": kind, "target_id": target}))
 
 
 def event(number=1, text="bot", target="7788", kind="group", sender="9999"):
@@ -76,47 +77,47 @@ def freeze(state, session, now=100, limit=20):
     return state.qq.store.freeze(session["session_id"], limit, now)
 
 
-def test_project_identity_resources_and_write_only_token(qq_client):
+def test_character_identity_resources_and_write_only_token(qq_client):
     client, state, _ = qq_client
-    p = project(client, access_token="private-token", keywords=[" BOT ", "bot"])
+    p = character(client, access_token="private-token", keywords=[" BOT ", "bot"])
     assert "access_token" not in p and p["has_access_token"]
     assert p["keywords"] == ["bot"]
-    assert "private-token" not in client.get("/api/projects").text
-    assert client.patch(f"/api/projects/{p['id']}", json={"name": "renamed"}).status_code == 200
-    assert state.projects.get(p["id"]).access_token == "private-token"
-    assert ok(client.patch(f"/api/projects/{p['id']}", json={"access_token": ""}))["has_access_token"] is False
-    assert client.post("/api/projects", json={"kind": "qqbot", "name": "duplicate", "context_policy": {},
+    assert "private-token" not in client.get("/api/characters").text
+    assert client.patch(f"/api/characters/{p['id']}", json={"name": "renamed"}).status_code == 200
+    assert state.characters.get(p["id"]).access_token == "private-token"
+    assert ok(client.patch(f"/api/characters/{p['id']}", json={"access_token": ""}))["has_access_token"] is False
+    assert client.post("/api/characters", json={"kind": "qqbot", "name": "duplicate", "context_policy": {},
         "bot_account": "12345", "websocket_url": "ws://localhost:3001"}).status_code == 409
     for patch in ({"kind": "workspace"}, {"knowledge_base_ids": []}, {"worldbook_ids": []},
                   {"cogita_persona_id": USER_PERSONA_ID}, {"harness_enabled": False}, {"tools_allowed": []},
                   {"group_reply_mode": "mention"}, {"batch_message_limit": 0}, {"keywords": [""]},
                   {"websocket_url": "ws://localhost:3001?access_token=secret"}):
-        assert client.patch(f"/api/projects/{p['id']}", json=patch).status_code == 422
+        assert client.patch(f"/api/characters/{p['id']}", json=patch).status_code == 422
     session = child(client, p)
-    assert session["user_persona"] is None
+    assert session["persona"] is None
     assert session["effective"]["knowledge_base_ids"] == []
-    assert session["effective"]["persona_id"] == ""
+    assert session["effective"]["persona_id"] is None
     assert session["effective"]["tools_allowed"] == ["qq_send_message", "qq_skip_reply", "web_fetch", "web_search"]
     assert session["effective"]["harness_enabled"]
-    assert client.post(f"/api/projects/{p['id']}/sessions", json={}).status_code == 422
-    assert client.post(f"/api/projects/{p['id']}/sessions", json={"target_kind": "group", "target_id": "7788"}).status_code == 409
+    assert client.post(f"/api/characters/{p['id']}/sessions", json={}).status_code == 422
+    assert client.post(f"/api/characters/{p['id']}/sessions", json={"target_kind": "group", "target_id": "7788"}).status_code == 409
     for patch in ({"target_id": "100"}, {"overrides": {}}, {"model_profile_id": None}):
         assert client.patch(f"/api/sessions/{session['session_id']}", json=patch).status_code == 422
-    assert client.patch(f"/api/projects/{p['id']}", json={"bot_account": "45678"}).status_code == 409
-    for path in (f"/api/projects/{p['id']}/knowledge-bases", f"/api/projects/{p['id']}/worldbooks",
+    assert client.patch(f"/api/characters/{p['id']}", json={"bot_account": "45678"}).status_code == 409
+    for path in (f"/api/characters/{p['id']}/knowledge-bases", f"/api/characters/{p['id']}/worldbooks",
                  f"/api/sessions/{session['session_id']}/knowledge-bases"):
-        assert client.get(path).status_code == 422
+        assert client.get(path).status_code in (404, 405)
     assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "/test_echo hello"}).status_code == 409
     assert client.post("/api/tools/qq_send_message/call", json={"session_id": session["session_id"], "arguments": {"text": "hi"}}).status_code == 409
-    ordinary = ok(client.post("/api/sessions", json={}))
-    assert "qq_send_message" not in ordinary["tools_allowed"]
-    assert client.patch(f"/api/sessions/{ordinary['session_id']}", json={"tools_allowed": ["qq_send_message"]}).status_code == 422
-    assert ok(client.get(f"/api/projects/{p['id']}/sessions"))[0]["session_id"] == session["session_id"]
+    ordinary = ok(create_chat(client, overrides={}))
+    assert "qq_send_message" not in ordinary["effective"]["tools_allowed"]
+    assert client.patch(f"/api/sessions/{ordinary['session_id']}", json={'overrides': {"tools_allowed": ["qq_send_message"]}}).status_code == 422
+    assert ok(client.get(f"/api/characters/{p['id']}/sessions"))[0]["session_id"] == session["session_id"]
 
 
 def test_debounce_dedup_cutoff_fifo_and_private_media(qq_client):
     client, state, _ = qq_client
-    p = project(client, keywords=["BOT"])
+    p = character(client, keywords=["BOT"])
     session = child(client, p)
     for i in range(1, 25):
         ingest(client, state, p, event(i, "context"), i / 100)
@@ -165,7 +166,7 @@ class FakeConnection:
 
 def configure_execution(client, state, *, streaming=False, **values):
     model = configure_model(client, request_options={"streaming": streaming})
-    p = project(client, model_profile_id=model["id"], connection_enabled=True, **{"keywords": ["bot"], **values})
+    p = character(client, model_profile_id=model["id"], connection_enabled=True, **{"keywords": ["bot"], **values})
     session = child(client, p)
     connection = FakeConnection()
     state.qq.connections[p["id"]] = connection
@@ -174,13 +175,9 @@ def configure_execution(client, state, *, streaming=False, **values):
 
 def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     client, state, upstream = qq_client
-    agent = ok(client.post("/api/personas", json={"collection": "agent", "name": "Agent", "system_prompt": "AGENT_PROMPT"}))
-    embedding = configure_model(client, kind="embedding", alias="embedding")
-    knowledge = ok(client.post("/api/knowledge/bases", json={"name": "Private knowledge", "embedding_model_profile_id": embedding["id"]}))
-    for persona_id in (agent["id"], USER_PERSONA_ID):
-        ok(client.patch(f"/api/personas/{persona_id}/knowledge-bases", json={"knowledge_base_ids": [knowledge["id"]]}))
-    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "PRIVATE_USER_PROMPT"}))
-    p, session, connection = configure_execution(client, state, agent_persona_id=agent["id"], system_prompt="PROJECT_PROMPT")
+    ok(client.post("/api/personas", json={"name": "Private user", "background": "UNSELECTED_BACKGROUND"}))
+    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"background": "PRIVATE_USER_PROMPT"}))
+    p, session, connection = configure_execution(client, state, system_prompt="CHARACTER_PROMPT")
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "first"}, "one"),
         tool_call("qq_send_message", {"text": "[CQ:at,qq=all]"}, "two"), content="PRIVATE_THOUGHT"),
         completion(content="PRIVATE_FINAL")]
@@ -195,10 +192,10 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert connection.timeouts == [90, 90]
     assert [t["function"]["name"] for t in upstream.calls[0]["tools"]] == ["qq_send_message", "web_fetch", "web_search"]
     request = json.dumps(upstream.calls[0], ensure_ascii=False)
-    assert "AGENT_PROMPT" in request and "PROJECT_PROMPT" in request and "PRIVATE_USER_PROMPT" not in request
+    assert "CHARACTER_PROMPT" in request and "UNSELECTED_BACKGROUND" not in request and "PRIVATE_USER_PROMPT" not in request
     assert upstream.calls[0]["messages"][-1]["role"] == "user"
     assert "/test_echo bot" in upstream.calls[0]["messages"][-1]["content"]
-    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     contents = context.model_dump_json()
     assert "first" in contents and "[CQ:at,qq=all]" in contents
     assert "PRIVATE_THOUGHT" not in contents and "PRIVATE_FINAL" not in contents
@@ -212,7 +209,7 @@ def test_harness_multiple_sends_and_context_excludes_private_prose(qq_client):
     assert client.post(f"/api/runs/{batch.run_id}/retry").status_code in (404, 409)
     assert client.delete(f"/api/messages/{batch.input_message_id}").status_code == 409
     assert qq_outgoing(client, session['session_id'])[0]["status"] == "sent"
-    ok(client.delete(f"/api/projects/{p['id']}"))
+    ok(client.delete(f"/api/characters/{p['id']}"))
     assert state.qq.store.get(QQBinding, session["session_id"]) is None
     assert stored_qq_rows(state.qq.store, QQDelivery, session["session_id"]) == []
 
@@ -290,7 +287,7 @@ def test_missing_reply_fails_and_pauses_without_replaying(qq_client, streaming, 
     if content:
         messages = state.messages.list_messages(session["session_id"])
         assert any(m.metadata.get("qq_internal") and content in json.dumps(m.parts) for m in messages)
-        assert content not in project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
+        assert content not in character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     ok(client.post(f"/api/qq/sessions/{session['session_id']}/control", json={"action": "resume"}))
     resumed = state.qq.store.next_batch(p["id"])
     assert resumed.id > queued.id and state.qq.store.get(QQBatch, queued.id) is None
@@ -337,7 +334,7 @@ def test_onebot_websocket_identity_and_plain_text_roundtrip():
 
 def test_exact_deadline_references_media_and_pagination(qq_client):
     client, state, _ = qq_client
-    p = project(client, keywords=["bot"])
+    p = character(client, keywords=["bot"])
     session = child(client, p)
     sid = session["session_id"]
     ingest(client, state, p, event(1), 0)
@@ -365,7 +362,7 @@ def test_exact_deadline_references_media_and_pagination(qq_client):
         {"type": "reply", "id": "bot", "name": None, "is_self": False}]
     older = qq_transcript(client, sid, limit=2, before=page["before_cursor"])
     assert [r["message"]["external_id"] for r in reversed(older["items"])] == ["2", "1"] and not older["has_before"]
-    ok(client.patch(f"/api/projects/{p['id']}", json={"keywords": []}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"keywords": []}))
     ingest(client, state, p, event(6, sender="8888"), 11)
     assert freeze(state, session, 20) is None
     friend = child(client, p, "9999", "friend")
@@ -422,7 +419,7 @@ def test_stop_during_send_keeps_confirmed_reply_and_merges_queued_windows(qq_cli
         await state.qq.execute(queued)
         assert state.qq.store.next_batch(p["id"]) is None
     client.portal.call(scenario)
-    context = project_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None).model_dump_json()
+    context = character_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None).model_dump_json()
     assert "confirmed" in context and "uncertain" not in context
     assert len(connection.calls) == 3
 
@@ -448,7 +445,7 @@ def test_disabled_connection_does_not_start_reserved_batch(qq_client):
     p, session, connection = configure_execution(client, state)
     ingest(client, state, p, event(1), 1)
     batch = freeze(state, session, 6)
-    ok(client.patch(f"/api/projects/{p['id']}", json={"connection_enabled": False}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"connection_enabled": False}))
     client.portal.call(state.qq.execute, batch)
     assert state.qq.store.get(QQBatch, batch.id).status == "queued"
     assert not upstream.calls and not connection.calls
@@ -481,7 +478,7 @@ def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, mo
         running = freeze(state, session, 6)
         config = state.chat_service.resolve(state.sessions.get_session(session["session_id"]))
         run = state.runs.create_run(kind="chat", session_id=session["session_id"], persona_id="",
-            config_snapshot=config.model_dump(mode="json"))
+            config_snapshot=config.model_dump(mode="json"), character_id="00000000-0000-4000-8000-000000000001")
         state.runs.update_status(run.run_id, RunStatus.RUNNING)
         running.status, running.run_id = "running", run.run_id
         state.qq.store.save(running)
@@ -514,7 +511,7 @@ def test_sqlite_restart_reconciles_runs_deliveries_and_keeps_queues(tmp_path, mo
 def test_authentication_failure_and_transport_reconnect(qq_client):
     from websockets.asyncio.server import serve
     client, state, _ = qq_client
-    p = project(client)
+    p = character(client)
     async def scenario():
         attempts = 0
         def authorize(socket, request):
@@ -527,7 +524,7 @@ def test_authentication_failure_and_transport_reconnect(qq_client):
                 request = json.loads(raw)
                 await socket.send(json.dumps({"status": "ok", "retcode": 0, "data": {"user_id": 12345}, "echo": request["echo"]}))
         async with serve(server, "127.0.0.1", 0, process_request=authorize) as host:
-            saved = state.project_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
+            saved = state.character_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
             authenticated = []
             connection = OneBotConnection(saved, lambda _: None, on_connected=lambda: authenticated.append(attempts))
             task = asyncio.create_task(state.qq.connect(connection))
@@ -567,7 +564,7 @@ def test_real_service_with_fake_onebot_and_model(qq_client):
                 if login:
                     await socket.send(json.dumps(event(1, "/test_echo bot")))
         async with serve(server, "127.0.0.1", 0) as host:
-            state.project_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
+            state.character_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
             state.qq.supervisor = asyncio.create_task(state.qq.run())
             async def finished():
                 while True:

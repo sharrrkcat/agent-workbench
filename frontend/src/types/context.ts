@@ -1,5 +1,5 @@
 import type { Attachment } from './messages';
-import type { ContextPolicy, BoundedContextPolicy } from './chat';
+import type { ContextPolicy } from './chat';
 
 export type ContextBudgetStats = {
   configured_window_tokens: number; window_tokens: number; input_budget_tokens: number;
@@ -8,8 +8,7 @@ export type ContextBudgetStats = {
 };
 export type ContextSummary = { available: true; message_count: number; tool_count: number; image_count: number;
   budget?: ContextBudgetStats | null };
-export type ContextSourceKind = 'system' | 'instruction' | 'agent_persona' | 'project_prompt' | 'cogita_persona' | 'knowledge' |
-  'knowledge_snippet' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary' | 'context_memory' | 'context_retrieval';
+export type ContextSourceKind = 'system' | 'instruction' | 'character' | 'persona' | 'history' | 'current_input' | 'attachment' | 'tool_call' | 'tool_result' | 'tools' | 'qq_runtime' | 'summary' | 'context_memory' | 'context_retrieval';
 export type ContextAttachment = Pick<Attachment, 'id' | 'name' | 'type' | 'mime_type' | 'size' | 'uri'>;
 export type RetrievalReference = { window_id: string; previous_window_id?: string | null; boundary_message_id?: string | null;
   boundary_qq_batch_id?: number | null; transcript_end: number; memory_id: string; progress_id?: string | null };
@@ -56,7 +55,7 @@ export type ContextRequest = {
 export type ContextDetail = {
   reference_numbers?: Record<string, number>;
   run_id: string; step_id: string; captured_at: string; model_profile_id: string; model_alias: string;
-  source_type: 'local' | 'provider'; request: ContextRequest; policy: ContextPolicy | BoundedContextPolicy;
+  source_type: 'local' | 'provider'; request: ContextRequest; policy: ContextPolicy;
   sources: ContextSource[]; exclusions: ContextExclusion[]; attachment_ids: string[];
   budget?: ContextBudgetStats | null;
 };

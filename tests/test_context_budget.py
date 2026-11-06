@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
@@ -52,7 +53,7 @@ def test_native_budget_keeps_whole_recent_turns_and_remaps_sources():
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize('section', ['current_input', 'knowledge', 'tools', 'tool_result'])
+@pytest.mark.parametrize('section', ['current_input', 'persona', 'tools', 'tool_result'])
 def test_fixed_content_cannot_be_removed(section):
     async def scenario():
         trace = ContextTrace(sources=[ContextSource(id='fixed', kind=section, message_index=0)])
@@ -99,7 +100,7 @@ def test_configured_output_is_explicit_or_automatic(window, output, expected):
 def test_provider_window_persistence_required_error_and_public_v1_unchanged(presentation_client):
     client, upstream = presentation_client
     profile = configure_model(client, context_window_tokens=None, request_options={'streaming': False})
-    session = ok(client.post('/api/sessions', json={'model_profile_id': profile['id']}))
+    session = ok(create_chat(client, overrides={'model_profile_id': profile['id']}))
     result = send(client, session)
     assert result['run']['error_code'] == 'CONTEXT_WINDOW_REQUIRED' and not upstream.calls
     assert ok(client.get(f"/api/models/profiles/{profile['id']}"))['context_window_tokens'] is None
@@ -123,13 +124,14 @@ def test_provider_window_persistence_required_error_and_public_v1_unchanged(pres
 def test_provider_trims_history_and_preserves_snapshot_attachment_indices(presentation_client, streaming):
     client, upstream = presentation_client
     session = configure(client, harness=False, streaming=streaming)
-    ok(client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 512}))
+    ok(client.patch(f"/api/characters/{session['character_id']}", json={"system_prompt": "Fixed instructions"}))
+    ok(client.patch(f"/api/models/profiles/{session['effective']['model_profile_id']}", json={'context_window_tokens': 512}))
     state = client.app.state.runtime_state
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': {'compaction': {'enabled': False}}}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': {'compaction': {'enabled': False}}}}))
     old = state.messages.add_message(session['session_id'], 'user', 'old ' * 600,
         metadata={'attachments': [{'id': 'old-file', 'type': 'file', 'name': 'old.txt', 'uri': 'local://attachments/old.txt'}]})
     state.messages.add_message(session['session_id'], 'assistant', 'old answer', parent_message_id=old.message_id)
-    other_session = ok(client.post('/api/sessions', json={}))
+    other_session = ok(create_chat(client, overrides={}))
     other = state.messages.add_message(other_session['session_id'], 'user', 'private-other-session')
     result = send(client, session, 'current')
     assert result['success'], result
@@ -148,12 +150,12 @@ def test_tool_growth_and_approval_resume_recheck_saved_limits(presentation_clien
     register_approval_tool(client.app.state.runtime_state.tool_registry, content='tool result ' * 5000)
     session = configure(client, harness=True, streaming=False)
     ok(client.patch(f"/api/sessions/{session['session_id']}",
-        json={'context_policy': ContextPolicy(compaction={'enabled': False}).model_dump()}))
-    ok(client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 4096}))
+        json={'overrides': {'context_policy': ContextPolicy(compaction={'enabled': False}).model_dump()}}))
+    ok(client.patch(f"/api/models/profiles/{session['effective']['model_profile_id']}", json={'context_window_tokens': 4096}))
     upstream.turns = [completion(tool_call('test_approval', {'value': 'large result'})), completion(content='must not execute')]
     result = send(client, session, 'produce a large result')
     assert result['run']['status'] == 'WAITING_FOR_USER', result
-    assert client.patch(f"/api/models/profiles/{session['model_profile_id']}", json={'context_window_tokens': 32768}).status_code == 409
+    assert client.patch(f"/api/models/profiles/{session['effective']['model_profile_id']}", json={'context_window_tokens': 32768}).status_code == 409
     run_id = result['run']['run_id']
     response = client.post(f'/api/tools/approvals/{run_id}', json={'decision': 'approve'})
     resumed = ok(response)

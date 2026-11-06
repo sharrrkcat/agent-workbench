@@ -103,9 +103,9 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible();
         const firstRunId = await page.locator('article[data-run-id]').first().getAttribute('data-run-id');
         const firstRun = await (await request.get(`/api/runs/${firstRunId}`)).json();
-        expect((await request.patch(`/api/sessions/${firstRun.session_id}`, { data: { context_policy: {
+        expect((await request.patch(`/api/sessions/${firstRun.session_id}`, { data: {overrides: {context_policy: {
           history_enabled: true, include_attachments: 'explicit', compaction: { enabled: false },
-        } } })).ok()).toBe(true);
+        }}} })).ok()).toBe(true);
         await input.fill('second context');
         await input.press('Enter');
         const trigger = page.getByRole('button', { name: title, exact: true }).last();
@@ -236,10 +236,10 @@ for (const locale of ['en', 'zh-CN']) {
         const badges = dialog.locator('.context-call-header [data-slot=badge]');
         expect(await badges.first().evaluate((node) => getComputedStyle(node).backgroundColor))
           .not.toEqual(await badges.nth(1).evaluate((node) => getComputedStyle(node).backgroundColor));
-        const empty = nav.locator('[data-context-source=cogita_persona]');
+        const empty = nav.locator('[data-context-source=persona]');
         await expect(empty).toHaveAttribute('data-empty', 'true');
         await expect(empty).toContainText(zh ? '空' : 'Empty');
-        await expect(nav.locator('[data-context-source=knowledge]')).toHaveAttribute('data-empty', 'true');
+        await expect(nav.locator('[data-context-source=knowledge]')).toHaveCount(0);
         await expect(dialog.locator('.context-exclusions')).toHaveCount(0);
         await empty.click();
         await expect(dialog.locator('.context-source-detail [data-slot=empty]')).toContainText(zh ? '空' : 'Empty');

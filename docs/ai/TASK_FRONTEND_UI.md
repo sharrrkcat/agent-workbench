@@ -20,8 +20,8 @@ Paths below are under frontend/src:
 - components/SessionSidebar.tsx and ChatHeader.tsx compose the home navigation.
   components/playground/ owns the app cards and local routes; App commits conversation departure.
   The [Farkle task](TASK_FARKLE.md) maps the lazy game page, modules, artifacts and focused tests.
-  The [QQBot task](TASK_QQBOT.md) maps its Project editor, conversations, resources and backend integration.
-  components/projects/ owns the Project tree, routes, editors and Workspace session overrides; store/useProjectsStore.ts owns Project reads/mutations.
+  The [QQBot task](TASK_QQBOT.md) maps its Character editor, conversations, resources and backend integration.
+  components/characters/ owns the Character tree, routes and editors; components/personas/ owns normal Session overrides. store/useCharactersStore.ts owns Character reads/mutations.
   components/ChatView.tsx owns the session-scoped MessageScroller; components/messages/
   compose replies, disclosure anchors and approvals; ReplyContext.tsx owns lazy per-call input inspection. ChatInput.tsx owns the composer.
 - components/SettingsPage.tsx composes components/settings/ domain panels and the
@@ -57,7 +57,7 @@ playground.spec.ts covers bilingual desktop/touch cards, app routes/history, lea
 Game-specific behavior and test coverage belong to the [Farkle task](TASK_FARKLE.md).
 QQBot-specific scripts and bilingual browser coverage belong to the [QQBot task](TASK_QQBOT.md#verification-map).
 navigation-feedback.spec.ts covers delayed loading, late session responses, retained list refreshes,
-independent Project/session hover and keyboard focus, and aligned actions in both locales/viewports.
+independent Character/session hover and keyboard focus, and aligned actions in both locales/viewports.
 chat-presentation.spec.ts, chat-display.spec.ts and vision-input.spec.ts cover streaming, reasoning timing, Trace disclosures, tool titles/results, message alignment and images.
 web-tools.spec.ts and test-web-tools.mjs cover web settings, UI-language headers/date Instruction, trace links/text, citation parsing/copying, source deduplication, streaming/history and bilingual desktop/touch interactions. web-filters.spec.ts covers subscription CRUD/failures, custom validation and shared navigation guards. test_web_instructions.py covers request ordering, gating, localized weekdays, approval continuation and retry/edit language.
 settings-layout.spec.ts covers populated grouped pages, collapsed menus, direct links, history, resource
@@ -67,12 +67,14 @@ empty startup and last-session deletion; test-chat-drafts.mjs covers first-send 
 chat-attachments.spec.ts covers immediate submission, acceptance/restoration, mixed cards, sizes, external message attachments and edit removal/cancellation/failure in both locales and viewports.
 message-queue.spec.ts covers queue/edit/attachment controls, scrolling, navigation, approvals and refresh in both locales/viewports;
 test-message-queue.mjs covers FIFO, submission reconciliation, terminal pauses and history/settings races.
-personas.spec.ts covers shared Persona CRUD, protected identities, binding restrictions and live Cogita identity.
-agent-identity.spec.ts covers Agent history, avatars, deletion, reconnects, streaming and approvals in ordinary/Workspace chats;
-test-persona-identity.mjs covers list/event races and deleted identities. projects.spec.ts covers Project creation, type restrictions,
-inherited resources, sparse overrides, guarded history and scoped deletion; test-projects.mjs covers selection/deletion races.
+personas.spec.ts covers independent user CRUD, protected User, background and avatar editing.
+character-editor.spec.ts covers normal creation/settings rendering, saving, sidebar expansion and empty-state sizing in both locales/viewports.
+characters.spec.ts covers explicit type creation, ownership, whole-list mounts, inherited settings and
+browser-local session restoration. persona-history.spec.ts covers original user authors, live profile
+changes, deletion and retry behavior. test-persona-identity.mjs covers list/event races;
+test-characters.mjs covers selection/deletion races and strict route payloads.
 context-detail.spec.ts covers lazy call selection, exact request views, stale reads, error retry, deletion and modal focus/scroll in both locales/viewports.
-context-message-window.spec.ts covers strategy switching, retained inactive settings, count validation, raw request boundaries and immutable detail; projects.spec.ts covers whole-policy inheritance.
+context-message-window.spec.ts covers strategy switching, retained inactive settings, count validation, raw request boundaries and immutable detail; characters.spec.ts covers whole-policy inheritance.
 manual-compaction.spec.ts and test-manual-compaction.mjs cover slash completion, dedicated submission, unnumbered Checkpoint events, details, refresh, command rejection and queue success/failure/cancellation.
 harness-qq-compaction.spec.ts covers ordered loop steps, private run/QQ summary sources and retained QQ delivery presentation in both locales on desktop/touch.
 image-generation.spec.ts covers provider-only sources, disabled Local Runtime, discovery/manual IDs, parameter defaults and CRUD in both locales/viewports.

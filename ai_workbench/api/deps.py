@@ -18,8 +18,8 @@ from ai_workbench.core.conversation_history import ConversationHistory, MemoryHi
 from ai_workbench.core.history_page import MemoryHistoryReader
 from ai_workbench.db.history_page import SqlHistoryReader
 from ai_workbench.core.personas import PersonaStore
-from ai_workbench.core.projects import ProjectStore
-from ai_workbench.core.project_service import ProjectService
+from ai_workbench.core.characters import CharacterStore
+from ai_workbench.core.character_service import CharacterService
 from ai_workbench.core.events import EventBus
 from ai_workbench.core.knowledge_service import KnowledgeService
 from ai_workbench.core.knowledge_store import MemoryKnowledgeStore
@@ -56,8 +56,8 @@ class RuntimeState:
     chat_service: ChatService
     history: ConversationHistory
     personas: PersonaStore
-    projects: ProjectStore
-    project_service: ProjectService
+    characters: CharacterStore
+    character_service: CharacterService
     active_runs: ActiveRunRegistry
     model_manager: ModelManager
     model_profiles: ModelProfileStore
@@ -123,10 +123,11 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     manager = ModelManager(profiles, providers, model_settings, events, adapter_factory, supervisor)
     utility_llm = UtilityLLMService(model_manager=manager, app_settings_store=app_settings)
     personas = PersonaStore(engine)
-    projects = ProjectStore(engine)
-    chat_service = ChatService(personas=personas, projects=projects, sessions=sessions, runs=runs, model_manager=manager,
+    characters = CharacterStore(engine)
+    chat_service = ChatService(personas=personas, characters=characters, sessions=sessions, runs=runs, model_manager=manager,
         knowledge=knowledge, worldbooks=worldbooks, tool_registry=tool_registry)
-    project_service = ProjectService(projects=projects, chat_service=chat_service)
+    character_service = CharacterService(characters=characters, chat_service=chat_service)
+    character_service.ensure_default()
     knowledge_service = KnowledgeService(store=knowledge, model_manager=manager, repo_root=repo_root,
         session_binding_resolver=lambda session_id: chat_service.effective_knowledge_ids(sessions.get_session(session_id)))
     from ai_workbench.core.qq_store import QQStore
@@ -142,7 +143,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     chat_runner = ChatRunner(
         sessions=sessions, messages=messages, runs=runs, events=events,
         model_manager=manager, app_settings=app_settings, utility_llm=utility_llm,
-        knowledge_service=knowledge_service, active_runs=active_runs,
+        active_runs=active_runs,
         chat_service=chat_service, qq_store=qq_store,
         tool_registry=tool_registry, web_tools=web_tools,
     )
@@ -154,7 +155,7 @@ def build_runtime_state(root: str | Path | None = None, database_url: str | None
     state = RuntimeState(
         sessions=sessions, messages=messages, runs=runs, run_events=run_events, events=events,
         runtime=runtime, chat_runner=chat_runner, active_runs=active_runs,
-        chat_service=chat_service, history=history, personas=personas, projects=projects, project_service=project_service,
+        chat_service=chat_service, history=history, personas=personas, characters=characters, character_service=character_service,
         model_manager=manager, model_profiles=profiles, provider_profiles=providers, local_runtime_settings=local_runtime_settings,
         model_settings=model_settings, app_settings=app_settings, knowledge=knowledge,
         knowledge_service=knowledge_service, worldbooks=worldbooks,

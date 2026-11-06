@@ -25,9 +25,9 @@ def compact(client, session):
 def test_manual_compaction_without_auto_creates_only_an_unnumbered_event(presentation_client):
     client, upstream = presentation_client
     session, state = setup(client)
-    policy = session['context_policy']
+    policy = session['effective']['context_policy']
     policy['compaction']['enabled'] = False
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': policy}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': policy}}))
     seed(state, session)
     before = [m.model_dump(mode='json') for m in state.messages.list_messages(session['session_id'])]
     title = state.sessions.get_session(session['session_id']).title
@@ -87,7 +87,7 @@ def test_manual_policy_and_body_rejection_preserve_history(presentation_client, 
     session, state = setup(client)
     path = f"/api/sessions/{session['session_id']}/compact"
     assert client.post(path, json={'target_percent': 1}).status_code == 422
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': policy}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': policy}}))
     assert client.post(path).status_code == 409
     assert not state.runs.list_runs(session['session_id'])
     assert not state.messages.list_messages(session['session_id'])
@@ -163,11 +163,11 @@ def test_command_rejects_attachments_before_decoding_or_storing_them(presentatio
     assert not state.messages.list_messages(session['session_id']) and not state.runs.list_runs(session['session_id'])
 
 
-def test_workspace_snapshot_and_history_cutoff_survive_later_changes(presentation_client, monkeypatch):
-    from tests.test_projects import workspace, child
+def test_character_snapshot_and_history_cutoff_survive_later_changes(presentation_client, monkeypatch):
+    from tests.chat_fixtures import normal_character, child
     client, upstream = presentation_client
     ordinary, state = setup(client)
-    project = workspace(client, model_profile_id=ordinary['model_profile_id'], context_policy=ordinary['context_policy'],
+    project = normal_character(client, model_profile_id=ordinary['effective']['model_profile_id'], context_policy=ordinary['effective']['context_policy'],
                         system_prompt='PROJECT_FIXED')
     session = child(client, project)
     seed(state, session)
@@ -175,7 +175,7 @@ def test_workspace_snapshot_and_history_cutoff_survive_later_changes(presentatio
     upstream.turns = [summarize] * 12
     def reject_retrieval(**_):
         pytest.fail('Manual compaction queried Knowledge')
-    monkeypatch.setattr(state.chat_runner.knowledge_service, 'search', reject_retrieval)
+    monkeypatch.setattr(state.knowledge_service, 'search', reject_retrieval)
     async def scenario():
         run = state.runtime.manual_compaction.start(state.sessions.get_session(session['session_id']))
         state.chat_service.update_session(session['session_id'], {'overrides': {'context_policy': {'history_enabled': False}}})
@@ -185,7 +185,7 @@ def test_workspace_snapshot_and_history_cutoff_survive_later_changes(presentatio
         assert state.runs.get_run(run.run_id).status == 'DONE'
         snapshot = state.runs.get_config_snapshot(run.run_id)
         assert snapshot['context_policy']['history_enabled'] is True
-        assert snapshot['project_system_prompt'] == 'PROJECT_FIXED'
+        assert snapshot['system_prompt'] == 'PROJECT_FIXED'
         checkpoint = state.sessions.get_context_checkpoint(session['session_id'])
         assert checkpoint and (checkpoint.boundary_created_at, checkpoint.boundary_message_id) <= (original_end.created_at, original_end.message_id)
         assert 'FACT_999' not in checkpoint.summary
@@ -217,7 +217,7 @@ def test_manual_fixed_prompt_overflow_and_explicit_summary_cap(presentation_clie
     run = compact(client, session)
     assert run['status'] == 'FAILED' and not upstream.calls
     assert state.sessions.get_context_checkpoint(session['session_id']) is None
-    state.personas.update(session['persona_id'], {'system_prompt': 'fixed ' * 6000})
+    state.character_service.update(session['character_id'], {'system_prompt': 'fixed ' * 6000})
     run = compact(client, session)
     assert run['error_code'] == 'CONTEXT_WINDOW_EXCEEDED'
 

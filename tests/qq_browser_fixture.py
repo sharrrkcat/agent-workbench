@@ -27,36 +27,36 @@ def install_qq_fixture(app):
 
     def program_connection(session_id):
         session = state.sessions.get_session(session_id)
-        project = state.project_service.update(session.project_id, {"connection_enabled": True})
-        state.qq.connections[project.id] = ProgramConnection()
-        return session, project
+        character = state.character_service.update(session.character_id, {"connection_enabled": True})
+        state.qq.connections[character.id] = ProgramConnection()
+        return session, character
 
     @app.post("/__test__/qq/{session_id}/command")
     async def command_message(session_id: str, text: str = Body(embed=True)):
-        session, project = program_connection(session_id)
-        await state.qq.ingest(project.id, {"post_type": "message", "self_id": project.bot_account,
+        session, character = program_connection(session_id)
+        await state.qq.ingest(character.id, {"post_type": "message", "self_id": character.bot_account,
             "message_type": "private" if session.target_kind == "friend" else "group", "group_id": session.target_id,
-            "user_id": project.admin_qq, "message_id": str(time.time_ns()), "time": time.time(),
+            "user_id": character.admin_qq, "message_id": str(time.time_ns()), "time": time.time(),
             "sender": {"nickname": "Administrator"}, "message": [{"type": "text", "data": {"text": text}}]})
-        await state.qq.programs.process_commands(project.id)
-        await state.qq.programs.send_pending(project.id)
+        await state.qq.programs.process_commands(character.id)
+        await state.qq.programs.send_pending(character.id)
         return {"ok": True}
 
     @app.post("/__test__/qq/{session_id}/notification")
     async def program_notification(session_id: str):
         from ai_workbench.db.qq_models import QQBatch
-        session, project = program_connection(session_id)
+        session, character = program_connection(session_id)
         state.qq.store.pause(session_id, "QQ_RUN_FAILED")
-        batch = state.qq.store.save(QQBatch(session_id=session_id, project_id=project.id,
+        batch = state.qq.store.save(QQBatch(session_id=session_id, character_id=character.id,
             text="", status="failed", error_code="QQ_RUN_FAILED", created_at=time.time()))
         state.qq.programs.batch_finished(batch)
-        state.qq.programs.prepare_notifications(project)
-        await state.qq.programs.send_pending(project.id)
+        state.qq.programs.prepare_notifications(character)
+        await state.qq.programs.send_pending(character.id)
         return {"ok": True}
 
     async def complete_media(session_id, *, include_old):
         service = QQMediaService(state, state.qq.store, {})
-        async def download(media, project_id, settings):
+        async def download(media, character_id, settings):
             if media.source.file == "fixture:failed":
                 raise ToolExecutionError("QQ_IMAGE_UNAVAILABLE", "Fixture unavailable")
             data = BytesIO()
@@ -75,7 +75,7 @@ def install_qq_fixture(app):
         for row in sorted(stored_qq_rows(state.qq.store, QQMessage, session_id, limit=100), key=lambda item: item["id"]):
             for media in state.qq.store.message_media([row["id"]])[row["id"]]:
                 if media.status == "pending" and (include_old or media.source.file != "fixture:old"):
-                    await service.acquire(media, state.sessions.get_session(session_id).project_id)
+                    await service.acquire(media, state.sessions.get_session(session_id).character_id)
 
     @app.post("/__test__/qq/{session_id}/media/complete")
     async def media_complete(session_id: str):
@@ -94,11 +94,11 @@ def install_qq_fixture(app):
     @app.post("/__test__/qq/{session_id}/resources")
     async def resource_records(session_id: str, count: int = Query(31, ge=1, le=60)):
         session = state.sessions.get_session(session_id)
-        project = state.projects.get(session.project_id)
+        character = state.characters.get(session.character_id)
         for number in range(count + 1):
             segment = ({"type": "face", "data": {"id": 0}} if number == count else
                 {"type": "image", "data": {"file": f"fixture:resource:{number}", "sub_type": 1 if number == 0 else 0}})
-            await state.qq.ingest(project.id, {"post_type": "message", "self_id": project.bot_account,
+            await state.qq.ingest(character.id, {"post_type": "message", "self_id": character.bot_account,
                 "message_type": "group", "group_id": session.target_id, "user_id": "9999",
                 "message_id": 10000 + number, "time": 1700000000 + number,
                 "sender": {"nickname": "Gallery participant"}, "message": [segment]}, now=number / 100)
@@ -115,7 +115,7 @@ def install_qq_fixture(app):
     @app.post("/__test__/qq/{session_id}/media")
     async def media_records(session_id: str):
         session = state.sessions.get_session(session_id)
-        project = state.projects.get(session.project_id)
+        character = state.characters.get(session.character_id)
         def text(value):
             return {"type": "text", "data": {"text": value}}
         def image(file, **values):
@@ -128,7 +128,7 @@ def install_qq_fixture(app):
             60: [text("Failed "), image("fixture:failed"), text(" end")],
         }
         for number in range(1, 61):
-            await state.qq.ingest(project.id, {"post_type": "message", "self_id": project.bot_account,
+            await state.qq.ingest(character.id, {"post_type": "message", "self_id": character.bot_account,
                 "message_type": "group", "group_id": session.target_id, "user_id": "9999",
                 "message_id": number, "time": 1700000000 + number, "sender": {"nickname": "QQ participant"},
                 "message": contents.get(number, [text(f"Record {number} bot")])}, now=number / 100)
@@ -137,56 +137,56 @@ def install_qq_fixture(app):
         return {"ids": {row["external_id"]: row["id"] for row in stored_qq_rows(state.qq.store, QQMessage, session_id, limit=100)}}
 
     async def execute(session, batch):
-        project = state.projects.get(session.project_id)
+        character = state.characters.get(session.character_id)
         receipt = 9000
         async def send(action, params, *, timeout=20):
             nonlocal receipt
             if action == "get_group_member_info":
-                return {"user_id": params["user_id"], "card": "QQ bot" if str(params["user_id"]) == project.bot_account else "Mentioned member"}
+                return {"user_id": params["user_id"], "card": "QQ bot" if str(params["user_id"]) == character.bot_account else "Mentioned member"}
             receipt += 1
             return {"message_id": receipt}
-        state.projects.save(project.model_copy(update={"connection_enabled": True}))
-        state.qq.connections[project.id] = SimpleNamespace(ready=True, call=send)
-        state.qq.workers[project.id] = asyncio.current_task()
+        state.characters.save(character.model_copy(update={"connection_enabled": True}))
+        state.qq.connections[character.id] = SimpleNamespace(ready=True, call=send)
+        state.qq.workers[character.id] = asyncio.current_task()
         try:
             await state.qq.execute(batch)
         finally:
-            state.projects.save(project)
-            state.qq.connections.pop(project.id)
-            state.qq.workers.pop(project.id)
+            state.characters.save(character)
+            state.qq.connections.pop(character.id)
+            state.qq.workers.pop(character.id)
         return {"batch_id": batch.id, "run_id": batch.run_id}
 
     @app.post("/__test__/qq/{session_id}/reply/{mode}")
     async def reply(session_id: str, mode: Literal["limit", "missing", "skip", "image-generated", "image-failure", "image-hold", "resource-image", "web-research", "web-failure", "compaction"]):
         session = state.sessions.get_session(session_id)
-        project = state.projects.get(session.project_id)
+        character = state.characters.get(session.character_id)
         now = time.time()
-        await state.qq.ingest(project.id, {
-            "post_type": "message", "self_id": project.bot_account, "message_type": "group",
+        await state.qq.ingest(character.id, {
+            "post_type": "message", "self_id": character.bot_account, "message_type": "group",
             "group_id": session.target_id, "user_id": "9999", "message_id": time.time_ns(), "time": int(now),
             "sender": {"nickname": "QQ participant"},
             "message": [{"type": "text", "data": {"text": f"qq-{mode}-fixture" + (" 画一张图" if mode.startswith("image-") else "")
                 + ("" if mode == "skip" else " bot")
                 + (" The budget is 42 EUR. Do not send email. " + "padding " * 650 if mode == "compaction" else "")}}],
         }, now=now)
-        return await execute(session, state.qq.store.freeze(session_id, project.batch_message_limit, now + 5))
+        return await execute(session, state.qq.store.freeze(session_id, character.batch_message_limit, now + 5))
 
     @app.post("/__test__/qq/{session_id}")
     async def populate(session_id: str):
         session = state.sessions.get_session(session_id)
-        project = state.projects.get(session.project_id)
+        character = state.characters.get(session.character_id)
         for number in range(1, 66):
-            await state.qq.ingest(project.id, {
-                "post_type": "message", "self_id": project.bot_account,
+            await state.qq.ingest(character.id, {
+                "post_type": "message", "self_id": character.bot_account,
                 "message_type": "group" if session.target_kind == "group" else "private",
                 "group_id": session.target_id, "user_id": session.target_id if session.target_kind == "friend" else "9999",
                 "message_id": number, "time": 1700000000 + number,
                 "sender": {"nickname": "QQ participant"},
                 "message": [{"type": "text", "data": {"text": f"Record {number}" if number < 65 else "qq-fixture bot"}},
-                            *([{"type": "at", "data": {"qq": project.bot_account}},
+                            *([{"type": "at", "data": {"qq": character.bot_account}},
                                {"type": "at", "data": {"qq": "8888"}}] if number == 65 else []),
                             {"type": "image", "data": {}}],
             }, now=number / 100)
-        batch = state.qq.store.freeze(session_id, project.batch_message_limit, 10)
+        batch = state.qq.store.freeze(session_id, character.batch_message_limit, 10)
 
         return await execute(session, batch)

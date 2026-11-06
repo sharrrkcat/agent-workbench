@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from tests.tool_fixtures import create_tool_app as create_app
 from tests.model_fixtures import MockOpenAI, configure_model
-from tests.test_projects import workspace
+from tests.chat_fixtures import create_chat
 
 
 @pytest.fixture(params=[True, False], ids=["memory", "sqlite"])
@@ -18,9 +18,8 @@ def environment(tmp_path, request):
         yield client, upstream, app.state.runtime_state
 
 
-def create_session(client, kind="ordinary", **values):
-    path = "/api/sessions" if kind == "ordinary" else f"/api/projects/{workspace(client)['id']}/sessions"
-    response = client.post(path, json=values)
+def create_session(client, **values):
+    response = create_chat(client, **values)
     assert response.status_code == 200, response.text
     return response.json()["session_id"]
 
@@ -31,8 +30,7 @@ def send(client, session_id, text, attachments=None):
     return response.json()
 
 
-@pytest.mark.parametrize("kind", ["ordinary", "workspace"])
-def test_input_titles_without_auxiliary_and_with_switch_off(environment, kind):
+def test_input_titles_without_auxiliary_and_with_switch_off(environment):
     client, upstream, _ = environment
     for enabled in (True, False):
         client.patch("/api/settings/general", json={"auto_generate_session_titles": enabled}).raise_for_status()
@@ -43,7 +41,7 @@ def test_input_titles_without_auxiliary_and_with_switch_off(environment, kind):
             ("这是一个包含中文字符的测试会话标题", "这是一个包含中文字符的测试会话标题"[:15] + "…"),
             ("😀" * 16, "😀" * 15 + "…"),
         ]:
-            session_id = create_session(client, kind)
+            session_id = create_session(client)
             send(client, session_id, text)
             session = client.get(f"/api/sessions/{session_id}").json()
             assert session["title"] == expected

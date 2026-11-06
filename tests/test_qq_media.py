@@ -9,13 +9,13 @@ import pytest
 
 from ai_workbench.core.attachments import attachments_root, resolve_attachment_uri, save_attachment_from_upload
 from ai_workbench.core.harness.schema import ToolExecutionError
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.qq_media import QQMediaService, decode_image
 from ai_workbench.core.qq_protocol import normalize
 from ai_workbench.core.qq_segments import public_segments
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMedia
-from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
+from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, character
 from tests.test_qq_reply_policy import execute_batch
 from tests.tool_fixtures import completion, ok, tool_call
 
@@ -104,10 +104,10 @@ def test_image_setting_is_strict_and_the_only_model_switch(qq_client):
     client, state, _ = qq_client
     p, session, _ = configure_execution(client, state)
     assert p["image_input_enabled"] is False
-    path = f"/api/projects/{p['id']}"
+    path = f"/api/characters/{p['id']}"
     for value in (None, 0, 1, "true", [], {}):
         assert client.patch(path, json={"image_input_enabled": value}).status_code == 422
-        assert client.post("/api/projects", json={"kind": "qqbot", "name": "invalid", "bot_account": "98765",
+        assert client.post("/api/characters", json={"kind": "qqbot", "name": "invalid", "bot_account": "98765",
             "websocket_url": "ws://localhost:3001", "image_input_enabled": value}).status_code == 422
     for enabled, attachment_policy in [(True, "none"), (False, "explicit")]:
         ok(client.patch(path, json={"image_input_enabled": enabled, "context_policy": {"include_attachments": attachment_policy}}))
@@ -140,7 +140,7 @@ def test_saved_images_join_only_current_model_requests(qq_client, monkeypatch, c
     assert isinstance(upstream.calls[0]["messages"][-1]["content"], str)
     assert "[图片]" in upstream.calls[0]["messages"][-1]["content"]
     assert state.runs.get_config_snapshot(first.run_id)["context_policy"]["include_attachments"] == "none"
-    ok(client.patch(f"/api/projects/{p['id']}", json={"image_input_enabled": True}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"image_input_enabled": True}))
     upstream.calls.clear()
     reply(upstream)
     ingest(client, state, p, image_event(2), 10)
@@ -161,7 +161,7 @@ def test_saved_images_join_only_current_model_requests(qq_client, monkeypatch, c
     sources = [s for s in detail["sources"] if s["kind"] == "attachment"]
     assert [s["part_index"] for s in sources] == [1, 3]
     assert "data:image" not in json.dumps(detail)
-    trimmed = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    trimmed = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert not any(s.kind == "attachment" for s in trimmed.trace.sources)
     assert ok(client.post("/api/data/attachments/scan-orphans"))["orphan_count"] == 0
     assert client.delete('/api/attachments/' + images[0]["attachment"]["id"]).status_code == 409
@@ -179,7 +179,7 @@ def test_saved_images_join_only_current_model_requests(qq_client, monkeypatch, c
 
 def test_acquisition_is_bounded_nonblocking_and_restarts_pending_work(qq_client, monkeypatch):
     client, state, _ = qq_client
-    p = project(client, keywords=["bot"])
+    p = character(client, keywords=["bot"])
     session = child(client, p)
     async def scenario():
         gates, started, active, peak = {}, [], 0, 0
@@ -225,7 +225,7 @@ def test_acquisition_is_bounded_nonblocking_and_restarts_pending_work(qq_client,
 @pytest.mark.parametrize("failure", ["corrupt", "oversize", "private", "remote_path", "unknown_face"])
 def test_unavailable_media_stays_in_place_and_does_not_trigger(qq_client, monkeypatch, failure):
     client, state, _ = qq_client
-    p = project(client, keywords=["图片", "表情包"])
+    p = character(client, keywords=["图片", "表情包"])
     session = child(client, p)
     source = {"url": "https://images.test/bad"}
     kind = "image"
@@ -274,26 +274,26 @@ def test_get_image_fallback_and_system_face_zero(qq_client, monkeypatch):
     assert all(s["status"] == "ready" for s in page(client, session)[0]["segments"] if s["type"] == "image")
 
 
-@pytest.mark.parametrize("scope", ["message", "session", "project"])
+@pytest.mark.parametrize("scope", ["message", "session", "character"])
 def test_deleted_media_cannot_restore_or_overwrite_new_records(qq_client, monkeypatch, scope):
     client, state, _ = qq_client
     prepare_images(monkeypatch)
-    p = project(client)
+    p = character(client)
     session = child(client, p)
     ingest(client, state, p, image_event(), 1)
     row, = page(client, session)
     pending = state.qq.store.pending_media(limit=10)
     target = f"/api/qq/sessions/{session['session_id']}/messages/{row['id']}" if scope == "message" else f"/api/{scope}s/{session['session_id'] if scope == 'session' else p['id']}"
     assert client.delete(target).status_code == 200
-    if scope == "project":
-        p = project(client)
+    if scope == "character":
+        p = character(client)
     if scope != "message":
         session = child(client, p)
     ingest(client, state, p, image_event(2), 2)
     new_ids = {m.id for m, _ in state.qq.store.pending_media(limit=10)}
     assert not new_ids.intersection({m.id for m, _ in pending})
-    for media, project_id in pending:
-        client.portal.call(state.qq.media.acquire, media, project_id)
+    for media, character_id in pending:
+        client.portal.call(state.qq.media.acquire, media, character_id)
     assert all(state.qq.store.get(QQMedia, key).status == "pending" for key in new_ids)
     assert not any(path.is_file() for path in attachments_root().rglob("*"))
 
@@ -335,7 +335,7 @@ def test_pending_timeout_preserves_run_setting_and_captured_request(qq_client, m
         monkeypatch.setattr("ai_workbench.core.qq_media.fetch_bytes", fetch)
         task = asyncio.create_task(state.qq.execute(batch))
         await asyncio.wait_for(started.wait(), 1)
-        state.project_service.update(p["id"], {"image_input_enabled": False})
+        state.character_service.update(p["id"], {"image_input_enabled": False})
         await asyncio.wait_for(task, 5)
         assert state.qq.store.get(QQBatch, batch.id).status == "done"
         assert state.runs.get_config_snapshot(batch.run_id)["context_policy"]["include_attachments"] == "explicit"
@@ -352,7 +352,7 @@ def test_pending_timeout_preserves_run_setting_and_captured_request(qq_client, m
     reply(upstream)
     execute_batch(client, state, p, session, 2)
     assert all(isinstance(m["content"], str) for m in upstream.calls[0]["messages"])
-    ok(client.patch(f"/api/projects/{p['id']}", json={"image_input_enabled": True}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"image_input_enabled": True}))
     upstream.calls.clear()
     reply(upstream)
     execute_batch(client, state, p, session, 3)

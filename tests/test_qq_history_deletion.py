@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import event as sql_event, inspect, text
 
 from ai_workbench.core.context import message_text
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db import migrations
@@ -25,7 +25,7 @@ def replies(upstream):
 
 
 def context(state, sid, **policy):
-    return project_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(**policy), None).model_dump()["messages"]
+    return character_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(**policy), None).model_dump()["messages"]
 
 
 def test_incoming_deletion_rebuilds_only_selected_input_and_next_request(qq_client):
@@ -169,7 +169,7 @@ def test_deletion_requires_matching_idle_session(qq_client):
         else:
             batch.status = "done"
             state.qq.store.save(batch)
-            active_run = state.runs.create_run("chat", run.persona_id, sid)
+            active_run = state.runs.create_run("chat", "00000000-0000-4000-8000-000000000001", run.persona_id, sid)
         assert ok(client.get(f"/api/qq/sessions/{sid}"))["busy"] is True
         for path in paths:
             response = client.delete(path)

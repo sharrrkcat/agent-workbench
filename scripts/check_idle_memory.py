@@ -172,18 +172,19 @@ async def workload(args, work_root):
                     model = await call("POST", "/api/models/profiles", {"name": "Memory", "alias": "memory",
                         "kind": "llm", "model_ref": "offline", "source": {"type": "provider", "provider_profile_id": external["id"]},
                         "context_window_tokens": 32768, "request_options": {"streaming": False}})
-                    ordinary = await call("POST", "/api/sessions", {"model_profile_id": model["id"],
-                        "harness_enabled": False, "context_policy": {"compaction": {"enabled": False}}})
-                    tool_session = await call("POST", "/api/sessions", {"model_profile_id": model["id"],
-                        "harness_enabled": True, "tools_allowed": ["web_search"]})
+                    character = await call("POST", "/api/characters", {"kind": "normal", "name": "Memory chat",
+                        "model_profile_id": model["id"], "context_policy": {"compaction": {"enabled": False}}})
+                    normal = await call("POST", f"/api/characters/{character['id']}/sessions", {})
+                    tool_session = await call("POST", f"/api/characters/{character['id']}/sessions", {
+                        "overrides": {"harness_enabled": True, "tools_allowed": ["web_search"]}})
                     await call("PATCH", "/api/tools/web/settings", {"api_key": "offline-memory"})
-                    project = await call("POST", "/api/projects", {"kind": "qqbot", "name": "Memory QQ",
+                    qq_character = await call("POST", "/api/characters", {"kind": "qqbot", "name": "Memory QQ",
                         "context_policy": {"compaction": {"enabled": False}}, "model_profile_id": model["id"],
                         "bot_account": "12345", "connection_enabled": True, "keywords": ["bot"], "reply_message_limit": 1,
                         "websocket_url": f"ws://127.0.0.1:{onebot_server.sockets[0].getsockname()[1]}"})
-                    qq = await call("POST", f"/api/projects/{project['id']}/sessions", {"target_kind": "group", "target_id": "7788"})
-                    await wait_until(lambda: project["id"] in state.qq.connections and state.qq.connections[project["id"]].ready)
-                    await call("GET", f"/api/sessions/{ordinary['session_id']}/history")
+                    qq = await call("POST", f"/api/characters/{qq_character['id']}/sessions", {"target_kind": "group", "target_id": "7788"})
+                    await wait_until(lambda: qq_character["id"] in state.qq.connections and state.qq.connections[qq_character["id"]].ready)
+                    await call("GET", f"/api/sessions/{normal['session_id']}/history")
                     await call("GET", f"/api/qq/sessions/{qq['session_id']}/history")
                     report["ready"] = memory(process)
                     report["startup_modules"] = [name for name in ("alembic", "mako", "PIL.Image", "tiktoken") if name in sys.modules]
@@ -200,8 +201,8 @@ async def workload(args, work_root):
                     for number in range(1, args.cycles + 1):
                         cycle = await count_tokens()
                         print(f"cycle {number}: token counting took {cycle['count_ms']:.0f}ms", flush=True)
-                        reply = await call("POST", f"/api/sessions/{ordinary['session_id']}/messages",
-                            {"content": f"Ordinary memory acceptance {number}. " * 10})
+                        reply = await call("POST", f"/api/sessions/{normal['session_id']}/messages",
+                            {"content": f"Normal memory acceptance {number}. " * 10})
                         assert reply["success"] and reply["run"]["status"] == "DONE", reply
                         tool = await call("POST", "/api/tools/web_search/call", {"session_id": tool_session["session_id"],
                             "arguments": {"searches": [{"query": "memory acceptance test"}]}})
@@ -209,7 +210,7 @@ async def workload(args, work_root):
                         sent_before = onebot.sent
                         await onebot.incoming(number)
                         await wait_until(lambda: onebot.sent > sent_before and state.active_runs.active_count() == 0, seconds=60)
-                        await call("GET", f"/api/sessions/{ordinary['session_id']}/history")
+                        await call("GET", f"/api/sessions/{normal['session_id']}/history")
                         await call("GET", f"/api/qq/sessions/{qq['session_id']}/history")
                         cycle["after_workload"] = memory(process)
                         print(f"cycle {number}: count {cycle['count_ms']:.0f}ms; workload RSS {cycle['after_workload']['rss'] / 2**20:.2f} MiB", flush=True)

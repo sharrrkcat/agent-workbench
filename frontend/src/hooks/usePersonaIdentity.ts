@@ -7,7 +7,7 @@ export function usePersonaIdentity() {
   return (id: string | null | undefined) => {
     const persona = personas.find((item) => item.id === id);
     return {
-      name: persona?.name ?? t(id && loaded && !loading && !error ? 'deletedPersona' : 'assistant'),
+      name: persona?.name ?? t(id && loaded && !loading && !error ? 'deletedPersona' : 'persona'),
       avatar_attachment_id: persona?.avatar_attachment_id ?? null,
     };
   };

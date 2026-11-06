@@ -45,7 +45,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('article[data-run-id]').last().locator('.reply-answer')).toContainText('Recovered budget: 47 EUR.');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         const saved = await (await request.get(`/api/sessions/${session.session_id}`)).json();
-        expect(saved.context_policy.strategy).toBe('history_retrieval');
+        expect(saved.effective.context_policy.strategy).toBe('history_retrieval');
       });
     });
   }

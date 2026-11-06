@@ -24,7 +24,7 @@ import { ContextWindowMeter } from '../ContextWindowMeter';
 import { ChatModelMenu } from '../ChatModelMenu';
 import { ErrorBanner } from '../ErrorBanner';
 import { useComposerLayout } from '../../hooks/useComposerLayout';
-import { usePersonaIdentity } from '../../hooks/usePersonaIdentity';
+import { useCharacterIdentity } from '../../hooks/useCharacterIdentity';
 import { useModelsStore } from '../../store/useModelsStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { terminal } from '../../store/cogita/mergeState';
@@ -154,7 +154,7 @@ function QQConversation({ session }: { session: QQSession }) {
               {item.kind === 'incoming' ? <QQIncoming message={item.message} showIdentity={item.showIdentity}
                 deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'message', id: item.message.id }) }} />
                 : item.kind === 'program' ? <div className="my-2" data-qq-program={item.delivery.origin}>
-                  <QQOutgoing delivery={item.delivery} personaId={null}
+                  <QQOutgoing delivery={item.delivery} characterId={null}
                     deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'delivery', id: item.delivery.id }) }} />
                 </div> : <>
                 <RunReply reply={item.reply} readOnly showFullProcessing={showFullProcessing}
@@ -166,7 +166,7 @@ function QQConversation({ session }: { session: QQSession }) {
                   <MarkerContent>{t('qq.replySkipped')}</MarkerContent>
                 </Marker> : null}
                 {item.deliveries.length ? <div className="mt-2 flex flex-col gap-1.5" data-qq-deliveries>
-                  {item.deliveries.map((delivery) => <QQOutgoing key={delivery.id} delivery={delivery} personaId={item.reply.run.persona_id}
+                  {item.deliveries.map((delivery) => <QQOutgoing key={delivery.id} delivery={delivery} characterId={item.reply.run.character_id}
                     deleteAction={{ disabled: deletionDisabled, onDelete: () => void remove({ kind: 'delivery', id: delivery.id }) }} />)}
                 </div> : null}
                 {item.reply.run.metadata?.qq_reply?.limit_reached ? <Marker className="mt-2" data-qq-reply-limit>
@@ -231,9 +231,9 @@ function QQIncoming({ message, showIdentity, deleteAction }: { message: QQMessag
   </MessageFrame>;
 }
 
-function QQOutgoing({ delivery, personaId, deleteAction }: { delivery: QQDelivery; personaId: string | null; deleteAction: ReplyDeleteAction }) {
+function QQOutgoing({ delivery, characterId, deleteAction }: { delivery: QQDelivery; characterId: string | null; deleteAction: ReplyDeleteAction }) {
   const { t } = useTranslation('personas');
-  const identity = usePersonaIdentity()(personaId);
+  const identity = useCharacterIdentity()(characterId);
   const detail = [delivery.run_id === null ? t('qq.origin.' + delivery.origin) : '',
     delivery.error_code ? t('qq.status.' + delivery.error_code, { defaultValue: delivery.error_code }) : '',
     delivery.external_id ? `${t('qq.externalId')}: ${delivery.external_id}` : ''].filter(Boolean).join(' · ');

@@ -96,14 +96,7 @@ export type KnowledgeSearchInput = {
   min_score_threshold?: number; max_chunks_per_source?: number; max_chunks_per_knowledge_base?: number; debug?: boolean;
 };
 
-export type SessionKnowledgeBindings = {
-  session_id: string;
-  user_persona_knowledge_base_ids: string[];
-  agent_persona_knowledge_base_ids: string[];
-  project_knowledge_base_ids: string[];
-  knowledge_base_ids: string[];
-  effective_knowledge_base_ids: string[];
-};
+
 
 export type KnowledgeSearchResponse = {
   query: string;

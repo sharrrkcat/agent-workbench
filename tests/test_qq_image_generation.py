@@ -11,11 +11,11 @@ from sqlmodel import Session, select
 
 from ai_workbench.core.attachments import attachments_root, resolve_attachment_uri
 from ai_workbench.core.harness.schema import ToolExecutionError
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQMediaAsset
 from tests.model_fixtures import configure_model
-from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
+from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, character
 from tests.test_qq_media import isolated_attachments, image_bytes, image_event, finish_pending
 from tests.test_qq_reply_policy import execute_batch
 from tests.test_qq_followup import clock, followup, participant, execute
@@ -68,7 +68,7 @@ def test_settings_validation_visibility_and_model_references(qq_client, image_pr
     assert p["image_generation_model_profile_id"] is None
     assert p["image_generation_options"] == {"size": None, "quality": None, "style": None}
     assert "qq_generate_image" not in state.chat_service.tools_for_run(state.chat_service.resolve(state.sessions.get_session(session['session_id'])))
-    url = f"/api/projects/{p['id']}"
+    url = f"/api/characters/{p['id']}"
     assert client.patch(url, json={"image_generation_model_profile_id": p["model_profile_id"]}).status_code == 400
     for fields in ({"image_generation_options": None}, {"image_generation_options": {"n": 2}},
                    {"image_generation_options": {"size": "0x4"}}, {"image_generation_options": {"quality": "best"}}):
@@ -125,7 +125,7 @@ def test_generate_send_store_and_text_only_history(qq_client, image_provider, mo
     assert delivery["kind"] == "generated_image" and delivery["asset_id"] == asset.id
     assert delivery["prompt"] == delivery["description"] == asset.description == prompt
     assert resolve_attachment_uri(delivery["attachment"]["uri"]).read_bytes() == image_provider.image
-    context = project_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(include_attachments="explicit"), None)
+    context = character_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(include_attachments="explicit"), None)
     history = context.model_dump_json()
     assert "[生成的图片:" in history and "枝头的一只红鸟" in history
     assert "Provider rewrite" not in history and "base64" not in history and "image_url" not in history and "attachment_image" not in history
@@ -226,7 +226,7 @@ def test_wait_excludes_generation_from_harness_budget_and_freezes_settings(qq_cl
     monkeypatch.setattr(agent_loop, '_Budget', lambda spent: budget_type(spent, started=clock[0]))
     async def wait():
         clock[0] += 600
-        state.project_service.update(p['id'], {'image_generation_model_profile_id': None, 'image_generation_options': {'size': 'auto'}})
+        state.character_service.update(p['id'], {'image_generation_model_profile_id': None, 'image_generation_options': {'size': 'auto'}})
         await asyncio.sleep(.04)
     image_provider.before_return = wait
     monkeypatch.setattr(agent_loop, 'TOOL_TIMEOUT_SECONDS', .01)
@@ -281,7 +281,7 @@ def test_deduplication_keeps_each_prompt_and_releases_last_reference(qq_client, 
     assert len(assets(state)) == 1 and len(attachment_files()) == 1
     assert first_delivery['asset_id'] == second_delivery['asset_id']
     assert assets(state)[0].description == 'Second prompt'
-    history = project_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None).model_dump_json()
+    history = character_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None).model_dump_json()
     assert '[生成的图片:First prompt]' in history and '[生成的图片:Second prompt]' in history
     other = child(client, p, '8877')
     incoming = image_event(3, images=[{'type': 'image', 'data': {'url': 'https://image.test/generated'}}])

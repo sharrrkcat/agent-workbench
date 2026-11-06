@@ -42,7 +42,7 @@ export function ChatInput() {
   const session = useCogitaStore((state) => state.currentSession);
   const chatDraft = useCogitaStore((state) => state.chatDraft);
   const configuration = useChatConfiguration();
-  const fullPlaceholder = t('messagePlaceholder', { name: configuration?.persona_name || t('assistant') });
+  const fullPlaceholder = t('messagePlaceholder', { name: configuration?.character_name || t('assistant') });
   const { composerRef, textareaRef, measureRef, actionsRef, expanded, textHeight, placeholder } =
     useComposerLayout(draft, fullPlaceholder, t('chat:shortPlaceholder'));
   const sessionLoad = useCogitaStore((state) => state.sessionLoad);

@@ -16,7 +16,7 @@ for (const locale of ['en', 'zh-CN']) {
       test.use({ viewport: { width, height: width === 390 ? 844 : 900 }, hasTouch: width === 390 });
       test.beforeEach(async ({ page, request }) => {
         const session = await (await request.post('/__test__/session')).json();
-        await request.patch(`/api/sessions/${session.session_id}`, { data: { harness_enabled: false } });
+        await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {harness_enabled: false}} });
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       });
 
@@ -92,7 +92,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.unroute('**/api/messages/*/edit');
         await save.click();
         await expect(edit).toBeEnabled();
-        const sessions = await (await request.get('/api/sessions')).json();
+        const sessions = await (await request.get('/api/characters/00000000-0000-4000-8000-000000000003/sessions')).json();
         const history = await readMessages(request, sessions[0].session_id);
         expect(history.find((message: { role: string }) => message.role === 'user').metadata.attachments.map((item: { name: string }) => item.name)).toEqual([text.name]);
         await page.reload();
@@ -102,7 +102,7 @@ for (const locale of ['en', 'zh-CN']) {
       });
 
       test('first send clears before acceptance and preserves the next draft after a lost response', async ({ page }, info) => {
-        await page.goto('/new');
+        await page.goto('/characters/00000000-0000-4000-8000-000000000003/new');
         await expect(page.locator('.composer input[type=file]')).toBeEnabled();
         await page.locator('.composer input[type=file]').setInputFiles(image);
         await expect(page.locator('.upload-ready')).toHaveCount(1);
@@ -174,7 +174,7 @@ test('a rejected image submission restores its usable preview and retries withou
     if (route.request().method() !== 'POST' || posts++ > 0) return route.continue();
     return route.fulfill({ status: 503, json: { error: { code: 'SEND_FAILED', message: 'Try again' } } });
   });
-  await page.goto('/new');
+  await page.goto('/characters/00000000-0000-4000-8000-000000000003/new');
   const picker = page.locator('.composer input[type=file]');
   await expect(picker).toBeEnabled();
   await picker.setInputFiles(image);

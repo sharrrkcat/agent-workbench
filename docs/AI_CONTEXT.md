@@ -31,16 +31,19 @@ Harrier has CUDA and short-text CPU acceptance; other text checkpoints require r
 Directory-selected native CrossEncoder rerankers serve Knowledge and `/v1/rerank`, with automatic scoring configuration and independent workers.
 mxbai-rerank-base-v2 has CUDA/native, Knowledge and short-text CPU acceptance; other reranker checkpoints require representative acceptance.
 
-Personas own identity, prompts and resource bindings. Ordinary sessions own configuration;
-Workspace sessions continuously inherit Project defaults with sparse overrides. Chat combines singleton Cogita Persona, selected Agent, Project and session Knowledge. Each chat/tool run has one visible
-reply, processing history and whole-reply actions. Model steps retain LLM usage/timing and private input snapshots for per-call context/source/request inspection.
-External chat optionally returns performance metrics.
-Internal chat budgets every model call; ordinary/Workspace/QQ chat defaults to rolling summaries plus recent turns, optionally selects a raw message-count window, and displays answer context usage beside model selection. Harness can summarize completed tool rounds while retaining original execution state. Optional on-demand history uses private checkpoints, bounded history tools and local window resets without summary inference.
-Idle ordinary/Workspace `/compact` creates an independent cancellable run and an unnumbered Checkpoint event, with slash completion and existing queue handling.
-Built-in tools share direct and model invocation with bounded execution and durable approvals; `/v1` forwards
-tool data without executing it. Cogita Persona background and Knowledge support chat. Workspace Projects provide isolated conversations in the global sidebar tree.
-AnySearch-backed batch search/focused fetch use their own key without approval, search-only URL filters with weekly subscriptions/custom rules, coverage-filtered excerpts, run budgets, guarded extraction, cached pagination, inferred dates, run-local citations, Sources and dedicated web steps.
-Timeline Projects support creation/settings and roleplay Persona/Worldbook selection; internal sessions and context injection remain deferred.
+Characters own AI identity, defaults and all Sessions; Personas independently describe users.
+Protected defaults are User and normal Cogita, both without background/personality. Normal Sessions
+inherit Character defaults through sparse overrides; model choice is captured once at Character creation.
+Knowledge/Worldbook mounts are editable configuration only and never enter chat retrieval or context.
+Each chat/tool run has one visible reply, processing history and whole-reply actions. Runs snapshot
+Character, Persona and execution configuration; historical messages retain original identity ids.
+Model steps retain LLM usage/timing and private per-call context/source/request snapshots.
+Internal normal/QQ chat budgets each call with rolling summaries, raw message windows or on-demand
+history checkpoints and bounded retrieval. Harness can summarize completed tool rounds. Idle normal
+`/compact` produces a cancellable Checkpoint event. These mechanisms do not implement long-term memory.
+Built-in tools share direct/model invocation, bounded execution and durable approvals; `/v1` forwards
+tool data without execution. AnySearch search/fetch retain filters, budgets, guarded extraction,
+cached pagination, dates, citations, Sources and dedicated web steps.
 [QQBot](contracts/qqbot.md) binds group/friend conversations through external OneBot v11, with keyword/follow-up batches, optional icebreakers, shared media, text/image tools, direct commands and administrator error notifications.
 Its independent contract owns settings, delivery/recovery and current acceptance limits.
 Playground includes browser-local Farkle with standard/custom matches, 22 dice types,
@@ -50,7 +53,7 @@ Pet has position, dragging and task-state foundations only, with no mounted UI.
 ## Contracts
 
 - [Models](contracts/models.md): profiles, lifecycle, runtimes, CUDA, storage/cache, `/v1`.
-- [Chat/context](contracts/chat-context.md): Projects, Personas, session inheritance, Worldbook, parts, titles.
+- [Chat/context](contracts/chat-context.md): Characters, user Personas, session inheritance, Worldbook, parts, titles.
 - [Harness/tools](contracts/harness-tools.md): direct calls, loops, permissions, approval.
 - [Knowledge](contracts/knowledge.md): sources, indexing, hybrid retrieval and rerank.
 - [Runs/streaming](contracts/runs-streaming.md): status, WS/SSE, persistence, reconciliation.

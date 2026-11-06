@@ -1,18 +1,16 @@
 # Harness and tools contract
 
-Harness execution uses effective `harness_enabled` and `tools_allowed`. Ordinary
-sessions default off with all general-purpose tools; explicit [] disables every tool.
-Workspace sessions inherit Project defaults and may override them; Persona owns neither field.
-Changing Harness enablement preserves the list, and new registry entries do
-not rewrite existing lists. The composer's model menu toggles Harness immediately, displays on/off text and keeps the menu open; failure preserves confirmed state.
-Its independent settings action opens a right Sheet with fade/slide transitions in both directions for catalog-backed session tool selection. Changes require Save; unsaved closing confirms discard, and failed saves retain edits. The Sheet is full-width on mobile and restores focus to the model trigger on close.
-Session settings no longer edit or submit Harness/allowlists. Workspace inheritance and per-field resets for both fields live in the Sheet; reset submits null. Draft edits remain local until first send. Session changes close the menu/Sheet and ignore late saves.
-Workspace tools are intersected with the Project allowlist; forbidden override submissions return 422.
-A Project's Harness boolean is a default, so a session may enable it independently.
-Each model round and queued call, including approval resumption, rechecks the current
-Project tool ceiling. Revoked calls produce TOOL_NOT_ALLOWED without running their handler;
-already executing handlers continue. Expanding the ceiling does not expand a running snapshot.
-Timeline Projects expose no Harness or direct execution path.
+Harness execution uses effective harness_enabled and tools_allowed from Character defaults and
+sparse Session overrides. Characters start off and capture the general-purpose tool list on creation;
+[] selects none. Persona owns neither setting. Lists replace inherited values, and catalog changes
+do not rewrite saved lists. Session overrides may choose any available general tool.
+
+The composer's model menu toggles Harness immediately and preserves confirmed state on failure.
+Its independent action opens a right Sheet for tool selection, with Save, discard confirmation,
+mobile full width and focus restoration. Reset submits null to follow Character defaults.
+Draft edits remain local until first send. Session changes close the Sheet and ignore late saves.
+Character tools are defaults, not a permission ceiling; running/approval snapshots keep their tool
+selection despite later edits. Registry permissions, approvals and scope checks still apply.
 Ordinary chat sends no tools
 and rejects unexpected calls with `UNEXPECTED_TOOL_CALL`. An enabled harness
 with an empty allowlist uses ordinary chat. Before the first model round, explicit local lack of tool support (unless its request_options skip is enabled) falls back to ordinary chat without sending or executing tools. The current user message gets a tools_ignored warning; saved Harness/allowlist settings do not change. Unknown support and providers pass through. Direct tool execution is independent of model checks. Public native-tool requests and incompatible approval continuations fail with UNSUPPORTED_CAPABILITY; existing tool results are never discarded to restart ordinary chat.
@@ -44,7 +42,7 @@ model loop. Invalid direct requests fail before creating a run.
 
 WebToolsService uses AnySearch's authenticated [Search](https://www.anysearch.com/docs/api-endpoints/v1-search)
 and [Extract](https://www.anysearch.com/docs/api-endpoints/v1-extract) APIs with their independent write-only key.
-Missing keys return WEB_NOT_CONFIGURED. Ordinary/Workspace allowlists apply; QQ automatically includes both tools.
+Missing keys return WEB_NOT_CONFIGURED. Normal allowlists apply; QQ automatically includes both tools.
 Both tools have general scope, network risk, direct invocation and no approval. Public inference never executes them.
 
 web_search accepts searches (1..4 objects with nonblank query and recency=any|week|month|year, default any).
@@ -126,11 +124,11 @@ Fetch retains pagination actions and meaningful failure notices. Web evidence ha
 boundaries; only less-than signs are escaped, preserving ordinary ampersands and greater-than signs.
 The final web-only dispatch guard stays below 6,000 characters even on unexpected truncation.
 
-Ordinary/Workspace results assign W1, W2, etc. only to displayed pages, reusing conservative URL keys within a run.
+Normal results assign W1, W2, etc. only to displayed pages, reusing conservative URL keys within a run.
 Private continuation preserves the source map across approval. Answers cite current-run [W1] identities; QQ uses
 URLs without numbered citations. Existing tool_result parts/events and reply Sources own presentation.
 When either web tool is effective, Instruction contains only the localized run-start date and weekday,
-before Agent Persona; date/language stay fixed through approval. Tool descriptions own concise
+before Character instructions; date/language stay fixed through approval. Tool descriptions own concise
 query/focus/recency/privacy guidance and distinguish retrieval from publication/event dates. Shared web
 content and citation rules appear once per request, on the first available web tool, including single-tool
 allowlists. QQ omits numbered-citation guidance. Web content is untrusted evidence, never instructions.
@@ -148,9 +146,9 @@ AnySearch owns target DNS/redirects. The API contacts only its fixed endpoint wi
 Error bodies never enter traces/results; only safe status/request-id diagnostics survive. Per-tool step metadata.web
 records output characters, reference-token estimates, filter counts, cache status and remaining budget; existing
 model usage/context snapshots retain actual prompt/cached tokens separately.
-Acceptance covers mocked ordinary/Workspace/QQ/direct paths and live ordinary research. Lexical matching lacks
+Acceptance covers mocked normal/QQ/direct paths and live ordinary research. Lexical matching lacks
 synonym expansion, dates remain heuristic, and extraction may return only a site's shell. Source sufficiency,
-stopping and answer scope remain model/Persona decisions. The QQ contract owns live-delivery limits.
+stopping and answer scope remain model/Character decisions. The QQ contract owns live-delivery limits.
 
 ## Loop, approval and cancellation
 
@@ -161,9 +159,9 @@ Waiting for approval consumes no active time and holds no model lease.
 
 Each model round, including after approval, applies the shared
 [chat token budget](chat-context.md#configuration-snapshots-and-context) to its final request.
-Ordinary/Workspace/QQ token-budget runs can compact completed history before their first answer. Before later calls, automatic compaction can summarize a complete tool-round prefix, including error/rejected results; pending calls and approvals are excluded. History off does not disable loop compaction; message-window and automatic-off runs never generate loop summaries.
+Normal/QQ token-budget runs can compact completed history before their first answer. Before later calls, automatic compaction can summarize a complete tool-round prefix, including error/rejected results; pending calls and approvals are excluded. History off does not disable loop compaction; message-window and automatic-off runs never generate loop summaries.
 The model receives frozen base context, a user-role run summary and uncovered tool rounds. Full transcript records remain append-only for execution and duplicate-ID checks. Prefer retaining the latest complete round; include it only if old-history pruning still cannot fit the request. Large rounds may require chunks, committed together only after actual token reduction and a fitting final recount.
-Run summaries preserve tool outcomes, uncertainty and existing web citation IDs/URLs. Current input/images, instructions, Knowledge, web-source maps/budgets and QQ send state remain separate. They never become conversation checkpoints; later runs project original eligible history.
+Run summaries preserve tool outcomes, uncertainty and existing web citation IDs/URLs. Current input/images, instructions, web-source maps/budgets and QQ send state remain separate. They never become conversation checkpoints; later runs project original eligible history.
 All history/loop summary calls share a four-call run limit and the five-minute active budget. Counting admission ends before generation. Failed candidates preserve the prior projection; if ordinary old-history pruning fits it, answering continues with a diagnostic, otherwise CONTEXT_COMPACTION_FAILED ends the run. Fixed-only overflow remains CONTEXT_WINDOW_EXCEEDED; no overflow retry or tool replay occurs.
 Saved base/configuration, summary and completed-prefix boundary survive approval. Each call captures its retained request and budget; web results retain their bounded evidence projection.
 
@@ -240,7 +238,7 @@ ordinary text; known unauthorized tools return TOOL_NOT_ALLOWED.
 
 Tools settings split into General tools, QQ Bot tools and Web search subpages. The first two contain
 session-independent, read-only catalogs; each entry shows its name, localized description and a collapsed
-parameter schema. Web search owns the key/preferences and filter controls. All four QQ tools remain visible regardless of Project configuration.
+parameter schema. Web search owns the key/preferences and filter controls. All four QQ tools remain visible regardless of Character configuration.
 The page has no call form, results or approval controls. Slash web calls require JSON objects matching the same schemas; search preferences belong to the settings form.
 The chat reply renders individual steps and keeps approval controls outside collapsed processing history.
 Web steps use dedicated result links/page text, including QQ results without source IDs; only numbered results participate in citations/Sources. Other tools retain their general presentation.

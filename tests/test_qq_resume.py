@@ -6,7 +6,7 @@ import pytest
 from sqlmodel import Session, select
 
 from ai_workbench.core.attachments import resolve_attachment_uri
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMessage
 from tests.model_fixtures import configure_model
@@ -25,7 +25,7 @@ def messages(state, session):
 
 
 @pytest.mark.parametrize("reply_limit", [1, 4])
-def test_resume_merges_windows_and_uses_one_project_reply_budget(qq_client, clock, reply_limit):
+def test_resume_merges_windows_and_uses_one_character_reply_budget(qq_client, clock, reply_limit):
     client, state, upstream = qq_client
     p, session, connection = configure_execution(client, state, reply_message_limit=reply_limit)
     control(client, session, "pause")
@@ -36,7 +36,7 @@ def test_resume_merges_windows_and_uses_one_project_reply_budget(qq_client, cloc
     ingest(client, state, p, event(4, "bot input-4"), 21)
     ingest(client, state, p, event(5, "input-5"), 22)
     before = participant(state, session)
-    ok(client.patch(f"/api/projects/{p['id']}", json={"batch_message_limit": 3}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"batch_message_limit": 3}))
     clock[0] = 23
     binding = control(client, session, "resume")
     merged = state.qq.store.next_batch(p["id"])
@@ -65,7 +65,7 @@ def test_resume_merges_windows_and_uses_one_project_reply_budget(qq_client, cloc
     assert len(connection.calls) == reply_limit and len(upstream.calls) == 1
     assert state.qq.store.next_batch(p["id"]) is None
     assert freeze(state, session, 1000) is None
-    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
+    context = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None).model_dump_json()
     assert "input-1" not in context and "input-2" not in context
     assert all(f"input-{n}" in context for n in (3, 4, 5))
     ingest(client, state, p, event(6, "bot fresh input"), 30)
@@ -87,7 +87,7 @@ def test_resume_followup_uses_only_retained_speakers_and_preserves_new_epochs(qq
     ingest(client, state, p, event(4, "other participant", sender="8888"), 17)
     assert freeze(state, session, 22).trigger_kind == "followup"
     ingest(client, state, p, event(5, "last follow-up"), 23)
-    ok(client.patch(f"/api/projects/{p['id']}", json={"batch_message_limit": 1}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"batch_message_limit": 1}))
     clock[0] = 100
     control(client, session, "resume")
     batch = state.qq.store.next_batch(p["id"])
@@ -161,7 +161,7 @@ def test_resume_without_trigger_or_with_deleted_window_does_not_create_work(qq_c
     assert messages(state, session)["3"]["disposition"] == "skipped"
 
 
-def test_resume_requeues_only_the_paused_session_at_the_project_tail(qq_client, clock):
+def test_resume_requeues_only_the_paused_session_at_the_character_tail(qq_client, clock):
     client, state, _ = qq_client
     p, session, _ = configure_execution(client, state)
     other = child(client, p, "6677")
@@ -256,7 +256,7 @@ def test_resume_lookup_timeout_and_late_names_do_not_retrigger(qq_client, monkey
 
 
 def test_connection_change_discards_nickname_decisions_during_resume(qq_client):
-    from ai_workbench.api.routes.projects import update_project
+    from ai_workbench.api.routes.characters import update_character
 
     client, state, _ = qq_client
     p, session, connection = configure_execution(client, state, keywords=["buddy"])
@@ -278,7 +278,7 @@ def test_connection_change_discards_nickname_decisions_during_resume(qq_client):
         await asyncio.wait_for(entered.wait(), 1)
         resume = asyncio.create_task(state.qq.control(sid, "resume"))
         await asyncio.sleep(0)
-        await update_project(p["id"], {"connection_enabled": False}, state)
+        await update_character(p["id"], {"connection_enabled": False}, state)
         binding = await asyncio.wait_for(resume, 1)
         assert not binding.paused and not state.qq.pending_ingress
         merged = state.qq.store.next_batch(p["id"])
@@ -313,7 +313,7 @@ def test_resume_generation_uses_retained_input_and_preserves_overflow_media(qq_c
     source = freeze(state, session, 16)
     deleted_id = messages(state, session)["3"]["id"]
     ok(client.delete(f"/api/qq/sessions/{session['session_id']}/messages/{deleted_id}"))
-    ok(client.patch(f"/api/projects/{p['id']}", json={"batch_message_limit": 1}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"batch_message_limit": 1}))
     control(client, session, "resume")
     merged = state.qq.store.next_batch(p["id"])
     assert [row.external_id for row in state.qq.store.batch_messages(merged.id)] == ["2"]

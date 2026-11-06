@@ -16,9 +16,9 @@ from tests.tool_fixtures import completion, ok, tool_call
 def setup(client, *, tools=None, history=True, window=8192):
     session, _, profile = configure(client, tools=tools or [], streaming=False)
     ok(client.patch(f"/api/models/profiles/{profile['id']}", json={"context_window_tokens": window}))
-    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={"context_policy": {
+    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"context_policy": {
         "strategy": "history_retrieval", "history_enabled": history,
-        "retrieval": {"trigger_percent": 40, "target_percent": 25, "max_checkpoint_tokens": 512}}}))
+        "retrieval": {"trigger_percent": 40, "target_percent": 25, "max_checkpoint_tokens": 512}}}}))
     return session, client.app.state.runtime_state
 
 
@@ -107,10 +107,10 @@ def test_manual_reset_never_calls_model_and_does_not_restore_archived_prefix(har
 def test_requires_harness_and_context_tools_cannot_be_selected_directly(harness_client):
     client, upstream, _ = harness_client
     session, state = setup(client)
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'harness_enabled': False}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'harness_enabled': False}}))
     result = send(client, session)
     assert not result['success'] and result['error_code'] == 'HISTORY_RETRIEVAL_REQUIRES_HARNESS'
-    assert client.patch(f"/api/sessions/{session['session_id']}", json={'tools_allowed': ['context_read']}).status_code == 422
+    assert client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'tools_allowed': ['context_read']}}).status_code == 422
 
 
 def test_search_empty_page_continues_and_reads_old_fact(harness_client):
@@ -293,7 +293,8 @@ def test_retrieval_migration_preserves_existing_records_and_files(tmp_path):
     from sqlmodel import Session
     from ai_workbench.db import migrations
     from ai_workbench.db.database import get_engine
-    from ai_workbench.db.models import SessionRecord, MessageRecord, ContextCheckpointRecord
+    from ai_workbench.db.models import MessageRecord, ContextCheckpointRecord
+    from tests.migration_fixtures import insert_historical_row
     engine = get_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     migrations.upgrade(engine, migrations.QQ_CONTEXT_COMPACTION_REVISION)
     paths = [tmp_path / name / 'keep' for name in ['models', 'attachments', 'runtimes']]
@@ -301,12 +302,12 @@ def test_retrieval_migration_preserves_existing_records_and_files(tmp_path):
         path.parent.mkdir()
         path.write_bytes(b'preserved')
     with Session(engine) as db:
-        db.add(SessionRecord(session_id='session', kind='ordinary', configuration_json='{"context_policy":{"strategy":"message_window"}}'))
+        insert_historical_row(db, "sessionrecord", session_id="session", kind="ordinary", configuration_json='{"context_policy":{"strategy":"message_window"}}')
         db.add(MessageRecord(message_id='message', session_id='session', role='user', parts_json='[]'))
         db.add(ContextCheckpointRecord(session_id='session', checkpoint_json='{"summary":"preserve"}'))
         db.commit()
         before = {table: db.execute(text(f'SELECT * FROM {table}')).all() for table in ['sessionrecord', 'messagerecord', 'context_checkpoints']}
-    migrations.upgrade(engine)
+    migrations.upgrade(engine, migrations.HISTORY_RETRIEVAL_REVISION)
     assert 'context_retrieval' in inspect(engine).get_table_names()
     with Session(engine) as db:
         assert all(db.execute(text(f'SELECT * FROM {table}')).all() == rows for table, rows in before.items())
@@ -347,7 +348,7 @@ def test_strategy_switches_preserve_private_memory_without_injection(harness_cli
         include_attachments='explicit', memory=RetrievalCheckpoint(text='PRIVATE_SWITCH_MEMORY'))
     state.sessions.save_retrieval_state(saved)
     for strategy in ['message_window', 'token_budget', 'history_retrieval']:
-        ok(client.patch(f"/api/sessions/{session['session_id']}", json={'context_policy': {'strategy': strategy}}))
+        ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'context_policy': {'strategy': strategy}}}))
         upstream.turns = [completion(content='Done')]
         result = send(client, session)
         assert result['success'], result.get('error')

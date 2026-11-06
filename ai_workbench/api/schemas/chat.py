@@ -12,10 +12,11 @@ from ai_workbench.core import message_parts as parts
 from ai_workbench.core.conversation_history import HistoryPruned
 from ai_workbench.core.json_data import JsonValue
 from ai_workbench.core.schema.message import MessageSchema
-from ai_workbench.core.schema.persona import Persona, PersonaIdentity, PersonaInput, ResolvedChatConfig
+from ai_workbench.core.schema.persona import Persona, PersonaIdentity, PersonaInput
+from ai_workbench.core.schema.chat_config import ResolvedChatConfig
 from ai_workbench.core.schema.run import RunSchema, RunStepSchema
 from ai_workbench.core.schema.run_event import RunEventSchema
-from ai_workbench.core.session import OrdinarySession, WorkspaceSession, QQSession
+from ai_workbench.core.session import NormalSession, QQSession
 
 
 class JsonPart(parts.JsonPart):
@@ -41,20 +42,26 @@ PersonaResponse = public_model("PersonaResponse", Persona, fields={
     "is_protected": (bool, Field(description="Protected identities can be edited but cannot be deleted.", json_schema_extra={"readOnly": True})),
 })
 PersonaPatch = patch_model("PersonaPatch", PersonaInput)
+
+
+class PersonaDeleted(ApiModel):
+    deleted: bool
+    persona_id: str
+
+
 ResolvedConfiguration = public_model("ResolvedConfiguration", ResolvedChatConfig,
-    omit={"system_prompt", "project_system_prompt", "user_persona_prompt", "qq_bot_account", "qq_target_kind", "qq_target_id",
+    omit={"system_prompt", "persona_background", "qq_bot_account", "qq_target_kind", "qq_target_id",
         "qq_image_generation_allowed", "qq_image_candidates"})
 
 
 _session_fields = {
-    "user_persona": (PersonaIdentity, ...),
+    "persona": (PersonaIdentity, ...),
     "effective": (ResolvedConfiguration, ...),
     "title_generation_metadata": (JsonObject, Field(description="Session-title source, input identity and status diagnostics, without prompts or model content.")),
 }
-OrdinarySessionResponse = public_model("OrdinarySessionResponse", OrdinarySession, fields=_session_fields)
-WorkspaceSessionResponse = public_model("WorkspaceSessionResponse", WorkspaceSession, fields=_session_fields)
-QQSessionResponse = public_model("QQSessionResponse", QQSession, fields={**_session_fields, "user_persona": (None, None)})
-SessionResponse = Annotated[OrdinarySessionResponse | WorkspaceSessionResponse | QQSessionResponse, Field(discriminator="kind")]
+NormalSessionResponse = public_model("NormalSessionResponse", NormalSession, fields=_session_fields)
+QQSessionResponse = public_model("QQSessionResponse", QQSession, fields={**_session_fields, "persona": (None, None)})
+SessionResponse = Annotated[NormalSessionResponse | QQSessionResponse, Field(discriminator="kind")]
 def validate_step_metadata(value: dict) -> dict:
     if "llm" in value:
         LLMCallSnapshot.model_validate(value["llm"])
@@ -184,22 +191,6 @@ RunEventResponse = Annotated[
     RunStateEvent | RunFailureEvent | RunStepEvent | RunMessageEvent | RunMessageDelta |
     ApprovalRequestedEvent | ApprovalResolvedEvent, Field(discriminator="type"),
 ]
-
-
-class KnowledgeBindingsResponse(ApiModel):
-    knowledge_base_ids: list[str]
-
-
-class WorldbookBindingsResponse(ApiModel):
-    worldbook_ids: list[str]
-
-
-class SessionKnowledgeResponse(KnowledgeBindingsResponse):
-    session_id: str
-    user_persona_knowledge_base_ids: list[str]
-    agent_persona_knowledge_base_ids: list[str]
-    project_knowledge_base_ids: list[str]
-    effective_knowledge_base_ids: list[str]
 
 
 class SessionDeleted(ApiModel):

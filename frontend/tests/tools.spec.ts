@@ -20,7 +20,6 @@ for (const locale of ['en', 'zh-CN']) {
         expect(catalog).toHaveLength(6);
         await request.patch('/api/tools/web/settings', { data: { api_key: '' } });
         await page.route('**/api/tools', (route) => route.fulfill({ json: catalog }));
-        await page.route('**/api/sessions', (route) => route.fulfill({ json: [] }));
         for (const scope of ['general', 'qqbot']) {
           await page.goto(`/settings?tab=tools${scope === 'general' ? '' : '&view=qqbot'}`);
           const panel = page.getByRole('region', { name: words.toolCatalog, exact: true });

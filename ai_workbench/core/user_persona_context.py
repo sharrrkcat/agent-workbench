@@ -1,10 +1,10 @@
-"""The singleton user's background context, resolved before a chat run starts."""
+"""The selected user identity's background context, resolved before a chat run starts."""
 
 from dataclasses import dataclass
 from typing import Any
 
 
-USER_PERSONA_BLOCK_TEMPLATE = """# Cogita Persona
+USER_PERSONA_BLOCK_TEMPLATE = """# Persona
 
 The following user-maintained information is stable background context about the user.
 Use it when relevant. Do not mention it unless it helps answer the user.
@@ -20,7 +20,7 @@ class UserPersonaContextResult:
     metadata: dict[str, Any]
 
 
-def build_user_persona_context(*, persona_id: str, content: str) -> UserPersonaContextResult:
+def build_user_persona_context(*, persona_id: str | None, content: str) -> UserPersonaContextResult:
     content = content.strip()
     return UserPersonaContextResult(
         rendered_text=USER_PERSONA_BLOCK_TEMPLATE.format(content=content) if content else "",

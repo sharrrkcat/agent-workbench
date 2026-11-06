@@ -16,8 +16,8 @@ def test_timeline_indexes_preserve_records_and_bound_pending_work(tmp_path):
     for path in paths:
         path.parent.mkdir()
         path.write_text("retained", encoding="utf-8")
-    migrations.upgrade(engine, "head")
-    migrations.upgrade(engine, "head")
+    migrations.upgrade(engine, migrations.QQ_TIMELINE_REVISION)
+    migrations.upgrade(engine, migrations.QQ_TIMELINE_REVISION)
     with engine.connect() as db:
         assert all(db.exec_driver_sql(f"SELECT * FROM {table}").all() == rows for table, rows in before.items())
         for sql, name in (

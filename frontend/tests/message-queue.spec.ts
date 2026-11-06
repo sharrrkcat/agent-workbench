@@ -16,7 +16,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
 
     test('FIFO, original-position editing, attachments, scroll, stop and session navigation', async ({ page, request }, info) => {
       const otherTitle = `Queue other ${locale} ${width}`, originTitle = `Queue origin ${locale} ${width}`;
-      await request.post('/api/sessions', { data: { title: otherTitle } });
+      await request.post('/api/characters/00000000-0000-4000-8000-000000000003/sessions', { data: { title: otherTitle } });
       const session = await (await request.post('/__test__/session')).json();
       await request.patch(`/api/sessions/${session.session_id}`, { data: { title: originTitle } });
       const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));

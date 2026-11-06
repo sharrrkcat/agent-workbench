@@ -26,7 +26,10 @@ from ai_workbench.core.instructions import date_instruction
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore
 from ai_workbench.core.models.token_counting import ReferenceTokenCounter
 from ai_workbench.core.personas import PersonaStore
-from ai_workbench.core.schema.persona import PersonaCreate, USER_PERSONA_ID
+from ai_workbench.core.characters import CharacterStore
+from ai_workbench.core.schema.character import NormalCharacterInput
+from ai_workbench.core.schema.chat_config import ChatDefaults
+from ai_workbench.core.schema.persona import PersonaInput
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.web_content import normalize_url, clean_content, page_title, QueryRelevance, infer_date, is_expired, BM25, paragraphs
 from ai_workbench.core.web_render import web_model_text
@@ -149,32 +152,37 @@ async def replay(question, saved):
 
 
 async def live(database, session, question, output):
-    # Only saved model/provider/persona/settings reads touch the source DB. No QQ bindings are copied.
+    # Only saved Character/Persona/model/provider/settings reads touch the source DB.
     source = create_engine("sqlite:///" + database.resolve().as_uri() + "?mode=ro&uri=true")
-    config = json.loads(session["configuration_json"])
-    profile = ModelProfileStore(source).get(config["model_profile_id"])
+    character = CharacterStore(source).get(session["character_id"])
+    if character.kind != "normal":
+        raise ValueError("Live acceptance requires a normal Character session")
+    config = ChatDefaults.model_validate({
+        **character.model_dump(include=set(ChatDefaults.model_fields)),
+        **json.loads(session["configuration_json"])["overrides"],
+    })
+    profile = ModelProfileStore(source).get(config.model_profile_id)
     if profile.source is None or profile.source.type != "provider":
         raise ValueError("Live acceptance requires the baseline's external LLM profile")
     provider = ProviderProfileStore(source).get(profile.source.provider_profile_id)
-    personas = PersonaStore(source)
-    agent = personas.get(config["persona_id"])
-    user = personas.get(USER_PERSONA_ID)
+    user = PersonaStore(source).get(config.persona_id)
     settings = WebToolsSettingsStore(source).get()
     source.dispose()
     app = create_app(use_memory=True, root=output / "runtime")
     state = app.state.runtime_state
     state.provider_profiles.create(provider)
     state.model_profiles.create(profile)
-    copied_agent = state.personas.create(PersonaCreate(name=agent.name, system_prompt=agent.system_prompt, collection="agent"))
-    state.personas.update(USER_PERSONA_ID, {"name": user.name, "system_prompt": user.system_prompt})
+    copied_user = state.personas.create(PersonaInput(name=user.name, background=user.background))
+    values = {**config.model_dump(), "persona_id": copied_user.id, "tools_allowed": ["web_search", "web_fetch"],
+        "knowledge_base_ids": [], "worldbook_ids": []}
+    copied_character = state.character_service.create(NormalCharacterInput(
+        kind="normal", name=character.name, system_prompt=character.system_prompt, **values))
     state.web_tools.settings.patch(WebToolsSettingsPatch(**settings.model_dump(exclude={"provider"})))
-    config["persona_id"] = copied_agent.id
-    config["tools_allowed"] = ["web_search", "web_fetch"]
     reports = []
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://acceptance") as client:
         for label, prompt in [("baseline-question", question), ("insufficient-evidence",
             "剑网3在2028年10月30日将上线的赛季，官方确定会赠送多少小时点卡和哪些限定坐骑？")]:
-            response = await client.post("/api/sessions", json=config)
+            response = await client.post(f"/api/characters/{copied_character.id}/sessions", json={})
             response.raise_for_status()
             sid = response.json()["session_id"]
             print(f"Live acceptance started: {label}, session={sid}", flush=True)

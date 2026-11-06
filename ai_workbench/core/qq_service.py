@@ -1,4 +1,4 @@
-"""Project-scoped OneBot connections and durable FIFO execution."""
+"""Character-scoped OneBot connections and durable FIFO execution."""
 import asyncio
 import base64
 import logging
@@ -22,7 +22,7 @@ from ai_workbench.core.qq_resources import QQResources
 from ai_workbench.core.qq_generation import prepare_image
 from ai_workbench.core.qq_icebreaker import QQIcebreaker, ICEBREAKER_SETTINGS
 from ai_workbench.core.qq_programs import QQPrograms
-from ai_workbench.core.schema.project import QQBotProject
+from ai_workbench.core.schema.character import QQBotCharacter
 from ai_workbench.core.schema.qq import QQSendImageArguments, QQ_TOOLS
 from ai_workbench.core.web_tools import WEB_TOOL_NAMES
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQMediaAsset
@@ -34,7 +34,7 @@ QQ_SEND_RESPONSE_TIMEOUT_SECONDS = 90
 
 @dataclass
 class PendingIngress:
-    project: QQBotProject
+    character: QQBotCharacter
     binding: QQBinding
     message: QQMessage
     received_at: float
@@ -82,7 +82,7 @@ class QQService:
         state.tool_registry.register(ToolSpec("qq_generate_image",
             "Generate and immediately send one image to the current QQ conversation. A successful send uses one reply slot. "
             "Use only for an explicit request to create a new picture. Discussing animation, scenes, generating text, or declining images is not such a request. "
-            "Only supply a drawing prompt; size, quality and style come from Project settings. Generation may take a while.",
+            "Only supply a drawing prompt; size, quality and style come from Character settings. Generation may take a while.",
             {"type": "object", "properties": {"prompt": {"type": "string", "minLength": 1, "maxLength": 32000, "pattern": r"\S"}},
              "required": ["prompt"], "additionalProperties": False}, lambda args, context: self.generate_image(args, context), "network", False, False, scope="qqbot"))
 
@@ -107,31 +107,31 @@ class QQService:
     async def run(self):
         while True:
             self.media.tick()
-            all_projects = [p for p in self.state.projects.list() if p.kind == "qqbot"]
-            self.programs.tick(all_projects)
-            self.names.retain_projects({p.id for p in all_projects})
-            projects = {p.id: p for p in all_projects if p.connection_enabled}
+            all_characters = [p for p in self.state.characters.list() if p.kind == "qqbot"]
+            self.programs.tick(all_characters)
+            self.names.retain_characters({p.id for p in all_characters})
+            characters = {p.id: p for p in all_characters if p.connection_enabled}
             for key in list(self.tasks):
                 connection = self.connections[key]
-                project = projects.get(key)
-                if project is None or any(getattr(project, f) != getattr(connection.project, f)
+                character = characters.get(key)
+                if character is None or any(getattr(character, f) != getattr(connection.character, f)
                         for f in ("websocket_url", "access_token", "bot_account")):
-                    self.icebreaker.reset_project(key)
+                    self.icebreaker.reset_character(key)
                     task = self.tasks.pop(key)
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
                     self.connections.pop(key)
             for key in list(self.workers):
-                if key not in projects and self.workers[key].done():
+                if key not in characters and self.workers[key].done():
                     self.workers.pop(key).result()
-            for key, project in projects.items():
+            for key, character in characters.items():
                 if key not in self.tasks:
-                    connection = OneBotConnection(project, lambda event, pid=key: self.ingest(pid, event),
+                    connection = OneBotConnection(character, lambda event, pid=key: self.ingest(pid, event),
                         on_connected=lambda pid=key: self.programs.connection_restored(pid))
                     self.connections[key] = connection
                     self.tasks[key] = asyncio.create_task(self.connect(connection))
                 for binding in self.store.bindings(key):
-                    self.tick_binding(project, binding, time.time())
+                    self.tick_binding(character, binding, time.time())
                 worker = self.workers.get(key)
                 if worker is None or worker.done():
                     if worker is not None:
@@ -155,24 +155,24 @@ class QQService:
             except (OSError, WebSocketException, ValueError, asyncio.TimeoutError):
                 connection.status = "QQ_CONNECTION_FAILED"
             finally:
-                self.icebreaker.reset_project(connection.project.id)
-                await asyncio.gather(*self.discard_ingress(connection.project.id), return_exceptions=True)
+                self.icebreaker.reset_character(connection.character.id)
+                await asyncio.gather(*self.discard_ingress(connection.character.id), return_exceptions=True)
             connection.ready = False
-            self.programs.connection_failed(connection.project.id, connection.status)
+            self.programs.connection_failed(connection.character.id, connection.status)
             await asyncio.sleep(3)
 
-    async def ingest(self, project_id, event, *, now=None):
-        project = self.state.projects.get(project_id)
-        if str(event.get("self_id")) != project.bot_account:
+    async def ingest(self, character_id, event, *, now=None):
+        character = self.state.characters.get(character_id)
+        if str(event.get("self_id")) != character.bot_account:
             return
-        own = str(event.get("user_id")) == project.bot_account or event.get("post_type") == "message_sent"
+        own = str(event.get("user_id")) == character.bot_account or event.get("post_type") == "message_sent"
         kind = {"group": "group", "private": "friend"}.get(event.get("message_type"))
         if kind is None:
             return
         target = str(event.get("group_id") if kind == "group" else
             event.get("target_id", event.get("user_id")) if own else event.get("user_id"))
-        binding = self.store.binding(project_id, kind, target)
-        if binding is None and (own or kind != "friend" or target != project.admin_qq):
+        binding = self.store.binding(character_id, kind, target)
+        if binding is None and (own or kind != "friend" or target != character.admin_qq):
             return
         if own:
             try:
@@ -194,35 +194,35 @@ class QQService:
         if binding is None:
             if values["kind"] != "command":
                 return
-            binding = self.programs.ensure_admin(project)
+            binding = self.programs.ensure_admin(character)
         now = time.time() if now is None else now
         if values["kind"] == "command":
             message = QQMessage(session_id=binding.session_id, disposition="command", command_status="pending", **values)
             self.store.record_ingress(binding, message)
             return
         # Synchronous transactions run without yielding: expiry wins at the exact deadline.
-        self.tick_binding(project, binding, now)
+        self.tick_binding(character, binding, now)
         message = QQMessage(session_id=binding.session_id, **values)
         message_id = self.store.record_ingress(binding, message, media=media)
         if not message_id:
             return
         self.names.observe(binding, message.sender_id, message.sender_name)
         references = references_adapter.validate_json(message.references_json)
-        keyword = addresses_bot or any(word in keyword_text for word in project.keywords)
+        keyword = addresses_bot or any(word in keyword_text for word in character.keywords)
         group = self.icebreaker.groups.get(binding.session_id)
         if group is not None and (keyword or (group.sender_id is not None and group.sender_id != message.sender_id)):
             self.icebreaker.cancel(group)
-        if not keyword and binding.target_kind == "group" and project.keywords:
-            keyword = self.names.cached_trigger(binding, references, project.keywords)
-        entry = PendingIngress(project, binding, message, now, keyword)
+        if not keyword and binding.target_kind == "group" and character.keywords:
+            keyword = self.names.cached_trigger(binding, references, character.keywords)
+        entry = PendingIngress(character, binding, message, now, keyword)
         self.pending_ingress.setdefault(binding.session_id, deque()).append(entry)
         if keyword is None:
             entry.task = asyncio.create_task(self.resolve_ingress(entry))
         self.flush_ingress(binding.session_id)
 
     async def resolve_ingress(self, entry):
-        entry.keyword = await self.names.resolve_trigger(entry.binding, entry.project.bot_account,
-            entry.message.model_dump(), entry.project.keywords)
+        entry.keyword = await self.names.resolve_trigger(entry.binding, entry.character.bot_account,
+            entry.message.model_dump(), entry.character.keywords)
         self.flush_ingress(entry.binding.session_id)
 
     def flush_ingress(self, session_id):
@@ -233,13 +233,13 @@ class QQService:
             entry = queue[0]
             binding = self.store.get(QQBinding, session_id)
             if binding is not None:
-                project = self.state.projects.get(binding.project_id)
-                self.tick_binding(project, binding, entry.received_at)
+                character = self.state.characters.get(binding.character_id)
+                self.tick_binding(character, binding, entry.received_at)
                 if self.store.activate_ingress(entry.message.id, keyword=entry.keyword, now=entry.received_at,
                         eligibility_before=entry.eligibility_before):
-                    if project.icebreaker_enabled:
+                    if character.icebreaker_enabled:
                         current = self.store.get(QQBinding, session_id)
-                        self.icebreaker.observe(project, current, self.connected(project.id),
+                        self.icebreaker.observe(character, current, self.connected(character.id),
                             entry.message.id, entry.message.sender_id, entry.received_at)
             queue.popleft()
         if not queue:
@@ -265,10 +265,10 @@ class QQService:
                     limit = (limit[0], min(limit[1], previous[1]))
                 entry.eligibility_before = limit
 
-    def discard_ingress(self, project_id=None):
+    def discard_ingress(self, character_id=None):
         tasks = []
         for session_id, queue in list(self.pending_ingress.items()):
-            if project_id is None or queue[0].project.id == project_id:
+            if character_id is None or queue[0].character.id == character_id:
                 del self.pending_ingress[session_id]
                 for entry in queue:
                     if entry.task is not None:
@@ -276,25 +276,25 @@ class QQService:
                         tasks.append(entry.task)
         return tasks
 
-    def connected(self, project_id):
-        connection = self.connections.get(project_id)
+    def connected(self, character_id):
+        connection = self.connections.get(character_id)
         return connection is not None and connection.ready
 
-    def tick_binding(self, project, binding, now):
+    def tick_binding(self, character, binding, now):
         queue = self.pending_ingress.get(binding.session_id)
         before_id = queue[0].message.id if queue else None
         if queue:
             now = min(now, queue[0].received_at)
-        self.store.freeze(binding.session_id, project.batch_message_limit, now, before_message_id=before_id)
-        if project.icebreaker_enabled or binding.session_id in self.icebreaker.groups:
+        self.store.freeze(binding.session_id, character.batch_message_limit, now, before_message_id=before_id)
+        if character.icebreaker_enabled or binding.session_id in self.icebreaker.groups:
             current = self.store.get(QQBinding, binding.session_id)
-            self.icebreaker.tick(project, current, self.connected(project.id), now, before_message_id=before_id)
+            self.icebreaker.tick(character, current, self.connected(character.id), now, before_message_id=before_id)
 
-    def project_updated(self, previous, current):
+    def character_updated(self, previous, current):
         if current.kind == "qqbot" and previous.admin_qq != current.admin_qq:
             self.programs.admin_changed(current)
         if current.kind == "qqbot" and any(getattr(previous, field) != getattr(current, field) for field in ICEBREAKER_SETTINGS):
-            self.icebreaker.reset_project(current.id)
+            self.icebreaker.reset_character(current.id)
             if any(getattr(previous, field) != getattr(current, field)
                     for field in ("connection_enabled", "websocket_url", "access_token", "bot_account")):
                 self.discard_ingress(current.id)
@@ -303,8 +303,8 @@ class QQService:
 
     def check_icebreaker(self, batch):
         binding = self.store.get(QQBinding, batch.session_id)
-        project = self.state.projects.get(binding.project_id)
-        return self.icebreaker.check(batch, project, binding, self.connected(project.id), time.time())
+        character = self.state.characters.get(binding.character_id)
+        return self.icebreaker.check(batch, character, binding, self.connected(character.id), time.time())
 
     async def execute(self, batch):
         # A queued batch may have been emptied after the supervisor selected it.
@@ -315,7 +315,7 @@ class QQService:
         binding = self.store.get(QQBinding, batch.session_id)
         if binding is None or binding.paused:
             return
-        if not self.state.projects.get(binding.project_id).connection_enabled:
+        if not self.state.characters.get(binding.character_id).connection_enabled:
             return
         attempt = self.icebreaker.begin(batch) if batch.trigger_kind == "icebreaker" else None
         if batch.trigger_kind == "icebreaker" and attempt is None:
@@ -363,8 +363,8 @@ class QQService:
                 if attempt is not None:
                     self.check_icebreaker(batch)
                     if not inference_started:
-                        project = self.state.projects.get(binding.project_id)
-                        self.store.start_icebreaker_cooldown(batch.session_id, time.time() + project.icebreaker_cooldown_seconds)
+                        character = self.state.characters.get(binding.character_id)
+                        self.store.start_icebreaker_cooldown(batch.session_id, time.time() + character.icebreaker_cooldown_seconds)
                 inference_started = True
             def context_ready(trace):
                 self.descriptions.submit(config.qq_image_description_model_profile_id,
@@ -497,7 +497,7 @@ class QQService:
                 delivery.asset_id = self.store.confirm_generated_asset(db, image.asset, prompt, session.session_id)
             transaction = {"transaction": db} if getattr(self.state.messages, "engine", None) is not None else {}
             message = self.state.messages.add_message(session.session_id, role="assistant", content=delivery.text,
-                speaker_id=self.state.runs.get_run(context.run_id).persona_id, run_id=context.run_id,
+                speaker_id=self.state.runs.get_run(context.run_id).character_id, run_id=context.run_id,
                 metadata={"qq_delivery_id": delivery.id, "qq_external_id": delivery.external_id}, **transaction)
             db.add(delivery)
             before = self.store.renew_participants(db, batch, time.time())
@@ -512,11 +512,11 @@ class QQService:
     async def transmit(self, delivery, segment):
         """Called under the Session send lock; the caller owns success persistence."""
         session = self.store.get(QQBinding, delivery.session_id)
-        connection = self.connections.get(session.project_id)
+        connection = self.connections.get(session.character_id)
         try:
             if connection is None or not connection.ready:
                 raise ToolExecutionError("QQ_DISCONNECTED", "QQ is disconnected.")
-            if not self.state.projects.get(session.project_id).connection_enabled:
+            if not self.state.characters.get(session.character_id).connection_enabled:
                 raise ToolExecutionError("QQ_DISABLED", "QQ connection is disabled.")
             delivery.status = "sending"
             self.store.save(delivery)
@@ -545,13 +545,13 @@ class QQService:
         finally:
             self.send_echoes.pop(session.session_id, None)
 
-    def create_session(self, project_id, values):
-        if self.state.projects.get(project_id).kind != "qqbot":
-            raise ChatError("PROJECT_TYPE_INVALID", "Choose a QQBot Project.", 422)
-        if self.store.binding(project_id, values["target_kind"], values["target_id"]):
+    def create_session(self, character_id, values):
+        if self.state.characters.get(character_id).kind != "qqbot":
+            raise ChatError("CHARACTER_TYPE_INVALID", "Choose a QQBot Character.", 422)
+        if self.store.binding(character_id, values["target_kind"], values["target_id"]):
             raise ChatError("QQ_TARGET_BOUND", "This conversation already has a Session.", 409)
-        session = self.state.sessions.create_session(kind="qqbot", project_id=project_id, **values)
-        self.store.save(QQBinding(session_id=session.session_id, project_id=project_id,
+        session = self.state.sessions.create_session(kind="qqbot", character_id=character_id, **values)
+        self.store.save(QQBinding(session_id=session.session_id, character_id=character_id,
             target_kind=session.target_kind, target_id=session.target_id))
         return session
 
@@ -569,9 +569,9 @@ class QQService:
                     raise ChatError("SESSION_NOT_FOUND", "QQ Session does not exist.", 404)
                 self.state.chat_service.assert_idle(session_id)
                 self.assert_idle(session_id, command_id=command.id if command else None, include_program_sends=False)
-        project = self.state.projects.get(binding.project_id)
+        character = self.state.characters.get(binding.character_id)
         if command is not None:
-            self.programs.authorize(project, command)
+            self.programs.authorize(character, command)
         changed = action != "resume" or binding.paused
         if changed:
             self.icebreaker.reset_session(session_id)
@@ -579,7 +579,7 @@ class QQService:
             db.connection().exec_driver_sql("BEGIN IMMEDIATE")
             if changed and action == "resume":
                 queue = self.pending_ingress.get(session_id)
-                binding = self.store.resume(session_id, project.batch_message_limit, time.time(),
+                binding = self.store.resume(session_id, character.batch_message_limit, time.time(),
                     before_message_id=queue[0].message.id if queue else None, transaction=db)
             elif action != "resume":
                 self.store.pause(session_id, "QQ_PAUSED", transaction=db)
@@ -591,9 +591,9 @@ class QQService:
             if changed and action == "resume":
                 db.refresh(binding)
         if changed and action == "resume":
-            self.icebreaker.sync(project, binding, self.connected(binding.project_id), time.time())
+            self.icebreaker.sync(character, binding, self.connected(binding.character_id), time.time())
         if action == "stop":
-            task = self.workers.get(binding.project_id)
+            task = self.workers.get(binding.character_id)
             # Cancel only the worker serving this Session.
             active = self.store.active_batch(session_id)
             if active is not None and task:

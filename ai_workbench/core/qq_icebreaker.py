@@ -13,7 +13,7 @@ ICEBREAKER_SETTINGS = (
 
 @dataclass
 class GroupActivity:
-    project_id: str
+    character_id: str
     settings: tuple
     last_activity: float
     sender_id: str | None = None
@@ -36,17 +36,17 @@ class QQIcebreaker:
         self.groups: dict[str, GroupActivity] = {}
         self.attempts: dict[int, IcebreakerAttempt] = {}
 
-    def sync(self, project, binding, ready, now):
+    def sync(self, character, binding, ready, now):
         session_id = binding.session_id
         if binding.target_kind != "group" or binding.paused or not ready or not (
-                project.connection_enabled and project.icebreaker_enabled):
+                character.connection_enabled and character.icebreaker_enabled):
             self.reset_session(session_id)
             return None
-        settings = tuple(getattr(project, field) for field in ICEBREAKER_SETTINGS)
+        settings = tuple(getattr(character, field) for field in ICEBREAKER_SETTINGS)
         group = self.groups.get(session_id)
         if group is None or group.settings != settings:
             self.reset_session(session_id)
-            group = self.groups[session_id] = GroupActivity(project.id, settings, now)
+            group = self.groups[session_id] = GroupActivity(character.id, settings, now)
         return group
 
     def reset_session(self, session_id):
@@ -54,9 +54,9 @@ class QQIcebreaker:
         if group is not None:
             self.cancel(group)
 
-    def reset_project(self, project_id):
+    def reset_character(self, character_id):
         for session_id, group in list(self.groups.items()):
-            if group.project_id == project_id:
+            if group.character_id == character_id:
                 self.reset_session(session_id)
 
     def cancel(self, group):
@@ -79,8 +79,8 @@ class QQIcebreaker:
                 self.store.save(batch)
             self.finish(group.batch_id)
 
-    def observe(self, project, binding, ready, message_id, sender_id, now):
-        group = self.sync(project, binding, ready, now)
+    def observe(self, character, binding, ready, message_id, sender_id, now):
+        group = self.sync(character, binding, ready, now)
         if group is None:
             return
         previous = group.last_activity
@@ -91,15 +91,15 @@ class QQIcebreaker:
             if sender_id != group.sender_id:
                 self.cancel(group)
             elif group.batch_id is None:
-                group.deadline = now + project.icebreaker_wait_seconds
-        elif now - previous > project.icebreaker_cold_seconds and (
+                group.deadline = now + character.icebreaker_wait_seconds
+        elif now - previous > character.icebreaker_cold_seconds and (
                 binding.icebreaker_cooldown_until is None or now >= binding.icebreaker_cooldown_until):
             group.sender_id = sender_id
             group.first_message_id = message_id
-            group.deadline = now + project.icebreaker_wait_seconds
+            group.deadline = now + character.icebreaker_wait_seconds
 
-    def tick(self, project, binding, ready, now, *, before_message_id=None):
-        group = self.sync(project, binding, ready, now)
+    def tick(self, character, binding, ready, now, *, before_message_id=None):
+        group = self.sync(character, binding, ready, now)
         if group is None:
             return
         if group.batch_id is not None:
@@ -112,7 +112,7 @@ class QQIcebreaker:
         if binding.deadline is not None or self.store.has_reply_work(binding.session_id):
             self.cancel(group)
             return
-        batch = self.store.freeze(binding.session_id, project.batch_message_limit, now,
+        batch = self.store.freeze(binding.session_id, character.batch_message_limit, now,
             icebreaker_first_id=group.first_message_id, before_message_id=before_message_id)
         group.deadline = None
         if batch is None:
@@ -130,8 +130,8 @@ class QQIcebreaker:
         attempt.task = asyncio.current_task()
         return attempt
 
-    def check(self, batch, project, binding, ready, now):
-        self.sync(project, binding, ready, now)
+    def check(self, batch, character, binding, ready, now):
+        self.sync(character, binding, ready, now)
         attempt = self.attempts[batch.id]
         if attempt.cancelled:
             raise asyncio.CancelledError

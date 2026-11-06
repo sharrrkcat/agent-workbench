@@ -16,7 +16,7 @@ import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { qqResourcesApi, type QQResource, type QQResourcePage, type QQResourceQuery } from '../../api/qq';
 import { ApiError } from '../../api/http';
 import { API_BASE_URL, resolveAttachmentUrlFromBase } from '../../api/url';
-import { useProjectsStore } from '../../store/useProjectsStore';
+import { useCharactersStore } from '../../store/useCharactersStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { attachmentSize } from '../messages/ChatAttachments';
 import { Feedback, ResourceEmpty, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
@@ -44,13 +44,13 @@ function Favorite({ resource, disabled, onChange }: { resource: QQResource; disa
     onPressedChange={onChange}><Heart className={resource.is_favorite ? 'fill-current' : undefined} /></Toggle>;
 }
 
-export function QQResourcesPage({ projectId, search, onNavigate, onLeaveGuardChange }: {
-  projectId: string; search: string; onNavigate: SettingsNavigate; onLeaveGuardChange: (guard: LeaveGuard) => void;
+export function QQResourcesPage({ characterId, search, onNavigate, onLeaveGuardChange }: {
+  characterId: string; search: string; onNavigate: SettingsNavigate; onLeaveGuardChange: (guard: LeaveGuard) => void;
 }) {
   const { t, i18n } = useTranslation('personas');
   const { confirm, confirmation } = useConfirmDialog();
-  const project = useProjectsStore((state) => state.projects.find((p) => p.id === projectId));
-  const projectError = useCogitaStore((state) => state.error);
+  const character = useCharactersStore((state) => state.characters.find((p) => p.id === characterId));
+  const characterError = useCogitaStore((state) => state.error);
   const query = useMemo(() => readResourceQuery(search), [search]);
   const queryKey = JSON.stringify(query);
   const [data, setData] = useState<{ key: string; page: QQResourcePage }>();
@@ -87,7 +87,7 @@ export function QQResourcesPage({ projectId, search, onNavigate, onLeaveGuardCha
     return () => { live.current = false; requestId.current++; window.removeEventListener('beforeunload', unload); };
   }, []);
   useEffect(() => {
-    if (project?.kind !== 'qqbot') return;
+    if (character?.kind !== 'qqbot') return;
     const id = ++requestId.current;
     setLoading(true); setLoadError('');
     void qqResourcesApi.list(query).then((page) => {
@@ -95,13 +95,13 @@ export function QQResourcesPage({ projectId, search, onNavigate, onLeaveGuardCha
     }).catch((reason) => { if (id === requestId.current) setLoadError(errorText(reason)); })
       .finally(() => { if (id === requestId.current) setLoading(false); });
     return () => { requestId.current++; };
-  }, [project?.kind, query, queryKey, reload]);
+  }, [character?.kind, query, queryKey, reload]);
   const currentPage = data?.key === queryKey ? data.page : undefined;
   const lastPage = Math.max(1, Math.ceil((currentPage?.total ?? 0) / 30));
   useEffect(() => {
     if (currentPage && !loading && !selected && query.page > lastPage)
-      void onNavigate(resourceQueryUrl(projectId, { ...query, page: lastPage }));
-  }, [currentPage, loading, selected, query, lastPage, onNavigate, projectId]);
+      void onNavigate(resourceQueryUrl(characterId, { ...query, page: lastPage }));
+  }, [currentPage, loading, selected, query, lastPage, onNavigate, characterId]);
 
   async function mutate(work: () => Promise<void>) {
     if (status.current.busy) return;
@@ -154,14 +154,14 @@ export function QQResourcesPage({ projectId, search, onNavigate, onLeaveGuardCha
       }
     });
   }
-  const navigateQuery = (values: Partial<QQResourceQuery>) => onNavigate(resourceQueryUrl(projectId, { ...query, ...values }));
+  const navigateQuery = (values: Partial<QQResourceQuery>) => onNavigate(resourceQueryUrl(characterId, { ...query, ...values }));
   const metadata = (resource: QQResource) => `${resource.attachment.mime_type.split('/')[1].toUpperCase()} · ${attachmentSize(resource.attachment.size, i18n.language)}`;
   return <>
     <header className="settings-header"><SidebarTrigger /><div className="settings-heading min-w-0"><h1>{t('qq.resources.title')}</h1></div></header>
     <div className="settings-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
       <div className="qq-resources-content flex flex-col gap-4">
-        {!project ? <ResourceLoading error={projectError || undefined} retry={() => void useCogitaStore.getState().activateLocation(projectId)} /> :
-          project.kind !== 'qqbot' ? <ResourceEmpty>{t('qq.resources.qqOnly')}</ResourceEmpty> : <>
+        {!character ? <ResourceLoading error={characterError || undefined} retry={() => void useCogitaStore.getState().activateLocation(characterId)} /> :
+          character.kind !== 'qqbot' ? <ResourceEmpty>{t('qq.resources.qqOnly')}</ResourceEmpty> : <>
             {!selected ? <Feedback error={error || (currentPage ? loadError : '')} notice={notice} /> : null}
             <Tabs value={query.favorite} onValueChange={(value) => void navigateQuery({ favorite: value as QQResourceQuery['favorite'], page: 1 })}>
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -205,15 +205,15 @@ export function QQResourcesPage({ projectId, search, onNavigate, onLeaveGuardCha
                     </div>}
                   <Pagination>
                     <PaginationContent>
-                      <PaginationItem><PaginationPrevious href={resourceQueryUrl(projectId, { ...query, page: Math.max(1, query.page - 1) })}
+                      <PaginationItem><PaginationPrevious href={resourceQueryUrl(characterId, { ...query, page: Math.max(1, query.page - 1) })}
                         aria-disabled={busy || query.page <= 1} tabIndex={busy || query.page <= 1 ? -1 : 0}
                         onClick={(event) => { event.preventDefault(); if (!busy && query.page > 1) void navigateQuery({ page: query.page - 1 }); }} /></PaginationItem>
                       {resourcePages(query.page, lastPage).map((value, index) => <PaginationItem key={`${value}-${index}`}>
                         {value === 'ellipsis' ? <PaginationEllipsis /> : <PaginationLink isActive={value === query.page}
-                          href={resourceQueryUrl(projectId, { ...query, page: value })} aria-label={t('qq.resources.page', { page: value })}
+                          href={resourceQueryUrl(characterId, { ...query, page: value })} aria-label={t('qq.resources.page', { page: value })}
                           aria-disabled={busy} onClick={(event) => { event.preventDefault(); if (!busy) void navigateQuery({ page: value }); }}>{value}</PaginationLink>}
                       </PaginationItem>)}
-                      <PaginationItem><PaginationNext href={resourceQueryUrl(projectId, { ...query, page: Math.min(lastPage, query.page + 1) })}
+                      <PaginationItem><PaginationNext href={resourceQueryUrl(characterId, { ...query, page: Math.min(lastPage, query.page + 1) })}
                         aria-disabled={busy || query.page >= lastPage} tabIndex={busy || query.page >= lastPage ? -1 : 0}
                         onClick={(event) => { event.preventDefault(); if (!busy && query.page < lastPage) void navigateQuery({ page: query.page + 1 }); }} /></PaginationItem>
                     </PaginationContent>

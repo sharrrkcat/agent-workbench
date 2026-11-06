@@ -30,14 +30,13 @@ def add_chat_instructions(config, messages, trace):
         for source in trace.sources:
             source.message_index += 1
         trace.sources[:0] = [ContextSource(id="system:0", kind="system", message_index=0, role="system"),
-            ContextSource(id="agent_persona", kind="agent_persona", parent_id="system:0", message_index=0,
-                end=len(config.system_prompt), reference_id=config.persona_id, role="system")]
+            ContextSource(id="character", kind="character", parent_id="system:0", message_index=0,
+                end=len(config.system_prompt), reference_id=config.character_id, role="system")]
     else:
-        trace.exclusions.append(ContextExclusion(kind="agent_persona", reason="empty", reference_id=config.persona_id))
-    if config.project_id:
-        messages, _ = append_system_block(messages, trace, config.project_system_prompt.strip(), "project_prompt", config.project_id)
-    user_context = build_user_persona_context(persona_id=config.user_persona_id, content=config.user_persona_prompt)
-    messages, _ = append_system_block(messages, trace, user_context.rendered_text, "cogita_persona", config.user_persona_id)
+        trace.exclusions.append(ContextExclusion(kind="character", reason="empty", reference_id=config.character_id))
+    user_context = build_user_persona_context(persona_id=config.persona_id, content=config.persona_background)
+    if config.persona_id is not None:
+        messages, _ = append_system_block(messages, trace, user_context.rendered_text, "persona", config.persona_id)
     return messages, user_context.metadata
 
 
@@ -48,7 +47,8 @@ class ContextBuilder:
     def build(self, session_id: str, text: str, policy: ContextPolicy | None = None, *,
               current_message_id: str | None = None, history=()) -> ContextBuildResult:
         policy = policy or ContextPolicy()
-        current = self._current_text(text, current_message_id)
+        current_message = self.message_store.get_message(current_message_id) if current_message_id else None
+        current = persona_context_prefix(current_message) + self._current_text(text, current_message_id)
         current_refs = []
         if current_message_id and policy.include_attachments == "explicit":
             current_refs = _image_refs(self.message_store.get_message(current_message_id))
@@ -72,7 +72,6 @@ class ContextBuilder:
         for index, (message, item) in enumerate(pairs):
             _trace_message(trace, message, index, item, "history", policy.include_attachments == "explicit",
                            turn_id=self.message_store.context_turn_id(message))
-        current_message = self.message_store.get_message(current_message_id) if current_message_id else None
         current_item = {"role": "user", "content": current_content}
         if current_message is not None:
             _trace_message(trace, current_message, len(projected), current_item, "current_input",
@@ -143,9 +142,16 @@ def message_text(message: Any, *, include_attachments: bool = True, attachment_s
     return "\n\n".join(part for part in rendered if part)
 
 
+def persona_context_prefix(message: Any) -> str:
+    if message is not None and message.role == "user" and message.speaker_id:
+        return f"[Persona: {message.speaker_id}]\n"
+    return ""
+
+
 def _trace_message(trace, message, index, projected, kind, include_attachments, *, turn_id=None):
     source_id = "message:" + message.message_id
     trace.sources.append(ContextSource(id=source_id, kind=kind, message_index=index,
+        start=len(persona_context_prefix(message)),
         reference_id=message.message_id, role=projected["role"], turn_id=turn_id))
     attachments = (message.metadata or {}).get("attachments", [])
     if not include_attachments:
@@ -161,9 +167,11 @@ def _trace_message(trace, message, index, projected, kind, include_attachments, 
     if kind == "history":
         spans = []
         message_text(message, attachment_spans=spans)
+        prefix_length = len(persona_context_prefix(message))
         for item, start, end in spans:
             trace.sources.append(ContextSource(id=f"{source_id}:file:{item['id']}", kind="attachment",
-                parent_id=source_id, message_index=index, start=start, end=end, attachment=snapshot_attachment(item)))
+                parent_id=source_id, message_index=index, start=start + prefix_length, end=end + prefix_length,
+                attachment=snapshot_attachment(item)))
 
 
 def _project(message: Any, *, include_attachments: bool = True) -> ContextMessage | None:
@@ -172,6 +180,7 @@ def _project(message: Any, *, include_attachments: bool = True) -> ContextMessag
     text=message_text(message, include_attachments=include_attachments)
     images = _image_refs(message) if include_attachments else []
     if not text and not images and role!="system": return None
+    text = persona_context_prefix(message) + text
     # A selected/truncated history may omit a call's partner. Historical tool
     # parts are quoted user data; only the live harness transcript uses native
     # assistant/tool protocol pairs. This also supports ordinary chat models.

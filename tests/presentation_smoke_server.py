@@ -93,6 +93,7 @@ class PresentationOpenAI(ToolOpenAI):
         command = history[user_index]["content"]
         if isinstance(command, list):
             command = "".join(part["text"] for part in command if part["type"] == "text")
+        command = re.sub(r"^\[Persona: [^\]]+\]\n", "", command)
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
         if command.startswith("history-retrieval-fixture"):
@@ -207,6 +208,9 @@ def create_fixture_app(repository: Path, root: Path):
     install_runtime_fixture(app, root)
     install_qq_fixture(app)
     install_web_fixture(app)
+    from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
+    state.character_service.update(COGITA_CHARACTER_ID, {"model_profile_id": profile["id"],
+        "tools_allowed": [tool.name for tool in state.tool_registry.list() if tool.scope == "general"]})
 
     @app.post("/__test__/session")
     async def fixture_session(values: dict = Body(default={})):
@@ -217,20 +221,20 @@ def create_fixture_app(repository: Path, root: Path):
         state.app_settings.patch({"show_full_processing": bool(values.get("show_full_processing", False))})
         if values.get("web_tools"):
             state.web_tools.settings.patch(WebToolsSettingsPatch(api_key="browser-web-key"))
-        session = state.chat_service.create_session({"title": "Presentation fixture", "harness_enabled": True,
-                                                     "model_profile_id": profile["id"]})
+        session = state.chat_service.create_session(COGITA_CHARACTER_ID, {"title": "Presentation fixture", "overrides": {"harness_enabled": True,
+                                                     "model_profile_id": profile["id"]}})
         if values.get('history_retrieval'):
             state.model_profiles.update(profile['id'], {'context_window_tokens': 8192})
-            session = state.chat_service.update_session(session.session_id, {'tools_allowed': ['test_echo'],
+            session = state.chat_service.update_session(session.session_id, {'overrides': {'tools_allowed': ['test_echo'],
                 'context_policy': {'strategy': 'history_retrieval', 'retrieval': {
-                    'trigger_percent': 40, 'target_percent': 25, 'max_checkpoint_tokens': 512}}})
+                    'trigger_percent': 40, 'target_percent': 25, 'max_checkpoint_tokens': 512}}}})
         if values.get("loop_compaction"):
-            session = state.chat_service.update_session(session.session_id, {'tools_allowed': ['test_echo'],
+            session = state.chat_service.update_session(session.session_id, {'overrides': {'tools_allowed': ['test_echo'],
                 'context_policy': {'history_enabled': False, 'compaction': {
-                    'trigger_percent': 70, 'target_percent': 45, 'max_summary_tokens': 512}}})
+                    'trigger_percent': 70, 'target_percent': 45, 'max_summary_tokens': 512}}}})
         if values.get("compaction"):
-            session = state.chat_service.update_session(session.session_id, {'harness_enabled': False,
-                'context_policy': {'compaction': {'trigger_percent': 50, 'target_percent': 35, 'max_summary_tokens': 512}}})
+            session = state.chat_service.update_session(session.session_id, {'overrides': {'harness_enabled': False,
+                'context_policy': {'compaction': {'trigger_percent': 50, 'target_percent': 35, 'max_summary_tokens': 512}}}})
             for index in range(14):
                 marker = {'hold': 'HOLD_COMPACTION ', 'fail': 'HOLD_COMPACTION FAIL_COMPACTION '}.get(values.get('compaction'), '')
                 user = state.messages.add_message(session.session_id, 'user', marker + 'The budget is 42 EUR. Do not send email. ' + 'Background information. ' * 85)
@@ -240,7 +244,7 @@ def create_fixture_app(repository: Path, root: Path):
             user = state.messages.add_message(session.session_id, role="user", content="Inspect the conversion results")
             run = state.runs.create_run(kind="chat", persona_id=config.persona_id, session_id=session.session_id,
                                        metadata={"input_message_id": user.message_id, "configuration": config.public_summary()},
-                                       config_snapshot=config.model_dump())
+                                       config_snapshot=config.model_dump(), character_id=config.character_id)
             state.runs.update_status(run.run_id, RunStatus.RUNNING)
             draft = AssistantDraft(messages=state.messages, events=state.events, session_id=session.session_id, run_id=run.run_id,
                                    message_id="long-calls-" + run.run_id, config=config, parent_message_id=user.message_id, streamed=False)

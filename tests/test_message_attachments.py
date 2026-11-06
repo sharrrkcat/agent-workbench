@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 from tests.history_helpers import history_messages
 import json
 
@@ -21,7 +22,7 @@ def chat(tmp_path, monkeypatch, request):
     with TestClient(app) as client:
         configure_model(client)
         ok(client.patch("/api/settings/general", json={"auto_generate_session_titles": False}))
-        session = ok(client.post("/api/sessions", json={"harness_enabled": False}))
+        session = ok(create_chat(client, overrides={"harness_enabled": False}))
         attachments = [ok(client.post("/api/attachments", files={"file": file})) for file in [
             ("picture.png", image_bytes(), "image/png"),
             ("keep.txt", b"KEEP_FILE_CONTEXT", "text/plain"),
@@ -77,7 +78,7 @@ def test_invalid_attachment_edits_do_not_prune_or_change_the_message(chat):
 
 def test_attachment_only_edit_and_remove_all_preserve_shared_files(chat):
     client, _, path, user, attachments = chat
-    shared = ok(client.post("/api/sessions", json={"harness_enabled": False}))
+    shared = ok(create_chat(client, overrides={"harness_enabled": False}))
     other = ok(client.post(f"/api/sessions/{shared['session_id']}/messages", json={
         "content": "shared", "attachments": [attachments[0]],
     }))

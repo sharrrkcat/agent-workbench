@@ -82,12 +82,12 @@ def test_names_are_conversation_scoped_and_private_uses_nickname(qq_client):
 
 def test_settings_are_snapshotted_before_name_lookup(qq_client):
     client, state, upstream = qq_client
-    p, session, connection = configure_execution(client, state, system_prompt="Initial project prompt", reply_message_limit=2)
+    p, session, connection = configure_execution(client, state, system_prompt="Initial character prompt", reply_message_limit=2)
     original = connection.call
     async def lookup(action, params, *, timeout=20):
         if action.startswith("send_"):
             return await original(action, params, timeout=timeout)
-        state.project_service.update(p["id"], {"system_prompt": "Changed project prompt", "reply_message_limit": 1})
+        state.character_service.update(p["id"], {"system_prompt": "Changed character prompt", "reply_message_limit": 1})
         return {"user_id": params["user_id"], "nickname": "Bot"}
     connection.call = lookup
     ingest(client, state, p, {**event(1), "message": "bot[CQ:at,qq=12345]"}, 0)
@@ -97,9 +97,9 @@ def test_settings_are_snapshotted_before_name_lookup(qq_client):
     run = state.runs.get_run(state.qq.store.get(QQBatch, batch.id).run_id)
     assert run.status == "DONE" and run.metadata["qq_reply"]["sent_count"] == 2
     snapshot = state.runs.get_config_snapshot(run.run_id)
-    assert snapshot["project_system_prompt"] == "Initial project prompt" and snapshot["qq_reply_message_limit"] == 2
-    assert all("Initial project prompt" in call["messages"][0]["content"] for call in upstream.calls)
-    assert state.projects.get(p["id"]).reply_message_limit == 1
+    assert snapshot["system_prompt"] == "Initial character prompt" and snapshot["qq_reply_message_limit"] == 2
+    assert all("Initial character prompt" in call["messages"][0]["content"] for call in upstream.calls)
+    assert state.characters.get(p["id"]).reply_message_limit == 1
 
 
 def test_raw_text_and_unlocated_historical_mentions_are_not_guessed():
@@ -120,7 +120,7 @@ def test_query_sharing_cache_expiry_and_capacity(monkeypatch):
             await release.wait()
             return {"user_id": params["user_id"], "card": "Name"}
         names = QQNames({"p": SimpleNamespace(ready=True, call=lookup)})
-        binding = SimpleNamespace(project_id="p", session_id="s", target_kind="group", target_id="77")
+        binding = SimpleNamespace(character_id="p", session_id="s", target_kind="group", target_id="77")
         first = asyncio.create_task(names._name(binding, "1", "2"))
         second = asyncio.create_task(names._name(binding, "1", "2"))
         while not calls:
@@ -135,7 +135,7 @@ def test_query_sharing_cache_expiry_and_capacity(monkeypatch):
         for number in range(1025):
             names.observe(binding, str(number), "Observed")
         assert len(names.cache["p"]) == 1024 and ("s", "0") not in names.cache["p"]
-        names.retain_projects(set())
+        names.retain_characters(set())
         assert not names.cache
         await names.close()
     asyncio.run(scenario())
@@ -157,7 +157,7 @@ def test_lookup_timeout_concurrency_and_negative_cache(monkeypatch):
                 active -= 1
         connection = SimpleNamespace(ready=True, call=lookup, login_name="Self")
         names = QQNames({"p": connection})
-        binding = SimpleNamespace(project_id="p", session_id="s", target_kind="group", target_id="77")
+        binding = SimpleNamespace(character_id="p", session_id="s", target_kind="group", target_id="77")
         values, _, media, _ = normalize({**event(), "message": "".join(f"[CQ:at,qq={n}]" for n in range(1, 21))})
         row = await names.project(binding, "1", [dict(values)], for_model=True)
         await asyncio.gather(*list(names.inflight.values()))
@@ -193,8 +193,8 @@ def test_member_queries_do_not_block_ingress_or_receipt_deadlines(qq_client):
             await state.qq.ingest(p["id"], value, now=0 if value["message_id"] == 1 else 5)
             received.set()
         async with serve(server, "127.0.0.1", 0) as host:
-            project = state.projects.get(p["id"]).model_copy(update={"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
-            connection = OneBotConnection(project, receive)
+            character = state.characters.get(p["id"]).model_copy(update={"websocket_url": f"ws://127.0.0.1:{host.sockets[0].getsockname()[1]}"})
+            connection = OneBotConnection(character, receive)
             state.qq.connections[p["id"]] = connection
             task = asyncio.create_task(connection.run())
             try:

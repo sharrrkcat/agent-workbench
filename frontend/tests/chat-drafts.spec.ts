@@ -4,7 +4,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { answerConfirmation, openSidebar } from './controls';
 
 const words = (locale: string, namespace: string) => JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'));
-const sessions = async (request: APIRequestContext) => (await request.get('/api/sessions')).json();
+const sessions = async (request: APIRequestContext) => (await request.get('/api/characters/00000000-0000-4000-8000-000000000003/sessions')).json();
 const send = (page: Page, labels: Record<string, string>) => page.locator('.composer').getByRole('button', { name: labels.send, exact: true });
 
 for (const locale of ['en', 'zh-CN']) {
@@ -20,8 +20,8 @@ for (const locale of ['en', 'zh-CN']) {
       test('new entries share a draft, save settings locally and send attachments once', async ({ page, request }, info) => {
         const before = await sessions(request);
         let creates = 0;
-        page.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/sessions') creates++; });
-        await page.goto('/new');
+        page.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/characters/00000000-0000-4000-8000-000000000003/sessions') creates++; });
+        await page.goto('/characters/00000000-0000-4000-8000-000000000003/new');
         await expect(send(page, labels)).toBeDisabled();
         await page.locator('.composer textarea').fill('Draft attachment question');
         await page.locator('.composer input[type=file]').setInputFiles({ name: 'draft.txt', mimeType: 'text/plain', buffer: Buffer.from('Draft attachment') });
@@ -49,8 +49,8 @@ for (const locale of ['en', 'zh-CN']) {
         await dialog.getByRole('button', { name: labels.save, exact: true }).click();
         await openSidebar(page);
         const sidebar = page.locator('.session-sidebar');
-        const heading = sidebar.locator('[data-sidebar=group-label]').filter({ hasText: new RegExp(`^${labels.sessions}$`) }).locator('..');
-        const quick = heading.getByRole('button', { name: labels.newSession, exact: true });
+        const heading = sidebar.locator('[data-character-id="00000000-0000-4000-8000-000000000003"] .group\\/character-heading');
+        const quick = heading.getByRole('button', { name: labels.newCharacterSession.replace('{{name}}', 'Cogita'), exact: true });
         if (width === 1366) {
           await page.mouse.move(600, 400);
           await expect(quick).toHaveCSS('opacity', '0');
@@ -73,15 +73,16 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.locator('.attachment-chip')).toContainText('draft.txt');
         expect(creates).toBe(0);
         expect((await sessions(request)).length).toBe(before.length);
-        const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/sessions' && r.request().method() === 'POST');
+        const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/characters/00000000-0000-4000-8000-000000000003/sessions' && r.request().method() === 'POST');
         await send(page, labels).click();
         const session = await (await created).json();
-        await expect(page).toHaveURL(/\/$/);
+        await expect(page).toHaveURL(/\/characters\/[^/]+\?session=/);
         await expect(page.locator('.reply-answer')).toContainText('Browser final answer.');
         expect(creates).toBe(1);
-        expect(session.generation).toEqual({ temperature: 0 });
-        expect(session.context_policy).toEqual({ history_enabled: false, strategy: 'history_retrieval', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: 500 }, retrieval: { trigger_percent: 80, target_percent: 55, max_checkpoint_tokens: 256 } });
-        expect(session.harness_enabled).toBe(true);
+        expect(session.overrides.temperature).toBe(0);
+        expect(session.effective.generation.temperature).toBe(0);
+        expect(session.effective.context_policy).toEqual({ history_enabled: false, strategy: 'history_retrieval', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: 500 }, retrieval: { trigger_percent: 80, target_percent: 55, max_checkpoint_tokens: 256 } });
+        expect(session.effective.harness_enabled).toBe(true);
         await expect(page.locator('.chat-title')).toHaveText('Draft attachmen…');
         await expect(page.locator('.composer textarea')).toHaveValue('');
         await expect(page.locator('.attachment-chip')).toHaveCount(0);
@@ -93,24 +94,24 @@ for (const locale of ['en', 'zh-CN']) {
           await dialog.getByRole('switch', { name: labels.historyEnabled, exact: true }).setChecked(enabled);
           await dialog.getByRole('button', { name: labels.save, exact: true }).click();
           const current = await (await request.get(`/api/sessions/${session.session_id}`)).json();
-          expect(current.context_policy.history_enabled).toBe(enabled);
-          expect(current.context_policy.compaction.max_summary_tokens).toBe(500);
-          expect(current.context_policy.retrieval.max_checkpoint_tokens).toBe(256);
+          expect(current.effective.context_policy.history_enabled).toBe(enabled);
+          expect(current.effective.context_policy.compaction.max_summary_tokens).toBe(500);
+          expect(current.effective.context_policy.retrieval.max_checkpoint_tokens).toBe(256);
         }
       });
 
       test('failed first message preserves the new session, text and attachments for retry', async ({ page, request }) => {
         let attempts = 0, creates = 0;
-        page.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/sessions') creates++; });
+        page.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/characters/00000000-0000-4000-8000-000000000003/sessions') creates++; });
         await page.route('**/api/sessions/*/messages', async (route) => {
           if (route.request().method() !== 'POST' || attempts++ > 0) return route.continue();
           await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TEST_FAILURE', message: 'Try again' } }) });
         });
-        await page.goto('/new');
+        await page.goto('/characters/00000000-0000-4000-8000-000000000003/new');
         await page.locator('.composer textarea').fill('Retry with attachment');
         await page.locator('.composer input[type=file]').setInputFiles({ name: 'retry.txt', mimeType: 'text/plain', buffer: Buffer.from('retry') });
         await send(page, labels).click();
-        await expect(page).toHaveURL(/\/$/);
+        await expect(page).toHaveURL(/\/characters\/[^/]+\?session=/);
         await expect(send(page, labels)).toBeEnabled();
         await expect(page.locator('.composer textarea')).toHaveValue('Retry with attachment');
         await expect(page.locator('.attachment-chip')).toContainText('retry.txt');

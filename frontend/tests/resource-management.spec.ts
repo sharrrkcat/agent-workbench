@@ -169,10 +169,10 @@ for (const locale of ['en', 'zh-CN']) for (const viewport of [{ width: 1366, hei
       await page.getByRole('button', { name: l.search, exact: true }).click();
       await expect(page.locator('.knowledge-result')).toHaveCount(3);
       await noOverflow(page); await page.screenshot({ path: info.outputPath('knowledge-search.png') });
-      const session = await (await request.post('/api/sessions', { data: {} })).json();
-      expect((await request.patch(`/api/sessions/${session.session_id}/knowledge-bases`, { data: { knowledge_base_ids: [base.id] } })).ok()).toBeTruthy();
-      const bindings = await (await request.get(`/api/sessions/${session.session_id}/knowledge-bases`)).json();
-      expect(bindings.effective_knowledge_base_ids).toContain(base.id);
+      const session = await (await request.post('/api/characters/00000000-0000-4000-8000-000000000003/sessions', { data: {} })).json();
+      expect((await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {knowledge_base_ids: [base.id]}} })).ok()).toBeTruthy();
+      const bindings = await (await request.get(`/api/sessions/${session.session_id}`)).json();
+      expect(bindings.effective.knowledge_base_ids).toContain(base.id);
       await page.getByRole('tab', { name: locale === 'en' ? 'Sources' : '来源', exact: true }).click();
       const row = page.locator('.knowledge-sources-table tbody tr').filter({ hasText: 'first.txt' });
       await row.getByRole('button', { name: locale === 'en' ? 'Delete' : '删除', exact: true }).click();
@@ -236,51 +236,50 @@ test('advanced settings retain nullable fields and invalid drafts block departur
   await request.patch('/api/knowledge/settings', { data: { reranker_enabled: false, min_score_threshold: null, default_min_score: null } });
 });
 
-test('Knowledge bindings enter chat while roleplay Worldbooks remain inactive', async ({ page, request }) => {
+test('Character and Session mounts replace whole lists and stay outside chat context', async ({ page, request }) => {
   const book = await (await request.post('/api/worldbooks', { data: { name: 'Binding worldbook' } })).json();
   await request.post(`/api/worldbooks/${book.id}/entries`, { data: { name: 'Alpha', keywords_text: 'alpha', content: 'Worldbook alpha context' } });
   const bases = [];
-  for (const name of ['Binding facts', 'Session extra facts']) {
+  for (const name of ['Character facts', 'Session facts']) {
     const base = await (await request.post('/api/knowledge/bases', { data: { name, embedding_model_profile_id: await modelId(request) } })).json();
     await request.post(`/api/knowledge/bases/${base.id}/sources`, { data: { title: name, text: name + ' alpha context' } });
     bases.push(base);
   }
-  await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
-  const character = await (await request.post('/api/personas', { data: { collection: 'character', name: 'Worldbook character' } })).json();
-  await request.patch(`/api/personas/${character.id}/worldbooks`, { data: { worldbook_ids: [book.id] } });
-  await page.goto('/settings?tab=personas&view=agent');
-  await page.getByRole('button', { name: 'Add persona', exact: true }).click();
-  let dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Name', { exact: true }).fill('Resource binding persona');
-  await dialog.getByRole('tab', { name: 'Knowledge', exact: true }).click();
-  await dialog.getByRole('checkbox', { name: 'Binding facts', exact: true }).check();
-  await expect(dialog.getByRole('tab', { name: 'Worldbook', exact: true })).toHaveCount(0);
-  const created = page.waitForResponse((response) => response.url().endsWith('/api/personas') && response.request().method() === 'POST');
-  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
-  const persona = await (await created).json();
-  await expect(dialog).toHaveCount(0);
-  const session = await (await request.post('/api/sessions', { data: { title: 'Resource binding workflow', persona_id: persona.id } })).json();
-  await page.goto('/');
-  await page.locator('.session-select').filter({ hasText: 'Resource binding workflow' }).click();
-  await page.getByRole('button', { name: 'Session settings', exact: true }).click();
-  dialog = page.getByRole('dialog');
-  await dialog.getByRole('tab', { name: 'Knowledge', exact: true }).click();
-  await expect(dialog.getByRole('checkbox', { name: 'Binding facts', exact: true })).toBeChecked();
-  await expect(dialog.getByRole('checkbox', { name: 'Binding facts', exact: true })).toBeDisabled();
-  await dialog.getByRole('checkbox', { name: 'Session extra facts', exact: true }).check();
-  await expect(dialog.getByRole('tab', { name: 'Worldbook', exact: true })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  const bindings = await (await request.get(`/api/sessions/${session.session_id}/knowledge-bases`)).json();
-  expect(bindings.knowledge_base_ids).toEqual([bases[1].id]);
-  expect(bindings.effective_knowledge_base_ids).toEqual(bases.map((base) => base.id));
-  await page.locator('.composer textarea').fill('alpha');
-  const sent = page.waitForResponse((response) => response.url().endsWith('/messages') && response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  const result = await (await sent).json();
-  const steps = await (await request.get(`/api/runs/${result.run.run_id}/steps`)).json();
-  const context = steps.find((step: { kind: string }) => step.kind === 'context').metadata;
-  expect(context.knowledge.injected).toBe(true); expect(context.knowledge.knowledge_base_ids).toEqual(bases.map((base) => base.id));
-  expect(context.worldbook).toBeUndefined();
-  await request.delete(`/api/personas/${character.id}`);
+  const character = await (await request.post('/api/characters', { data: { kind: 'normal', name: 'Resource Character',
+    knowledge_base_ids: [bases[0].id], worldbook_ids: [book.id] } })).json();
+  try {
+    const session = await (await request.post(`/api/characters/${character.id}/sessions`, { data: { title: 'Resource mounts' } })).json();
+    await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
+    await page.goto(`/characters/${character.id}?session=${session.session_id}`);
+    await page.getByRole('button', { name: 'Session settings', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Resources', exact: true }).click();
+    await expect(dialog.getByRole('checkbox', { name: bases[0].name, exact: true })).toBeChecked();
+    await expect(dialog.getByRole('checkbox', { name: book.name, exact: true })).toBeChecked();
+    await dialog.getByRole('checkbox', { name: bases[0].name, exact: true }).uncheck();
+    await dialog.getByRole('checkbox', { name: bases[1].name, exact: true }).check();
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    const bindings = await (await request.get(`/api/sessions/${session.session_id}`)).json();
+    expect(bindings.overrides.knowledge_base_ids).toEqual([bases[1].id]);
+    expect(bindings.effective.knowledge_base_ids).toEqual([bases[1].id]);
+    expect(bindings.effective.worldbook_ids).toEqual([book.id]);
+    await page.locator('.composer textarea').fill('alpha');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(page.locator('.reply-answer')).toHaveText('Browser final answer.');
+    const runId = await page.locator('article[data-run-id]').getAttribute('data-run-id');
+    const run = await (await request.get(`/api/runs/${runId}`)).json();
+    expect(run.steps.some((step: { kind: string }) => step.kind === 'knowledge' || step.kind === 'worldbook')).toBe(false);
+    await page.getByRole('button', { name: 'Context detail', exact: true }).click();
+    const detail = page.getByRole('dialog', { name: 'Context detail', exact: true });
+    await detail.getByRole('tab', { name: 'Request data', exact: true }).click();
+    const sent = await detail.locator('.context-request').innerText();
+    expect(sent).not.toContain('alpha context');
+    expect(sent).not.toContain('Character facts');
+    expect(sent).not.toContain('Session facts');
+  } finally {
+    await request.delete(`/api/characters/${character.id}`);
+    for (const base of bases) await request.delete(`/api/knowledge/bases/${base.id}`);
+    await request.delete(`/api/worldbooks/${book.id}`);
+  }
 });

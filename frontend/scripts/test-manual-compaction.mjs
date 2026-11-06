@@ -6,7 +6,7 @@ const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
 const { compactCommand, compactUnavailable } = (await load('../src/store/cogita/compactCommand.ts')).exports;
-const session = { session_id: 'one', kind: 'ordinary', project_id: null, title: 'one',
+const session = { session_id: 'one', kind: 'normal', character_id: null, title: 'one',
   effective: { model_profile_id: 'model', context_policy: { strategy: 'token_budget', history_enabled: true } },
   updated_at: '2026-11-01T00:00:00Z' };
 const message = { message_id: 'user', session_id: 'one', role: 'user', parts: [], created_at: '2026-11-01T00:00:01Z' };

@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat, create_chat_async
 import asyncio
 import json
 import time
@@ -15,7 +16,8 @@ from ai_workbench.core import chat_runner
 from ai_workbench.core.harness import agent_loop
 from ai_workbench.core.harness.schema import ToolSpec
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.schema.persona import COGITA_PERSONA_ID
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
+from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
@@ -35,8 +37,8 @@ def harness_client(tmp_path, request):
 
 def configure(client, *, tools=None, enabled=True, streaming=True, model=True):
     profile = configure_model(client, request_options={"streaming": streaming}) if model else None
-    persona = ok(client.post("/api/personas", json={'collection': 'agent', 'name': 'Original persona', 'system_prompt': 'PRIVATE_TOOL_PROMPT'}))
-    session = ok(client.post("/api/sessions", json={'persona_id': persona['id'], 'harness_enabled': enabled, 'tools_allowed': tools if tools is not None else ['test_echo', 'test_other'], 'generation': {'temperature': 0.25}}))
+    persona = ok(client.post("/api/characters", json={'kind': 'normal', 'name': 'Original character', 'system_prompt': 'PRIVATE_TOOL_PROMPT'}))
+    session = ok(create_chat(client, character_id=persona['id'], overrides={ 'harness_enabled': enabled, 'tools_allowed': tools if tools is not None else ['test_echo', 'test_other'], 'temperature': 0.25}))
     return session, persona, profile
 
 
@@ -110,7 +112,7 @@ def test_provider_tool_support_is_not_prechecked_and_empty_allowlist(harness_cli
     session, _, _ = configure(client)
     response = send(client, session)
     assert response["success"] and upstream.calls[0]["tools"]
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"tools_allowed": []}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"tools_allowed": []}}))
     assert send(client, session)["success"]
     assert "tools" not in upstream.calls[-1]
 
@@ -141,8 +143,8 @@ def test_approval_retains_queue_snapshot_and_original_input(harness_client):
     assert "PRIVATE_TOOL_PROMPT" not in json.dumps(response)
     assert client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "approve"}).json()["error"]["code"] == "RUN_WAITING_FOR_APPROVAL"
     assert client.post("/api/tools/test_echo/call", json={"session_id": session["session_id"], "arguments": {"value": "x"}}).status_code == 409
-    ok(client.patch(f"/api/personas/{persona['id']}", json={"name": "Changed", "system_prompt": "CHANGED_PROMPT"}))
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"persona_id": COGITA_PERSONA_ID, "tools_allowed": [], "generation": {"temperature": 0.9}}))
+    ok(client.patch(f"/api/characters/{persona['id']}", json={"name": "Changed", "system_prompt": "CHANGED_PROMPT"}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"persona_id": USER_PERSONA_ID, "tools_allowed": [], 'temperature': 0.9}}))
     approved = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
     assert approved["run"]["status"] == "WAITING_FOR_USER"
     assert [p["tool_call_id"] for p in results(approved)] == ["first", "middle"]
@@ -169,17 +171,17 @@ def test_restart_preserves_only_pending_approval(tmp_path):
     register_approval_tool(app.state.runtime_state.tool_registry)
     with TestClient(app) as client:
         session, _, _ = configure(client, tools=["test_approval"])
-        ok(client.patch(f"/api/sessions/{session['session_id']}", json={"reasoning": False}))
+        ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"reasoning": False}}))
         response = send(client, session)
-        ok(client.patch(f"/api/sessions/{session['session_id']}", json={"reasoning": True}))
+        ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"reasoning": True}}))
         run_id = response["run"]["run_id"]
         first_statistics = next(step["metadata"]["llm"] for step in response["run"]["steps"] if step["kind"] == "model")
         assert first_statistics["usage"]["total_tokens"] == 15
         first_step = next(step for step in response["run"]["steps"] if step["kind"] == "model")
         first_context = ok(client.get(f"/api/runs/{run_id}/steps/{first_step['step_id']}/context"))
         state = app.state.runtime_state
-        orphan_session = state.sessions.create_session()
-        orphan = state.runs.create_run(kind="tool", persona_id=COGITA_PERSONA_ID, session_id=orphan_session.session_id)
+        orphan_session = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001")
+        orphan = state.runs.create_run(kind="tool", persona_id=COGITA_CHARACTER_ID, session_id=orphan_session.session_id, character_id="00000000-0000-4000-8000-000000000001")
         state.runs.update_status(orphan.run_id, RunStatus.RUNNING)
     restarted = create_app(**kwargs)
     register_approval_tool(restarted.state.runtime_state.tool_registry)
@@ -200,7 +202,7 @@ def test_restart_preserves_only_pending_approval(tmp_path):
                      for step in response["run"]["steps"] if step["kind"] == "model"]
         assert snapshots[0] == first_context
         assert snapshots[1]["request"] == upstream.calls[1]
-        assert any(source["kind"] == "agent_persona" and source["text"] == "PRIVATE_TOOL_PROMPT" for source in snapshots[1]["sources"])
+        assert any(source["kind"] == "character" and source["text"] == "PRIVATE_TOOL_PROMPT" for source in snapshots[1]["sources"])
 
 
 def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_client):
@@ -310,8 +312,8 @@ def test_cancel_registered_execution_and_claim_approval_once(tmp_path, entry):
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'provider', 'connection': {'base_url': 'http://provider.test/v1'}}))
             profile = ok(await client.post("/api/models/profiles", json={"name": "model", "alias": "model", "kind": "llm", "model_ref": "fake", "context_window_tokens": 32768, "request_options": {"streaming": False}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
-            persona = ok(await client.post("/api/personas", json={'collection': 'agent', 'name': 'persona'}))
-            session = ok(await client.post("/api/sessions", json={'persona_id': persona['id'], 'model_profile_id': profile['id'], 'harness_enabled': True, 'tools_allowed': ['blocking']}))
+            persona = ok(await client.post("/api/personas", json={'name': 'persona'}))
+            session = ok(await create_chat_async(client, overrides={'persona_id': persona['id'], 'model_profile_id': profile['id'], 'harness_enabled': True, 'tools_allowed': ['blocking']}))
             if entry == "chat":
                 task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "run"}))
             elif entry == "direct":
@@ -391,7 +393,7 @@ def test_strict_rest_json(harness_client):
     duplicate = '{"session_id":' + json.dumps(session["session_id"]) + ',"arguments":{"value":"a","value":"b"}}'
     response = client.post("/api/tools/test_echo/call", content=duplicate, headers={"Content-Type": "application/json"})
     assert response.status_code == 422 and response.json()["error"]["code"] == "INVALID_TOOL_JSON"
-    assert client.post("/api/sessions", json={"tools_allowed": ["not_registered"]}).json()["error"]["code"] == "TOOL_NOT_FOUND"
+    assert create_chat(client, overrides={"tools_allowed": ["not_registered"]}).json()["error"]["code"] == "TOOL_NOT_FOUND"
 
 
 def test_waiting_time_is_excluded_and_approval_rounds_remain_bounded(harness_client, monkeypatch):
@@ -456,7 +458,7 @@ def test_harness_stream_is_visible_before_completion_and_cancels_model(tmp_path)
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             provider = ok(await client.post("/api/models/providers", json={'name': 'p', 'connection': {'base_url': 'http://provider.test/v1'}}))
             profile = ok(await client.post("/api/models/profiles", json={"name": "m", "alias": "model", "kind": "llm", "model_ref": "fake", "context_window_tokens": 32768, "request_options": {"streaming": True}, 'source': {'type': 'provider', 'provider_profile_id': provider["id"]}}))
-            session = ok(await client.post("/api/sessions", json={"model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["test_echo"]}))
+            session = ok(await create_chat_async(client, overrides={"model_profile_id": profile["id"], "harness_enabled": True, "tools_allowed": ["test_echo"]}))
             task = asyncio.create_task(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "go"}))
             try:
                 await asyncio.wait_for(entered.wait(), 3)

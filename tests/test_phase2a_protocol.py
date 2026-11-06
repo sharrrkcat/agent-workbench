@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 import asyncio
 import base64
 import json
@@ -40,12 +41,12 @@ def test_internal_chat_and_external_nonstream_share_transport_and_parameters(app
     profile = configure_model(client, parameters={"temperature": 0.4, "top_p": 0.8, "max_tokens": 123})
     headers = enable_external(client)
     assert [model["owned_by"] for model in client.get("/v1/models", headers=headers).json()["data"]] == ["cogita"]
-    session = client.post("/api/sessions", json={}).json()
+    session = create_chat(client, overrides={}).json()
     result = client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "hello"})
     assert result.json()["success"] is True, result.text
     assert upstream.calls[-1]["temperature"] == 0.4
     assert upstream.calls[-1]["max_tokens"] == 123
-    before = client.get("/api/sessions").json()
+    before = client.get("/api/characters/00000000-0000-4000-8000-000000000003/sessions").json()
     message_count = len(client.app.state.runtime_state.messages.list_all_messages())
     response = client.post("/v1/chat/completions", headers=headers, json={
         "model": "local", "messages": [{"role": "user", "content": "external"}], "temperature": 0.1,
@@ -55,7 +56,7 @@ def test_internal_chat_and_external_nonstream_share_transport_and_parameters(app
     assert response.json()["choices"][0]["message"]["content"] == "reply"
     assert upstream.calls[-1]["model"] == upstream.calls[-2]["model"] == "fake"
     assert upstream.calls[-1]["temperature"] == 0.1
-    assert client.get("/api/sessions").json() == before
+    assert client.get("/api/characters/00000000-0000-4000-8000-000000000003/sessions").json() == before
     assert len(client.app.state.runtime_state.messages.list_all_messages()) == message_count
     assert len(client.app.state.runtime_state.model_manager._slots) == 1
     assert client.get(f"/api/models/profiles/{profile['id']}/status").json()["residency"] == "unknown"
@@ -192,7 +193,7 @@ def test_actual_chunked_body_limit_does_not_trust_content_length():
 def test_current_images_reach_provider_and_stream_events_have_stable_identity(app_client):
     client, upstream = app_client
     profile = configure_model(client, request_options={"streaming": True})
-    session = client.post("/api/sessions", json={"model_profile_id": profile["id"]}).json()
+    session = create_chat(client, overrides={"model_profile_id": profile["id"]}).json()
     image = {"id": "image1", "name": "one.png", "type": "image", "mime_type": "image/png",
              "size": 68,
              "data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII="}
@@ -213,4 +214,4 @@ def test_current_images_reach_provider_and_stream_events_have_stable_identity(ap
     history_images = [m for m in upstream.calls[-1]["messages"] if isinstance(m["content"], list)]
     assert len(history_images) == 1
     assert history_images[0]["content"][1] == upstream.calls[-2]["messages"][-1]["content"][1]
-    assert upstream.calls[-1]["messages"][-1]["content"] == "again"
+    assert upstream.calls[-1]["messages"][-1]["content"] == "[Persona: 00000000-0000-4000-8000-000000000004]\nagain"

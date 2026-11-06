@@ -14,13 +14,13 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await json(request.post('/__test__/session', { data: { web_tools: true } }));
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
-        const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'QQ web research',
+        const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'QQ web research',
           model_profile_id: model.id, bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3001',
           keywords: ['bot'], reply_message_limit: 1, context_policy: {} } }));
         try {
-          const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
+          const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
           expect(session.effective.tools_allowed).toEqual(['qq_send_message', 'qq_skip_reply', 'web_fetch', 'web_search']);
-          await page.goto(`/projects/${project.id}?session=${session.session_id}`);
+          await page.goto(`/characters/${character.id}?session=${session.session_id}`);
           const fixture = await json(request.post(`/__test__/qq/${session.session_id}/reply/${mode}`));
           const reply = page.locator(`article[data-run-id="${fixture.run_id}"]`);
           const expected = mode === 'web-failure' ? 'Search unavailable; here is a reply.' : 'Here are the current facts from the web.';
@@ -53,7 +53,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           await expect(reply.locator('[data-web-citation], [data-web-sources]')).toHaveCount(0);
           expect(errors).toEqual([]);
         } finally {
-          await request.delete(`/api/projects/${project.id}`);
+          await request.delete(`/api/characters/${character.id}`);
         }
       });
     }

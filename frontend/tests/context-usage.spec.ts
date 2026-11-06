@@ -56,10 +56,10 @@ for (const locale of ['en', 'zh-CN']) {
         const id = await replies.last().getAttribute('data-run-id');
         expect((await request.delete(`/api/runs/${id}`)).ok()).toBeTruthy();
         await expect(meter).toHaveAttribute('aria-label', /8,136 \/ 32,768/);
-        expect((await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: { context_window_tokens: 16384 } })).ok()).toBeTruthy();
+        expect((await request.patch(`/api/models/profiles/${session.effective.model_profile_id}`, { data: { context_window_tokens: 16384 } })).ok()).toBeTruthy();
         await page.reload();
         await expect(meter).toHaveAttribute('aria-label', new RegExp(zh ? '尚无匹配配置的调用' : 'No calls'));
-        await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: { context_window_tokens: 32768 } });
+        await request.patch(`/api/models/profiles/${session.effective.model_profile_id}`, { data: { context_window_tokens: 32768 } });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
       });
     });

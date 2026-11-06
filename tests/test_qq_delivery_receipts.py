@@ -9,7 +9,7 @@ import pytest
 from ai_workbench.core import qq_protocol
 from ai_workbench.core.harness import agent_loop
 from ai_workbench.core.harness.schema import ToolExecutionError
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.qq_protocol import OneBotConnection
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBinding, QQDelivery, QQMessage
@@ -224,7 +224,7 @@ def test_self_echo_order_scope_and_bound_do_not_duplicate_confirmation(qq_client
     assert len(stored_qq_rows(state.qq.store, QQDelivery, session["session_id"])) == 1
     assert len(stored_qq_rows(state.qq.store, QQMessage, session["session_id"])) == 1
     assert stored_qq_rows(state.qq.store, QQMessage, other["session_id"]) == []
-    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert sum(m["role"] == "assistant" for m in context.messages) == 1
     assert state.qq.send_echoes == {}
 

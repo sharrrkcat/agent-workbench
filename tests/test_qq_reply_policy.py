@@ -9,7 +9,7 @@ import pytest
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery
-from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
+from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, character
 from tests.tool_fixtures import completion, ok, tool_call
 
 
@@ -23,23 +23,23 @@ def execute_batch(client, state, p, session, number=1, *, private=False, text="b
 
 def test_reply_limit_configuration_and_http_contract(qq_client):
     client, state, _ = qq_client
-    p = project(client)
+    p = character(client)
     assert p["reply_message_limit"] == 4
     for limit in (1, 20):
-        p = ok(client.patch(f"/api/projects/{p['id']}", json={"reply_message_limit": limit}))
+        p = ok(client.patch(f"/api/characters/{p['id']}", json={"reply_message_limit": limit}))
         assert p["reply_message_limit"] == limit
-    ok(client.patch(f"/api/projects/{p['id']}", json={"name": "Renamed"}))
-    assert ok(client.get(f"/api/projects/{p['id']}"))["reply_message_limit"] == 20
-    assert ok(client.get("/api/projects"))[0]["reply_message_limit"] == 20
+    ok(client.patch(f"/api/characters/{p['id']}", json={"name": "Renamed"}))
+    assert ok(client.get(f"/api/characters/{p['id']}"))["reply_message_limit"] == 20
+    assert ok(client.get("/api/characters"))[0]["reply_message_limit"] == 20
     session = child(client, p)
     assert session["effective"]["qq_reply_message_limit"] == 20
     for value in (None, True, False, 0, 21, 1.5, "4"):
-        assert client.patch(f"/api/projects/{p['id']}", json={"reply_message_limit": value}).status_code == 422
-        assert client.post("/api/projects", json={"kind": "qqbot", "name": "Invalid limit", "context_policy": {},
+        assert client.patch(f"/api/characters/{p['id']}", json={"reply_message_limit": value}).status_code == 422
+        assert client.post("/api/characters", json={"kind": "qqbot", "name": "Invalid limit", "context_policy": {},
             "bot_account": "98765", "websocket_url": "ws://localhost:3001", "reply_message_limit": value}).status_code == 422
-    assert state.projects.get(p["id"]).reply_message_limit == 20
+    assert state.characters.get(p["id"]).reply_message_limit == 20
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
-    limit_schema = schemas["QQBotProjectResponse"]["properties"]["reply_message_limit"]
+    limit_schema = schemas["QQBotCharacterResponse"]["properties"]["reply_message_limit"]
     assert (limit_schema["type"], limit_schema["minimum"], limit_schema["maximum"], limit_schema["default"]) == ("integer", 1, 20, 4)
     assert "QQBatchResponse" not in schemas and "QQHistoryPage" in schemas
 
@@ -123,7 +123,7 @@ def test_running_limit_is_snapshotted_and_progress_retains_confirmed_count(qq_cl
     async def change_limit(action, params, *, timeout=20):
         run_id = state.qq.store.active_batch(session["session_id"]).run_id
         if not connection.calls:
-            state.project_service.update(p["id"], {"reply_message_limit": 1})
+            state.character_service.update(p["id"], {"reply_message_limit": 1})
         else:
             assert state.runs.get_run(run_id).metadata["qq_reply"] == {"sent_count": 1, "message_limit": 2, "limit_reached": False, "skipped": False}
             assert state.runs.get_harness_state(run_id)["qq_sent_count"] == 1

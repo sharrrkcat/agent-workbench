@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 from tests.history_helpers import history_messages
 """Contract gates and wire-format cases beyond the domain regression suites."""
 
@@ -107,7 +108,7 @@ def test_hidden_routes_and_documented_only_response_models_fail_gate(api):
     assert any("Route coverage differs" in error for error in check_document(document, http_operations(app)))
     assert any("/api/unchecked-response" in error for error in check_route_contracts(app, document))
     del document["paths"]["/v1/embeddings"]["post"]["requestBody"]
-    del document["paths"]["/api/sessions"]["get"]["responses"]["200"]["content"]
+    del document["paths"]["/api/characters/{character_id}/sessions"]["get"]["responses"]["200"]["content"]
     errors = check_route_contracts(app, document)
     assert any("request body is undocumented" in error for error in errors)
     assert any("JSON success schema is missing" in error for error in errors)
@@ -182,9 +183,9 @@ def test_external_response_validation_failure_is_sanitized_and_logged(api, monke
 
 def test_message_parts_preserve_omitted_fields_json_values_and_microseconds(api):
     client, _ = api
-    session = client.post("/api/sessions", json={}).json()
+    session = create_chat(client, overrides={}).json()
     session_id = session["session_id"]
-    assert session["generation"] == {}
+    assert all(value is None for value in session["effective"]["generation"].values())
     assert "temperature" in session["effective"]["generation"]
     state = client.app.state.runtime_state
     contents = [
@@ -222,13 +223,13 @@ def test_chat_event_variants_and_private_state(api):
     client, upstream = api
     configure_model(client, request_options={"streaming": True})
     client.patch("/api/settings/general", json={"persist_streaming_message_deltas": True})
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    session_id = create_chat(client, overrides={}).json()["session_id"]
     reply = client.post(f"/api/sessions/{session_id}/messages", json={"content": "Hello"}).json()
     run = reply["run"]
     assert run["status"] == "DONE"
     assert "config_snapshot_json" not in run and "harness_state_json" not in run
     state = client.app.state.runtime_state
-    assert state.runs.get_config_snapshot(run["run_id"])["system_prompt"]
+    assert state.runs.get_config_snapshot(run["run_id"])["character_id"] == reply["session"]["character_id"]
     events = client.get(f"/api/runs/{run['run_id']}/events").json()["items"]
     assert {"run_started", "message_started", "message_delta", "message_completed", "run_completed"} <= {event["type"] for event in events}
     assert all("config_snapshot_json" not in event["payload"].get("run", {}) for event in events)
@@ -334,7 +335,7 @@ def test_management_reads_updates_and_deletions_keep_response_shapes(api):
     client, _ = api
     for path in ("/api/health", "/api/data/storage-stats", "/api/models/inventory",
                  "/api/models/local-runtime/settings", "/api/models/local-runtime", "/api/models/local-runtime/catalog",
-                 "/api/sessions", "/api/tools", "/api/personas"):
+                 "/api/characters", "/api/tools", "/api/personas"):
         assert client.get(path).status_code == 200
     assert client.patch("/api/models/local-runtime/settings", json={"download": {"http_proxy": ""}}).json()["download"]["http_proxy"] is None
     assert client.get("/api/tools/settings").status_code == 404
@@ -342,18 +343,15 @@ def test_management_reads_updates_and_deletions_keep_response_shapes(api):
     assert client.post("/api/data/attachments/scan-orphans").json()["orphans"] == []
     assert client.post("/api/data/attachments/cleanup-orphans", json={"confirm": True}).json()["errors"] == []
 
-    persona = client.post("/api/personas", json={'collection': 'agent', 'name': 'Fixture persona'}).json()
+    persona = client.post("/api/personas", json={'name': 'Fixture persona'}).json()
     persona_path = f"/api/personas/{persona['id']}"
     assert client.get(persona_path).json()["name"] == "Fixture persona"
-    assert client.patch(persona_path, json={"system_prompt": ""}).json()["system_prompt"] == ""
-    for resource, field in (("knowledge-bases", "knowledge_base_ids"),):
-        assert client.get(persona_path + "/" + resource).json()[field] == []
-        assert client.patch(persona_path + "/" + resource, json={field: []}).json()[field] == []
-    session = client.post("/api/sessions", json={}).json()
+    assert client.patch(persona_path, json={"background": ""}).json()["background"] == ""
+    session = create_chat(client, overrides={}).json()
     session_path = f"/api/sessions/{session['session_id']}"
     assert client.get(session_path).status_code == 200
     assert client.get(session_path + "/personas").status_code == 404
-    assert client.patch(session_path, json={"persona_id": persona["id"]}).json()["persona_id"] == persona["id"]
+    assert client.patch(session_path, json={'overrides': {"persona_id": persona["id"]}}).json()["effective"]["persona_id"] == persona["id"]
     assert client.delete(session_path).json()["deleted"]
     assert client.delete(persona_path).json()["deleted"]
 

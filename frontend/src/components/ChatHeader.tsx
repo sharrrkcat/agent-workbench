@@ -48,14 +48,14 @@ export function ChatHeader({ onOpenSettings }: { onOpenSettings: (route: Setting
         </TooltipTrigger>
         <TooltipContent>{t('sessionSettings')}</TooltipContent>
       </Tooltip>
-      {editing && target ? (
+      {editing && target?.kind === 'normal' ? (
         <SessionSettingsDialog
           key={session?.session_id ?? 'draft'}
           session={target}
           onClose={() => setEditing(false)}
           onManagePersonas={() => {
             setEditing(false);
-            onOpenSettings({ section: 'personas', view: 'agent' });
+            onOpenSettings({ section: 'personas' });
           }}
         />
       ) : null}

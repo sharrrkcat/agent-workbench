@@ -103,8 +103,8 @@ class QQMediaService:
                 self.tasks.pop(key).result()
         slots = MEDIA_CONCURRENCY - len(self.tasks)
         if slots:
-            for media, project_id in self.store.pending_media(exclude=list(self.tasks), limit=slots):
-                self.tasks[media.id] = asyncio.create_task(self.acquire(media, project_id))
+            for media, character_id in self.store.pending_media(exclude=list(self.tasks), limit=slots):
+                self.tasks[media.id] = asyncio.create_task(self.acquire(media, character_id))
 
     async def close(self):
         for task in self.tasks.values():
@@ -126,7 +126,7 @@ class QQMediaService:
             # Late images remain visible; history uses text placeholders.
             return
 
-    async def download(self, media, project_id, settings):
+    async def download(self, media, character_id, settings):
         max_bytes = settings.max_image_size_mb * 1024 * 1024
         policy = replace(self.state.network_policy, max_response_bytes=max_bytes)
         url = media_url(media)
@@ -137,7 +137,7 @@ class QQMediaService:
                 return data
             except ToolExecutionError as exc:
                 failure = exc
-        connection = self.connections.get(project_id)
+        connection = self.connections.get(character_id)
         if media.kind != "face" and media.source.file and connection is not None and connection.ready:
             response = await connection.call("get_image", {"file": media.source.file})
             resolved = response.get("url")
@@ -151,16 +151,16 @@ class QQMediaService:
     def cleanup(self, attachment_ids):
         for attachment_id in set(attachment_ids) | self.store.release_unused_assets(attachment_ids):
             delete_attachment_if_unreferenced({"uri": "local://attachments/" + attachment_id}, self.state.messages,
-                persona_store=self.state.personas, knowledge_store=self.state.knowledge, run_store=self.state.runs,
+                persona_store=self.state.personas, character_store=self.state.characters, knowledge_store=self.state.knowledge, run_store=self.state.runs,
                 qq_store=self.store)
 
-    async def acquire(self, media, project_id):
+    async def acquire(self, media, character_id):
         from PIL import Image, UnidentifiedImageError
 
         created = set()
         try:
             settings = self.state.app_settings.get()
-            data = await self.download(media, project_id, settings)
+            data = await self.download(media, character_id, settings)
             sha256 = hashlib.sha256(data).hexdigest()
             if self.store.acquire_media(media, sha256):
                 return

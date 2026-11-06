@@ -28,7 +28,7 @@ from ai_workbench.core.qq_context import runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.schema.message import MessageSchema
 from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES, RunRetrievalState
-from ai_workbench.core.schema.persona import ResolvedChatConfig
+from ai_workbench.core.schema.chat_config import ResolvedChatConfig
 from ai_workbench.core.schema.result import RunResult
 from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.schema.qq import QQ_SEND_TOOLS, QQ_TOOLS
@@ -182,7 +182,7 @@ class HarnessAgentLoop:
                     try:
                         spec = self.registry.get(call.function.name)
                         if call.function.name not in self._allowed_tools(config, state):
-                            raise ToolExecutionError("TOOL_NOT_ALLOWED", "Tool is not allowed for this session or Project.")
+                            raise ToolExecutionError("TOOL_NOT_ALLOWED", "Tool is not allowed for this session.")
                         if state.direct and not spec.direct_callable:
                             raise ToolExecutionError("TOOL_NOT_DIRECT_CALLABLE", "Tool cannot be called directly.")
                         arguments = self._arguments(call)

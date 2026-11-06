@@ -60,7 +60,7 @@ for (const locale of ['en', 'zh-CN']) {
         const prefix = 'History ' + locale + ' ' + viewport.width + ' ';
         await Promise.all(
           Array.from({ length: 48 }, async (_, index) => {
-            const response = await request.post('/api/sessions', { data: { title: prefix + index } });
+            const response = await request.post('/api/characters/00000000-0000-4000-8000-000000000003/sessions', { data: { title: prefix + index } });
             expect(response.ok()).toBe(true);
           }),
         );
@@ -83,10 +83,9 @@ for (const locale of ['en', 'zh-CN']) {
         await openSidebar(page);
         const sidebar = page.locator('.session-sidebar');
         await expect(sidebar.locator('.sidebar-brand')).toHaveText('Cogita');
-        const list = sidebar.locator('.session-list');
+        const list = sidebar.locator('[data-slot=sidebar-content]');
         expect((await sidebar.boundingBox())!.width).toBeCloseTo(viewport.width === 390 ? 288 : 256, 1);
-        await expect(sidebar.getByRole('button', { name: labels.newWorkspace, exact: true })).toBeEnabled();
-        await expect(sidebar.getByRole('button', { name: labels.newTimeline, exact: true })).toBeEnabled();
+        await expect(sidebar.getByRole('button', { name: labels.newCharacter, exact: true })).toBeEnabled();
         const currentRow = sidebar.locator('.session-item.selected');
         const currentTitle = currentRow.locator('.session-select > span');
         await expect(currentTitle).toHaveCSS('white-space', 'nowrap');
@@ -94,13 +93,13 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(currentRow.locator('.session-select')).toHaveAttribute('title', title);
         expect(await currentTitle.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
         const header = await sidebar.locator('.sidebar-header').boundingBox();
-        const footer = await sidebar.locator('.sidebar-footer').boundingBox();
+        const footer = await sidebar.locator('[data-slot=sidebar-footer]').boundingBox();
         expect(await list.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
         await list.evaluate((node) => {
           node.scrollTop = node.scrollHeight;
         });
         expect((await sidebar.locator('.sidebar-header').boundingBox())!.y).toBe(header!.y);
-        expect((await sidebar.locator('.sidebar-footer').boundingBox())!.y).toBe(footer!.y);
+        expect((await sidebar.locator('[data-slot=sidebar-footer]').boundingBox())!.y).toBe(footer!.y);
 
         const row = sidebar
           .locator('.session-item')
@@ -174,7 +173,7 @@ for (const locale of ['en', 'zh-CN']) {
           await sidebar.getByRole('button', { name: labels.settings, exact: true }).click();
           await expect(page).toHaveURL(/\/settings$/);
           await expect(sidebar).toHaveCount(0);
-          await page.goto('/settings?tab=personas&view=user');
+          await page.goto('/settings?tab=knowledge&view=settings');
           await page.setViewportSize({ width: viewport.width, height: 480 });
           await expect
             .poll(() => page.locator('.settings-scroll').evaluate((node) => node.scrollHeight > node.clientHeight))
@@ -352,7 +351,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect(model.y + model.height).toBeLessThan(composer.y + composer.height);
         await noPageOverflow(page);
         await openSidebar(page);
-        await expect(page.locator('.sidebar-footer')).toBeInViewport();
+        await expect(page.locator('.session-sidebar [data-slot=sidebar-footer]')).toBeInViewport();
         await expect(page.locator('.sidebar-header')).toBeInViewport();
       },
     );

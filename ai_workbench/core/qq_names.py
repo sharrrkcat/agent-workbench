@@ -71,8 +71,8 @@ class QQNames:
         self.display_tasks = {}
         self.slots = asyncio.Semaphore(4)
 
-    def _cached(self, project_id, key):
-        cache = self.cache.get(project_id)
+    def _cached(self, character_id, key):
+        cache = self.cache.get(character_id)
         item = cache.get(key) if cache is not None else None
         if item is not None:
             if item[0] > time.monotonic():
@@ -81,8 +81,8 @@ class QQNames:
             del cache[key]
         return None
 
-    def _remember(self, project_id, key, name):
-        cache = self.cache.setdefault(project_id, OrderedDict())
+    def _remember(self, character_id, key, name):
+        cache = self.cache.setdefault(character_id, OrderedDict())
         cache[key] = (time.monotonic() + (NAME_TTL if name else FAILURE_TTL), name)
         cache.move_to_end(key)
         while len(cache) > CACHE_SIZE:
@@ -90,7 +90,7 @@ class QQNames:
 
     def observe(self, binding, sender_id, sender_name):
         if sender_name.strip() and sender_name != sender_id:
-            self._remember(binding.project_id, (binding.session_id, sender_id), sender_name)
+            self._remember(binding.character_id, (binding.session_id, sender_id), sender_name)
 
     async def _query(self, connection, binding, user_id):
         async with self.slots:
@@ -105,7 +105,7 @@ class QQNames:
 
     async def _lookup(self, binding, bot_account, user_id):
         key = (binding.session_id, user_id)
-        connection = self.connections.get(binding.project_id)
+        connection = self.connections.get(binding.character_id)
         name = None
         if connection is not None and connection.ready:
             try:
@@ -115,17 +115,17 @@ class QQNames:
                 log.warning("QQ name lookup unavailable (%s)", type(exc).__name__)
             if not name and user_id == bot_account:
                 name = getattr(connection, "login_name", "") or None
-        observed = self._cached(binding.project_id, key)
+        observed = self._cached(binding.character_id, key)
         if observed is not None and observed[1]:
             return observed[1]
-        self._remember(binding.project_id, key, name)
+        self._remember(binding.character_id, key, name)
         return name
 
     async def _name(self, binding, bot_account, user_id):
-        cached = self._cached(binding.project_id, (binding.session_id, user_id))
+        cached = self._cached(binding.character_id, (binding.session_id, user_id))
         if cached is not None:
             return cached[1]
-        key = (binding.project_id, binding.session_id, user_id)
+        key = (binding.character_id, binding.session_id, user_id)
         task = self.inflight.get(key)
         if task is None:
             task = asyncio.create_task(self._lookup(binding, bot_account, user_id))
@@ -138,7 +138,7 @@ class QQNames:
         for ref in references:
             if ref.type != "at" or not re.fullmatch(r"[1-9][0-9]{0,19}", ref.id):
                 continue
-            cached = self._cached(binding.project_id, (binding.session_id, ref.id))
+            cached = self._cached(binding.character_id, (binding.session_id, ref.id))
             if cached is None:
                 missing = True
             elif cached[1] and any(word in ("@" + cached[1]).casefold() for word in keywords):
@@ -172,7 +172,7 @@ class QQNames:
         references = [references_adapter.validate_json(row["references_json"]) for row in rows]
         missing = any(ref.type == "at" and not ref.frozen and ref.start is not None and ref.end is not None
             and re.fullmatch(r"[1-9][0-9]{0,19}", ref.id)
-            and self._cached(binding.project_id, (binding.session_id, ref.id)) is None for refs in references for ref in refs)
+            and self._cached(binding.character_id, (binding.session_id, ref.id)) is None for refs in references for ref in refs)
         if missing and binding.session_id not in self.display_tasks:
             task = asyncio.create_task(self.project(binding, bot_account, [dict(row) for row in rows]))
             self.display_tasks[binding.session_id] = task
@@ -188,7 +188,7 @@ class QQNames:
             for ref in refs:
                 if ref.type == "at" and ref.start is not None and ref.end is not None and not ref.frozen:
                     ref.is_self = ref.id == bot_account
-                    cached = self._cached(binding.project_id, (binding.session_id, ref.id))
+                    cached = self._cached(binding.character_id, (binding.session_id, ref.id))
                     ref.name = cached[1] if cached is not None else ref.name
                     ref.frozen = freeze
             row["text"] = render_mentions(row["text"], refs, for_model=for_model)
@@ -196,9 +196,9 @@ class QQNames:
             row["references_json"] = references_adapter.dump_json(refs).decode()
         return rows
 
-    def retain_projects(self, project_ids):
-        for project_id in self.cache.keys() - project_ids:
-            del self.cache[project_id]
+    def retain_characters(self, character_ids):
+        for character_id in self.cache.keys() - character_ids:
+            del self.cache[character_id]
 
     async def close(self):
         tasks = [*self.display_tasks.values(), *self.inflight.values()]

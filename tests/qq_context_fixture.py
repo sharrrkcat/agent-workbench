@@ -7,8 +7,8 @@ from ai_workbench.core.qq_context import QQContextHistory, build_qq_context
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 
 
-def project_qq_context(store, messages, session_id, text, policy, current_message_id, **options):
-    """Project all submitted history; window/compaction behavior uses prepare_qq_context."""
+def character_qq_context(store, messages, session_id, text, policy, current_message_id, **options):
+    """Character all submitted history; window/compaction behavior uses prepare_qq_context."""
     result = build_qq_context(store, messages, session_id, text, policy, current_message_id, **options)
     current = messages.get_message(current_message_id) if current_message_id else None
     history = QQContextHistory(store, messages, session_id, policy, current, **options)
@@ -33,7 +33,7 @@ def prepare_qq_context(client, state, session_id, policy, *, text="next", curren
     current = state.messages.get_message(current_message_id) if current_message_id else None
     base = build_qq_context(state.qq.store, state.messages, session_id, text, policy, current_message_id)
     history = QQContextHistory(state.qq.store, state.messages, session_id, policy, current)
-    run = state.runs.create_run("chat", config.persona_id, session_id)
+    run = state.runs.create_run("chat", "00000000-0000-4000-8000-000000000001", config.persona_id, session_id)
     state.runs.update_status(run.run_id, "RUNNING")
     try:
         context, trace, _ = client.portal.call(partial(state.chat_runner.compaction.prepare,

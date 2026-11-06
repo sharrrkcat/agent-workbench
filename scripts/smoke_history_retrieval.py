@@ -7,6 +7,7 @@ import time
 from uuid import uuid4
 
 from ai_workbench.api.deps import build_runtime_state
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
 from ai_workbench.core.harness.schema import ToolSpec
 from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.models.store import ModelProfileStore, ProviderProfileStore, LocalRuntimeSettingsStore
@@ -43,7 +44,7 @@ async def smoke(root, profile_id, model_ref, device, window):
         profile = state.model_profiles.create(profile)
         state.app_settings.patch({'auto_generate_session_titles': False})
         report.update(model_ref=profile.model_ref, source=profile.source.type)
-        facts = ['Project code: CEDAR-184.', 'Corrected budget: 47 EUR, replacing 42 EUR.',
+        facts = ['Character code: CEDAR-184.', 'Corrected budget: 47 EUR, replacing 42 EUR.',
                  'Deadline: 2026-12-15.', 'Owner: Mei-Quinn.']
         probes = []
         async def probe(arguments, context):
@@ -54,14 +55,14 @@ async def smoke(root, profile_id, model_ref, device, window):
         state.tool_registry.register(ToolSpec('acceptance_probe', 'Read one numbered acceptance fact. Call once per model response, in order 1 through 4.',
             {'type': 'object', 'properties': {'index': {'type': 'integer', 'minimum': 1, 'maximum': 4}},
              'required': ['index'], 'additionalProperties': False}, probe))
-        session = state.chat_service.create_session({'model_profile_id': profile.id, 'harness_enabled': True,
+        session = state.chat_service.create_session(COGITA_CHARACTER_ID, {'overrides': {'model_profile_id': profile.id, 'harness_enabled': True,
             'reasoning': False, 'tools_allowed': ['acceptance_probe'], 'context_policy': {'strategy': 'history_retrieval',
-                'retrieval': {'trigger_percent': 65, 'target_percent': 40, 'max_checkpoint_tokens': 512}}})
+                'retrieval': {'trigger_percent': 65, 'target_percent': 40, 'max_checkpoint_tokens': 512}}}})
         prompt = ('Complete this acceptance task using the tools. Do not send email. First save a brief progress checkpoint. '
             'Call acceptance_probe for indexes 1, 2, 3 and 4, exactly once each and only one probe per response. '
             'Context may reset; use the checkpoints and the original records to continue without repeating probes. '
             'After all four probes, use context_list(scope=run) and context_read to read the original FIRST probe result. '
-            'Update conversation memory with the verified facts and original source IDs, then answer with the project code, '
+            'Update conversation memory with the verified facts and original source IDs, then answer with the character code, '
             'corrected budget, deadline, owner, and the email restriction. Keep checkpoint bodies below 300 tokens.')
         reset_times = []
         first_reset_at = None

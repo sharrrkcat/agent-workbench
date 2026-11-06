@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 
 from ai_workbench.api.deps import build_runtime_state
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
 from ai_workbench.core.models.runtimes.store import RuntimeStore
 from ai_workbench.core.models.schema import ModelProfile
 from ai_workbench.core.models.store import LocalRuntimeSettingsStore
@@ -41,12 +42,12 @@ async def smoke(root, model_ref, device, manual=False, harness=False):
                 output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
                 raise
             return
-        session = state.chat_service.create_session({'model_profile_id': profile.id, 'harness_enabled': False,
+        session = state.chat_service.create_session(COGITA_CHARACTER_ID, {'overrides': {'model_profile_id': profile.id, 'harness_enabled': False,
             'reasoning': False, 'tools_allowed': [], 'context_policy': {'compaction': {
-                'enabled': not manual, 'trigger_percent': 25, 'target_percent': 15, 'max_summary_tokens': 512}}})
-        report['context_policy'] = session.context_policy.model_dump()
+                'enabled': not manual, 'trigger_percent': 25, 'target_percent': 15, 'max_summary_tokens': 512}}}})
+        report['context_policy'] = state.chat_service.resolve(session).context_policy.model_dump()
         facts = [
-            'The project code is CEDAR. The budget is exactly 42 EUR. Do not send email.',
+            'The character code is CEDAR. The budget is exactly 42 EUR. Do not send email.',
             'Correction: the budget is now 47 EUR, replacing 42 EUR. The deadline is 2026-12-15.',
             'The owner is Mei. Keep the deadline 2026-12-15 and the prohibition on sending email.',
         ]
@@ -71,7 +72,7 @@ async def smoke(root, model_ref, device, manual=False, harness=False):
                     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
                     raise RuntimeError(f'Manual compaction acceptance failed: {manual_run.error_code}; report: {output}')
             result = await state.chat_runner.run(session_id=session.session_id,
-                text='Briefly list the project code, current budget, deadline, owner and the forbidden action. Do not invent missing facts.')
+                text='Briefly list the character code, current budget, deadline, owner and the forbidden action. Do not invent missing facts.')
             checkpoint = state.sessions.get_context_checkpoint(session.session_id)
             steps = (state.runs.list_steps(manual_run.run_id) if manual_run else []) + state.runs.list_steps(result.run_id)
             row = {'cycle': cycle + 1, 'success': result.success, 'elapsed_seconds': round(time.monotonic() - started, 2),
@@ -114,28 +115,28 @@ async def smoke_harness(state, profile, report, output):
     from ai_workbench.core.models.llm_metrics import LLMCallMetrics
     from ai_workbench.core.models.schema import ChatRequest
 
-    session = state.chat_service.create_session({'model_profile_id': profile.id, 'harness_enabled': False,
+    session = state.chat_service.create_session(COGITA_CHARACTER_ID, {'overrides': {'model_profile_id': profile.id, 'harness_enabled': False,
         'reasoning': False, 'tools_allowed': [], 'context_policy': {'history_enabled': False, 'compaction': {
-            'trigger_percent': 25, 'target_percent': 15, 'max_summary_tokens': 512}}})
+            'trigger_percent': 25, 'target_percent': 15, 'max_summary_tokens': 512}}}})
     config = state.chat_service.resolve(session)
-    question = 'List the project code, current budget, deadline, owner and forbidden action from completed tool results. Keep exact values.'
+    question = 'List the character code, current budget, deadline, owner and forbidden action from completed tool results. Keep exact values.'
     user = state.messages.add_message(session.session_id, 'user', question)
     context, _, trace = await state.chat_runner._build_context(session, config, question, user.message_id, [])
-    run = state.runs.create_run('chat', config.persona_id, session.session_id, metadata={'input_message_id': user.message_id},
+    run = state.runs.create_run('chat', config.character_id, config.persona_id, session.session_id, metadata={'input_message_id': user.message_id},
         config_snapshot=config.model_dump(mode='json'))
     state.runs.update_status(run.run_id, 'RUNNING')
     facts = [
-        'The project code is CEDAR. The budget is exactly 42 EUR. Do not send email.',
+        'The character code is CEDAR. The budget is exactly 42 EUR. Do not send email.',
         'Confirmed correction: the current budget is 47 EUR, replacing 42 EUR. The deadline is 2026-12-15.',
         'The owner is Mei. Keep the deadline 2026-12-15 and the prohibition on sending email.',
-        'All facts have been collected. Report the confirmed project information without inventing other decisions.',
+        'All facts have been collected. Report the confirmed character information without inventing other decisions.',
     ]
-    report.update(run_id=run.run_id, scripted_tool_rounds=True, context_policy=session.context_policy.model_dump())
+    report.update(run_id=run.run_id, scripted_tool_rounds=True, context_policy=state.chat_service.resolve(session).context_policy.model_dump())
     async with state.model_manager.check_chat_inputs(profile, tools=True, vision=False, reasoning=False) as support:
         continuation = HarnessState(base_messages=context, context_trace=trace,
             reasoning=chat_reasoning_mode(profile, support, False), summary_reasoning=chat_reasoning_mode(profile, support, False))
         base = ChatRequest(model=profile.alias, messages=context, reasoning=continuation.reasoning, tools=[{'type': 'function',
-            'function': {'name': 'acceptance_result', 'description': 'Return a recorded project fact.',
+            'function': {'name': 'acceptance_result', 'description': 'Return a recorded character fact.',
                 'parameters': {'type': 'object', 'properties': {'index': {'type': 'integer'}}, 'required': ['index']}}}])
         for number, fact in enumerate(facts):
             continuation.transcript.extend([

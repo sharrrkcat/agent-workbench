@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 from tests.history_helpers import history_messages
 """Request controls, local preflight decisions and durable chat degradation."""
 import json
@@ -133,7 +134,7 @@ def test_chat_drops_images_and_tools_persists_warning_and_retry_recomputes(tmp_p
     with TestClient(app) as client:
         profile, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch,
             options={**DEFAULTS, "streaming": streaming}, release="after_request")
-        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["test_echo"]}))
+        session = ok(create_chat(client, overrides={"harness_enabled": True, "tools_allowed": ["test_echo"]}))
         attachment = ok(client.post("/api/attachments", files={"file": ("picture.png", image_bytes(), "image/png")}))
         path = f"/api/sessions/{session['session_id']}/messages"
         response = ok(client.post(path, json={"content": "Describe this", "attachments": [attachment]}))
@@ -147,12 +148,12 @@ def test_chat_drops_images_and_tools_persists_warning_and_retry_recomputes(tmp_p
         assert user["metadata"]["request_warnings"] == expected
         assert user["metadata"]["attachments"] == [attachment]
         assert history_messages(ok(client.get(path.removesuffix("/messages") + "/history")))[0]["metadata"]["request_warnings"] == expected
-        assert ok(client.get(f"/api/sessions/{session['session_id']}"))["harness_enabled"]
+        assert ok(client.get(f"/api/sessions/{session['session_id']}"))["effective"]["harness_enabled"]
         assert adapter.state == "stopped"
         events = app.state.runtime_state.events.recorded
         assert any(event.type == "message_updated" and event.message_id == user["message_id"] and event.payload.get("message", {}).get("metadata", {}).get("request_warnings") == expected for event in events)
         provider = configure_model(client, alias="provider")
-        ok(client.patch(f"/api/sessions/{session['session_id']}", json={"model_profile_id": provider["id"], "harness_enabled": False}))
+        ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"model_profile_id": provider["id"], "harness_enabled": False}}))
         # Replace the provider transport with the same scripted responder for a successful retry.
         app.state.runtime_state.model_manager.adapter_factory = upstream.factory
         retried = ok(client.post(f"/api/runs/{response['run']['run_id']}/retry"))
@@ -168,7 +169,7 @@ def test_image_only_stops_without_generation_or_auxiliary_title(tmp_path, monkey
     app = create_app(root=tmp_path, use_memory=True)
     with TestClient(app) as client:
         _, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, engine=engine, release="after_request")
-        session = ok(client.post("/api/sessions", json={}))
+        session = ok(create_chat(client, overrides={}))
         attachment = ok(client.post("/api/attachments", files={"file": ("picture.png", image_bytes(), "image/png")}))
         runner = app.state.runtime_state.chat_runner
         monkeypatch.setattr(runner, "maybe_title", AsyncMock())
@@ -240,7 +241,7 @@ def test_history_images_are_omitted_without_rewriting_old_messages(tmp_path, mon
     app = create_app(root=tmp_path, use_memory=True)
     with TestClient(app) as client:
         _, _, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, engine="llama-server")
-        session = ok(client.post("/api/sessions", json={}))
+        session = ok(create_chat(client, overrides={}))
         attachment = ok(client.post("/api/attachments", files={"file": ("old.png", image_bytes(), "image/png")}))
         old = app.state.runtime_state.messages.add_message(session["session_id"], "user", "",
             metadata={"attachments": [attachment]})
@@ -261,7 +262,7 @@ def test_harness_sends_tools_when_supported_or_explicitly_unchecked(tmp_path, mo
         _, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, tools=supported,
             options={**DEFAULTS, "skip_tool_capability_check": skip})
         upstream.turns = [completion(tool_call()), completion(content="finished")]
-        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["test_echo"]}))
+        session = ok(create_chat(client, overrides={"harness_enabled": True, "tools_allowed": ["test_echo"]}))
         result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Encode hello"}))
         assert result["success"], result
         assert len(upstream.calls) == 2 and adapter.load.await_count == 1

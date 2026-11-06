@@ -60,8 +60,8 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(menu).toBeHidden();
           await expect(trigger).toHaveText(longName);
           const savedSession = await json(request.get(`/api/sessions/${session.session_id}`));
-          expect(savedSession.model_profile_id).toBe(remote.id);
-          expect(savedSession.reasoning).toBe(false);
+          expect(savedSession.effective.model_profile_id).toBe(remote.id);
+          expect(savedSession.effective.reasoning).toBe(false);
           await expect(page.locator('.composer')).toHaveAttribute('data-expanded', 'false');
           const modelBox = (await trigger.boundingBox())!;
           expect(modelBox.width).toBeLessThanOrEqual(width === 390 ? 120 : 160);
@@ -85,22 +85,22 @@ for (const locale of ['en', 'zh-CN']) {
           await trigger.click();
           await expect(reasoning).not.toBeChecked();
         } finally {
-          await request.patch(`/api/sessions/${session.session_id}`, { data: { model_profile_id: session.model_profile_id } });
+          await request.patch(`/api/sessions/${session.session_id}`, { data: { overrides: { model_profile_id: session.effective.model_profile_id } } });
           for (const id of created) await request.delete(`/api/models/profiles/${id}`);
           await request.delete(`/api/models/providers/${provider.id}`);
         }
       });
 
-      test('reasoning draft choice reaches ordinary and Workspace first sends', async ({ page, request }) => {
+      test('reasoning draft choice reaches Cogita and custom Character first sends', async ({ page, request }) => {
         const base = await json(request.post('/__test__/session'));
-        const project = await json(request.post('/api/projects', { data: {
-          kind: 'workspace', name: 'Reasoning workspace', agent_persona_id: base.persona_id,
-          cogita_persona_id: base.user_persona.id, context_policy: base.context_policy,
+        const character = await json(request.post('/api/characters', { data: {
+          kind: 'normal', name: 'Reasoning Character', persona_id: base.effective.persona_id,
+          context_policy: base.effective.context_policy,
           harness_enabled: false, tools_allowed: [],
         } }));
         try {
           for (const workspace of [false, true]) {
-            await page.goto(workspace ? `/projects/${project.id}/new` : '/new');
+            await page.goto(workspace ? `/characters/${character.id}/new` : '/characters/00000000-0000-4000-8000-000000000003/new');
             await page.locator('.chat-model-select').click();
             const reasoning = page.getByRole('menuitemcheckbox', { name: labels.reasoning, exact: true });
             await expect(reasoning).toBeChecked();
@@ -109,17 +109,17 @@ for (const locale of ['en', 'zh-CN']) {
             await page.keyboard.press('Escape');
             await page.locator('.composer textarea').fill('reasoning choice');
             const created = page.waitForResponse((response) => response.request().method() === 'POST'
-              && response.url().endsWith(workspace ? `/api/projects/${project.id}/sessions` : '/api/sessions'));
+              && response.url().endsWith(workspace ? `/api/characters/${character.id}/sessions` : '/api/characters/00000000-0000-4000-8000-000000000003/sessions'));
             await page.locator('.composer textarea').press('Enter');
             const response = await created;
             const payload = response.request().postDataJSON();
-            expect(workspace ? payload.overrides.reasoning : payload.reasoning).toBe(false);
+            expect(payload.overrides.reasoning).toBe(false);
             const session = await response.json();
             await expect.poll(async () => (await json(request.get(`/api/sessions/${session.session_id}`))).effective.reasoning).toBe(false);
             await expect(page.locator('.chat-model-select')).toBeEnabled();
           }
         } finally {
-          await request.delete(`/api/projects/${project.id}`);
+          await request.delete(`/api/characters/${character.id}`);
         }
       });
 
@@ -173,14 +173,14 @@ for (const locale of ['en', 'zh-CN']) {
         await toggle.click();
         await expect(toggle).not.toBeChecked();
         await expect(toggle.locator('[data-slot=dropdown-menu-checkbox-item-indicator]')).toHaveText('off');
-        expect((await json(request.get(`/api/sessions/${session.session_id}`))).tools_allowed).toEqual(session.tools_allowed);
+        expect((await json(request.get(`/api/sessions/${session.session_id}`))).effective.tools_allowed).toEqual(session.effective.tools_allowed);
         const settings = page.getByRole('menuitem', { name: labels.harnessSettings, exact: true });
         await settings.focus();
         await settings.press('Enter');
         const sheet = page.getByRole('dialog', { name: labels.harnessSettings, exact: true });
         await expect(sheet).toBeVisible();
         await expect(page.getByRole('menu')).toBeHidden();
-        expect((await json(request.get(`/api/sessions/${session.session_id}`))).harness_enabled).toBe(false);
+        expect((await json(request.get(`/api/sessions/${session.session_id}`))).effective.harness_enabled).toBe(false);
         const decodeTool = sheet.getByRole('checkbox', { name: 'test_other', exact: true });
         await expect(sheet.getByRole('checkbox', { name: /^qq_/ })).toHaveCount(0);
         await decodeTool.uncheck();
@@ -215,16 +215,16 @@ for (const locale of ['en', 'zh-CN']) {
         await sheet.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(sheet).toBeHidden();
         const saved = await json(request.get(`/api/sessions/${session.session_id}`));
-        expect(saved.tools_allowed).toEqual(session.tools_allowed.filter((name: string) => name !== 'test_other'));
-        expect(saved.harness_enabled).toBe(false);
-        expect(patches).toEqual([{ tools_allowed: saved.tools_allowed }, { tools_allowed: saved.tools_allowed }]);
+        expect(saved.effective.tools_allowed).toEqual(session.effective.tools_allowed.filter((name: string) => name !== 'test_other'));
+        expect(saved.effective.harness_enabled).toBe(false);
+        expect(patches).toEqual([{ overrides: { tools_allowed: saved.effective.tools_allowed } }, { overrides: { tools_allowed: saved.effective.tools_allowed } }]);
         await page.getByRole('button', { name: labels.sessionSettings, exact: true }).click();
         const dialog = page.getByRole('dialog', { name: labels.sessionSettings, exact: true });
-        await expect(dialog.getByRole('checkbox', { name: 'test_other', exact: true })).toHaveCount(0);
-        await dialog.getByRole('button', { name: labels.save, exact: true }).click();
+        await expect(dialog.getByRole('checkbox', { name: 'test_other', exact: true })).not.toBeChecked();
+        await expect(dialog.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
+        await page.keyboard.press('Escape');
         await expect(dialog).toBeHidden();
-        expect(patches.at(-1)).not.toHaveProperty('harness_enabled');
-        expect(patches.at(-1)).not.toHaveProperty('tools_allowed');
+        expect(patches).toHaveLength(2);
       });
     });
   }
@@ -240,7 +240,7 @@ test('no selectable models still exposes Harness without selecting a replacement
   await expect(page.getByRole('menuitem', { name: 'Unavailable', exact: true })).toBeDisabled();
   await expect(page.getByRole('menuitemcheckbox', { name: 'Harness', exact: true })).toBeEnabled();
   await expect(page.getByRole('menuitemradio')).toHaveCount(0);
-  expect((await json(request.get(`/api/sessions/${session.session_id}`))).model_profile_id).toBe(session.model_profile_id);
+  expect((await json(request.get(`/api/sessions/${session.session_id}`))).effective.model_profile_id).toBe(session.effective.model_profile_id);
 });
 
 for (const setting of ['Harness', 'Reasoning']) {

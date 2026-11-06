@@ -1,49 +1,23 @@
-"""Persona persistence, including ordered default context bindings."""
+"""User Persona persistence, without resources or conversation ownership."""
 
-from __future__ import annotations
+from sqlmodel import Session, select
 
-from sqlmodel import Session, delete, select
-
-from ai_workbench.core.schema.persona import Persona, PersonaCollection, PersonaCreate, PersonaInput, seed_personas
+from ai_workbench.core.schema.persona import Persona, PersonaInput, seed_personas
 from ai_workbench.core.time import utc_now
-from ai_workbench.db.models import PersonaRecord, PersonaKnowledgeBindingRecord, PersonaWorldbookBindingRecord
-
-
-BINDINGS = {
-    "knowledge": (PersonaKnowledgeBindingRecord, "knowledge_base_id"),
-    "worldbook": (PersonaWorldbookBindingRecord, "worldbook_id"),
-}
+from ai_workbench.db.models import PersonaRecord
 
 
 class PersonaStore:
-    def referenced_attachments(self, names: set[str]) -> set[str]:
-        if self.engine is None:
-            return {p.avatar_attachment_id for p in self._personas.values() if p.avatar_attachment_id in names}
-        with Session(self.engine) as db:
-            return set(db.exec(select(PersonaRecord.avatar_attachment_id).where(PersonaRecord.avatar_attachment_id.in_(names))))
-
     def __init__(self, engine=None):
         self.engine = engine
         self._personas = {p.id: p for p in seed_personas()} if engine is None else {}
-        self._bindings: dict[tuple[str, str], list[str]] = {}
 
-    @staticmethod
-    def _decode(row: PersonaRecord) -> Persona:
-        return Persona.model_validate(row.model_dump())
-
-    @staticmethod
-    def _encode(persona: Persona) -> dict:
-        return persona.model_dump()
-
-    def list(self, collection: PersonaCollection | None = None) -> list[Persona]:
+    def list(self) -> list[Persona]:
         if self.engine is None:
-            return sorted((p.model_copy(deep=True) for p in self._personas.values()
-                           if collection is None or p.collection == collection), key=lambda p: (p.name, p.id))
+            return sorted((p.model_copy(deep=True) for p in self._personas.values()), key=lambda p: (p.name, p.id))
         with Session(self.engine) as db:
-            query = select(PersonaRecord).order_by(PersonaRecord.name, PersonaRecord.id)
-            if collection is not None:
-                query = query.where(PersonaRecord.collection == collection)
-            return [self._decode(r) for r in db.exec(query).all()]
+            return [Persona.model_validate(r.model_dump()) for r in db.exec(
+                select(PersonaRecord).order_by(PersonaRecord.name, PersonaRecord.id)).all()]
 
     def get(self, persona_id: str) -> Persona:
         if self.engine is None:
@@ -52,72 +26,38 @@ class PersonaStore:
             row = db.get(PersonaRecord, persona_id)
             if row is None:
                 raise KeyError(persona_id)
-            return self._decode(row)
+            return Persona.model_validate(row.model_dump())
 
-    def create(self, values: PersonaCreate) -> Persona:
-        persona = Persona(**values.model_dump())
+    def _save(self, persona: Persona) -> Persona:
         if self.engine is None:
-            self._personas[persona.id] = persona
+            self._personas[persona.id] = persona.model_copy(deep=True)
         else:
             with Session(self.engine) as db:
-                db.add(PersonaRecord(**self._encode(persona)))
+                db.merge(PersonaRecord(**persona.model_dump()))
                 db.commit()
         return persona.model_copy(deep=True)
+
+    def create(self, values: PersonaInput) -> Persona:
+        return self._save(Persona(**values.model_dump()))
 
     def update(self, persona_id: str, values: dict) -> Persona:
-        current = self.get(persona_id)
-        data = PersonaInput.model_validate({**current.model_dump(include=set(PersonaInput.model_fields)), **values})
-        persona = Persona(**{**current.model_dump(), **data.model_dump(), "updated_at": utc_now()})
-        if self.engine is None:
-            self._personas[persona_id] = persona
-        else:
-            with Session(self.engine) as db:
-                row = db.get(PersonaRecord, persona_id)
-                for key, value in self._encode(persona).items():
-                    setattr(row, key, value)
-                db.add(row)
-                db.commit()
-        return persona.model_copy(deep=True)
+        return self._save(Persona.model_validate({**self.get(persona_id).model_dump(), **values, "updated_at": utc_now()}))
 
     def delete(self, persona_id: str) -> Persona:
         current = self.get(persona_id)
         if self.engine is None:
             del self._personas[persona_id]
-            for kind in BINDINGS:
-                self._bindings.pop((persona_id, kind), None)
         else:
             with Session(self.engine) as db:
-                for record, _field in BINDINGS.values():
-                    db.exec(delete(record).where(record.persona_id == persona_id))
                 db.delete(db.get(PersonaRecord, persona_id))
                 db.commit()
         return current
 
-    def binding_ids(self, persona_id: str, kind: str) -> list[str]:
-        self.get(persona_id)
-        if self.engine is None:
-            return list(self._bindings.get((persona_id, kind), []))
-        record, key = BINDINGS[kind]
-        with Session(self.engine) as db:
-            return [getattr(r, key) for r in db.exec(select(record).where(record.persona_id == persona_id).order_by(record.sort_order)).all()]
-
-    def replace_bindings(self, persona_id: str, kind: str, ids: list[str]) -> list[str]:
-        self.get(persona_id)
-        if len(ids) != len(set(ids)):
-            raise ValueError("Bindings must be unique")
-        if self.engine is None:
-            self._bindings[persona_id, kind] = list(ids)
-        else:
-            record, key = BINDINGS[kind]
-            with Session(self.engine) as db:
-                db.exec(delete(record).where(record.persona_id == persona_id))
-                for index, value in enumerate(ids):
-                    db.add(record(persona_id=persona_id, sort_order=index, **{key: value}))
-                db.commit()
-        return list(ids)
-
-    def references_resource(self, kind: str, resource_id: str) -> bool:
-        return any(resource_id in self.binding_ids(p.id, kind) for p in self.list())
-
     def references_attachment(self, attachment_id: str) -> bool:
         return any(p.avatar_attachment_id == attachment_id for p in self.list())
+
+    def referenced_attachments(self, names: set[str]) -> set[str]:
+        if self.engine is None:
+            return {p.avatar_attachment_id for p in self._personas.values() if p.avatar_attachment_id in names}
+        with Session(self.engine) as db:
+            return set(db.exec(select(PersonaRecord.avatar_attachment_id).where(PersonaRecord.avatar_attachment_id.in_(names))))

@@ -82,7 +82,7 @@ test('first send animates once and historical reload does not; reduced motion di
       if (event.animationName === 'user-message-blur-fade') (window as any).bubbleAnimations.push(event.animationName);
     });
   });
-  await page.goto('/new');
+  await page.goto('/characters/00000000-0000-4000-8000-000000000003/new');
   await expect(page.locator('.user-message-navigation')).toHaveCount(0);
   await page.locator('.composer textarea').fill('A new draft message');
   await page.locator('.composer textarea').press('Enter');

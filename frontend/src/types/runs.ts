@@ -42,7 +42,8 @@ export type Run = {
   session_id: string;
   kind: RunKind;
   status: RunStatus;
-  persona_id: string;
+  character_id: string;
+  persona_id: string | null;
   current_step?: string;
   stage?: string;
   progress_message?: string;

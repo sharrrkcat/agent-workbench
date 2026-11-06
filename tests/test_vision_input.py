@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 from tests.history_helpers import history_messages
 import asyncio
 import base64
@@ -247,7 +248,7 @@ def test_images_survive_approval_history_retry_edit_and_cleanup(tmp_path, monkey
         configure_model(client, request_options={"streaming": True})
         ok(client.patch("/api/settings/general", json={"auto_generate_session_titles": False}))
         attachment = ok(client.post("/api/attachments", files={"file": ("picture.png", image_bytes(), "image/png")}))
-        session = ok(client.post("/api/sessions", json={"harness_enabled": True, "tools_allowed": ["test_approval"]}))
+        session = ok(create_chat(client, overrides={"harness_enabled": True, "tools_allowed": ["test_approval"]}))
         state = app.state.runtime_state
         path = f"/api/sessions/{session['session_id']}/messages"
         pending = ok(client.post(path, json={"content": "", "attachments": [attachment]}))

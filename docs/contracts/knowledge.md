@@ -1,7 +1,7 @@
 # Knowledge / RAG contract
 
 Knowledge is an explicit core service used by ChatRunner and the Knowledge
-HTTP routes. It owns bases, sources, chunks, indexes, session bindings,
+HTTP routes. It owns bases, sources, chunks, indexes, resource-reference checks,
 hybrid retrieval, context formatting, and optional post-retrieval reranking.
 
 ## Sources and indexing
@@ -43,11 +43,10 @@ overrides are in its collapsed advanced section.
 Vector and keyword candidates are merged with reciprocal rank fusion (RRF).
 SQLite scans vector batches of 256, retains only top-k identities/scores and then reads winning text.
 Exact dot/cosine scoring uses deterministic chunk-id ties in both stores; dimension diagnostics retain counts and at most ten examples.
-The singleton Cogita Persona, selected Agent Persona, Workspace Project and session additions
-define default Knowledge Bases, deduplicated in that order; ordinary sessions have no Project bindings.
-Project bindings remain inherited while additions are independently editable. An empty session list
-clears only additions. Callers may provide an explicit list. Search can return compact debug metadata and a
-rendered context preview. RRF ordering is deterministic for equal candidates.
+Explicit search accepts selected Knowledge Base ids; a supplied normal Session can resolve its
+Character defaults plus whole-list Session override. Search returns compact debug metadata and a
+rendered preview. RRF ordering is deterministic for equal candidates. Character/Session mounts never
+trigger retrieval or context injection during chat, Harness, retry or compaction.
 
 `KnowledgeSettings` retains `reranker_enabled`,
 `reranker_model_profile_id`, and `reranker_candidate_limit`. There is no
@@ -68,13 +67,10 @@ background-indexing workflows are not part of this contract.
 - `/api/knowledge/sources/{id}/preview`, `/chunks` — original text and indexed chunks.
 - `/api/knowledge/sources/{id}` — get/delete a source.
 - `/api/knowledge/search` — explicit hybrid search.
-- `/api/sessions/{id}/knowledge-bases` — additions, separate Cogita/Agent/Project bindings and effective ids.
-- `/api/personas/{id}/knowledge-bases` — ordered Cogita/Agent Persona bindings.
-- `/api/projects/{id}/knowledge-bases` — ordered Workspace bindings, inherited by its sessions; Timeline rejects Knowledge.
 - Model selection uses `/api/models/profiles?kind=embedding` or `reranker`.
 
-Deleting a base referenced by a Persona or Project requires removing those bindings first.
-Project deletion removes only its bindings/conversations, preserving shared bases and sources.
+Deleting a base referenced by Character defaults or explicit Session overrides requires removing
+those mounts first. Character deletion preserves shared bases and sources.
 
 Indexing, query embedding and reranking are async calls to the app-scoped
 ModelManager. Local text profiles derive dimensions, pooling, normalization and

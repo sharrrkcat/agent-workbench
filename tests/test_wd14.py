@@ -265,7 +265,7 @@ def test_public_result_threshold_inheritance_and_statelessness(api, monkeypatch)
         assert all(image.startswith("data:image/png;base64,") for image in calls[-1][1])
         assert response.headers["x-request-id"]
     assert manager.profiles.get(value["id"]).parameters["thresholds"] == {"general": 0.6, "character": 0.9}
-    assert client.get("/api/sessions").json() == []
+    assert client.get("/api/characters/00000000-0000-4000-8000-000000000003/sessions").json() == []
     assert not client.app.state.runtime_state.runs.list_all_runs()
 
 

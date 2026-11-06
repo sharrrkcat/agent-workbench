@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -47,13 +47,3 @@ class ContextPolicy(BaseModel):
     compaction: CompactionPolicy = Field(default_factory=CompactionPolicy)
     message_window: MessageWindowPolicy = Field(default_factory=MessageWindowPolicy)
     retrieval: RetrievalPolicy = Field(default_factory=RetrievalPolicy)
-
-
-class BoundedContextPolicy(BaseModel):
-    """Reserved Timeline history; this domain does not compact."""
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    max_messages: Optional[int] = Field(default=100, ge=0, le=10000,
-        description="History message limit; null includes all available history, zero excludes history. Current input is not counted.")
-    max_chars: Optional[int] = Field(default=100000, ge=1, le=1000000)
-    include_attachments: Literal["none", "explicit"] = "explicit"

@@ -1,263 +1,244 @@
-import { defaultContextPolicy } from '../../types/chat';
 import type { CogitaActions, CogitaState } from './state';
 import type { Session } from '../../types/chat';
+import { COGITA_CHARACTER_ID } from '../../types/chat';
 import { errorText } from './mergeState';
-
 import { useModelsStore } from '../useModelsStore';
 import { chatApi } from '../../api/chat';
 import { settingsApi } from '../../api/settings';
-import { projectsApi } from '../../api/projects';
-import { useProjectsStore } from '../useProjectsStore';
+import { charactersApi } from '../../api/characters';
+import { useCharactersStore } from '../useCharactersStore';
 import { usePersonasStore } from '../usePersonasStore';
-import { toolsApi } from '../../api/tools';
-import { defaultModelId } from './drafts';
 import { historyPageState } from './historyWindow';
 
-function conversation(state: CogitaState, session: Session | null, projectId: string | null): Partial<CogitaState> {
+const selectionKey = (characterId: string) => 'cogita.lastSession.' + characterId;
+export function rememberSession(session: Session) {
+  if (typeof localStorage !== 'undefined') localStorage.setItem(selectionKey(session.character_id), session.session_id);
+}
+function lastSession(characterId: string) {
+  return typeof localStorage === 'undefined' ? null : localStorage.getItem(selectionKey(characterId));
+}
+function forgetSelection(characterId: string) {
+  if (typeof localStorage !== 'undefined') localStorage.removeItem(selectionKey(characterId));
+}
+
+function conversation(state: CogitaState, session: Session | null, characterId: string | null): Partial<CogitaState> {
   return {
-    currentSession: session, currentProjectId: projectId, chatDraft: null, pendingKnowledge: null,
-    sessionLoad: null,
-    lastOrdinarySessionId: session?.kind === 'ordinary' ? session.session_id : state.lastOrdinarySessionId,
+    currentSession: session, currentCharacterId: characterId, chatDraft: null, sessionLoad: null,
     messages: [], runs: [], stepsByRunId: {}, historyWindow: null, historyLoading: false, historyFollowing: true, historyAnchor: null, error: null,
     composerDraftText: session ? state.messageQueues[session.session_id]?.editing?.content ?? '' : '', queueTarget: null,
-    sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false, awaitingAcceptance: false, pendingClientMessageId: null, mutatingHistory: false,
+    sessionEpoch: state.sessionEpoch + 1, deletedMessageIds: [], deletedRunIds: [], sending: false,
+    awaitingAcceptance: false, pendingClientMessageId: null, mutatingHistory: false,
   };
 }
 
 export const createSessionActions: CogitaActions<
-  | 'initialize'
-  | 'reloadSessions'
-  | 'selectSession'
-  | 'retrySession'
-  | 'startDraft'
-  | 'saveDraft'
-  | 'deleteSession'
-  | 'updateSession'
-  | 'activateLocation'
-  | 'deactivateConversation'
-  | 'forgetProject'
-  | 'setError'
+  'initialize' | 'reloadSessions' | 'selectSession' | 'retrySession' | 'startDraft' | 'saveDraft' |
+  'deleteSession' | 'updateSession' | 'activateLocation' | 'deactivateConversation' | 'forgetCharacter' | 'setError'
 > = (set, get, store) => {
   let initializationVersion = 0;
   let controller: AbortController | null = null;
   store.subscribe((state, previous) => {
     if (!state.conversationVisible || state.sessionEpoch !== previous.sessionEpoch) controller?.abort();
   });
-  async function loadSession(id: string, scope: string | null, epoch: number) {
+  async function loadSession(id: string, scope: string, epoch: number) {
     controller?.abort();
     const request = new AbortController(); controller = request;
-    let active = true;
     try {
-      if (scope && useProjectsStore.getState().projects.find((project) => project.id === scope)?.kind === 'timeline')
-        throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
+      const owner = useCharactersStore.getState().characters.find((item) => item.id === scope);
       const sessionRequest = chatApi.getSession(id, request.signal).then((session) => {
-        if (session.project_id !== scope) throw new Error('SESSION_PROJECT_MISMATCH: Session does not belong to this Project.');
-        if (active && !request.signal.aborted && get().sessionEpoch === epoch) set({ currentSession: session });
+        if (session.character_id !== scope) throw new Error('SESSION_CHARACTER_MISMATCH: Session does not belong to this Character.');
+        if (!request.signal.aborted && get().sessionEpoch === epoch) set({ currentSession: session });
         return session;
       });
-      const kind = scope ? useProjectsStore.getState().projects.find((project) => project.id === scope)?.kind : 'ordinary';
-      const history = kind === 'qqbot' ? Promise.resolve(null) : kind
+      const history = owner?.kind === 'qqbot' ? Promise.resolve(null) : owner
         ? chatApi.getHistory(id, {}, request.signal)
         : sessionRequest.then((session) => session.kind === 'qqbot' || request.signal.aborted ? null : chatApi.getHistory(id, {}, request.signal));
-      const personas = usePersonasStore.getState().reload().catch((error) => {
+      const [session, page] = await Promise.all([
+        sessionRequest, history, owner ? Promise.resolve(owner) : useCharactersStore.getState().load(scope),
+      ]);
+      if (request.signal.aborted || get().sessionEpoch !== epoch) return;
+      if (session.kind === 'normal') await usePersonasStore.getState().reload().catch((error) => {
         if (!request.signal.aborted && get().sessionEpoch === epoch) set({ error: errorText(error) });
       });
-      const [session, page] = await Promise.all([
-        sessionRequest, history,
-        scope ? Promise.resolve(useProjectsStore.getState().projects.find((project) => project.id === scope)
-          ?? useProjectsStore.getState().load(scope)).then((project) => {
-          if (project.kind === 'timeline') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
-        }) : Promise.resolve(),
-      ]);
-      if (session.kind !== 'qqbot') await personas;
       if (request.signal.aborted || get().sessionEpoch !== epoch) return;
+      rememberSession(session);
       set((state) => ({
         ...(page ? historyPageState({ ...state, currentSession: session }, page, 'latest') : {}), currentSession: session,
         composerDraftText: state.messageQueues[id]?.editing?.content ?? state.composerDraftText,
-        lastOrdinarySessionId: session.kind === 'ordinary' ? id : state.lastOrdinarySessionId,
         sessions: state.sessions.some((item) => item.session_id === id)
           ? state.sessions.map((item) => item.session_id === id ? session : item) : [...state.sessions, session],
         messageVersion: state.messageVersion + 1, runVersion: state.runVersion + 1, sessionVersion: state.sessionVersion + 1,
       }));
-      if (session.kind !== 'qqbot') await get().reconcileMessageQueue(id);
-      if (get().sessionEpoch === epoch) set({ sessionLoad: { sessionId: id, projectId: scope, status: 'ready', error: null } });
+      if (session.kind === 'normal') await get().reconcileMessageQueue(id);
+      if (get().sessionEpoch === epoch) set({ sessionLoad: { sessionId: id, characterId: scope, status: 'ready', error: null } });
     } catch (error) {
-      if (!request.signal.aborted && get().sessionEpoch === epoch)
-        set({ sessionLoad: { sessionId: id, projectId: scope, status: 'error', error: errorText(error) } });
+      if (!request.signal.aborted && get().sessionEpoch === epoch) {
+        request.abort();
+        set({ sessionLoad: { sessionId: id, characterId: scope, status: 'error', error: errorText(error) } });
+      }
     } finally {
-      active = false;
       if (controller === request) controller = null;
     }
   }
-  return ({
-  initialize: async (selectOrdinary = true) => {
-    const request = ++initializationVersion;
-    const epoch = get().sessionEpoch + 1;
-    const settingsVersion = get().settingsVersion;
-    set({ loading: true, error: null, sessionEpoch: epoch });
-    void useModelsStore.getState().reloadProfiles().catch((error) => set({ error: errorText(error) }));
-    void useModelsStore.getState().reloadSettings().catch((error) => set({ error: errorText(error) }));
-    try {
-      const [listed, settings] = await Promise.all([
-        chatApi.listSessions(), settingsApi.getGeneralSettings(),
-      ]);
-      if (request !== initializationVersion) return;
-      const sessions = listed;
-      const selected = selectOrdinary ? sessions[0] : null;
-      set((state) => ({ sessions: [...state.sessions.filter((session) => session.kind !== 'ordinary'), ...sessions] }));
-      if (get().settingsVersion === settingsVersion) get().setSettings(settings);
-      if (get().sessionEpoch === epoch && get().conversationVisible) {
-        if (selectOrdinary && !selected) await get().startDraft();
-        else if (selected) await get().selectSession(selected.session_id, null);
+  return {
+    initialize: async (selectDefault = true) => {
+      const request = ++initializationVersion;
+      const epoch = get().sessionEpoch + 1;
+      const settingsVersion = get().settingsVersion;
+      set({ loading: true, error: null, sessionEpoch: epoch });
+      void useModelsStore.getState().reloadProfiles().catch((error) => set({ error: errorText(error) }));
+      void useModelsStore.getState().reloadProviders().catch((error) => set({ error: errorText(error) }));
+      void useModelsStore.getState().reloadSettings().catch((error) => set({ error: errorText(error) }));
+      try {
+        const [settings] = await Promise.all([settingsApi.getGeneralSettings(), useCharactersStore.getState().reload()]);
+        if (request !== initializationVersion) return;
+        if (get().settingsVersion === settingsVersion) get().setSettings(settings);
+        if (selectDefault && get().sessionEpoch === epoch && get().conversationVisible)
+          await get().activateLocation(COGITA_CHARACTER_ID);
+      } catch (error) {
+        if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+      } finally {
+        if (request === initializationVersion) set({ loading: false, initialized: true });
       }
-    } catch (error) {
-      if (get().sessionEpoch === epoch) set({ error: errorText(error) });
-    } finally {
-      if (request === initializationVersion) set({ loading: false, initialized: true });
-    }
-  },
+    },
 
-  reloadSessions: async (projectId = null) => {
-    const version = get().sessionVersion;
-    const sessions = projectId ? await projectsApi.listSessions(projectId) : await chatApi.listSessions();
-    if (version === get().sessionVersion)
-      set((state) => ({ sessions: [...state.sessions.filter((session) => session.project_id !== projectId), ...sessions] }));
-    await get().refreshCurrent();
-  },
+    reloadSessions: async (characterId = COGITA_CHARACTER_ID) => {
+      const scope = characterId ?? COGITA_CHARACTER_ID;
+      const version = get().sessionVersion;
+      const sessions = await charactersApi.listSessions(scope);
+      if (version === get().sessionVersion)
+        set((state) => ({ sessions: [...state.sessions.filter((session) => session.character_id !== scope), ...sessions] }));
+      await get().refreshCurrent();
+    },
 
-  selectSession: async (id, projectId) => {
-    const cached = get().sessions.find((item) => item.session_id === id);
-    const scope = projectId === undefined ? cached?.project_id ?? null : projectId;
-    const active = get().sessionLoad;
-    if (active?.sessionId === id && active.projectId === scope) return;
-    if (!active && !get().chatDraft && get().currentSession?.session_id === id && get().currentProjectId === scope) return;
-    set((state) => ({ ...conversation(state, cached?.project_id === scope ? cached : null, scope),
-      sessionLoad: { sessionId: id, projectId: scope, status: 'loading', error: null } }));
-    await loadSession(id, scope, get().sessionEpoch);
-  },
+    selectSession: async (id, characterId) => {
+      const cached = get().sessions.find((item) => item.session_id === id);
+      const scope = characterId ?? cached?.character_id ?? COGITA_CHARACTER_ID;
+      const active = get().sessionLoad;
+      if (active?.sessionId === id && active.characterId === scope) return;
+      if (!active && !get().chatDraft && get().currentSession?.session_id === id && get().currentCharacterId === scope) return;
+      set((state) => ({ ...conversation(state, cached?.character_id === scope ? cached : null, scope),
+        sessionLoad: { sessionId: id, characterId: scope, status: 'loading', error: null } }));
+      await loadSession(id, scope, get().sessionEpoch);
+    },
 
-  retrySession: async () => {
-    const target = get().sessionLoad;
-    if (target?.status !== 'error') return;
-    set({ sessionLoad: { ...target, status: 'loading', error: null } });
-    await loadSession(target.sessionId, target.projectId, get().sessionEpoch);
-  },
+    retrySession: async () => {
+      const target = get().sessionLoad;
+      if (target?.status !== 'error') return;
+      set({ sessionLoad: { ...target, status: 'loading', error: null } });
+      await loadSession(target.sessionId, target.characterId, get().sessionEpoch);
+    },
 
-  startDraft: async (projectId = null) => {
-    if (get().chatDraft?.project_id === projectId) return;
-    set((state) => conversation(state, null, projectId));
-    const epoch = get().sessionEpoch;
-    try {
-      const [, tools, project] = await Promise.all([
-        usePersonasStore.getState().reload(), toolsApi.listTools(),
-        projectId ? useProjectsStore.getState().load(projectId) : Promise.resolve(null),
-        useModelsStore.getState().reloadProfiles(),
-        useModelsStore.getState().reloadSettings(),
-      ]);
-      if (get().sessionEpoch !== epoch) return;
-      if (project && project.kind !== 'workspace') throw new Error('PROJECT_CHAT_UNAVAILABLE: Timeline conversations are not available yet.');
-      const personas = usePersonasStore.getState().personas;
-      const user = personas.find((p) => p.collection === 'user')!;
-      const base = { title: '', user_persona: { id: user.id, name: user.name, avatar_attachment_id: user.avatar_attachment_id }, knowledge_base_ids: [] };
-      const models = useModelsStore.getState();
-      set({ chatDraft: project ? { ...base, kind: 'workspace', project_id: project.id, overrides: {} }
-        : { ...base, kind: 'ordinary', project_id: null,
-          persona_id: personas.find((p) => p.collection === 'agent' && p.is_protected)!.id,
-          model_profile_id: defaultModelId(models.profiles, models.settings?.default_model_profile_id),
-          context_policy: defaultContextPolicy(),
-          generation: {}, reasoning: true, harness_enabled: false, tools_allowed: tools.filter((tool) => tool.scope === 'general').map((tool) => tool.name) } });
-    } catch (error) {
-      if (get().sessionEpoch === epoch) set({ error: errorText(error) });
-    }
-  },
-
-  saveDraft: (patch, knowledgeIds) => set((state) => {
-    const draft = state.chatDraft;
-    if (!draft || state.sending) return {};
-    return { chatDraft: { ...draft, ...patch,
-      ...(draft.kind === 'workspace' && 'overrides' in patch ? { overrides: { ...draft.overrides, ...patch.overrides } } : {}),
-      ...(knowledgeIds === undefined ? {} : { knowledge_base_ids: knowledgeIds }) } };
-  }),
-
-  deleteSession: async (id) => {
-    const projectId = get().sessions.find((session) => session.session_id === id)?.project_id ?? null;
-    try {
-      await chatApi.deleteSession(id);
+    startDraft: async (characterId = COGITA_CHARACTER_ID) => {
+      const scope = characterId ?? COGITA_CHARACTER_ID;
+      if (get().chatDraft?.character_id === scope) return;
+      set((state) => conversation(state, null, scope));
       const epoch = get().sessionEpoch;
-      set((state) => ({
-        sessions: state.sessions.filter((item) => item.session_id !== id),
-        messageQueues: Object.fromEntries(Object.entries(state.messageQueues).filter(([sessionId]) => sessionId !== id)),
-        sessionVersion: state.sessionVersion + 1,
-      }));
-      if ((get().sessionLoad?.sessionId ?? get().currentSession?.session_id) === id && get().sessionEpoch === epoch) {
-        const next = get().sessions.find((item) => item.project_id === projectId);
-        if (next) await get().selectSession(next.session_id, projectId);
-        else if (projectId === null) await get().startDraft();
-        else set((state) => conversation(state, null, projectId));
+      try {
+        const [character] = await Promise.all([
+          useCharactersStore.getState().load(scope), usePersonasStore.getState().reload(),
+          useModelsStore.getState().reloadProfiles(),
+        ]);
+        if (get().sessionEpoch !== epoch) return;
+        if (character.kind !== 'normal') throw new Error('CHARACTER_KIND_INVALID: QQ conversations require a group or friend binding.');
+        set({ chatDraft: { title: '', kind: 'normal', character_id: scope, overrides: {} } });
+      } catch (error) {
+        if (get().sessionEpoch === epoch) set({ error: errorText(error) });
       }
-    } catch (error) {
-      set({ error: errorText(error) });
-    }
-  },
+    },
 
-  updateSession: async (patch) => {
-    if (get().sending || (get().sessionLoad && get().sessionLoad?.status !== 'ready')) return false;
-    const session = get().currentSession;
-    if (!session) {
-      if (!get().chatDraft) return false;
-      get().saveDraft(patch);
-      return true;
-    }
-    if (get().savingSessionIds.includes(session.session_id)) return false;
-    const epoch = get().sessionEpoch;
-    set((state) => ({ error: null, savingSessionIds: [...state.savingSessionIds, session.session_id] }));
-    try {
-      const updated = await chatApi.updateSession(session.session_id, patch);
-      if (get().currentSession?.session_id !== updated.session_id || get().sessionEpoch !== epoch) return false;
+    saveDraft: (patch) => set((state) => {
+      const draft = state.chatDraft;
+      if (!draft || state.sending) return {};
+      return { chatDraft: { ...draft, ...patch, overrides: { ...draft.overrides, ...patch.overrides } } };
+    }),
+
+    deleteSession: async (id) => {
+      const session = get().sessions.find((item) => item.session_id === id);
+      const scope = session?.character_id;
+      const epoch = get().sessionEpoch;
+      try {
+        await chatApi.deleteSession(id);
+        if (scope && lastSession(scope) === id) forgetSelection(scope);
+        set((state) => ({
+          sessions: state.sessions.filter((item) => item.session_id !== id),
+          messageQueues: Object.fromEntries(Object.entries(state.messageQueues).filter(([sessionId]) => sessionId !== id)),
+          sessionVersion: state.sessionVersion + 1,
+        }));
+        if (scope && (get().sessionLoad?.sessionId ?? get().currentSession?.session_id) === id && get().sessionEpoch === epoch) {
+          const next = get().sessions.find((item) => item.character_id === scope);
+          if (next) await get().selectSession(next.session_id, scope);
+          else if (session.kind === 'normal') await get().startDraft(scope);
+          else set((state) => conversation(state, null, scope));
+        }
+      } catch (error) {
+        set({ error: errorText(error) });
+      }
+    },
+
+    updateSession: async (patch) => {
+      if (get().sending || (get().sessionLoad && get().sessionLoad?.status !== 'ready')) return false;
+      const session = get().currentSession;
+      if (!session) {
+        if (!get().chatDraft) return false;
+        get().saveDraft(patch);
+        return true;
+      }
+      if (get().savingSessionIds.includes(session.session_id)) return false;
+      const epoch = get().sessionEpoch;
+      set((state) => ({ error: null, savingSessionIds: [...state.savingSessionIds, session.session_id] }));
+      try {
+        const updated = await chatApi.updateSession(session.session_id, patch);
+        if (get().currentSession?.session_id !== updated.session_id || get().sessionEpoch !== epoch) return false;
+        set((state) => ({
+          currentSession: updated, sessions: state.sessions.map((item) => item.session_id === updated.session_id ? updated : item),
+          sessionVersion: state.sessionVersion + 1,
+        }));
+        return true;
+      } catch (error) {
+        if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+        return false;
+      } finally {
+        set((state) => ({ savingSessionIds: state.savingSessionIds.filter((id) => id !== session.session_id) }));
+      }
+    },
+
+    deactivateConversation: () => set((state) => conversation(state, null, null)),
+
+    activateLocation: async (characterId, sessionId = null) => {
+      const scope = characterId ?? COGITA_CHARACTER_ID;
+      if (sessionId) { await get().selectSession(sessionId, scope); return; }
+      if (get().currentCharacterId === scope && (get().currentSession || get().chatDraft || get().sessionLoad)) return;
+      set((state) => conversation(state, null, scope));
+      const epoch = get().sessionEpoch;
+      const version = get().sessionVersion;
+      try {
+        const [character, sessions] = await Promise.all([
+          useCharactersStore.getState().load(scope), charactersApi.listSessions(scope),
+        ]);
+        if (get().sessionEpoch !== epoch) return;
+        if (get().sessionVersion === version)
+          set((state) => ({ sessions: [...state.sessions.filter((item) => item.character_id !== scope), ...sessions] }));
+        const available = get().sessions.filter((item) => item.character_id === scope)
+          .sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.session_id.localeCompare(a.session_id));
+        const selected = available.find((item) => item.session_id === lastSession(scope)) ?? available[0];
+        if (selected) await get().selectSession(selected.session_id, scope);
+        else if (character.kind === 'normal') await get().startDraft(scope);
+      } catch (error) {
+        if (get().sessionEpoch === epoch) set({ error: errorText(error) });
+      }
+    },
+
+    forgetCharacter: (characterId) => {
+      forgetSelection(characterId);
       set((state) => ({
-        currentSession: updated,
-        sessions: state.sessions.map((item) => (item.session_id === updated.session_id ? updated : item)),
+        sessions: state.sessions.filter((session) => session.character_id !== characterId),
+        messageQueues: Object.fromEntries(Object.entries(state.messageQueues).filter(([, queue]) => queue.characterId !== characterId)),
         sessionVersion: state.sessionVersion + 1,
+        ...(state.currentCharacterId === characterId ? conversation(state, null, null) : {}),
       }));
-      return true;
-    } catch (error) {
-      if (get().sessionEpoch === epoch) set({ error: errorText(error) });
-      return false;
-    } finally {
-      set((state) => ({ savingSessionIds: state.savingSessionIds.filter((id) => id !== session.session_id) }));
-    }
-  },
+    },
 
-  deactivateConversation: () => set((state) => conversation(state, null, null)),
-
-  activateLocation: async (projectId, sessionId = null) => {
-    if (projectId === null) {
-      if (get().currentProjectId === null && (get().currentSession || get().chatDraft || get().sessionLoad)) return;
-      const ordinary = get().sessions.filter((session) => session.kind === 'ordinary');
-      const selected = ordinary.find((session) => session.session_id === get().lastOrdinarySessionId) ?? ordinary[0];
-      if (selected) await get().selectSession(selected.session_id, null);
-      else await get().startDraft();
-      return;
-    }
-    if (sessionId) { await get().selectSession(sessionId, projectId); return; }
-    if (!get().sessionLoad && !get().chatDraft && get().currentProjectId === projectId && (get().currentSession?.session_id ?? null) === sessionId &&
-        useProjectsStore.getState().projects.some((project) => project.id === projectId)) return;
-    set((state) => conversation(state, null, projectId));
-    const epoch = get().sessionEpoch;
-    try {
-      await useProjectsStore.getState().load(projectId);
-    } catch (error) {
-      if (get().sessionEpoch === epoch) set({ error: errorText(error) });
-    }
-  },
-
-  forgetProject: (projectId) => set((state) => ({
-    sessions: state.sessions.filter((session) => session.project_id !== projectId),
-    messageQueues: Object.fromEntries(Object.entries(state.messageQueues).filter(([, queue]) => queue.projectId !== projectId)),
-    sessionVersion: state.sessionVersion + 1,
-    ...(state.currentProjectId === projectId ? conversation(state, null, null) : {}),
-  })),
-
-  setError: (error) => set({ error }),
-  });
+    setError: (error) => set({ error }),
+  };
 };

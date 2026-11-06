@@ -60,12 +60,12 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const stamp = Date.now();
       const model = await json(request.post('/api/models/profiles', { data: { name: 'QQ summary model', alias: `qq-summary-${stamp}`,
         kind: 'llm', model_ref: 'fake', source: main.source, context_window_tokens: 8192, request_options: { streaming: true } } }));
-      const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'QQ memory', bot_account: String(stamp),
+      const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'QQ memory', bot_account: String(stamp),
         model_profile_id: model.id, websocket_url: 'ws://127.0.0.1:3001', keywords: ['bot'], reply_message_limit: 1,
         context_policy: { compaction: { trigger_percent: 25, target_percent: 15, max_summary_tokens: 512 } } } }));
       try {
-        const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
-        await page.goto(`/projects/${project.id}?session=${session.session_id}`);
+        const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
+        await page.goto(`/characters/${character.id}?session=${session.session_id}`);
         await json(request.post(`/__test__/qq/${session.session_id}/reply/compaction`));
         const fixture = await json(request.post(`/__test__/qq/${session.session_id}/reply/compaction`));
         await expect(page.locator('[data-qq-delivery]')).toHaveCount(2);
@@ -86,7 +86,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect((await json(request.get(`/api/qq/sessions/${session.session_id}`))).paused).toBe(false);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       } finally {
-        await request.delete(`/api/projects/${project.id}`);
+        await request.delete(`/api/characters/${character.id}`);
         await request.delete(`/api/models/profiles/${model.id}`);
       }
     });

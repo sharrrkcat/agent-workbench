@@ -40,8 +40,8 @@ for (const locale of ['en', 'zh-CN']) {
         await settings.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(settings).toBeHidden();
         const saved = await (await request.get(`/api/sessions/${session.session_id}`)).json();
-        expect(saved.context_policy.strategy).toBe('message_window');
-        expect(saved.context_policy.compaction).toEqual(session.context_policy.compaction);
+        expect(saved.effective.context_policy.strategy).toBe('message_window');
+        expect(saved.effective.context_policy.compaction).toEqual(session.effective.context_policy.compaction);
         await page.reload();
         await page.locator('.composer textarea').fill('Use the recent raw history.');
         await page.locator('.composer textarea').press('Enter');
@@ -58,7 +58,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.screenshot({ path: info.outputPath('message-window-context.png'), animations: 'disabled' });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.keyboard.press('Escape');
-        await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { strategy: 'token_budget' } } });
+        await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {context_policy: { strategy: 'token_budget' }}} });
         await page.reload();
         await page.locator('article[data-run-id]').last().getByRole('button', { name: title, exact: true }).click();
         await expect(page.getByRole('dialog', { name: title }).locator('.context-footer')).toContainText(locale === 'en' ? 'History message limit: 3' : '历史消息上限：3');

@@ -1,29 +1,29 @@
 from ai_workbench.core.schema.run import RunStatus
 from ai_workbench.core.stores import MessageStore, RunStore, SessionStore
-from ai_workbench.core.schema.persona import COGITA_PERSONA_ID
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
 
 
 def test_session_store_keeps_context_and_model_overrides() -> None:
     store = SessionStore()
 
-    session = store.create_session(title="Test", persona_id=COGITA_PERSONA_ID)
-    updated = store.set_model_profile(session.session_id, "profile-1")
+    session = store.create_session(title="Test", overrides={"reasoning": False}, character_id=COGITA_CHARACTER_ID)
+    updated = store.update_session(session.session_id, {"overrides": {"model_profile_id": "profile-1"}})
 
     assert session.session_id
-    assert updated.persona_id == COGITA_PERSONA_ID
-    assert updated.model_profile_id == "profile-1"
-    assert store.get_session(session.session_id).model_profile_id == "profile-1"
+    assert updated.character_id == COGITA_CHARACTER_ID
+    assert updated.overrides.model_profile_id == "profile-1"
+    assert store.get_session(session.session_id).overrides.model_profile_id == "profile-1"
 
 
 def test_run_store_uses_generic_chat_contract() -> None:
     store = RunStore()
 
-    run = store.create_run(kind="chat", persona_id=COGITA_PERSONA_ID, session_id="session-1")
+    run = store.create_run(kind="chat", persona_id=COGITA_CHARACTER_ID, session_id="session-1", character_id=COGITA_CHARACTER_ID)
     running = store.update_status(run.run_id, RunStatus.RUNNING, current_step="context")
     done = store.update_status(run.run_id, RunStatus.DONE, current_step="done")
 
     assert run.kind == "chat"
-    assert run.persona_id == COGITA_PERSONA_ID
+    assert run.persona_id == COGITA_CHARACTER_ID
     assert running.status is RunStatus.RUNNING
     assert done.status is RunStatus.DONE
     assert store.get_run(run.run_id).status is RunStatus.DONE
@@ -32,7 +32,7 @@ def test_run_store_uses_generic_chat_contract() -> None:
 def test_message_store_persists_generic_speaker_parts_and_parent() -> None:
     sessions = SessionStore()
     store = MessageStore(session_store=sessions)
-    session = sessions.create_session()
+    session = sessions.create_session(character_id=COGITA_CHARACTER_ID)
     session_id = session.session_id
 
     first = store.add_message(session_id=session_id, role="user", content="hello", message_id="first")
@@ -43,7 +43,7 @@ def test_message_store_persists_generic_speaker_parts_and_parent() -> None:
         message_id="second",
         run_id="run-1",
         parent_message_id=first.message_id,
-        speaker_id=COGITA_PERSONA_ID,
+        speaker_id=COGITA_CHARACTER_ID,
         speaker_name="Chat",
     )
 
@@ -51,6 +51,6 @@ def test_message_store_persists_generic_speaker_parts_and_parent() -> None:
 
     assert [message.message_id for message in messages] == [first.message_id, second.message_id]
     assert messages[0].parts[0]["text"] == "hello"
-    assert messages[1].speaker_id == COGITA_PERSONA_ID
+    assert messages[1].speaker_id == COGITA_CHARACTER_ID
     assert messages[1].parent_message_id == first.message_id
     assert messages[1].speaker_name == "Chat"

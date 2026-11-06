@@ -5,20 +5,20 @@ import { chooseOption } from './controls';
 const words = (locale: string, namespace = 'personas') => JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/${namespace}.json`, import.meta.url), 'utf8'));
 async function json(response: Promise<APIResponse>) { const value = await response; expect(value.ok(), await value.text()).toBe(true); return value.json(); }
 async function setup(request: APIRequestContext, count = 31) {
-  const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'Resource gallery',
+  const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'Resource gallery',
     bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3001', keywords: ['bot'], context_policy: {} } }));
-  const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { title: 'Gallery conversation', target_kind: 'group', target_id: '7788' } }));
+  const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { title: 'Gallery conversation', target_kind: 'group', target_id: '7788' } }));
   const fixture = await json(request.post(`/__test__/qq/${session.session_id}/resources?count=${count}`));
-  return { project, session, resources: fixture.resources as Array<{ asset_id: number; message_id: number }> };
+  return { character, session, resources: fixture.resources as Array<{ asset_id: number; message_id: number }> };
 }
 async function cleanup(request: APIRequestContext, fixture: Awaited<ReturnType<typeof setup>>) {
   for (const resource of fixture.resources) await request.delete(`/api/qq/resources/${resource.asset_id}`);
-  await request.delete(`/api/projects/${fixture.project.id}`);
+  await request.delete(`/api/characters/${fixture.character.id}`);
 }
-async function entry(page: Page, projectId: string, title: string, width = 1366) {
-  await page.goto(`/projects/${projectId}`);
+async function entry(page: Page, characterId: string, title: string, width = 1366) {
+  await page.goto(`/characters/${characterId}`);
   if (width === 390) await page.locator('[data-slot="sidebar-trigger"]').click();
-  await page.locator(`[data-project-id="${projectId}"]`).getByRole('button', { name: title, exact: true }).click();
+  await page.locator(`[data-character-id="${characterId}"]`).getByRole('button', { name: title, exact: true }).click();
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
 }
 
@@ -32,7 +32,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 1280, 390]) {
       page.on('pageerror', (error) => errors.push(error.message));
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       try {
-        await entry(page, fixture.project.id, text.title, width);
+        await entry(page, fixture.character.id, text.title, width);
         const cards = page.locator('[data-resource-id]');
         await expect(cards).toHaveCount(30);
         const tabsBox = (await page.getByRole('tablist', { name: text.filter }).boundingBox())!;
@@ -107,7 +107,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 1280, 390]) {
         await expect(cards).toHaveCount(30);
         await expect(page.getByRole('link', { name: common.pagination.next, exact: true })).toHaveAttribute('aria-disabled', 'true');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-        await page.goto(`/projects/${fixture.project.id}?session=${fixture.session.session_id}`);
+        await page.goto(`/characters/${fixture.character.id}?session=${fixture.session.session_id}`);
         const deleted = page.locator(`[data-qq-incoming="${fixture.resources[0].message_id}"]`);
         await expect(deleted.locator('[data-qq-media-state="deleted"]')).toHaveText(text.imagePlaceholder);
         await expect(deleted.locator('img')).toHaveCount(0);
@@ -122,7 +122,7 @@ test('failures retain drafts and records; stale reads and browser history respec
   const fixture = await setup(request, 3);
   await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   try {
-    await entry(page, fixture.project.id, text.title);
+    await entry(page, fixture.character.id, text.title);
     const cards = page.locator('[data-resource-id]');
     await expect(cards).toHaveCount(3);
     let release!: () => void;
@@ -177,15 +177,15 @@ test('failures retain drafts and records; stale reads and browser history respec
   } finally { await cleanup(request, fixture); }
 });
 
-test('orphan favorites are shared across Projects and removal confirms their deletion', async ({ page, request }) => {
+test('orphan favorites are shared across Characters and removal confirms their deletion', async ({ page, request }) => {
   const labels = words('en'), text = labels.qq.resources, common = words('en', 'common');
   const fixture = await setup(request, 1);
-  const other = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'Other QQBot', bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3002', context_policy: {} } }));
+  const other = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'Other QQBot', bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3002', context_policy: {} } }));
   await page.addInitScript(() => localStorage.setItem('cogita.locale', 'en'));
   try {
     await json(request.patch(`/api/qq/resources/${fixture.resources[0].asset_id}`, { data: { is_favorite: true } }));
-    await json(request.delete(`/api/projects/${fixture.project.id}`));
-    await page.goto(`/projects/${other.id}/resources`);
+    await json(request.delete(`/api/characters/${fixture.character.id}`));
+    await page.goto(`/characters/${other.id}/resources`);
     const card = page.locator('[data-resource-id]');
     await expect(card).toHaveCount(1);
     await card.hover();
@@ -197,5 +197,5 @@ test('orphan favorites are shared across Projects and removal confirms their del
     await card.getByRole('button', { name: text.unfavorite, exact: true }).click();
     await confirmation.getByRole('button', { name: common.confirm, exact: true }).click();
     await expect(card).toHaveCount(0);
-  } finally { await cleanup(request, fixture); await request.delete(`/api/projects/${other.id}`); }
+  } finally { await cleanup(request, fixture); await request.delete(`/api/characters/${other.id}`); }
 });

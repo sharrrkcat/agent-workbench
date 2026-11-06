@@ -117,7 +117,7 @@ export function SettingsSidebar({
                     <SidebarMenu
                       key={menu.id}
                       className="settings-domain-menu"
-                      aria-label={menu.section === 'personas' ? `${t(menu.label)} / ${t('sidebarGroups.' + group.id)}` : t(menu.label)}
+                      aria-label={t(menu.label)}
                     >
                       {menu.pages.length === 1 ? (
                         pageItem(menu.pages[0])

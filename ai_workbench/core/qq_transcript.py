@@ -143,7 +143,7 @@ class QQTranscriptReader:
             has_after = bool(keys and read(1, cursor(keys[-1])))
             if self.sql_runs:
                 visible = select(R).options(defer(R.config_snapshot_json), defer(R.harness_state_json)).where(R.session_id == session_id)
-                # QQ execution is serial per Project; status lookup must not walk settled history.
+                # QQ execution is serial per Character; status lookup must not walk settled history.
                 active = db.exec(visible.where(R.status.in_(ACTIVE)).limit(1)).first()
                 completed_call = select(S.step_id).where(S.run_id == R.run_id, S.kind == "model", S.status.not_in(("pending", "running"))).exists()
                 latest = db.exec(visible.where(completed_call).order_by(R.created_at.desc(), R.run_id.desc()).limit(1)).first()

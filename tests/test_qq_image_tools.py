@@ -1,4 +1,5 @@
 """Favorite-image delivery and immutable, text-only generation permissions."""
+from tests.chat_fixtures import create_chat
 from tests.qq_transcript_helpers import qq_incoming, qq_outgoing
 import asyncio
 import base64
@@ -9,13 +10,13 @@ import pytest
 from ai_workbench.core.attachments import resolve_attachment_uri, save_attachment_from_upload
 from ai_workbench.core.harness.schema import ToolExecutionError
 from ai_workbench.core.chat_service import ChatError
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.qq_media import decode_image
 from ai_workbench.core.qq_protocol import normalize
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.qq import QQImageAttachment
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMediaAsset
-from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project, FakeConnection
+from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, character, FakeConnection
 from tests.test_qq_followup import clock, followup, participant, execute
 from tests.test_qq_icebreaker import queued
 from tests.test_qq_image_generation import image_provider, draw, assets, deliveries
@@ -70,13 +71,13 @@ def test_original_animation_delivery_and_stable_text_history(qq_client, private,
     assert 'Favorite image candidates:' in system and asset.description in system
     assert 'local://' not in system and 'base64://' not in system
     state.qq.resources.update(asset.id, {'description': 'New shared description'})
-    context = project_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
     call = context.messages[1]['tool_calls'][0]
     assert call.function.name == 'qq_send_image' and json.loads(call.function.arguments) == {'asset_id': asset.id}
     assert f'[图片:{asset.description}]' in context.model_dump_json()
     assert 'New shared description' not in context.model_dump_json() and 'attachment_image' not in context.model_dump_json()
     state.qq.resources.delete(asset.id)
-    context = project_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session['session_id'], 'next', ContextPolicy(), None)
     assert 'qq_send_image' not in context.model_dump_json() and asset.description not in context.model_dump_json()
     assert any(m.get('content') == '[图片]' for m in context.messages)
     assert state.runs.get_config_snapshot(run.run_id) == snapshot
@@ -146,8 +147,8 @@ def test_asset_id_is_strict_and_tool_is_qq_only(qq_client, value):
     favorite(state)
     assert 'qq_send_image' in {t['name'] for t in ok(client.get('/api/tools'))}
     assert client.post('/api/tools/qq_send_image/call', json={'session_id': session['session_id'], 'arguments': {'asset_id': 1}}).status_code >= 400
-    ordinary = ok(client.post('/api/sessions', json={}))
-    assert client.patch(f"/api/sessions/{ordinary['session_id']}", json={'tools_allowed': ['qq_send_image']}).status_code == 422
+    ordinary = ok(create_chat(client, overrides={}))
+    assert client.patch(f"/api/sessions/{ordinary['session_id']}", json={'overrides': {'tools_allowed': ['qq_send_image']}}).status_code == 422
     upstream.turns = [completion(send_image(value)), completion(tool_call('qq_send_message', {'text': 'fallback'}, 'text'))]
     _, run = execute_batch(client, state, p, session)
     assert run.status == 'DONE' and len(connection.calls) == 1
@@ -163,7 +164,7 @@ def test_no_candidates_hides_tool_and_prompt(qq_client):
     assert run.status == 'DONE'
     assert tool_names(upstream.calls[0]) == {'qq_send_message', 'web_fetch', 'web_search'}
     assert 'Favorite image candidates:' not in upstream.calls[0]['messages'][0]['content']
-    assert state.projects.get(p['id']).system_prompt == 'Custom prompt'
+    assert state.characters.get(p['id']).system_prompt == 'Custom prompt'
 
 
 def test_text_resource_and_generation_share_limit(qq_client, image_provider):
@@ -179,11 +180,11 @@ def test_text_resource_and_generation_share_limit(qq_client, image_provider):
     assert {d['kind'] for d in deliveries(client, session)} == {'text', 'resource_image', 'generated_image'}
 
 
-def test_shared_resource_retention_across_projects_and_session_deletion(qq_client):
+def test_shared_resource_retention_across_characters_and_session_deletion(qq_client):
     client, state, upstream = qq_client
     p, session, _ = configure_execution(client, state, reply_message_limit=2)
     asset, _ = favorite(state)
-    other = project(client, bot_account='54321', model_profile_id=p['model_profile_id'],
+    other = character(client, bot_account='54321', model_profile_id=p['model_profile_id'],
         keywords=['bot'], connection_enabled=True, reply_message_limit=1)
     second = child(client, other)
     state.qq.connections[other['id']] = FakeConnection()
@@ -195,7 +196,7 @@ def test_shared_resource_retention_across_projects_and_session_deletion(qq_clien
     _, second_run = execute(qq_client, freeze(state, second, 5))
     assert second_run.status == 'DONE' and len(assets(state)) == 1
     path = resolve_attachment_uri(asset.attachment.uri)
-    ok(client.delete(f"/api/projects/{p['id']}"))
+    ok(client.delete(f"/api/characters/{p['id']}"))
     assert path.exists() and deliveries(client, second)[0]['asset_id'] == asset.id
     state.qq.resources.update(asset.id, {'is_favorite': False})
     ok(client.delete(f"/api/sessions/{second['session_id']}"))
@@ -355,11 +356,11 @@ def test_keyword_migration_defaults_false_without_reading_display_text(tmp_path)
         for path in files:
             path.parent.mkdir()
             path.write_bytes(b'keep')
-        migrations.upgrade(engine)
+        migrations.upgrade(engine, migrations.QQ_IMAGE_TOOLS_REVISION)
         with engine.begin() as db:
             assert db.exec_driver_sql('SELECT image_generation_keyword FROM qq_messages').scalar_one() == 0
             db.exec_driver_sql('UPDATE qq_messages SET image_generation_keyword=1')
-        migrations.upgrade(engine)
+        migrations.upgrade(engine, migrations.QQ_IMAGE_TOOLS_REVISION)
         with engine.connect() as db:
             assert db.exec_driver_sql('SELECT image_generation_keyword FROM qq_messages').scalar_one() == 1
         assert all(path.read_bytes() == b'keep' for path in files)

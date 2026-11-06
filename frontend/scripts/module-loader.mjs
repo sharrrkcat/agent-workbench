@@ -31,7 +31,7 @@ export function apiMocks(api) {
     return historyPage(messages, runs, query);
   };
   return Object.fromEntries(
-    ['chat', 'models', 'runs', 'tools', 'knowledge', 'worldbook', 'settings', 'projects'].map((domain) => [
+    ['chat', 'models', 'runs', 'tools', 'knowledge', 'worldbook', 'settings', 'characters'].map((domain) => [
       sourceUrl(`api/${domain}.ts`),
       mockModule({ [domain + 'Api']: api }),
     ]),

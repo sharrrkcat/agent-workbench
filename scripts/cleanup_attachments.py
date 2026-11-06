@@ -8,6 +8,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ai_workbench.core.personas import PersonaStore
+from ai_workbench.core.characters import CharacterStore
 from ai_workbench.core.qq_store import QQStore
 from ai_workbench.core.storage_maintenance import cleanup_orphan_attachments, scan_orphan_attachments, sqlite_database_path
 from ai_workbench.db.database import get_database_url, get_engine
@@ -26,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = get_engine(url)
     try:
         messages = SqlMessageStore(engine)
-        owners = dict(persona_store=PersonaStore(engine), knowledge_store=SqlKnowledgeStore(engine),
+        owners = dict(persona_store=PersonaStore(engine), character_store=CharacterStore(engine), knowledge_store=SqlKnowledgeStore(engine),
                       run_store=SqlRunStore(engine), qq_store=QQStore(engine))
         scan = scan_orphan_attachments(messages, **owners)
         result = cleanup_orphan_attachments(messages, **owners) if args.apply else {"deleted_count": 0, "errors": []}

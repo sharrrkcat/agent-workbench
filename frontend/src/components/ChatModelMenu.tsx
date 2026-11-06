@@ -9,9 +9,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCogitaStore } from '../store/useCogitaStore';
 import { useModelsStore } from '../store/useModelsStore';
-import { useProjectsStore } from '../store/useProjectsStore';
+import { useCharactersStore } from '../store/useCharactersStore';
 import { useChatConfiguration } from '../hooks/useChatConfiguration';
-import type { OrdinarySessionPatch } from '../types/chat';
+import type { ChatDefaults } from '../types/chat';
 import { errorText } from './settings/resources/ResourceUI';
 import { HarnessSettingsSheet } from './personas/HarnessSettingsSheet';
 
@@ -48,18 +48,18 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
       && !providers.some((provider) => profile.source?.type === 'provider' && provider.id === profile.source.provider_profile_id)) },
   ].filter((group) => group.models.length);
 
-  async function save(patch: Pick<OrdinarySessionPatch, 'model_profile_id' | 'reasoning' | 'harness_enabled'>) {
+  async function save(patch: Partial<Pick<ChatDefaults, 'model_profile_id' | 'reasoning' | 'harness_enabled'>>) {
     if (disabled || busy) return;
     if (isQQ) useCogitaStore.getState().setError(null);
     setBusy(true);
     onBusyChange(true);
     try {
       if (target?.kind === 'qqbot') {
-        await useProjectsStore.getState().patch(target.project_id, patch);
+        await useCharactersStore.getState().patch(target.character_id, patch);
         if (useCogitaStore.getState().sessionEpoch === sessionEpoch)
-          await useCogitaStore.getState().reloadSessions(target.project_id);
+          await useCogitaStore.getState().reloadSessions(target.character_id);
       } else {
-        await updateSession(target?.kind === 'workspace' ? { overrides: patch } : patch);
+        await updateSession({ overrides: patch });
       }
     } catch (error) {
       if (useCogitaStore.getState().sessionEpoch === sessionEpoch) useCogitaStore.getState().setError(errorText(error));
@@ -117,7 +117,7 @@ export function ChatModelMenu({ disabled, onBusyChange }: {
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-    {editing && target && !isQQ ? <HarnessSettingsSheet session={target} onClose={() => setEditing(false)}
+    {editing && target?.kind === 'normal' ? <HarnessSettingsSheet session={target} onClose={() => setEditing(false)}
       finalFocus={triggerRef} onBusyChange={onBusyChange} /> : null}
   </>;
 }

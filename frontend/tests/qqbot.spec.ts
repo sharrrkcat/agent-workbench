@@ -17,22 +17,23 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
       const account = String(Date.now());
-      let projectId = '';
+      let characterId = '';
       try {
         await page.goto('/');
         await openSidebar(page);
-        await page.locator('.session-sidebar').getByRole('button', { name: labels.newQQBot, exact: true }).click();
-        const dialog = page.getByRole('dialog', { name: labels.newQQBot, exact: true });
+        await page.locator('.session-sidebar').getByRole('button', { name: labels.newCharacter, exact: true }).click();
+        const dialog = page.getByRole('dialog', { name: labels.newCharacter, exact: true });
+        await dialog.getByRole('button', { name: labels.characterKinds.qqbot, exact: true }).click();
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByLabel(labels.projectPrompt, { exact: true })).toHaveValue(labels.qq.defaultPrompt);
-        await dialog.getByLabel(labels.projectName, { exact: true }).fill('QQ browser');
+        await expect(dialog.getByLabel(labels.characterPrompt, { exact: true })).toHaveValue(labels.qq.defaultPrompt);
+        await dialog.getByLabel(labels.characterName, { exact: true }).fill('QQ browser');
         await dialog.getByLabel(labels.qq.account, { exact: true }).fill(account);
         await dialog.getByLabel(labels.qq.token, { exact: true }).fill('fixture-secret');
         await expect(dialog.getByRole('switch', { name: labels.qq.enabled, exact: true })).not.toBeChecked();
         await dialog.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await chooseOption(dialog.getByLabel(labels.model, { exact: true }), model.name);
         await expect(dialog.getByLabel(labels.model, { exact: true })).toContainText(model.name);
-        await expect(dialog.getByLabel(labels.defaultAgentPersona, { exact: true })).toContainText(labels.qq.noPersona);
+        await expect(dialog.getByLabel(labels.persona, { exact: true })).toHaveCount(0);
         await expect(dialog.getByRole('switch', { name: labels.qq.icebreakerEnabled, exact: true })).not.toBeChecked();
         await expect(dialog.getByLabel(labels.qq.icebreakerCold, { exact: true })).toHaveCount(0);
         await dialog.getByLabel(labels.qq.keywords, { exact: true }).fill('BOT\nhello');
@@ -42,48 +43,49 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(dialog.getByRole('tab', { name: labels.knowledge, exact: true })).toHaveCount(0);
         await dialog.getByRole('tab', { name: labels.qq.tabs.images, exact: true }).click();
         await expect(dialog.getByRole('switch', { name: labels.qq.imageInputEnabled, exact: true })).not.toBeChecked();
-        const created = page.waitForResponse((r) => r.url().endsWith('/api/projects') && r.request().method() === 'POST');
-        await dialog.getByRole('button', { name: labels.createProject, exact: true }).click();
-        const project = await (await created).json();
-        projectId = project.id;
-        expect(project.kind).toBe('qqbot');
-        expect(project.model_profile_id).toBe(model.id);
-        expect(project.has_access_token).toBe(true);
-        expect(project.access_token).toBeUndefined();
-        expect(project.keywords).toEqual(['bot', 'hello']);
-        expect(project.reply_message_limit).toBe(3);
-        expect(project.image_input_enabled).toBe(false);
-        expect(project.system_prompt).toBe(labels.qq.defaultPrompt);
+        const created = page.waitForResponse((r) => r.url().endsWith('/api/characters') && r.request().method() === 'POST');
+        await dialog.getByRole('button', { name: labels.createCharacter, exact: true }).click();
+        const character = await (await created).json();
+        characterId = character.id;
+        expect(character.kind).toBe('qqbot');
+        expect(character.model_profile_id).toBe(model.id);
+        expect(character.has_access_token).toBe(true);
+        expect(character.access_token).toBeUndefined();
+        expect(character.keywords).toEqual(['bot', 'hello']);
+        expect(character.reply_message_limit).toBe(3);
+        expect(character.image_input_enabled).toBe(false);
+        expect(character.system_prompt).toBe(labels.qq.defaultPrompt);
         await expect(dialog).toBeHidden();
-        await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`));
+        await expect(page).toHaveURL(new RegExp(`/characters/${characterId}$`));
+        await page.goto(`/characters/${characterId}/settings`);
         await expect(page.getByLabel(labels.qq.token, { exact: true })).toHaveValue('');
         await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
-        await page.getByLabel(labels.projectPrompt, { exact: true }).fill('Project prompt');
+        await page.getByLabel(labels.characterPrompt, { exact: true }).fill('Character prompt');
         await page.getByLabel(labels.qq.replyLimit, { exact: true }).fill('2');
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
-        expect((await json(request.get(`/api/projects/${projectId}`))).has_access_token).toBe(true);
-        expect((await json(request.get(`/api/projects/${projectId}`))).reply_message_limit).toBe(2);
-        expect((await json(request.get(`/api/projects/${projectId}`))).system_prompt).toBe('Project prompt');
-        await page.getByLabel(labels.projectPrompt, { exact: true }).fill('');
+        expect((await json(request.get(`/api/characters/${characterId}`))).has_access_token).toBe(true);
+        expect((await json(request.get(`/api/characters/${characterId}`))).reply_message_limit).toBe(2);
+        expect((await json(request.get(`/api/characters/${characterId}`))).system_prompt).toBe('Character prompt');
+        await page.getByLabel(labels.characterPrompt, { exact: true }).fill('');
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
-        expect((await json(request.get(`/api/projects/${projectId}`))).system_prompt).toBe('');
+        expect((await json(request.get(`/api/characters/${characterId}`))).system_prompt).toBe('');
         await page.getByRole('tab', { name: labels.qq.tabs.connection, exact: true }).click();
         await page.getByRole('button', { name: labels.qq.clearToken, exact: true }).click();
         await page.getByRole('button', { name: labels.save, exact: true }).click();
         await expect(page.getByRole('button', { name: labels.save, exact: true })).toBeDisabled();
-        expect((await json(request.get(`/api/projects/${projectId}`))).has_access_token).toBe(false);
+        expect((await json(request.get(`/api/characters/${characterId}`))).has_access_token).toBe(false);
         await page.locator('.settings-scroll').evaluate((element) => { element.scrollTop = 0; });
         await page.screenshot({ path: info.outputPath('qq-settings.png') });
         await openSidebar(page);
-        await page.locator(`[data-project-id="${projectId}"]`).getByRole('button', { name: labels.newProjectSession.replace('{{name}}', project.name), exact: true }).click();
+        await page.locator(`[data-character-id="${characterId}"]`).getByRole('button', { name: labels.newCharacterSession.replace('{{name}}', character.name), exact: true }).click();
         const bind = page.getByRole('dialog', { name: labels.qq.bindConversation, exact: true });
         await bind.getByLabel(labels.qq.sessionTitle, { exact: true }).fill('Bound QQ conversation');
         await chooseOption(bind.getByLabel(labels.qq.targetKind, { exact: true }), labels.qq.friend);
         await chooseOption(bind.getByLabel(labels.qq.targetKind, { exact: true }), labels.qq.group);
         await bind.getByLabel(labels.qq.targetId, { exact: true }).fill('7788');
-        const bound = page.waitForResponse((r) => r.url().endsWith(`/api/projects/${projectId}/sessions`) && r.request().method() === 'POST');
+        const bound = page.waitForResponse((r) => r.url().endsWith(`/api/characters/${characterId}/sessions`) && r.request().method() === 'POST');
         await bind.getByRole('button', { name: labels.qq.bindConversation, exact: true }).click();
         const session = await (await bound).json();
         await expect(bind).toBeHidden();
@@ -219,11 +221,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect(dimensions.height, JSON.stringify(dimensions)).toBeLessThanOrEqual(dimensions.viewportHeight);
         expect(errors).toEqual([]);
       } finally {
-        if (projectId) await json(request.delete(`/api/projects/${projectId}`));
+        if (characterId) await json(request.delete(`/api/characters/${characterId}`));
       }
     });
 
-    test('composer model and reasoning edit the Project across bound conversations', async ({ page, request }, info) => {
+    test('composer model and reasoning edit the Character across bound conversations', async ({ page, request }, info) => {
       const labels = words(locale, 'personas');
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
@@ -232,7 +234,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
       const longName = 'QQ external model with a very long display name';
       const created: string[] = [];
-      let projectId = '';
+      let characterId = '';
       try {
         for (const [name, source] of [[longName, model.source], ['QQ local model', { type: 'local' }], ['QQ unconfigured model', null]] as const) {
           const profile = await json(request.post('/api/models/profiles', { data: {
@@ -241,21 +243,21 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           } }));
           created.push(profile.id);
         }
-        const project = await json(request.post('/api/projects', { data: {
+        const character = await json(request.post('/api/characters', { data: {
           kind: 'qqbot', name: 'QQ composer settings', context_policy: {}, bot_account: String(Date.now()),
           websocket_url: 'ws://127.0.0.1:3001', model_profile_id: model.id, access_token: 'keep-token',
           system_prompt: 'Keep this prompt', keywords: ['bot'], reply_message_limit: 3,
         } }));
-        projectId = project.id;
-        const group = await json(request.post(`/api/projects/${projectId}/sessions`, { data: { title: 'QQ group settings', target_kind: 'group', target_id: '7788' } }));
-        const friend = await json(request.post(`/api/projects/${projectId}/sessions`, { data: { title: 'QQ friend settings', target_kind: 'friend', target_id: '12345678901234567890' } }));
+        characterId = character.id;
+        const group = await json(request.post(`/api/characters/${characterId}/sessions`, { data: { title: 'QQ group settings', target_kind: 'group', target_id: '7788' } }));
+        const friend = await json(request.post(`/api/characters/${characterId}/sessions`, { data: { title: 'QQ friend settings', target_kind: 'friend', target_id: '12345678901234567890' } }));
         const patches: unknown[] = [], sessionPatches: unknown[] = [];
         page.on('request', (req) => {
           if (req.method() !== 'PATCH') return;
-          if (req.url().endsWith(`/api/projects/${projectId}`)) patches.push(req.postDataJSON());
+          if (req.url().endsWith(`/api/characters/${characterId}`)) patches.push(req.postDataJSON());
           if (req.url().includes('/api/sessions/')) sessionPatches.push(req.postDataJSON());
         });
-        await page.goto(`/projects/${projectId}?session=${group.session_id}`);
+        await page.goto(`/characters/${characterId}?session=${group.session_id}`);
         const composer = page.locator('.composer'), menu = page.getByRole('menu');
         const trigger = composer.getByRole('button', { name: labels.model, exact: true });
         await trigger.click();
@@ -274,18 +276,20 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(trigger).toBeEnabled();
         expect(patches).toEqual([{ reasoning: false }, { model_profile_id: created[0] }]);
         expect(sessionPatches).toEqual([]);
-        const saved = await json(request.get(`/api/projects/${projectId}`));
+        const saved = await json(request.get(`/api/characters/${characterId}`));
         expect(saved).toMatchObject({ model_profile_id: created[0], reasoning: false, system_prompt: 'Keep this prompt', has_access_token: true, keywords: ['bot'], reply_message_limit: 3 });
         for (const session of [group, friend]) {
           expect((await json(request.get(`/api/sessions/${session.session_id}`))).effective)
             .toMatchObject({ model_profile_id: created[0], reasoning: false, harness_enabled: true });
         }
         await openSidebar(page);
-        await page.getByRole('button', { name: labels.projectActions.replace('{{name}}', project.name), exact: true }).click();
-        await page.getByRole('menuitem', { name: labels.projectSettings, exact: true }).click();
+        await page.getByRole('button', { name: labels.characterActions.replace('{{name}}', character.name), exact: true }).click();
+        await page.getByRole('menuitem', { name: labels.characterSettings, exact: true }).click();
         await page.getByRole('tab', { name: labels.qq.tabs.reply, exact: true }).click();
         await expect(page.getByLabel(labels.model, { exact: true })).toContainText(longName);
         await expect(page.getByRole('switch', { name: labels.qq.reasoning, exact: true })).not.toBeChecked();
+        await openSidebar(page);
+        await page.locator(`[data-character-id="${characterId}"] .character-select`).click();
         await openSidebar(page);
         await page.locator('.session-select').filter({ hasText: friend.title }).click();
         const hint = labels.qq.chattingIn.replace('{{targetId}}', friend.target_id);
@@ -337,7 +341,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(reasoning).not.toBeChecked();
         expect(errors).toEqual([]);
       } finally {
-        if (projectId) await json(request.delete(`/api/projects/${projectId}`));
+        if (characterId) await json(request.delete(`/api/characters/${characterId}`));
         for (const id of created) await json(request.delete(`/api/models/profiles/${id}`));
       }
     });
@@ -347,28 +351,28 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await request.post('/__test__/session');
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
-      const projects: string[] = [];
+      const characters: string[] = [];
       let release: () => void = () => {};
       try {
         const sessions = [];
         for (let index = 0; index < 2; index++) {
-          const project = await json(request.post('/api/projects', { data: {
+          const character = await json(request.post('/api/characters', { data: {
             kind: 'qqbot', name: `QQ save ${index}`, context_policy: {}, bot_account: `${Date.now()}${index}`,
             websocket_url: 'ws://127.0.0.1:3001', model_profile_id: model.id,
           } }));
-          projects.push(project.id);
-          sessions.push(await json(request.post(`/api/projects/${project.id}/sessions`, { data: { title: `QQ save conversation ${index}`, target_kind: 'group', target_id: `${index + 1}7788` } })));
+          characters.push(character.id);
+          sessions.push(await json(request.post(`/api/characters/${character.id}/sessions`, { data: { title: `QQ save conversation ${index}`, target_kind: 'group', target_id: `${index + 1}7788` } })));
         }
         let fail = true, calls = 0;
         const pending = new Promise<void>((resolve) => { release = resolve; });
-        await page.route(`**/api/projects/${projects[0]}`, async (route) => {
+        await page.route(`**/api/characters/${characters[0]}`, async (route) => {
           if (route.request().method() !== 'PATCH') return route.continue();
           calls++;
           if (fail) return route.fulfill({ status: 500, json: { error: { code: 'SAVE_FAILED', message: 'QQ settings save failed' } } });
           await pending;
           await route.continue();
         });
-        await page.goto(`/projects/${projects[0]}?session=${sessions[0].session_id}`);
+        await page.goto(`/characters/${characters[0]}?session=${sessions[0].session_id}`);
         const trigger = page.locator('.composer .chat-model-select');
         await trigger.click();
         const reasoning = page.getByRole('menuitemcheckbox', { name: labels.reasoning, exact: true });
@@ -376,7 +380,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.getByRole('alert')).toContainText('QQ settings save failed');
         await expect(reasoning).toBeChecked();
         await expect(reasoning).toBeEnabled();
-        expect((await json(request.get(`/api/projects/${projects[0]}`))).reasoning).toBe(true);
+        expect((await json(request.get(`/api/characters/${characters[0]}`))).reasoning).toBe(true);
         fail = false;
         await reasoning.click();
         await expect(reasoning).toBeDisabled();
@@ -385,12 +389,9 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.keyboard.press('Escape');
         await expect(page.locator('.composer').getByRole('button', { name: labels.qq.stop, exact: true })).toBeEnabled();
         await openSidebar(page);
-        await page.locator(`[data-project-id="${projects[1]}"] .project-select`).click();
-        const next = page.locator('.session-select').filter({ hasText: sessions[1].title });
-        await expect(next).toBeVisible();
-        await next.click();
+        await page.locator(`[data-character-id="${characters[1]}"] .character-select`).click();
         await expect(page.getByRole('heading', { name: sessions[1].title, exact: true })).toBeVisible();
-        const saved = page.waitForResponse((response) => response.url().endsWith(`/api/projects/${projects[0]}`) && response.request().method() === 'PATCH');
+        const saved = page.waitForResponse((response) => response.url().endsWith(`/api/characters/${characters[0]}`) && response.request().method() === 'PATCH');
         release();
         await saved;
         expect(calls).toBe(2);
@@ -399,12 +400,12 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await trigger.click();
         await expect(reasoning).toBeChecked();
         await expect(page.getByRole('alert')).toHaveCount(0);
-        expect((await json(request.get(`/api/projects/${projects[0]}`))).reasoning).toBe(false);
-        expect((await json(request.get(`/api/projects/${projects[1]}`))).reasoning).toBe(true);
+        expect((await json(request.get(`/api/characters/${characters[0]}`))).reasoning).toBe(false);
+        expect((await json(request.get(`/api/characters/${characters[1]}`))).reasoning).toBe(true);
       } finally {
         release();
         await page.unrouteAll({ behavior: 'wait' });
-        for (const id of projects) await json(request.delete(`/api/projects/${id}`));
+        for (const id of characters) await json(request.delete(`/api/characters/${id}`));
       }
     });
 
@@ -415,13 +416,13 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await request.post('/__test__/session');
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
-      const project = await json(request.post('/api/projects', { data: {
+      const character = await json(request.post('/api/characters', { data: {
         kind: 'qqbot', name: 'QQ reply policy', context_policy: {}, bot_account: String(Date.now()),
         websocket_url: 'ws://127.0.0.1:3001', model_profile_id: model.id, keywords: ['bot'], reply_message_limit: 2,
       } }));
       try {
-        const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { title: 'QQ reply policy', target_kind: 'group', target_id: '7788' } }));
-        await page.goto(`/projects/${project.id}?session=${session.session_id}`);
+        const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { title: 'QQ reply policy', target_kind: 'group', target_id: '7788' } }));
+        await page.goto(`/characters/${character.id}?session=${session.session_id}`);
         await expect(page.getByRole('heading', { name: session.title, exact: true })).toBeVisible();
         const limited = await json(request.post(`/__test__/qq/${session.session_id}/reply/limit`));
         await expect(page.locator('[data-qq-delivery]')).toHaveCount(2);
@@ -457,7 +458,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.screenshot({ path: info.outputPath('qq-missing-reply.png') });
         expect(errors).toEqual([]);
       } finally {
-        await json(request.delete(`/api/projects/${project.id}`));
+        await json(request.delete(`/api/characters/${character.id}`));
       }
     });
   });

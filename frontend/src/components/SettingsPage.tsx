@@ -83,7 +83,7 @@ export function SettingsPage({
             {route.section === 'general' ? <GeneralPanel /> : null}
             {route.section === 'models' ? <ModelsPanel view={route.view} onNavigate={onNavigate}
               listOnlyKind={modelListKind} onOpenEditor={() => setModelListKind(null)} /> : null}
-            {route.section === 'personas' ? <PersonasPanel key={route.view} collection={route.view} /> : null}
+            {route.section === 'personas' ? <PersonasPanel /> : null}
             {route.section === 'knowledge' ? <KnowledgePanel view={route.view} /> : null}
             {route.section === 'worldbook' ? <WorldbookPanel view={route.view} /> : null}
             {route.section === 'tools' ? route.view === 'web' ? <WebToolsSettings /> : <ToolsPanel scope={route.view} /> : null}

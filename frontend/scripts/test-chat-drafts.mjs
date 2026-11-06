@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { apiMocks, createModuleLoader } from './module-loader.mjs';
-import { mockDraftCatalogs } from './draft-fixtures.mjs';
+import { mockDraftCatalogs, normalCharacter, policy, COGITA } from './draft-fixtures.mjs';
 
 const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
-const { draftConfiguration, defaultModelId } = (await load('../src/store/cogita/drafts.ts')).exports;
-const { newChatUrl, readProjectRoute, isDraftRoute } = (await load('../src/components/projects/navigation.ts')).exports;
-const policy = { history_enabled: true, strategy: 'token_budget', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: { enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: null } };
-const project = { id: 'workspace', kind: 'workspace', agent_persona_id: 'agent', context_policy: policy };
-const saved = (id, projectId = null) => ({ session_id: id, kind: projectId ? 'workspace' : 'ordinary', project_id: projectId,
-  title: '', effective: {}, updated_at: '2026-09-30T00:00:00Z' });
+const { useModelsStore: models } = (await load('../src/store/useModelsStore.ts')).exports;
+const { draftConfiguration, resolveDraft } = (await load('../src/store/cogita/drafts.ts')).exports;
+const { newChatUrl, readCharacterRoute, isDraftRoute } = (await load('../src/components/characters/navigation.ts')).exports;
+const character = normalCharacter('custom');
+const saved = (id, characterId = COGITA) => ({ session_id: id, kind: 'normal', character_id: characterId,
+  title: '', overrides: {}, effective: {}, updated_at: '2026-09-30T00:00:00Z' });
 const result = (session) => ({ success: true, session, messages: [], run: { run_id: 'run', session_id: session.session_id,
   status: 'DONE', created_at: session.updated_at, updated_at: session.updated_at } });
 function deferred() { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
@@ -19,56 +19,52 @@ function reset() {
   store.setState(store.getInitialState(), true);
   mockDraftCatalogs(api);
   calls = [];
-  api.get = async () => project;
+  api.get = async (id) => normalCharacter(id);
   api.listSessions = async () => [];
   api.getGeneralSettings = async () => ({});
   api.getSession = async (id) => saved(id);
   api.messageRows = async () => [];
   api.runRows = async () => [];
-  api.runRows = async () => [];
-  api.createSession = async (...args) => { calls.push(['create', ...args]); return saved('created', typeof args[0] === 'string' ? args[0] : null); };
-  api.updateSessionKnowledgeBases = async (...args) => { calls.push(['bindings', ...args]); };
+  api.createSession = async (...args) => { calls.push(['create', ...args]); return saved('created', args[0]); };
   api.sendMessage = async (...args) => { calls.push(['send', ...args]); return result(saved(args[0])); };
 }
 
 reset();
+const providers = [{ id: 'provider', name: 'Available provider' }];
+api.listProviderProfiles = async () => providers;
 await store.getState().initialize();
+assert.deepEqual(models.getState().providers, providers, 'Startup supplies provider names to the chat model menu');
 assert.equal(store.getState().currentSession, null);
-assert.equal(store.getState().chatDraft.kind, 'ordinary');
+assert.equal(store.getState().chatDraft.kind, 'normal');
 assert.deepEqual(calls, []);
 store.getState().setComposerDraftText('keep this');
 const epoch = store.getState().sessionEpoch;
 for (let i = 0; i < 100; i++) await store.getState().startDraft();
 assert.equal(store.getState().sessionEpoch, epoch);
 assert.equal(store.getState().composerDraftText, 'keep this');
-assert.equal(store.getState().chatDraft.reasoning, true);
-store.getState().saveDraft({ persona_id: 'chosen', title: 'Manual', context_policy: { ...policy, history_enabled: false }, generation: { temperature: 0 }, reasoning: false, tools_allowed: [] }, ['kb']);
+assert.equal(draftConfiguration(store.getState().chatDraft, [], normalCharacter()).reasoning, true);
+store.getState().saveDraft({ title: 'Manual', overrides: { persona_id: 'chosen', context_policy: { ...policy, history_enabled: false }, temperature: 0, reasoning: false, tools_allowed: [], knowledge_base_ids: ['kb'], worldbook_ids: ['book'] } });
 assert.deepEqual(calls, []);
 assert.equal(await store.getState().sendMessage('   '), false);
 assert.deepEqual(calls, []);
 const attachment = { type: 'image', name: 'image.png', id: 'attachment' };
 await store.getState().sendMessage('question', [attachment]);
-assert.deepEqual(calls.map((c) => c[0]), ['create', 'bindings', 'send']);
-assert.equal(calls[0][1].persona_id, 'chosen');
-assert.equal(calls[0][1].title, 'Manual');
-assert.deepEqual(calls[0][1].generation, { temperature: 0 });
-assert.equal(calls[0][1].reasoning, false);
-assert.deepEqual(calls[0][1].context_policy, { ...policy, history_enabled: false });
-assert.deepEqual(calls[0][1].tools_allowed, []);
-assert.equal('knowledge_base_ids' in calls[0][1], false);
-assert.deepEqual(calls[1], ['bindings', 'created', ['kb']]);
-assert.deepEqual(calls[2].slice(1, 4), ['created', 'question', [attachment]]);
+assert.deepEqual(calls.map((c) => c[0]), ['create', 'send']);
+assert.equal(calls[0][1], COGITA);
+assert.deepEqual(calls[0][2], { title: 'Manual', overrides: { persona_id: 'chosen', context_policy: { ...policy, history_enabled: false },
+  temperature: 0, reasoning: false, tools_allowed: [], knowledge_base_ids: ['kb'], worldbook_ids: ['book'] } });
+assert.deepEqual(calls[1].slice(1, 4), ['created', 'question', [attachment]]);
 assert.equal(store.getState().sessionEpoch, epoch, 'Promotion must not reset the composer or attachment hook');
 assert.equal(store.getState().chatDraft, null);
 
 reset();
-await store.getState().startDraft('workspace');
-assert.equal(draftConfiguration(store.getState().chatDraft, [], [], null, project).reasoning, true);
-store.getState().saveDraft({ overrides: { context_policy: { ...policy, history_enabled: false }, temperature: 0, tools_allowed: [], harness_enabled: false, reasoning: false } }, ['kb']);
-assert.equal(draftConfiguration(store.getState().chatDraft, [], [], null, project).context_policy.history_enabled, false);
-assert.equal(draftConfiguration(store.getState().chatDraft, [], [], null, project).reasoning, false);
+await store.getState().startDraft('custom');
+assert.equal(draftConfiguration(store.getState().chatDraft, [], character).reasoning, true);
+store.getState().saveDraft({ overrides: { context_policy: { ...policy, history_enabled: false }, temperature: 0, tools_allowed: [], harness_enabled: false, reasoning: false } });
+assert.equal(draftConfiguration(store.getState().chatDraft, [], character).context_policy.history_enabled, false);
+assert.equal(draftConfiguration(store.getState().chatDraft, [], character).reasoning, false);
 await store.getState().sendMessage('', [attachment]);
-assert.deepEqual(calls[0], ['create', 'workspace', { title: '', overrides: { context_policy: { ...policy, history_enabled: false }, temperature: 0, tools_allowed: [], harness_enabled: false, reasoning: false } }]);
+assert.deepEqual(calls[0], ['create', 'custom', { title: '', overrides: { context_policy: { ...policy, history_enabled: false }, temperature: 0, tools_allowed: [], harness_enabled: false, reasoning: false } }]);
 
 reset();
 await store.getState().startDraft();
@@ -90,22 +86,16 @@ api.createSession = async () => { throw new Error('Creation failed'); };
 store.getState().setComposerDraftText('retry me');
 await store.getState().sendMessage('retry me');
 assert.equal(store.getState().currentSession, null);
-assert.equal(store.getState().chatDraft.kind, 'ordinary');
+assert.equal(store.getState().chatDraft.kind, 'normal');
 assert.equal(store.getState().composerDraftText, 'retry me');
 assert.equal(store.getState().awaitingAcceptance, false);
 assert.match(store.getState().error, /Creation failed/);
 
 reset();
 await store.getState().startDraft();
-store.getState().saveDraft({}, ['kb']);
-api.updateSessionKnowledgeBases = async () => { throw new Error('Bindings failed'); };
-await store.getState().sendMessage('retry');
-assert.equal(store.getState().currentSession.session_id, 'created');
-assert.deepEqual(store.getState().pendingKnowledge, { sessionId: 'created', ids: ['kb'] });
-api.updateSessionKnowledgeBases = async (...args) => { calls.push(['bindings', ...args]); };
 api.sendMessage = async () => { throw new Error('Send failed'); };
 await store.getState().sendMessage('retry');
-assert.equal(store.getState().pendingKnowledge, null);
+assert.equal(store.getState().currentSession.session_id, 'created');
 assert.match(store.getState().error, /Send failed/);
 api.sendMessage = async () => result(saved('created'));
 await store.getState().sendMessage('retry');
@@ -113,7 +103,7 @@ assert.equal(calls.filter((c) => c[0] === 'create').length, 1);
 
 reset();
 await store.getState().startDraft();
-store.getState().saveDraft({}, ['original-kb']);
+store.getState().saveDraft({ overrides: { knowledge_base_ids: ['original-kb'] } });
 const late = deferred();
 api.createSession = () => late.promise;
 const oldSend = store.getState().sendMessage('original', [attachment]);
@@ -123,8 +113,7 @@ late.resolve(saved('late'));
 await oldSend;
 assert.equal(store.getState().currentSession.session_id, 'other');
 assert.equal(store.getState().composerDraftText, 'new page');
-assert.deepEqual(calls[0], ['bindings', 'late', ['original-kb']]);
-assert.deepEqual(calls[1].slice(1, 4), ['late', 'original', [attachment]]);
+assert.deepEqual(calls[0].slice(1, 4), ['late', 'original', [attachment]]);
 assert.ok(store.getState().sessions.some((s) => s.session_id === 'late'));
 
 for (const finish of ['success', 'failed-run', 'cancelled-run', 'lost-response']) {
@@ -165,12 +154,13 @@ api.sendMessage = async (_session, _content, _attachments, id) => {
 assert.equal(await store.getState().sendMessage('saved input'), true);
 assert.equal(store.getState().composerDraftText, '');
 
-assert.equal(newChatUrl(), '/new');
-assert.equal(newChatUrl('a/b'), '/projects/a%2Fb/new');
-assert.deepEqual(readProjectRoute({ pathname: '/projects/a%2Fb/new', search: '' }), { projectId: 'a/b', sessionId: null });
-assert.equal(isDraftRoute({ pathname: '/new' }), true);
-assert.equal(isDraftRoute({ pathname: '/projects/a' }), false);
-assert.equal(defaultModelId([{ id: 'off', kind: 'llm', enabled: false }, { id: 'yes', kind: 'llm', enabled: true }], 'off'), 'yes');
-assert.equal(defaultModelId([], null), null);
-assert.equal(draftConfiguration({ kind: 'workspace', overrides: {} }, [], [{ id: 'global', kind: 'llm', enabled: true }], null, project).model_profile_id, 'global');
-console.log('Chat drafts: deferred creation, complete configuration, duplicate submission, failures, routes and navigation isolation: ok');
+assert.equal(newChatUrl(), `/characters/${COGITA}/new`);
+assert.equal(newChatUrl('a/b'), '/characters/a%2Fb/new');
+assert.deepEqual(readCharacterRoute({ pathname: '/characters/a%2Fb/new', search: '' }), { characterId: 'a/b', sessionId: null });
+assert.equal(isDraftRoute({ pathname: `/characters/${COGITA}/new` }), true);
+assert.equal(isDraftRoute({ pathname: '/characters/a' }), false);
+assert.equal(resolveDraft({ overrides: {} }, { ...character, model_profile_id: null }).model_profile_id, null);
+assert.equal(resolveDraft({ overrides: { reasoning: false, temperature: 0, knowledge_base_ids: [], worldbook_ids: null } },
+  { ...character, knowledge_base_ids: ['parent'], worldbook_ids: ['lore'] }).reasoning, false);
+assert.deepEqual(resolveDraft({ overrides: { knowledge_base_ids: [] } }, { ...character, knowledge_base_ids: ['parent'] }).knowledge_base_ids, []);
+console.log('Chat drafts: atomic creation, sparse overrides, failures, routes and navigation isolation: ok');

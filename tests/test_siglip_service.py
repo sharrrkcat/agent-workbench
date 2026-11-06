@@ -252,7 +252,7 @@ def test_public_vectors_visibility_limits_and_invalid_input_preserve_residency(t
             manager.settings.patch({"max_request_mb": 1, "max_normalized_request_mb": 128})
             assert (await caller.post("/v1/images/embeddings", json=request(inputs="x" * 1024 * 1024).model_dump())).status_code == 413
             assert process.returncode is None
-            assert (await caller.get("/api/sessions")).json() == []
+            assert (await caller.get("/api/characters/00000000-0000-4000-8000-000000000003/sessions")).json() == []
             assert not caller._transport.app.state.runtime_state.runs.list_all_runs()
             assert (await caller.get(path + "/log?tower=text")).json()["text"].find("SigLIP text") >= 0
     asyncio.run(scenario())

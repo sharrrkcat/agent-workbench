@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.qq_protocol import normalize
 from ai_workbench.core.qq_segments import ordered_segments, public_segments
 from ai_workbench.core.schema.context_policy import ContextPolicy
@@ -157,7 +157,7 @@ def test_card_text_reaches_api_batch_model_and_history_without_keyword_trigger(q
     assert len(connection.calls) == 1
     model_input = upstream.calls[0]["messages"][-1]["content"]
     assert expected in model_input
-    history = project_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None)
+    history = character_qq_context(state.qq.store, state.messages, sid, "next", ContextPolicy(), None)
     assert any(message["role"] == "user" and message["content"] == model_input for message in history.messages)
     refreshed = qq_incoming(client, sid)
     assert next(item for item in refreshed if item["external_id"] == "1")["segments"] == row["segments"]

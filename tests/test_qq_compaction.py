@@ -10,12 +10,12 @@ from ai_workbench.core.schema.compaction import ContextCheckpoint
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQMessage
 from tests.test_harness_compaction import is_summary, summary
-from tests.test_qqbot import qq_client, project, configure_execution, child, ingest, freeze, event
+from tests.test_qqbot import qq_client, character, configure_execution, child, ingest, freeze, event
 from tests.test_qq_followup import clock
 from tests.test_qq_icebreaker import setup as icebreaker_setup, tick, binding
 from tests.test_qq_reply_policy import execute_batch
 from tests.test_qq_media import isolated_attachments, prepare_images, image_event, finish_pending, page
-from tests.qq_context_fixture import project_qq_context, prepare_qq_context
+from tests.qq_context_fixture import character_qq_context, prepare_qq_context
 from tests.tool_fixtures import completion, ok, tool_call
 
 
@@ -34,9 +34,9 @@ def respond(request):
 
 def test_qq_policy_defaults_strict_rejection_and_image_ownership(qq_client):
     client, state, _ = qq_client
-    p = project(client)
+    p = character(client)
     assert p["context_policy"] == ContextPolicy().model_dump()
-    url = f"/api/projects/{p['id']}"
+    url = f"/api/characters/{p['id']}"
     for policy in ({"max_messages": 100}, {"max_chars": 1000}, {"history_enabled": None},
                    {"strategy": "message_window", "message_window": {"max_messages": 0}},
                    {"compaction": {"trigger_percent": 50, "target_percent": 50}}):
@@ -82,7 +82,7 @@ def test_three_qq_checkpoints_cover_only_submitted_inputs_and_confirmed_sends(qq
     assert all(state.runs.get_context_snapshot(item.step_id) == item for item in snapshots)
     other = child(client, p, "8899")
     assert state.sessions.get_context_checkpoint(other["session_id"]) is None
-    assert "FACT_" not in project_qq_context(state.qq.store, state.messages, other["session_id"], "next", ContextPolicy(), None).model_dump_json()
+    assert "FACT_" not in character_qq_context(state.qq.store, state.messages, other["session_id"], "next", ContextPolicy(), None).model_dump_json()
 
 
 def test_qq_window_omits_memory_and_switch_back_reuses_it(qq_client):
@@ -95,7 +95,7 @@ def test_qq_window_omits_memory_and_switch_back_reuses_it(qq_client):
     checkpoint = state.sessions.get_context_checkpoint(session["session_id"])
     assert checkpoint
     policy = ContextPolicy(strategy="message_window", message_window={"max_messages": 2})
-    ok(client.patch(f"/api/projects/{p['id']}", json={"context_policy": policy.model_dump()}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"context_policy": policy.model_dump()}))
     offset = len(upstream.calls)
     _, run = execute_batch(client, state, p, session, 3)
     assert run.status == "DONE" and len(upstream.calls) == offset + 1
@@ -105,7 +105,7 @@ def test_qq_window_omits_memory_and_switch_back_reuses_it(qq_client):
     assert state.sessions.get_context_checkpoint(session["session_id"]) == checkpoint
     policy.strategy = "token_budget"
     policy.compaction.enabled = False
-    ok(client.patch(f"/api/projects/{p['id']}", json={"context_policy": policy.model_dump()}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"context_policy": policy.model_dump()}))
     _, run = execute_batch(client, state, p, session, 4)
     assert run.status == "DONE" and checkpoint.summary in json.dumps(upstream.calls[-1])
     assert len(connection.calls) == 4
@@ -116,9 +116,9 @@ def test_loop_compaction_preserves_qq_delivery_count_and_web_budget(qq_client, s
     client, state, upstream = qq_client
     p, session, connection = setup(client, state)
     if strategy == 'history_retrieval':
-        ok(client.patch(f"/api/projects/{p['id']}", json={'context_policy': {'strategy': strategy,
+        ok(client.patch(f"/api/characters/{p['id']}", json={'context_policy': {'strategy': strategy,
             'retrieval': {'trigger_percent': 25, 'target_percent': 15}}}))
-    ok(client.patch(f"/api/projects/{p['id']}", json={"reply_message_limit": 2}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"reply_message_limit": 2}))
     calls = []
     async def fetch(arguments, context):
         calls.append(context.tool_call_id)
@@ -145,7 +145,7 @@ def test_loop_compaction_preserves_qq_delivery_count_and_web_budget(qq_client, s
     web_steps = [step for step in state.runs.list_steps(run.run_id) if step.metadata.get("tool_name") == "web_fetch"]
     assert [step.metadata["web"]["remaining"]["fetch"] for step in web_steps] == [5, 4]
     assert state.sessions.get_context_checkpoint(session["session_id"]) is None
-    projected = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    projected = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert "FACT_0" not in projected.model_dump_json() and "Reply 1" in projected.model_dump_json()
 
 
@@ -194,7 +194,7 @@ def test_qq_history_pages_bidirectionally_and_bounds_candidate_reads(qq_client, 
     with Session(state.qq.store.engine) as db:
         for number in range(1, 131):
             message = state.messages.add_message(sid, "user", f"batch {number} " + "padding " * 2000)
-            db.add(QQBatch(id=number, session_id=sid, project_id=p["id"], status="done", text="input",
+            db.add(QQBatch(id=number, session_id=sid, character_id=p["id"], status="done", text="input",
                 created_at=number, input_message_id=message.message_id))
             db.add(QQMessage(session_id=sid, external_id=str(number), sender_id="9999", sender_name="Name",
                 timestamp="2026-11-01T00:00:00+00:00", text="input", batch_id=number, disposition="batched"))
@@ -222,13 +222,13 @@ def test_qq_summary_failure_over_window_pauses_without_sending(qq_client):
     client, state, upstream = qq_client
     p, session, connection = setup(client, state)
     policy = ContextPolicy(compaction={"enabled": False})
-    ok(client.patch(f"/api/projects/{p['id']}", json={"context_policy": policy.model_dump()}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"context_policy": policy.model_dump()}))
     upstream.turns = [respond] * 20
     for number in range(4):
         _, run = execute_batch(client, state, p, session, number + 1, text="bot " + "padding " * 1700)
         assert run.status == "DONE", run
     policy.compaction.enabled = True
-    ok(client.patch(f"/api/projects/{p['id']}", json={"context_policy": policy.model_dump()}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"context_policy": policy.model_dump()}))
     upstream.turns = [completion(content="truncated summary", finish="length")]
     _, run = execute_batch(client, state, p, session, 5)
     assert run.status == "FAILED" and run.error_code == "CONTEXT_COMPACTION_FAILED"

@@ -1,4 +1,5 @@
 """QQ participant clocks, immutable batches and explicit no-reply decisions."""
+from tests.chat_fixtures import create_chat
 from tests.qq_transcript_helpers import stored_qq_rows
 from tests.qq_transcript_helpers import qq_transcript
 import json
@@ -7,11 +8,11 @@ from types import SimpleNamespace
 import pytest
 from sqlmodel import Session, select
 
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.qq_store import QQStore
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBatch, QQBinding, QQDelivery, QQParticipant
-from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, project
+from tests.test_qqbot import qq_client, child, configure_execution, event, freeze, ingest, character
 from tests.tool_fixtures import completion, ok, tool_call
 
 
@@ -98,7 +99,7 @@ def test_example_timeline_batches_and_reply_clocks(qq_client, clock):
 
 def test_silence_latches_participants_past_expiry_and_exact_cutoff(qq_client):
     client, state, _ = qq_client
-    p = project(client, keywords=["bot"])
+    p = character(client, keywords=["bot"])
     session = child(client, p)
     ingest(client, state, p, event(1), 0)
     freeze(state, session, 5)
@@ -123,7 +124,7 @@ def test_silence_latches_participants_past_expiry_and_exact_cutoff(qq_client):
 
 def test_keyword_promotes_window_before_truncation_and_snapshots_only_submitted_speakers(qq_client):
     client, state, _ = qq_client
-    p = project(client, keywords=["bot"])
+    p = character(client, keywords=["bot"])
     session = child(client, p)
     ingest(client, state, p, event(1), 0)
     freeze(state, session, 5)
@@ -148,7 +149,7 @@ def test_keyword_promotes_window_before_truncation_and_snapshots_only_submitted_
 @pytest.mark.parametrize("cq", [False, True])
 def test_actual_mentions_share_keyword_matching_without_name_queries(qq_client, cq):
     client, state, _ = qq_client
-    p = project(client, keywords=["@12345"])
+    p = character(client, keywords=["@12345"])
     session = child(client, p)
     message = "[CQ:at,qq=12345]" if cq else [{"type": "at", "data": {"qq": "12345"}}]
     ingest(client, state, p, {**event(1), "message": message}, 0)
@@ -178,7 +179,7 @@ def test_skip_is_a_single_successful_round_and_preserves_history(qq_client, cloc
     assert "follow-up batch" in upstream.calls[0]["messages"][0]["content"]
     assert not state.qq.store.get(QQBinding, session["session_id"]).paused
     assert state.runs.get_harness_state(run.run_id) == {}
-    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     assert any("a follow-up" in str(m.get("content")) for m in context.messages)
     assert not any(call.function.name == "qq_skip_reply" for m in context.messages for call in m.get("tool_calls", []))
     public = qq_transcript(client, session["session_id"])
@@ -294,7 +295,7 @@ def test_multiple_confirmations_renew_only_batch_speakers_and_survive_failure(qq
 
 def test_participant_state_and_frozen_policy_survive_store_recovery(qq_client):
     client, state, _ = qq_client
-    p = project(client, keywords=["bot"])
+    p = character(client, keywords=["bot"])
     session = child(client, p)
     ingest(client, state, p, event(1), 0)
     queued = freeze(state, session, 5)
@@ -318,9 +319,9 @@ def test_skip_stays_out_of_general_tools_and_public_snapshot_state(qq_client):
     client, state, _ = qq_client
     tools = ok(client.get("/api/tools"))
     assert {"qq_send_message", "qq_skip_reply"}.issubset(t["name"] for t in tools if t["scope"] == "qqbot")
-    session = ok(client.post("/api/sessions", json={}))
-    assert "qq_skip_reply" not in session["tools_allowed"]
-    assert client.patch(f"/api/sessions/{session['session_id']}", json={"tools_allowed": ["qq_skip_reply"]}).status_code == 422
+    session = ok(create_chat(client, overrides={}))
+    assert "qq_skip_reply" not in session["effective"]["tools_allowed"]
+    assert client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"tools_allowed": ["qq_skip_reply"]}}).status_code == 422
     assert client.post("/api/tools/qq_skip_reply/call", json={"session_id": session["session_id"], "arguments": {}}).status_code == 400
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
     assert "QQBatchResponse" not in schemas

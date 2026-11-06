@@ -14,8 +14,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
 
     test('slash completion, independent checkpoint, queued answer and refresh', async ({ page, request }, info) => {
       const session = await (await request.post('/__test__/session', { data: { compaction: 'hold' } })).json();
-      await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: {
-        compaction: { enabled: false, trigger_percent: 50, target_percent: 35, max_summary_tokens: 512 } } } });
+      await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {context_policy: {
+        compaction: { enabled: false, trigger_percent: 50, target_percent: 35, max_summary_tokens: 512 } }}} });
       const before = await readHistory(request, session.session_id);
       const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
       const sent: string[] = []; page.on('request', (r) => {
@@ -110,7 +110,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const marker = page.locator('[data-compaction-run]');
       await expect(marker).toContainText(runs.compaction.notNeeded);
       await expect(marker.getByRole('button')).toHaveCount(0);
-      await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { strategy: 'message_window' } } });
+      await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {context_policy: { strategy: 'message_window' }}} });
       await input.fill('/compact');
       await expect(page.getByRole('listbox').getByRole('option')).toBeDisabled();
       await expect(page.getByText(chat.compactCommand.policy, { exact: true })).toBeVisible();

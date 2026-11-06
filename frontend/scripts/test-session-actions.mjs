@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { apiMocks, createModuleLoader } from './module-loader.mjs';
-import { mockDraftCatalogs } from './draft-fixtures.mjs';
+import { mockDraftCatalogs, COGITA } from './draft-fixtures.mjs';
 
 const api = {};
 const load = createModuleLoader(apiMocks(api));
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
-const session = (id) => ({ session_id: id, kind: 'ordinary', project_id: null, title: id, effective: {}, updated_at: '2026-09-23T00:00:00Z' });
+const session = (id) => ({ session_id: id, kind: 'normal', character_id: COGITA, title: id, effective: {}, updated_at: '2026-09-23T00:00:00Z' });
 const first = session('first'),
   second = session('second'),
   third = session('third'),
@@ -27,7 +27,7 @@ function reset(sessions = [first, second, third]) {
   store.setState(store.getInitialState(), true);
   store.setState({
     sessions,
-    currentSession: first,
+    currentSession: first, currentCharacterId: COGITA,
     messages,
     runs,
     stepsByRunId: { run: [{ step_id: 'step' }] },
@@ -63,7 +63,7 @@ reset([first]);
 await store.getState().deleteSession('first');
 assert.deepEqual(store.getState().sessions, []);
 assert.equal(store.getState().currentSession, null);
-assert.equal(store.getState().chatDraft.kind, 'ordinary');
+assert.equal(store.getState().chatDraft.kind, 'normal');
 
 reset();
 const delayedDelete = deferred();
@@ -81,7 +81,7 @@ assert.deepEqual(store.getState().sessions, [second, third]);
 reset([first]);
 const delayedCatalog = deferred(),
   creating = deferred();
-api.listTools = () => {
+api.get = () => {
   creating.resolve();
   return delayedCatalog.promise;
 };
@@ -90,7 +90,7 @@ await creating.promise;
 store.setState({ sessions: [third] });
 await store.getState().selectSession('third');
 const changed = store.getState();
-delayedCatalog.resolve([]);
+delayedCatalog.resolve({ id: COGITA, kind: 'normal', updated_at: '2026-09-25T00:00:00Z' });
 await deletingLast;
 assert.equal(store.getState().currentSession, third);
 assert.equal(store.getState().messages, changed.messages);
@@ -218,18 +218,18 @@ assert.equal(store.getState().sessionLoad.status, 'ready');
 
 reset();
 api.updateSession = async (id, patch) => ({ ...first, ...patch });
-assert.equal(await store.getState().updateSession({ harness_enabled: false, tools_allowed: [] }), true);
-assert.equal(store.getState().currentSession.harness_enabled, false);
-assert.deepEqual(store.getState().currentSession.tools_allowed, []);
+assert.equal(await store.getState().updateSession({ overrides: { harness_enabled: false, tools_allowed: [] } }), true);
+assert.equal(store.getState().currentSession.overrides.harness_enabled, false);
+assert.deepEqual(store.getState().currentSession.overrides.tools_allowed, []);
 api.updateSession = async () => { throw new Error('Configuration save failed'); };
-assert.equal(await store.getState().updateSession({ harness_enabled: true }), false);
-assert.equal(store.getState().currentSession.harness_enabled, false);
+assert.equal(await store.getState().updateSession({ overrides: { harness_enabled: true } }), false);
+assert.equal(store.getState().currentSession.overrides.harness_enabled, false);
 assert.match(store.getState().error, /Configuration save failed/);
 
 reset();
 const pendingConfiguration = deferred();
 api.updateSession = () => pendingConfiguration.promise;
-const savingConfiguration = store.getState().updateSession({ harness_enabled: true });
+const savingConfiguration = store.getState().updateSession({ overrides: { harness_enabled: true } });
 await store.getState().selectSession('third');
 pendingConfiguration.resolve({ ...first, harness_enabled: true });
 assert.equal(await savingConfiguration, false);
@@ -237,9 +237,9 @@ assert.equal(store.getState().currentSession.session_id, 'third');
 
 reset();
 await store.getState().startDraft();
-assert.equal(await store.getState().updateSession({ harness_enabled: true, tools_allowed: [] }), true);
-assert.equal(store.getState().chatDraft.harness_enabled, true);
-assert.deepEqual(store.getState().chatDraft.tools_allowed, []);
+assert.equal(await store.getState().updateSession({ overrides: { harness_enabled: true, tools_allowed: [] } }), true);
+assert.equal(store.getState().chatDraft.overrides.harness_enabled, true);
+assert.deepEqual(store.getState().chatDraft.overrides.tools_allowed, []);
 store.setState({ sending: true });
-assert.equal(await store.getState().updateSession({ harness_enabled: false }), false);
-assert.equal(store.getState().chatDraft.harness_enabled, true);
+assert.equal(await store.getState().updateSession({ overrides: { harness_enabled: false } }), false);
+assert.equal(store.getState().chatDraft.overrides.harness_enabled, true);

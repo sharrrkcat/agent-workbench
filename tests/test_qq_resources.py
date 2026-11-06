@@ -6,13 +6,13 @@ import pytest
 from sqlmodel import Session
 
 from ai_workbench.core.attachments import resolve_attachment_uri
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.time import utc_now
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.qq_models import QQMedia, QQMediaAsset, QQBatch
-from tests.test_qqbot import qq_client, project, child, configure_execution, ingest, freeze
+from tests.test_qqbot import qq_client, character, child, configure_execution, ingest, freeze
 from tests.test_qq_media import isolated_attachments, prepare_images, image_event, finish_pending, page, reply
 from tests.test_qq_image_generation import image_provider, draw, deliveries
 from tests.test_qq_reply_policy import execute_batch
@@ -34,7 +34,7 @@ def populate(client, state, monkeypatch, **options):
 def test_global_gallery_and_manual_descriptions(qq_client, monkeypatch):
     client, state, _ = qq_client
     p, session = populate(client, state, monkeypatch)
-    other = project(client, bot_account="54321")
+    other = character(client, bot_account="54321")
     other_session = child(client, other)
     data = image_event()
     data["self_id"] = 54321
@@ -103,7 +103,7 @@ def test_favorites_survive_last_reference_and_require_explicit_deletion(qq_clien
     ok(client.patch(url, json={"is_favorite": True}))
     asset = state.qq.store.get(QQMediaAsset, image["id"])
     paths = {resolve_attachment_uri(a.uri) for a in (asset.attachment, asset.model_attachment) if a}
-    ok(client.delete(f"/api/projects/{p['id']}"))
+    ok(client.delete(f"/api/characters/{p['id']}"))
     retained = gallery(client)["items"]
     assert len(retained) == 1 and not retained[0]["has_references"]
     assert all(path.is_file() for path in paths)
@@ -161,7 +161,7 @@ def test_deletion_preserves_recorded_snapshots_but_removes_future_image_context(
     assert model_path.name in snapshot_ids
     ok(client.delete(f"/api/qq/resources/{image['id']}"))
     assert model_path.is_file() and state.runs.context_attachment_ids({batch.run_id}) == snapshot_ids
-    context = project_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
     assert "deleted-description" not in context.model_dump_json() and "[图片]" in context.model_dump_json()
     ok(client.delete(f"/api/runs/{batch.run_id}"))
     assert not model_path.exists()
@@ -178,7 +178,7 @@ def test_deleted_generated_images_do_not_inject_original_prompts(qq_client, imag
     ok(client.delete(f"/api/qq/resources/{image['id']}"))
     delivery = deliveries(client, session)[0]
     assert delivery["status"] == "sent" and delivery["asset_id"] is None and delivery["attachment"] is None
-    context = project_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session['session_id'], "next", ContextPolicy(), None)
     assert "secret drawing prompt" not in context.model_dump_json()
     assert any(m.get("role") == "assistant" and m.get("content") == "[图片]" for m in context.messages)
 

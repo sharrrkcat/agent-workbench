@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from ai_workbench.core.models.schema import (
     ChatRequestOptions, GenerationParameters, ResponseFormat, StreamOptions, TextPart, ToolCall, ToolChoice, ToolSpec,
 )
-from ai_workbench.core.schema.context_policy import ContextPolicy, BoundedContextPolicy
+from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.compaction import CompactionReference, RunCompactionReference
 from ai_workbench.core.schema.retrieval import RetrievalReference
 from ai_workbench.core.schema.context_budget import ContextBudgetStats
@@ -70,7 +70,7 @@ class SnapshotRequest(GenerationParameters):
 
 
 SourceKind = Literal[
-    "system", "instruction", "agent_persona", "project_prompt", "cogita_persona", "knowledge", "knowledge_snippet",
+    "system", "instruction", "character", "persona",
     "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime", "summary", "context_memory", "context_retrieval",
 ]
 
@@ -130,7 +130,7 @@ class ContextSnapshot(SnapshotModel):
     model_alias: str
     source_type: Literal["local", "provider"]
     request: SnapshotRequest
-    policy: ContextPolicy | BoundedContextPolicy
+    policy: ContextPolicy
     sources: list[ContextSource]
     exclusions: list[ContextExclusion]
     attachment_ids: list[str]

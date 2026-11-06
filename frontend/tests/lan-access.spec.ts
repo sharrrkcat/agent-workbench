@@ -15,7 +15,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         localStorage.setItem('cogita.locale', language);
         Object.defineProperty(crypto, 'randomUUID', { value: undefined });
       }, locale);
-      await page.goto('/new');
+      await page.goto('/characters/00000000-0000-4000-8000-000000000003/new');
       await page.locator('.composer textarea').fill('HTTP LAN attachment');
       await page.locator('.composer input[type=file]').setInputFiles({ name: 'lan.txt', mimeType: 'text/plain', buffer: Buffer.from('LAN upload') });
       await expect(page.locator('.upload-ready')).toHaveCount(1);

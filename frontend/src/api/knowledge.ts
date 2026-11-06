@@ -3,7 +3,6 @@ import type {
   KnowledgeSearchResponse,
   KnowledgeSettings,
   KnowledgeSource,
-  SessionKnowledgeBindings,
   KnowledgeBaseInput, KnowledgeSettingsInput, KnowledgeSourceIndexResult, KnowledgeSourcePreview, KnowledgeSourceChunk, KnowledgeSearchInput,
 } from '../types/knowledge';
 import { request } from './http';
@@ -56,11 +55,5 @@ export const knowledgeApi = {
   listKnowledgeSourceChunks: (id: string) =>
     request<{ source_id: string; chunks: KnowledgeSourceChunk[] }>(`/api/knowledge/sources/${encodeURIComponent(id)}/chunks`),
   searchKnowledge: (payload: KnowledgeSearchInput) => request<KnowledgeSearchResponse>('/api/knowledge/search', { method: 'POST', body: JSON.stringify(payload) }),
-  listSessionKnowledgeBases: (sessionId: string) =>
-    request<SessionKnowledgeBindings>(`/api/sessions/${encodeURIComponent(sessionId)}/knowledge-bases`),
-  updateSessionKnowledgeBases: (sessionId: string, ids: string[]) =>
-    request<SessionKnowledgeBindings>(`/api/sessions/${encodeURIComponent(sessionId)}/knowledge-bases`, {
-      method: 'PATCH',
-      body: JSON.stringify({ knowledge_base_ids: ids }),
-    }),
+
 };

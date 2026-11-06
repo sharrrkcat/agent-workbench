@@ -79,10 +79,7 @@ for (const locale of ['en', 'zh-CN']) {
             .filter((kind) => populatedKinds.has(kind)).map((kind) => ['models', kind]),
           ['models', 'providers'],
           ['models', 'localRuntime'],
-          ['personas', 'user'],
-          ['personas', 'agent'],
-          ['personas', 'roleplay_user'],
-          ['personas', 'character'],
+          ['personas', ''],
           ['knowledge', 'list'],
           ['knowledge', 'settings'],
           ['worldbook', 'list'],
@@ -94,9 +91,9 @@ for (const locale of ['en', 'zh-CN']) {
             ? settings[section]
             : section === 'models'
               ? llm.kinds[view] || llm[view]
-              : section === 'personas' ? personas.collections[view] : section === 'tools' ? settings.toolGroups[view] : settings.resources[view];
+              : section === 'tools' ? settings.toolGroups[view] : settings.resources[view];
           const menuLabel = section === 'models' && ['providers', 'localRuntime'].includes(view) ? settings.providersRuntime : settings[section];
-          await navigateSettings(page, menuLabel, label, section === 'personas' ? settings.sidebarGroups[['user', 'agent'].includes(view) ? 'daily' : 'roleplay'] : undefined);
+          await navigateSettings(page, menuLabel, label);
           await expect(page).toHaveURL(`/settings?tab=${section}${view ? `&view=${view}` : ''}`);
           await expect(page.locator('.settings-heading h1')).toContainText(menuLabel);
           await expect(page.locator('.settings-heading h1')).toContainText(label);
@@ -131,15 +128,14 @@ for (const locale of ['en', 'zh-CN']) {
           });
         }
         await openSidebar(page);
-        await expect(sidebar.locator('nav > [data-slot="sidebar-group"]')).toHaveCount(4);
+        await expect(sidebar.locator('nav > [data-slot="sidebar-group"]')).toHaveCount(3);
         await expect(sidebar.locator('[data-slot="sidebar-group-label"]')).toHaveText([
           settings.sidebarGroups.application,
           settings.sidebarGroups.execution,
-          settings.sidebarGroups.daily,
-          settings.sidebarGroups.roleplay,
+          settings.sidebarGroups.content,
         ]);
-        await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(8);
-        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(15 + populatedKinds.size);
+        await expect(sidebar.locator('.settings-domain-menu')).toHaveCount(7);
+        await expect(sidebar.locator('button[data-settings-page]')).toHaveCount(12 + populatedKinds.size);
         for (const [section, count] of [
           ['models', 1 + populatedKinds.size],
           ['providersRuntime', 2],

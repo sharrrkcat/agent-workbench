@@ -37,7 +37,8 @@ class RunSchema(BaseModel):
     session_id: str
     kind: RunKind
     status: RunStatus = RunStatus.PENDING
-    persona_id: str
+    character_id: str
+    persona_id: str | None
     current_step: str = ""
     stage: str = ""
     progress_message: str = ""

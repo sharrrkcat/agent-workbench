@@ -33,11 +33,11 @@ def history_stores(request, tmp_path):
 
 def test_history_pages_keep_replies_whole_and_number_globally(history_stores):
     state = history_stores
-    session = state.sessions.create_session()
+    session = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001")
     sid = session.session_id
     for index in range(61):
         user = state.messages.add_message(sid, "user", f"input-{index}", message_id=f"user-{index:03}")
-        run = state.runs.create_run("chat", "persona", sid, {"input_message_id": user.message_id})
+        run = state.runs.create_run("chat", "00000000-0000-4000-8000-000000000001", "persona", sid, {"input_message_id": user.message_id})
         state.messages.add_message(sid, "assistant", "reasoning", run_id=run.run_id)
         state.messages.add_message(sid, "assistant", "final", run_id=run.run_id)
         state.runs.update_status(run.run_id, RunStatus.DONE)
@@ -57,14 +57,14 @@ def test_history_pages_keep_replies_whole_and_number_globally(history_stores):
     around = state.reader.page(sid, HistoryQuery(around=anchor["cursor"]))
     assert next(i for i in around["items"] if i["id"] == anchor["id"])["number"] == anchor["number"]
     with pytest.raises(ValueError):
-        state.reader.page(state.sessions.create_session().session_id, HistoryQuery(before=anchor["cursor"]))
+        state.reader.page(state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id, HistoryQuery(before=anchor["cursor"]))
 
 
 def test_compaction_events_page_without_consuming_reference_numbers(history_stores):
     state = history_stores
-    sid = state.sessions.create_session().session_id
+    sid = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id
     user = state.messages.add_message(sid, "user", "before")
-    run = state.runs.create_run("compaction", "persona", sid)
+    run = state.runs.create_run("compaction", "00000000-0000-4000-8000-000000000001", "persona", sid)
     state.runs.update_status(run.run_id, RunStatus.DONE)
     after = state.messages.add_message(sid, "user", "after")
     after.created_at = run.created_at + timedelta(microseconds=1)
@@ -82,7 +82,7 @@ def test_compaction_events_page_without_consuming_reference_numbers(history_stor
 
 def test_bounded_context_does_not_call_full_history_and_preserves_parent(history_stores, monkeypatch):
     state = history_stores
-    sid = state.sessions.create_session().session_id
+    sid = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id
     parent = state.messages.add_message(sid, "user", "question", message_id="000-parent")
     for index in range(150):
         state.messages.add_message(sid, "assistant", str(index), run_id="run", parent_message_id=parent.message_id,
@@ -103,8 +103,8 @@ def test_sql_reads_are_limited_and_do_not_select_private_snapshots(history_store
     state = history_stores
     if not state.engine:
         pytest.skip("SQL shape")
-    sid = state.sessions.create_session().session_id
-    run = state.runs.create_run("chat", "persona", sid)
+    sid = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id
+    run = state.runs.create_run("chat", "00000000-0000-4000-8000-000000000001", "persona", sid)
     state.runs.create_step(run.run_id, "model")
     state.messages.add_message(sid, "user", "input")
     captured = []
@@ -127,7 +127,7 @@ def test_sql_reads_are_limited_and_do_not_select_private_snapshots(history_store
 
 def test_character_only_window_aggregates_empty_history(history_stores):
     state = history_stores
-    sid = state.sessions.create_session().session_id
+    sid = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id
     state.messages.add_message(sid, "user", "retained")
     for index in range(260):
         state.messages.add_message(sid, "assistant", parts=[{"id": "r", "type": "reasoning", "text": "private"}])
@@ -144,7 +144,7 @@ def test_same_timestamp_pages_and_deleted_cursor_remain_stable(history_stores):
     from ai_workbench.db.stores import SqlHistoryStore
     from ai_workbench.db.models import MessageRecord
     state = history_stores
-    sid = state.sessions.create_session().session_id
+    sid = state.sessions.create_session(character_id="00000000-0000-4000-8000-000000000001").session_id
     stamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
     for id in ("b", "a", "c"):
         message = state.messages.add_message(sid, "user", id, message_id=id)

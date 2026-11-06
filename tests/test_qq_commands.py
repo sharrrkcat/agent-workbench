@@ -7,10 +7,10 @@ import time
 import pytest
 from sqlmodel import Session, select
 
-from tests.qq_context_fixture import project_qq_context
+from tests.qq_context_fixture import character_qq_context
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery, QQParticipant, QQNotification
-from tests.test_qqbot import qq_client, configure_execution, project, child, event, ingest, freeze
+from tests.test_qqbot import qq_client, configure_execution, character, child, event, ingest, freeze
 from tests.tool_fixtures import completion, tool_call, ok
 
 
@@ -30,14 +30,14 @@ def resources(monkeypatch, state):
 
 def test_admin_schema_is_optional_strict_and_not_the_bot(qq_client):
     client, state, _ = qq_client
-    p = project(client)
+    p = character(client)
     assert p["admin_qq"] is None
     for value in (123, True, "", "0", "01", "-3", "1.0", "12345", "1" * 21):
-        assert client.patch(f"/api/projects/{p['id']}", json={"admin_qq": value}).status_code == 422
-    assert ok(client.patch(f"/api/projects/{p['id']}", json={"admin_qq": "9999"}))["admin_qq"] == "9999"
+        assert client.patch(f"/api/characters/{p['id']}", json={"admin_qq": value}).status_code == 422
+    assert ok(client.patch(f"/api/characters/{p['id']}", json={"admin_qq": "9999"}))["admin_qq"] == "9999"
     assert state.qq.store.bindings(p["id"]) == [], "Settings alone do not create a conversation"
-    assert ok(client.patch(f"/api/projects/{p['id']}", json={"name": "renamed"}))["admin_qq"] == "9999"
-    assert ok(client.patch(f"/api/projects/{p['id']}", json={"admin_qq": None}))["admin_qq"] is None
+    assert ok(client.patch(f"/api/characters/{p['id']}", json={"name": "renamed"}))["admin_qq"] == "9999"
+    assert ok(client.patch(f"/api/characters/{p['id']}", json={"admin_qq": None}))["admin_qq"] is None
 
 
 def test_prefix_uses_only_actual_leading_text(qq_client):
@@ -87,7 +87,7 @@ def test_pause_check_resume_are_visible_but_excluded_from_batches_and_context(qq
     assert [m.external_id for m in state.qq.store.batch_messages(merged.id)] == ["2"]
     upstream.turns = [completion(tool_call("qq_send_message", {"text": "ordinary reply"}, "one"))]
     client.portal.call(state.qq.execute, merged)
-    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     for payload in (context.model_dump_json(), json.dumps(upstream.calls, ensure_ascii=False)):
         assert "/cogita" not in payload and "health: ok" not in payload
         assert "ordinary input" in payload
@@ -268,7 +268,7 @@ def test_socket_reader_keeps_receiving_command_acknowledgements(qq_client, monke
                 await ws.send(json.dumps({"status": "ok", "retcode": 0, "echo": request["echo"], "data": {"message_id": 88}}))
                 received.set()
         async with serve(socket, "127.0.0.1", 0) as server:
-            state.project_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"})
+            state.character_service.update(p["id"], {"websocket_url": f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"})
             state.qq.supervisor = asyncio.create_task(state.qq.run())
             try:
                 await asyncio.wait_for(received.wait(), 5)

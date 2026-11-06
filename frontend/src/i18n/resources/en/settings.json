@@ -67,8 +67,7 @@
   "sidebarGroups": {
     "application": "Application preferences",
     "execution": "Models and execution",
-    "daily": "Daily Chat & Workspace",
-    "roleplay": "Roleplay & Timeline"
+    "content": "Content"
   },
   "providersRuntime": "Providers & Runtime",
   "toolGroups": {

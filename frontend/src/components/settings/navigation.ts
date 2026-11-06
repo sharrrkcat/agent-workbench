@@ -5,23 +5,21 @@ export type SettingsSection = (typeof settingsSections)[number];
 
 export const modelViews = ['dashboard', ...modelKinds, 'providers', 'localRuntime'] as const;
 export const resourceViews = ['list', 'settings'] as const;
-export const personaViews = ['user', 'agent', 'roleplay_user', 'character'] as const;
 export const toolViews = ['general', 'qqbot', 'web'] as const;
 export type ModelView = (typeof modelViews)[number];
 export type ResourceView = (typeof resourceViews)[number];
-export type PersonaView = (typeof personaViews)[number];
 export type ToolView = (typeof toolViews)[number];
 export type SettingsRoute =
   | { section: 'models'; view: ModelView }
   | { section: 'knowledge' | 'worldbook'; view: ResourceView }
-  | { section: 'personas'; view: PersonaView }
+  | { section: 'personas'; view?: never }
   | { section: 'tools'; view: ToolView }
   | { section: 'general'; view?: never };
 export type NavigationTarget = { pathname: string; search: string };
 export type SettingsNavigate = (url: string) => Promise<boolean>;
 
 export const settingsGroups: {
-  id: 'application' | 'execution' | 'daily' | 'roleplay';
+  id: 'application' | 'execution' | 'content';
   menus: { id: string; section: SettingsSection; label: string; pages: SettingsRoute[] }[];
 }[] = [
   { id: 'application', menus: [{ id: 'general', section: 'general', label: 'general', pages: [{ section: 'general' }] }] },
@@ -39,16 +37,10 @@ export const settingsGroups: {
     ],
   },
   {
-    id: 'daily',
+    id: 'content',
     menus: [
-      { id: 'daily-personas', section: 'personas', label: 'personas', pages: [{ section: 'personas', view: 'user' }, { section: 'personas', view: 'agent' }] },
+      { id: 'personas', section: 'personas', label: 'personas', pages: [{ section: 'personas' }] },
       { id: 'knowledge', section: 'knowledge', label: 'knowledge', pages: resourceViews.map((view) => ({ section: 'knowledge', view })) },
-    ],
-  },
-  {
-    id: 'roleplay',
-    menus: [
-      { id: 'roleplay-personas', section: 'personas', label: 'personas', pages: [{ section: 'personas', view: 'roleplay_user' }, { section: 'personas', view: 'character' }] },
       { id: 'worldbook', section: 'worldbook', label: 'worldbook', pages: resourceViews.map((view) => ({ section: 'worldbook', view })) },
     ],
   },
@@ -60,7 +52,7 @@ export function readSettingsRoute(search: string): SettingsRoute {
   const section = settingsSections.find((item) => item === value) || 'general';
   const view = params.get('view');
   if (section === 'models') return { section, view: modelViews.find((item) => item === view) || 'dashboard' };
-  if (section === 'personas') return { section, view: personaViews.find((item) => item === view) || 'user' };
+  if (section === 'personas') return { section };
   if (section === 'tools') return { section, view: toolViews.find((item) => item === view) || 'general' };
   if (section === 'knowledge' || section === 'worldbook')
     return { section, view: resourceViews.find((item) => item === view) || 'list' };
@@ -74,7 +66,7 @@ export function settingsRouteUrl(route: SettingsRoute): string {
 export function settingsPageLabel(route: SettingsRoute): string {
   if (route.section === 'models') return route.view === 'dashboard' || route.view === 'providers' || route.view === 'localRuntime'
     ? `llm:${route.view}` : `llm:kinds.${route.view}`;
-  if (route.section === 'personas') return `personas:collections.${route.view}`;
+  if (route.section === 'personas') return 'personas:personasTitle';
   if (route.section === 'tools') return `settings:toolGroups.${route.view}`;
   if (route.section === 'knowledge' || route.section === 'worldbook')
     return `settings:resources.${route.view}`;

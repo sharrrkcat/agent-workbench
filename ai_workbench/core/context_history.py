@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from ai_workbench.core.context import _project, _trace_message, message_text
+from ai_workbench.core.context import _project, _trace_message, message_text, persona_context_prefix
 from ai_workbench.core.schema.context_snapshot import ContextTrace
 
 
@@ -46,4 +46,4 @@ class ConversationHistory:
                 _trace_message(trace, row, 0, item, "history", attachments, turn_id=turn)
             text = "" if row.role == "system" else message_text(row, include_attachments=attachments)
             yield HistoryItem(row.message_id, row.created_at, turn, [item] if item is not None else [], trace,
-                f"\n[{row.role}; message={row.message_id}]\n{text}\n" if text else "")
+                f"\n[{row.role}; message={row.message_id}]\n{persona_context_prefix(row)}{text}\n" if text else "")

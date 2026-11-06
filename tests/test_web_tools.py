@@ -1,4 +1,5 @@
 """Authenticated web tools, durable citations and ordinary Harness execution."""
+from tests.chat_fixtures import create_chat, create_chat_async
 
 import asyncio
 import json
@@ -61,7 +62,7 @@ def web_env(tmp_path):
 
 def configure(client, **values):
     ok(client.patch("/api/tools/web/settings", json={"api_key": "test-web-key"}))
-    return ok(client.post("/api/sessions", json=values))
+    return ok(create_chat(client, overrides=values))
 
 
 def call(client, session, name="web_search", arguments=None):
@@ -175,7 +176,7 @@ def test_nonpublic_or_credentialed_targets_do_not_dispatch(web_env, url):
 
 def test_missing_key_and_permissions(web_env):
     client, upstream, network = web_env
-    session = ok(client.post("/api/sessions", json={}))
+    session = ok(create_chat(client, overrides={}))
     assert call(client, session)["run"]["error_code"] == "WEB_NOT_CONFIGURED"
     session = configure(client, tools_allowed=[])
     forbidden = client.post("/api/tools/web_search/call", json={"session_id": session["session_id"], "arguments": {"searches": [{"query": "x"}]}})
@@ -284,7 +285,7 @@ def test_cancel_and_timeout_use_harness_lifecycle(tmp_path, monkeypatch):
         state.web_tools.provider = AnySearchProvider(transport=httpx.MockTransport(hold))
         async with app.router.lifespan_context(app), httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             ok(await client.patch("/api/tools/web/settings", json={"api_key": "key"}))
-            session = ok(await client.post("/api/sessions", json={}))
+            session = ok(await create_chat_async(client, overrides={}))
             task = asyncio.create_task(client.post("/api/tools/web_search/call", json={"session_id": session["session_id"], "arguments": {"searches": [{"query": "test"}]}}))
             await asyncio.wait_for(started.wait(), 3)
             if cancel:

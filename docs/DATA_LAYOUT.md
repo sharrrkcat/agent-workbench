@@ -5,7 +5,7 @@ Alembic records application schema changes without modifying model files, attach
 SQLite records are disposable test state. Files have separate ownership and
 are never removed by schema revisions.
 Web settings remain in appmetadatarecord.web_tools_settings. Revision `0043_web_cache` adds web_pages (cleaned bodies/links, content hash/source and acquisition/access times) and web_session_pages (session-owned queries, keyed by session/URL/query). Only displayed search results and successful Extract pages are cached. Search never overwrites Extract content or renews its acquisition time; successful unchanged Extract results do renew freshness.
-Cache bodies are separate from bounded tool-result JSON and private citation/budget continuation. Session deletion removes its cache associations, unreferenced pages and session in one transaction; Project deletion reuses that path. Default expiration is 30 idle days, checked by indexed queries at startup and before web calls, at most once daily. Expiration removes page associations as well; historical excerpts/snapshots are not rewritten. The migration preserves existing data and every filesystem directory.
+Cache bodies are separate from bounded tool-result JSON and private citation/budget continuation. Session deletion removes its cache associations, unreferenced pages and session in one transaction; Character deletion reuses that path. Default expiration is 30 idle days, checked by indexed queries at startup and before web calls, at most once daily. Expiration removes page associations as well; historical excerpts/snapshots are not rewritten. The migration preserves existing data and every filesystem directory.
 
 Revision `0045_web_filters` adds web_filter_settings (custom rules and next weekly update) and web_filter_subscriptions
 (identity, source URL, enablement, downloaded text, count and attempt/success/error metadata). It seeds four enabled
@@ -15,8 +15,8 @@ The revision does not clear page caches, historical messages, settings or filesy
 
 | Path | Contents and owner |
 | --- | --- |
-| data/cogita.db | Application test state: Personas, Projects, sessions/messages/runs, QQ bindings/queues/deliveries, settings, models/providers, resources and runtime jobs |
-| data/attachments/ | Uploaded files and Persona avatars; explicit orphan cleanup |
+| data/cogita.db | Application test state: Personas, Characters, sessions/messages/runs, QQ bindings/queues/deliveries, settings, models/providers, resources and runtime jobs |
+| data/attachments/ | Uploaded files and Persona/Character avatars; explicit orphan cleanup |
 | data/tmp/voice-references/ | Model-service temporary reference audio; no database records |
 | data/tmp/asr-inputs/ | Request-scoped transcription uploads; no database records |
 | data/knowledge/ | Knowledge service source/index working files |
@@ -30,15 +30,26 @@ The revision does not clear page caches, historical messages, settings or filesy
 | build/ | Generated portable package and optional ZIP; ignored by Git |
 
 Root dist/ is the removed application snapshot and remains unsupported.
+Attachment orphan scans and cleanup in the API and CLI protect live Persona/Character avatars,
+message files, Knowledge sources, request snapshots and QQ media references.
 The portable builder uses build/ and excludes local data and secrets. It copies
 the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0050_history_retrieval`; current tables follow the SQLModel schema.
+Alembic head is `0052_characters_personas`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
+
+Revision `0052_characters_personas` directly replaces identities and conversation ownership. It
+removes Project and multi-owner resource-binding tables, clears test Sessions/messages/Runs/steps/events,
+checkpoints/retrieval state, session web associations and QQ conversation/notification state. It creates
+user Personas, normal/QQBot Characters and Sessions with required character_id, and renames QQ ownership
+columns to character_id. Runs store both identities. It seeds User with empty background; runtime
+bootstrap creates protected Cogita once with empty prompt and one-time model/tool defaults.
+Model/Provider profiles, global settings, Knowledge/Worldbook catalogs, independent sources/indexes,
+shared QQ assets and all data directories remain. There is no conversion or filesystem cleanup.
 
 The default `data/cogita.db` is initialized independently, with fresh settings,
 model/provider profiles and runtime registration. Other database files are not

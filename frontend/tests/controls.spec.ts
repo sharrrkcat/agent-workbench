@@ -328,7 +328,7 @@ for (const locale of ['en', 'zh-CN']) {
 
       test('session drafts, IME, attachment preview and collapsed approvals', async ({ page, request }) => {
         const session = await (await request.post('/__test__/session', { data: {} })).json();
-        await request.patch(`/api/models/profiles/${session.model_profile_id}`, {
+        await request.patch(`/api/models/profiles/${session.effective.model_profile_id}`, {
           data: { request_options: {"streaming": true} },
         });
         await page.goto('/');
@@ -510,7 +510,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
     const models = await response.json();
     await route.fulfill({
       response,
-      json: models.filter((model: { id: string }) => model.id !== session.model_profile_id),
+      json: models.filter((model: { id: string }) => model.id !== session.effective.model_profile_id),
     });
   });
   await page.goto('/');
@@ -523,7 +523,7 @@ test('busy model save blocks modal exit and unavailable selected models stay sel
   await expect(model).toBeDisabled();
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).toBeHidden();
-  expect((await (await request.get(`/api/sessions/${session.session_id}`)).json()).model_profile_id).toBe(
-    session.model_profile_id,
+  expect((await (await request.get(`/api/sessions/${session.session_id}`)).json()).effective.model_profile_id).toBe(
+    session.effective.model_profile_id,
   );
 });

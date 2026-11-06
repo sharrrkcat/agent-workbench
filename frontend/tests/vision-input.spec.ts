@@ -8,10 +8,10 @@ const file = (name: string) => ({ name, mimeType: 'image/png', buffer: png });
 
 async function configure(request: APIRequestContext) {
   const session = await (await request.post('/__test__/session', { data: {} })).json();
-  expect((await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: {
+  expect((await request.patch(`/api/models/profiles/${session.effective.model_profile_id}`, { data: {
     request_options: {"streaming": true },
   } })).ok()).toBeTruthy();
-  expect((await request.patch(`/api/sessions/${session.session_id}`, { data: { harness_enabled: false } })).ok()).toBeTruthy();
+  expect((await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {harness_enabled: false}} })).ok()).toBeTruthy();
   return session;
 }
 
@@ -43,7 +43,7 @@ for (const locale of ['en', 'zh-CN']) {
         } });
         expect(response.ok()).toBeTruthy();
         const model = await response.json();
-        await request.patch(`/api/sessions/${session.session_id}`, { data: { model_profile_id: model.id } });
+        await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {model_profile_id: model.id}} });
         const warning = JSON.parse(fs.readFileSync(new URL(`../src/i18n/resources/${locale}/chat.json`, import.meta.url), 'utf8')).requestWarnings.images_require_text;
         await page.goto('/');
         await expect(page.locator('.composer').getByRole('button', { name: labels.attach, exact: true })).toBeEnabled();
@@ -112,7 +112,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect(created.ok()).toBeTruthy();
         const model = await created.json();
         try {
-          expect((await request.patch(`/api/sessions/${session.session_id}`, { data: { model_profile_id: model.id } })).ok()).toBeTruthy();
+          expect((await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {model_profile_id: model.id}} })).ok()).toBeTruthy();
           expect((await request.patch(settingsPath, { data: { max_normalized_request_mb: 128 } })).ok()).toBeTruthy();
           await page.goto('/');
           const picker = page.locator('.composer input[type=file]');
@@ -242,13 +242,13 @@ test('partial upload failure preserves successes and late results stay in their 
 
 test('provider images are allowed and attachment policy provides clear prompts', async ({ page, request }) => {
   const session = await configure(request);
-  await request.patch(`/api/models/profiles/${session.model_profile_id}`, { data: { request_options: {"streaming": true} } });
+  await request.patch(`/api/models/profiles/${session.effective.model_profile_id}`, { data: { request_options: {"streaming": true} } });
   await page.goto('/');
   await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();
   await page.locator('.composer input[type=file]').setInputFiles(file('image.png'));
   await expect(page.locator('.composer-warning')).toHaveCount(0);
   await expect(page.locator('.composer').getByRole('button', { name: /^(Send|发送)$/, exact: true })).toBeEnabled();
-  await request.patch(`/api/sessions/${session.session_id}`, { data: { context_policy: { include_attachments: 'none' } } });
+  await request.patch(`/api/sessions/${session.session_id}`, { data: {overrides: {context_policy: { include_attachments: 'none' }}} });
   await page.reload();
   await expect(page.locator('.composer').getByRole('button', { name: 'Attach file', exact: true })).toBeEnabled();
   await page.locator('.composer input[type=file]').setInputFiles(file('image.png'));

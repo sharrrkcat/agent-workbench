@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createModuleLoader, mockModule, sourceUrl } from './module-loader.mjs';
 
 const { mergeQQHistory, pruneQQHistory, buildQQConversation, QQHistoryChanged } =
-  (await createModuleLoader()('../src/components/projects/qqConversation.ts')).exports;
+  (await createModuleLoader()('../src/components/characters/qqConversation.ts')).exports;
 const at = (n) => new Date(Date.UTC(2026, 0, 1) + n * 1000).toISOString();
 const input = (id, sender = 'a') => ({ id: `qq-message-${id}`, cursor: `c${id}`, created_at: at(id), kind: 'incoming',
   message: { id, sender_id: sender, sender_name: sender, timestamp: at(id), text: `Input ${id}`, segments: [], disposition: 'batched', batch_id: 1 } });
@@ -81,7 +81,7 @@ const loader = createModuleLoader({
 const settle = () => new Promise(setImmediate);
 const unmount = () => { for (const cell of cells) cell.cleanup?.(); };
 try {
-  const { useQQConversation } = (await loader('../src/components/projects/useQQConversation.ts')).exports;
+  const { useQQConversation } = (await loader('../src/components/characters/useQQConversation.ts')).exports;
   const render = () => { cursor = 0; const result = useQQConversation('s'); const pending = effects; effects = []; pending.forEach(effect => effect()); return result; };
   render(); await settle();
   assert.equal(render().loading, false);
@@ -194,11 +194,11 @@ const editorLoader = createModuleLoader({
   [sourceUrl('hooks/useConfirmDialog.tsx')]: mockModule({ useConfirmDialog: () => ({ confirm: async () => true, confirmation: null }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: storeHook({ profiles: [] }) }),
   [sourceUrl('store/usePersonasStore.ts')]: mockModule({ usePersonasStore: storeHook({ personas: [] }) }),
-  [sourceUrl('store/useProjectsStore.ts')]: mockModule({ useProjectsStore: storeHook({}) }),
+  [sourceUrl('store/useCharactersStore.ts')]: mockModule({ useCharactersStore: storeHook({}) }),
   [sourceUrl('store/useCogitaStore.ts')]: mockModule({ useCogitaStore: storeHook({}) }),
 });
 try {
-  const { QQBotEditor, qqInput } = (await editorLoader('../src/components/projects/QQBotEditor.tsx')).exports;
+  const { QQBotEditor, qqInput } = (await editorLoader('../src/components/characters/QQBotEditor.tsx')).exports;
   assert.equal(qqInput().image_input_enabled, false);
   assert.equal(qqInput().icebreaker_enabled, false);
   assert.equal(qqInput().admin_qq, null);
@@ -247,4 +247,4 @@ try {
 } finally {
   globalThis.window = savedWindow;
 }
-console.log('QQ editor defaults, edits and cleared prompts survive language changes; saved projects retain their prompts');
+console.log('QQ editor defaults, edits and cleared prompts survive language changes; saved characters retain their prompts');

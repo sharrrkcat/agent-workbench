@@ -4,19 +4,19 @@ async function setup(request: APIRequestContext) {
   await request.post('/__test__/session');
   const profiles = await (await request.get('/api/models/profiles')).json();
   const model = profiles.find((item: { kind: string }) => item.kind === 'llm');
-  const project = await (await request.post('/api/projects', { data: { kind: 'qqbot', name: 'QQ loading',
+  const character = await (await request.post('/api/characters', { data: { kind: 'qqbot', name: 'QQ loading',
     model_profile_id: model.id, bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3001',
     keywords: ['bot'], context_policy: {} } })).json();
-  const session = await (await request.post(`/api/projects/${project.id}/sessions`, {
+  const session = await (await request.post(`/api/characters/${character.id}/sessions`, {
     data: { target_kind: 'group', target_id: '7788' } })).json();
-  return { project, session };
+  return { character, session };
 }
 
 for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
   test.describe(`QQ loading ${locale} ${width}`, () => {
     test.use({ viewport: { width, height: 900 }, hasTouch: width === 390 });
     test('bounded automatic pages preserve anchors and lazy processing leaves bubbles usable', async ({ page, request }) => {
-      const { project, session } = await setup(request);
+      const { character, session } = await setup(request);
       let releaseDetail = () => {};
       try {
         await page.clock.install();
@@ -52,7 +52,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.route(`**/api/tools/runs/${fixture.run_id}`, async (route) => {
           detailReads++; await detailGate; await route.continue();
         });
-        await page.goto(`/projects/${project.id}?session=${session.session_id}`);
+        await page.goto(`/characters/${character.id}?session=${session.session_id}`);
         const rows = page.locator('[data-qq-item]');
         const viewport = page.locator('[data-slot="message-scroller-viewport"]');
         await expect(rows).toHaveCount(50);
@@ -102,11 +102,11 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await expect(page.locator('[data-qq-delivery]').first()).toBeVisible();
         expect(detailReads).toBe(1);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      } finally { releaseDetail(); await request.delete(`/api/projects/${project.id}`); }
+      } finally { releaseDetail(); await request.delete(`/api/characters/${character.id}`); }
     });
 
     test('connection form loads while options are slow and saves existing references', async ({ page, request }) => {
-      const { project } = await setup(request);
+      const { character } = await setup(request);
       let release = () => {};
       const gate = new Promise<void>((resolve) => { release = resolve; });
       const requests: string[] = [];
@@ -114,22 +114,21 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         page.on('request', (req) => { if (req.url().includes('/api/')) requests.push(req.url()); });
         await page.route('**/api/models/profiles', async (route) => { await gate; await route.continue(); });
-        await page.route('**/api/personas', async (route) => { await gate; await route.continue(); });
-        await page.goto(`/projects/${project.id}`);
-        const name = page.getByLabel(locale === 'en' ? 'Project name' : '项目名称', { exact: true });
-        await expect(name).toHaveValue(project.name);
+        await page.goto(`/characters/${character.id}/settings`);
+        const name = page.getByLabel(locale === 'en' ? 'Character name' : '角色名称', { exact: true });
+        await expect(name).toHaveValue(character.name);
         await name.fill('Changed while options pending');
         await page.getByRole('button', { name: locale === 'en' ? 'Save' : '保存', exact: true }).click();
-        await expect.poll(async () => (await (await request.get(`/api/projects/${project.id}`)).json()).name).toBe('Changed while options pending');
-        const saved = await (await request.get(`/api/projects/${project.id}`)).json();
-        expect(saved.model_profile_id).toBe(project.model_profile_id);
+        await expect.poll(async () => (await (await request.get(`/api/characters/${character.id}`)).json()).name).toBe('Changed while options pending');
+        const saved = await (await request.get(`/api/characters/${character.id}`)).json();
+        expect(saved.model_profile_id).toBe(character.model_profile_id);
         expect(requests.filter((url) => /\/api\/models\/.*\/status|\/api\/models\/local-runtime|\/api\/sessions\/[^/]+\/history/.test(url))).toEqual([]);
         release();
         await expect(name).toHaveValue('Changed while options pending');
         await page.goto('/settings');
         await expect(page.locator('.settings-scroll')).toBeVisible();
         expect(requests.filter((url) => /\/api\/sessions\/[^/]+\/history/.test(url))).toEqual([]);
-      } finally { release(); await request.delete(`/api/projects/${project.id}`); }
+      } finally { release(); await request.delete(`/api/characters/${character.id}`); }
     });
   });
 }

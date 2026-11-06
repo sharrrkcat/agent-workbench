@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { apiMocks, createModuleLoader } from './module-loader.mjs';
-import { mockDraftCatalogs } from './draft-fixtures.mjs';
+import { mockDraftCatalogs, COGITA } from './draft-fixtures.mjs';
 import { historyPage } from './history-fixtures.mjs';
 
 const api = {};
@@ -8,8 +8,8 @@ const load = createModuleLoader(apiMocks(api));
 const { useCogitaStore: store } = (await load('../src/store/useCogitaStore.ts')).exports;
 const state = () => store.getState();
 const queue = (id = 'one') => state().messageQueues[id];
-const session = (id, projectId = null) => ({ session_id: id, kind: projectId ? 'workspace' : 'ordinary',
-  project_id: projectId, title: id, updated_at: '2026-10-03T00:00:00Z', effective: {} });
+const session = (id, characterId = COGITA) => ({ session_id: id, kind: characterId ? 'normal' : 'normal',
+  character_id: characterId, title: id, updated_at: '2026-10-03T00:00:00Z', effective: {} });
 const attachment = { id: 'file', type: 'file', name: 'notes.txt', uri: 'local://attachments/file' };
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 let calls, runs, messages, serial;
@@ -18,13 +18,13 @@ function run(id, status = 'DONE', sessionId = 'one') {
   return { run_id: id, session_id: sessionId, status, created_at, updated_at: created_at, metadata: {} };
 }
 function response(value) { runs.set(value.run_id, value); return { success: true, run: value, session: session(value.session_id), messages: [] }; }
-function reset(projectId = null) {
+function reset(characterId = COGITA) {
   calls = []; runs = new Map(); messages = []; serial = 0;
   mockDraftCatalogs(api);
   store.setState(store.getInitialState(), true);
-  store.setState({ sessions: [session('one', projectId), session('two')], currentSession: session('one', projectId),
-    sessionLoad: { sessionId: 'one', projectId, status: 'ready', error: null }, queueTarget: 'one' });
-  api.getSession = async (id) => session(id, id === 'one' ? projectId : null);
+  store.setState({ sessions: [session('one', characterId), session('two')], currentSession: session('one', characterId),
+    sessionLoad: { sessionId: 'one', characterId, status: 'ready', error: null }, queueTarget: 'one' });
+  api.getSession = async (id) => session(id, id === 'one' ? characterId : COGITA);
   api.getHistory = async (id, query) => historyPage(messages.filter((m) => m.session_id === id), [...runs.values()].filter((r) => r.session_id === id), query);
   api.getRun = async (id) => runs.get(id);
   api.deleteSession = async () => {};
@@ -107,7 +107,7 @@ await event(waiting, 'approval_requested'); await state().dispatchQueuedMessage(
 await event({ ...waiting, status: 'DONE', updated_at: '2026-10-03T00:01:00Z' });
 for (const lock of [{ mutatingHistory: true }, { historyLoading: true }, { queueTarget: null },
   { savingSessionIds: ['one'] }, { resolvingApprovals: ['approval'] },
-  { sessionLoad: { sessionId: 'one', projectId: null, status: 'loading' } }]) {
+  { sessionLoad: { sessionId: 'one', characterId: null, status: 'loading' } }]) {
   const previous = Object.fromEntries(Object.keys(lock).map((key) => [key, state()[key]]));
   store.setState(lock); await state().dispatchQueuedMessage(); assert.equal(calls.length, 0);
   store.setState(previous);
@@ -200,7 +200,7 @@ await state().dispatchQueuedMessage(); assert.equal(calls.length, 1);
 await event({ ...offscreen, status: 'FAILED', updated_at: '2026-10-03T00:01:00Z' }, 'run_failed');
 assert.equal(queue().paused, 'failed');
 
-reset('workspace'); state().enqueueMessage('project queue'); state().forgetProject('workspace');
+reset('normal'); state().enqueueMessage('character queue'); state().forgetCharacter('normal');
 assert.equal(queue(), undefined);
 reset(); state().enqueueMessage('deleted'); await state().deleteSession('one'); assert.equal(queue(), undefined);
 store.setState(store.getInitialState(), true); assert.deepEqual(state().messageQueues, {});

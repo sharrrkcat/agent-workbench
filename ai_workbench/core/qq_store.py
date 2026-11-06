@@ -23,14 +23,14 @@ class QQStore:
         with Session(self.engine) as db:
             return db.get(kind, key)
 
-    def binding(self, project_id, target_kind, target_id):
+    def binding(self, character_id, target_kind, target_id):
         with Session(self.engine) as db:
-            return db.exec(select(QQBinding).where(QQBinding.project_id == project_id,
+            return db.exec(select(QQBinding).where(QQBinding.character_id == character_id,
                 QQBinding.target_kind == target_kind, QQBinding.target_id == target_id)).first()
 
-    def bindings(self, project_id):
+    def bindings(self, character_id):
         with Session(self.engine) as db:
-            return db.exec(select(QQBinding).where(QQBinding.project_id == project_id)).all()
+            return db.exec(select(QQBinding).where(QQBinding.character_id == character_id)).all()
 
     def record_ingress(self, binding, message, *, media=()):
         with Session(self.engine) as db:
@@ -111,7 +111,7 @@ class QQStore:
             rows.reverse()
             grants = ({rows[-1].sender_id: rows[-1].id} if icebreaker else
                 {p.sender_id: p.grant_message_id for p in participants})
-            batch = QQBatch(session_id=session_id, project_id=binding.project_id, created_at=now,
+            batch = QQBatch(session_id=session_id, character_id=binding.character_id, created_at=now,
                 trigger_kind="icebreaker" if icebreaker else "private" if binding.target_kind == "friend" else binding.window_kind,
                 participants_json=json.dumps(grants),
                 text="\n".join(f"[{m.timestamp}][{m.sender_name}]:{m.text}" for m in rows))
@@ -137,10 +137,10 @@ class QQStore:
             db.exec(update(QQBinding).where(QQBinding.session_id == session_id).values(icebreaker_cooldown_until=until))
             db.commit()
 
-    def next_batch(self, project_id):
+    def next_batch(self, character_id):
         with Session(self.engine) as db:
             return db.exec(select(QQBatch).join(QQBinding, QQBinding.session_id == QQBatch.session_id)
-                .where(QQBatch.project_id == project_id, QQBatch.status == "queued", QQBinding.paused == False)
+                .where(QQBatch.character_id == character_id, QQBatch.status == "queued", QQBinding.paused == False)
                 .order_by(QQBatch.id).limit(1)).first()
 
     def pause(self, session_id, reason, *, transaction=None):
@@ -179,7 +179,7 @@ class QQStore:
                         grant = (window if row.batch_id is None else sources[row.batch_id]).get(row.sender_id)
                         if grant is not None:
                             grants[row.sender_id] = max(grants.get(row.sender_id, grant), grant)
-                    batch = QQBatch(session_id=session_id, project_id=binding.project_id, created_at=now,
+                    batch = QQBatch(session_id=session_id, character_id=binding.character_id, created_at=now,
                         trigger_kind="private" if binding.target_kind == "friend" else "keyword" if keyword else "followup",
                         participants_json=json.dumps(grants),
                         text="\n".join(f"[{m.timestamp}][{m.sender_name}]:{m.text}" for m in rows))
@@ -234,7 +234,7 @@ class QQStore:
 
     def pending_media(self, *, exclude=(), limit=4, batch_id=None):
         with Session(self.engine) as db:
-            query = select(QQMedia, QQBinding.project_id).join(QQMessage, QQMedia.message_id == QQMessage.id)
+            query = select(QQMedia, QQBinding.character_id).join(QQMessage, QQMedia.message_id == QQMessage.id)
             query = query.join(QQBinding, QQMessage.session_id == QQBinding.session_id).where(
                 QQMedia.status == "pending", QQMessage.deleted == False, QQMedia.id.not_in(exclude))
             if batch_id is not None:
@@ -517,7 +517,7 @@ class QQStore:
                 db.exec(delete(kind).where(kind.session_id == session_id))
             db.commit()
 
-    def delete_project_notifications(self, project_id):
+    def delete_character_notifications(self, character_id):
         with Session(self.engine) as db:
-            db.exec(delete(QQNotification).where(QQNotification.project_id == project_id))
+            db.exec(delete(QQNotification).where(QQNotification.character_id == character_id))
             db.commit()

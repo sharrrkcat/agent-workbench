@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.chat_fixtures import create_chat
 
 import asyncio
 import socket
@@ -11,7 +12,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ai_workbench.api.main import create_app
 from ai_workbench.core.personas import PersonaStore
-from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, PersonaInput
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
+from ai_workbench.core.schema.persona import PersonaInput, USER_PERSONA_ID
 from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.knowledge_settings import KnowledgeSettings
 from ai_workbench.core.retrieval import RetrievalCandidate, rrf_merge, search_knowledge
@@ -35,15 +37,15 @@ def make_client(tmp_path: Path):
 
 
 def create_session(client: TestClient) -> dict[str, Any]:
-    response = client.post("/api/sessions", json={})
+    response = create_chat(client, overrides={})
     assert response.status_code == 200, response.text
     return response.json()
 
 
 def test_persona_seeds_are_database_records_with_strict_input() -> None:
     catalog = PersonaStore()
-    assert [p.name for p in catalog.list()] == ["Cogita", "User"]
-    assert catalog.get(COGITA_PERSONA_ID).system_prompt == "You are a helpful assistant."
+    assert [p.name for p in catalog.list()] == ["User"]
+    assert catalog.get(USER_PERSONA_ID).background == ""
     with pytest.raises(KeyError):
         catalog.get("unknown")
     with pytest.raises(ValidationError):
@@ -60,7 +62,8 @@ def test_prefixes_are_plain_chat_text_and_openai_responses_are_saved(tmp_path: P
         response = client.post(f"/api/sessions/{session_id}/messages", json={"content": text})
         assert response.status_code == 200, response.text
         payload = response.json()
-        assert payload["run"]["persona_id"] == COGITA_PERSONA_ID
+        assert payload["run"]["character_id"] == session["character_id"]
+        assert payload["run"]["persona_id"] == USER_PERSONA_ID
         assert "target" not in payload["run"]
         assert payload["messages"][0]["parts"][0]["text"] == text
         assert payload["messages"][1]["parts"][0]["text"] == "reply"
@@ -69,7 +72,7 @@ def test_prefixes_are_plain_chat_text_and_openai_responses_are_saved(tmp_path: P
     assert not removed_metadata.intersection(payload["messages"][0]["metadata"])
 
     assert len(runtime.calls) == 4
-    assert all(call["messages"][-1]["content"] == text for call, text in zip(runtime.calls, ("/base64 hello", "@chat hi", "@chat:formal hi", ":formal hi")))
+    assert all(call["messages"][-1]["content"] == f"[Persona: {USER_PERSONA_ID}]\n{text}" for call, text in zip(runtime.calls, ("/base64 hello", "@chat hi", "@chat:formal hi", ":formal hi")))
 
 
 def test_waiting_run_blocks_new_chat_until_explicit_resolution(tmp_path: Path) -> None:
@@ -78,7 +81,7 @@ def test_waiting_run_blocks_new_chat_until_explicit_resolution(tmp_path: Path) -
     session = create_session(client)
     state = client.app.state.runtime_state
     config = state.chat_service.resolve(state.sessions.get_session(session["session_id"]))
-    waiting = state.runs.create_run(kind="chat", persona_id=COGITA_PERSONA_ID, session_id=session["session_id"], config_snapshot=config.model_dump(mode="json"))
+    waiting = state.runs.create_run(kind="chat", persona_id=COGITA_CHARACTER_ID, session_id=session["session_id"], config_snapshot=config.model_dump(mode="json"), character_id="00000000-0000-4000-8000-000000000001")
     state.runs.update_status(waiting.run_id, status=RunStatus.WAITING_FOR_USER, current_step="approval")
     state.sessions.set_waiting_run(session["session_id"], waiting.run_id)
 
@@ -95,7 +98,7 @@ def test_new_schemas_forbid_removed_fields_and_limit_step_kinds() -> None:
     with pytest.raises(ValidationError):
         MessageSchema(message_id="m", session_id="s", role="user", parts=[], **{"action" + "_id": "old"})
     with pytest.raises(ValidationError):
-        RunSchema(run_id="r", session_id="s", kind="chat", persona_id=COGITA_PERSONA_ID, **{"target" + "_id": "old"})
+        RunSchema(run_id="r", session_id="s", kind="chat", persona_id=COGITA_CHARACTER_ID, **{"target" + "_id": "old"})
     with pytest.raises(ValidationError):
         RunStepSchema(step_id="st", run_id="r", kind="legacy")
 
@@ -108,7 +111,7 @@ def test_removed_routes_are_ordinary_404_and_removed_payloads_are_422(tmp_path: 
     removed_paths = ("/api/" + "agents", "/api/" + "commands", "/api/" + "intent/predict", "/api/" + "image-generation/models", "/pet", "/base64")
     for path in removed_paths:
         assert client.get(path).status_code == 404
-    assert client.post("/api/sessions", json={"default" + "_agent_id": "chat"}).status_code == 422
+    assert create_chat(client, overrides={"default" + "_agent_id": "chat"}).status_code == 422
     assert client.post(f"/api/sessions/{session_id}/messages", json={"content": "hi", "action" + "_id": "old"}).status_code == 422
     assert client.patch("/api/settings/general", json={"session_title_" + "backend": "utility_llm"}).status_code == 422
     assert client.patch("/api/pets/settings", json={"values": {"command" + "_texts": {}}}).status_code == 422

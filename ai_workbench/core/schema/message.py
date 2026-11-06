@@ -4,7 +4,6 @@ from typing import Any, Dict, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from ai_workbench.core.message_parts import validate_message_parts
-from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
@@ -57,7 +56,7 @@ def infer_speaker_identity(
 ) -> Dict[str, Optional[str]]:
     metadata = metadata or {}
     if role == "user":
-        inferred = ("user", USER_PERSONA_ID, None, "user_message")
+        inferred = ("user", None, None, "user_message")
     elif role == "assistant":
         inferred = ("assistant", None, None, "assistant_reply")
     elif role == "tool":

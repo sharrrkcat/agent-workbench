@@ -6,7 +6,7 @@ import {
   SelectGroup,
   SelectItem,
 } from '@/components/ui/select';
-import { FieldGroup, Field, FieldLabel, FieldContent, FieldDescription } from '@/components/ui/field';
+import { FieldGroup, Field, FieldLabel, FieldContent, FieldDescription, FieldSet, FieldLegend } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -19,7 +19,7 @@ import { ArrowDown, ArrowUp, ShieldCheck, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useId } from 'react';
 
-import type { ContextPolicy, BoundedContextPolicy, Persona, SessionGenerationParameters } from '../../types/chat';
+import type { ContextPolicy, Persona, SessionGenerationParameters } from '../../types/chat';
 import type { ModelProfile } from '../../types/models';
 import type { HarnessTool } from '../../types/tools';
 import { API_BASE_URL } from '../../api/url';
@@ -207,73 +207,6 @@ export function ContextFields({ value, onChange, showAttachments = true, harness
   </FieldGroup>;
 }
 
-export function BoundedContextFields({
-  value,
-  onChange,
-  showAttachments = true,
-  showDescriptions = true,
-  className,
-}: {
-  value: BoundedContextPolicy;
-  showAttachments?: boolean;
-  showDescriptions?: boolean;
-  className?: string;
-  onChange: (value: BoundedContextPolicy) => void;
-}) {
-  const { t } = useTranslation('personas');
-  return (
-    <>
-      <FieldGroup className={className ?? 'grid gap-4 sm:grid-cols-2'}>
-        <Field>
-          <FieldLabel>{t('maxMessages')}</FieldLabel>
-          <Input
-            type="number"
-            min={0}
-            max={10000}
-            placeholder={t('unlimited')}
-            step={1}
-            value={Number.isNaN(value.max_messages) ? '' : (value.max_messages ?? '')}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                max_messages: event.currentTarget.value === '' ? null : Number(event.currentTarget.value),
-              })
-            }
-          />
-          {showDescriptions ? <FieldDescription>{t('maxMessagesDescription')}</FieldDescription> : null}
-        </Field>
-        <Field>
-          <FieldLabel>{t('maxChars')}</FieldLabel>
-          <Input
-            type="number"
-            min={1}
-            max={1000000}
-            placeholder={t('unlimited')}
-            step={1}
-            value={Number.isNaN(value.max_chars) ? '' : (value.max_chars ?? '')}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                max_chars: event.currentTarget.value === '' ? null : Number(event.currentTarget.value),
-              })
-            }
-          />
-          {showDescriptions ? <FieldDescription>{t('maxCharsDescription')}</FieldDescription> : null}
-        </Field>
-      </FieldGroup>
-      {showAttachments ? <Field orientation="horizontal">
-        <Switch
-          checked={value.include_attachments === 'explicit'}
-          onCheckedChange={(enabled) =>
-            onChange({ ...value, include_attachments: enabled ? 'explicit' : 'none' })
-          }
-        />
-        <FieldLabel>{t('includeAttachments')}</FieldLabel>
-      </Field> : null}
-    </>
-  );
-}
-
 export function GenerationFields({
   value,
   onChange,
@@ -305,12 +238,10 @@ export function ToolsField({
   tools,
   value,
   onChange,
-  allowed,
 }: {
   tools: HarnessTool[];
   value: string[];
   onChange: (values: string[]) => void;
-  allowed?: string[];
 }) {
   const { t } = useTranslation('settings');
   const { t: p } = useTranslation('personas');
@@ -320,22 +251,20 @@ export function ToolsField({
       {tools.map((tool) => (
         <Field orientation="horizontal" className="context-binding-row" key={tool.name}>
           <Checkbox
-            checked={value.includes(tool.name) && (!allowed || allowed.includes(tool.name))}
-            disabled={!!allowed && !allowed.includes(tool.name)}
+            checked={value.includes(tool.name)}
             onCheckedChange={(enabled) =>
               onChange(
                 enabled
                   ? tools
-                      .filter((item) => (!allowed || allowed.includes(item.name)) && (item.name === tool.name || value.includes(item.name)))
+                      .filter((item) => (item.name === tool.name || value.includes(item.name)))
                       .map((item) => item.name)
-                  : value.filter((name) => name !== tool.name && (!allowed || allowed.includes(name))),
+                  : value.filter((name) => name !== tool.name),
               )
             }
           />
           <FieldContent>
             <FieldLabel>{tool.name}</FieldLabel>
             <FieldDescription className="flex flex-wrap items-center gap-2">
-              {allowed && !allowed.includes(tool.name) ? <span>{p('projectToolDisabled')}</span> : null}
               <span>{t('toolRisk.' + tool.risk)}</span>
               {tool.requires_approval ? (
                 <Tooltip>
@@ -354,11 +283,13 @@ export function ToolsField({
 }
 
 export function BindingsField({
+  label,
   items,
   ids,
   onChange,
   disabled = false,
 }: {
+  label?: string;
   items: Array<{ id: string; name: string; enabled: boolean }>;
   ids: string[];
   onChange: (ids: string[]) => void;
@@ -378,7 +309,8 @@ export function BindingsField({
     onChange(next);
   };
   return (
-    <div className="context-binding-list">
+    <FieldSet className="context-binding-list">
+      {label ? <FieldLegend>{label}</FieldLegend> : null}
       {!sorted.length ? <p className="model-empty">{t('noResources')}</p> : null}
       {sorted.map((item) => (
         <div className="context-binding-row" key={item.id}>
@@ -432,6 +364,6 @@ export function BindingsField({
           ) : null}
         </div>
       ))}
-    </div>
+    </FieldSet>
   );
 }

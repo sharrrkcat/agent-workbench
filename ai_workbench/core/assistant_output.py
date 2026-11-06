@@ -113,7 +113,7 @@ class AssistantDraft:
         self.parser = ThinkParser(self._append_part, self.finish_reasoning)
         self.message = MessageSchema(
             message_id=message_id, session_id=session_id, run_id=run_id, role="assistant",
-            speaker_type="assistant", speaker_id=config.persona_id,
+            speaker_type="assistant", speaker_id=config.character_id,
             parent_message_id=parent_message_id,
             metadata={"streamed": streamed, **({"qq_internal": True} if config.session_kind == "qqbot" else {})},
         )

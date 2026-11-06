@@ -1,4 +1,4 @@
-"""Project types share metadata, with distinct Workspace and Timeline settings."""
+"""AI identities own either ordinary conversations or bound QQ conversations."""
 
 from datetime import datetime
 from typing import Annotated, Literal
@@ -7,14 +7,18 @@ from uuid import uuid4
 from pydantic import Field, StrictBool, TypeAdapter, field_serializer, field_validator
 
 from ai_workbench.core.models.schema import StrictModel, ImageGenerationControls
-from ai_workbench.core.schema.context_policy import ContextPolicy, BoundedContextPolicy
-from ai_workbench.core.schema.persona import USER_PERSONA_ID
-from ai_workbench.core.session import ChatSettings
+from ai_workbench.core.schema.context_policy import ContextPolicy
+from ai_workbench.core.schema.chat_config import ChatDefaults
 from ai_workbench.core.time import isoformat_utc, utc_now
 
 
-class ProjectInput(StrictModel):
+COGITA_CHARACTER_ID = "00000000-0000-4000-8000-000000000003"
+
+
+class CharacterInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
+    avatar_attachment_id: str | None = None
+    system_prompt: str = Field(default="", max_length=100000)
     model_profile_id: str | None = None
     temperature: float | None = Field(default=None, ge=0, le=2)
 
@@ -22,38 +26,18 @@ class ProjectInput(StrictModel):
     @classmethod
     def trim_name(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("Project name must not be empty")
+            raise ValueError("Character name must not be empty")
         return value.strip()
 
 
-class WorkspaceInput(ProjectInput):
-    kind: Literal["workspace"]
-    context_policy: ContextPolicy
-    agent_persona_id: str
-    cogita_persona_id: Literal[USER_PERSONA_ID]
-    harness_enabled: StrictBool
-    tools_allowed: list[str] = Field(max_length=128)
-    system_prompt: str = Field(default="", max_length=100000)
-    knowledge_base_ids: list[str] = Field(default_factory=list, max_length=128)
-
-    @field_validator("tools_allowed")
-    @classmethod
-    def unique_tools(cls, value: list[str]) -> list[str]:
-        return ChatSettings.unique_tools(value)
-
-
-class TimelineInput(ProjectInput):
-    kind: Literal["timeline"]
-    context_policy: BoundedContextPolicy
-    character_persona_id: str
-    user_persona_id: str
-    worldbook_ids: list[str] = Field(default_factory=list, max_length=128)
+class NormalCharacterInput(CharacterInput, ChatDefaults):
+    kind: Literal["normal"]
 
 
 QQ_DEFAULT_PROMPT = (
     "Participate naturally in the current QQ conversation. Stay on the latest topic and reply briefly in the other "
-    "participants' language. Usually finish in one message; add another only when necessary. Follow the selected "
-    "persona when present; otherwise be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others. "
+    "participants' language. Usually finish in one message; add another only when necessary. "
+    "Be friendly and natural. Avoid repetition, unrelated follow-ups and speaking for others. "
     "Prefer text with qq_send_message; most replies need no image. When qq_send_image is available, choose an asset_id "
     "from the favorite candidates for fitting emotional interaction. Tags are candidate data; a topic match alone is not "
     "a reason to send. Avoid routine illustrations and consecutive unsolicited images; use at most one image per reply. "
@@ -63,9 +47,9 @@ QQ_DEFAULT_PROMPT = (
 )
 
 
-class QQBotInput(ProjectInput):
+class QQBotInput(CharacterInput):
     kind: Literal["qqbot"]
-    context_policy: ContextPolicy
+    context_policy: ContextPolicy = Field(default_factory=ContextPolicy)
     bot_account: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
     admin_qq: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$", strict=True)
     websocket_url: str = Field(max_length=2048)
@@ -75,7 +59,6 @@ class QQBotInput(ProjectInput):
     image_description_model_profile_id: str | None = None
     image_generation_model_profile_id: str | None = None
     image_generation_options: ImageGenerationControls = Field(default_factory=ImageGenerationControls)
-    agent_persona_id: str | None = None
     system_prompt: str = Field(default=QQ_DEFAULT_PROMPT, max_length=100000)
     reasoning: StrictBool = True
     group_reply_mode: Literal["keyword"] = "keyword"
@@ -106,10 +89,10 @@ class QQBotInput(ProjectInput):
         return list(dict.fromkeys(value.strip().casefold() for value in values))
 
 
-ProjectCreate = Annotated[WorkspaceInput | TimelineInput | QQBotInput, Field(discriminator="kind")]
+CharacterCreate = Annotated[NormalCharacterInput | QQBotInput, Field(discriminator="kind")]
 
 
-class ProjectMetadata(StrictModel):
+class CharacterMetadata(StrictModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -118,19 +101,23 @@ class ProjectMetadata(StrictModel):
     def serialize_datetime(self, value: datetime) -> str:
         return isoformat_utc(value) or ""
 
+    @property
+    def is_protected(self) -> bool:
+        return self.id == COGITA_CHARACTER_ID
 
-class WorkspaceProject(WorkspaceInput, ProjectMetadata):
-    pass
-
-
-class TimelineProject(TimelineInput, ProjectMetadata):
-    pass
-
-
-class QQBotProject(QQBotInput, ProjectMetadata):
     def public_response(self) -> dict:
-        return {**self.model_dump(mode="json", exclude={"access_token"}), "has_access_token": bool(self.access_token)}
+        return {**self.model_dump(mode="json"), "is_protected": self.is_protected}
 
 
-Project = Annotated[WorkspaceProject | TimelineProject | QQBotProject, Field(discriminator="kind")]
-project_adapter = TypeAdapter(Project)
+class NormalCharacter(NormalCharacterInput, CharacterMetadata):
+    pass
+
+
+class QQBotCharacter(QQBotInput, CharacterMetadata):
+    def public_response(self) -> dict:
+        return {**self.model_dump(mode="json", exclude={"access_token"}), "has_access_token": bool(self.access_token),
+                "is_protected": self.is_protected}
+
+
+Character = Annotated[NormalCharacter | QQBotCharacter, Field(discriminator="kind")]
+character_adapter = TypeAdapter(Character)

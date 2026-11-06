@@ -12,11 +12,12 @@ from ai_workbench.core.context_snapshot import capture_context, context_detail, 
 from ai_workbench.core.models.schema import ChatRequest, ExternalConnection
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.stores import MessageStore, RunStore
-from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
+from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from tests.model_fixtures import configure_model
-from tests.test_projects import workspace, child
+from tests.chat_fixtures import normal_character, child
 from tests.test_chat_presentation import presentation_client, configure, send
 from tests.tool_fixtures import completion, ok, tool_call
 from tests.test_vision_input import profile as local_profile
@@ -32,7 +33,7 @@ def details(client, run):
 def test_context_captures_the_actual_request_and_stays_private(presentation_client, harness, streaming):
     client, upstream = presentation_client
     session = configure(client, harness=harness, streaming=streaming)
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"generation": {"temperature": 0}, "reasoning": False}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'temperature': 0, "reasoning": False}}))
     upstream.turns = ([completion(tool_call(), content="working")] if harness else []) + [completion(content="final output")]
     result = send(client, session, "PRIVATE_INPUT 中文😀")
     assert result["success"], result
@@ -76,20 +77,18 @@ def test_context_endpoint_checks_ownership_and_missing_snapshots(presentation_cl
     assert client.get(f"/api/runs/{result['run']['run_id']}/steps/{snapshot['step_id']}/context").status_code == 404
 
 
-def test_sources_preserve_workspace_order_unicode_and_selection(presentation_client, monkeypatch):
+def test_sources_preserve_character_persona_order_unicode_and_selection(presentation_client, monkeypatch):
     client, upstream = presentation_client
     configure_model(client, request_options={"streaming": False})
     embedding = configure_model(client, kind="embedding", alias="embedding")
     base = ok(client.post("/api/knowledge/bases", json={"name": "Guides", "embedding_model_profile_id": embedding["id"]}))
-    ok(client.patch(f"/api/personas/{COGITA_PERSONA_ID}", json={"system_prompt": "  AGENT😀 private  "}))
-    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"system_prompt": "用户背景😀"}))
-    project = workspace(client, system_prompt="PROJECT private", knowledge_base_ids=[base["id"]],
+    ok(client.patch(f"/api/personas/{USER_PERSONA_ID}", json={"background": "用户背景😀"}))
+    project = normal_character(client, system_prompt="  CHARACTER😀 private  ", knowledge_base_ids=[base["id"]],
                         context_policy={"compaction": {"enabled": False}})
     session = child(client, project)
     state = client.app.state.runtime_state
     async def search(**_):
-        return {"results": [{"chunk_id": "chunk-1", "source_id": "source-1", "knowledge_base_id": base["id"],
-                             "title": "guide.md", "content": "KNOWLEDGE 中文😀"}], "debug": {}}
+        pytest.fail("Mounted Knowledge must not enter chat")
     monkeypatch.setattr(state.knowledge_service, "search", search)
     for index, (role, content) in enumerate([("user", "old"), ("assistant", "middle"), ("user", "long" * 20), ("assistant", "recent")]):
         state.messages.add_message(session["session_id"], role, content, message_id=f"history-{index}")
@@ -99,19 +98,14 @@ def test_sources_preserve_workspace_order_unicode_and_selection(presentation_cli
     snapshot = details(client, result["run"])[0]
     assert snapshot["request"] == upstream.calls[-1]
     sources = {source["kind"]: source for source in snapshot["sources"]}
-    assert sources["agent_persona"]["text"] == "AGENT😀 private"
-    assert sources["project_prompt"]["text"] == "PROJECT private"
-    assert sources["cogita_persona"]["text"].endswith("用户背景😀\n</user_persona>")
-    assert "KNOWLEDGE 中文😀" in sources["knowledge_snippet"]["text"]
-    assert sources["knowledge_snippet"]["citation"] == "K1"
-    assert sources["knowledge_snippet"]["source_id"] == "source-1"
-    assert [sources[kind]["start"] for kind in ("agent_persona", "project_prompt", "cogita_persona", "knowledge")] == sorted(
-        sources[kind]["start"] for kind in ("agent_persona", "project_prompt", "cogita_persona", "knowledge"))
+    assert sources["character"]["text"].strip() == "CHARACTER😀 private"
+    assert sources["persona"]["text"].endswith("用户背景😀\n</user_persona>")
+    assert sources["character"]["start"] < sources["persona"]["start"]
+    assert "knowledge" not in sources and "knowledge_snippet" not in sources
     assert sources["history"]["text"] == "recent"
     assert {item["reason"] for item in snapshot["exclusions"]} == {"ineligible_history"}
     assert all(source["char_count"] == len(source["text"]) for source in snapshot["sources"])
-    ok(client.patch(f"/api/personas/{COGITA_PERSONA_ID}", json={"system_prompt": "CHANGED"}))
-    ok(client.patch(f"/api/projects/{project['id']}", json={"system_prompt": "CHANGED"}))
+    ok(client.patch(f"/api/characters/{project['id']}", json={"system_prompt": "CHANGED"}))
     assert details(client, result["run"])[0] == snapshot
 
 
@@ -188,7 +182,7 @@ def test_local_capture_uses_the_translated_transport_body(engine, streaming):
         model = local_profile(engine).model_copy(update={"model_ref": "managed", "parameters": {"temperature": 0.7, "top_p": 0.9}})
         messages, runs = MessageStore(), RunStore()
         built = ContextBuilder(messages).build("s", "hello")
-        run = runs.create_run("chat", COGITA_PERSONA_ID, "s")
+        run = runs.create_run("chat", "00000000-0000-4000-8000-000000000001", COGITA_CHARACTER_ID, "s")
         step = runs.create_step(run.run_id, "model")
         request = ChatRequest(model="local", messages=built.messages, reasoning=False, temperature=0, stream=streaming)
         capture = capture_context(runs, step.step_id, built.trace, model, ContextPolicy())
@@ -219,7 +213,7 @@ def test_ignored_images_remap_sources_and_do_not_retain_attachments():
     built = ContextBuilder(messages).build("s", "current", current_message_id=current.message_id, history=messages.list_messages("s"))
     prepared = omit_context_images(built.messages, built.trace)
     assert prepared == [{"role": "assistant", "content": "retained"}, {"role": "user", "content": "current"}]
-    run = runs.create_run("chat", COGITA_PERSONA_ID, "s")
+    run = runs.create_run("chat", "00000000-0000-4000-8000-000000000001", COGITA_CHARACTER_ID, "s")
     step = runs.create_step(run.run_id, "model")
     capture_context(runs, step.step_id, built.trace, local_profile(), ContextPolicy())(
         {"model": "managed", "stream": False, "messages": prepared})

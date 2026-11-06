@@ -22,7 +22,7 @@ def notices(state):
 
 def prepare(client, state, p):
     state.qq.programs.connection_restored(p["id"])
-    state.qq.programs.prepare_notifications(state.projects.get(p["id"]))
+    state.qq.programs.prepare_notifications(state.characters.get(p["id"]))
     client.portal.call(state.qq.programs.send_pending, p["id"])
 
 
@@ -33,7 +33,7 @@ def test_idle_ticks_do_not_repeat_connection_recovery(qq_client, monkeypatch):
     monkeypatch.setattr(state.qq.programs, "connection_restored", restored.append)
     async def tick():
         for _ in range(10):
-            state.qq.programs.tick([state.projects.get(p["id"])])
+            state.qq.programs.tick([state.characters.get(p["id"])])
     client.portal.call(tick)
     assert restored == []
 
@@ -77,11 +77,11 @@ def test_connection_episode_merges_and_pending_recipient_tracks_admin_setting(qq
     assert len(notices(state)) == 1 and not connection.calls
     connection.ready = True
     state.qq.programs.connection_restored(p["id"])
-    state.qq.programs.prepare_notifications(state.projects.get(p["id"]))
+    state.qq.programs.prepare_notifications(state.characters.get(p["id"]))
     old_admin = state.qq.store.binding(p["id"], "friend", "9999")
     delivery = replies(state, {"session_id": old_admin.session_id})[0]
     assert "失败次数：3" in delivery["text"] and "连接已恢复" in delivery["text"]
-    ok(client.patch(f"/api/projects/{p['id']}", json={"admin_qq": "8888"}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"admin_qq": "8888"}))
     new_admin = state.qq.store.binding(p["id"], "friend", "8888")
     assert replies(state, {"session_id": old_admin.session_id}) == []
     assert replies(state, {"session_id": new_admin.session_id})[0]["id"] == delivery["id"]
@@ -90,8 +90,8 @@ def test_connection_episode_merges_and_pending_recipient_tracks_admin_setting(qq
     state.qq.programs.connection_failed(p["id"], "QQ_CONNECTION_FAILED")
     assert len(notices(state)) == 2
     state.qq.programs.connection_restored(p["id"])
-    state.qq.programs.prepare_notifications(state.projects.get(p["id"]))
-    ok(client.patch(f"/api/projects/{p['id']}", json={"admin_qq": None}))
+    state.qq.programs.prepare_notifications(state.characters.get(p["id"]))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"admin_qq": None}))
     client.portal.call(state.qq.programs.send_pending, p["id"])
     assert len(connection.calls) == 1
     assert replies(state, {"session_id": new_admin.session_id})[-1]["status"] == "cancelled"
@@ -140,7 +140,7 @@ def test_intentional_stop_disable_and_icebreaker_cancellation_do_not_notify(qq_c
     client.portal.call(scenario)
     assert notices(state) == []
     for code in ("QQ_ICEBREAKER_CANCELLED", "QQ_DISABLED"):
-        row = state.qq.store.save(QQBatch(session_id=session["session_id"], project_id=p["id"],
+        row = state.qq.store.save(QQBatch(session_id=session["session_id"], character_id=p["id"],
             status="failed", text="", created_at=0, error_code=code))
         state.qq.programs.batch_finished(row)
     assert notices(state) == []
@@ -161,7 +161,7 @@ def test_restart_preserves_unsent_work_and_never_replays_completed_commands_or_s
         state.qq.store.save(first)
         first_id = first.id
         ingest(client, state, p, event(2, "/cogita resume"), 2)
-        running = state.qq.store.save(QQBatch(session_id=session["session_id"], project_id=p["id"],
+        running = state.qq.store.save(QQBatch(session_id=session["session_id"], character_id=p["id"],
             status="running", text="interrupted", created_at=0))
         running_id = running.id
         state.qq.programs.connection_failed(p["id"], "QQ_CONNECTION_FAILED")
@@ -185,15 +185,15 @@ def test_restart_preserves_unsent_work_and_never_replays_completed_commands_or_s
         assert not connection.calls and len(notices(state)) == 2
 
 
-def test_source_deletion_cancels_unsent_alerts_and_project_removal_cleans_events(qq_client):
+def test_source_deletion_cancels_unsent_alerts_and_character_removal_cleans_events(qq_client):
     client, state, _ = qq_client
     p, session, connection = configure_execution(client, state, admin_qq="9999")
-    failed = state.qq.store.save(QQBatch(session_id=session["session_id"], project_id=p["id"],
+    failed = state.qq.store.save(QQBatch(session_id=session["session_id"], character_id=p["id"],
         status="failed", text="", created_at=0, error_code="QQ_RUN_FAILED"))
     state.qq.programs.batch_finished(failed)
-    state.qq.programs.prepare_notifications(state.projects.get(p["id"]))
+    state.qq.programs.prepare_notifications(state.characters.get(p["id"]))
     ok(client.delete(f"/api/sessions/{session['session_id']}"))
     prepare(client, state, p)
     assert not connection.calls
-    ok(client.delete(f"/api/projects/{p['id']}"))
+    ok(client.delete(f"/api/characters/{p['id']}"))
     assert notices(state) == []

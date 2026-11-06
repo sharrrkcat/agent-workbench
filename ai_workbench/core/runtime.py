@@ -127,7 +127,7 @@ class CogitaRuntime:
         except ToolExecutionError as exc:
             raise ChatError(exc.code, exc.message, 404 if exc.code == "TOOL_NOT_FOUND" else 400) from exc
         run = self.chat_runner.runs.create_run(
-            kind="tool", persona_id=config.persona_id, session_id=session.session_id,
+            kind="tool", character_id=config.character_id, persona_id=config.persona_id, session_id=session.session_id,
             metadata={"tool_name": name, "direct": True, "harness": True, "configuration": config.public_summary()},
             config_snapshot=config.model_dump(mode="json"),
         )
@@ -142,7 +142,7 @@ class CogitaRuntime:
             text=_text(source_user_message),
             attachments=(source_user_message.metadata or {}).get("attachments") or [],
             input_message_id=source_user_message.message_id,
-            persona_id=run.persona_id,
+            persona_id=source_user_message.speaker_id,
             ui_language=ui_language,
         )
 
@@ -152,6 +152,7 @@ class CogitaRuntime:
             text=_text(message),
             attachments=(message.metadata or {}).get("attachments") or [],
             input_message_id=message.message_id,
+            persona_id=message.speaker_id,
             ui_language=ui_language,
         )
 

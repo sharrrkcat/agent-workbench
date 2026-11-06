@@ -17,9 +17,9 @@ def test_grant_column_upgrade_preserves_existing_epoch_and_files(tmp_path):
     for path in paths:
         path.parent.mkdir()
         path.write_bytes(b"untouched")
-    migrations.upgrade(engine, "head")
-    migrations.upgrade(engine, "head")
-    assert migrations.current_revision(engine) == migrations.HEAD_REVISION
+    migrations.upgrade(engine, migrations.QQ_TRIGGER_GRANTS_REVISION)
+    migrations.upgrade(engine, migrations.QQ_TRIGGER_GRANTS_REVISION)
+    assert migrations.current_revision(engine) == migrations.QQ_TRIGGER_GRANTS_REVISION
     columns = {column["name"] for column in inspect(engine).get_columns("qq_participants")}
     assert "grant_message_id" in columns and "keyword_message_id" not in columns
     row = QQStore(engine).get(QQParticipant, ("session", "123"))

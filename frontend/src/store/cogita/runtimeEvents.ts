@@ -6,10 +6,16 @@ import { applyMessageEvent } from '../messageStream';
 import type { Run, RunStep, RuntimeEvent } from '../../types/runs';
 import type { Persona, Session } from '../../types/chat';
 import { usePersonasStore } from '../usePersonasStore';
+import { useCharactersStore } from '../useCharactersStore';
+import type { Character } from '../../types/characters';
 import { mergeQueueRuntime } from './messageQueue';
 import type { Message } from '../../types/messages';
 
 export function handleRuntimeEvent(set: CogitaSet, get: CogitaGet, event: RuntimeEvent): void {
+  if (event.type === 'character_updated' && event.payload?.character) {
+    useCharactersStore.getState().upsert(event.payload.character as Character);
+    return;
+  }
   if (event.type === 'persona_updated' && event.payload?.persona) {
     usePersonasStore.getState().upsert(event.payload.persona as Persona);
     return;

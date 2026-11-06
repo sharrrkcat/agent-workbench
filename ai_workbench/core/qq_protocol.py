@@ -155,8 +155,8 @@ def normalize(event):
 
 
 class OneBotConnection:
-    def __init__(self, project, receive, *, on_connected=None):
-        self.project, self.receive = project, receive
+    def __init__(self, character, receive, *, on_connected=None):
+        self.character, self.receive = character, receive
         self.on_connected = on_connected
         self.socket = None
         self.pending = {}
@@ -165,14 +165,14 @@ class OneBotConnection:
         self.login_name = ""
 
     async def run(self):
-        headers = {"Authorization": "Bearer " + self.project.access_token} if self.project.access_token else {}
-        async with connect(self.project.websocket_url, additional_headers=headers, max_size=1024 * 1024,
+        headers = {"Authorization": "Bearer " + self.character.access_token} if self.character.access_token else {}
+        async with connect(self.character.websocket_url, additional_headers=headers, max_size=1024 * 1024,
                            max_queue=16, open_timeout=10) as socket:
             self.socket = socket
             try:
                 login = OneBotUser.model_validate(await asyncio.wait_for(self.login(), 20))
-                if str(login.user_id) != self.project.bot_account:
-                    raise ToolExecutionError("QQ_ACCOUNT_MISMATCH", "Connected account differs from the Project.")
+                if str(login.user_id) != self.character.bot_account:
+                    raise ToolExecutionError("QQ_ACCOUNT_MISMATCH", "Connected account differs from the Character.")
                 self.login_name = login.nickname
                 self.ready, self.status = True, "connected"
                 if self.on_connected is not None:

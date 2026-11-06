@@ -4,7 +4,7 @@ import { Field, FieldGroup, FieldLabel, FieldDescription } from '@/components/ui
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
 import { useModelsStore } from '../../store/useModelsStore';
-import type { QQBotInput } from '../../types/projects';
+import type { QQBotInput } from '../../types/characters';
 import { ModelSelect } from '../personas/ConfigurationFields';
 
 const choices = {

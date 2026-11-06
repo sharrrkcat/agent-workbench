@@ -15,15 +15,15 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await request.post('/__test__/session');
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       const model = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
-      const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'QQ deletion', context_policy: {},
+      const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'QQ deletion', context_policy: {},
         bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3001', model_profile_id: model.id,
         keywords: ['bot'], batch_message_limit: 3, reply_message_limit: 2 } }));
       try {
-        const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { title: 'Delete QQ messages', target_kind: 'group', target_id: '7788' } }));
+        const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { title: 'Delete QQ messages', target_kind: 'group', target_id: '7788' } }));
         const sid = session.session_id, base = `/api/qq/sessions/${sid}`;
         const firstRun = await json(request.post(`/__test__/qq/${sid}`));
         const secondRun = await json(request.post(`/__test__/qq/${sid}/reply/limit`));
-        await page.goto(`/projects/${project.id}?session=${sid}`);
+        await page.goto(`/characters/${character.id}?session=${sid}`);
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(48);
         await page.getByRole('button', { name: chat.loadEarlier, exact: true }).click();
         await expect(page.locator('[data-qq-incoming]')).toHaveCount(66);
@@ -115,7 +115,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         for (const row of remaining) expect(row.disposition).toBe(messages.find((old: { id: number }) => old.id === row.id).disposition);
         await page.screenshot({ path: info.outputPath('qq-delete-result.png') });
         expect(errors).toEqual([]);
-      } finally { await json(request.delete(`/api/projects/${project.id}`)); }
+      } finally { await json(request.delete(`/api/characters/${character.id}`)); }
     });
   });
 }

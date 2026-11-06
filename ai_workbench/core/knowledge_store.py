@@ -100,15 +100,6 @@ class KnowledgeBasePatch(BaseModel):
     max_context_chars_override: int | None = Field(default=None, ge=100, le=200000)
 
 
-class SessionKnowledgeBinding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: int | None = None
-    session_id: str
-    knowledge_base_id: str
-    enabled: bool = True
-    sort_order: int = 0
-    created_at: datetime = Field(default_factory=utc_now)
-    knowledge_base: KnowledgeBase | None = None
 
 
 class KnowledgeSource(BaseModel):
@@ -164,7 +155,6 @@ class MemoryKnowledgeStore(KnowledgeStore):
     def __init__(self) -> None:
         self._settings = KnowledgeSettings()
         self._bases: dict[str, KnowledgeBase] = {}
-        self._bindings: dict[tuple[str, str], SessionKnowledgeBinding] = {}
         self._sources: dict[str, KnowledgeSource] = {}
         self._chunks: dict[str, list[Any]] = {}
         self._vectors: dict[str, list[list[float]]] = {}
@@ -190,25 +180,9 @@ class MemoryKnowledgeStore(KnowledgeStore):
         current=self.get_knowledge_base(knowledge_base_id); updated=KnowledgeBase.model_validate({**current.model_dump(),**values,"updated_at":utc_now()}); self._bases[knowledge_base_id]=updated; return updated
     def delete_knowledge_base(self, knowledge_base_id: str) -> KnowledgeBase:
         current=self.get_knowledge_base(knowledge_base_id); del self._bases[knowledge_base_id]
-        for key in list(self._bindings):
-            if key[1] == knowledge_base_id: del self._bindings[key]
         for source_id, source in list(self._sources.items()):
             if source.knowledge_base_id == knowledge_base_id: self._sources.pop(source_id); self._chunks.pop(source_id, None); self._vectors.pop(source_id, None); self._search_texts.pop(source_id, None)
         return current
-    def list_session_bindings(self, session_id: str) -> list[SessionKnowledgeBinding]:
-        result=[]
-        for binding in sorted((item for (sid,_),item in self._bindings.items() if sid==session_id), key=lambda item:item.sort_order):
-            result.append(binding.model_copy(update={"knowledge_base": self._bases.get(binding.knowledge_base_id)}))
-        return result
-    def replace_session_bindings(self, session_id: str, knowledge_base_ids: list[str]) -> list[SessionKnowledgeBinding]:
-        for key in list(self._bindings):
-            if key[0] == session_id: del self._bindings[key]
-        for index,kb_id in enumerate(dict.fromkeys(knowledge_base_ids)):
-            self.get_knowledge_base(kb_id); binding=SessionKnowledgeBinding(session_id=session_id,knowledge_base_id=kb_id,sort_order=(index+1)*10); self._bindings[(session_id,kb_id)] = binding
-        return self.list_session_bindings(session_id)
-    def delete_session_bindings(self, session_id: str) -> None:
-        for key in list(self._bindings):
-            if key[0] == session_id: del self._bindings[key]
     def list_sources(self, knowledge_base_id: str) -> list[KnowledgeSource]: return [item for item in self._sources.values() if item.knowledge_base_id==knowledge_base_id]
     def get_source(self, source_id: str) -> KnowledgeSource:
         if source_id not in self._sources: raise KeyError(f"unknown knowledge source: {source_id}")

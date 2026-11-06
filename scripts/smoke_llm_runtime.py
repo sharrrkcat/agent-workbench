@@ -20,6 +20,7 @@ from PIL import Image
 
 from ai_workbench.api.deps import build_runtime_state
 from ai_workbench.api.main import create_app
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
 from ai_workbench.core.assistant_output import ThinkParser
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics, LLMTiming, LLMUsage
@@ -126,8 +127,8 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     stream_statistics = check_statistics(tails[0], streaming=True, engine_name=engine_name)
     assert manager.status(profile.id).residency == "loaded"
 
-    session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
-        "generation": {"temperature": 0}, "tools_allowed": []})
+    session = await checked_json(client, "POST", f"/api/characters/{COGITA_CHARACTER_ID}/sessions", json={"overrides": {"model_profile_id": profile.id,
+        "temperature": 0, "tools_allowed": []}})
     chat = await checked_json(client, "POST", f"/api/sessions/{session['session_id']}/messages",
                               json={"content": "Greet me briefly."})
     assert chat["success"] and chat["run"]["status"] == "DONE" and chat["data"]
@@ -143,8 +144,8 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     if "smoke_echo" not in {spec.name for spec in state.tool_registry.list()}:
         state.tool_registry.register(ToolSpec("smoke_echo", "Return the supplied value.", {"type": "object",
             "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": False}, echo))
-    harness_session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
-        "harness_enabled": True, "tools_allowed": ["smoke_echo"], "generation": {"temperature": 0}})
+    harness_session = await checked_json(client, "POST", f"/api/characters/{COGITA_CHARACTER_ID}/sessions", json={"overrides": {"model_profile_id": profile.id,
+        "harness_enabled": True, "tools_allowed": ["smoke_echo"], "temperature": 0}})
     harness = await checked_json(client, "POST", f"/api/sessions/{harness_session['session_id']}/messages", json={
         "content": "Call smoke_echo with value hello, then return the tool result."})
     tool_results = [part for message in harness["messages"] for part in message["parts"] if part["type"] == "tool_result"]
@@ -317,8 +318,8 @@ async def validate_vision(state, client, profile, engine_name):
     answers["stream"] = "".join(pieces)
     check_colors(answers["stream"], ["red", "blue"])
 
-    session = await checked_json(client, "POST", "/api/sessions", json={"model_profile_id": profile.id,
-        "generation": {"temperature": 0}, "tools_allowed": []})
+    session = await checked_json(client, "POST", f"/api/characters/{COGITA_CHARACTER_ID}/sessions", json={"overrides": {"model_profile_id": profile.id,
+        "temperature": 0, "tools_allowed": []}})
     attachment = await checked_json(client, "POST", "/api/attachments", files={"file": ("input.png", red, "image/png")})
     path = f"/api/sessions/{session['session_id']}/messages"
     first = await checked_json(client, "POST", path, json={"content": "Remember this image for my next question. Reply only READY.", "attachments": [attachment]})

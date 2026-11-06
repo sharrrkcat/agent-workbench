@@ -75,13 +75,13 @@ def binding(state, session_id):
     return value
 
 
-@router.get("/projects/{project_id}/status", response_model=ConnectionStatus, responses=error_responses(404, 422))
-def connection_status(project_id: str, state: RuntimeState = Depends(get_state)):
-    project = state.project_service.get(project_id)
-    if project.kind != "qqbot":
-        raise ChatError("PROJECT_TYPE_INVALID", "Choose a QQBot Project.", 422)
-    connection = state.qq.connections.get(project_id)
-    return {"status": connection.status if connection else "disabled" if not project.connection_enabled else "connecting",
+@router.get("/characters/{character_id}/status", response_model=ConnectionStatus, responses=error_responses(404, 422))
+def connection_status(character_id: str, state: RuntimeState = Depends(get_state)):
+    character = state.character_service.get(character_id)
+    if character.kind != "qqbot":
+        raise ChatError("CHARACTER_TYPE_INVALID", "Choose a QQBot Character.", 422)
+    connection = state.qq.connections.get(character_id)
+    return {"status": connection.status if connection else "disabled" if not character.connection_enabled else "connecting",
         "connected": bool(connection and connection.ready)}
 
 
@@ -108,7 +108,7 @@ async def history(session_id: str, query: Annotated[HistoryQuery, Query()], stat
     program_busy = state.qq.programs.busy(session_id)
     def read():
         page, bound, media = state.qq.transcript.page(session_id, query, program_busy=program_busy)
-        return page, bound, media, state.projects.get(bound.project_id).bot_account
+        return page, bound, media, state.characters.get(bound.character_id).bot_account
     try:
         # The in-memory test backend shares one SQLite connection and event-loop-owned run stores.
         page, bound, media, bot_account = await asyncio.to_thread(read) if state.qq.transcript.sql_runs else read()

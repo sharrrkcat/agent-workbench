@@ -20,6 +20,8 @@ def measure(rows: int, strategy: str = 'token_budget'):
     import psutil
     from sqlalchemy import insert
     from sqlmodel import SQLModel
+    from ai_workbench.core.characters import CharacterStore
+    from ai_workbench.core.schema.character import NormalCharacter
     from ai_workbench.core.context import ContextBuilder
     from ai_workbench.core.context_compaction import ContextCompactionService
     from ai_workbench.core.history_retrieval import HistoryRetrieval
@@ -35,7 +37,8 @@ def measure(rows: int, strategy: str = 'token_budget'):
         engine = get_engine(f"sqlite:///{Path(root) / 'history.db'}")
         SQLModel.metadata.create_all(engine)
         sessions = SqlSessionStore(engine)
-        session = sessions.create_session()
+        character = CharacterStore(engine).save(NormalCharacter(kind="normal", name="History memory"))
+        session = sessions.create_session(character_id=character.id)
         sid = session.session_id
         beginning = datetime(2026, 1, 1, tzinfo=timezone.utc)
         parts = json.dumps([{"id": "t", "type": "text", "text": "x" * 1024}])

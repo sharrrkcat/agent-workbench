@@ -20,7 +20,7 @@ def setup(client, *, history=True, enabled=True, strategy="token_budget", stream
     ok(client.patch(f"/api/models/profiles/{profile['id']}", json={"context_window_tokens": 4096}))
     policy = ContextPolicy(history_enabled=history, strategy=strategy,
         compaction={"enabled": enabled, "trigger_percent": 70, "target_percent": 45, "max_summary_tokens": summary})
-    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={"context_policy": policy.model_dump()}))
+    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"context_policy": policy.model_dump()}}))
     state = client.app.state.runtime_state
     executed = []
     async def result(arguments, context):
@@ -164,7 +164,7 @@ def test_approval_keeps_summary_and_original_ids_without_replaying(harness_clien
     corrupted = {**saved, "compaction": {**checkpoint, "transcript_end": 3}}
     with pytest.raises(ValueError, match="complete tool-round"):
         HarnessState.model_validate(corrupted)
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={"context_policy": {"strategy": "message_window"}}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"context_policy": {"strategy": "message_window"}}}))
     def resumed(request):
         return summary(request) if is_summary(request) else completion(content="Approved")
     upstream.turns = [resumed] * 8

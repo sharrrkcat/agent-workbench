@@ -1,4 +1,5 @@
 """Reasoning is a native request mode, independent of response text presentation."""
+from tests.chat_fixtures import create_chat
 import asyncio
 import json
 from itertools import product
@@ -15,7 +16,8 @@ from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.openai_adapter import OpenAIAdapter
 from ai_workbench.core.models.runtimes.adapters import LlamaServerAdapter
 from ai_workbench.core.models.schema import ChatRequest, ChatRequestOptions, ExternalConnection, ModelProfile
-from ai_workbench.core.schema.persona import COGITA_PERSONA_ID, USER_PERSONA_ID
+from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
+from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.workers.reasoning import generation_prefix, template_reasoning_support
 from ai_workbench.workers.transformers_engine import TransformersEngine
 from ai_workbench.workers.transformers_server import build_app
@@ -185,13 +187,13 @@ def test_public_rejection_and_home_adjustment_do_not_change_saved_mode(tmp_path,
         response = client.post("/v1/chat/completions", headers={"Authorization": "Bearer test-key"}, json=body)
         assert response.status_code == 200
         assert upstream.calls[-1]["chat_template_kwargs"] == {"enable_thinking": False}
-        session = ok(client.post("/api/sessions", json={"model_profile_id": profile["id"]}))
+        session = ok(create_chat(client, overrides={"model_profile_id": profile["id"]}))
         path = f"/api/sessions/{session['session_id']}"
         response = ok(client.post(path + "/messages", json={"content": "hello"}))
         assert response["success"]
         assert response["run"]["metadata"]["reasoning"] == {"requested": True, "effective": False}
         assert response["messages"][0]["metadata"]["request_warnings"]["codes"] == ["reasoning_disabled"]
-        assert ok(client.get(path))["reasoning"] is True
+        assert ok(client.get(path))["effective"]["reasoning"] is True
         assert upstream.calls[-1]["chat_template_kwargs"] == {"enable_thinking": False}
         adapter.reasoning_support = {"instant": "unknown", "reasoning": "unknown"}
         retried = ok(client.post(f"/api/runs/{response['run']['run_id']}/retry"))
@@ -201,23 +203,21 @@ def test_public_rejection_and_home_adjustment_do_not_change_saved_mode(tmp_path,
 
 
 @pytest.mark.parametrize("memory", [True, False])
-def test_session_reasoning_is_independent_and_workspace_null_restores_default(tmp_path, memory):
+def test_session_reasoning_is_independent_and_null_restores_character_default(tmp_path, memory):
     app = create_app(root=tmp_path, use_memory=memory, database_url=f"sqlite:///{tmp_path / 'chat.db'}")
     with TestClient(app) as client:
         first = configure_model(client, alias="first")
         second = configure_model(client, alias="second")
-        ordinary = ok(client.post("/api/sessions", json={"model_profile_id": first["id"]}))
-        assert ordinary["reasoning"] is True and ordinary["effective"]["reasoning"] is True
+        ordinary = ok(create_chat(client, overrides={"model_profile_id": first["id"]}))
+        assert ordinary["effective"]["reasoning"] is True and ordinary["effective"]["reasoning"] is True
         path = f"/api/sessions/{ordinary['session_id']}"
-        ok(client.patch(path, json={"reasoning": False}))
-        assert ok(client.patch(path, json={"model_profile_id": second["id"]}))["reasoning"] is False
+        ok(client.patch(path, json={'overrides': {"reasoning": False}}))
+        assert ok(client.patch(path, json={'overrides': {"model_profile_id": second["id"]}}))["effective"]["reasoning"] is False
         assert ok(client.get(path))["effective"]["reasoning"] is False
-        for value in (None, 0, "false"):
-            assert client.patch(path, json={"reasoning": value}).status_code == 422
-        project = ok(client.post("/api/projects", json={"kind": "workspace", "name": "Work",
-            "agent_persona_id": COGITA_PERSONA_ID, "cogita_persona_id": USER_PERSONA_ID,
-            "context_policy": {}, "harness_enabled": False, "tools_allowed": []}))
-        session = ok(client.post(f"/api/projects/{project['id']}/sessions", json={}))
+        for value in (0, "false"):
+            assert client.patch(path, json={'overrides': {"reasoning": value}}).status_code == 422
+        project = ok(client.post("/api/characters", json={"kind": "normal", "name": "Work"}))
+        session = ok(client.post(f"/api/characters/{project['id']}/sessions", json={}))
         path = f"/api/sessions/{session['session_id']}"
         assert session["effective"]["reasoning"] is True
         assert ok(client.patch(path, json={"overrides": {"reasoning": False}}))["effective"]["reasoning"] is False
@@ -233,8 +233,7 @@ def test_adjusted_mode_survives_harness_approval_and_session_edits(tmp_path, mon
         profile, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, tools=True)
         adapter.reasoning_support = {"instant": "unsupported", "reasoning": "supported"}
         upstream.turns = [completion(tool_call("test_approval", {"value": "confirm"})), completion(content="answer")]
-        session = ok(client.post("/api/sessions", json={"model_profile_id": profile["id"],
-            "reasoning": False, "harness_enabled": True, "tools_allowed": ["test_approval"]}))
+        session = ok(create_chat(client, overrides={"model_profile_id": profile["id"], "reasoning": False, "harness_enabled": True, "tools_allowed": ["test_approval"]}))
         path = f"/api/sessions/{session['session_id']}"
         waiting = ok(client.post(path + "/messages", json={"content": "read the note"}))
         run_id = waiting["run"]["run_id"]
@@ -242,9 +241,9 @@ def test_adjusted_mode_survives_harness_approval_and_session_edits(tmp_path, mon
         assert waiting["run"]["metadata"]["reasoning"] == {"requested": False, "effective": True}
         assert app.state.runtime_state.runs.get_config_snapshot(run_id)["reasoning"] is False
         assert app.state.runtime_state.runs.get_harness_state(run_id)["reasoning"] is True
-        ok(client.patch(path, json={"reasoning": True}))
-        ok(client.patch(path, json={"reasoning": False}))
+        ok(client.patch(path, json={'overrides': {"reasoning": True}}))
+        ok(client.patch(path, json={'overrides': {"reasoning": False}}))
         response = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
         assert response["run"]["status"] == "DONE"
         assert len(upstream.calls) == 2 and all(body["chat_template_kwargs"] == {"enable_thinking": True} for body in upstream.calls)
-        assert ok(client.get(path))["reasoning"] is False
+        assert ok(client.get(path))["effective"]["reasoning"] is False

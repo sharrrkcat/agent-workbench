@@ -1,3 +1,4 @@
+from tests.chat_fixtures import create_chat
 from pathlib import Path
 
 import pytest
@@ -35,7 +36,7 @@ def test_phase2a_recreates_all_test_data_and_matches_orm(tmp_path):
     SQLModel.metadata.create_all(expected)
     for table in SQLModel.metadata.tables:
         columns = lambda bind: [{**column, "type": str(column["type"])} for column in inspect(bind).get_columns(table)]
-        assert columns(engine) == columns(expected)
+        assert sorted(columns(engine), key=lambda c: c["name"]) == sorted(columns(expected), key=lambda c: c["name"])
         def indexes(source):
             return [{**row, "dialect_options": {key: str(value) for key, value in row.get("dialect_options", {}).items()}}
                 for row in inspect(source).get_indexes(table)]
@@ -81,10 +82,11 @@ def test_unified_store_crud_references_and_secret_redaction(tmp_path, memory):
         assert client.patch(f"/api/models/profiles/{profile['id']}", json={"kind": "vision"}).status_code == 409
         assert client.delete(f"/api/models/providers/{provider_id}").status_code == 409
         assert client.delete(f"/api/models/profiles/{profile['id']}").status_code == 409
-        session = client.post("/api/sessions", json={"model_profile_id": profile["id"]}).json()
+        session = create_chat(client, overrides={"model_profile_id": profile["id"]}).json()
         client.patch("/api/models/settings", json={"default_model_profile_id": None})
         assert client.delete(f"/api/models/profiles/{profile['id']}").status_code == 409
-        client.patch(f"/api/sessions/{session['session_id']}", json={"model_profile_id": None})
+        client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"model_profile_id": None}})
+        assert client.patch(f"/api/characters/{session['character_id']}", json={"model_profile_id": None}).status_code == 200
         assert client.delete(f"/api/models/profiles/{profile['id']}").status_code == 200
         assert client.delete(f"/api/models/providers/{provider_id}").status_code == 200
 

@@ -202,7 +202,7 @@ def test_shared_cache_session_deletion_expiration_and_migration(tmp_path, sql):
         migrations.upgrade(engine)
         migrations.upgrade(engine)
         with Session(engine) as db:
-            db.add_all([SessionRecord(session_id=sid, kind="ordinary", configuration_json="{}") for sid in ("a", "b")])
+            db.add_all([SessionRecord(session_id=sid, kind="normal", character_id="character", configuration_json="{}") for sid in ("a", "b")])
             db.commit()
     store = WebPageStore(engine)
     page = cached_page(URL, "Article", "", "text", [], "extract", NOW)
@@ -298,7 +298,7 @@ def test_sql_concurrent_upserts_share_one_page(tmp_path):
     engine = get_engine(f"sqlite:///{tmp_path / 'parallel.db'}")
     migrations.upgrade(engine)
     with Session(engine) as db:
-        db.add(SessionRecord(session_id="parallel", kind="ordinary", configuration_json="{}"))
+        db.add(SessionRecord(session_id="parallel", kind="normal", character_id="character", configuration_json="{}"))
         db.commit()
     store = WebPageStore(engine)
     def write(index):

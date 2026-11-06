@@ -114,7 +114,7 @@ const unselected = ModelSelect({ profiles, value: null, onChange: () => {} });
 assert.equal(unselected.props.value, '');
 assert.equal(descendants(unselected).find((node) => node.type === SelectItem && node.props.value === '').props.disabled, true);
 
-let headerSession = { kind: 'ordinary', title: 'Configuration fixture', model_profile_id: 'preferred', persona_id: 'cogita', effective: { model_profile_id: 'preferred' } };
+let headerSession = { kind: 'normal', title: 'Configuration fixture', model_profile_id: 'preferred', persona_id: 'cogita', effective: { model_profile_id: 'preferred' } };
 const headerLoad = createModuleLoader({
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
   [sourceUrl('store/useModelsStore.ts')]: mockModule({ useModelsStore: (selector) => selector({ profiles }) }),
@@ -157,19 +157,20 @@ globalThis.fetch = async (url, options) => {
 const { knowledgeApi } = (await load('../src/api/knowledge.ts')).exports;
 const { worldbookApi } = (await load('../src/api/worldbook.ts')).exports;
 const { chatApi } = (await load('../src/api/chat.ts')).exports;
-await knowledgeApi.updateSessionKnowledgeBases('session/1', ['extra']);
-assert.deepEqual(requests.at(-1), { url: '/api/sessions/session%2F1/knowledge-bases', method: 'PATCH', body: { knowledge_base_ids: ['extra'] } });
+await chatApi.updateSession('session/1', { overrides: { knowledge_base_ids: ['extra'], worldbook_ids: [] } });
+assert.deepEqual(requests.at(-1), { url: '/api/sessions/session%2F1', method: 'PATCH', body: { overrides: { knowledge_base_ids: ['extra'], worldbook_ids: [] } } });
 assert.equal('updateSessionWorldbooks' in worldbookApi, false);
 await worldbookApi.matchWorldbooks({ text: 'lore', worldbook_ids: ['book'] });
 assert.deepEqual(requests.at(-1).body, { text: 'lore', worldbook_ids: ['book'] });
-await chatApi.createSession();
+const { charactersApi } = (await load('../src/api/characters.ts')).exports;
+await charactersApi.createSession('character');
 assert.deepEqual(requests.at(-1).body, {});
 await chatApi.sendMessage('s', 'input', [], 'client');
 assert.deepEqual(requests.at(-1).body, { content: 'input', attachments: [], client_message_id: 'client' });
-await chatApi.updateSession('s', { harness_enabled: false, tools_allowed: [] });
-assert.deepEqual(requests.at(-1).body, { harness_enabled: false, tools_allowed: [] });
-await chatApi.updateSession('s', { model_profile_id: modelChoice });
-assert.deepEqual(requests.at(-1).body, { model_profile_id: 'first' });
+await chatApi.updateSession('s', { overrides: { harness_enabled: false, tools_allowed: [] } });
+assert.deepEqual(requests.at(-1).body, { overrides: { harness_enabled: false, tools_allowed: [] } });
+await chatApi.updateSession('s', { overrides: { model_profile_id: modelChoice } });
+assert.deepEqual(requests.at(-1).body, { overrides: { model_profile_id: 'first' } });
 let generation = {};
 const { Input } = (await load('../src/components/ui/input.tsx')).exports;
 let generationElement;
@@ -185,8 +186,8 @@ temperature.props.onChange({ currentTarget: { value: '0' } });
 assert.deepEqual(generation, { temperature: 0 });
 temperature.props.onChange({ currentTarget: { value: '' } });
 assert.deepEqual(generation, { temperature: null });
-await chatApi.listPersonas('character');
-assert.equal(requests.at(-1).url, '/api/personas?collection=character');
-await chatApi.createPersona({ collection: 'character', name: 'Role', avatar_attachment_id: null, system_prompt: '' });
-assert.equal(requests.at(-1).body.collection, 'character');
+await chatApi.listPersonas();
+assert.equal(requests.at(-1).url, '/api/personas');
+await chatApi.createPersona({ name: 'User', avatar_attachment_id: null, background: '' });
+assert.deepEqual(requests.at(-1).body, { name: 'User', avatar_attachment_id: null, background: '' });
 console.log('Session configuration fields, concrete model selection, tool switches, locales and API requests passed.');

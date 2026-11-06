@@ -1,5 +1,8 @@
-import { QQSessionDialog } from "./components/projects/QQSessionDialog";
-import { QQSessionView } from "./components/projects/QQSessionView";
+import { COGITA_CHARACTER_ID } from './types/chat';
+import { ResourceEmpty } from './components/settings/resources/ResourceUI';
+import { useTranslation } from 'react-i18next';
+import { QQSessionDialog } from "./components/characters/QQSessionDialog";
+import { QQSessionView } from "./components/characters/QQSessionView";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createWebSocketUrl } from './api/url';
 import { usePersonasStore } from './store/usePersonasStore';
@@ -9,17 +12,17 @@ import { ChatView } from './components/ChatView';
 import { ErrorBanner } from './components/ErrorBanner';
 import { SessionSidebar } from './components/SessionSidebar';
 import { SettingsPage } from './components/SettingsPage';
-import { SidebarInset, SidebarProvider } from './components/ui/sidebar';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from './components/ui/sidebar';
 import { useCogitaStore } from './store/useCogitaStore';
 import { useModelEvents } from './hooks/useModelEvents';
 import type { LeaveGuard } from './components/settings/resources/ResourceUI';
 import { readSettingsRoute, settingsRouteUrl } from './components/settings/navigation';
-import { ProjectPage } from './components/projects/ProjectPage';
-import { QQResourcesPage } from './components/projects/QQResourcesPage';
+import { CharacterPage } from './components/characters/CharacterPage';
+import { QQResourcesPage } from './components/characters/QQResourcesPage';
 import { PlaygroundPage } from './components/playground/PlaygroundPage';
 import { readPlaygroundRoute } from './components/playground/navigation';
-import { isDraftRoute, isResourcesRoute, newChatUrl, projectUrl, readProjectRoute } from './components/projects/navigation';
-import { useProjectsStore } from './store/useProjectsStore';
+import { isDraftRoute, isCharacterSettingsRoute, isResourcesRoute, newChatUrl, characterUrl, readCharacterRoute } from './components/characters/navigation';
+import { useCharactersStore } from './store/useCharactersStore';
 import { ResourceLoading, errorText } from './components/settings/resources/ResourceUI';
 
 const FarklePage = lazy(() => import('./components/playground/farkle/FarklePage'));
@@ -31,12 +34,12 @@ const readLocation = (): Location => ({
   url: window.location.pathname + window.location.search + window.location.hash,
   index: window.history.state?.cogitaIndex ?? 0,
 });
-const guarded = (location: Location) => location.pathname === '/settings' ||
-  (!isDraftRoute(location) && !!readProjectRoute(location).projectId && !readProjectRoute(location).sessionId);
+const guarded = (location: Location) => location.pathname === '/settings' || isCharacterSettingsRoute(location) || isResourcesRoute(location);
 const conversationRoute = (location: Location) => location.pathname !== '/settings' && !readPlaygroundRoute(location)
-  && !isResourcesRoute(location) && (!readProjectRoute(location).projectId || !!readProjectRoute(location).sessionId || isDraftRoute(location));
+  && !isResourcesRoute(location) && !isCharacterSettingsRoute(location);
 
 export default function App() {
+  const { t } = useTranslation('personas');
   useModelEvents();
   const initialize = useCogitaStore((state) => state.initialize);
   const currentSession = useCogitaStore((state) => state.currentSession);
@@ -96,62 +99,67 @@ export default function App() {
     [commitUrl],
   );
   useEffect(() => {
-    void initialize(committed.current.pathname !== '/settings' && !readProjectRoute(committed.current).projectId && !isDraftRoute(committed.current) && !readPlaygroundRoute(committed.current));
-    void useProjectsStore.getState().reload().catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
+    void initialize(false);
   }, [initialize]);
   useLayoutEffect(() => {
     useCogitaStore.getState().setConversationVisible(conversationRoute(location));
     if (!initialized || location.pathname === '/settings' || readPlaygroundRoute(location)) return;
-    const route = readProjectRoute(location);
-    if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(route.projectId);
-    else void activateLocation(route.projectId, route.sessionId);
+    const route = readCharacterRoute(location);
+    if (isCharacterSettingsRoute(location) || isResourcesRoute(location)) {
+      useCogitaStore.getState().deactivateConversation();
+      if (route.characterId) void useCharactersStore.getState().load(route.characterId)
+        .catch((reason) => useCogitaStore.getState().setError(errorText(reason)));
+    } else if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(route.characterId);
+    else void activateLocation(route.characterId, route.sessionId);
   }, [initialized, location.pathname, location.search, activateLocation]);
 
   useEffect(() => {
     if (chatDraft) { draftEpoch.current = sessionEpoch; return; }
     if (draftEpoch.current !== sessionEpoch) return;
     if (!isDraftRoute(location) || !currentSession || useCogitaStore.getState().currentSession?.session_id !== currentSession.session_id ||
-        currentSession.project_id !== readProjectRoute(location).projectId) return;
-    const url = currentSession.project_id ? projectUrl(currentSession.project_id, currentSession.session_id) : '/';
+        currentSession.character_id !== readCharacterRoute(location).characterId) return;
+    const url = currentSession.character_id ? characterUrl(currentSession.character_id, currentSession.session_id) : '/';
     window.history.replaceState({ cogitaIndex: committed.current.index }, '', url);
     commit(readLocation());
     draftEpoch.current = null;
   }, [chatDraft, sessionEpoch, currentSession?.session_id, location, commit]);
 
-  const selectSession = useCallback(async (id: string, projectId: string | null) => {
+  const selectSession = useCallback(async (id: string, characterId: string | null) => {
     if (navigating.current) return false;
     const origin = committed.current;
-    const url = projectId ? projectUrl(projectId, id) : '/';
+    const url = characterUrl(characterId ?? COGITA_CHARACTER_ID, id);
     if (guarded(committed.current) && !(await leaveSettings.current(new URL(url, window.location.href)))) return false;
     if (committed.current !== origin) return false;
     commitUrl(url);
-    void useCogitaStore.getState().selectSession(id, projectId);
+    void useCogitaStore.getState().selectSession(id, characterId);
     return true;
   }, [commitUrl]);
-  const createSession = useCallback(async (projectId: string | null = null) => {
+  const createSession = useCallback(async (characterId: string | null = null) => {
     if (navigating.current) return false;
     const origin = committed.current;
-    const target = newChatUrl(projectId);
+    characterId = characterId ?? COGITA_CHARACTER_ID;
+    const target = newChatUrl(characterId);
     if (guarded(committed.current) && !(await leaveSettings.current(new URL(target, window.location.href)))) return false;
     if (committed.current !== origin) return false;
-    if (projectId && useProjectsStore.getState().projects.find((p) => p.id === projectId)?.kind === 'qqbot') {
-      setQQCreate(projectId);
+    if (characterId && useCharactersStore.getState().characters.find((p) => p.id === characterId)?.kind === 'qqbot') {
+      setQQCreate(characterId);
       return true;
     }
-    await useCogitaStore.getState().startDraft(projectId);
-    if (committed.current !== origin || useCogitaStore.getState().chatDraft?.project_id !== projectId) return false;
+    await useCogitaStore.getState().startDraft(characterId);
+    if (committed.current !== origin || useCogitaStore.getState().chatDraft?.character_id !== characterId) return false;
     commitUrl(target);
     return true;
   }, [commitUrl]);
   const sessionDeleted = useCallback((id: string) => {
-    const route = readProjectRoute(committed.current);
-    if (route.projectId && route.sessionId === id) {
+    const route = readCharacterRoute(committed.current);
+    if (route.characterId && route.sessionId === id) {
       const selected = useCogitaStore.getState().currentSession;
-      commitUrl(projectUrl(route.projectId, selected?.project_id === route.projectId ? selected.session_id : null));
+      const draft = useCogitaStore.getState().chatDraft;
+      commitUrl(draft?.character_id === route.characterId ? newChatUrl(route.characterId) : characterUrl(route.characterId, selected?.character_id === route.characterId ? selected.session_id : null));
     }
   }, [commitUrl]);
-  const projectDeleted = useCallback((id: string) => {
-    if (readProjectRoute(committed.current).projectId === id) {
+  const characterDeleted = useCallback((id: string) => {
+    if (readCharacterRoute(committed.current).characterId === id) {
       leaveSettings.current = async () => true;
       commitUrl('/');
     }
@@ -266,12 +274,13 @@ export default function App() {
       window.removeEventListener('popstate', onPop);
     };
   }, [commit]);
-  const projectRoute = readProjectRoute(location);
+  const characterRoute = readCharacterRoute(location);
+  const activeCharacter = useCharactersStore((state) => state.characters.find((item) => item.id === characterRoute.characterId));
   const playgroundRoute = readPlaygroundRoute(location);
-  const conversationReady = !!currentSession && currentSession.project_id === projectRoute.projectId &&
-    (!projectRoute.projectId || isDraftRoute(location) || currentSession.session_id === projectRoute.sessionId);
-  const draftReady = !!chatDraft && chatDraft.project_id === projectRoute.projectId &&
-    (isDraftRoute(location) || (!projectRoute.projectId && location.pathname === '/'));
+  const conversationReady = !!currentSession && currentSession.character_id === characterRoute.characterId &&
+    (!characterRoute.sessionId || isDraftRoute(location) || currentSession.session_id === characterRoute.sessionId);
+  const draftReady = !!chatDraft && chatDraft.character_id === characterRoute.characterId &&
+    (isDraftRoute(location) || !characterRoute.sessionId);
   return (
     <SidebarProvider className="app-shell h-dvh min-h-0 overflow-hidden">
       {location.pathname === '/settings' ? (
@@ -284,30 +293,34 @@ export default function App() {
         <>
           <SessionSidebar onOpenSettings={() => navigate('/settings')} onNavigate={navigate}
             playgroundActive={playgroundRoute !== null}
-            resourcesProjectId={isResourcesRoute(location) ? projectRoute.projectId : null}
-            onSelectSession={selectSession} onCreateSession={createSession} onSessionDeleted={sessionDeleted} onProjectDeleted={projectDeleted} />
+            resourcesCharacterId={isResourcesRoute(location) ? characterRoute.characterId : null}
+            onSelectSession={selectSession} onCreateSession={createSession} onSessionDeleted={sessionDeleted} onCharacterDeleted={characterDeleted} />
           <SidebarInset className="workspace min-h-0 min-w-0 overflow-hidden">
             {playgroundRoute ? <PlaygroundPage onNavigate={navigate} /> :
-            projectRoute.projectId && isResourcesRoute(location) ?
-              <QQResourcesPage key={projectRoute.projectId} projectId={projectRoute.projectId} search={location.search}
+            characterRoute.characterId && isResourcesRoute(location) ?
+              <QQResourcesPage key={characterRoute.characterId} characterId={characterRoute.characterId} search={location.search}
                 onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} /> :
-            projectRoute.projectId && !projectRoute.sessionId && !isDraftRoute(location) ?
-              <ProjectPage projectId={projectRoute.projectId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} onCreateSession={createSession} /> :
+            characterRoute.characterId && isCharacterSettingsRoute(location) ?
+              <CharacterPage characterId={characterRoute.characterId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} onCreateSession={createSession} /> :
+              activeCharacter?.kind === 'qqbot' && !currentSession && !sessionLoad ? <>
+                <header className="topbar"><SidebarTrigger /><h1 className="chat-title">{activeCharacter.name}</h1></header>
+                <ResourceEmpty>{t('qq.emptyConversations')}</ResourceEmpty>
+              </> :
               currentSession?.kind === 'qqbot' && conversationReady ? <QQSessionView key={currentSession.session_id} session={currentSession} /> : <>
                 <ChatHeader onOpenSettings={(route) => void navigate(settingsRouteUrl(route))} />
                 <ErrorBanner />
                 {conversationReady || draftReady || sessionLoad ? <ChatView key={sessionEpoch} /> :
                 <div className="min-h-0 flex-1"><ResourceLoading key={sessionEpoch} error={error || undefined} retry={() => {
-                  if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(projectRoute.projectId);
-                  else void activateLocation(projectRoute.projectId, projectRoute.sessionId);
+                  if (isDraftRoute(location)) void useCogitaStore.getState().startDraft(characterRoute.characterId);
+                  else void activateLocation(characterRoute.characterId, characterRoute.sessionId);
                 }} /></div>}
                 <div className="chat-bottom"><ChatInput /></div>
               </>}
           </SidebarInset>
         </>
       )}
-      {qqCreate ? <QQSessionDialog projectId={qqCreate} onClose={() => setQQCreate(null)} onSaved={(id) => {
-        const projectId = qqCreate; setQQCreate(null); void selectSession(id, projectId);
+      {qqCreate ? <QQSessionDialog characterId={qqCreate} onClose={() => setQQCreate(null)} onSaved={(id) => {
+        const characterId = qqCreate; setQQCreate(null); void selectSession(id, characterId);
       }} /> : null}
     </SidebarProvider>
   );

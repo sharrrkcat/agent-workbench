@@ -2,7 +2,7 @@
 import json
 from itertools import islice
 
-from ai_workbench.core.context import _eligible, message_text
+from ai_workbench.core.context import _eligible, message_text, persona_context_prefix
 from ai_workbench.core.context_history import ConversationHistory
 from ai_workbench.core.harness.schema import ToolExecutionError, ToolSpec
 from ai_workbench.core.qq_context import QQContextHistory
@@ -197,6 +197,8 @@ class RetrievalReader:
             if row and row.session_id == self.context.session_id and (current or completed or (not self.qq and self.work.history_enabled
                     and _eligible(row) and (self.current is None or (row.created_at, row.message_id) < (self.current.created_at, self.current.message_id)))):
                 text = message_text(row, include_attachments=self.policy.include_attachments == "explicit")
+                if text:
+                    text = persona_context_prefix(row) + text
                 if text:
                     return {"source_id": source_id, "time": row.created_at.isoformat(), "text": text}
         elif source_id.startswith("batch:") and self.qq:

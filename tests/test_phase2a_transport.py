@@ -1,4 +1,5 @@
 """Real loopback HTTP/SSE/WS tests, without model files or browser automation."""
+from tests.chat_fixtures import create_chat
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -116,7 +117,7 @@ def test_real_sse_fragments_usage_and_disconnect_release(transport_app):
 
 def test_websocket_delivers_deltas_before_chat_request_completes(transport_app):
     client, state, profile, proceed, _ = transport_app
-    session = client.post("/api/sessions", json={"model_profile_id": profile["id"]}).json()
+    session = create_chat(client, overrides={"model_profile_id": profile["id"]}).json()
     path = f"/api/sessions/{session['session_id']}/messages"
     ws_url = str(client.base_url).replace("http://", "ws://").rstrip("/") + f"/api/ws/{session['session_id']}"
     with connect(ws_url, open_timeout=5) as ws, ThreadPoolExecutor(max_workers=1) as executor:

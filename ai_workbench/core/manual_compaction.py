@@ -33,7 +33,7 @@ class ManualCompactionRunner:
         self.lifecycle = RunLifecycle(chat.runs, chat.events)
 
     def start(self, session, *, ui_language="en"):
-        if session.kind not in {"ordinary", "workspace"}:
+        if session.kind != "normal":
             raise ChatError("COMPACTION_UNAVAILABLE", "This conversation does not support manual compaction.", 409)
         self.chat.chat_service.assert_idle(session.session_id)
         config = self.chat.chat_service.resolve(session)
@@ -46,7 +46,7 @@ class ManualCompactionRunner:
         profile = self.chat.model_manager.profile(config.model_profile_id, "llm")
         latest = next(iter(self.chat.messages.iter_context_history(session.session_id, None)), None)
         through = message_key(latest) if latest else None
-        run = self.chat.runs.create_run(kind="compaction", persona_id=config.persona_id, session_id=session.session_id,
+        run = self.chat.runs.create_run(kind="compaction", character_id=config.character_id, persona_id=config.persona_id, session_id=session.session_id,
             metadata={"configuration": config.public_summary()}, config_snapshot=config.model_dump(mode="json"))
         task = asyncio.create_task(self._execute(session, config, profile, run, through, ui_language))
         self.active_runs.register(run.run_id, task)

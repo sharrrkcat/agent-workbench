@@ -1,249 +1,108 @@
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Pencil, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel, FieldSet, FieldGroup } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Pencil, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { knowledgeApi } from '../../api/knowledge';
-import { worldbookApi } from '../../api/worldbook';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { chatApi } from '../../api/chat';
 import { usePersonasStore } from '../../store/usePersonasStore';
-import { useCogitaStore } from '../../store/useCogitaStore';
-import type { Persona, PersonaCollection, PersonaInput } from '../../types/chat';
-import { BindingsField, PersonaAvatar } from '../personas/ConfigurationFields';
+import type { Persona, PersonaInput } from '../../types/chat';
+import { PersonaAvatar } from '../personas/ConfigurationFields';
+import { IdentityAvatarField } from '../personas/IdentityAvatarField';
 import { Feedback, ResourceEmpty, ResourceLoading, useResourceTask, useSettingsLeaveGuard } from './resources/ResourceUI';
 
-type Editor = { id?: string; value: PersonaInput; bindings: string[] };
-type Resource = { id: string; name: string; enabled: boolean };
-type ResourceKind = 'knowledge' | 'worldbook';
-const personaInput = (persona: Persona): PersonaInput => ({
-  name: persona.name, avatar_attachment_id: persona.avatar_attachment_id, system_prompt: persona.system_prompt,
+type Editor = { id?: string; value: PersonaInput };
+export const personaInput = (persona: Persona): PersonaInput => ({
+  name: persona.name, avatar_attachment_id: persona.avatar_attachment_id, background: persona.background,
 });
 
-export function PersonasPanel({ collection }: { collection: PersonaCollection }) {
-  const { confirm, confirmation } = useConfirmDialog();
+export function PersonasPanel() {
   const { t } = useTranslation('personas');
-  const allPersonas = usePersonasStore((s) => s.personas);
-  const personas = allPersonas.filter((p) => p.collection === collection);
-  const singleton = collection === 'user';
-  const kind: ResourceKind = singleton || collection === 'agent' ? 'knowledge' : 'worldbook';
+  const { confirm, confirmation } = useConfirmDialog();
+  const personas = usePersonasStore((state) => state.personas);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [baseline, setBaseline] = useState('');
-  const [resources, setResources] = useState<Resource[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const temporaryAvatars = useRef(new Set<string>());
+  const [uploading, setUploading] = useState(false);
   const live = useRef(true);
   const task = useResourceTask();
-  const busy = !!task.busy;
+  const busy = !!task.busy || uploading;
   const dirty = !!editor && JSON.stringify(editor) !== baseline;
-  useSettingsLeaveGuard(useCallback(async () => !busy && (!dirty || await confirm(t('discardChanges'))), [busy, dirty, confirm, t]));
-
-  function beginEdit(value: Editor) {
-    setEditor(value);
-    setBaseline(JSON.stringify(value));
-  }
-  async function bindingIds(id: string) {
-    return kind === 'knowledge'
-      ? (await chatApi.getPersonaKnowledge(id)).knowledge_base_ids
-      : (await chatApi.getPersonaWorldbooks(id)).worldbook_ids;
-  }
+  const leaveStatus = useRef({ busy, dirty });
+  leaveStatus.current = { busy, dirty };
+  const canLeave = useCallback(async () => !busy && (!dirty || await confirm(t('discardChanges'))), [busy, dirty, confirm, t]);
+  useSettingsLeaveGuard(canLeave);
+  const formId = useId();
+  function begin(value: Editor) { setEditor(value); setBaseline(JSON.stringify(value)); }
   async function load() {
-    const [, available] = await Promise.all([
-      usePersonasStore.getState().reload(),
-      kind === 'knowledge' ? knowledgeApi.listKnowledgeBases() : worldbookApi.listWorldbooks(),
-    ]);
-    if (!live.current) return;
-    setResources(available);
-    if (singleton) {
-      const persona = usePersonasStore.getState().personas.find((p) => p.collection === 'user');
-      if (!persona) throw new Error(t('unavailable'));
-      const bindings = await bindingIds(persona.id);
-      if (!live.current) return;
-      beginEdit({ id: persona.id, value: personaInput(persona), bindings });
-    }
-    setLoaded(true);
-  }
-  async function cleanupUploads() {
-    const pending = [...temporaryAvatars.current];
-    temporaryAvatars.current.clear();
-    await Promise.allSettled(pending.map((id) => chatApi.deleteAttachment(id)));
+    await usePersonasStore.getState().reload(true);
+    if (live.current) setLoaded(true);
   }
   useEffect(() => {
-    live.current = true;
-    void task.run('load', load);
-    return () => { live.current = false; void cleanupUploads(); };
+    live.current = true; void task.run('load', load);
+    const unload = (event: BeforeUnloadEvent) => {
+      if (leaveStatus.current.busy || leaveStatus.current.dirty) { event.preventDefault(); event.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', unload);
+    return () => { live.current = false; window.removeEventListener('beforeunload', unload); };
   }, []);
-
-  async function edit(persona: Persona) {
-    await task.run('edit', async () => {
-      const bindings = await bindingIds(persona.id);
-      if (live.current) beginEdit({ id: persona.id, value: personaInput(persona), bindings });
-    });
-  }
-  function close() {
-    if (busy) return;
-    setEditor(null);
-    void cleanupUploads();
-  }
   async function save() {
-    if (!editor) return;
+    if (!editor || uploading) return;
     await task.run('save', async () => {
-      let saved: Persona;
-      if (editor.id) saved = await chatApi.patchPersona(editor.id, editor.value);
-      else if (collection !== 'user') saved = await chatApi.createPersona({ ...editor.value, collection });
-      else return;
+      const saved = editor.id ? await chatApi.patchPersona(editor.id, editor.value) : await chatApi.createPersona(editor.value);
       usePersonasStore.getState().upsert(saved);
-      const next = { ...editor, id: saved.id, value: personaInput(saved) };
-      setEditor(next);
-      if (saved.avatar_attachment_id) temporaryAvatars.current.delete(saved.avatar_attachment_id);
-      if (kind === 'knowledge') await chatApi.patchPersonaKnowledge(saved.id, editor.bindings);
-      else await chatApi.patchPersonaWorldbooks(saved.id, editor.bindings);
-      await usePersonasStore.getState().reload(true);
-      await useCogitaStore.getState().reloadSessions();
-      await cleanupUploads();
-      if (singleton) beginEdit(next);
-      else setEditor(null);
+      if (live.current) setEditor(null);
     }, t('saved'));
   }
-  async function chooseAvatar(file: File) {
-    await task.run('avatar', async () => {
-      const result = await chatApi.uploadAttachment(file);
-      if (!result.uri) throw new Error(t('unavailable'));
-      const attachmentId = new URL(result.uri).pathname.slice(1);
-      if (!live.current) { await chatApi.deleteAttachment(attachmentId); return; }
-      temporaryAvatars.current.add(attachmentId);
-      setEditor((current) => current ? { ...current, value: { ...current.value, avatar_attachment_id: attachmentId } } : null);
-    });
-  }
-  const form = editor ? (
-    <PersonaEditor key={editor.id || 'new'} editor={editor} kind={kind} resources={resources} busy={busy}
-      inline={singleton} error={task.error} onChange={setEditor} onSave={() => void save()} onAvatar={(file) => void chooseAvatar(file)} />
-  ) : null;
-  return (
-    <section className="settings-panel personas-panel" data-persona-collection={collection}>
-      <div className="model-heading">
-        <h2>{t('collections.' + collection)}</h2>
-        <div className="model-actions">
-          <Tooltip><TooltipTrigger render={
-            <Button type="button" variant="ghost" size="icon" aria-label={t('refresh')} disabled={busy} onClick={async () => {
-              if (!dirty || await confirm(t('discardChanges'))) {
-                await cleanupUploads();
-                void task.run('load', load);
-              }
-            }} />
-          }><RefreshCw data-icon="inline-start" /></TooltipTrigger><TooltipContent>{t('refresh')}</TooltipContent></Tooltip>
-          {!singleton ? <Button type="button" variant="outline" disabled={busy} onClick={() => beginEdit({
-            value: { name: '', avatar_attachment_id: null, system_prompt: '' }, bindings: [],
-          })}><Plus data-icon="inline-start" />{t('add')}</Button> : null}
-        </div>
+  const patch = (values: Partial<PersonaInput>) => setEditor((current) => current ? { ...current, value: { ...current.value, ...values } } : current);
+  return <section className="resource-panel">
+    <div className="resource-toolbar">
+      <h2>{t('personasTitle')}</h2>
+      <div className="resource-actions">
+        <Button type="button" variant="ghost" size="icon" aria-label={t('refresh')} disabled={busy}
+          onClick={() => void task.run('load', load)}><RefreshCw data-icon="inline-start" /></Button>
+        <Button type="button" disabled={busy} onClick={() => begin({ value: { name: '', avatar_attachment_id: null, background: '' } })}>
+          <Plus data-icon="inline-start" />{t('add')}
+        </Button>
       </div>
-      {singleton || !editor ? <Feedback error={task.error} notice={task.notice} /> : null}
-      {!loaded ? <ResourceLoading /> : singleton ? form : (
-        <div className="persona-list">
-          {!personas.length ? <ResourceEmpty>{t('emptyPersonas')}</ResourceEmpty> : null}
-          {personas.map((persona) => (
-            <div className="persona-row" key={persona.id}>
-              <PersonaAvatar name={persona.name} attachmentId={persona.avatar_attachment_id} />
-              <div className="persona-identity"><strong>{persona.name}</strong></div>
-              <div className="model-actions">
-                <Tooltip><TooltipTrigger render={
-                  <Button type="button" variant="ghost" size="icon" aria-label={t('editNamed', { name: persona.name })}
-                    disabled={busy} onClick={() => void edit(persona)} />
-                }><Pencil data-icon="inline-start" /></TooltipTrigger><TooltipContent>{t('editNamed', { name: persona.name })}</TooltipContent></Tooltip>
-                {!persona.is_protected ? <Tooltip><TooltipTrigger render={
-                  <Button type="button" variant="ghost" size="icon" aria-label={t('deleteNamed', { name: persona.name })}
-                    disabled={busy} onClick={async () => {
-                      if (await confirm(t('deleteConfirm', { name: persona.name }), { destructive: true }))
-                        void task.run('delete', async () => {
-                          await chatApi.deletePersona(persona.id);
-                          usePersonasStore.getState().remove(persona.id);
-                          await usePersonasStore.getState().reload(true);
-                        });
-                    }} />
-                }><Trash2 data-icon="inline-start" /></TooltipTrigger><TooltipContent>{t('deleteNamed', { name: persona.name })}</TooltipContent></Tooltip> : null}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {!singleton ? <Dialog open={!!editor} onOpenChange={(open) => { if (!open) close(); }}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader><DialogTitle>{editor?.id ? t('edit') : t('add')}</DialogTitle></DialogHeader>
-          {form}
-        </DialogContent>
-      </Dialog> : null}
-      {confirmation}
-    </section>
-  );
-}
-
-function PersonaEditor({ editor, kind, resources, busy, inline, error, onChange, onSave, onAvatar }: {
-  editor: Editor;
-  kind: ResourceKind;
-  resources: Resource[];
-  busy: boolean;
-  inline: boolean;
-  error: string;
-  onChange: (value: Editor) => void;
-  onSave: () => void;
-  onAvatar: (file: File) => void;
-}) {
-  const { t } = useTranslation('personas');
-  const [tab, setTab] = useState<'identity' | ResourceKind>('identity');
-  const formId = useId();
-  const upload = useRef<HTMLInputElement>(null);
-  const patch = (values: Partial<PersonaInput>) => onChange({ ...editor, value: { ...editor.value, ...values } });
-  const saveButton = <Button type="submit" disabled={busy}><Save data-icon="inline-start" />{t('save')}</Button>;
-  return (
-    <Tabs value={tab} onValueChange={setTab} render={
-      <form className={inline ? 'settings-form' : 'settings-dialog-form'}
-        onInvalidCapture={() => setTab('identity')}
-        onSubmit={(event) => { event.preventDefault(); onSave(); }} />
-    }>
-      {!inline ? <Feedback error={error} /> : null}
-      <TabsList aria-label={t('editorSections')}>
-        <TabsTrigger value="identity">{t('identity')}</TabsTrigger>
-        <TabsTrigger value={kind}>{t(kind)}</TabsTrigger>
-      </TabsList>
-      <div className={inline ? 'py-4' : 'settings-dialog-body'}>
-        <FieldSet disabled={busy} className="model-form">
-          <TabsContent value="identity">
-            <FieldGroup>
-              <div className="persona-avatar-editor">
-                <PersonaAvatar name={editor.value.name} attachmentId={editor.value.avatar_attachment_id} />
-                <input ref={upload} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => {
-                  const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) onAvatar(file);
-                }} />
-                <Tooltip><TooltipTrigger render={
-                  <Button type="button" variant="ghost" size="icon" aria-label={t('uploadAvatar')} onClick={() => upload.current?.click()} />
-                }><Upload data-icon="inline-start" /></TooltipTrigger><TooltipContent>{t('uploadAvatar')}</TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger render={
-                  <Button type="button" variant="ghost" size="icon" aria-label={t('removeAvatar')} disabled={!editor.value.avatar_attachment_id}
-                    onClick={() => patch({ avatar_attachment_id: null })} />
-                }><X data-icon="inline-start" /></TooltipTrigger><TooltipContent>{t('removeAvatar')}</TooltipContent></Tooltip>
-              </div>
-              <Field>
-                <FieldLabel htmlFor={formId + '-name'}>{t('name')}</FieldLabel>
-                <Input id={formId + '-name'} required maxLength={128} value={editor.value.name} onChange={(event) => patch({ name: event.currentTarget.value })} />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={formId + '-prompt'}>{t('systemPrompt')}</FieldLabel>
-                <Textarea id={formId + '-prompt'} rows={8} maxLength={100000} value={editor.value.system_prompt}
-                  onChange={(event) => patch({ system_prompt: event.currentTarget.value })} />
-              </Field>
-            </FieldGroup>
-          </TabsContent>
-          <TabsContent value={kind}>
-            <BindingsField items={resources} ids={editor.bindings} onChange={(bindings) => onChange({ ...editor, bindings })} />
-          </TabsContent>
-        </FieldSet>
-      </div>
-      {inline ? <div className="settings-form-actions">{saveButton}</div> : <DialogFooter>{saveButton}</DialogFooter>}
-    </Tabs>
-  );
+    </div>
+    <Feedback error={task.error} notice={task.notice} />
+    {!loaded ? <ResourceLoading error={task.error} retry={() => void task.run('load', load)} /> : !personas.length
+      ? <ResourceEmpty>{t('noPersonas')}</ResourceEmpty> : <div className="persona-list">
+        {personas.map((persona) => <div className="persona-row" key={persona.id}>
+          <PersonaAvatar name={persona.name} attachmentId={persona.avatar_attachment_id} />
+          <span className="min-w-0 flex-1 truncate">{persona.name}</span>
+          <div className="resource-actions">
+            <Button type="button" variant="ghost" size="icon" aria-label={t('editNamed', { name: persona.name })} disabled={busy}
+              onClick={() => begin({ id: persona.id, value: personaInput(persona) })}><Pencil data-icon="inline-start" /></Button>
+            {!persona.is_protected ? <Button type="button" variant="ghost" size="icon" aria-label={t('deleteNamed', { name: persona.name })} disabled={busy}
+              onClick={async () => {
+                if (await confirm(t('deleteConfirm', { name: persona.name }), { destructive: true }))
+                  void task.run('delete', async () => { await chatApi.deletePersona(persona.id); usePersonasStore.getState().remove(persona.id); });
+              }}><Trash2 data-icon="inline-start" /></Button> : null}
+          </div>
+        </div>)}
+      </div>}
+    <Dialog open={!!editor} onOpenChange={(open) => { if (!open) void canLeave().then((allowed) => { if (allowed) setEditor(null); }); }}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader><DialogTitle>{editor?.id ? t('edit') : t('add')}</DialogTitle></DialogHeader>
+        {editor ? <form className="settings-dialog-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+          <Feedback error={task.error} />
+          <div className="settings-dialog-body"><FieldSet disabled={!!task.busy}><FieldGroup>
+            <IdentityAvatarField key={editor.id ?? 'new'} name={editor.value.name} value={editor.value.avatar_attachment_id}
+              disabled={!!task.busy} onChange={(id) => patch({ avatar_attachment_id: id })} onBusyChange={setUploading} onError={task.setError} />
+            <Field><FieldLabel htmlFor={formId + '-name'}>{t('name')}</FieldLabel>
+              <Input id={formId + '-name'} required maxLength={128} value={editor.value.name} onChange={(event) => patch({ name: event.target.value })} /></Field>
+            <Field><FieldLabel htmlFor={formId + '-background'}>{t('background')}</FieldLabel>
+              <Textarea id={formId + '-background'} rows={8} maxLength={100000} value={editor.value.background} onChange={(event) => patch({ background: event.target.value })} /></Field>
+          </FieldGroup></FieldSet></div>
+          <DialogFooter><Button type="submit" disabled={busy || !dirty}><Save data-icon="inline-start" />{t('save')}</Button></DialogFooter>
+        </form> : null}
+      </DialogContent>
+    </Dialog>
+    {confirmation}
+  </section>;
 }

@@ -53,24 +53,29 @@ is at most 18rem wide with viewport margins; Close/backdrop/Escape return focus 
 Drawers are titled Sessions or Settings. Accepted navigation/creation closes the drawer;
 rejected navigation keeps it open.
 
-The sidebar fixes its brand, New session/New Workspace/New Timeline/New QQBot actions, Playground entry and Settings footer.
-The scrolling tree contains Projects and ordinary sessions. Sessions has a header creation icon; Project names toggle expansion. Workspace/QQBot rows place creation before settings/delete actions,
-without a separate arrow or internal creation row.
-Creation icons respond to their header-row hover or keyboard-visible focus; session actions respond only to their own row or open menu.
-Mouse focus does not retain hover feedback. Touch actions stay visible with 44px targets.
-Project sessions retain left indentation and share the Project's right action column; selections keep their own highlight.
-Opening a Workspace draft expands its row. Timeline expands an unavailable-chat notice.
-Project settings use `/projects/{id}`; `?session={id}` opens a belonging Workspace/QQBot session. `/new` and `/projects/{id}/new` open drafts, replaced with conversation locations on first send.
-Routes survive refresh/history, reject mismatched membership and retain unsaved-navigation guards.
-Playground follows New QQBot and stays selected at `/playground`. Its shared shell replaces the conversation with icon/name cards: enabled Farkle (dice), then disabled Whisper (audio waveform).
+The sidebar fixes its brand, global New session, New Character, Playground and Settings actions.
+Its tree contains all Characters and their Sessions. Character names open their most recently selected
+Session in this browser, falling back to the most recently updated Session, then a normal draft or QQ
+empty state. The name row expands its Sessions and toggles the active list, without a separate expand button.
+Empty lists use the sidebar's small muted text. Global New session opens a Cogita draft.
+Creation requires an explicit normal/QQBot choice and immediately lists the Character without creating
+a Session. Character settings edit identity/defaults; its type is immutable.
+Mouse hover or keyboard focus reveals row actions; touch actions stay visible with 44px targets.
+Sessions retain indentation and their own selected highlight. Current Character deletion returns to Cogita
+and requires confirmation of cascading Session deletion; protected Cogita has no delete action.
+`/characters/{id}` and `?session={id}` open the owned conversation; `/characters/{id}/new`,
+`/characters/{id}/settings` and QQ `/characters/{id}/resources` open drafts, settings and shared assets.
+First send promotes the draft URL to the created Session. Membership checks, epochs, retry cancellation
+and unsaved-edit guards protect navigation, browser history and refresh.
+Playground stays selected at `/playground`. Its shell shows enabled Farkle and disabled Whisper cards.
 The grid uses two columns at a content width of 640px, otherwise one. Farkle opens `/playground/farkle`; Whisper transcription UI is unimplemented. Direct startup selects no session or draft.
 Entering Playground discards ordinary composer text/attachments and unsaved chat drafts; session epochs prevent late responses from reopening chats. Saved sessions, queued messages and queue edits remain; dispatch stops until returning and reconciling. Submitted runs continue.
 Both routes support direct loading and guarded history. Repeated selection adds no history entry; accepted mobile navigation closes the drawer.
 [Farkle](farkle.md) owns the game UI, typography, rules, opponent, dice, inventory, browser storage and rendering.
 
-[QQBot](qqbot.md#project-editor-and-conversation) owns its creation/settings tabs, field layout and conversation controls; shared navigation remains here.
+[QQBot](qqbot.md#character-editor-and-conversation) owns its creation/settings tabs, field layout and conversation controls; shared navigation remains here.
 
-The fixed chat header stays on one row, including narrow screens, with the sidebar toggle, title and session settings; Agent Persona selection lives in the session dialog. The composer owns the concrete model menu with Harness and Reasoning on/off controls. Reasoning selects generation mode with session defaults and automatic-adjustment feedback owned by [chat/context](chat-context.md#personas-and-sessions).
+The fixed chat header stays on one row, including narrow screens, with the sidebar toggle, title and session settings; User Persona selection lives in the session dialog. The composer owns the concrete model menu with Harness and Reasoning on/off controls. Reasoning selects generation mode with session defaults and automatic-adjustment feedback owned by [chat/context](chat-context.md#personas-and-sessions).
 The message column is at most 48rem wide, with an independent scroller and aligned fixed composer/status area.
 Assistant bodies align with both composer edges; user messages align with its right edge. Avatars are 48px square and their top edges align with the entire identity header box. They sit outside
 the body column. Below 61rem of chat width, avatars and names share a row above each body, left-aligned
@@ -81,31 +86,30 @@ Message Markdown fences, JSON, inline files and tool output use shadcn Code Bloc
 
 Settings fixes its title in the shared sidebar brand position and a Back to chat footer; the middle navigation
 scrolls independently. SidebarGroup reflects responsibility: Application preferences
-contains General; Models and execution contains Models, Providers & Runtime and Tools; Daily Chat & Workspace
-contains Personas (Cogita Persona, Agent Personas) and Knowledge; Roleplay & Timeline
-contains Personas (User Personas, Character Personas) and Worldbook. The two Personas
-menus have distinct ids and accessible group context. Each menu uses SidebarMenu;
+contains General; Models and execution contains Models, Providers & Runtime and Tools; Content
+contains Personas, Knowledge and Worldbook. Personas is one independent user-identity page.
+Each menu uses SidebarMenu;
 parents only toggle their nested pages and have no selected state. Menus start collapsed
 and closed pages leave keyboard navigation. Active pages use aria-current.
 | Menu | Pages / `view` values |
 | --- | --- |
 | General | Single page; no `view` |
 | Tools | General tools `general`, QQ Bot tools `qqbot`, Web search `web` |
-| Personas | Cogita Persona `user`, Agent Personas `agent`, User Personas `roleplay_user`, Character Personas `character` |
+| Personas | Single page; no `view` |
 | Models | Dashboard `dashboard`; LLM `llm`, Text Embedding `embedding`, Reranker `reranker`, Image Embedding `image_embedding`, Vision `vision`, Text to Speech `tts`, Speech to Text `asr`, Processor `processor`, Image Generation `image_generation` |
 | Providers & Runtime | Model Providers `providers`, Local Runtime `localRuntime` (both remain under `tab=models`) |
 | Knowledge, Worldbook | Resources `list`, Global settings `settings` |
 
-Missing/unknown views select user for Personas, dashboard for Models, general for Tools or list for resources. Page changes push browser history;
-reselecting the effective current page adds no entry. Back to chat restores the previous ordinary/Project/Playground route.
+Missing/unknown views select dashboard for Models, general for Tools or list for resources. Page changes push browser history;
+reselecting the effective current page adds no entry. Back to chat restores the previous Character/Playground route.
 Refresh restores the domain/subpage; resource selection and detail Tabs are local.
 The fixed location header shares Home's primary-row height and toggle position. Content scrolls independently
 within 64rem; ordinary forms use 48rem. FieldSet/FieldGroup and separators organize forms, resource rows wrap,
 and code, logs and tables contain their own overflow.
 
-Home, Project, settings and Runtime show background-free loading text after 200ms, without skeletons; completion/unmount cancels it, new conversations restart it, and errors/retry appear immediately.
+Home, Character, settings and Runtime show background-free loading text after 200ms, without skeletons; completion/unmount cancels it, new conversations restart it, and errors/retry appear immediately.
 Session navigation immediately updates selection and route/title, keeping the header/composer mounted; only history loads before showing messages or confirmed empty content. Uncached targets use a neutral loading title until details arrive.
-Failed loads keep the shell and show local retry; sending, attachments and configuration stay disabled until ready. Repeated target selection preserves input and does not reload or restart feedback. Project refreshes retain listed sessions; empty text waits for completion.
+Failed loads keep the shell and show local retry; sending, attachments and configuration stay disabled until ready. Repeated target selection preserves input and does not reload or restart feedback. Character refreshes retain listed sessions; empty text waits for completion.
 
 ## General
 
@@ -140,7 +144,7 @@ settings select concrete LLMs without a Global default option. [Models](models.m
 parameters; [chat/context](chat-context.md#auxiliary-tasks-and-titles) owns titles.
 
 Models contains Dashboard followed by kinds with saved profiles, including disabled, unloaded and unavailable profiles. Dashboard and the collapsible Models heading remain when all kinds are empty. Filtering affects navigation only: empty-kind URLs and their Add model shortcuts remain usable, including after deleting the last profile. Dashboard stacks Default models above External API; only enabled LLMs appear in the default chat/auxiliary selectors. Each kind page owns its filtered card list and independent editor draft; its Add model, edit and copy actions keep the kind read-only. There is no list kind selector.
-The Models heading places an Add model icon before its collapse arrow, with Project-style header hover/keyboard focus and visible touch targets. Adding does not toggle expansion. It opens a shared editor from any settings page, with all nine kinds selectable at the top; the initial kind is the current model page or LLM elsewhere. Changing kind preserves name, alias and external visibility, resetting source, reference, parameters and inspection to that kind's defaults. Image generation still requires explicit provider selection. Failed saves retain the draft; busy saves block close and departure. Successful creation refreshes the list, expands Models and navigates through the existing leave guard to the new kind. Rejecting departure preserves the created model and current settings draft. The destination shows the list while retaining previous category drafts for subsequent navigation. Mobile creation closes the sidebar; cancelling returns focus to the sidebar toggle. Other cancellation returns focus to the heading action. Accepted navigation closes the shared creation editor.
+The Models heading places an Add model icon before its collapse arrow, with Character-style header hover/keyboard focus and visible touch targets. Adding does not toggle expansion. It opens a shared editor from any settings page, with all nine kinds selectable at the top; the initial kind is the current model page or LLM elsewhere. Changing kind preserves name, alias and external visibility, resetting source, reference, parameters and inspection to that kind's defaults. Image generation still requires explicit provider selection. Failed saves retain the draft; busy saves block close and departure. Successful creation refreshes the list, expands Models and navigates through the existing leave guard to the new kind. Rejecting departure preserves the created model and current settings draft. The destination shows the list while retaining previous category drafts for subsequent navigation. Mobile creation closes the sidebar; cancelling returns focus to the sidebar toggle. Other cancellation returns focus to the heading action. Accepted navigation closes the shared creation editor.
 Providers & Runtime contains Model Providers for external connections and Local Runtime for runtime cards, Storage & cache, collapsed download settings and task history with a log dialog. Both menus share model state and the busy navigation guard. Forms retain drafts across their subpages, with inactive overlays hidden. Removed profiles/service views follow the normal Dashboard default, without redirects. LLM/text embedding/TTS offer Local Runtime and configured providers; image generation requires a provider, while other kinds use Local Runtime only. Disabled providers are marked. New forms default to Local Runtime except image generation, which requires explicit provider selection. Existing unbound profiles show Unconfigured; editing/copying requires selecting a source before saving, without changing the nullable backend contract. Detected Kokoro/WD14 use CPU, DLSS NR uses D3D12, and other engines use CUDA. Unresolved
 LLM/TTS/WD14 directories expose no guessed engine options. Local editors expose directory suggestions, execution options and release policy. Vision shows detected WD14/backbone information, read-only Tags,
 general/character thresholds (0.35/0.85), CPU with four threads, release policy and external visibility. Thresholds require finite values in [0,1]; zero and fractions round-trip, while blank fields
@@ -202,20 +206,19 @@ Defaults and execution belong to Models.
 
 ## Other domains
 
-Persona editors share identity/avatar/prompts and collection-specific resources; [chat/context](chat-context.md) owns restrictions.
-Cogita Persona opens its singleton editor without create/delete controls. Other collections use lists/dialogs;
-the protected Agent Cogita also has no delete control. Editors retain tab drafts, guard navigation and clean temporary avatars.
-Session dialogs own Agent/model/context/temperature and Knowledge; the composer menu and [Harness Sheet](harness-tools.md) own Harness and tool selection. Workspace controls show inheritance and per-setting reset,
-submit only changed overrides, lock Cogita identity and inherited Knowledge, and disable Project-forbidden tools.
-Project editors offer type-specific Configuration and Knowledge/Worldbook tabs; missing required Personas
-have management links. Context controls expose message/character limits and attachments, with no History selector.
-Creation defaults to unlimited session history, global model inheritance and, for Workspace, the default Agent, fixed Cogita Persona, Harness off and the explicit current tool catalog.
+Persona editors manage name/avatar/background, with protected User in the same list and no delete action.
+Normal Character editors have Profile, Configuration and Resources tabs, with required type selection on creation.
+Session dialogs edit user Persona, model, temperature, reasoning, Harness, tools and context through sparse overrides;
+resource controls replace complete lists and explain that mounts do not participate in chat. Each field can restore
+Character inheritance. QQ uses its dedicated editor and permits no ordinary Session overrides.
+Creation and missing/disabled model behavior follow [chat/context](chat-context.md#personas-and-sessions).
+
 Tools has separate General tools/QQ Bot tools catalogs and a Web search page for AnySearch, subscriptions and custom rules. All Web search forms share one leave guard.
 GET/PATCH `/api/tools/web/settings` owns appmetadatarecord.web_tools_settings: max_results (strict integer 1..10, default 5), zone (cn/intl/null) and language (nonblank string/null), with null defaults using the provider's choice. Reads also return provider=anysearch and has_api_key; api_key is write-only. Omission retains every field; an empty key clears it, while null/non-string/control-character keys and null max_results are rejected.
 The same endpoint/form owns search_calls_per_run (1..16, default 4), fetch_calls_per_run (1..16, default 6), cache_ttl_hours (1..168, default 24) and cache_retention_days (1..365, default 30), all strict integers.
 The form contains the masked key, results per query, search language/region, run call limits and cache durations. Saving options preserves an omitted key; explicit key clearing preserves search drafts/preferences. A placeholder indicates key presence. Failed saves retain drafts; unsaved navigation confirms discard and busy saves block departure. Call limits are snapshotted for each new run; other changes affect subsequent tool calls without restart.
-Each catalog entry shows its name, localized description and an initially collapsed, scrollable parameter schema. Both catalog pages work on narrow screens; all four QQ tools remain visible independently of Project configuration.
-Ordinary Session and Workspace selectors/defaults use only general-scoped tools. Loading uses delayed text; errors offer local refresh.
+Each catalog entry shows its name, localized description and an initially collapsed, scrollable parameter schema. Both catalog pages work on narrow screens; all four QQ tools remain visible independently of Character configuration.
+Normal Character and Session selectors/defaults use only general-scoped tools. Loading uses delayed text; errors offer local refresh.
 The page contains no test calls, results or approval controls. Anonymous access and additional web providers remain unavailable.
 [Harness/tools](harness-tools.md) owns the catalog, remaining direct calls and permissions.
 

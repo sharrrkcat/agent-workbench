@@ -15,17 +15,17 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await request.post('/__test__/session');
       await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
       const main = (await json(request.get('/api/models/profiles'))).find((p: { kind: string }) => p.kind === 'llm');
-      const project = await json(request.post('/api/projects', { data: { kind: 'qqbot', name: 'Favorite image replies',
+      const character = await json(request.post('/api/characters', { data: { kind: 'qqbot', name: 'Favorite image replies',
         model_profile_id: main.id, bot_account: String(Date.now()), websocket_url: 'ws://127.0.0.1:3001',
         keywords: ['bot'], reply_message_limit: 1, context_policy: {} } }));
       let assetId: number | undefined;
       try {
-        const session = await json(request.post(`/api/projects/${project.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
+        const session = await json(request.post(`/api/characters/${character.id}/sessions`, { data: { target_kind: 'group', target_id: '7788' } }));
         const sid = session.session_id;
         const fixture = await json(request.post(`/__test__/qq/${sid}/resources?count=1`));
         assetId = fixture.resources[0].asset_id;
         await json(request.patch(`/api/qq/resources/${assetId}`, { data: { is_favorite: true, description: 'Celebration animation' } }));
-        await page.goto(`/projects/${project.id}?session=${sid}`);
+        await page.goto(`/characters/${character.id}?session=${sid}`);
         await json(request.post(`/__test__/qq/${sid}/reply/resource-image`));
         const bubble = page.locator('[data-qq-delivery]').first();
         await expect(bubble.locator('img')).toHaveAttribute('src', /\.gif$/);
@@ -53,7 +53,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect(errors).toEqual([]);
       } finally {
         if (assetId !== undefined) await request.delete(`/api/qq/resources/${assetId}`);
-        await request.delete(`/api/projects/${project.id}`);
+        await request.delete(`/api/characters/${character.id}`);
       }
     });
   });

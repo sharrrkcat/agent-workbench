@@ -5,11 +5,11 @@ import pytest
 
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.models.schema import ChatRequest
-from tests.qq_context_fixture import project_qq_context, prepare_qq_context
+from tests.qq_context_fixture import character_qq_context, prepare_qq_context
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.schema.context_policy import ContextPolicy
-from ai_workbench.core.schema.project import QQ_DEFAULT_PROMPT
-from tests.test_qqbot import qq_client, configure_execution, project
+from ai_workbench.core.schema.character import QQ_DEFAULT_PROMPT
+from tests.test_qqbot import qq_client, configure_execution, character
 from tests.test_qq_reply_policy import execute_batch
 from tests.tool_fixtures import completion, ok, tool_call
 
@@ -59,7 +59,7 @@ def test_whole_batch_history_limits_and_token_pruning(qq_client, monkeypatch):
     assert [s.message_index for s in budget.trace.sources] == list(range(6))
     assert {s.turn_id for s in budget.trace.sources if s.kind == "history"} == {batch.input_message_id}
     assert_pairs([m.model_dump(exclude_none=True) for m in request.messages])
-    assert len(connection.calls) == 6  # Projecting native history never dispatches it.
+    assert len(connection.calls) == 6  # Charactering native history never dispatches it.
 
 
 @pytest.mark.parametrize("failure", ["failed", "unknown", "cancelled"])
@@ -80,7 +80,7 @@ def test_partial_sends_survive_run_failure_in_history(qq_client, failure):
                                 tool_call("qq_send_message", {"text": "not confirmed"}, "second"), content="PRIVATE")]
     batch, run = execute_batch(client, state, p, session)
     assert batch.status != "done"
-    context = project_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
+    context = character_qq_context(state.qq.store, state.messages, session["session_id"], "next", ContextPolicy(), None)
     wire = context.model_dump()["messages"]
     assert [m["role"] for m in wire] == ["user", "assistant", "tool", "user"]
     assert_pairs(wire)
@@ -100,10 +100,10 @@ def test_default_prompt_is_creation_only_and_runtime_is_per_call(qq_client):
         assert f"confirmed sends={number}/2" in system["content"]
         assert "your QQ account=12345" in system["content"] and "target=7788" in system["content"]
     snapshot = state.runs.get_config_snapshot(run.run_id)
-    assert snapshot["project_system_prompt"] == "" and snapshot["qq_bot_account"] == "12345"
-    client.delete(f"/api/projects/{p['id']}")
-    p = project(client)
+    assert snapshot["system_prompt"] == "" and snapshot["qq_bot_account"] == "12345"
+    client.delete(f"/api/characters/{p['id']}")
+    p = character(client)
     assert p["system_prompt"] == QQ_DEFAULT_PROMPT
-    ok(client.patch(f"/api/projects/{p['id']}", json={"system_prompt": ""}))
-    ok(client.patch(f"/api/projects/{p['id']}", json={"name": "Renamed"}))
-    assert ok(client.get(f"/api/projects/{p['id']}"))["system_prompt"] == ""
+    ok(client.patch(f"/api/characters/{p['id']}", json={"system_prompt": ""}))
+    ok(client.patch(f"/api/characters/{p['id']}", json={"name": "Renamed"}))
+    assert ok(client.get(f"/api/characters/{p['id']}"))["system_prompt"] == ""

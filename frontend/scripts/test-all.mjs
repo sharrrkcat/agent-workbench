@@ -22,7 +22,7 @@ for (const script of [
   'test-chat-drafts',
   'test-message-queue',
   'test-manual-compaction',
-  'test-projects',
+  'test-characters',
   'test-confirm-dialog',
   'test-pet-foundation',
   'test-model-stream',
