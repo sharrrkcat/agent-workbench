@@ -37,6 +37,8 @@ from tests.tool_fixtures import register_approval_tool, ToolOpenAI, completion, 
     (None, {True: None, False: None}, ("unknown", "unknown")),
     ("<think></think>", {True: "assistant<think>", False: None}, ("unknown", "supported")),
     ("enable_thinking <|channel>thought<channel|>", {True: "model<|channel>thought\n", False: "model"}, ("supported", "supported")),
+    ("enable_thinking <|think|> <|channel>thought<channel|>",
+     {True: "<|turn>model\n", False: "<|turn>model\n"}, ("unknown", "unknown")),
 ])
 def test_native_generation_prefix_evidence(template, prefixes, expected):
     support = template_reasoning_support(template, prefixes)
@@ -226,13 +228,18 @@ def test_session_reasoning_is_independent_and_null_restores_character_default(tm
         assert restored["effective"]["reasoning"] is True and "reasoning" not in restored["overrides"]
 
 
-def test_adjusted_mode_survives_harness_approval_and_session_edits(tmp_path, monkeypatch):
+@pytest.mark.parametrize('engine', ['llama-server', 'transformers'])
+def test_adjusted_mode_survives_harness_approval_and_session_edits(tmp_path, monkeypatch, engine):
     app = create_app(root=tmp_path, use_memory=False, database_url=f"sqlite:///{tmp_path / 'chat.db'}")
     register_approval_tool(app.state.runtime_state.tool_registry)
     with TestClient(app) as client:
-        profile, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, tools=True)
+        profile, adapter, upstream = install_fake_worker(app, client, tmp_path, monkeypatch, engine=engine, tools=True)
         adapter.reasoning_support = {"instant": "unsupported", "reasoning": "supported"}
-        upstream.turns = [completion(tool_call("test_approval", {"value": "confirm"})), completion(content="answer")]
+        first = completion(tool_call("test_approval", {"value": "confirm"}))
+        first['message']['reasoning_content'] = 'Native approval reasoning'
+        final = completion(content='<think>literal answer</think>')
+        final['message']['reasoning_content'] = 'Native final reasoning'
+        upstream.turns = [first, final]
         session = ok(create_chat(client, overrides={"model_profile_id": profile["id"], "reasoning": False, "harness_enabled": True, "tools_allowed": ["test_approval"]}))
         path = f"/api/sessions/{session['session_id']}"
         waiting = ok(client.post(path + "/messages", json={"content": "read the note"}))
@@ -245,5 +252,10 @@ def test_adjusted_mode_survives_harness_approval_and_session_edits(tmp_path, mon
         ok(client.patch(path, json={'overrides': {"reasoning": False}}))
         response = ok(client.post(f"/api/tools/approvals/{run_id}", json={"decision": "approve"}))
         assert response["run"]["status"] == "DONE"
+        answer = response['messages'][-1]
+        assert [(p['type'], p['text']) for p in answer['parts']] == [
+            ('reasoning', 'Native final reasoning'), ('text', '<think>literal answer</think>')]
+        native = upstream.calls[-1]['messages'][-2]
+        assert native.get('content') is None and native['reasoning_content'] == 'Native approval reasoning'
         assert len(upstream.calls) == 2 and all(body["chat_template_kwargs"] == {"enable_thinking": True} for body in upstream.calls)
         assert ok(client.get(path))["effective"]["reasoning"] is False

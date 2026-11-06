@@ -12,6 +12,7 @@ from ai_workbench.core.harness.schema import HarnessState
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.web_schemas import WebSource
 from tests.test_phase4_harness import harness_client, configure, send
+from tests.test_chat_request_options import DEFAULTS, install_fake_worker
 from tests.tool_fixtures import completion, ok, tool_call, create_tool_app, register_approval_tool, ToolOpenAI
 
 
@@ -41,7 +42,7 @@ def summary(request):
         "usage": {"prompt_tokens": 1000, "completion_tokens": 30, "total_tokens": 1030}}
 
 
-def drive(upstream, count=4, *, final=None, summarize=summary):
+def drive(upstream, count=4, *, final=None, summarize=summary, content="<think>PRIVATE_REASONING</think>Working"):
     answers = []
     def respond(request):
         if is_summary(request):
@@ -50,7 +51,7 @@ def drive(upstream, count=4, *, final=None, summarize=summary):
         answers.append(request)
         if number < count:
             result = completion(tool_call("test_echo", {"value": str(number)}, f"call_{number}"),
-                content="<think>PRIVATE_REASONING</think>Working")
+                content=content)
             result["message"]["reasoning_content"] = "STRUCTURED_PRIVATE_REASONING"
             return result
         return final(request) if final else completion(content="Done")
@@ -101,6 +102,26 @@ def test_three_loop_compactions_keep_raw_records_and_private_sources(harness_cli
     assert source["run_compaction"]["covered_tool_calls"] == 3
     assert source["compaction"] is None and source["kind"] == "summary"
     assert source["text"] not in client.get(f"/api/runs/{run_id}").text
+
+
+@pytest.mark.parametrize('engine', ['llama-server', 'transformers'])
+def test_native_tool_compaction_keeps_literal_content_and_excludes_reasoning(harness_client, monkeypatch, engine):
+    client, _, tmp_path = harness_client
+    session, state, executed = setup(client, history=False)
+    profile, _, upstream = install_fake_worker(client.app, client, tmp_path, monkeypatch, engine=engine,
+        alias='native', tools=True, options={**DEFAULTS, 'streaming': False})
+    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'model_profile_id': profile['id']}}))
+    literal = 'Working <think>literal tool text</think>'
+    drive(upstream, count=4, content=literal)
+    result = send(client, session)
+    assert result['success'] and executed == [f'call_{index}' for index in range(4)]
+    steps = summaries(state, result['run']['run_id'])
+    assert steps and all(step.status == 'completed' for step in steps)
+    inputs = [state.runs.get_context_snapshot(step.step_id).request.messages[1].content for step in steps]
+    assert any(literal in value for value in inputs)
+    assert all('STRUCTURED_PRIVATE_REASONING' not in value for value in inputs)
+    compacted = [step for step in steps if step.metadata.get('run_compaction')]
+    assert compacted and all(step.metadata['input_tokens_after'] < step.metadata['input_tokens_before'] for step in compacted)
 
 
 @pytest.mark.parametrize("strategy,enabled", [("message_window", True), ("token_budget", False)])

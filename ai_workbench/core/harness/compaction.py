@@ -6,7 +6,7 @@ from ai_workbench.core.assistant_output import ThinkParser
 from ai_workbench.core.compaction_generation import SummaryGenerator, summary_output
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.models.errors import ModelError
-from ai_workbench.core.models.schema import ChatMessage
+from ai_workbench.core.models.schema import ChatMessage, ProviderSource
 from ai_workbench.core.schema.compaction import RunCompactionState
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource
 from ai_workbench.core.memory_context import strip_memory_transcript
@@ -84,7 +84,7 @@ class HarnessCompaction:
             for message in strip_memory_transcript(state.transcript[begin:stop]):
                 # Tool results already contain the bounded web evidence projection.
                 projected = {key: value for key, value in message.items() if key != "reasoning_content"}
-                if message["role"] == "assistant" and message.get("content"):
+                if isinstance(profile.source, ProviderSource) and message["role"] == "assistant" and message.get("content"):
                     pieces = []
                     ThinkParser(lambda kind, text: pieces.append(text) if kind == "text" else None).feed(message["content"], final=True)
                     projected["content"] = "".join(pieces) or None

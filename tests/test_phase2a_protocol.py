@@ -15,6 +15,8 @@ from ai_workbench.core.models.http import read_request
 from ai_workbench.core.models.schema import ChatRequest, ModelSettings
 from starlette.requests import Request
 from tests.model_fixtures import MockOpenAI, configure_model
+from tests.test_chat_request_options import DEFAULTS, install_fake_worker
+from tests.tool_fixtures import completion
 
 
 @pytest.fixture
@@ -34,6 +36,32 @@ def enable_external(client):
 
 def sse_data(response):
     return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ") and line != "data: [DONE]"]
+
+
+@pytest.mark.parametrize('engine', ['llama-server', 'transformers'])
+@pytest.mark.parametrize('stream', [False, True])
+def test_public_native_reasoning_fields_are_forwarded_without_text_parsing(app_client, tmp_path, monkeypatch, engine, stream):
+    client, _ = app_client
+    profile, _, upstream = install_fake_worker(client.app, client, tmp_path, monkeypatch, engine=engine,
+        options={**DEFAULTS, 'streaming': True})
+    turn = completion(content='<think>literal answer</think>')
+    turn['message']['reasoning_content'] = 'Independent native reasoning'
+    upstream.turns = [turn]
+    response = client.post('/v1/chat/completions', headers={'Authorization': 'Bearer test-key'}, json={
+        'model': profile['alias'], 'messages': [{'role': 'user', 'content': 'hi'}], 'reasoning': False, 'stream': stream})
+    assert response.status_code == 200, response.text
+    if stream:
+        chunks = sse_data(response)
+        deltas = [choice['delta'] for chunk in chunks for choice in chunk['choices']]
+        result = {key: ''.join(delta.get(key) or '' for delta in deltas) for key in ('content', 'reasoning_content')}
+        assert chunks[-1]['choices'][0]['finish_reason'] == 'stop'
+        assert response.text.count('data: [DONE]') == 1
+    else:
+        result = response.json()['choices'][0]['message']
+    assert result['content'] == '<think>literal answer</think>'
+    assert result['reasoning_content'] == 'Independent native reasoning'
+    assert upstream.calls[-1]['chat_template_kwargs'] == {'enable_thinking': False}
+    assert not client.app.state.runtime_state.messages.list_all_messages()
 
 
 def test_internal_chat_and_external_nonstream_share_transport_and_parameters(app_client):

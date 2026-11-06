@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
 import pytest
 from pydantic import ValidationError
@@ -24,7 +24,7 @@ from ai_workbench.db import migrations
 from ai_workbench.db.database import get_engine
 from ai_workbench.db.models import KnowledgeBaseRecord, KnowledgeSettingsRecord, SessionRecord
 from ai_workbench.workers.common import WorkerError, local_model
-from ai_workbench.workers.transformers_engine import StopFilter
+from ai_workbench.workers.transformers_engine import StopFilter, TransformersEngine
 from ai_workbench.workers.transformers_server import build_app, chat_request, options_request
 from tests.model_fixtures import resolve_local_profile, write_local_model
 
@@ -142,3 +142,40 @@ def test_transformers_stream_closure_stops_process_before_returning(tmp_path):
         assert stopped.is_set()
         adapter._stop.assert_awaited_once()
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('streaming', [False, True])
+def test_worker_preserves_native_handler_reasoning_and_tool_fields(streaming):
+    engine = TransformersEngine.__new__(TransformersEngine)
+    engine.manager = engine.generation = None
+    engine.metadata = {'tool_calls': True, 'vision': False, 'reasoning_support': {'instant': 'unknown', 'reasoning': 'unknown'}}
+    engine.close = lambda: None
+    native = {'content': None, 'reasoning_content': 'Native tool reasoning', 'tool_calls': [
+        {'id': 'c1', 'type': 'function', 'function': {'name': 'lookup', 'arguments': '{}'}}]}
+
+    class Handler:
+        def __init__(self, manager, generation, stops):
+            assert (manager, generation, stops) == (None, None, ['END'])
+
+        async def handle_request(self, body, request_id):
+            assert body['chat_template_kwargs'] == {'enable_thinking': True}
+            assert 'cogita_request_options' not in body
+            if not body['stream']:
+                return JSONResponse({'choices': [{'message': {'role': 'assistant', **native}, 'finish_reason': 'tool_calls'}]})
+            async def events():
+                yield 'data: ' + json.dumps({'choices': [{'delta': native, 'finish_reason': 'tool_calls'}]}) + '\n\n'
+                yield 'data: [DONE]\n\n'
+            return StreamingResponse(events(), media_type='text/event-stream')
+
+    engine.handler_type = Handler
+    with TestClient(build_app(engine, 'token')) as client:
+        response = client.post('/v1/chat/completions', headers={'Authorization': 'Bearer token'}, json={
+            'model': 'managed', 'messages': [{'role': 'user', 'content': 'Find it.'}], 'stream': streaming,
+            'stop': 'END', 'chat_template_kwargs': {'enable_thinking': True}})
+    assert response.status_code == 200, response.text
+    if streaming:
+        result = json.loads(response.text.splitlines()[0][6:])['choices'][0]['delta']
+        assert response.text.endswith('data: [DONE]\n\n')
+    else:
+        result = response.json()['choices'][0]['message']
+    assert {key: result[key] for key in native} == native

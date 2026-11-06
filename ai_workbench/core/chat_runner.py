@@ -23,7 +23,7 @@ from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextS
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.chat_support import chat_reasoning_mode, local_chat_support
 from ai_workbench.core.models.images import has_context_images, resolve_context_images
-from ai_workbench.core.models.schema import ChatRequest
+from ai_workbench.core.models.schema import ChatRequest, ProviderSource
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.attachments import read_attachment_text, is_text_attachment
 from ai_workbench.core.schema.chat_config import ResolvedChatConfig
@@ -277,7 +277,8 @@ class ChatRunner:
             self.model_manager.validate_chat(profile, request)
             draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session_id,
                                    run_id=run.run_id, message_id=str(uuid4()), config=config,
-                                   parent_message_id=user.message_id, streamed=streamed)
+                                   parent_message_id=user.message_id, streamed=streamed,
+                                   parse_think_tags=isinstance(profile.source, ProviderSource))
             metrics = first_metrics
             budget = ChatContextBudget(config.context_limits, context_trace,
                 allow_pruning=config.context_policy.strategy == "message_window" or not config.context_policy.compaction.enabled)

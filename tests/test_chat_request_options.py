@@ -95,10 +95,10 @@ def test_gguf_only_missing_projector_is_conclusive(tmp_path, projector):
 
 
 def install_fake_worker(app, client, tmp_path, monkeypatch, *, engine="transformers", tools=False, vision=False,
-                        options=None, release="manual"):
+                        options=None, release="manual", alias="local"):
     """Keep real admission, adapters and HTTP serialization, replacing only process loading."""
     write_local_model(tmp_path, "llms/model", engine)
-    profile = ok(client.post("/api/models/profiles", json={"name": "Local", "alias": "local", "kind": "llm",
+    profile = ok(client.post("/api/models/profiles", json={"name": "Local", "alias": alias, "kind": "llm",
         "model_ref": "llms/model", "source": {"type": "local", "lifecycle": {"unload": release}},
         "request_options": options or DEFAULTS, "external_enabled": True}))
     state = app.state.runtime_state

@@ -126,7 +126,7 @@ Loading/failure preserves known identities and never implies deletion; errors us
 
 messageStream tracks one sequence per message across text and reasoning parts,
 ignores duplicates/late/gapped deltas, and replaces drafts with completed parts.
-Shared AssistantDraft times each streamed reasoning segment with a monotonic clock, from first normalized reasoning through its closing marker, text/tool transition or generation end.
+Shared AssistantDraft times each streamed reasoning segment with a monotonic clock, from first reasoning field through the text/tool transition or generation end; provider raw-marker parsing also settles at the closing marker. Local content is never reparsed.
 Cancellation/failure settles partial timing. A final empty reasoning message_delta carries
 duration_ms and the next sequence; reconciliation retains it without replacing text.
 Non-streaming output has no measured duration. Reasoning time excludes later tool/approval work.

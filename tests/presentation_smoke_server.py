@@ -246,14 +246,16 @@ def create_fixture_app(repository: Path, root: Path):
                                        config_snapshot=config.model_dump(), character_id=config.character_id)
             state.runs.update_status(run.run_id, RunStatus.RUNNING)
             draft = AssistantDraft(messages=state.messages, events=state.events, session_id=session.session_id, run_id=run.run_id,
-                                   message_id="long-calls-" + run.run_id, config=config, parent_message_id=user.message_id, streamed=False)
+                                   message_id="long-calls-" + run.run_id, config=config, parent_message_id=user.message_id, streamed=False,
+                                   parse_think_tags=False)
             draft.append(reasoning_content="Checking the conversion values.\n\n" * 28)
             draft.persist(extra_parts=[make_tool_call_part(f"long_{i}", "test_other", {"value": "aGk="}, part_id=f"call_{i}") for i in range(12)])
             for index in range(12):
                 state.messages.add_message(session.session_id, role="tool", run_id=run.run_id,
                     parts=[make_tool_result_part(f"long_{index}", "test_other", "success", {"value": "large-result:" + "0123456789" * 500, "rows": list(range(200))})])
             final = AssistantDraft(messages=state.messages, events=state.events, session_id=session.session_id, run_id=run.run_id,
-                                   message_id="long-final-" + run.run_id, config=config, parent_message_id=user.message_id, streamed=False)
+                                   message_id="long-final-" + run.run_id, config=config, parent_message_id=user.message_id, streamed=False,
+                                   parse_think_tags=False)
             final.append("## Conversion result\n\nAll 12 commands completed.\n\n`aGk=` decodes to **hi**.")
             final.persist()
             state.runs.update_status(run.run_id, RunStatus.DONE)

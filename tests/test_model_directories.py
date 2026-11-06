@@ -257,6 +257,8 @@ def test_llama_command_uses_detected_main_and_optional_projector(tmp_path, monke
             with pytest.raises(ModelError, match='captured command'):
                 await adapter.load(profile, explicit=True)
             assert captured[captured.index('--model') + 1] == str(path / 'model.gguf')
+            assert '--jinja' in captured
+            assert captured[captured.index('--reasoning-format') + 1] == 'deepseek'
             assert '--no-mmproj-auto' in captured
             assert ('--mmproj' in captured) == vision
             if vision:

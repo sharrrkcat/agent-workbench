@@ -258,8 +258,8 @@ Thumbnails and zoom previews resolve stored references after refresh. Request wa
 Tool calls require assistant role, run-unique call id, name and finite JSON object arguments, with distinct part ids per message. Results require tool role, matching call id, success/error/rejected/cancelled status, optional JSON data/errors and truncation flag.
 Live loops use native assistant/tool pairs. Normal history quotes tool parts as data, permitting truncation without orphan protocol calls or promoting data to system/developer instructions. [QQBot](qqbot.md#context-and-media) owns its confirmed-delivery history pairs.
 
-Reasoning is assistant-only strict {id,type:reasoning,text} data. The output normalizer accepts reasoning_content and incrementally extracts <think> markers, including split tags; Markdown inline/fenced/indented code and escapes stay literal.
-Only internal chat extracts markers; /v1 preserves content. Reasoning/incomplete messages are excluded from history; live tool transcripts retain upstream content/structured reasoning for provider continuation.
+Reasoning is assistant-only strict {id,type:reasoning,text} data. All sources accept reasoning_content. Managed local content stays literal; provider internal chat incrementally extracts <think> markers, including split tags, while Markdown code and escapes stay literal. The resolved source selects this behavior before output arrives.
+`/v1` preserves engine fields. Reasoning/incomplete messages are excluded from history; live tool transcripts retain upstream content/structured reasoning for continuation. Summaries exclude structured reasoning and parse raw <think> markers only for providers, preserving literal local content.
 Known provider limitation: [DeepSeek thinking-mode documentation](https://api-docs.deepseek.com/guides/thinking_mode)
 requires earlier-turn reasoning when tools are supplied, including answers without tool calls. Internal history
 currently omits that earlier reasoning; only the active tool loop preserves it. No model-specific history switch exists.

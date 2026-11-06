@@ -8,6 +8,7 @@ import pytest
 from ai_workbench.core.compaction_generation import SUMMARY_INSTRUCTION
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from tests.test_chat_presentation import presentation_client, configure, send
+from tests.test_chat_request_options import DEFAULTS, install_fake_worker
 from tests.tool_fixtures import completion, ok, tool_call
 
 
@@ -253,19 +254,26 @@ def test_oversized_turn_is_split_and_commits_only_after_all_pieces(presentation_
         assert checkpoint is None
 
 
-def test_summary_reasoning_markers_are_not_saved(presentation_client):
+@pytest.mark.parametrize('engine', [None, 'llama-server', 'transformers'])
+def test_summary_reasoning_extraction_follows_source(presentation_client, tmp_path, monkeypatch, engine):
     client, upstream = presentation_client
     session, state = setup(client)
+    if engine:
+        profile, _, upstream = install_fake_worker(client.app, client, tmp_path, monkeypatch, engine=engine,
+            alias='native', options={**DEFAULTS, 'streaming': False})
+        session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'model_profile_id': profile['id']}}))
     seed(state, session)
     def response(data):
         result = summarize(data)
         if summary_call(data):
-            result['message']['content'] = '<think>PRIVATE REASONING</think>' + result['message']['content']
+            result['message']['content'] = '<think>literal tag example</think>' + result['message']['content']
+            result['message']['reasoning_content'] = 'PRIVATE REASONING'
         return result
     upstream.turns = [response] * 12
     assert send(client, session)['success']
     checkpoint = state.sessions.get_context_checkpoint(session['session_id'])
-    assert '<think>' not in checkpoint.summary and 'PRIVATE REASONING' not in checkpoint.summary
+    assert 'PRIVATE REASONING' not in checkpoint.summary
+    assert ('<think>literal tag example</think>' in checkpoint.summary) == bool(engine)
 
 
 def test_explicit_summary_reserve_is_not_reduced(presentation_client):

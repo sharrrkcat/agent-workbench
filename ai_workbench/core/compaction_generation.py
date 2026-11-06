@@ -9,7 +9,7 @@ from ai_workbench.core.context_snapshot import capture_context
 from ai_workbench.core.models.context_budget import ChatContextBudget
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
-from ai_workbench.core.models.schema import ChatRequest
+from ai_workbench.core.models.schema import ChatRequest, ProviderSource
 from ai_workbench.core.schema.context_budget import ContextLimits
 from ai_workbench.core.schema.context_snapshot import ContextSource, ContextTrace
 from ai_workbench.core.schema.run import RunStepStatus
@@ -114,9 +114,12 @@ class SummaryGenerator:
             response = await self.models.chat(self.profile.id, self.request(buffer[:end]), metrics=metrics, capture=capture, budget=budget)
             if response.finish_reason != "stop" or response.message.tool_calls or not isinstance(response.message.content, str) or not response.message.content.strip():
                 raise ModelError("CONTEXT_COMPACTION_FAILED", "The model returned an incomplete or invalid summary.", 422)
-            pieces = []
-            ThinkParser(lambda kind, text: pieces.append(text) if kind == "text" else None).feed(response.message.content, final=True)
-            summary = "".join(pieces).strip()
+            summary = response.message.content
+            if isinstance(self.profile.source, ProviderSource):
+                pieces = []
+                ThinkParser(lambda kind, text: pieces.append(text) if kind == "text" else None).feed(summary, final=True)
+                summary = "".join(pieces)
+            summary = summary.strip()
             if not summary:
                 raise ModelError("CONTEXT_COMPACTION_FAILED", "The model returned no summary text.", 422)
             self.summary = summary

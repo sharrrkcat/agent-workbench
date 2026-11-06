@@ -215,7 +215,7 @@ Edit/delete/retry and relevant media changes invalidate private retrieval state 
 Each model round records one assistant message with distinct tool_call parts.
 Its model step stores one LLM statistics snapshot, including failed/cancelled calls; restored approvals retain earlier call statistics.
 Each dispatched model call also retains its private input snapshot. Base-source provenance and exclusions
-travel in the existing approval continuation; later calls append only already-produced assistant/tool exchanges.
+travel in the existing approval continuation; later calls append only already-produced assistant/tool exchanges, retaining structured reasoning separately from content. Local content stays literal through resumed rounds and compaction; summaries omit structured reasoning. Provider raw-marker handling follows [chat/context](chat-context.md#messages-and-attachments).
 Tool definitions reflect that round's effective allowlist. [Context detail](runs-streaming.md#context-detail) owns inspection.
 The reply aggregates these rounds without charging tool execution or approval waits to generation speed; [Runs/streaming](runs-streaming.md#llm-statistics) owns the accounting rules.
 Results use role=tool and tool_result parts with status

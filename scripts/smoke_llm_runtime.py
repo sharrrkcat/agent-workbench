@@ -21,7 +21,6 @@ from PIL import Image
 from ai_workbench.api.deps import build_runtime_state
 from ai_workbench.api.main import create_app
 from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
-from ai_workbench.core.assistant_output import ThinkParser
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics, LLMTiming, LLMUsage
 from ai_workbench.core.models.runtimes.store import RuntimeStore
@@ -65,7 +64,10 @@ def check_statistics(body, *, streaming, engine_name):
 async def validate_device(state, client, model_ref, device, engine_name, vision=False, reasoning=False, context_budget=False):
     manager = state.model_manager
     options = {"device": device}
-    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, request_options={"streaming": True}, parameters={'temperature': 0, 'max_tokens': 256 if vision else 192}, external_enabled=True, source={'type': 'local', 'execution_options': options}))
+    parameters = {'temperature': 0, 'max_tokens': 256 if vision else 192}
+    if reasoning:
+        parameters.update(temperature=1, top_p=0.95, seed=42, max_tokens=2048)
+    profile = manager.profiles.create(ModelProfile(name=f'{engine_name} {device} smoke', alias=f'{engine_name}-{device}', kind='llm', model_ref=model_ref, request_options={"streaming": True}, parameters=parameters, external_enabled=True, source={'type': 'local', 'execution_options': options}))
     manager.settings.patch({"utility_model_profile_id": profile.id})
     loaded = await manager.load(profile.id)
     profile = manager.profile(profile.id)
@@ -90,6 +92,7 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
         return result
     if reasoning:
         result = await validate_reasoning(client, profile, adapter)
+        result["presentation"] = await validate_reasoning_chat(state, client, profile)
         await manager.unload(profile.id)
         result.update(engine=engine_name, device=device, device_name=loaded.runtime.device_name, dtype=metadata.get("dtype"))
         print(json.dumps(result), flush=True)
@@ -138,12 +141,7 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     assert title
     assert len(state.runs.list_steps(chat["run"]["run_id"])) == len(chat["run"]["steps"])
 
-    from ai_workbench.core.harness.schema import ToolSpec
-    async def echo(arguments, _context):
-        return {"value": arguments["value"]}
-    if "smoke_echo" not in {spec.name for spec in state.tool_registry.list()}:
-        state.tool_registry.register(ToolSpec("smoke_echo", "Return the supplied value.", {"type": "object",
-            "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": False}, echo))
+    register_smoke_echo(state)
     harness_session = await checked_json(client, "POST", f"/api/characters/{COGITA_CHARACTER_ID}/sessions", json={"overrides": {"model_profile_id": profile.id,
         "harness_enabled": True, "tools_allowed": ["smoke_echo"], "temperature": 0}})
     harness = await checked_json(client, "POST", f"/api/sessions/{harness_session['session_id']}/messages", json={
@@ -210,9 +208,11 @@ async def validate_device(state, client, model_ref, device, engine_name, vision=
     return result
 
 
+REASONING_PROMPT = "A shop has 17 boxes with 23 pens each and sells 349 pens. How many pens remain?"
+
+
 async def validate_reasoning(client, profile, adapter):
     """Check native request controls, template evidence and real output together."""
-    assert adapter.reasoning_support == {"instant": "supported", "reasoning": "supported"}, adapter.reasoning_support
     payloads, results = [], []
     async def capture(request):
         if request.url.path.endswith("/chat/completions"):
@@ -220,13 +220,10 @@ async def validate_reasoning(client, profile, adapter):
     adapter.openai.client.event_hooks["request"].append(capture)
     for enabled in (False, True):
         for stream in (False, True):
-            body = {"model": profile.alias, "messages": [{"role": "user", "content": "What is 17 plus 25? Answer briefly."}],
-                    "reasoning": enabled, "stream": stream, "temperature": 0, "max_tokens": 256}
+            body = {"model": profile.alias, "messages": [{"role": "user", "content": REASONING_PROMPT}],
+                    "reasoning": enabled, "stream": stream, "temperature": 1, "top_p": 0.95, "seed": 42, "max_tokens": 512}
             output = {"text": "", "reasoning": ""}
             finish_reason = None
-            def append(kind, value):
-                output[kind] += value
-            parser = ThinkParser(append)
             if stream:
                 finished = False
                 async with client.stream("POST", "/v1/chat/completions", json=body) as response:
@@ -239,29 +236,70 @@ async def validate_reasoning(client, profile, adapter):
                             assert "error" not in chunk, chunk
                             for choice in chunk["choices"]:
                                 finish_reason = choice.get("finish_reason") or finish_reason
-                                parser.feed(choice["delta"].get("content") or "")
-                                append("reasoning", choice["delta"].get("reasoning_content") or "")
+                                output["text"] += choice["delta"].get("content") or ""
+                                output["reasoning"] += choice["delta"].get("reasoning_content") or ""
                 assert finished
             else:
                 response = await checked_json(client, "POST", "/v1/chat/completions", json=body)
                 message = response["choices"][0]["message"]
                 finish_reason = response["choices"][0]["finish_reason"]
-                parser.feed(message.get("content") or "")
-                append("reasoning", message.get("reasoning_content") or "")
-            parser.feed("", final=True)
+                output["text"] = message.get("content") or ""
+                output["reasoning"] = message.get("reasoning_content") or ""
             assert payloads[-1]["chat_template_kwargs"] == {"enable_thinking": enabled}
             assert "reasoning" not in payloads[-1] and "reasoning_format" not in payloads[-1]
             assert bool(output["reasoning"].strip()) == enabled, output
+            assert not any(marker in output["text"] for marker in ("<think>", "</think>", "<|channel>", "<channel|>")), output
             assert finish_reason in {"stop", "length"}, finish_reason
             # A bounded reasoning trace can exhaust max_tokens before its answer.
-            # Record that outcome; preflight/native controls establish mode support.
+            # Record that outcome without promoting unknown preflight evidence.
             if not enabled or finish_reason == "stop":
                 assert "42" in output["text"], output
             results.append({"reasoning": enabled, "stream": stream, "text": output["text"],
                             "reasoning_chars": len(output["reasoning"].strip()), "finish_reason": finish_reason,
                             "native_control": payloads[-1]["chat_template_kwargs"]})
             print(json.dumps({"stage": "reasoning_mode", **results[-1]}), flush=True)
-    return {"reasoning_support": adapter.reasoning_support, "reasoning_cases": results}
+    return {"reasoning_support": adapter.reasoning_support, "reasoning_prompt": REASONING_PROMPT,
+            "sampling": {"temperature": 1, "top_p": 0.95, "seed": 42}, "reasoning_cases": results}
+
+
+def register_smoke_echo(state):
+    from ai_workbench.core.harness.schema import ToolSpec
+    async def echo(arguments, _context):
+        return {"value": arguments["value"]}
+    if "smoke_echo" not in {spec.name for spec in state.tool_registry.list()}:
+        state.tool_registry.register(ToolSpec("smoke_echo", "Return the supplied value.", {"type": "object",
+            "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": False}, echo))
+
+
+async def validate_reasoning_chat(state, client, profile):
+    """Exercise structured reasoning through normal chat and a real tool continuation."""
+    register_smoke_echo(state)
+    results = []
+    for harness in (False, True):
+        session = await checked_json(client, "POST", f"/api/characters/{COGITA_CHARACTER_ID}/sessions", json={
+            "overrides": {"model_profile_id": profile.id, "reasoning": True, "temperature": 1,
+                          "harness_enabled": harness, "tools_allowed": ["smoke_echo"] if harness else []}})
+        prompt = ("Call smoke_echo with value hello, then briefly report the returned value." if harness
+                  else REASONING_PROMPT)
+        reply = await checked_json(client, "POST", f"/api/sessions/{session['session_id']}/messages", json={"content": prompt})
+        assert reply["success"] and reply["run"]["status"] == "DONE", reply["run"]
+        thoughts = [part for message in reply["messages"] for part in message["parts"] if part["type"] == "reasoning"]
+        assert thoughts and all(part["text"].strip() and part.get("duration_ms", -1) >= 0 for part in thoughts)
+        assert reply["data"] and ("hello" if harness else "42") in reply["data"].lower(), reply["data"]
+        assert not any(marker in reply["data"] for marker in ("<think>", "</think>", "<|channel>", "<channel|>"))
+        if harness:
+            tool_results = [part for message in reply["messages"] for part in message["parts"] if part["type"] == "tool_result"]
+            assert any(part.get("data", {}).get("value") == "hello" for part in tool_results), tool_results
+            model_steps = [step for step in state.runs.list_steps(reply["run"]["run_id"]) if step.kind == "model"]
+            assert len(model_steps) >= 2
+            snapshot = await checked_json(client, "GET", f"/api/runs/{reply['run']['run_id']}/steps/{model_steps[-1].step_id}/context")
+            calls = [message for message in snapshot["request"]["messages"] if message.get("tool_calls")]
+            assert calls and any(message.get("reasoning_content") for message in calls)
+        result = {"harness": harness, "answer": reply["data"], "reasoning_parts": len(thoughts),
+                  "output_limit": profile.parameters['max_tokens']}
+        results.append(result)
+        print(json.dumps({"stage": "reasoning_presentation", **result}), flush=True)
+    return results
 
 
 def vision_image(format_, color):

@@ -13,7 +13,7 @@ PartKind = Literal["text", "reasoning"]
 
 
 class ThinkParser:
-    """Incremental model markers, with Markdown code and escapes left literal."""
+    """Provider content markers, with Markdown code and escapes left literal."""
 
     def __init__(self, emit: Callable[[PartKind, str], None], on_reasoning_end: Callable[[], None] | None = None) -> None:
         self.emit = emit
@@ -100,7 +100,7 @@ class ThinkParser:
 
 class AssistantDraft:
     def __init__(self, *, messages, events, session_id: str, run_id: str, message_id: str,
-                 config, parent_message_id: str | None, streamed: bool) -> None:
+                 config, parent_message_id: str | None, streamed: bool, parse_think_tags: bool) -> None:
         self.messages = messages
         self.events = events
         self.streamed = streamed
@@ -110,7 +110,7 @@ class AssistantDraft:
         self.seq = 0
         self.saved: MessageSchema | None = None
         self.reasoning_started: float | None = None
-        self.parser = ThinkParser(self._append_part, self.finish_reasoning)
+        self.parser = ThinkParser(self._append_part, self.finish_reasoning) if parse_think_tags else None
         self.message = MessageSchema(
             message_id=message_id, session_id=session_id, run_id=run_id, role="assistant",
             speaker_type="assistant", speaker_id=config.character_id,
@@ -126,7 +126,10 @@ class AssistantDraft:
             self._append_part("reasoning", reasoning_content)
         if content:
             self.raw_content += content
-            self.parser.feed(content)
+            if self.parser is not None:
+                self.parser.feed(content)
+            else:
+                self._append_part("text", content)
 
     def _append_part(self, kind: PartKind, text: str) -> None:
         if not text:
@@ -157,7 +160,7 @@ class AssistantDraft:
                                      "delta": "", "duration_ms": part["duration_ms"]})
 
     def finish(self) -> None:
-        if not self.parser.finished:
+        if self.parser is not None and not self.parser.finished:
             self.parser.feed("", final=True)
         self.finish_reasoning()
 

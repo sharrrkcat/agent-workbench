@@ -19,7 +19,7 @@ from ai_workbench.core.json_data import strict_json_loads
 from ai_workbench.core.message_parts import make_tool_call_part, make_tool_result_part
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.images import resolve_context_images
-from ai_workbench.core.models.schema import ChatRequest, ToolCall
+from ai_workbench.core.models.schema import ChatRequest, ProviderSource, ToolCall
 from ai_workbench.core.models.llm_metrics import LLMCallMetrics
 from ai_workbench.core.context_snapshot import append_system_block, prepend_system_block, capture_context
 from ai_workbench.core.instructions import UiLanguage, date_instruction
@@ -114,7 +114,7 @@ class HarnessAgentLoop:
         self._emit_run("run_started", run.run_id)
         draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
                                run_id=run.run_id, message_id=str(uuid4()), config=config,
-                               parent_message_id=None, streamed=False)
+                               parent_message_id=None, streamed=False, parse_think_tags=False)
         self._persist_calls(draft, [call], direct=True)
         self._save_state(run.run_id, state)
         return await self._drive(session=session, config=config, run=run, user=None, state=state)
@@ -319,7 +319,8 @@ class HarnessAgentLoop:
         self.runs.update_metadata(run.run_id, {**self.runs.get_run(run.run_id).metadata, "model_resolution": resolution})
         draft = AssistantDraft(messages=self.messages, events=self.events, session_id=session.session_id,
                                run_id=run.run_id, message_id=str(uuid4()), config=config,
-                               parent_message_id=user.message_id, streamed=request.stream)
+                               parent_message_id=user.message_id, streamed=request.stream,
+                               parse_think_tags=isinstance(profile.source, ProviderSource))
         metrics = first_metrics or LLMCallMetrics()
         try:
             try:

@@ -260,7 +260,7 @@ class ManagedAdapter:
             args = [executable, "--host", "127.0.0.1", "--port", port, "--model", path, "--alias", "managed",
                     "--api-key-file", key_file, "--threads", options["threads"], "--ctx-size", options["context_size"],
                     "--batch-size", options["batch_size"], "--parallel", 1,
-                    "--reasoning-format", "none", "--offline", "--no-mmproj-auto", "--log-verbosity", 4 if cuda else 1]
+                    "--jinja", "--reasoning-format", "deepseek", "--offline", "--no-mmproj-auto", "--log-verbosity", 4 if cuda else 1]
             if profile._directory.mmproj_ref:
                 args.extend(["--mmproj", model_path(self.supervisor.root, profile._directory.mmproj_ref)])
                 args.extend(["--mmproj-offload", "--mmproj-device", device_id] if cuda else ["--no-mmproj-offload"])

@@ -17,6 +17,7 @@ from ai_workbench.core.context import ContextBuilder
 from ai_workbench.core.schema.context_policy import ContextPolicy
 from ai_workbench.core.schema.message import MessageSchema
 from tests.model_fixtures import configure_model
+from tests.test_chat_request_options import DEFAULTS, install_fake_worker
 from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
 
 
@@ -97,7 +98,7 @@ def test_reasoning_duration_delta_is_strict_and_reasoning_only():
 
 
 @pytest.fixture
-def timed_draft(presentation_client, monkeypatch):
+def timed_draft(presentation_client, monkeypatch, request):
     client, _ = presentation_client
     session = configure(client, harness=False)
     state = client.app.state.runtime_state
@@ -106,7 +107,8 @@ def timed_draft(presentation_client, monkeypatch):
     clock = SimpleNamespace(now=10.0)
     monkeypatch.setattr('ai_workbench.core.assistant_output.monotonic', lambda: clock.now)
     draft = AssistantDraft(messages=state.messages, events=state.events, session_id=session['session_id'],
-        run_id=run.run_id, message_id='timed-draft', config=config, parent_message_id=None, streamed=True)
+        run_id=run.run_id, message_id='timed-draft', config=config, parent_message_id=None, streamed=True,
+        parse_think_tags=getattr(request, 'param', True))
     return draft, clock, state
 
 
@@ -138,6 +140,7 @@ def test_reasoning_durations_settle_independently_and_survive_storage(timed_draf
 
 
 @pytest.mark.parametrize('ending', ['tool', 'finish', 'failure', 'cancellation'])
+@pytest.mark.parametrize('timed_draft', [False, True], indirect=True, ids=['native', 'provider'])
 def test_reasoning_duration_excludes_work_after_its_end(timed_draft, ending):
     draft, clock, _ = timed_draft
     draft.append(reasoning_content='Working')
@@ -208,6 +211,71 @@ def test_reasoning_body_deltas_and_native_tool_transcript(presentation_client, h
     assert "structured reasoning" not in json.dumps(history.messages)
     assert "tag reasoning" not in json.dumps(history.messages)
     assert "answer" in json.dumps(history.messages)
+
+
+@pytest.mark.parametrize('engine', ['llama-server', 'transformers'])
+@pytest.mark.parametrize('streaming', [False, True])
+@pytest.mark.parametrize('harness', [False, True])
+def test_native_reasoning_is_separate_and_answer_markers_stay_literal(
+        presentation_client, tmp_path, monkeypatch, engine, streaming, harness):
+    client, _ = presentation_client
+    profile, _, upstream = install_fake_worker(client.app, client, tmp_path, monkeypatch, engine=engine,
+        tools=True, options={**DEFAULTS, 'streaming': streaming})
+    session = ok(create_chat(client, overrides={'model_profile_id': profile['id'], 'harness_enabled': harness,
+        'tools_allowed': ['test_echo'], 'reasoning': False}))
+    answer = 'Literal <think>example</think> and `<think>code</think>`, with a partial <thi'
+    tool_turn = completion(tool_call())
+    tool_turn['message']['reasoning_content'] = 'Native tool analysis'
+    final_turn = completion(content=answer)
+    final_turn['message']['reasoning_content'] = 'Native answer analysis'
+    upstream.turns = ([tool_turn] if harness else []) + [final_turn]
+    response = send(client, session)
+    assert response['success'] and response['data'] == answer
+    final = response['messages'][-1]
+    assert [(p['type'], p['text']) for p in final['parts']] == [
+        ('reasoning', 'Native answer analysis'), ('text', answer)]
+    state = client.app.state.runtime_state
+    if harness:
+        native = upstream.calls[-1]['messages'][-2]
+        assert native.get('content') is None and native['reasoning_content'] == 'Native tool analysis'
+    assert all(body['chat_template_kwargs'] == {'enable_thinking': False} for body in upstream.calls)
+    if streaming:
+        deltas = [e.payload for e in state.events.list_events()
+                  if e.type == 'message_delta' and e.message_id == final['message_id']]
+        assert [delta['seq'] for delta in deltas] == list(range(1, len(deltas) + 1))
+        for part in final['parts']:
+            chunks = [delta for delta in deltas if delta['part_id'] == part['id']]
+            assert ''.join(delta['delta'] for delta in chunks) == part['text']
+            assert all(delta['part_type'] == part['type'] for delta in chunks)
+        assert len([delta for delta in deltas if 'duration_ms' in delta]) == 1
+    stored = history_messages(ok(client.get(f"/api/sessions/{session['session_id']}/history")))
+    assert stored[-1]['parts'] == final['parts']
+    context = ContextBuilder(state.messages).build(session['session_id'], 'next', ContextPolicy(),
+        history=state.messages.list_messages(session['session_id']))
+    assert 'Native answer analysis' not in json.dumps(context.messages)
+    assert 'Native tool analysis' not in json.dumps(context.messages)
+    assert answer in json.dumps(context.messages)
+
+
+@pytest.mark.parametrize('engine', ['llama-server', 'transformers'])
+@pytest.mark.parametrize('harness', [False, True])
+@pytest.mark.parametrize('ending', ['length', 'refusal'])
+def test_native_reasoning_only_output_survives_truncation_and_failure(
+        presentation_client, tmp_path, monkeypatch, engine, harness, ending):
+    client, _ = presentation_client
+    profile, _, upstream = install_fake_worker(client.app, client, tmp_path, monkeypatch, engine=engine, tools=True)
+    session = ok(create_chat(client, overrides={'model_profile_id': profile['id'], 'harness_enabled': harness,
+        'tools_allowed': ['test_echo']}))
+    upstream.turns = [completion(finish='length')]
+    upstream.stream_chunks = [{'reasoning_content': 'Partial native thought'}]
+    if ending == 'refusal':
+        upstream.stream_chunks.append({'refusal': 'refused'})
+    response = send(client, session)
+    assert response['run']['status'] == ('FAILED' if ending == 'refusal' else 'DONE')
+    message = response['messages'][-1]
+    assert [(p['type'], p['text']) for p in message['parts']] == [('reasoning', 'Partial native thought')]
+    assert message['parts'][0]['duration_ms'] >= 0
+    assert bool(message['metadata'].get('incomplete')) == (ending == 'refusal')
 
 
 @pytest.mark.parametrize("harness", [False, True])
