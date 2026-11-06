@@ -12,7 +12,7 @@ from datetime import date
 from ai_workbench.core.assistant_output import AssistantDraft
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.agent_loop import ACTIVE_BUDGET_SECONDS, HarnessAgentLoop, request_tools
-from ai_workbench.core.context import ContextBuilder, add_chat_instructions, persona_context_prefix
+from ai_workbench.core.context import ContextBuilder, add_chat_instructions
 from ai_workbench.core.context_compaction import ContextCompactionService
 from ai_workbench.core.history_retrieval import HistoryRetrieval
 from ai_workbench.core.retrieval_tools import RetrievalTools
@@ -161,7 +161,6 @@ class ChatRunner:
             current = context[-1]["content"]
             current_text = current if isinstance(current, str) else "\n".join(
                 part["text"] for part in current if part["type"] == "text")
-            current_text = current_text.removeprefix(persona_context_prefix(user))
             rejected_image = (has_images and not current_text.strip() and not profile.request_options.skip_vision_capability_check
                               and local_chat_support(profile).vision.state == "unsupported")
             first_metrics.start()
@@ -224,8 +223,7 @@ class ChatRunner:
                 window = config.context_limits.window_tokens or 0
                 margin = 32 if profile.source.type == "local" else max(128, (window + 9) // 10)
                 capacity = max(0, window - (config.context_limits.output_tokens or 0) - margin)
-                context, context_trace = self.durable_memory.recall(context, context_trace, memory_work, raw_text, capacity,
-                    include_evidence_ids="memory_write" in allowed)
+                context, context_trace = self.durable_memory.recall(context, context_trace, memory_work, raw_text, capacity)
             if any(item.reason == "images_unsupported" for item in context_trace.exclusions) and "images_ignored" not in warnings:
                 warnings.append("images_ignored")
             if warnings:
@@ -286,7 +284,6 @@ class ChatRunner:
             save_capture = capture_context(self.runs, model_step.step_id, budget.trace, profile, config.context_policy, budget=budget)
             def capture(payload):
                 self.durable_memory.check(memory_work)
-                self.durable_memory.capture_evidence(memory_work, budget.trace)
                 save_capture(payload)
             try:
                 if streamed:
@@ -406,11 +403,6 @@ class ChatRunner:
         for source in attachment_trace.sources:
             source.message_index = current_index
             source.parent_id = "message:" + current_message_id
-            prefix_length = len(persona_context_prefix(self.messages.get_message(current_message_id)))
-            if source.start is not None:
-                source.start += prefix_length
-            if source.end is not None:
-                source.end += prefix_length
         trace.sources.extend(attachment_trace.sources)
         trace.exclusions.extend(attachment_trace.exclusions)
         metadata: dict[str, Any] = {

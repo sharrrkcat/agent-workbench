@@ -120,8 +120,9 @@ async def smoke(root, profile_id, model_ref, device, window):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument('--profile-id', help='Reuse a saved model/provider configuration without changing it; inference is billable for providers.')
-    parser.add_argument('--model-ref', default='llms/Qwen3.5-0.8B-GGUF')
+    model = parser.add_mutually_exclusive_group(required=True)
+    model.add_argument('--profile-id', help='Reuse a representative saved model; provider inference is billable.')
+    model.add_argument('--model-ref', help='Existing representative GGUF directory; do not use a 0.8B LLM.')
     parser.add_argument('--device', choices=['cuda', 'cpu'], default='cuda')
     parser.add_argument('--window', type=int, default=8192)
     args = parser.parse_args()

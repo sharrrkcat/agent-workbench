@@ -50,7 +50,7 @@ def test_message_window_keeps_complete_recent_turns_and_current_input(presentati
     detail = answer_detail(client, result)
     selected = [source['reference_id'] for source in detail['sources'] if source['kind'] == 'history']
     assert selected == [item.message_id for item in messages[len(messages) - retained:]]
-    assert detail['request']['messages'][-1]['content'] == f"[Persona: {session['effective']['persona_id']}]\nCURRENT"
+    assert detail['request']['messages'][-1]['content'] == "CURRENT"
     assert len(upstream.calls) == 1 and not summary_call(upstream.calls[0])
     excluded = [item for item in detail['exclusions'] if item['reason'] == 'message_limit']
     assert sum(item['count'] for item in excluded) == 8 - retained

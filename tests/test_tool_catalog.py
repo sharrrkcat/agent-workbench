@@ -6,7 +6,7 @@ from ai_workbench.api.main import create_app
 from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
 from ai_workbench.core.schema.persona import USER_PERSONA_ID
 from ai_workbench.core.schema.qq import QQ_TOOLS
-from ai_workbench.core.schema.memory import MEMORY_READ_TOOLS
+from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, completion, ok, tool_call
 
@@ -26,9 +26,10 @@ def catalog_client(tmp_path):
 def test_catalog_scopes_and_general_defaults(catalog_client):
     client, _ = catalog_client
     catalog = ok(client.get("/api/tools"))
-    assert len(catalog) == 6
+    assert len(catalog) == 11
     assert {tool["name"] for tool in catalog if tool["scope"] == "general"} == GENERAL_TOOLS
     assert {tool["name"] for tool in catalog if tool["scope"] == "qqbot"} == set(QQ_TOOLS)
+    assert {tool["name"] for tool in catalog if tool["scope"] == "memory"} == MEMORY_TOOL_NAMES
     assert all(tool["direct_callable"] == (tool["scope"] == "general") for tool in catalog)
     assert all(tool["parameters"]["type"] == "object" for tool in catalog)
     session = ok(create_chat(client, overrides={}))
@@ -42,7 +43,7 @@ def test_catalog_scopes_and_general_defaults(catalog_client):
             "harness_enabled": True, "tools_allowed": [name]})
         assert response.status_code == 422 and response.json()["error"]["code"] == "TOOL_NOT_ALLOWED"
     schema = ok(client.get("/openapi.json"))
-    assert schema["components"]["schemas"]["ToolCatalogItem"]["properties"]["scope"]["enum"] == ["general", "qqbot"]
+    assert schema["components"]["schemas"]["ToolCatalogItem"]["properties"]["scope"]["enum"] == ["general", "qqbot", "memory"]
     assert "/api/tools/settings" not in schema["paths"]
     assert "HarnessSettings" not in schema["components"]["schemas"]
 
@@ -60,7 +61,7 @@ def test_removed_tools_are_unavailable_to_direct_and_model_calls(catalog_client,
     response = ok(client.post(path + "/messages", json={"content": "use a tool"}))
     result = next(part for message in response["messages"] for part in message["parts"] if part["type"] == "tool_result")
     assert result["status"] == "error" and result["error_code"] == "TOOL_NOT_FOUND"
-    assert all({tool["function"]["name"] for tool in call["tools"]} == GENERAL_TOOLS | MEMORY_READ_TOOLS for call in upstream.calls)
+    assert all({tool["function"]["name"] for tool in call["tools"]} == GENERAL_TOOLS for call in upstream.calls)
     slash = f"/{name} example"
     response = ok(client.post(path + "/messages", json={"content": slash}))
     assert response["messages"][0]["parts"][0]["text"] == slash

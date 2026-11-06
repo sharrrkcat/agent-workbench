@@ -45,6 +45,11 @@
     "network": "网络请求"
   },
   "toolDescriptions": {
+    "memory_list": "列出已记住的事实。",
+    "memory_search": "按文字搜索记忆。",
+    "memory_read": "读取选定的记忆。",
+    "memory_write": "保存或更新已确认的长期事实。",
+    "memory_forget": "忘记一条记忆。",
     "web_search": "从多个角度搜索，返回相关节选和推断日期。",
     "web_fetch": "按具体信息读取网页，支持缓存和分页。",
     "qq_send_message": "向当前 QQ 会话发送一条文本消息。",

@@ -79,17 +79,27 @@ def test_audio_and_loading_defaults_preserve_explicit_cpu_selection():
     assert smoke_audio_runtime.parse_args([]).device == ["cuda"]
     assert smoke_audio_runtime.parse_args(["--device", "cpu"]).device == ["cpu"]
     assert smoke_audio_runtime.parse_args(["--device", "cuda", "--device", "cpu"]).device == ["cuda", "cpu"]
-    defaults = smoke_model_loading.parse_args([]).backend
+    defaults = smoke_model_loading.parse_args(['--gguf-model', 'llms/example', '--transformers-model', 'llms/example-tf']).backend
     assert set(defaults) == {"llama-cpu", "llama-cuda", "transformers-cpu", "transformers-cuda", "kokoro", "chatterbox-cuda", "qwen3tts-cuda"}
     assert smoke_model_loading.parse_args(["--backend", "qwen3tts-cpu"]).backend == ["qwen3tts-cpu"]
-    assert smoke_llm_runtime.parse_args([]).device == "both"
+    assert smoke_llm_runtime.parse_args(['--model-ref', 'llms/example']).device == "both"
+
+
+def test_llm_acceptance_has_no_implicit_small_model():
+    for parser, argv in ((smoke_llm_runtime.parse_args, []),
+                         (smoke_model_loading.parse_args, ['--backend', 'llama-cuda']),
+                         (smoke_model_loading.parse_args, ['--backend', 'transformers-cuda'])):
+        with pytest.raises(SystemExit):
+            parser(argv)
+    assert smoke_llm_runtime.parse_args(['--install-only']).model_ref is None
+    assert smoke_model_loading.parse_args(['--install-only']).gguf_model is None
 
 
 def test_vision_smoke_uses_directory_discovery_and_checks_answers():
-    assert smoke_llm_runtime.parse_args(["--reasoning"]).reasoning
+    assert smoke_llm_runtime.parse_args(["--reasoning", "--model-ref", "llms/example"]).reasoning
     with pytest.raises(SystemExit):
         smoke_llm_runtime.parse_args(["--reasoning", "--vision"])
-    assert smoke_llm_runtime.parse_args(["--vision"]).vision
+    assert smoke_llm_runtime.parse_args(["--vision", "--model-ref", "llms/example"]).vision
     args = smoke_llm_runtime.parse_args(["--vision", "--engine", "llama-server", "--model-ref", "llms/vision"])
     assert args.model_ref == "llms/vision"
     for argv in (["--vision", "--engine", "llama-server", "--mmproj-ref", "llms/mmproj.gguf"], ["--mmproj-ref", "llms/mmproj.gguf"]):
@@ -166,7 +176,7 @@ def test_smoke_modes_separate_installation_from_inference(tmp_path, monkeypatch,
         monkeypatch.setattr(script, "RuntimeSupervisor", lambda *_: supervisor)
         monkeypatch.setattr(script, "ModelManager", lambda *_, **__: manager)
     argv = ["--root", str(tmp_path)] + (["--install-only"] if install_only else [])
-    if script is smoke_cuda_runtime:
+    if script in {smoke_cuda_runtime, smoke_llm_runtime}:
         argv += ["--model-ref", "llms/local.gguf"]
     if script is smoke_model_loading:
         argv += ["--backend", "chatterbox-cuda"]

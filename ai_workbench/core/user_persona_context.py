@@ -4,14 +4,14 @@ from dataclasses import dataclass
 from typing import Any
 
 
-USER_PERSONA_BLOCK_TEMPLATE = """# Persona
+USER_PERSONA_BLOCK_TEMPLATE = """# User background
 
 The following user-maintained information is stable background context about the user.
 Use it when relevant. Do not mention it unless it helps answer the user.
 
-<user_persona>
+<user_background>
 {content}
-</user_persona>"""
+</user_background>"""
 
 
 @dataclass

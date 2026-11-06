@@ -1,7 +1,6 @@
 """Durable identity boundaries, publication and explicit deletion destinations."""
 
 import pytest
-import re
 import json
 
 from ai_workbench.core.schema.memory import MemoryEvidence
@@ -192,9 +191,7 @@ def test_source_edit_invalidates_only_model_managed_dependents(client_pair):
 
 
 def write_turn(request):
-    user_id = re.findall(r'\[User-message ID: ([^\]]+)\]', json.dumps(request, ensure_ascii=False))[-1]
-    return completion(tool_call("memory_write", {"summary": "Prefers oolong tea", "body": "The user prefers oolong tea.",
-        "source_message_ids": [user_id]}, "remember"))
+    return completion(tool_call("memory_write", {"summary": "Prefers oolong tea", "body": "The user prefers oolong tea."}, "remember"))
 
 
 def test_harness_stages_then_commits_and_cross_session_recalls(client_pair):
@@ -205,7 +202,7 @@ def test_harness_stages_then_commits_and_cross_session_recalls(client_pair):
     def finish(request):
         assert state.memory.list().total == 0
         results = [json.loads(m["content"]) for m in request["messages"] if m["role"] == "tool"]
-        assert results[-1]["data"]["pending"] is True
+        assert results[-1]["status"] == "success" and set(results[-1]["data"]) == {"id"}
         return completion(content="I will remember your tea preference.")
     upstream.turns = [write_turn, finish]
     response = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "Please remember that I prefer oolong tea."}))
@@ -215,20 +212,50 @@ def test_harness_stages_then_commits_and_cross_session_recalls(client_pair):
     assert tool_result['data'] == {'private_context': True, 'count': 0, 'truncated': False, 'pending': True}
     entry = state.memory.store.query()[0][0]
     assert entry.session_id == session["session_id"] and entry.managed_by == "model"
+    assert entry.origin.run_id == response["run"]["run_id"] and entry.origin.evidence == []
     assert len([event for event in state.run_events.list_events(response["run"]["run_id"]) if event.type == "run_completed"]) == 1
     second = child(client, owner)
     ok(client.post(f"/api/sessions/{second['session_id']}/messages", json={"content": "Which tea do I prefer?"}))
     assert "The user prefers oolong tea." in json.dumps(upstream.calls[-1])
 
 
-@pytest.mark.parametrize("finish", ["content_filter", "invalid_source", "approval_cancel"])
+def test_memory_tools_switch_as_one_group_without_disabling_recall(client_pair):
+    from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
+    client, upstream, state = client_pair
+    configure_model(client)
+    owner = character(client, harness_enabled=True, tools_allowed=['test_echo'], memory_learning='automatic')
+    session = child(client, owner)
+    path = f"/api/sessions/{session['session_id']}"
+    upstream.turns = [write_turn, completion(content='Remembered.')]
+    assert ok(client.post(path + '/messages', json={'content': 'I prefer oolong tea.'}))['success']
+    entry = state.memory.list().items[0]
+    assert {tool['function']['name'] for tool in upstream.calls[-1]['tools']} == MEMORY_TOOL_NAMES | {'test_echo'}
+    settings = ok(client.patch(path, json={'overrides': {'memory_learning': 'manual'}}))
+    assert settings['effective']['memory_enabled'] is True
+    upstream.turns = [completion(tool_call('memory_write', {'summary': 'Wrong', 'body': 'Wrong'}, 'write'),
+        tool_call('memory_forget', {'id': entry.id}, 'forget')), completion(content='Oolong tea.')]
+    result = ok(client.post(path + '/messages', json={'content': 'Which tea do I prefer?'}))
+    assert result['success'] and state.memory.get(entry.id).revision == 1
+    assert {tool['function']['name'] for tool in upstream.calls[-1]['tools']} == {'test_echo'}
+    assert 'The user prefers oolong tea.' in json.dumps(upstream.calls[-1]['messages'])
+    errors = [part['error_code'] for message in result['messages'] for part in message['parts'] if part['type'] == 'tool_result']
+    assert errors == ['TOOL_NOT_ALLOWED', 'TOOL_NOT_ALLOWED']
+    # Restoring inheritance enables the whole group again without changing ordinary tools.
+    ok(client.patch(path, json={'overrides': {'memory_learning': None}}))
+    upstream.turns = [completion(tool_call('memory_write', {'id': entry.id, 'summary': 'Coffee', 'body': 'Prefers coffee.'})), completion(content='Updated.')]
+    assert ok(client.post(path + '/messages', json={'content': 'I now prefer coffee.'}))['success']
+    assert state.memory.get(entry.id).body == 'Prefers coffee.'
+    assert {tool['function']['name'] for tool in upstream.calls[-1]['tools']} == MEMORY_TOOL_NAMES | {'test_echo'}
+
+
+@pytest.mark.parametrize("finish", ["content_filter", "removed_parameter", "approval_cancel"])
 def test_unsuccessful_or_unsupported_capture_never_commits(client_pair, finish):
     client, upstream, state = client_pair
     configure_model(client)
     register_approval_tool(state.tool_registry)
     owner = character(client, harness_enabled=True, tools_allowed=["test_approval"], memory_learning="automatic")
     session = child(client, owner)
-    if finish == "invalid_source":
+    if finish == "removed_parameter":
         upstream.turns = [completion(tool_call("memory_write", {"summary": "Guess", "body": "Assistant guess.",
             "source_message_ids": ["invented"]})), completion(content="I cannot save an unsupported fact.")]
     elif finish == "approval_cancel":
@@ -253,11 +280,9 @@ def test_memory_conflict_preserves_answer_and_discards_entire_batch(client_pair)
     assert first["success"]
     entry = state.memory.store.query()[0][0]
     def propose(request):
-        user_id = re.findall(r'\[User-message ID: ([^\]]+)\]', json.dumps(request))[-1]
-        return completion(tool_call("memory_write", {"id": entry.id, "expected_revision": entry.revision,
-            "summary": "Now coffee", "body": "The user now prefers coffee.", "source_message_ids": [user_id]}, "update"),
-            tool_call("memory_write", {"summary": "Evening drink", "body": "The user drinks tea in the evening.",
-                "source_message_ids": [user_id]}, "new"))
+        return completion(tool_call("memory_write", {"id": entry.id,
+            "summary": "Now coffee", "body": "The user now prefers coffee."}, "update"),
+            tool_call("memory_write", {"summary": "Evening drink", "body": "The user drinks tea in the evening."}, "new"))
     def concurrent_edit(_request):
         from ai_workbench.core.schema.memory import MemoryEdit
         state.memory.edit(entry.id, MemoryEdit(expected_revision=entry.revision, summary="Manual truth", body="Manually corrected."))
@@ -334,9 +359,8 @@ def test_commit_storage_failure_rolls_back_whole_batch_and_terminal_event(client
             raise RuntimeError('injected commit failure')
     monkeypatch.setattr(state.memory.store, 'save', fail_second)
     def propose(request):
-        user_id = re.findall(r'\[User-message ID: ([^\]]+)\]', json.dumps(request))[-1]
-        return completion(*(tool_call('memory_write', {'summary': fact, 'body': fact,
-            'source_message_ids': [user_id]}, str(index)) for index, fact in enumerate(['I like tea.', 'I like coffee.'])))
+        return completion(*(tool_call('memory_write', {'summary': fact, 'body': fact}, str(index))
+            for index, fact in enumerate(['I like tea.', 'I like coffee.'])))
     upstream.turns = [propose, completion(content='Your answer.')]
     result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'I like tea and coffee.'}))
     assert not result['success']
@@ -361,6 +385,9 @@ def test_approval_continuation_commits_staged_memory_once(client_pair):
     assert state.memory.list().total == 1
     assert client.post(f'/api/tools/approvals/{run_id}', json={'decision': 'approve'}).status_code == 409
     assert state.memory.list().total == 1
+    from tests.test_memory_model_context import clean_request
+    for request in upstream.calls:
+        clean_request(request, owner, session)
 
 
 def test_memory_budget_removes_complete_native_pairs_with_reasoning():
@@ -492,7 +519,7 @@ def test_memory_api_boundaries_and_large_collection_pages(client_pair):
     for name in MEMORY_TOOL_NAMES:
         assert client.post(f'/api/tools/{name}/call', json={'session_id': session['session_id'], 'arguments': {}}).status_code == 400
         assert client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'tools_allowed': [name]}}).status_code == 422
-    assert not MEMORY_TOOL_NAMES & {tool['name'] for tool in ok(client.get('/api/tools'))}
+    assert MEMORY_TOOL_NAMES == {tool['name'] for tool in ok(client.get('/api/tools')) if tool['scope'] == 'memory'}
     ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'harness_enabled': False, 'memory_learning': 'automatic'}}))
     result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'Recall oolong'}))
     assert result['success'] and 'tools' not in upstream.calls[-1]
@@ -535,9 +562,8 @@ def test_forgotten_id_and_user_adoption_cannot_be_overwritten(client_pair):
     from ai_workbench.core.schema.memory import MemoryEdit
     adopted = state.memory.edit(original.id, MemoryEdit(expected_revision=original.revision, summary='User-owned', body='User-owned truth'))
     def attempt(request):
-        user_id = re.findall(r'\[User-message ID: ([^\]]+)\]', json.dumps(request))[-1]
-        return completion(tool_call('memory_write', {'id': original.id, 'expected_revision': adopted.revision,
-            'summary': 'Overwrite', 'body': 'Overwrite', 'source_message_ids': [user_id]}))
+        return completion(tool_call('memory_write', {'id': original.id,
+            'summary': 'Overwrite', 'body': 'Overwrite'}))
     for forgotten in (False, True):
         if forgotten:
             state.memory.delete(original.id, adopted.revision)
@@ -589,7 +615,7 @@ def test_repeated_memory_reads_are_bounded_before_history_maintenance(client_pai
     client, upstream, state = client_pair
     profile = configure_model(client)
     ok(client.patch(f"/api/models/profiles/{profile['id']}", json={'context_window_tokens': 4096, 'parameters': {'max_tokens': 512}}))
-    owner = character(client, harness_enabled=True, tools_allowed=[], context_policy={'strategy': strategy,
+    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic', context_policy={'strategy': strategy,
         'compaction': {'trigger_percent': 70, 'target_percent': 45}, 'retrieval': {'trigger_percent': 70, 'target_percent': 45}})
     entry = add(client, owner, owner['persona_id'], summary='Large fact', body='detail ' * 280)
     session = child(client, owner)

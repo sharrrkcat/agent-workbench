@@ -49,7 +49,7 @@ class ContextBuilder:
               current_message_id: str | None = None, history=()) -> ContextBuildResult:
         policy = policy or ContextPolicy()
         current_message = self.message_store.get_message(current_message_id) if current_message_id else None
-        current = persona_context_prefix(current_message) + self._current_text(text, current_message_id)
+        current = self._current_text(text, current_message_id)
         current_refs = []
         if current_message_id and policy.include_attachments == "explicit":
             current_refs = _image_refs(self.message_store.get_message(current_message_id))
@@ -143,16 +143,9 @@ def message_text(message: Any, *, include_attachments: bool = True, attachment_s
     return "\n\n".join(part for part in rendered if part)
 
 
-def persona_context_prefix(message: Any) -> str:
-    if message is not None and message.role == "user" and message.speaker_id:
-        return f"[Persona: {message.speaker_id}]\n"
-    return ""
-
-
 def _trace_message(trace, message, index, projected, kind, include_attachments, *, turn_id=None):
     source_id = "message:" + message.message_id
     trace.sources.append(ContextSource(id=source_id, kind=kind, message_index=index,
-        start=len(persona_context_prefix(message)),
         reference_id=message.message_id, role=projected["role"], turn_id=turn_id))
     attachments = (message.metadata or {}).get("attachments", [])
     if not include_attachments:
@@ -168,10 +161,9 @@ def _trace_message(trace, message, index, projected, kind, include_attachments, 
     if kind == "history":
         spans = []
         message_text(message, attachment_spans=spans)
-        prefix_length = len(persona_context_prefix(message))
         for item, start, end in spans:
             trace.sources.append(ContextSource(id=f"{source_id}:file:{item['id']}", kind="attachment",
-                parent_id=source_id, message_index=index, start=start + prefix_length, end=end + prefix_length,
+                parent_id=source_id, message_index=index, start=start, end=end,
                 attachment=snapshot_attachment(item)))
 
 
@@ -181,7 +173,6 @@ def _project(message: Any, *, include_attachments: bool = True) -> ContextMessag
     text=message_text(message, include_attachments=include_attachments)
     images = _image_refs(message) if include_attachments else []
     if not text and not images and role!="system": return None
-    text = persona_context_prefix(message) + text
     # A selected/truncated history may omit a call's partner. Historical tool
     # parts are quoted user data; only the live harness transcript uses native
     # assistant/tool protocol pairs. This also supports ordinary chat models.

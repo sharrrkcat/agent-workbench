@@ -183,7 +183,7 @@ async def smoke_harness(state, profile, report, output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument('--model-ref', default='llms/Qwen3.5-0.8B-GGUF')
+    parser.add_argument('--model-ref', required=True, help='Existing representative GGUF directory; do not use a 0.8B LLM.')
     parser.add_argument('--device', choices=('cuda', 'cpu'), default='cuda')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--manual', action='store_true', help='Run one manual compaction followed by an ordinary answer.')

@@ -201,13 +201,18 @@ def parse_args(argv=None):
     parser.add_argument("--install-only", action="store_true")
     parser.add_argument("--backend", choices=BACKENDS, action="append")
     parser.add_argument("--reference", type=Path)
-    parser.add_argument("--gguf-model", default="llms/Qwen3.5-0.8B-GGUF")
-    parser.add_argument("--transformers-model", default="llms/Qwen3.5-0.8B-TF")
+    parser.add_argument("--gguf-model", help="Representative installed GGUF; do not use a 0.8B LLM")
+    parser.add_argument("--transformers-model", help="Representative installed Transformers model; do not use a 0.8B LLM")
     parser.add_argument("--kokoro-model", default="tts/Kokoro-82M-onnx")
     parser.add_argument("--chatterbox-model", default="tts/chatterbox")
     parser.add_argument("--qwen3tts-model", default="tts/Qwen3-TTS-12Hz-0.6B-Base")
     args = parser.parse_args(argv)
     args.backend = args.backend or DEFAULT_BACKENDS
+    if not args.install_only:
+        if any(backend.startswith('llama-') for backend in args.backend) and not args.gguf_model:
+            parser.error('--gguf-model is required for llama-server acceptance')
+        if any(backend.startswith('transformers-') for backend in args.backend) and not args.transformers_model:
+            parser.error('--transformers-model is required for Transformers acceptance')
     return args
 
 

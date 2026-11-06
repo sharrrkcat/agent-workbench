@@ -90,7 +90,7 @@ General retains a source Character and crosses Characters only for the same Pers
 all-Persona audience. Manual records can omit Session; model records cannot.
 Original attribution is preserved separately from current ownership when records are transferred.
 Defaults are memory_enabled=true, memory_learning=manual, external isolation off and shared Sessions.
-Read/learning preferences follow Character defaults and sparse overrides; memory_isolation is Session state.
+Read/learning preferences follow Character defaults and sparse overrides; all memory-tool switches share memory_learning, with manual preserving recall but disabling the tools. memory_isolation is Session state.
 Session modes shared/block_outgoing/block_incoming/isolated independently permit imports/exports.
 Own records remain eligible; incoming blocks exclude General. Character memory_external_isolation
 blocks General without blocking same-Character records. All existing active records follow current
@@ -102,8 +102,8 @@ and ID reads use /api/sessions/{id}/memories. Unknown/inaccessible IDs return th
 Manual edits create user-managed records protected from model writes. General publication creates an
 independent version copy; local edits/isolation/deletion do not synchronize it. Repeating a live
 publication of the same source revision reuses it. Summary/body limits are 160/2,000 characters.
-Source edit/delete and producing-Run pruning make dependent model facts needs-review; user-managed
-facts are independent of source lifetime. Forget removes content/indexes, retaining body-free tombstones.
+Model writes retain the producing Run and no message evidence; pruning that Run makes them needs-review.
+Existing message-linked facts still follow source edit/delete; user-managed facts are independent. Forget removes content/indexes, retaining body-free tombstones.
 Deleting normal owners uses memory-deletion-preview and explicit revision-checked choices. Session
 keep detaches Session ownership and makes all kept facts user-managed Character-shared records for
 the same Persona. Character keep requires transfer to another normal Character or publication to
@@ -117,7 +117,7 @@ capacity); model counting removes complete facts/tool pairs before history maint
 Memory references invalidate consuming checkpoints; version checks prevent stale summary commits.
 Memory-tool payloads are excluded from ordinary history and compaction. Saved request snapshots are
 inspection records. Old assistant prose can retain repeated facts; forgetting is not transcript erasure.
-Literal recall misses paraphrases; source presence does not prove entailment. QQ, vectors, automatic
+Literal recall misses paraphrases; a producing Run does not prove factual support. QQ, vectors, automatic
 consolidation and auxiliary-model extraction remain deferred. Knowledge/Worldbook mounts stay inactive.
 
 ## Configuration snapshots and context
@@ -188,18 +188,18 @@ The command bypasses message creation, queue insertion, answers and title genera
 Ordinary messages may queue during compaction: success permits dispatch; failure/cancellation/interruption pauses it. Queues remain browser-local. No slash command registry is introduced.
 QQ uses the same automatic preparation with its [batch history](qqbot.md#context-and-media). QQ manual compaction, overflow retry and draft previews are deferred.
 Summaries are lossy; model-specific factual retention and accumulated drift require representative real-model acceptance.
-Qwen3.5-0.8B GGUF can exhaust a 512-token summary cap in conversation and active-tool summaries, or copy summary instructions into its memory; three consecutive successful summaries with factual-retention
-acceptance remain outstanding. A successful individual compression or mocked test does not establish that model's long-conversation quality.
-Autonomous on-demand checkpoint/recovery quality requires model-specific acceptance: Qwen3.5-0.8B repeats rejected checkpoint-source updates; tested provider configurations can omit native tool calls, invent tool results in prose or time out. The tested 9B GGUF on CPU reaches the five-minute run limit before recovery. These outcomes do not establish successful multi-reset recovery.
+Three consecutive successful summaries with factual-retention acceptance remain outstanding on a representative model.
+A successful individual compression or mocked test does not establish long-conversation quality. Acceptance must not use 0.8B LLMs; the README owns model selection and commands.
+Autonomous on-demand checkpoint/recovery quality requires model-specific acceptance: tested provider configurations can omit native tool calls, invent tool results in prose or time out. The tested 9B GGUF on CPU reaches the five-minute run limit before recovery. These outcomes do not establish successful multi-reset recovery.
 
 The [context meter](runs-streaming.md#context-detail) displays actual per-call input plus output usage beside the model selector. Input reflects history limits and token trimming; policy edits affect the next request, not recorded usage.
 
-Persona background is trimmed, wrapped in <user_persona> tags and appended once as contextual data;
+Persona background is trimmed, wrapped in <user_background> tags under User background and appended once as contextual data;
 empty text produces no block. The Run snapshots it before execution. Compact user_persona metadata
-contains identity, injection status, length and empty skip reason, never the content. Normal user
-history and current input carry a Persona-id prefix in model projection; raw messages remain unchanged.
-Summary inputs and on-demand history retain the original Persona attribution. General settings have
-no Core Memory fields or enable switch.
+contains identity, injection status, length and empty skip reason, never the content. Current input,
+history, summary inputs and retrieved text have no generated Persona or user-message ID markers; summary text uses role labels only.
+Identity stays in storage and inspection metadata. User-authored text and saved snapshots are not rewritten.
+General settings have no Core Memory fields or enable switch.
 
 Worldbook is deterministic matching over current user text and configured
 keywords. Enabled entries obey entry/context limits, case sensitivity,

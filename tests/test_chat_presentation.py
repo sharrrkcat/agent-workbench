@@ -354,7 +354,7 @@ def test_cancelled_stream_retains_received_content(tmp_path, use_memory, harness
                 assert state.runs.get_run(started.run_id).status == "CANCELLED"
                 step = next(step for step in cancelled["run"]["steps"] if step["kind"] == "model")
                 snapshot = ok(await client.get(f"/api/runs/{started.run_id}/steps/{step['step_id']}/context"))
-                assert snapshot["request"]["messages"][-1]["content"] == f"[Persona: {session['effective']['persona_id']}]\ngo"
+                assert snapshot["request"]["messages"][-1]["content"] == "go"
                 assert "partial" not in json.dumps(snapshot)
                 assert state.model_manager.status(profile["id"]).active == 0
             finally:

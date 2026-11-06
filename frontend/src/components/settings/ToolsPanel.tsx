@@ -38,7 +38,7 @@ export function ToolsPanel({ scope }: { scope: 'general' | 'qqbot' }) {
             <section className="flex min-w-0 flex-col gap-3" aria-labelledby={`tools-${scope}`}>
               <h2 id={`tools-${scope}`}>{t('toolGroups.' + scope)}</h2>
               <ItemGroup>
-                {tools.filter((tool) => tool.scope === scope).map((tool) => (
+                {tools.filter((tool) => tool.scope === scope || (scope === 'general' && tool.scope === 'memory')).map((tool) => (
                   <Item key={tool.name} role="listitem" className="min-w-0 px-0" data-tool-name={tool.name}>
                     <ItemContent className="min-w-0">
                       <ItemTitle>{tool.name}</ItemTitle>

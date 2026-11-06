@@ -59,7 +59,7 @@ The processing header has no cancel button; cancellation remains in the composer
 (ceiling seconds, including zero), or Thought when timing is unknown, in both locales.
 Expansion shows full Markdown. Incoming deltas preserve manual expansion; an expanded
 live segment closes once, one second after thinking ends. Reopening it stays open.
-Internal context/memory tools show localized operation/status only; arguments/results remain in private context details. Staged memory shows pending, with saved/not_saved outcomes after completion. General tool titles include their name and arguments: one value or compact key=value pairs, with nested JSON. Long titles truncate; pending confirmation retains full arguments.
+Internal context/memory tools show localized operation/status only; arguments/results remain in private context details. Staged memory shows pending from internal candidates, with saved/not_saved outcomes after completion; these states never enter memory-tool model results. General tool titles include their name and arguments: one value or compact key=value pairs, with nested JSON. Long titles truncate; pending confirmation retains full arguments.
 Running/queued calls are plain Trace lines; general results start collapsed and show bounded output/errors and truncation notices.
 Web tools use specialized Trace steps: search titles contain the queries and successful details show only linked `title | hostname` Badges. Long page titles truncate while hostnames stay visible; missing titles show only the hostname. Tooltips and accessible labels retain the full label. Fetch details show bounded page text in a Code Block or an empty-content notice. Dates, query summaries, filter counts, cache/page metadata, separate related-link lists and remaining budgets are omitted from Trace. Titles reflect pending/running/failed/cancelled states in both locales; tool failures retain localized errors and empty searches show No results found.
 Web details start expanded inside processing history and remain independently collapsible. Replies containing web tools keep the processing content mounted so closing the outer clock preserves step choices. Fetched content remains scrollable text, bounded to 160px on desktop and 120px below 768px.
@@ -257,7 +257,7 @@ The modal omits explanatory prose, includes Model calls in the summary grid, and
 It scrolls within the viewport and returns focus to its trigger without moving the message list.
 Approval statistics are labelled So far; failed/cancelled statistics are incomplete. During active generation only the existing Run clock updates.
 User messages, direct tool runs and histories without recorded statistics do not receive invented LLM metrics. Both locales and narrow layouts are supported.
-Qwen3.5-0.8B GGUF/Transformers statistics have Windows CPU/CUDA acceptance. GGUF reports native speed/cache hits; Transformers reports streaming estimates without cache/reasoning breakdowns.
+GGUF/Transformers statistics require representative-model Windows CPU/CUDA acceptance; historical 0.8B probes are insufficient. GGUF reports native speed/cache hits; Transformers reports streaming estimates without cache/reasoning breakdowns.
 
 ## Persistence
 

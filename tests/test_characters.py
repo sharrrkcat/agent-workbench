@@ -107,7 +107,7 @@ def test_bound_persona_ignores_parent_changes_and_preserves_retry_identity(clien
     ok(client.patch(f"/api/characters/{owner['id']}", json={"persona_id": b["id"]}))
     ok(client.post(path + "/messages", json={"content": "second"}))
     request = json.dumps(upstream.calls[-1])
-    assert a["id"] in request and b["id"] not in request
+    assert a["id"] not in request and b["id"] not in request
     assert "A_BACKGROUND" in request and "B_BACKGROUND" not in request
     ok(client.patch(f"/api/personas/{a['id']}", json={"name": "A renamed", "background": "A_CURRENT"}))
     retried = ok(client.post(f"/api/runs/{run['run_id']}/retry"))
@@ -181,7 +181,7 @@ def test_active_run_snapshot_and_tool_defaults_are_not_a_ceiling(client_pair):
     snapshot = state.runs.get_config_snapshot(result["run"]["run_id"])
     ok(client.patch(f"/api/characters/{owner['id']}", json={"system_prompt": "AFTER", "tools_allowed": []}))
     assert state.runs.get_config_snapshot(result["run"]["run_id"]) == snapshot
-    assert state.chat_service.tools_for_run(ResolvedChatConfig.model_validate(snapshot)) == ["test_approval", "memory_list", "memory_read", "memory_search"]
+    assert state.chat_service.tools_for_run(ResolvedChatConfig.model_validate(snapshot)) == ["test_approval"]
     assert client.delete(f"/api/characters/{owner['id']}").status_code == 409
     resumed = ok(client.post(f"/api/tools/approvals/{result['run']['run_id']}", json={"decision": "approve"}))
     assert resumed["run"]["status"] == "DONE"

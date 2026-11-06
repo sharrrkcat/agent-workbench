@@ -94,7 +94,7 @@ and closed pages leave keyboard navigation. Active pages use aria-current.
 | Menu | Pages / `view` values |
 | --- | --- |
 | General | Single page; no `view` |
-| Tools | General tools `general`, QQ Bot tools `qqbot`, Web search `web` |
+| Tools | General tools `general` including memory tools, QQ Bot tools `qqbot`, Web search `web` |
 | Personas | Single page; no `view` |
 | Models | Dashboard `dashboard`; LLM `llm`, Text Embedding `embedding`, Reranker `reranker`, Image Embedding `image_embedding`, Vision `vision`, Text to Speech `tts`, Speech to Text `asr`, Processor `processor`, Image Generation `image_generation` |
 | Providers & Runtime | Model Providers `providers`, Local Runtime `localRuntime` (both remain under `tab=models`) |

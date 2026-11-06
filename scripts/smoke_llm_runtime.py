@@ -416,10 +416,11 @@ def parse_args(argv=None):
     focus.add_argument("--vision", action="store_true", help="Verify static images, multi-image order, history, streaming and cancellation")
     focus.add_argument("--reasoning", action="store_true", help="Verify reasoning on/off with native template evidence, payloads and streaming/non-streaming output")
     args = parser.parse_args(argv)
+    if not args.install_only and not args.model_ref:
+        parser.error('--model-ref is required for inference acceptance; select a representative model, not a 0.8B LLM')
     return args
 
 
 if __name__ == "__main__":
     args = parse_args()
-    reference = args.model_ref or ("llms/Qwen3.5-0.8B-TF" if args.engine == "transformers" else "llms/Qwen3.5-0.8B-GGUF")
-    asyncio.run(smoke(args.root.resolve(), reference, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision, args.reasoning, args.context_budget))
+    asyncio.run(smoke(args.root.resolve(), args.model_ref, ("cuda", "cpu") if args.device == "both" else (args.device,), args.install_only, args.engine, args.vision, args.reasoning, args.context_budget))

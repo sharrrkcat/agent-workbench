@@ -72,7 +72,7 @@ def test_prefixes_are_plain_chat_text_and_openai_responses_are_saved(tmp_path: P
     assert not removed_metadata.intersection(payload["messages"][0]["metadata"])
 
     assert len(runtime.calls) == 4
-    assert all(call["messages"][-1]["content"] == f"[Persona: {USER_PERSONA_ID}]\n{text}" for call, text in zip(runtime.calls, ("/base64 hello", "@chat hi", "@chat:formal hi", ":formal hi")))
+    assert all(call["messages"][-1]["content"] == text for call, text in zip(runtime.calls, ("/base64 hello", "@chat hi", "@chat:formal hi", ":formal hi")))
 
 
 def test_waiting_run_blocks_new_chat_until_explicit_resolution(tmp_path: Path) -> None:

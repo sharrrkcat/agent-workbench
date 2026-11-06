@@ -93,7 +93,6 @@ class PresentationOpenAI(ToolOpenAI):
         command = history[user_index]["content"]
         if isinstance(command, list):
             command = "".join(part["text"] for part in command if part["type"] == "text")
-        command = re.sub(r"^\[Persona: [^\]]+\]\n", "", command)
         transcript = history[user_index + 1:]
         outputs = [item for item in transcript if item["role"] == "tool"]
         if command.startswith("history-retrieval-fixture"):

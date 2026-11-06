@@ -47,6 +47,27 @@ for (const name of [...selected])
 assert.deepEqual(selected, []);
 assert.ok(descendants(renderTools()).filter((node) => node.type === Checkbox).every((node) => !node.props.checked));
 
+const memories = ['memory_list', 'memory_search', 'memory_read', 'memory_write', 'memory_forget']
+  .map((name) => ({ name, scope: 'memory', risk: 'safe', requires_approval: false }));
+let learning = 'manual';
+selected = ['test_echo'];
+const renderMemoryTools = () => ToolsField({ tools: [...tools, ...memories], value: selected,
+  onChange: (value) => { selected = value; }, memoryLearning: learning,
+  onMemoryLearningChange: (value) => { learning = value; } });
+for (let index = 0; index < memories.length; index++) {
+  const controls = () => descendants(renderMemoryTools()).filter((node) => node.type === Checkbox);
+  controls()[tools.length + index].props.onCheckedChange(true);
+  assert.equal(learning, 'automatic');
+  assert.ok(controls().slice(tools.length).every((node) => node.props.checked));
+  controls()[1].props.onCheckedChange(true);
+  assert.deepEqual(selected, ['test_echo', 'test_approval']);
+  assert.equal(learning, 'automatic');
+  controls()[tools.length + (index + 1) % memories.length].props.onCheckedChange(false);
+  assert.equal(learning, 'manual');
+  assert.ok(controls().slice(tools.length).every((node) => !node.props.checked));
+  assert.deepEqual(selected, ['test_echo', 'test_approval']);
+}
+
 const policy = { history_enabled: true, strategy: 'token_budget', message_window: { max_messages: 100 }, include_attachments: 'explicit', compaction: {
   enabled: true, trigger_percent: 80, target_percent: 55, max_summary_tokens: null } };
 let changedPolicy;

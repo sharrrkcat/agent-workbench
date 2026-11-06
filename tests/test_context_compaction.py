@@ -22,7 +22,8 @@ def setup(client, *, trigger=50, target=35, summary=512, harness=False):
 
 def seed(state, session, start=0, count=12):
     for i in range(start, start + count):
-        user = state.messages.add_message(session['session_id'], 'user', f'FACT_{i}=value{i}; ' + 'padding ' * 110)
+        user = state.messages.add_message(session['session_id'], 'user', f'FACT_{i}=value{i}; ' + 'padding ' * 110,
+            speaker_id=session['effective']['persona_id'])
         state.messages.add_message(session['session_id'], 'assistant', 'Recorded.', parent_message_id=user.message_id)
 
 
@@ -78,6 +79,8 @@ def test_three_compactions_preserve_coverage_and_private_immutable_inputs(presen
     for call in filter(summary_call, upstream.calls):
         assert not call.get('tools') and not call['stream'] and call['temperature'] == 0
         assert call['max_tokens'] == 512
+        assert '[Persona:' not in json.dumps(call) and session['effective']['persona_id'] not in json.dumps(call)
+        assert '; message=' not in json.dumps(call)
 
 
 @pytest.mark.parametrize('failure', ['empty', 'length', 'tool', 'large'])

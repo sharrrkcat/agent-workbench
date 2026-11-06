@@ -2,12 +2,12 @@
 
 Harness execution uses effective harness_enabled and tools_allowed from Character defaults and
 sparse Session overrides. Characters start off and capture the general-purpose tool list on creation;
-[] selects none. Persona owns neither setting. Lists replace inherited values, and catalog changes
+[] selects no general tools. Persona owns neither setting. Lists replace inherited values, and catalog changes
 do not rewrite saved lists. Session overrides may choose any available general tool.
 
 The composer's model menu toggles Harness immediately and preserves confirmed state on failure.
-Its independent action opens a right Sheet for tool selection, with Save, discard confirmation,
-mobile full width and focus restoration. Reset submits null to follow Character defaults.
+Its independent action opens a right Sheet for general and memory tool selection, with Save, discard confirmation,
+mobile full width and focus restoration. Tools reset submits null for tools_allowed and memory_learning to follow Character defaults.
 Draft edits remain local until first send. Session changes close the Sheet and ignore late saves.
 Character tools are defaults, not a permission ceiling; running/approval snapshots keep their tool
 selection despite later edits. Registry permissions, approvals and scope checks still apply.
@@ -40,27 +40,32 @@ model loop. Invalid direct requests fail before creating a run.
 
 ## Durable memory tools
 
-Normal Harness runs with memory reads enabled include memory_list, memory_search and memory_read,
-including when the business allowlist is empty. Automatic learning additionally includes memory_write
-and memory_forget. Memory tools are internal, absent from the general catalog, not directly/slash
-callable, and unavailable to QQ and public inference. Enabling learning never enables Harness.
+The catalog exposes memory_list, memory_search, memory_read, memory_write and memory_forget with scope=memory.
+All five switches in Character, Session and composer tool settings share memory_learning: automatic enables
+the group; manual disables it. The Memory tab edits the same setting. Ordinary tools remain independent.
+Memory reads enabled plus automatic learning and Harness are required to provide the complete group,
+including with an empty business allowlist. Disabling the group preserves automatic recall of existing facts.
+Memory tools remain unavailable to direct/slash calls, QQ and public inference. Enabling the group never enables Harness.
 They consume existing business-round/time limits; no separate execution budget or auxiliary call is added.
 List/search return at most 20 summaries; read accepts at most eight IDs. Complete request counting
 bounds retained memory results with the [recall allowance](chat-context.md#durable-memory).
-Tools derive identity from the Run. Writes cite same-Session, same-Persona user text actually supplied
-to that Run; checkpoints, other memories, assistant guesses and unconfirmed tool outcomes are not evidence.
+Tools derive identity from the Run. Model instructions request lasting user-confirmed facts, with most
+turns saving nothing; updates reuse IDs, and guesses, temporary suggestions and secrets must not be saved.
 At most eight mutations stage privately; subsequent own-ID reads see the overlay. New records cannot
-target General. Update/forget requires the expected revision and a model-managed current-Session record.
+target General. Update/forget requires a model-managed current-Session record; the backend uses versions
+recorded by recall/list/search/read or the latest staged candidate. Unread records require a read first.
 Unknown/deleted IDs fail. Exact reuse never crosses origin/audience. Cross-Session corrections need user review.
-Results state pending; success atomically commits the validated batch and terminal outcome. Conflicts
+Success atomically commits the validated batch and terminal outcome. Conflicts
 keep the answer with not_saved; failure/cancellation/interruption discard staging. Approval continuation
 retains candidates, rechecks current access and cannot replay a completed Run. Manual adoption protects
 facts. Tools and dispatch recheck revoked references; already-dispatched requests cannot be withdrawn.
 Private memory call/result payloads never become ordinary quoted history or compaction input.
-Creation omits id/revision; updates require both returned values. Only automatic-learning requests add
-user-message evidence IDs. Local Qwen3.5 0.8B/9B CUDA probes exercised confirmed capture, sibling recall
-and Persona isolation. The 0.8B model can repeatedly propose a transient disclaimer in a suggestion-only
-turn and exhaust the tool limit; failed Runs commit nothing. Same-Run exact duplicates reuse a candidate.
+Model writes accept summary/body and optional id; forget accepts id. Source-message and revision arguments
+are rejected. Model results expose only IDs, content, dates and paging/truncation; mutations return only id.
+Recall headers contain id/date. Ownership, revisions and pending/commit details stay out of model input.
+New/updated model facts retain origin.run_id with empty evidence; message-evidence collection is absent.
+Qwen3.5-9B GGUF CUDA acceptance covers confirmed capture, same-conversation/sibling recall, Persona isolation, suggestion exclusion and clean model requests. Select representative models explicitly; 0.8B LLMs are excluded.
+Failed Runs commit nothing. Same-Run exact duplicates reuse a candidate.
 Model tool reliability and semantic entailment remain limitations; literal recall misses paraphrases.
 
 ## Web tools
@@ -261,7 +266,7 @@ receives the raw remainder, preserving whitespace; other schemas require
 a JSON object. There is no key=value parser. Unknown slash prefixes remain
 ordinary text; known unauthorized tools return TOOL_NOT_ALLOWED.
 
-Tools settings split into General tools, QQ Bot tools and Web search subpages. The first two contain
+Tools settings split into General tools (including memory), QQ Bot tools and Web search subpages. The first two contain
 session-independent, read-only catalogs; each entry shows its name, localized description and a collapsed
 parameter schema. Web search owns the key/preferences and filter controls. All four QQ tools remain visible regardless of Character configuration.
 The page has no call form, results or approval controls. Slash web calls require JSON objects matching the same schemas; search preferences belong to the settings form.

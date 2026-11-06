@@ -14,7 +14,6 @@ MemoryPool = Literal["character", "general"]
 MemoryIsolation = Literal["shared", "block_outgoing", "block_incoming", "isolated"]
 MemoryStatus = Literal["active", "needs_review", "deleted"]
 MEMORY_TOOL_NAMES = frozenset({"memory_list", "memory_search", "memory_read", "memory_write", "memory_forget"})
-MEMORY_READ_TOOLS = frozenset({"memory_list", "memory_search", "memory_read"})
 
 
 class MemoryEvidence(StrictModel):
@@ -135,17 +134,7 @@ class MemoryView(StrictModel):
 
 
 class MemoryWrite(MemoryContent):
-    id: str | None = None
-    expected_revision: int | None = Field(default=None, ge=1, strict=True)
-    source_message_ids: list[str] = Field(min_length=1, max_length=8)
-
-    @model_validator(mode="after")
-    def update_revision(self):
-        if (self.id is None) != (self.expected_revision is None):
-            raise ValueError("Updating a memory requires its id and expected_revision")
-        if len(set(self.source_message_ids)) != len(self.source_message_ids):
-            raise ValueError("Source messages must be unique")
-        return self
+    id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class MemoryMutation(StrictModel):
@@ -160,7 +149,6 @@ class MemoryRunState(StrictModel):
     history_version: int
     allowance: int = 0
     references: dict[str, int] = Field(default_factory=dict)
-    evidence: list[MemoryEvidence] = Field(default_factory=list)
     mutations: list[MemoryMutation] = Field(default_factory=list, max_length=8)
     read_calls: dict[str, list[str]] = Field(default_factory=dict)
 

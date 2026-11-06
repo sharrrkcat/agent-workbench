@@ -4,7 +4,7 @@ import type { Session } from './chat';
 
 export type HarnessTool = {
   name: string;
-  scope: 'general' | 'qqbot';
+  scope: 'general' | 'qqbot' | 'memory';
   description: string;
   parameters: Record<string, unknown>;
   risk: 'safe' | 'file' | 'network';

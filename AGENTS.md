@@ -47,6 +47,9 @@ for frontend-only or documentation-only work.
 
 ## Runtime verification and acceptance
 
+- Do not use 0.8B LLMs for acceptance. Select an explicitly configured, representative
+  model (such as the installed 9B GGUF or a suitable provider model). Historical
+  0.8B results are not acceptance evidence for current behavior.
 - Keep installation checks at artifact and installation boundaries: downloaded
   archives and locked dependencies, dependency consistency, offline engine imports,
   native programs, release identity, entry points and path containment.

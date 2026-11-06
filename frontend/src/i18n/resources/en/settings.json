@@ -45,6 +45,11 @@
     "network": "Network request"
   },
   "toolDescriptions": {
+    "memory_list": "List remembered facts.",
+    "memory_search": "Search remembered facts by text.",
+    "memory_read": "Read selected memories.",
+    "memory_write": "Save or update a lasting, confirmed fact.",
+    "memory_forget": "Forget a remembered fact.",
     "web_search": "Search multiple angles and return relevant, dated excerpts.",
     "web_fetch": "Read extracted pages with a specific focus and pagination.",
     "qq_send_message": "Send one text message to the current QQ conversation.",

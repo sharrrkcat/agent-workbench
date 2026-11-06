@@ -83,7 +83,7 @@ function NormalCharacterEditor({ character, onSaved, onLeaveGuardChange, dialog 
       usePersonasStore.getState().reload(), useModelsStore.getState().reloadProfiles(), useModelsStore.getState().reloadSettings(),
     ]).then(([bases, books, tools]) => {
       if (!active) return;
-      setBases(bases); setBooks(books); setTools(tools.filter((tool) => tool.scope === 'general'));
+      setBases(bases); setBooks(books); setTools(tools.filter((tool) => tool.scope !== 'qqbot'));
       if (!draft) {
         const models = useModelsStore.getState();
         const enabled = models.profiles.filter((profile) => profile.kind === 'llm' && profile.enabled);
@@ -136,7 +136,8 @@ function NormalCharacterEditor({ character, onSaved, onLeaveGuardChange, dialog 
           <FieldLabel htmlFor={formId + '-reasoning'}>{t('reasoning')}</FieldLabel></Field>
         <Field orientation="horizontal"><Switch id={formId + '-harness'} checked={draft.harness_enabled} onCheckedChange={(harness_enabled) => update({ harness_enabled })} />
           <FieldLabel htmlFor={formId + '-harness'}>{t('harness')}</FieldLabel></Field>
-        <ToolsField tools={tools} value={draft.tools_allowed} onChange={(tools_allowed) => update({ tools_allowed })} />
+        <ToolsField tools={tools} value={draft.tools_allowed} onChange={(tools_allowed) => update({ tools_allowed })}
+          memoryLearning={draft.memory_learning} onMemoryLearningChange={(memory_learning) => update({ memory_learning })} />
         <ContextFields value={draft.context_policy} harnessEnabled={draft.harness_enabled} onChange={(context_policy) => update({ context_policy })} />
       </FieldGroup></TabsContent>
       <TabsContent value="resources" keepMounted data-character-tab="resources"><FieldGroup>

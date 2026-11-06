@@ -39,7 +39,7 @@ class ToolRegistry:
         return [self._tools[name] for name in sorted(self._tools)]
 
     def catalog(self) -> list[dict[str, Any]]:
-        return [deepcopy(item.public()) for item in self.list() if item.scope not in {"context", "memory"}]
+        return [deepcopy(item.public()) for item in self.list() if item.scope != "context"]
 
     def validate_allowlist(self, names: list[str]) -> list[str]:
         if len(names) != len(set(names)):

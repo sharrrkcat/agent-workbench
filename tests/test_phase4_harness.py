@@ -114,8 +114,7 @@ def test_provider_tool_support_is_not_prechecked_and_empty_allowlist(harness_cli
     assert response["success"] and upstream.calls[0]["tools"]
     ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"tools_allowed": []}}))
     assert send(client, session)["success"]
-    from ai_workbench.core.schema.memory import MEMORY_READ_TOOLS
-    assert {tool['function']['name'] for tool in upstream.calls[-1]['tools']} == MEMORY_READ_TOOLS
+    assert "tools" not in upstream.calls[-1]
     ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {"memory_enabled": False}}))
     assert send(client, session)["success"]
     assert "tools" not in upstream.calls[-1]

@@ -72,7 +72,7 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
       knowledgeApi.listKnowledgeBases(), worldbookApi.listWorldbooks(), toolsApi.listTools(),
       useModelsStore.getState().reloadProfiles(),
     ]).then(([, , bases, books, tools]) => {
-      if (live) { setBases(bases); setBooks(books); setTools(tools.filter((tool) => tool.scope === 'general')); setLoading(false); }
+      if (live) { setBases(bases); setBooks(books); setTools(tools.filter((tool) => tool.scope !== 'qqbot')); setLoading(false); }
     }).catch((reason) => { if (live) setError(errorText(reason)); });
     return () => { live = false; };
   }, [session.character_id, reload]);
@@ -138,8 +138,12 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
                 checked={overrides.reasoning ?? character.reasoning} onCheckedChange={(value) => change('reasoning', value)} /><FieldLabel htmlFor={formId + '-reasoning'}>{t('reasoning')}</FieldLabel></Field>)}
               {inheritance('harness_enabled', t('harness'), <Field orientation="horizontal"><Switch id={formId + '-harness'}
                 checked={overrides.harness_enabled ?? character.harness_enabled} onCheckedChange={(value) => change('harness_enabled', value)} /><FieldLabel htmlFor={formId + '-harness'}>{t('harness')}</FieldLabel></Field>)}
-              {inheritance('tools_allowed', t('tools'), <ToolsField tools={tools} value={overrides.tools_allowed ?? character.tools_allowed}
-                onChange={(value) => change('tools_allowed', value)} />)}
+              <Inheritance label={t('tools')} inherited={overrides.tools_allowed == null && overrides.memory_learning == null}
+                onReset={() => setChanges((current) => ({ ...current, tools_allowed: null, memory_learning: null }))}>
+                <ToolsField tools={tools} value={overrides.tools_allowed ?? character.tools_allowed}
+                  onChange={(value) => change('tools_allowed', value)} memoryLearning={overrides.memory_learning ?? character.memory_learning}
+                  onMemoryLearningChange={(value) => change('memory_learning', value)} />
+              </Inheritance>
               {inheritance('context_policy', t('context'), <ContextFields harnessEnabled={overrides.harness_enabled ?? character.harness_enabled}
                 value={overrides.context_policy ?? character.context_policy} onChange={(value) => change('context_policy', value)} />)}
             </FieldGroup></TabsContent>

@@ -2,7 +2,7 @@
 import json
 from itertools import islice
 
-from ai_workbench.core.context import _eligible, message_text, persona_context_prefix
+from ai_workbench.core.context import _eligible, message_text
 from ai_workbench.core.context_history import ConversationHistory
 from ai_workbench.core.harness.schema import ToolExecutionError, ToolSpec
 from ai_workbench.core.qq_context import QQContextHistory
@@ -40,7 +40,7 @@ class RetrievalTools:
             ("context_read", "Read a bounded text range using a returned source ID. Old images return descriptions only.",
              {"source_id": {"type": "string", "maxLength": 256}, "offset": {"type": "integer", "minimum": 0},
               "max_tokens": {"type": "integer", "minimum": 1, "maximum": 4096}}, ["source_id"]),
-            ("context_checkpoint_update", "Replace memory (commit only on successful run) or progress (this run only). Cite source IDs. Both share a token allowance. Empty text clears that checkpoint.",
+            ("context_checkpoint_update", "Replace conversation memory or task progress. Cite source IDs. Both share a token allowance. Empty text clears that checkpoint.",
              {"scope": {"type": "string", "enum": ["memory", "progress"]}, "text": {"type": "string", "maxLength": 65536},
               "references": {"type": "array", "items": {"type": "string", "maxLength": 256}, "maxItems": 64, "uniqueItems": True}},
              ["scope", "text", "references"]),
@@ -66,14 +66,6 @@ class RetrievalTools:
             record = reader.read(args["source_id"])
             offset = args.get("offset", 0)
             text, next_offset = clip_text(record["text"], offset, min(allowance, args.get("max_tokens", 4096)), count_tokens)
-            if state.memory is not None and offset == 0 and next_offset is None and args["source_id"].startswith("message:"):
-                from ai_workbench.core.memory_service import message_digest
-                from ai_workbench.core.schema.memory import MemoryEvidence
-                source = self.messages.get_message(args["source_id"][8:])
-                if (source.role == "user" and source.session_id == context.session_id
-                    and source.speaker_id == state.memory.view.persona_id
-                    and source.message_id not in {item.message_id for item in state.memory.evidence}):
-                    state.memory.evidence.append(MemoryEvidence(message_id=source.message_id, digest=message_digest(source)))
             return {"source_id": record["source_id"], "text": text, "offset": offset,
                 "next_offset": next_offset, "truncated": next_offset is not None}
         if operation == "context_checkpoint_update":
@@ -206,8 +198,6 @@ class RetrievalReader:
             if row and row.session_id == self.context.session_id and (current or completed or (not self.qq and self.work.history_enabled
                     and _eligible(row) and (self.current is None or (row.created_at, row.message_id) < (self.current.created_at, self.current.message_id)))):
                 text = message_text(row, include_attachments=self.policy.include_attachments == "explicit")
-                if text:
-                    text = persona_context_prefix(row) + text
                 if text:
                     return {"source_id": source_id, "time": row.created_at.isoformat(), "text": text}
         elif source_id.startswith("batch:") and self.qq:

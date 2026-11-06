@@ -214,4 +214,4 @@ def test_current_images_reach_provider_and_stream_events_have_stable_identity(ap
     history_images = [m for m in upstream.calls[-1]["messages"] if isinstance(m["content"], list)]
     assert len(history_images) == 1
     assert history_images[0]["content"][1] == upstream.calls[-2]["messages"][-1]["content"][1]
-    assert upstream.calls[-1]["messages"][-1]["content"] == "[Persona: 00000000-0000-4000-8000-000000000004]\nagain"
+    assert upstream.calls[-1]["messages"][-1]["content"] == "again"

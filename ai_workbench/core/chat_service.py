@@ -208,7 +208,7 @@ class ChatService:
 
     def tools_for_run(self, config: ResolvedChatConfig) -> list[str]:
         from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
-        from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES, MEMORY_READ_TOOLS
+        from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
         allowed = list(config.tools_allowed)
         if config.session_kind == "qqbot":
             allowed = [name for name in allowed
@@ -217,8 +217,9 @@ class ChatService:
                 and (name != "qq_generate_image" or config.qq_image_generation_allowed)]
         if config.context_policy.strategy == "history_retrieval" and config.harness_enabled:
             allowed.extend(sorted(CONTEXT_TOOL_NAMES))
-        if config.session_kind == "normal" and config.harness_enabled and config.memory_enabled:
-            allowed.extend(sorted(MEMORY_TOOL_NAMES if config.memory_learning == "automatic" else MEMORY_READ_TOOLS))
+        if (config.session_kind == "normal" and config.harness_enabled and config.memory_enabled
+            and config.memory_learning == "automatic"):
+            allowed.extend(sorted(MEMORY_TOOL_NAMES))
         return allowed
 
     def session_response(self, session: Session) -> dict:

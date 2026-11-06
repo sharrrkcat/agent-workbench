@@ -77,6 +77,10 @@ generation and verification commands are in the [README](../README.md#http-contr
 - [QQBot](ai/TASK_QQBOT.md)
 - [Farkle](ai/TASK_FARKLE.md)
 
+## Active plans
+
+- [Native reasoning output](plans/NATIVE_REASONING.md): planned engine-owned reasoning separation for local chat; implementation has not started.
+
 ## Supporting documents
 
 - [README](../README.md): source installation, model setup, API examples and verification.

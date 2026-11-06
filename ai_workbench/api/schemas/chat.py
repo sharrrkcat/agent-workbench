@@ -232,7 +232,7 @@ class RunCancellation(ApiModel):
 
 class ToolCatalogItem(ApiModel):
     name: str
-    scope: Literal["general", "qqbot"]
+    scope: Literal["general", "qqbot", "memory"]
     description: str
     parameters: JsonObject = Field(description="Draft 2020-12 JSON object schema for this built-in tool's arguments.")
     risk: Literal["safe", "file", "network"]

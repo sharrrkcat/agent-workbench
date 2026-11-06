@@ -99,7 +99,7 @@ def test_sources_preserve_character_persona_order_unicode_and_selection(presenta
     assert snapshot["request"] == upstream.calls[-1]
     sources = {source["kind"]: source for source in snapshot["sources"]}
     assert sources["character"]["text"].strip() == "CHARACTER😀 private"
-    assert sources["persona"]["text"].endswith("用户背景😀\n</user_persona>")
+    assert sources["persona"]["text"].endswith("用户背景😀\n</user_background>")
     assert sources["character"]["start"] < sources["persona"]["start"]
     assert "knowledge" not in sources and "knowledge_snippet" not in sources
     assert sources["history"]["text"] == "recent"
@@ -124,9 +124,16 @@ def test_included_attachments_are_retained_until_the_last_snapshot_is_deleted(pr
     assert set(snapshot["attachment_ids"]) == {image["uri"].split("/")[-1], file["uri"].split("/")[-1]}
     assert "base64" not in json.dumps(snapshot)
     assert next(source for source in snapshot["sources"] if (source.get("attachment") or {}).get("type") == "image")["char_count"] == 0
-    assert any("文件内容😀" in source["text"] for source in snapshot["sources"] if source["kind"] == "attachment")
+    file_source = next(source for source in snapshot['sources'] if (source.get('attachment') or {}).get('type') == 'file')
+    assert file_source['text'].endswith('文件内容😀')
+    assert file_source['start'] == len('看看😀\n\n')
+    assert file_source['char_count'] == len(file_source['text'])
     assert upstream.calls[-1]["messages"][-1]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
     follow_up = send(client, session, "follow up")
+    history_snapshot = details(client, follow_up['run'])[0]
+    history_file = next(source for source in history_snapshot['sources'] if (source.get('attachment') or {}).get('type') == 'file')
+    assert history_file['text'] == '[file attachment: note.txt]'
+    assert history_file['start'] == file_source['start'] and history_file['char_count'] == len(history_file['text'])
     user_id = result["run"]["metadata"]["input_message_id"]
     ok(client.delete(f"/api/messages/{user_id}"))
     assert resolve_attachment_uri(image["uri"]).exists()

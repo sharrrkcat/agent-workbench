@@ -17,13 +17,13 @@ for (const locale of ['en', 'zh-CN']) {
         await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
         // The browser server also registers a synthetic tool for approval tests.
         const catalog = (await (await request.get('/api/tools')).json()).filter((tool: { name: string }) => !tool.name.startsWith('test_'));
-        expect(catalog).toHaveLength(6);
+        expect(catalog).toHaveLength(11);
         await request.patch('/api/tools/web/settings', { data: { api_key: '' } });
         await page.route('**/api/tools', (route) => route.fulfill({ json: catalog }));
         for (const scope of ['general', 'qqbot']) {
           await page.goto(`/settings?tab=tools${scope === 'general' ? '' : '&view=qqbot'}`);
           const panel = page.getByRole('region', { name: words.toolCatalog, exact: true });
-          const selected = catalog.filter((tool: { scope: string }) => tool.scope === scope);
+          const selected = catalog.filter((tool: { scope: string }) => tool.scope === scope || (scope === 'general' && tool.scope === 'memory'));
           await expect(panel.locator('[data-slot="item-title"]')).toHaveText(selected.map((tool: { name: string }) => tool.name));
           await expect(panel.locator('input[type="password"], .tool-output, .tool-call-form')).toHaveCount(0);
           await expect(panel.getByRole('button', { name: words.toolSchema, exact: true })).toHaveCount(selected.length);

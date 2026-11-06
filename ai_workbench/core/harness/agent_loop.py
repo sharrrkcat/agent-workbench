@@ -331,7 +331,6 @@ class HarnessAgentLoop:
                 def capture(payload):
                     if state.memory is not None:
                         self.durable_memory.check(state.memory)
-                        self.durable_memory.capture_evidence(state.memory, context_budget.trace)
                     save_capture(payload)
                 calls = await asyncio.wait_for(self._model_turn(profile.id, request, run.run_id, draft, metrics, capture, context_budget),
                                                timeout=budget.check())
@@ -513,7 +512,8 @@ class HarnessAgentLoop:
         private = call.function.name in CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES
         public_data = ({"private_context": True, "count": len((outcome.data or {}).get("items", [])),
                         "truncated": bool((outcome.data or {}).get("truncated"))} if private else outcome.data)
-        if call.function.name in MEMORY_TOOL_NAMES and (outcome.data or {}).get("pending"):
+        if (call.function.name in MEMORY_TOOL_NAMES and state.memory is not None and outcome.status == "success"
+            and any(mutation.entry.id == (outcome.data or {}).get("id") for mutation in state.memory.mutations)):
             public_data["pending"] = True
         part = make_tool_result_part(call.id, call.function.name, outcome.status, public_data,
                                     error_code=outcome.error_code, error_message=outcome.error_message,

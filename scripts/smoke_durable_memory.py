@@ -61,10 +61,17 @@ async def smoke(root, profile_id, model_ref, window):
                     snapshots.append(state.runs.get_context_snapshot(step.step_id))
                 except KeyError:
                     pass  # Dispatch can fail before a request snapshot is created.
+            run_record = state.runs.get_run(result.run_id)
+            wire = json.dumps([{'messages': snapshot.request.messages, 'tools': snapshot.request.tools}
+                for snapshot in snapshots], ensure_ascii=False, default=lambda value: value.model_dump(mode='json'))
+            model_context_clean = all(marker.lower() not in wire.lower() for marker in (
+                '[User-message ID:', 'character', 'persona', 'session=', 'session_id', 'pool',
+                'revision', 'source_message_ids', 'pending',
+                run_record.character_id, run_record.persona_id, owner.session_id))
             case = {'name': name, 'success': result.success, 'error_code': result.error_code,
                 'error': result.error, 'answer': result.data, 'elapsed_seconds': time.monotonic() - started,
                 'model_calls': len(calls), 'tools': [step.metadata.get('tool_name') for step in steps if step.kind == 'tool'],
-                'memory_outcome': state.runs.get_run(result.run_id).metadata.get('memory'),
+                'memory_outcome': run_record.metadata.get('memory'), 'model_context_clean': model_context_clean,
                 'usage': [step.metadata.get('llm') for step in calls],
                 'requests': [snapshot.model_dump(mode='json') for snapshot in snapshots if snapshot is not None]}
             report['cases'].append(case)
@@ -74,9 +81,11 @@ async def smoke(root, profile_id, model_ref, window):
         source = session()
         saved = await run('confirmed_fact', source,
             'Please use memory_write to remember this confirmed preference: I prefer oolong tea. '
-            'My tea cupboard label is CEDAR-184. Save this as one fact using the user-message ID provided in this request.')
+            'My tea cupboard label is CEDAR-184. Save this as one fact.')
         entries = state.memory.list().items
         report['saved_count'] = len(entries)
+        follow_up = await run('same_conversation_recall', source,
+            'Which tea do I prefer? Answer briefly.')
         recalled = await run('sibling_recall', session(memory_learning='manual', harness_enabled=False),
             'Which tea do I prefer, and what is my tea cupboard label? Answer only from confirmed facts, otherwise say unknown.')
         other = state.personas.create(Persona(name='Memory acceptance second user'))
@@ -89,8 +98,9 @@ async def smoke(root, profile_id, model_ref, window):
         report['unconfirmed_count_unchanged'] = state.memory.list().total == before
         isolated_wire = json.dumps(isolated['requests'], ensure_ascii=False)
         report['other_persona_excluded'] = 'CEDAR-184' not in isolated_wire
-        report['success'] = (all(case['success'] for case in report['cases']) and len(entries) == 1
+        report['success'] = (all(case['success'] and case['model_context_clean'] for case in report['cases']) and len(entries) == 1
             and saved['memory_outcome'] == {'status': 'saved', 'count': 1}
+            and 'oolong' in str(follow_up['answer']).lower()
             and 'CEDAR-184' in str(recalled['answer']) and 'oolong' in str(recalled['answer']).lower()
             and report['other_persona_excluded'] and report['unconfirmed_count_unchanged'])
     finally:
@@ -106,8 +116,9 @@ async def smoke(root, profile_id, model_ref, window):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument('--profile-id', help='Use a saved configuration without changing it; provider inference is billable.')
-    parser.add_argument('--model-ref', default='llms/Qwen3.5-0.8B-GGUF')
+    model = parser.add_mutually_exclusive_group(required=True)
+    model.add_argument('--profile-id', help='Use a representative saved configuration; provider inference is billable.')
+    model.add_argument('--model-ref', help='Existing representative GGUF directory relative to data/models; do not use a 0.8B LLM.')
     parser.add_argument('--window', type=int, default=16384)
     args = parser.parse_args()
     asyncio.run(smoke(args.root.resolve(), args.profile_id, args.model_ref, args.window))

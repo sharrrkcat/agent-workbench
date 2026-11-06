@@ -37,7 +37,7 @@ def test_empty_business_tools_support_checkpoint_and_private_history(harness_cli
     result = send(client, session, 'The budget is 47 EUR')
     assert result['success'], result
     assert len(seen) == 2
-    assert {tool['function']['name'] for tool in seen[0]['tools']} == CONTEXT_TOOL_NAMES | {'memory_list', 'memory_read', 'memory_search'}
+    assert {tool['function']['name'] for tool in seen[0]['tools']} == CONTEXT_TOOL_NAMES
     saved = state.sessions.get_retrieval_state(session['session_id'])
     assert saved.memory.text == 'SECRET_MEMORY: budget 47 EUR'
     assert state.runs.get_harness_state(result['run']['run_id']) == {}
@@ -117,7 +117,8 @@ def test_search_empty_page_continues_and_reads_old_fact(harness_client):
     client, upstream, _ = harness_client
     session, state = setup(client)
     for i in range(180):
-        state.messages.add_message(session['session_id'], role='user', parts=[make_text_part('UNIQUE_OLD_FACT=47' if i == 0 else f'noise_{i}')])
+        state.messages.add_message(session['session_id'], role='user', speaker_id=session['effective']['persona_id'],
+            parts=[make_text_part('UNIQUE_OLD_FACT=47' if i == 0 else f'noise_{i}')])
     seen = []
     def respond(request):
         seen.append(request)
@@ -131,6 +132,8 @@ def test_search_empty_page_continues_and_reads_old_fact(harness_client):
             assert len(data['items']) == 1 and not data['has_more']
             return completion(tool_call('context_read', {'source_id': data['items'][0]['source_id']}, 'read'))
         assert 'UNIQUE_OLD_FACT=47' in data['text'] and not data['truncated']
+        assert '[Persona:' not in data['text'] and session['effective']['persona_id'] not in json.dumps(request)
+        assert 'message=' not in data['text']
         return completion(content='47')
     upstream.turns = [respond] * 4
     result = send(client, session, 'Find the old fact')
