@@ -199,7 +199,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const character = await response.json();
       try {
         await page.goto(`/characters/${character.id}/settings`);
-        await page.getByLabel(labels.characterName, { exact: true }).fill('Unsaved Playground guard');
+        const temperature = page.getByLabel(words(locale, 'llm').params.temperature, { exact: true });
+        await temperature.fill('3');
         await openSidebar(page);
         await page.locator('.session-sidebar').getByRole('button', { name: 'Playground', exact: true }).click();
         await answerConfirmation(page, false, locale);
@@ -208,15 +209,15 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           await expect(page.locator('[data-sidebar="trigger"]')).toHaveAttribute('aria-expanded', 'true');
           await page.keyboard.press('Escape');
         }
-        await expect(page.getByLabel(labels.characterName, { exact: true })).toHaveValue('Unsaved Playground guard');
+        await expect(temperature).toHaveValue('3');
         await openSidebar(page);
         await page.locator('.session-sidebar').getByRole('button', { name: 'Playground', exact: true }).click();
         await answerConfirmation(page, true, locale);
         await expect(page).toHaveURL('/playground');
         if (width === 390) await expect(page.locator('[data-sidebar="trigger"]')).toHaveAttribute('aria-expanded', 'false');
         await page.goBack();
-        await expect(page.getByLabel(labels.characterName, { exact: true })).toHaveValue(character.name);
-        await page.getByLabel(labels.characterName, { exact: true }).fill('Browser forward guard');
+        await expect(temperature).toHaveValue('');
+        await temperature.fill('4');
         await page.evaluate(() => history.forward());
         await answerConfirmation(page, false, locale);
         await expect(page).toHaveURL(`/characters/${character.id}/settings`);

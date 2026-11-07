@@ -23,8 +23,9 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       const owner = await json(request.post('/api/characters', { data: { kind: 'normal', name: `Memory tools ${locale} ${width}`,
         harness_enabled: true, memory_learning: 'automatic', tools_allowed: ['web_fetch'] } }));
       await page.goto(`/characters/${owner.id}/settings`);
-      await page.getByRole('tab', { name: words.configuration, exact: true }).click();
-      const characterTools = page.locator('[data-character-tab="configuration"]');
+      await page.getByRole('button', { name: words.characterCards.configureTools, exact: true }).click();
+      const characterTools = page.getByRole('form', { name: words.tools, exact: true });
+      const characterDrawer = page.getByRole('dialog', { name: words.harnessSettings, exact: true });
       await groupChecked(characterTools, true);
       await characterTools.getByRole('checkbox', { name: 'memory_write', exact: true }).click();
       await groupChecked(characterTools, false);
@@ -32,15 +33,18 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await characterTools.getByRole('checkbox', { name: 'memory_read', exact: true }).click();
       await groupChecked(characterTools, true);
       await characterTools.getByRole('checkbox', { name: 'memory_forget', exact: true }).click();
-      await page.getByRole('button', { name: words.save, exact: true }).click();
+      await characterTools.getByRole('button', { name: words.save, exact: true }).click();
       await expect.poll(async () => (await json(request.get(`/api/characters/${owner.id}`))).memory_learning).toBe('manual');
-      await page.getByRole('tab', { name: memory.title, exact: true }).click();
+      await characterDrawer.getByRole('button', { name: words.close, exact: true }).click();
+      await expect(characterDrawer).toBeHidden();
       await expect(page.getByRole('switch', { name: memory.readEnabled, exact: true })).toBeChecked();
       await page.getByRole('button', { name: memory.automatic, exact: true }).click();
-      await page.getByRole('tab', { name: words.configuration, exact: true }).click();
+      await page.getByRole('button', { name: words.characterCards.configureTools, exact: true }).click();
       await groupChecked(characterTools, true);
-      await page.getByRole('button', { name: words.save, exact: true }).click();
+      await expect(characterTools.getByRole('button', { name: words.save, exact: true })).toBeDisabled();
       await expect.poll(async () => (await json(request.get(`/api/characters/${owner.id}`))).memory_learning).toBe('automatic');
+      await characterDrawer.getByRole('button', { name: words.close, exact: true }).click();
+      await expect(characterDrawer).toBeHidden();
 
       const session = await json(request.post(`/api/characters/${owner.id}/sessions`, { data: { title: 'Memory tool switches' } }));
       await page.goto(`/characters/${owner.id}?session=${session.session_id}`);

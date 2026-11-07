@@ -10,7 +10,7 @@
   "previous": "Previous", "next": "Next", "pageCount": "{{count}} memories", "details": "Details", "origin": "Original source",
   "deletedSource": "Deleted source", "manualSource": "Manually added", "sourceMessage": "Source message {{id}}",
   "sourceSession": "Session: {{name}} · {{id}}", "sourceRun": "Run: {{id}}",
-  "sourceSessionId": "Source Session ID",
+  "actions": "Memory actions",
   "version": "Version {{revision}}", "own": "Own memories", "readable": "Readable memories", "manage": "Manage memories",
   "readEnabled": "Read memories", "learning": "Learning", "manual": "Manual", "automatic": "Automatic",
   "harnessRequired": "Automatic learning requires Harness and a model that supports tools.",

@@ -6,8 +6,9 @@ import { chatApi } from '../../api/chat';
 import { PersonaAvatar } from './ConfigurationFields';
 import { errorText } from '../settings/resources/ResourceUI';
 
-export function IdentityAvatarField({ name, value, disabled, onChange, onBusyChange, onError }: {
+export function IdentityAvatarField({ name, value, persistedValue, disabled, onChange, onBusyChange, onError }: {
   name: string; value: string | null; disabled: boolean; onChange: (id: string | null) => void;
+  persistedValue?: string | null;
   onBusyChange: (busy: boolean) => void; onError: (error: string) => void;
 }) {
   const { t } = useTranslation('personas');
@@ -15,6 +16,7 @@ export function IdentityAvatarField({ name, value, disabled, onChange, onBusyCha
   const temporary = useRef(new Set<string>());
   const live = useRef(true);
   const [uploading, setUploading] = useState(false);
+  useEffect(() => { if (persistedValue) temporary.current.delete(persistedValue); }, [persistedValue]);
   useEffect(() => {
     live.current = true;
     return () => {

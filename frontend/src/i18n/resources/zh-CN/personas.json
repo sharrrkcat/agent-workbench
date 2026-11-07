@@ -62,6 +62,16 @@
     "qqbot": "QQBot"
   },
   "characterSettings": "角色设置",
+  "characterCards": {
+    "profile": "角色资料",
+    "editProfile": "编辑角色资料",
+    "emptyPrompt": "暂无系统提示词",
+    "execution": "模型与执行",
+    "configureTools": "配置工具",
+    "resourceUnavailable": "暂不可用",
+    "memorySettings": "记忆设置",
+    "memories": "记忆列表"
+  },
   "characterName": "角色名称",
   "characterPrompt": "系统提示词",
   "createCharacter": "创建角色",

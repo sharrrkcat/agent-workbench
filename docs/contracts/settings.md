@@ -23,9 +23,7 @@ Field labels/titles use explicit 12px medium text; descriptions, field errors an
 actions have at least 44px targets, except the compact [chat tick rail](chat-context.md#messages-and-attachments), [Farkle names](farkle.md#inventory-and-chooser-views) and [history dice widths](farkle.md#match-history); Checkbox/Switch keep compact marks with
 expanded targets and associated labels. Field labels/descriptions are connected to controls. Forms retain native required/range validation and existing blank,
 null and zero semantics. Hidden file inputs remain behind visible Buttons.
-Controlled Select preserves groups, disabled options, empty choices and missing
-selected records. Model references use editable Comboboxes for local directories or provider IDs;
-their text is the field value, including values outside the suggestions. Detected file paths are read-only.
+Controlled Select preserves groups, disabled options, empty choices and missing selected records. Model references use editable Comboboxes for local directories or provider IDs; their text is the field value, including values outside the suggestions. Detected file paths are read-only.
 
 Detail/editor Tabs use arrow keys for focus and Enter/Space for activation. Model
 and resource subpages retain mounted drafts; hidden panels and their overlays
@@ -33,11 +31,7 @@ leave the focus order and accessibility tree. Other editors retain parent-owned 
 Advanced Collapsible fields stay mounted; invalid submissions expand their
 section and focus the field. CUDA mode uses a single-selection ToggleGroup.
 
-Base UI owns modal focus, Escape, backdrops and scroll locking. Dialogs use Mira's
-default width; large editors use `max-w-3xl`. Side margins and scrollable bodies
-bound them to the viewport; settings editor actions stay in a fixed footer.
-Nested Select/Combobox and confirmation popups return
-focus to their trigger, and busy editors retain their close restrictions.
+Base UI owns modal focus, Escape, backdrops and scroll locking. Dialogs use Mira's default width; large editors use `max-w-3xl`. Side margins and scrollable bodies bound them to the viewport; dialog editor actions stay in a fixed footer. Nested Select/Combobox and confirmation popups return focus to their trigger, and busy editors retain their close restrictions.
 
 `useConfirmDialog` returns an owner-rendered AlertDialog and `Promise<boolean>`. Overlapping requests, cancellation, Escape, hidden owners and unmount resolve false.
 One request may be pending per owner; acceptance continues the action. Model cache clearing uses this confirmation workflow.
@@ -75,7 +69,13 @@ Both routes support direct loading and guarded history. Repeated selection adds 
 
 [QQBot](qqbot.md#character-editor-and-conversation) owns its creation/settings tabs, field layout and conversation controls; shared navigation remains here.
 
-Memory management filters Character/General facts by Persona, original Session ID and status, with details, edit/forget/publish and message-to-memory drafts. Details retain original Character/Session/Run/message IDs and identify deleted sources. Character/Session Memory tabs expose defaults, isolation and own/readable views. Bound Persona is read-only. Deleting a normal owner previews records and requires separate local/General choices; retained private Session facts explicitly become shared. [Chat/context](chat-context.md#durable-memory) owns destinations and conflicts. The one-row chat header contains sidebar toggle, title and session settings; Persona lives in the session dialog. The composer owns model, Harness and Reasoning controls.
+Normal Character settings use Profile, Model & execution, Context, Knowledge, Worldbook and Memory settings cards without Tabs or a header New session action. The 64rem container uses 16px gaps and one/two/three columns at content widths below 640px, 640px and 960px; independent stacks pair Profile/Memory, Model & execution/Context, and Knowledge/Worldbook, with no shared row heights. At two columns the resource pair sits together below the first two stacks; mobile stacks all three groups. Memory management spans the full bottom row. Creation keeps its tabbed dialog.
+The Profile card uses 32px vertical and 20px horizontal padding, centers its saved avatar/name and clamps its prompt to four lines. Profile, Harness tools and advanced context controls use separate Drawers. Settings icons follow the Harness and Automatic compaction labels; on-demand history puts its advanced icon beside History strategy. Profile uses a 30rem right Drawer with its prompt filling the space down to the fixed Save footer; tools/advanced use 24rem. Below 768px they become bounded bottom drawers; Profile uses 90dvh. Close/save actions stay fixed and long form content scrolls.
+Execution, Context and Memory cards have no Save buttons: selections/switches PATCH immediately; valid numeric edits save on blur or Enter, with blank temperature meaning model default. Invalid numbers remain unsubmitted. Pending saves disable edits/departure; failed autosaves restore the confirmed fields and show a local error. Profile/tools/advanced Drawers save explicitly, retain failed drafts and confirm discarding unsaved changes on close. Changed-field PATCH responses preserve other drafts; memory learning shares one draft/baseline. Saving/uploading blocks close/departure; route/history/unload guards cover drafts.
+Knowledge and Worldbook are unavailable placeholders without binding reads or edits; saves leave stored mounts untouched. They do not imply empty mounts or active retrieval.
+
+Character settings place Add memory in Memory settings. Character and global Memory management share a single-row search InputGroup and Persona, Pool, Status and Session dropdowns; the global page also filters Character. Narrow toolbars scroll horizontally. Session options list existing normal conversations and filter by original Session ID; deleted origins remain identifiable in source details. Refreshes retain the displayed list, and unchanged filters do not request it again. Management and Session lists size to their content; empty results keep the message and pagination together without reserving viewport height.
+Memory rows keep summary and Persona badge visible when collapsed; expanded cards contain the fact with 12px top padding below the summary row and bottom-right source-info/action icons. Original source opens a Dialog with attribution, pool and revision; the menu provides edit, publish and delete, with publication disabled for General records. Session readable views remain read-only. Source details retain original Character/Session/Run/message IDs and identify deleted sources. Message actions open memory drafts. Character cards and Session Memory tabs expose defaults and isolation; Sessions also have own/readable views. Bound Persona is read-only. Deleting a normal owner previews records and requires separate local/General choices; retained private Session facts explicitly become shared. [Chat/context](chat-context.md#durable-memory) owns destinations and conflicts. The one-row chat header contains sidebar toggle, title and session settings; Persona lives in the session dialog. The composer owns model, Harness and Reasoning controls.
 The message column is at most 48rem wide, with an independent scroller and aligned fixed composer/status area.
 Assistant bodies align with both composer edges; user messages align with its right edge. Avatars are 48px square and their top edges align with the entire identity header box. They sit outside
 the body column. Below 61rem of chat width, avatars and names share a row above each body, left-aligned
@@ -207,7 +207,7 @@ Defaults and execution belong to Models.
 ## Other domains
 
 Persona editors manage name/avatar/background, with protected User in the same list and no delete action.
-Normal Character editors have Profile, Configuration and Resources tabs, with required type selection on creation.
+Normal Character creation retains Profile, Configuration, Resources and Memory tabs after required type selection; existing Character settings use the cards described above.
 Session dialogs edit user Persona, model, temperature, reasoning, Harness, tools and context through sparse overrides;
 resource controls replace complete lists and explain that mounts do not participate in chat. Each field can restore
 Character inheritance. QQ uses its dedicated editor and permits no ordinary Session overrides.

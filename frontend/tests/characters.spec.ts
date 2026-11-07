@@ -105,6 +105,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await characterRow.getByRole('button', { name: labels.characterActions.replace('{{name}}', character.name), exact: true }).click();
         await page.getByRole('menuitem', { name: labels.characterSettings, exact: true }).click();
         await expect(page).toHaveURL(`/characters/${character.id}/settings`);
+        await page.getByRole('button', { name: labels.characterCards.editProfile, exact: true }).click();
         await page.getByLabel(labels.characterName, { exact: true }).fill('Unsaved Character');
         await page.evaluate(() => history.back());
         await answerConfirmation(page, false, locale);

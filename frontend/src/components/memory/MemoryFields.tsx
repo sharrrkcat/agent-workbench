@@ -5,13 +5,13 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-export function MemorySelect({ label, value, options, onChange, disabled = false }: {
-  label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean;
+export function MemorySelect({ label, value, options, onChange, disabled = false, compact = false }: {
+  label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; compact?: boolean;
 }) {
   const id = useId();
-  return <Field><FieldLabel htmlFor={id}>{label}</FieldLabel>
-    <Select value={value} items={options} disabled={disabled} onValueChange={(next) => { if (next !== null) onChange(next); }}>
-      <SelectTrigger id={id}><SelectValue /></SelectTrigger>
+  return <Field className={compact ? 'memory-filter' : undefined}><FieldLabel htmlFor={id} className={compact ? 'sr-only' : undefined}>{label}</FieldLabel>
+    <Select value={value} items={options} disabled={disabled} onValueChange={(next) => { if (next !== null && next !== value) onChange(next); }}>
+      <SelectTrigger id={id}><SelectValue>{compact ? `${label}: ${options.find((option) => option.value === value)?.label ?? value}` : undefined}</SelectValue></SelectTrigger>
       <SelectContent><SelectGroup>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectGroup></SelectContent>
     </Select>
   </Field>;

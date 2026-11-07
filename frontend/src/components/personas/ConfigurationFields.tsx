@@ -17,7 +17,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { ArrowDown, ArrowUp, ShieldCheck, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 
 import type { ContextPolicy, Persona, SessionGenerationParameters } from '../../types/chat';
 import type { ModelProfile } from '../../types/models';
@@ -136,8 +136,9 @@ export function PersonaField({ label, personas, value, onChange, invalid = false
   );
 }
 
-export function ContextFields({ value, onChange, showAttachments = true, harnessEnabled = false, className }: {
+export function ContextFields({ value, onChange, showAttachments = true, harnessEnabled = false, className, advancedAction, onMessageLimitCommit }: {
   value: ContextPolicy; onChange: (value: ContextPolicy) => void; showAttachments?: boolean; harnessEnabled?: boolean; className?: string;
+  advancedAction?: ReactNode; onMessageLimitCommit?: () => void;
 }) {
   const { t } = useTranslation('personas');
   const id = useId();
@@ -145,16 +146,16 @@ export function ContextFields({ value, onChange, showAttachments = true, harness
   const messageLimit = value.message_window.max_messages;
   const invalidMessageLimit = !Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 10000;
   const retrieval = value.strategy === 'history_retrieval';
-  const budget = retrieval ? value.retrieval : value.compaction;
-  const patch = (change: Partial<ContextPolicy['compaction'] & ContextPolicy['retrieval']>) =>
-    onChange(retrieval ? { ...value, retrieval: { ...value.retrieval, ...change } } : { ...value, compaction: { ...value.compaction, ...change } });
   return <FieldGroup className={className}>
     <Field orientation="horizontal">
       <Switch id={id + '-history'} checked={value.history_enabled} onCheckedChange={(history_enabled) => onChange({ ...value, history_enabled })} />
       <FieldLabel htmlFor={id + '-history'}>{t('historyEnabled')}</FieldLabel>
     </Field>
     <Field>
-      <FieldLabel id={id + '-strategy-label'}>{t('historyStrategy')}</FieldLabel>
+      <div className="flex items-center gap-1">
+        <FieldLabel id={id + '-strategy-label'}>{t('historyStrategy')}</FieldLabel>
+        {retrieval ? advancedAction : null}
+      </div>
       <ToggleGroup variant="segmented" className="flex-wrap" value={[value.strategy]} aria-labelledby={id + '-strategy-label'}
         onValueChange={(next) => { if (next[0]) onChange({ ...value, strategy: next[0] as ContextPolicy['strategy'] }); }}>
         <ToggleGroupItem value="token_budget">{t('tokenBudget')}</ToggleGroupItem>
@@ -167,37 +168,19 @@ export function ContextFields({ value, onChange, showAttachments = true, harness
       <FieldLabel htmlFor={id + '-message-limit'}>{t('maxMessages')}</FieldLabel>
       <Input id={id + '-message-limit'} type="number" required min={1} max={10000} step={1} disabled={disabled}
         aria-invalid={invalidMessageLimit} value={Number.isNaN(messageLimit) ? '' : messageLimit}
+        onBlur={onMessageLimitCommit ? (event) => { if (event.currentTarget.validity.valid) onMessageLimitCommit(); } : undefined}
+        onKeyDown={onMessageLimitCommit ? (event) => { if (event.key === 'Enter') { event.preventDefault(); if (event.currentTarget.reportValidity()) event.currentTarget.blur(); } } : undefined}
         onChange={(event) => onChange({ ...value, message_window: { max_messages: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) } })} />
     </Field> : <>
-    {!retrieval ? <Field orientation="horizontal">
-      <Switch id={id + '-compaction'} checked={value.compaction.enabled} onCheckedChange={(enabled) => patch({ enabled })} />
+    {!retrieval ? <Field orientation="horizontal" className={advancedAction ? '[&>[data-slot=field-label]]:flex-none' : undefined}>
+      <Switch id={id + '-compaction'} checked={value.compaction.enabled} onCheckedChange={(enabled) => onChange({ ...value, compaction: { ...value.compaction, enabled } })} />
       <FieldLabel htmlFor={id + '-compaction'}>{t('autoCompaction')}</FieldLabel>
+      {advancedAction}
     </Field> : null}
-    <Collapsible>
+    {!advancedAction ? <Collapsible>
       <CollapsibleTrigger render={<Button variant="ghost" size="sm" />}>{t('compactionAdvanced')}</CollapsibleTrigger>
-      <CollapsibleContent>
-        <FieldGroup className="grid gap-4 sm:grid-cols-2">
-          {(['trigger_percent', 'target_percent'] as const).map((key) => {
-            const number = budget[key];
-            const invalid = !Number.isInteger(number) || number <= 0 || number >= 100
-              || budget.target_percent >= budget.trigger_percent;
-            return <Field key={key} data-invalid={invalid || undefined}>
-              <FieldLabel htmlFor={id + key}>{t(key === 'trigger_percent' ? (retrieval ? 'retrievalTrigger' : 'compactionTrigger') : (retrieval ? 'retrievalTarget' : 'compactionTarget'))}</FieldLabel>
-              <Input id={id + key} type="number" required min={key === 'trigger_percent' ? budget.target_percent + 1 : 1}
-                max={key === 'target_percent' ? budget.trigger_percent - 1 : 99} step={1}
-                aria-invalid={invalid} value={Number.isNaN(number) ? '' : number}
-                onChange={(event) => patch({ [key]: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) })} />
-            </Field>;
-          })}
-          <Field>
-            <FieldLabel htmlFor={id + '-summary'}>{t(retrieval ? 'checkpointTokens' : 'compactionSummaryTokens')}</FieldLabel>
-            <Input id={id + '-summary'} type="number" min={1} step={1} placeholder={t('compactionAutomatic')}
-              value={(retrieval ? value.retrieval.max_checkpoint_tokens : value.compaction.max_summary_tokens) ?? ''}
-              onChange={(event) => patch({ [retrieval ? 'max_checkpoint_tokens' : 'max_summary_tokens']: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })} />
-          </Field>
-        </FieldGroup>
-      </CollapsibleContent>
-    </Collapsible>
+      <CollapsibleContent><ContextAdvancedFields value={value} onChange={onChange} /></CollapsibleContent>
+    </Collapsible> : null}
     </>}
     {showAttachments ? <Field orientation="horizontal">
       <Switch id={id + '-attachments'} checked={value.include_attachments === 'explicit'}
@@ -207,12 +190,43 @@ export function ContextFields({ value, onChange, showAttachments = true, harness
   </FieldGroup>;
 }
 
+export function ContextAdvancedFields({ value, onChange }: { value: ContextPolicy; onChange: (value: ContextPolicy) => void }) {
+  const { t } = useTranslation('personas');
+  const id = useId();
+  const retrieval = value.strategy === 'history_retrieval';
+  const budget = retrieval ? value.retrieval : value.compaction;
+  const patch = (change: Partial<ContextPolicy['compaction'] & ContextPolicy['retrieval']>) =>
+    onChange(retrieval ? { ...value, retrieval: { ...value.retrieval, ...change } } : { ...value, compaction: { ...value.compaction, ...change } });
+  return <FieldGroup className="grid gap-4 sm:grid-cols-2">
+    {(['trigger_percent', 'target_percent'] as const).map((key) => {
+      const number = budget[key];
+      const invalid = !Number.isInteger(number) || number <= 0 || number >= 100
+        || budget.target_percent >= budget.trigger_percent;
+      return <Field key={key} data-invalid={invalid || undefined}>
+        <FieldLabel htmlFor={id + key}>{t(key === 'trigger_percent' ? (retrieval ? 'retrievalTrigger' : 'compactionTrigger') : (retrieval ? 'retrievalTarget' : 'compactionTarget'))}</FieldLabel>
+        <Input id={id + key} type="number" required min={key === 'trigger_percent' ? budget.target_percent + 1 : 1}
+          max={key === 'target_percent' ? budget.trigger_percent - 1 : 99} step={1}
+          aria-invalid={invalid} value={Number.isNaN(number) ? '' : number}
+          onChange={(event) => patch({ [key]: event.currentTarget.value === '' ? NaN : Number(event.currentTarget.value) })} />
+      </Field>;
+    })}
+    <Field>
+      <FieldLabel htmlFor={id + '-summary'}>{t(retrieval ? 'checkpointTokens' : 'compactionSummaryTokens')}</FieldLabel>
+      <Input id={id + '-summary'} type="number" min={1} step={1} placeholder={t('compactionAutomatic')}
+        value={(retrieval ? value.retrieval.max_checkpoint_tokens : value.compaction.max_summary_tokens) ?? ''}
+        onChange={(event) => patch({ [retrieval ? 'max_checkpoint_tokens' : 'max_summary_tokens']: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })} />
+    </Field>
+  </FieldGroup>;
+}
+
 export function GenerationFields({
   value,
   onChange,
+  onCommit,
 }: {
   value: SessionGenerationParameters;
   onChange: (value: SessionGenerationParameters) => void;
+  onCommit?: () => void;
 }) {
   const { t } = useTranslation('llm');
   const { t: p } = useTranslation('personas');
@@ -228,6 +242,8 @@ export function GenerationFields({
         step="any"
         placeholder={p('modelDefault')}
         value={value.temperature ?? ''}
+        onBlur={onCommit ? (event) => { if (event.currentTarget.validity.valid) onCommit(); } : undefined}
+        onKeyDown={onCommit ? (event) => { if (event.key === 'Enter') { event.preventDefault(); if (event.currentTarget.reportValidity()) event.currentTarget.blur(); } } : undefined}
         onChange={(event) => onChange({ temperature: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) })}
       />
     </Field>

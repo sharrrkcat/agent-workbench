@@ -32,7 +32,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await editor.getByRole('button', { name: labels.save, exact: true }).click();
       await expect(editor).toBeHidden();
       await settings.getByRole('button', { name: 'Oolong preference', exact: true }).click();
-      await settings.getByRole('button', { name: labels.publish, exact: true }).click();
+      await settings.getByRole('button', { name: labels.actions, exact: true }).click();
+      await page.getByRole('menuitem', { name: labels.publish, exact: true }).click();
       await answerConfirmation(page, true, locale);
       const stored = await json(request.get('/api/memories', { params: { character_id: owner.id } }));
       expect(stored.total).toBe(2);
@@ -84,10 +85,10 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await editor.getByRole('button', { name: labels.save, exact: true }).click();
       await expect(editor).toBeHidden();
       await page.goto(`/characters/${owner.id}/settings`);
-      await page.getByRole('tab', { name: labels.title, exact: true }).click();
-      await page.getByLabel(labels.sourceSessionId, { exact: true }).fill(session.session_id);
+      await chooseOption(page.getByRole('combobox', { name: labels.session, exact: true }), session.title);
       await page.getByRole('button', { name: 'Saved from message', exact: true }).click();
-      await page.getByRole('button', { name: labels.edit, exact: true }).click();
+      await page.getByRole('button', { name: labels.actions, exact: true }).click();
+      await page.getByRole('menuitem', { name: labels.edit, exact: true }).click();
       const edit = page.getByRole('dialog', { name: labels.edit, exact: true });
       await edit.getByLabel(labels.body, { exact: true }).fill('Manually confirmed oolong preference.');
       await edit.getByRole('button', { name: labels.save, exact: true }).click();
@@ -103,17 +104,107 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       await deletion.getByRole('button', { name: labels.deleteConfirm, exact: true }).click();
       await expect(deletion).toBeHidden();
       await page.goto(`/characters/${target.id}/settings`);
-      await page.getByRole('tab', { name: labels.title, exact: true }).click();
       await page.getByRole('button', { name: 'Saved from message', exact: true }).click();
       await expect(page.getByText('Manually confirmed oolong preference.', { exact: true })).toBeVisible();
-      await expect(page.getByText(labels.sourceSession.replace('{{name}}', labels.deletedSource).replace('{{id}}', session.session_id), { exact: true })).toBeVisible();
       await page.screenshot({ path: info.outputPath('transferred-memory.png'), animations: 'disabled' });
+      await page.getByRole('button', { name: labels.origin, exact: true }).click();
+      const source = page.getByRole('dialog', { name: labels.origin, exact: true });
+      await expect(source.getByText(labels.sourceSession.replace('{{name}}', labels.deletedSource).replace('{{id}}', session.session_id), { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape'); await expect(source).toBeHidden();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await page.getByRole('button', { name: labels.forget, exact: true }).click();
+      await page.getByRole('button', { name: labels.actions, exact: true }).click();
+      await page.getByRole('menuitem', { name: labels.delete, exact: true }).click();
       await answerConfirmation(page, true, locale);
       await expect(page.getByText(labels.empty, { exact: true })).toBeVisible();
       expect(errors).toEqual([]);
       await json(request.delete(`/api/characters/${target.id}`));
+    });
+
+    test('compact toolbar preserves refresh positions and empty cards fit their content', async ({ page, request }, info) => {
+      await request.post('/__test__/session');
+      await page.addInitScript((value) => localStorage.setItem('cogita.locale', value), locale);
+      const persona = await json(request.post('/api/personas', { data: { name: 'Memory badge' } }));
+      const owner = await json(request.post('/api/characters', { data: { kind: 'normal', name: 'Memory layout', persona_id: persona.id } }));
+      for (let index = 0; index < 12; index++) await json(request.post('/api/memories', { data: {
+        character_id: owner.id, persona_id: persona.id, pool: 'character', summary: `Fact ${index}`, body: `Remembered fact ${index}.`, pinned: false,
+      } }));
+      let release: (() => void) | undefined;
+      try {
+        for (const destination of [`/characters/${owner.id}/settings`, '/settings?tab=memory']) {
+          await page.goto(destination);
+          const manager = page.locator('[data-memory-manager]');
+          if (destination.startsWith('/characters/')) {
+            const settings = page.locator('[data-character-card="memory"]');
+            await settings.getByRole('button', { name: labels.add, exact: true }).click();
+            const editor = page.getByRole('dialog', { name: labels.add, exact: true });
+            await expect(editor).toBeVisible(); await editor.getByRole('button', { name: labels.cancel, exact: true }).click();
+            await expect(editor).toBeHidden();
+            await expect(manager.getByRole('button', { name: labels.add, exact: true })).toHaveCount(0);
+          } else await chooseOption(manager.getByRole('combobox', { name: labels.character, exact: true }), owner.name);
+          await expect(manager.locator('[data-memory-id]')).toHaveCount(12);
+          await expect(manager.locator('.memory-results')).toHaveAttribute('aria-busy', 'false');
+          const row = manager.locator('[data-memory-id]').first();
+          const summary = row.getByRole('button').first();
+          await expect(summary.locator('[data-slot="badge"]')).toHaveText(persona.name);
+          await summary.click();
+          await expect(row.getByText(/Remembered fact/)).toBeVisible();
+          await expect(row.locator('[data-slot="card"]')).toContainText(/Remembered fact/);
+          await row.getByRole('button', { name: labels.origin, exact: true }).click();
+          const source = page.getByRole('dialog', { name: labels.origin, exact: true });
+          await expect(source.getByText(labels.manualSource, { exact: true })).toBeVisible();
+          await page.keyboard.press('Escape'); await expect(source).toBeHidden();
+          await expect(row.getByRole('button', { name: labels.origin, exact: true })).toBeFocused();
+          await row.getByRole('button', { name: labels.actions, exact: true }).click();
+          await expect(page.getByRole('menuitem')).toHaveCount(3);
+          await page.keyboard.press('Escape'); await expect(page.getByRole('menu')).toBeHidden();
+          const toolbar = manager.locator('.memory-toolbar');
+          const selectors = toolbar.getByRole('combobox');
+          const controls = await toolbar.locator('.memory-search input, [data-slot="select-trigger"]').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
+          expect(Math.max(...controls) - Math.min(...controls)).toBeLessThan(2);
+          await toolbar.scrollIntoViewIfNeeded();
+          const top = (await toolbar.boundingBox())!.y;
+          let reads = 0;
+          const gate = new Promise<void>((resolve) => { release = resolve; });
+          await page.route('**/api/memories?**', async (route) => { reads++; await gate; await route.continue(); });
+          for (const filter of [labels.persona, labels.pool, labels.status, labels.session]) {
+            const trigger = selectors.filter({ hasText: filter });
+            await trigger.click();
+            expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
+            await page.locator('[data-slot="select-content"][data-open]').getByRole('option', {
+              name: filter === labels.pool && destination.startsWith('/characters/') ? labels.characterPool : labels.all, exact: true,
+            }).click();
+            await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+            expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
+          }
+          expect(reads).toBe(0);
+          await chooseOption(manager.getByRole('combobox', { name: labels.status, exact: true }), labels.active);
+          await expect(manager.locator('.memory-results')).toHaveAttribute('aria-busy', 'true');
+          await expect(row.getByText(/Remembered fact/)).toBeVisible();
+          expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
+          release!();
+          await expect(manager.locator('.memory-results')).toHaveAttribute('aria-busy', 'false');
+          await expect(row.getByText(/Remembered fact/)).toBeVisible();
+          expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
+          await page.unroute('**/api/memories?**');
+          await chooseOption(manager.getByRole('combobox', { name: labels.status, exact: true }), labels.needs_review);
+          await expect(manager.getByText(labels.empty, { exact: true })).toBeVisible();
+          expect((await manager.boundingBox())!.height).toBeLessThan(320);
+          await expect(manager.getByRole('button', { name: labels.previous, exact: true })).toBeInViewport();
+          await toolbar.evaluate((element) => { element.scrollLeft = 0; });
+          await page.screenshot({ path: info.outputPath(destination.startsWith('/characters/') ? 'character-memory-empty.png' : 'settings-memory-empty.png'), animations: 'disabled' });
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+          await chooseOption(manager.getByRole('combobox', { name: labels.status, exact: true }), labels.all);
+          await expect(manager.locator('[data-memory-id]')).toHaveCount(12);
+          await summary.click(); await expect(row.getByText(/Remembered fact/)).toBeVisible();
+          await toolbar.evaluate((element) => { element.scrollLeft = 0; });
+          await page.screenshot({ path: info.outputPath(destination.startsWith('/characters/') ? 'character-memory-cards.png' : 'settings-memory-cards.png'), animations: 'disabled' });
+        }
+      } finally {
+        release?.();
+        const preview = await json(request.get(`/api/characters/${owner.id}/memory-deletion-preview`));
+        await json(request.delete(`/api/characters/${owner.id}`, { data: { expected_revision: preview.revision, local: 'delete', general: 'delete' } }));
+        await request.delete(`/api/personas/${persona.id}`);
+      }
     });
   });
 }

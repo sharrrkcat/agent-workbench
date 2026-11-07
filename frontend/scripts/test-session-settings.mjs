@@ -15,7 +15,7 @@ const load = createModuleLoader({
   'react': mockModule({ ...React, default: React, useId: () => 'context-test' }),
   'react-i18next': mockModule({ useTranslation: (namespace) => ({ t: i18n.getFixedT(null, namespace) }) }),
 });
-const { ToolsField, ContextFields, GenerationFields, ModelField, ModelSelect } = (
+const { ToolsField, ContextFields, ContextAdvancedFields, GenerationFields, ModelField, ModelSelect } = (
   await load('../src/components/personas/ConfigurationFields.tsx')
 ).exports;
 const { Checkbox } = (await load('../src/components/ui/checkbox.tsx')).exports;
@@ -84,7 +84,8 @@ const historyOff = descendants(ContextFields({ value: { ...policy, history_enabl
 assert.equal(historyOff.filter((node) => node.type === Switch).length, 2);
 assert.ok(historyOff.filter((node) => node.type === Switch).every((node) => !node.props.disabled));
 const { Input: ContextInput } = (await load('../src/components/ui/input.tsx')).exports;
-const inputs = descendants(fields).filter((node) => node.type === ContextInput);
+const advanced = descendants(fields).find((node) => node.type === ContextAdvancedFields);
+const inputs = descendants(ContextAdvancedFields(advanced.props)).filter((node) => node.type === ContextInput);
 assert.equal(inputs.length, 3);
 inputs[0].props.onChange({ currentTarget: { value: '90' } });
 assert.deepEqual(changedPolicy.compaction, { ...policy.compaction, trigger_percent: 90 });

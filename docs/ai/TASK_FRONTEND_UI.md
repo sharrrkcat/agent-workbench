@@ -68,7 +68,8 @@ chat-attachments.spec.ts covers immediate submission, acceptance/restoration, mi
 message-queue.spec.ts covers queue/edit/attachment controls, scrolling, navigation, approvals and refresh in both locales/viewports;
 test-message-queue.mjs covers FIFO, submission reconciliation, terminal pauses and history/settings races.
 personas.spec.ts covers independent user CRUD, protected User, background and avatar editing.
-character-editor.spec.ts covers normal creation/settings rendering, saving, sidebar expansion and empty-state sizing in both locales/viewports.
+character-editor.spec.ts covers normal creation/settings rendering, saving, sidebar expansion and empty-state sizing in both locales/viewports. character-settings.spec.ts covers independent card columns, expanding prompt, separate Drawer widths, partial autosaves, shared memory, discard, failed/busy saves and avatar retention.
+memory.spec.ts covers single-row filters, retained scroll positions for unchanged/pending results, compact empty cards, Persona badges, source Dialogs, action menus, publication, transfer and deletion in Character/global management and Session views.
 characters.spec.ts covers explicit type creation, ownership, whole-list mounts, inherited settings and
 browser-local session restoration. persona-history.spec.ts covers original user authors, live profile
 changes, deletion and retry behavior. test-persona-identity.mjs covers list/event races;

@@ -301,7 +301,7 @@ export default function App() {
               <QQResourcesPage key={characterRoute.characterId} characterId={characterRoute.characterId} search={location.search}
                 onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} /> :
             characterRoute.characterId && isCharacterSettingsRoute(location) ?
-              <CharacterPage characterId={characterRoute.characterId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} onCreateSession={createSession} /> :
+              <CharacterPage characterId={characterRoute.characterId} onNavigate={navigate} onLeaveGuardChange={setLeaveSettings} /> :
               activeCharacter?.kind === 'qqbot' && !currentSession && !sessionLoad ? <>
                 <header className="topbar"><SidebarTrigger /><h1 className="chat-title">{activeCharacter.name}</h1></header>
                 <ResourceEmpty>{t('qq.emptyConversations')}</ResourceEmpty>

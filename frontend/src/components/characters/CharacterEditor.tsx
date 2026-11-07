@@ -16,7 +16,7 @@ import { usePersonasStore } from '../../store/usePersonasStore';
 import { useCharactersStore } from '../../store/useCharactersStore';
 import { useCogitaStore } from '../../store/useCogitaStore';
 import { defaultContextPolicy, USER_PERSONA_ID } from '../../types/chat';
-import type { Character, CharacterKind, NormalCharacter, NormalCharacterInput } from '../../types/characters';
+import type { Character, CharacterKind, NormalCharacterInput } from '../../types/characters';
 import type { HarnessTool } from '../../types/tools';
 import { BindingsField, ContextFields, GenerationFields, ModelField, PersonaField, ToolsField } from '../personas/ConfigurationFields';
 import { IdentityAvatarField } from '../personas/IdentityAvatarField';
@@ -24,7 +24,6 @@ import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settin
 import type { SettingsNavigate } from '../settings/navigation';
 import { QQBotEditor } from './QQBotEditor';
 import { MemoryReadField, MemoryLearningField } from '../memory/MemoryFields';
-import { MemoryManager } from '../memory/MemoryManager';
 
 type EditorProps = {
   character?: Character; kind: CharacterKind; onSaved: (character: Character) => void; onNavigate: SettingsNavigate;
@@ -32,11 +31,7 @@ type EditorProps = {
 };
 export function CharacterEditor(props: EditorProps) {
   if (props.kind === 'qqbot') return <QQBotEditor {...props} character={props.character?.kind === 'qqbot' ? props.character : undefined} />;
-  return <NormalCharacterEditor {...props} character={props.character?.kind === 'normal' ? props.character : undefined} />;
-}
-export function characterInput(character: NormalCharacter): NormalCharacterInput {
-  const { id: _id, is_protected: _protected, created_at: _created, updated_at: _updated, ...values } = character;
-  return values;
+  return <NormalCharacterCreationForm {...props} />;
 }
 export function newCharacterInput(tools: HarnessTool[], modelId: string | null): NormalCharacterInput {
   return { kind: 'normal', name: '', avatar_attachment_id: null, system_prompt: '', persona_id: USER_PERSONA_ID,
@@ -46,14 +41,14 @@ export function newCharacterInput(tools: HarnessTool[], modelId: string | null):
 }
 type Resource = { id: string; name: string; enabled: boolean };
 
-function NormalCharacterEditor({ character, onSaved, onLeaveGuardChange, dialog = false }: Omit<EditorProps, 'character'> & { character?: NormalCharacter }) {
+function NormalCharacterCreationForm({ onSaved, onLeaveGuardChange }: Pick<EditorProps, 'onSaved' | 'onLeaveGuardChange'>) {
   const { t } = useTranslation('personas');
   const { confirm, confirmation } = useConfirmDialog();
   const formId = useId();
   const personas = usePersonasStore((state) => state.personas);
   const profiles = useModelsStore((state) => state.profiles);
-  const [draft, setDraft] = useState<NormalCharacterInput | null>(() => character ? characterInput(character) : null);
-  const [baseline, setBaseline] = useState(() => JSON.stringify(character ? characterInput(character) : null));
+  const [draft, setDraft] = useState<NormalCharacterInput | null>(null);
+  const [baseline, setBaseline] = useState('null');
   const [bases, setBases] = useState<Resource[]>([]);
   const [books, setBooks] = useState<Resource[]>([]);
   const [tools, setTools] = useState<HarnessTool[]>([]);
@@ -99,17 +94,16 @@ function NormalCharacterEditor({ character, onSaved, onLeaveGuardChange, dialog 
     if (!draft || status.current.busy) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const saved = await useCharactersStore.getState().save(draft, character?.id);
+      const saved = await useCharactersStore.getState().save(draft);
       if (!live.current || saved.kind !== 'normal') return;
-      const value = characterInput(saved);
-      setDraft(value); setBaseline(JSON.stringify(value)); status.current.dirty = false;
+      setBaseline(JSON.stringify(draft)); status.current.dirty = false;
       setNotice(t('characterSaved')); void useCogitaStore.getState().refreshCurrent(); onSaved(saved);
     } catch (reason) { if (live.current) setError(errorText(reason)); }
     finally { if (live.current) setBusy(false); }
   }
   if (!draft) return <ResourceLoading error={error} retry={() => setReload((n) => n + 1)} />;
   const update = (values: Partial<NormalCharacterInput>) => setDraft((current) => current ? { ...current, ...values } : current);
-  return <Tabs value={tab} onValueChange={setTab} render={<form className={dialog ? 'settings-dialog-form' : 'settings-form'}
+  return <Tabs value={tab} onValueChange={setTab} render={<form className="settings-dialog-form"
     onInvalidCapture={(event) => { const panel = (event.target as HTMLElement).closest<HTMLElement>('[data-character-tab]'); if (panel) setTab(panel.dataset.characterTab!); }}
     onSubmit={(event) => { event.preventDefault(); void save(); }} />}>
     <Feedback error={error} notice={notice} />
@@ -119,7 +113,7 @@ function NormalCharacterEditor({ character, onSaved, onLeaveGuardChange, dialog 
       <TabsTrigger value="resources">{t('resources')}</TabsTrigger>
       <TabsTrigger value="memory">{t('memory:title')}</TabsTrigger>
     </TabsList>
-    <div className={dialog ? 'settings-dialog-body' : 'py-4'}><FieldSet disabled={busy}><FieldGroup>
+    <div className="settings-dialog-body"><FieldSet disabled={busy}><FieldGroup>
       <TabsContent value="identity" keepMounted data-character-tab="identity"><FieldGroup>
         <IdentityAvatarField name={draft.name} value={draft.avatar_attachment_id} disabled={busy}
           onChange={(id) => update({ avatar_attachment_id: id })} onBusyChange={setUploading} onError={setError} />
@@ -151,7 +145,6 @@ function NormalCharacterEditor({ character, onSaved, onLeaveGuardChange, dialog 
         <Field orientation="horizontal"><Switch id={formId + '-external-memory'} checked={draft.memory_external_isolation}
           onCheckedChange={(memory_external_isolation) => update({ memory_external_isolation })} />
           <FieldLabel htmlFor={formId + '-external-memory'}>{t('memory:externalIsolation')}</FieldLabel></Field>
-        {character ? <MemoryManager characterId={character.id} /> : null}
       </FieldGroup></TabsContent>
     </FieldGroup></FieldSet></div>
     <div className="flex justify-end"><Button type="submit" disabled={busy || uploading || loading || !dirty}><Save data-icon="inline-start" />{t('save')}</Button></div>

@@ -62,6 +62,16 @@
     "qqbot": "QQBot"
   },
   "characterSettings": "Character settings",
+  "characterCards": {
+    "profile": "Profile",
+    "editProfile": "Edit character profile",
+    "emptyPrompt": "No system prompt",
+    "execution": "Model & execution",
+    "configureTools": "Configure tools",
+    "resourceUnavailable": "Not available yet",
+    "memorySettings": "Memory settings",
+    "memories": "Memories"
+  },
   "characterName": "Character name",
   "characterPrompt": "System prompt",
   "createCharacter": "Create character",
