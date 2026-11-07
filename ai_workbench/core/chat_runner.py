@@ -18,7 +18,7 @@ from ai_workbench.core.history_retrieval import HistoryRetrieval
 from ai_workbench.core.retrieval_tools import RetrievalTools
 from ai_workbench.core.qq_context import QQContextHistory, build_qq_context, runtime_prompt
 from ai_workbench.core.models.context_budget import ChatContextBudget
-from ai_workbench.core.context_snapshot import append_system_block, capture_context, omit_context_images, snapshot_attachment
+from ai_workbench.core.context_snapshot import capture_context, omit_context_images, snapshot_attachment
 from ai_workbench.core.schema.context_snapshot import ContextExclusion, ContextSource, ContextTrace
 from ai_workbench.core.models.errors import ModelError
 from ai_workbench.core.models.chat_support import chat_reasoning_mode, local_chat_support
@@ -32,8 +32,8 @@ from ai_workbench.core.schema.run import RunStatus, RunStepStatus
 from ai_workbench.core.instructions import UiLanguage, date_instruction
 from ai_workbench.core.time import utc_now
 from ai_workbench.core.web_tools import WEB_TOOL_NAMES
-from ai_workbench.core.durable_memory import DurableMemory, MEMORY_INSTRUCTION
-from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
+from ai_workbench.core.durable_memory import DurableMemory
+from ai_workbench.core.memory_prompt import add_memory_section
 from ai_workbench.core.harness.schema import ToolExecutionError
 
 
@@ -200,9 +200,7 @@ class ChatRunner:
             if qq and user.metadata["qq_trigger_kind"] not in {"followup", "icebreaker"}:
                 allowed = [name for name in allowed if name != "qq_skip_reply"]
             tools = request_tools(self.harness_loop.registry, allowed, qq=qq) if use_harness else None
-            if MEMORY_TOOL_NAMES.intersection(allowed):
-                context, memory_source = append_system_block(context, context_trace, MEMORY_INSTRUCTION, "instruction")
-                memory_source.id = "memory-instruction"
+            context = add_memory_section(config, context, context_trace, allowed)
             instruction = date_instruction(ui_language, date.fromisoformat(web_date)) if WEB_TOOL_NAMES.intersection(allowed) else ""
             max_image_bytes = self.app_settings.get().max_image_size_mb * 1024 * 1024
             context_service = self.retrieval if config.context_policy.strategy == "history_retrieval" else self.compaction

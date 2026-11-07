@@ -97,6 +97,9 @@ def test_default_prompt_is_creation_only_and_runtime_is_per_call(qq_client):
     for number, call in enumerate(upstream.calls):
         system, = [m for m in call["messages"] if m["role"] == "system"]
         assert system["content"].count("Current batch=") == 1
+        assert system["content"].count('# QQ\n<qq_runtime>') == 1
+        assert system["content"].endswith('</qq_runtime>')
+        assert '<memory_index>' not in system["content"]
         assert f"confirmed sends={number}/2" in system["content"]
         assert "your QQ account=12345" in system["content"] and "target=7788" in system["content"]
     snapshot = state.runs.get_config_snapshot(run.run_id)

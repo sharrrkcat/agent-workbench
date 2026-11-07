@@ -71,7 +71,7 @@ class SnapshotRequest(GenerationParameters):
 
 
 SourceKind = Literal[
-    "system", "instruction", "character", "persona",
+    "system", "instruction", "character", "persona", "memory_instruction", "memory_index",
     "history", "current_input", "attachment", "tool_call", "tool_result", "tools", "qq_runtime", "summary", "context_memory", "context_retrieval", "durable_memory",
 ]
 

@@ -17,6 +17,44 @@ for (const locale of ['en', 'zh-CN']) {
         await page.goto('/');
       });
 
+      test('shows memory instructions and the summary index in prompt order', async ({ page, request }, info) => {
+        const persona = await (await request.post('/api/personas', { data: { name: 'Index user', background: 'Persona 中文😀' } })).json();
+        const owner = await (await request.post('/api/characters', { data: { kind: 'normal', name: 'Index character',
+          system_prompt: 'Character 😀', persona_id: persona.id, harness_enabled: true,
+          tools_allowed: ['web_search'], memory_learning: 'automatic' } })).json();
+        const session = await (await request.post(`/api/characters/${owner.id}/sessions`, { data: {} })).json();
+        for (const [pool, summary] of [['character', 'Own summary 中文😀'], ['general', 'General summary']]) {
+          expect((await request.post('/api/memories', { data: { character_id: owner.id, persona_id: persona.id,
+            pool, summary, body: 'BODY-ONLY-NOT-IN-INDEX' } })).ok()).toBe(true);
+        }
+        await page.goto(`/characters/${owner.id}?session=${session.session_id}`);
+        await page.locator('.composer textarea').fill('memory index context');
+        await page.locator('.composer textarea').press('Enter');
+        await page.getByRole('button', { name: title, exact: true }).last().click();
+        const dialog = page.getByRole('dialog', { name: title });
+        const instruction = dialog.locator('[data-context-source=memory_instruction]');
+        const index = dialog.locator('[data-context-source=memory_index]');
+        await expect(instruction).toContainText(zh ? '记忆指令' : 'Memory instruction');
+        await expect(index).toContainText(zh ? '记忆索引' : 'Memory index');
+        const order = await dialog.locator('[data-context-source]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-context-source'))
+          .filter((kind) => ['instruction', 'character', 'persona', 'memory_instruction', 'memory_index'].includes(kind!)));
+        expect(order).toEqual(['instruction', 'character', 'persona', 'memory_instruction', 'memory_index']);
+        await index.click();
+        await expect(dialog.locator('.context-text')).toContainText('Your own:');
+        await expect(dialog.locator('.context-text')).toContainText('Own summary 中文😀');
+        await expect(dialog.locator('.context-text')).toContainText('General summary');
+        await expect(dialog.locator('.context-text')).not.toContainText('BODY-ONLY');
+        expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+        await page.screenshot({ path: info.outputPath('memory-index-context.png'), animations: 'disabled' });
+        await page.keyboard.press('Escape');
+        expect((await request.patch(`/api/sessions/${session.session_id}`, { data: { overrides: { memory_learning: 'manual' } } })).ok()).toBe(true);
+        expect((await request.post(`/api/sessions/${session.session_id}/messages`, { data: { content: 'memory tools disabled' } })).ok()).toBe(true);
+        await page.reload();
+        await page.getByRole('button', { name: title, exact: true }).last().click();
+        await expect(index).toBeVisible();
+        await expect(instruction).toHaveCount(0);
+      });
+
       test('captures calls lazily, keeps exact request data and restores focus', async ({ page, request }, info) => {
         const contextRequests: string[] = [];
         page.on('request', (req) => { if (/\/steps\/[^/]+\/context$/.test(req.url())) contextRequests.push(req.url()); });
@@ -155,6 +193,7 @@ for (const locale of ['en', 'zh-CN']) {
 
       test('closes on approval resume and stays closed when the answer finishes', async ({ page, request }) => {
         await page.locator('.composer textarea').fill('approval');
+        await expect(page.getByRole('button', { name: zh ? '发送' : 'Send', exact: true })).toBeEnabled();
         await page.locator('.composer textarea').press('Enter');
         const reply = page.locator('article[data-run-id]').last();
         const trigger = reply.getByRole('button', { name: title, exact: true });
@@ -202,6 +241,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.route('**/*contextTokens.worker*.js', async (route) => { await workerGate; await route.continue(); });
         page.on('request', (req) => { if (req.url().includes('contextTokens.worker')) workerLoads++; });
         await page.locator('.composer textarea').fill('Hello, world!');
+        await expect(page.getByRole('button', { name: zh ? '发送' : 'Send', exact: true })).toBeEnabled();
         await page.locator('.composer textarea').press('Enter');
         const trigger = page.getByRole('button', { name: title, exact: true });
         await expect(trigger).toBeVisible();

@@ -105,13 +105,16 @@ class ChatContextBudget:
         facts, calls = memory_units(request, self.trace)
         if not facts and not calls:
             return request
-        # Old memory tool pairs leave first; low-priority injected facts follow.
+        # Old memory tool pairs leave first; low-priority index entries follow.
         # A pair is removed as a unit, even inside a mixed tool batch.
         removals = calls + list(reversed(facts))
-        bare, _ = remove_memory(request, self.trace, removals)
+        bare, bare_trace = remove_memory(request, self.trace, removals)
         base_stats = await self.measure(profile, bare, adapter, reference_tokens)
         allowance = max(0, min(1024, base_stats.input_budget_tokens // 10,
             base_stats.input_budget_tokens - base_stats.input_tokens))
+        if allowance == 0:
+            self.trace.sources, self.trace.exclusions = bare_trace.sources, bare_trace.exclusions
+            return bare
         async def fits(cut):
             candidate, provenance = remove_memory(request, self.trace, removals[:cut])
             stats = await self.measure(profile, candidate, adapter, reference_tokens)
@@ -134,7 +137,7 @@ class ChatContextBudget:
     def _history_groups(self):
         # An old system message can share its slot with newly appended instructions.
         fixed = {s.message_index for s in self.trace.sources if s.kind in {
-            "instruction", "character", "persona", "current_input", "qq_runtime"}}
+            "instruction", "character", "persona", "memory_instruction", "memory_index", "current_input", "qq_runtime"}}
         groups = {}
         for source in self.trace.sources:
             if source.kind == "history" and source.message_index not in fixed:

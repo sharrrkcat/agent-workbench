@@ -23,6 +23,17 @@ view = contextPresentation({ sources: [source('sys', 'system'), source('qq', 'qq
   source('character', 'character', 'sys'), source('input', 'current_input')], exclusions: [] });
 assert.deepEqual(view.byParent.get('sys').map((item) => item.kind), ['character', 'qq_runtime']);
 
+// Actual offsets own ordering; the two instruction blocks occupy different positions.
+const positioned = (id, kind, start, parent_id = 'sys') => ({ ...source(id, kind, parent_id), message_index: 0, start, end: start + 5 });
+view = contextPresentation({ sources: [source('sys', 'system'), positioned('memory-index', 'memory_index', 200),
+  positioned('history-instruction', 'instruction', 300), positioned('instruction', 'instruction', 0),
+  positioned('memory-instruction', 'memory_instruction', 100), positioned('character', 'character', 40),
+  positioned('general', 'durable_memory', 250, 'memory-index'), positioned('own', 'durable_memory', 220, 'memory-index')],
+  exclusions: [{ kind: 'persona', reason: 'empty' }] });
+assert.deepEqual(view.byParent.get('sys').map((item) => item.id), ['instruction', 'character', 'empty:persona',
+  'memory-instruction', 'memory-index', 'history-instruction']);
+assert.deepEqual(view.byParent.get('memory-index').map((item) => item.id), ['own', 'general']);
+
 let response;
 globalThis.self = { postMessage: (value) => { response = value; } };
 await load('../src/components/messages/contextTokens.worker.ts');

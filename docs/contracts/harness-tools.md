@@ -44,13 +44,12 @@ The catalog exposes memory_list, memory_search, memory_read, memory_write and me
 All five switches in Character, Session and composer tool settings share memory_learning: automatic enables
 the group; manual disables it. The Memory tab edits the same setting. Ordinary tools remain independent.
 Memory reads enabled plus automatic learning and Harness are required to provide the complete group,
-including with an empty business allowlist. Disabling the group preserves automatic recall of existing facts.
+including with an empty business allowlist. Disabling the group preserves the summary-only Memory index.
 Memory tools remain unavailable to direct/slash calls, QQ and public inference. Enabling the group never enables Harness.
 They consume existing business-round/time limits; no separate execution budget or auxiliary call is added.
 List/search return at most 20 summaries; read accepts at most eight IDs. Complete request counting
 bounds retained memory results with the [recall allowance](chat-context.md#durable-memory).
-Tools derive identity from the Run. Model instructions request lasting user-confirmed facts, with most
-turns saving nothing; updates reuse IDs, and guesses, temporary suggestions and secrets must not be saved.
+Tools derive identity from the Run. The <memory_instruction> block follows Persona only when tools are available after capability checks. It requests relevant summary use, body reads when needed, lasting user-confirmed facts or explicit remember requests, one fact per entry, and usually no changes. Updates reuse IDs; forget handles user requests or confirmed invalid facts. Guesses, temporary suggestions and secrets must not be saved.
 At most eight mutations stage privately; subsequent own-ID reads see the overlay. New records cannot
 target General. Update/forget requires a model-managed current-Session record; the backend uses versions
 recorded by recall/list/search/read or the latest staged candidate. Unread records require a read first.
@@ -62,9 +61,9 @@ facts. Tools and dispatch recheck revoked references; already-dispatched request
 Private memory call/result payloads never become ordinary quoted history or compaction input.
 Model writes accept summary/body and optional id; forget accepts id. Source-message and revision arguments
 are rejected. Model results expose only IDs, content, dates and paging/truncation; mutations return only id.
-Recall headers contain id/date. Ownership, revisions and pending/commit details stay out of model input.
+Automatic index lines contain only ID and summary; tool reads retain their dates. Ownership IDs, revisions and pending/commit details stay out of model input.
 New/updated model facts retain origin.run_id with empty evidence; message-evidence collection is absent.
-Qwen3.5-9B GGUF CUDA acceptance covers confirmed capture, same-conversation/sibling recall, Persona isolation, suggestion exclusion and clean model requests. Select representative models explicitly; 0.8B LLMs are excluded.
+Nemotron Bolt E4B GGUF CUDA acceptance covers confirmed capture, same-conversation recall, summary-only sibling recall, explicit body reads, Persona isolation, suggestion exclusion and clean model requests. The README owns commands; 0.8B LLMs are excluded.
 Failed Runs commit nothing. Same-Run exact duplicates reuse a candidate.
 Model tool reliability and semantic entailment remain limitations; literal recall misses paraphrases.
 

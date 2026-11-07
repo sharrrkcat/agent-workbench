@@ -8,27 +8,16 @@ from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolExecutionError, ToolSpec
 from ai_workbench.core.retrieval_tools import clip_text
 from ai_workbench.core.memory_service import forget
+from ai_workbench.core.memory_prompt import render_memory_index, replace_memory_index
 from ai_workbench.core.schema.memory import (MemoryRunState, MemoryMutation, MemoryEntry,
     MemoryOrigin, MemoryWrite, MemoryContextReference)
 from ai_workbench.core.schema.context_snapshot import ContextSource, ContextExclusion
 from ai_workbench.core.time import utc_now
 
 
-MEMORY_INSTRUCTION = """Use remembered facts when relevant; read more with memory tools when needed.
-Save only lasting user-confirmed facts, preferences and decisions. Most turns need no memory changes.
-Update an existing entry by its ID instead of adding a duplicate. Do not save guesses, temporary
-suggestions or secrets.
-"""
-
-
 def reference(entry, reason):
     return MemoryContextReference(id=entry.id, revision=entry.revision, character_id=entry.character_id,
         persona_id=entry.persona_id, session_id=entry.session_id, pool=entry.pool, reason=reason)
-
-
-def render_fact(entry, *, body=False):
-    return (f"[Remembered fact; id={entry.id}; "
-        f"date={entry.observed_at.date().isoformat()}]\n{entry.summary}" + ("\n" + entry.body if body and entry.body != entry.summary else ""))
 
 
 class DurableMemory:
@@ -95,7 +84,7 @@ class DurableMemory:
                 "date": entry.observed_at.date().isoformat()} for entry in entries], "total": total,
                 "next_offset": offset + len(entries) if offset + len(entries) < total else None}
         # Each tool result is bounded here; the complete per-call memory budget
-        # also counts older results and injected facts before model dispatch.
+        # also counts older results and index entries before model dispatch.
         count = self.models.reference_tokens.count_text
         allowance = max(0, work.allowance - 64)
         while result["items"] and count(json.dumps(result, ensure_ascii=False)) > allowance:
@@ -144,27 +133,21 @@ class DurableMemory:
                     seen.add(entry.id)
                     selected.append((reason, entry))
         result, provenance = deepcopy(context), trace.model_copy(deep=True)
-        at = max(0, len(result) - 1)
-        added, sources, used = [], [], 0
+        sources = []
+        count = self.models.reference_tokens.count_text
+        empty_cost = count(render_memory_index()[0])
         for reason, entry in selected:
-            text = render_fact(entry, body=True)
-            cost = self.models.reference_tokens.count_text(text) + 12
-            if used + cost > work.allowance:
-                text = render_fact(entry)
-                cost = self.models.reference_tokens.count_text(text) + 12
-            if used + cost > work.allowance:
+            source = ContextSource(id="memory:" + entry.id, kind="durable_memory", role="system",
+                reference_id=entry.id, name=" ".join(entry.summary.split()), memory=reference(entry, reason))
+            text, _ = render_memory_index([*sources, source], limited=total > len(sources) + 1)
+            if count(text) - empty_cost > work.allowance:
                 provenance.exclusions.append(ContextExclusion(kind="durable_memory", reason="token_limit", reference_id=entry.id))
                 continue
-            sources.append(ContextSource(id="memory:" + entry.id, kind="durable_memory", role="user",
-                message_index=at + len(added), reference_id=entry.id, memory=reference(entry, reason)))
-            added.append({"role": "user", "content": text})
+            sources.append(source)
             work.references[entry.id] = entry.revision
-            used += cost
-        for source in provenance.sources:
-            if source.message_index is not None and source.message_index >= at:
-                source.message_index += len(added)
-        provenance.sources.extend(sources)
-        result[at:at] = added
+        root = next(source for source in provenance.sources if source.kind == "memory_index")
+        result[root.message_index]["content"] = replace_memory_index(result[root.message_index]["content"],
+            provenance, sources, limited=total > len(sources))
         # Record dependencies before dispatch; later edits invalidate the Run view,
         # including an approval continuation whose context is already materialized.
         self.service.store.track(work.view.session_id, work.references)

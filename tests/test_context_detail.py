@@ -98,8 +98,8 @@ def test_sources_preserve_character_persona_order_unicode_and_selection(presenta
     snapshot = details(client, result["run"])[0]
     assert snapshot["request"] == upstream.calls[-1]
     sources = {source["kind"]: source for source in snapshot["sources"]}
-    assert sources["character"]["text"].strip() == "CHARACTER😀 private"
-    assert sources["persona"]["text"].endswith("用户背景😀\n</user_background>")
+    assert sources["character"]["text"] == "# CHARACTER\n<character>\nCHARACTER😀 private\n</character>"
+    assert sources["persona"]["text"].endswith("用户背景😀\n</user_persona>")
     assert sources["character"]["start"] < sources["persona"]["start"]
     assert "knowledge" not in sources and "knowledge_snippet" not in sources
     assert sources["history"]["text"] == "recent"

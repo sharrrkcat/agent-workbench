@@ -32,7 +32,8 @@ async def smoke(root, profile_id, model_ref, window):
             if original.source.type == 'provider':
                 state.provider_profiles.create(ProviderProfileStore(engine).get(original.source.provider_profile_id))
             profile = original.model_copy(deep=True, update={'id': str(uuid4()), 'alias': 'durable-memory-smoke',
-                'parameters': {**original.parameters, 'max_tokens': 1024, 'temperature': 0}, 'context_window_tokens': window})
+                'parameters': {**original.parameters, 'max_tokens': 1024, 'temperature': 0},
+                'context_window_tokens': window if original.source.type == 'provider' else None})
             if profile.source.type == 'local':
                 supervisor.assert_available()
                 profile.source.execution_options['context_size'] = window
@@ -65,13 +66,16 @@ async def smoke(root, profile_id, model_ref, window):
             wire = json.dumps([{'messages': snapshot.request.messages, 'tools': snapshot.request.tools}
                 for snapshot in snapshots], ensure_ascii=False, default=lambda value: value.model_dump(mode='json'))
             model_context_clean = all(marker.lower() not in wire.lower() for marker in (
-                '[User-message ID:', 'character', 'persona', 'session=', 'session_id', 'pool',
+                '[User-message ID:', 'character_id', 'persona_id', 'session=', 'session_id', 'pool',
                 'revision', 'source_message_ids', 'pending',
                 run_record.character_id, run_record.persona_id, owner.session_id))
+            summary_only = all('CEDAR-184' not in str(message.content) for snapshot in snapshots
+                for message in snapshot.request.messages if message.role == 'system')
             case = {'name': name, 'success': result.success, 'error_code': result.error_code,
                 'error': result.error, 'answer': result.data, 'elapsed_seconds': time.monotonic() - started,
                 'model_calls': len(calls), 'tools': [step.metadata.get('tool_name') for step in steps if step.kind == 'tool'],
                 'memory_outcome': run_record.metadata.get('memory'), 'model_context_clean': model_context_clean,
+                'summary_only_index': summary_only,
                 'usage': [step.metadata.get('llm') for step in calls],
                 'requests': [snapshot.model_dump(mode='json') for snapshot in snapshots if snapshot is not None]}
             report['cases'].append(case)
@@ -80,14 +84,16 @@ async def smoke(root, profile_id, model_ref, window):
 
         source = session()
         saved = await run('confirmed_fact', source,
-            'Please use memory_write to remember this confirmed preference: I prefer oolong tea. '
-            'My tea cupboard label is CEDAR-184. Save this as one fact.')
+            'Please use memory_write to remember this confirmed preference. Use exactly the summary '
+            '"Prefers oolong tea" and the body "The user prefers oolong tea. The tea cupboard label is CEDAR-184."')
         entries = state.memory.list().items
         report['saved_count'] = len(entries)
         follow_up = await run('same_conversation_recall', source,
             'Which tea do I prefer? Answer briefly.')
-        recalled = await run('sibling_recall', session(memory_learning='manual', harness_enabled=False),
-            'Which tea do I prefer, and what is my tea cupboard label? Answer only from confirmed facts, otherwise say unknown.')
+        recalled = await run('sibling_summary_recall', session(memory_learning='manual', harness_enabled=False),
+            'Which tea do I prefer? Answer only from confirmed facts, otherwise say unknown.')
+        body_read = await run('sibling_body_read', session(),
+            'What is my tea cupboard label? Look up the details of my remembered tea preference; do not guess.')
         other = state.personas.create(Persona(name='Memory acceptance second user'))
         isolated = await run('other_persona', session(persona_id=other.id, memory_learning='manual', harness_enabled=False),
             'What is my tea cupboard label? Use only facts attributed to me; say unknown if unavailable.')
@@ -98,10 +104,12 @@ async def smoke(root, profile_id, model_ref, window):
         report['unconfirmed_count_unchanged'] = state.memory.list().total == before
         isolated_wire = json.dumps(isolated['requests'], ensure_ascii=False)
         report['other_persona_excluded'] = 'CEDAR-184' not in isolated_wire
-        report['success'] = (all(case['success'] and case['model_context_clean'] for case in report['cases']) and len(entries) == 1
+        report['success'] = (all(case['success'] and case['model_context_clean'] and case['summary_only_index']
+            for case in report['cases']) and len(entries) == 1
             and saved['memory_outcome'] == {'status': 'saved', 'count': 1}
             and 'oolong' in str(follow_up['answer']).lower()
-            and 'CEDAR-184' in str(recalled['answer']) and 'oolong' in str(recalled['answer']).lower()
+            and 'oolong' in str(recalled['answer']).lower() and not recalled['tools']
+            and 'CEDAR-184' in str(body_read['answer']) and 'memory_read' in body_read['tools']
             and report['other_persona_excluded'] and report['unconfirmed_count_unchanged'])
     finally:
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding='utf-8')

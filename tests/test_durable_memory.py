@@ -216,7 +216,8 @@ def test_harness_stages_then_commits_and_cross_session_recalls(client_pair):
     assert len([event for event in state.run_events.list_events(response["run"]["run_id"]) if event.type == "run_completed"]) == 1
     second = child(client, owner)
     ok(client.post(f"/api/sessions/{second['session_id']}/messages", json={"content": "Which tea do I prefer?"}))
-    assert "The user prefers oolong tea." in json.dumps(upstream.calls[-1])
+    assert f"{entry.id}: Prefers oolong tea" in upstream.calls[-1]['messages'][0]['content']
+    assert "The user prefers oolong tea." not in json.dumps(upstream.calls[-1])
 
 
 def test_memory_tools_switch_as_one_group_without_disabling_recall(client_pair):
@@ -237,7 +238,8 @@ def test_memory_tools_switch_as_one_group_without_disabling_recall(client_pair):
     result = ok(client.post(path + '/messages', json={'content': 'Which tea do I prefer?'}))
     assert result['success'] and state.memory.get(entry.id).revision == 1
     assert {tool['function']['name'] for tool in upstream.calls[-1]['tools']} == {'test_echo'}
-    assert 'The user prefers oolong tea.' in json.dumps(upstream.calls[-1]['messages'])
+    assert f'{entry.id}: Prefers oolong tea' in upstream.calls[-1]['messages'][0]['content']
+    assert 'The user prefers oolong tea.' not in upstream.calls[-1]['messages'][0]['content']
     errors = [part['error_code'] for message in result['messages'] for part in message['parts'] if part['type'] == 'tool_result']
     assert errors == ['TOOL_NOT_ALLOWED', 'TOOL_NOT_ALLOWED']
     # Restoring inheritance enables the whole group again without changing ordinary tools.
@@ -523,7 +525,8 @@ def test_memory_api_boundaries_and_large_collection_pages(client_pair):
     ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'harness_enabled': False, 'memory_learning': 'automatic'}}))
     result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'Recall oolong'}))
     assert result['success'] and 'tools' not in upstream.calls[-1]
-    assert 'Remembered fact' in json.dumps(upstream.calls[-1])
+    assert '<memory_index>' in upstream.calls[-1]['messages'][0]['content']
+    assert 'Remembered fact' not in json.dumps(upstream.calls[-1])
 
 
 def test_forgetting_invalidates_both_checkpoints_and_rejects_stale_resave(client_pair):

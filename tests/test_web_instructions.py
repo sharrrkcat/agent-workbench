@@ -48,10 +48,10 @@ def test_instruction_precedes_persona_in_request_and_snapshot(web_env, monkeypat
     assert sources["instruction"]["parent_id"] == sources["character"]["parent_id"] == sources["system"]["id"]
     assert sources["instruction"]["start"] == 0
     assert sources["character"]["start"] == len(expected) + 2
-    assert sources["character"]["text"] == "CHARACTER😀\nSecond line"
+    assert sources["character"]["text"] == "# CHARACTER\n<character>\nCHARACTER😀\nSecond line\n</character>"
     assert "USER background" in sources["persona"]["text"]
     assert sources["current_input"]["text"] == "Research"
-    assert snapshot["request"]["messages"][0]["content"].startswith(expected + "\n\nCHARACTER😀")
+    assert snapshot["request"]["messages"][0]["content"].startswith(expected + "\n\n# CHARACTER\n<character>")
     assert snapshot["budget"]["input_tokens"] > 0
     assert all(source["char_count"] == len(source["text"]) for source in snapshot["sources"])
     descriptions = "\n".join(tool["function"]["description"] for tool in snapshot["request"]["tools"])

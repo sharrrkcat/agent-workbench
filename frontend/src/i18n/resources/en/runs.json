@@ -141,6 +141,8 @@
       "context_memory": "Working checkpoint",
       "context_retrieval": "Retrieved history",
       "durable_memory": "Durable memory",
+      "memory_instruction": "Memory instruction",
+      "memory_index": "Memory index",
       "character": "Character",
       "persona": "Persona"
     },

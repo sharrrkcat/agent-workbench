@@ -1,7 +1,9 @@
 import type { ContextDetail, ContextSource, ContextSourceKind } from '../../types/context';
 
 export type DisplayContextSource = ContextSource & { empty?: boolean };
-const systemOrder: ContextSourceKind[] = ['instruction', 'character', 'qq_runtime', 'persona'];
+const systemOrder: ContextSourceKind[] = ['instruction', 'character', 'persona', 'memory_instruction', 'memory_index', 'qq_runtime'];
+const rank = (source: DisplayContextSource) => source.id === 'history-instruction' ? 4.5
+  : systemOrder.includes(source.kind) ? systemOrder.indexOf(source.kind) : systemOrder.length;
 
 export function contextPresentation(detail: ContextDetail) {
   const sources: DisplayContextSource[] = detail.sources.map((source) => ({ ...source }));
@@ -25,10 +27,11 @@ export function contextPresentation(detail: ContextDetail) {
     const parent = source.parent_id || null;
     byParent.set(parent, [...(byParent.get(parent) || []), source]);
   }
-  for (const source of sources.filter((item) => item.kind === 'system')) {
+  for (const source of sources.filter((item) => item.kind === 'system' || item.kind === 'memory_index')) {
     byParent.get(source.id)?.sort((a, b) => {
-      const rank = (kind: ContextSourceKind) => systemOrder.includes(kind) ? systemOrder.indexOf(kind) : systemOrder.length;
-      return rank(a.kind) - rank(b.kind);
+      if (a.empty || b.empty) return rank(a) - rank(b);
+      return (a.message_index ?? 0) - (b.message_index ?? 0)
+        || (a.start ?? 0) - (b.start ?? 0) || rank(a) - rank(b);
     });
   }
   return { sources, byParent, exclusions: detail.exclusions.filter((item) => !empty.includes(item)) };

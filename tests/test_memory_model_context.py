@@ -17,7 +17,7 @@ def results(request):
 
 def clean_request(request, owner, session):
     wire = json.dumps({'messages': request['messages'], 'tools': request.get('tools')}, ensure_ascii=False)
-    for text in ('[Persona:', '[User-message ID:', 'character', 'persona', 'session=', 'session_id',
+    for text in ('[Persona:', '[User-message ID:', 'character_id', 'persona_id', 'session=', 'session_id',
                  'pool', 'revision', 'pending', 'source_message_ids', 'commit only', 'until the run succeeds',
                  owner['id'], owner['persona_id'], session['session_id']):
         assert text.lower() not in wire.lower(), text
@@ -77,7 +77,7 @@ def test_clean_memory_protocol_and_sequential_candidate_changes(client_pair, str
     assert entry.origin.run_id == response['run']['run_id'] and entry.origin.evidence == []
     for request in upstream.calls:
         clean_request(request, owner, session)
-    assert '<user_background>' in upstream.calls[0]['messages'][0]['content']
+    assert '<user_persona>' in upstream.calls[0]['messages'][0]['content']
     assert state.memory.get(baseline['id']).character_id == owner['id']
 
 

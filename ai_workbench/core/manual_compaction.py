@@ -4,6 +4,7 @@ import logging
 
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.context import add_chat_instructions
+from ai_workbench.core.memory_prompt import add_memory_section
 from ai_workbench.core.context_compaction import message_key
 from ai_workbench.core.harness.agent_loop import request_tools
 from ai_workbench.core.instructions import date_instruction
@@ -73,6 +74,7 @@ class ManualCompactionRunner:
                         raise ModelError("UNSUPPORTED_CAPABILITY", "On-demand history requires model tool support.", 422)
                     allowed = []
                 tools = request_tools(self.chat.harness_loop.registry, allowed) if allowed else None
+                base = add_memory_section(config, base, trace, allowed)
                 instruction = date_instruction(ui_language, utc_now().astimezone().date()) if WEB_TOOL_NAMES.intersection(allowed) else ""
                 service = self.chat.retrieval if config.context_policy.strategy == "history_retrieval" else self.chat.compaction
                 await service.prepare(session=session, config=config, run=run, base=base, trace=trace,

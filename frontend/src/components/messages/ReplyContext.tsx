@@ -99,6 +99,7 @@ function ContextInspector({ reply, calls }: { reply: Reply; calls: RunStep[] }) 
   const isMessage = (source: ContextSource) => (source.kind === 'history' || source.kind === 'current_input') && !!source.reference_id;
   function label(source: ContextSource) {
     if (source.attachment) return source.attachment.name;
+    if (source.kind === 'durable_memory' && source.parent_id === 'memory-index') return `${source.reference_id}: ${source.name}`;
     if (source.citation) return `[${source.citation}] ${source.name || ''}`;
     if (isMessage(source)) {
       const number = numbers.get(source.reference_id!) ?? detail?.reference_numbers?.[source.reference_id!];

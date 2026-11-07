@@ -41,14 +41,14 @@ and the plan lifecycle.
 
 Each implementation round reports changed files, commands and results,
 API/settings/workflow changes, and remaining limitations. Run frontend tests/build,
-relevant checks, and `scripts/check_docs_size.py`. Run backend tests using 8-core
-concurrency (`uv run pytest -n 8 -q`) only when backend code changes; skip them
+relevant checks, and `scripts/check_docs_size.py`. Run backend tests with 16 parallel workers
+(`uv run pytest -n 16 -q`) only when backend code changes; skip them
 for frontend-only or documentation-only work.
 
 ## Runtime verification and acceptance
 
-- Do not use 0.8B LLMs for acceptance. Select an explicitly configured, representative
-  model (such as the installed 9B GGUF or a suitable provider model). Historical
+- LLM acceptance uses the installed Nemotron Bolt E4B GGUF or a model explicitly
+  selected by the user. Do not use 0.8B LLMs for acceptance. Historical
   0.8B results are not acceptance evidence for current behavior.
 - Keep installation checks at artifact and installation boundaries: downloaded
   archives and locked dependencies, dependency consistency, offline engine imports,

@@ -111,8 +111,9 @@ General. Existing General copies independently require keep/delete. Original IDs
 sources; needs-review survives transfer. Memory and owner removal share the persistence transaction.
 Recall prefers pins, literal matches, then bounded recent facts; SQLite-local Latin words/CJK character
 n-grams share normalization with the in-memory store. No embedding or auxiliary extraction is required.
-Injected facts and retained memory-tool content share min(1,024 tokens, 10% of input budget, remaining
-capacity); model counting removes complete facts/tool pairs before history maintenance and dispatch. Memory is user-role evidence.
+Automatic recall supplies only IDs and single-line summaries in the system Memory index, grouped as Your own (Character pool) then General; bodies require memory_read. Empty groups say (empty), and an empty index is explicit. A bounded selection reports that more entries may exist.
+Index entries and retained memory-tool content share min(1,024 tokens, 10% of input budget, remaining
+capacity); model counting removes complete index entries/tool pairs before history maintenance and dispatch, preserving system blocks and source offsets. Recalled text is contextual evidence, not instructions.
 [Harness](harness-tools.md#durable-memory-tools) owns model capture; [Runs](runs-streaming.md) owns commit outcomes.
 Memory references invalidate consuming checkpoints; version checks prevent stale summary commits.
 Memory-tool payloads are excluded from ordinary history and compaction. Saved request snapshots are
@@ -190,16 +191,15 @@ QQ uses the same automatic preparation with its [batch history](qqbot.md#context
 Summaries are lossy; model-specific factual retention and accumulated drift require representative real-model acceptance.
 Three consecutive successful summaries with factual-retention acceptance remain outstanding on a representative model.
 A successful individual compression or mocked test does not establish long-conversation quality. Acceptance must not use 0.8B LLMs; the README owns model selection and commands.
-Autonomous on-demand checkpoint/recovery quality requires model-specific acceptance: tested provider configurations can omit native tool calls, invent tool results in prose or time out. The tested 9B GGUF on CPU reaches the five-minute run limit before recovery. These outcomes do not establish successful multi-reset recovery.
+Autonomous on-demand checkpoint/recovery quality requires model-specific acceptance: tested provider configurations can omit native tool calls, invent tool results in prose or time out. Successful multi-reset recovery remains unverified on the selected Nemotron GGUF.
 
 The [context meter](runs-streaming.md#context-detail) displays actual per-call input plus output usage beside the model selector. Input reflects history limits and token trimming; policy edits affect the next request, not recorded usage.
 
-Persona background is trimmed, wrapped in <user_background> tags under User background and appended once as contextual data;
-empty text produces no block. The Run snapshots it before execution. Compact user_persona metadata
+Chat system order is the optional unwrapped localized Current date, # CHARACTER/<character>, # USER/<user_persona>, then # MEMORY with optional <memory_instruction> and mandatory <memory_index>. Character and Persona content is trimmed; empty text produces no block. Memory instructions appear only with effective memory tools; disabling tools preserves the index. Disabling memory reads preserves an empty index marked Memory is disabled, without querying entries. On-demand history appends # HISTORY/<history_instruction>; QQ appends its runtime block and has no durable memory section.
+The Run snapshots Character and Persona before execution. Compact user_persona metadata
 contains identity, injection status, length and empty skip reason, never the content. Current input,
 history, summary inputs and retrieved text have no generated Persona or user-message ID markers; summary text uses role labels only.
 Identity stays in storage and inspection metadata. User-authored text and saved snapshots are not rewritten.
-General settings have no Core Memory fields or enable switch.
 
 Worldbook is deterministic matching over current user text and configured
 keywords. Enabled entries obey entry/context limits, case sensitivity,

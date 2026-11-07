@@ -26,13 +26,15 @@ class ContextBuildResult(BaseModel):
 
 def add_chat_instructions(config, messages, trace):
     """Add the saved instructions shared by chat and idle history evaluation."""
-    if config.system_prompt:
-        messages.insert(0, {"role": "system", "content": config.system_prompt})
+    prompt = config.system_prompt.strip()
+    if prompt:
+        prompt = f"# CHARACTER\n<character>\n{prompt}\n</character>"
+        messages.insert(0, {"role": "system", "content": prompt})
         for source in trace.sources:
             source.message_index += 1
         trace.sources[:0] = [ContextSource(id="system:0", kind="system", message_index=0, role="system"),
             ContextSource(id="character", kind="character", parent_id="system:0", message_index=0,
-                end=len(config.system_prompt), reference_id=config.character_id, role="system")]
+                end=len(prompt), reference_id=config.character_id, role="system")]
     else:
         trace.exclusions.append(ContextExclusion(kind="character", reason="empty", reference_id=config.character_id))
     user_context = build_user_persona_context(persona_id=config.persona_id, content=config.persona_background)

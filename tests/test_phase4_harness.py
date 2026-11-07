@@ -205,7 +205,8 @@ def test_restart_preserves_only_pending_approval(tmp_path):
                      for step in response["run"]["steps"] if step["kind"] == "model"]
         assert snapshots[0] == first_context
         assert snapshots[1]["request"] == upstream.calls[1]
-        assert any(source["kind"] == "character" and source["text"] == "PRIVATE_TOOL_PROMPT" for source in snapshots[1]["sources"])
+        assert any(source["kind"] == "character" and source["text"] == "# CHARACTER\n<character>\nPRIVATE_TOOL_PROMPT\n</character>"
+            for source in snapshots[1]["sources"])
 
 
 def test_direct_rest_and_slash_share_permissions_results_and_errors(harness_client):
