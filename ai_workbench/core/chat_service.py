@@ -118,7 +118,7 @@ class ChatService:
                 raise ChatError("PERSONA_LOCKED", "This Session is bound to its first Persona. Start a new Session to change identity.", 409)
             policy_changed = ("memory_isolation" in values and values["memory_isolation"] != current.memory_isolation
                 or any(key in overrides and overrides[key] != getattr(current.overrides, key)
-                    for key in ("memory_enabled", "memory_learning")))
+                    for key in ("memory_enabled",)))
             if policy_changed and self.memory:
                 self.memory.assert_character_idle(current.character_id)
         if current.kind == "normal" and "overrides" in values:
@@ -188,7 +188,7 @@ class ChatService:
             ("persona", "persona_id"), ("context", "context_policy"), ("reasoning", "reasoning"),
             ("harness", "harness_enabled"), ("tools", "tools_allowed"),
             ("knowledge", "knowledge_base_ids"), ("worldbook", "worldbook_ids"),
-            ("memory", "memory_enabled"), ("memory_learning", "memory_learning"))}
+            ("memory", "memory_enabled"))}
         if session.bound_persona_id:
             sources["persona"] = "binding"
         sources["temperature"] = "session" if "temperature" in overridden else "character" if character.temperature is not None else "model"
@@ -201,7 +201,7 @@ class ChatService:
             model_profile_id=settings.model_profile_id,
             model_source="session" if "model_profile_id" in overridden else "character",
             generation=generation, reasoning=settings.reasoning, harness_enabled=settings.harness_enabled,
-            memory_enabled=settings.memory_enabled, memory_learning=settings.memory_learning,
+            memory_enabled=settings.memory_enabled,
             tools_allowed=settings.tools_allowed, knowledge_base_ids=settings.knowledge_base_ids,
             worldbook_ids=settings.worldbook_ids,
         )
@@ -217,8 +217,7 @@ class ChatService:
                 and (name != "qq_generate_image" or config.qq_image_generation_allowed)]
         if config.context_policy.strategy == "history_retrieval" and config.harness_enabled:
             allowed.extend(sorted(CONTEXT_TOOL_NAMES))
-        if (config.session_kind == "normal" and config.harness_enabled and config.memory_enabled
-            and config.memory_learning == "automatic"):
+        if (config.session_kind == "normal" and config.harness_enabled and config.memory_enabled):
             allowed.extend(sorted(MEMORY_TOOL_NAMES))
         return allowed
 

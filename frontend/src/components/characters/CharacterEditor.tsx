@@ -23,7 +23,7 @@ import { IdentityAvatarField } from '../personas/IdentityAvatarField';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 import type { SettingsNavigate } from '../settings/navigation';
 import { QQBotEditor } from './QQBotEditor';
-import { MemoryReadField, MemoryLearningField } from '../memory/MemoryFields';
+import { MemoryEnabledField } from '../memory/MemoryFields';
 
 type EditorProps = {
   character?: Character; kind: CharacterKind; onSaved: (character: Character) => void; onNavigate: SettingsNavigate;
@@ -36,7 +36,7 @@ export function CharacterEditor(props: EditorProps) {
 export function newCharacterInput(tools: HarnessTool[], modelId: string | null): NormalCharacterInput {
   return { kind: 'normal', name: '', avatar_attachment_id: null, system_prompt: '', persona_id: USER_PERSONA_ID,
     model_profile_id: modelId, temperature: null, reasoning: true, context_policy: defaultContextPolicy(), harness_enabled: false,
-    memory_enabled: true, memory_learning: 'manual', memory_external_isolation: false,
+    memory_enabled: true, memory_external_isolation: false,
     tools_allowed: tools.filter((tool) => tool.scope === 'general').map((tool) => tool.name), knowledge_base_ids: [], worldbook_ids: [] };
 }
 type Resource = { id: string; name: string; enabled: boolean };
@@ -130,8 +130,7 @@ function NormalCharacterCreationForm({ onSaved, onLeaveGuardChange }: Pick<Edito
           <FieldLabel htmlFor={formId + '-reasoning'}>{t('reasoning')}</FieldLabel></Field>
         <Field orientation="horizontal"><Switch id={formId + '-harness'} checked={draft.harness_enabled} onCheckedChange={(harness_enabled) => update({ harness_enabled })} />
           <FieldLabel htmlFor={formId + '-harness'}>{t('harness')}</FieldLabel></Field>
-        <ToolsField tools={tools} value={draft.tools_allowed} onChange={(tools_allowed) => update({ tools_allowed })}
-          memoryLearning={draft.memory_learning} onMemoryLearningChange={(memory_learning) => update({ memory_learning })} />
+        <ToolsField tools={tools} value={draft.tools_allowed} onChange={(tools_allowed) => update({ tools_allowed })} />
         <ContextFields value={draft.context_policy} harnessEnabled={draft.harness_enabled} onChange={(context_policy) => update({ context_policy })} />
       </FieldGroup></TabsContent>
       <TabsContent value="resources" keepMounted data-character-tab="resources"><FieldGroup>
@@ -140,8 +139,7 @@ function NormalCharacterCreationForm({ onSaved, onLeaveGuardChange }: Pick<Edito
         <BindingsField label={t('worldbook')} items={books} ids={draft.worldbook_ids} onChange={(worldbook_ids) => update({ worldbook_ids })} />
       </FieldGroup></TabsContent>
       <TabsContent value="memory" data-character-tab="memory"><FieldGroup>
-        <MemoryReadField value={draft.memory_enabled} onChange={(memory_enabled) => update({ memory_enabled })} />
-        <MemoryLearningField value={draft.memory_learning} harness={draft.harness_enabled} onChange={(memory_learning) => update({ memory_learning })} />
+        <MemoryEnabledField value={draft.memory_enabled} onChange={(memory_enabled) => update({ memory_enabled })} />
         <Field orientation="horizontal"><Switch id={formId + '-external-memory'} checked={draft.memory_external_isolation}
           onCheckedChange={(memory_external_isolation) => update({ memory_external_isolation })} />
           <FieldLabel htmlFor={formId + '-external-memory'}>{t('memory:externalIsolation')}</FieldLabel></Field>

@@ -31,7 +31,7 @@ export type ChatDefaults = {
   persona_id: string; model_profile_id: string | null; temperature: number | null;
   reasoning: boolean; context_policy: ContextPolicy; harness_enabled: boolean; tools_allowed: string[];
   knowledge_base_ids: string[]; worldbook_ids: string[];
-  memory_enabled: boolean; memory_learning: 'manual' | 'automatic';
+  memory_enabled: boolean;
 };
 export type SessionOverrides = { [K in keyof ChatDefaults]?: ChatDefaults[K] | null };
 export type SessionPatch = { title?: string; overrides?: SessionOverrides; memory_isolation?: MemoryIsolation };
@@ -44,7 +44,7 @@ export type EffectiveChatConfig = {
   persona_id: string | null; persona_name: string | null;
   sources: {
     persona: 'session' | 'character' | 'binding'; context: 'session' | 'character';
-    memory: 'session' | 'character'; memory_learning: 'session' | 'character';
+    memory: 'session' | 'character';
     temperature: 'session' | 'character' | 'model'; reasoning: 'session' | 'character';
     harness: 'session' | 'character'; tools: 'session' | 'character';
     knowledge: 'session' | 'character'; worldbook: 'session' | 'character';
@@ -53,7 +53,7 @@ export type EffectiveChatConfig = {
   context_policy: ContextPolicy; generation: GenerationParameters;
   reasoning: boolean; harness_enabled: boolean; tools_allowed: string[];
   knowledge_base_ids: string[]; worldbook_ids: string[];
-  memory_enabled: boolean; memory_learning: 'manual' | 'automatic';
+  memory_enabled: boolean;
 };
 
 type SessionBase = {

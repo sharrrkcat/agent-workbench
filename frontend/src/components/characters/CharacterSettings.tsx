@@ -23,7 +23,7 @@ import type { NormalCharacter } from '../../types/characters';
 import type { HarnessTool } from '../../types/tools';
 import { ContextAdvancedFields, ContextFields, GenerationFields, ModelField, PersonaField, ToolsField } from '../personas/ConfigurationFields';
 import { IdentityAvatarField } from '../personas/IdentityAvatarField';
-import { MemoryLearningField, MemoryReadField } from '../memory/MemoryFields';
+import { MemoryEnabledField } from '../memory/MemoryFields';
 import { MemoryManager } from '../memory/MemoryManager';
 import { Feedback, ResourceLoading, errorText, type LeaveGuard } from '../settings/resources/ResourceUI';
 
@@ -31,8 +31,8 @@ const sections = {
   profile: ['name', 'avatar_attachment_id', 'system_prompt'],
   execution: ['persona_id', 'model_profile_id', 'temperature', 'reasoning', 'harness_enabled'],
   context: ['context_policy'],
-  memory: ['memory_enabled', 'memory_learning', 'memory_external_isolation'],
-  tools: ['tools_allowed', 'memory_learning'],
+  memory: ['memory_enabled', 'memory_external_isolation'],
+  tools: ['tools_allowed'],
   advanced: ['context_policy'],
 } as const;
 type Section = keyof typeof sections;
@@ -170,8 +170,7 @@ export function CharacterSettings({ character, onLeaveGuardChange }: {
         <Card data-character-card="memory">
           <CardHeader><CardTitle>{t('characterCards.memorySettings')}</CardTitle></CardHeader>
           {sectionForm('memory', t('characterCards.memorySettings'), <>
-            <MemoryReadField value={draft.memory_enabled} onChange={(memory_enabled) => autosave('memory', { memory_enabled })} />
-            <MemoryLearningField value={draft.memory_learning} harness={draft.harness_enabled} onChange={(memory_learning) => autosave('memory', { memory_learning })} />
+            <MemoryEnabledField value={draft.memory_enabled} onChange={(memory_enabled) => autosave('memory', { memory_enabled })} />
             <Field orientation="horizontal"><Switch id={id + '-isolation'} checked={draft.memory_external_isolation} onCheckedChange={(memory_external_isolation) => autosave('memory', { memory_external_isolation })} />
               <FieldLabel htmlFor={id + '-isolation'}>{t('memory:externalIsolation')}</FieldLabel></Field>
           </>)}
@@ -254,8 +253,7 @@ export function CharacterSettings({ character, onLeaveGuardChange }: {
                 <Textarea id={id + '-prompt'} className="min-h-32 flex-1 field-sizing-fixed" rows={4} maxLength={100000} value={draft.system_prompt}
                   onChange={(event) => update({ system_prompt: event.target.value })} /></Field>
               </FieldGroup> : section === 'tools' ? loading ? <ResourceLoading error={loadError} retry={() => setReload((value) => value + 1)} /> :
-                <ToolsField tools={tools} value={draft.tools_allowed} onChange={(tools_allowed) => update({ tools_allowed })}
-                  memoryLearning={draft.memory_learning} onMemoryLearningChange={(memory_learning) => update({ memory_learning })} /> :
+                <ToolsField tools={tools} value={draft.tools_allowed} onChange={(tools_allowed) => update({ tools_allowed })} /> :
                 <ContextAdvancedFields value={draft.context_policy} onChange={(context_policy) => update({ context_policy })} />}
             </FieldSet>
           </div>

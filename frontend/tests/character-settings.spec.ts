@@ -94,7 +94,8 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await toolsTrigger.click();
         const toolDrawer = page.getByRole('dialog', { name: labels.harnessSettings, exact: true });
         const tools = toolDrawer.getByRole('form', { name: labels.tools, exact: true });
-        await expect(tools.getByRole('checkbox', { name: 'memory_list', exact: true })).toBeInViewport();
+        await expect(tools.getByRole('checkbox', { name: 'web_fetch', exact: true })).toBeInViewport();
+        await expect(tools.getByRole('checkbox', { name: 'memory_list', exact: true })).toHaveCount(0);
         await expect(toolDrawer.getByLabel(labels.characterName, { exact: true })).toHaveCount(0);
         await expect(toolDrawer.getByRole('button', { name: labels.close, exact: true })).toBeInViewport();
         if (width === 1366) expect((await toolDrawer.boundingBox())!.width).toBeCloseTo(384, 0);
@@ -132,12 +133,12 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
       } finally { await request.delete(`/api/characters/${owner.id}`); }
     });
 
-    test('card changes autosave independently and keep shared memory and mounts', async ({ page, request }) => {
+    test('card changes autosave independently and keep memory and mounts', async ({ page, request }) => {
       const profiles = await json(request.get('/api/models/profiles'));
       const base = await json(request.post('/api/knowledge/bases', { data: { name: 'Retained mount', embedding_model_profile_id: profiles.find((p: { kind: string }) => p.kind === 'embedding').id } }));
       const book = await json(request.post('/api/worldbooks', { data: { name: 'Retained worldbook' } }));
       const owner = await json(request.post('/api/characters', { data: { kind: 'normal', name: 'Automatic saves', temperature: 0.4,
-        tools_allowed: ['web_fetch'], memory_learning: 'manual', knowledge_base_ids: [base.id], worldbook_ids: [book.id] } }));
+        tools_allowed: ['web_fetch'], knowledge_base_ids: [base.id], worldbook_ids: [book.id] } }));
       const patches: Record<string, unknown>[] = [];
       page.on('request', (request) => { if (request.method() === 'PATCH' && request.url().endsWith(`/api/characters/${owner.id}`)) patches.push(request.postDataJSON()); });
       const current = () => json(request.get(`/api/characters/${owner.id}`));
@@ -158,7 +159,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         expect(patches.at(-1)).toEqual({ temperature: 0 });
         await temperature.fill(''); await temperature.press('Tab');
         await expect.poll(async () => (await current()).temperature).toBeNull();
-        await memoryForm.getByRole('switch', { name: memory.readEnabled, exact: true }).uncheck();
+        await memoryForm.getByRole('switch', { name: memory.enabled, exact: true }).uncheck();
         await expect.poll(async () => (await current()).memory_enabled).toBe(false);
         expect(patches.at(-1)).toEqual({ memory_enabled: false });
         await context.getByRole('button', { name: labels.messageWindow, exact: true }).click();
@@ -167,22 +168,14 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await context.getByLabel(labels.maxMessages, { exact: true }).press('Tab');
         await expect.poll(async () => (await current()).context_policy.message_window.max_messages).toBe(7);
         expect(Object.keys(patches.at(-1)!)).toEqual(['context_policy']);
-        await memoryForm.getByRole('button', { name: memory.automatic, exact: true }).click();
-        await expect.poll(async () => (await current()).memory_learning).toBe('automatic');
         await page.getByRole('button', { name: labels.characterCards.configureTools, exact: true }).click();
         const tools = page.getByRole('dialog', { name: labels.harnessSettings, exact: true });
-        await expect(tools.getByRole('checkbox', { name: 'memory_read', exact: true })).toBeChecked();
-        await tools.getByRole('checkbox', { name: 'memory_forget', exact: true }).uncheck();
+        await expect(tools.getByRole('checkbox', { name: 'memory_read', exact: true })).toHaveCount(0);
+        await tools.getByRole('checkbox', { name: 'web_fetch', exact: true }).uncheck();
         await tools.getByRole('button', { name: labels.close, exact: true }).click();
         await answerConfirmation(page, true, locale); await expect(tools).toBeHidden();
-        await expect(memoryForm.getByRole('button', { name: memory.automatic, exact: true })).toHaveAttribute('aria-pressed', 'true');
-        await page.getByRole('button', { name: labels.characterCards.configureTools, exact: true }).click();
-        await tools.getByRole('checkbox', { name: 'memory_write', exact: true }).uncheck();
-        await tools.getByRole('button', { name: labels.save, exact: true }).click();
-        await expect(tools.getByRole('status')).toHaveText(labels.saved);
-        expect(patches.at(-1)).toEqual({ memory_learning: 'manual' });
-        await tools.getByRole('button', { name: labels.close, exact: true }).click(); await expect(tools).toBeHidden();
-        await expect(memoryForm.getByRole('button', { name: memory.manual, exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(memoryForm.getByRole('switch', { name: memory.enabled, exact: true })).not.toBeChecked();
+        expect((await current()).tools_allowed).toEqual(['web_fetch']);
         await execution.getByRole('switch', { name: labels.harness, exact: true }).check();
         await expect.poll(async () => (await current()).harness_enabled).toBe(true);
         await context.getByRole('button', { name: labels.historyRetrieval, exact: true }).click();
@@ -195,7 +188,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
         await advanced.getByRole('button', { name: labels.close, exact: true }).click(); await expect(advanced).toBeHidden();
         await page.reload();
         expect(await current()).toMatchObject({ temperature: null, reasoning: false, harness_enabled: true,
-          memory_learning: 'manual', memory_enabled: false, tools_allowed: ['web_fetch'], knowledge_base_ids: [base.id], worldbook_ids: [book.id],
+          memory_enabled: false, tools_allowed: ['web_fetch'], knowledge_base_ids: [base.id], worldbook_ids: [book.id],
           context_policy: { strategy: 'history_retrieval', message_window: { max_messages: 7 }, retrieval: { max_checkpoint_tokens: 512 } } });
       } finally {
         await request.delete(`/api/characters/${owner.id}`);

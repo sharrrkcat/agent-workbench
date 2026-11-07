@@ -12,7 +12,7 @@ from ai_workbench.core.time import isoformat_utc, utc_now
 
 MemoryPool = Literal["character", "general"]
 MemoryIsolation = Literal["shared", "block_outgoing", "block_incoming", "isolated"]
-MemoryStatus = Literal["active", "needs_review", "deleted"]
+MemoryStatus = Literal["active", "deleted"]
 MEMORY_TOOL_NAMES = frozenset({"memory_list", "memory_search", "memory_read", "memory_write", "memory_forget"})
 
 
@@ -63,7 +63,6 @@ class MemoryCreate(MemoryContent):
 
 class MemoryEdit(MemoryContent):
     expected_revision: int = Field(ge=1, strict=True)
-    status: Literal["active", "needs_review"] = "active"
     pinned: StrictBool = False
 
 

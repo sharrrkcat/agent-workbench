@@ -23,7 +23,6 @@ class MemoryQuery(BaseModel):
     persona_id: str | None = None
     session_id: str | None = None
     origin_session_id: str | None = None
-    status: Literal["active", "needs_review"] | None = None
     q: str = Field(default="", max_length=4000)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=20)

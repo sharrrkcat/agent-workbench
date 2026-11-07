@@ -137,8 +137,7 @@ class ConversationHistory:
         snapshot_attachments = self.runs.context_attachment_ids(run_ids)
         memory_store = self.chat_service.memory.store
         with memory_store.transaction(conversation=True) as db:
-            source_ids = set(deleted) | ({updated.message_id} if updated else set())
-            memory_store.invalidate_history(source_ids, run_ids, transaction=db)
+            memory_store.forget_runs(change.deleted_run_ids, transaction=db)
             self.store.prune(session_id, change, updated, transaction=db)
         self.events.emit("history_pruned", session_id=session_id, payload=change.model_dump())
         for attachment_id in snapshot_attachments | attachments:

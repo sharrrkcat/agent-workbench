@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from ai_workbench.core.schema.character import COGITA_CHARACTER_ID
 from ai_workbench.core.schema.chat_config import ResolvedChatConfig
 from ai_workbench.core.schema.persona import USER_PERSONA_ID
+from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
 from tests.history_helpers import history_messages
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ToolOpenAI, create_tool_app, ok, completion, tool_call, register_approval_tool
@@ -181,7 +182,7 @@ def test_active_run_snapshot_and_tool_defaults_are_not_a_ceiling(client_pair):
     snapshot = state.runs.get_config_snapshot(result["run"]["run_id"])
     ok(client.patch(f"/api/characters/{owner['id']}", json={"system_prompt": "AFTER", "tools_allowed": []}))
     assert state.runs.get_config_snapshot(result["run"]["run_id"]) == snapshot
-    assert state.chat_service.tools_for_run(ResolvedChatConfig.model_validate(snapshot)) == ["test_approval"]
+    assert set(state.chat_service.tools_for_run(ResolvedChatConfig.model_validate(snapshot))) == {"test_approval"} | MEMORY_TOOL_NAMES
     assert client.delete(f"/api/characters/{owner['id']}").status_code == 409
     resumed = ok(client.post(f"/api/tools/approvals/{result['run']['run_id']}", json={"decision": "approve"}))
     assert resumed["run"]["status"] == "DONE"

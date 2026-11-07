@@ -21,11 +21,10 @@ export function MemoryEditor({ entry, initial, onClose, onSaved }: {
   const { t } = useTranslation('memory'); const id = useId();
   const { confirm, confirmation } = useConfirmDialog();
   const [draft, setDraft] = useState(initial);
-  const [status, setStatus] = useState<'active' | 'needs_review'>(entry?.status === 'needs_review' ? 'needs_review' : 'active');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const characters = useCharactersStore((s) => s.characters).filter((c) => c.kind === 'normal');
   const personas = usePersonasStore((s) => s.personas);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(initial) || (entry && status !== entry.status);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
   useSettingsLeaveGuard(useCallback(async () => !busy && (!dirty || await confirm(t('personas:discardChanges'))), [busy, dirty, confirm, t]));
   useEffect(() => {
     if (!dirty && !busy) return;
@@ -43,7 +42,7 @@ export function MemoryEditor({ entry, initial, onClose, onSaved }: {
   async function save() {
     setBusy(true); setError('');
     try {
-      if (entry) await memoriesApi.edit(entry.id, { expected_revision: entry.revision, summary: draft.summary, body: draft.body, pinned: draft.pinned, status });
+      if (entry) await memoriesApi.edit(entry.id, { expected_revision: entry.revision, summary: draft.summary, body: draft.body, pinned: draft.pinned });
       else await memoriesApi.create(draft);
       onSaved(); onClose();
     } catch (reason) { setError(errorText(reason)); }
@@ -72,8 +71,6 @@ export function MemoryEditor({ entry, initial, onClose, onSaved }: {
           value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} /></Field>
         <Field orientation="horizontal"><Switch id={id + '-pin'} checked={draft.pinned} onCheckedChange={(pinned) => setDraft({ ...draft, pinned })} />
           <FieldLabel htmlFor={id + '-pin'}>{t('pinned')}</FieldLabel></Field>
-        {entry ? <MemorySelect label={t('status')} value={status} options={[{ value: 'active', label: t('active') }, { value: 'needs_review', label: t('needs_review') }]}
-          onChange={(value) => setStatus(value as typeof status)} /> : null}
       </FieldGroup></FieldSet></div>
       <DialogFooter><Button type="button" variant="outline" onClick={() => void close()} disabled={busy}>{t('cancel')}</Button>
         <Button type="submit" disabled={busy || !draft.character_id || !draft.persona_id}><Save data-icon="inline-start" />{t('save')}</Button></DialogFooter>

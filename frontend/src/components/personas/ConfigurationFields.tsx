@@ -254,31 +254,28 @@ export function ToolsField({
   tools,
   value,
   onChange,
-  memoryLearning,
-  onMemoryLearningChange,
 }: {
   tools: HarnessTool[];
   value: string[];
   onChange: (values: string[]) => void;
-  memoryLearning: 'manual' | 'automatic';
-  onMemoryLearningChange: (value: 'manual' | 'automatic') => void;
 }) {
   const { t } = useTranslation('settings');
   const { t: p } = useTranslation('personas');
   const id = useId();
+  const generalTools = tools.filter((tool) => tool.scope === 'general');
   return (
     <FieldGroup className="context-binding-list gap-3" role="group" aria-label={p('tools')}>
-      {!tools.length ? <p className="model-empty">{p('noTools')}</p> : null}
-      {tools.map((tool) => (
+      {!generalTools.length ? <p className="model-empty">{p('noTools')}</p> : null}
+      {generalTools.map((tool) => (
         <Field orientation="horizontal" className="context-binding-row" key={tool.name}>
           <Checkbox
             id={id + '-' + tool.name}
-            checked={tool.scope === 'memory' ? memoryLearning === 'automatic' : value.includes(tool.name)}
+            checked={value.includes(tool.name)}
             onCheckedChange={(enabled) =>
-              tool.scope === 'memory' ? onMemoryLearningChange(enabled ? 'automatic' : 'manual') : onChange(
+              onChange(
                 enabled
-                  ? tools
-                      .filter((item) => item.scope === 'general' && (item.name === tool.name || value.includes(item.name)))
+                  ? generalTools
+                      .filter((item) => item.name === tool.name || value.includes(item.name))
                       .map((item) => item.name)
                   : value.filter((name) => name !== tool.name),
               )
@@ -287,7 +284,7 @@ export function ToolsField({
           <FieldContent>
             <FieldLabel htmlFor={id + '-' + tool.name}>{tool.name}</FieldLabel>
             <FieldDescription className="flex flex-wrap items-center gap-2">
-              <span>{t(tool.scope === 'memory' ? 'toolDescriptions.' + tool.name : 'toolRisk.' + tool.risk)}</span>
+              <span>{t('toolRisk.' + tool.risk)}</span>
               {tool.requires_approval ? (
                 <Tooltip>
                   <TooltipTrigger render={<span tabIndex={0} className="inline-flex" aria-label={t('approvalRequired')} />}>

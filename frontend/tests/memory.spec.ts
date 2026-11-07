@@ -166,7 +166,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           let reads = 0;
           const gate = new Promise<void>((resolve) => { release = resolve; });
           await page.route('**/api/memories?**', async (route) => { reads++; await gate; await route.continue(); });
-          for (const filter of [labels.persona, labels.pool, labels.status, labels.session]) {
+          for (const filter of [labels.persona, labels.pool, labels.session]) {
             const trigger = selectors.filter({ hasText: filter });
             await trigger.click();
             expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
@@ -177,7 +177,7 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
             expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
           }
           expect(reads).toBe(0);
-          await chooseOption(manager.getByRole('combobox', { name: labels.status, exact: true }), labels.active);
+          await chooseOption(manager.getByRole('combobox', { name: labels.persona, exact: true }), persona.name);
           await expect(manager.locator('.memory-results')).toHaveAttribute('aria-busy', 'true');
           await expect(row.getByText(/Remembered fact/)).toBeVisible();
           expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
@@ -186,14 +186,14 @@ for (const locale of ['en', 'zh-CN']) for (const width of [1366, 390]) {
           await expect(row.getByText(/Remembered fact/)).toBeVisible();
           expect(Math.abs((await toolbar.boundingBox())!.y - top)).toBeLessThan(2);
           await page.unroute('**/api/memories?**');
-          await chooseOption(manager.getByRole('combobox', { name: labels.status, exact: true }), labels.needs_review);
+          await chooseOption(manager.getByRole('combobox', { name: labels.pool, exact: true }), labels.general);
           await expect(manager.getByText(labels.empty, { exact: true })).toBeVisible();
           expect((await manager.boundingBox())!.height).toBeLessThan(320);
           await expect(manager.getByRole('button', { name: labels.previous, exact: true })).toBeInViewport();
           await toolbar.evaluate((element) => { element.scrollLeft = 0; });
           await page.screenshot({ path: info.outputPath(destination.startsWith('/characters/') ? 'character-memory-empty.png' : 'settings-memory-empty.png'), animations: 'disabled' });
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-          await chooseOption(manager.getByRole('combobox', { name: labels.status, exact: true }), labels.all);
+          await chooseOption(manager.getByRole('combobox', { name: labels.pool, exact: true }), labels.characterPool);
           await expect(manager.locator('[data-memory-id]')).toHaveCount(12);
           await summary.click(); await expect(row.getByText(/Remembered fact/)).toBeVisible();
           await toolbar.evaluate((element) => { element.scrollLeft = 0; });

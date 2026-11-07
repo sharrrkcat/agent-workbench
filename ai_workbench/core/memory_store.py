@@ -12,12 +12,18 @@ from ai_workbench.core.memory_search import entry_terms, query_terms
 from ai_workbench.core.schema.memory import MemoryEntry, MemoryView
 from ai_workbench.core.time import utc_now
 from ai_workbench.db.memory_models import DurableMemoryRecord as Record, DurableMemoryTerm as Term
-from ai_workbench.db.memory_models import DurableMemoryDependency as Dependency, DurableMemoryEvidence as Evidence
+from ai_workbench.db.memory_models import DurableMemoryDependency as Dependency
 from ai_workbench.db.models import SessionRecord, ContextCheckpointRecord, ContextRetrievalRecord
 
 
 def conflict():
     return ChatError("MEMORY_CONFLICT", "Memory changed. Reload it before trying again.", 409)
+
+
+def forget(entry):
+    return entry.model_copy(deep=True, update={"revision": entry.revision + 1, "summary": "", "body": "",
+        "status": "deleted", "pinned": False, "origin": entry.origin.model_copy(update={"evidence": []}),
+        "updated_at": utc_now()})
 
 
 class DurableMemoryStore:
@@ -67,11 +73,11 @@ class DurableMemoryStore:
             return MemoryEntry.model_validate_json(row.record_json) if row else None
 
     def visible(self, entry: MemoryEntry, view: MemoryView) -> bool:
-        if not view.enabled or entry.status != "active" or entry.persona_id != view.persona_id:
+        if entry.status != "active" or entry.persona_id != view.persona_id:
             return False
         if entry.pool == "general":
             return view.imports and view.general
-        if entry.character_id != view.character_id:
+        if not view.enabled or entry.character_id != view.character_id:
             return False
         if entry.session_id == view.session_id:
             return True
@@ -87,8 +93,6 @@ class DurableMemoryStore:
             and origin.memory_isolation in {"shared", "block_incoming"})
 
     def _visibility(self, view):
-        if not view.enabled:
-            return false()
         local = and_(Record.pool == "character", Record.character_id == view.character_id)
         origins = [Record.session_id == view.session_id]
         if view.imports:
@@ -96,7 +100,7 @@ class DurableMemoryStore:
                 SessionRecord.character_id == view.character_id,
                 SessionRecord.memory_isolation.in_(("shared", "block_incoming")))
             origins += [Record.session_id.is_(None), Record.session_id.in_(exported)]
-        scopes = [and_(local, or_(*origins))]
+        scopes = [and_(local, or_(*origins))] if view.enabled else [false()]
         if view.imports and view.general:
             scopes.append(Record.pool == "general")
         return and_(Record.status == "active", Record.persona_id == view.persona_id, or_(*scopes))
@@ -148,13 +152,9 @@ class DurableMemoryStore:
             db.merge(Record(**values, origin_run_id=entry.origin.run_id, origin_session_id=entry.origin.session_id,
                 record_json=entry.model_dump_json()))
             db.exec(delete(Term).where(Term.memory_id == entry.id))
-            db.exec(delete(Evidence).where(Evidence.memory_id == entry.id))
             if entry.status == "active":
                 for term, weight in entry_terms(entry.summary, entry.body).items():
                     db.add(Term(memory_id=entry.id, term=term, weight=weight))
-            if entry.status != "deleted" and entry.managed_by == "model":
-                for source in entry.origin.evidence:
-                    db.add(Evidence(memory_id=entry.id, message_id=source.message_id))
             db.flush()
         if current is not None:
             self.invalidate_dependencies([entry.id], transaction=transaction)
@@ -194,19 +194,17 @@ class DurableMemoryStore:
             affected = transaction.exec(select(Dependency.session_id).where(Dependency.memory_id.in_(memory_ids))).all()
         self.invalidate_sessions(affected, transaction=transaction)
 
-    def invalidate_history(self, message_ids, run_ids, *, transaction=None):
+    def forget_runs(self, run_ids, *, transaction=None):
         if self.engine is None:
             affected = [entry.model_copy(deep=True) for entry in self._entries.values()
                 if entry.managed_by == "model" and entry.status == "active" and
-                (entry.origin.run_id in run_ids or any(source.message_id in message_ids for source in entry.origin.evidence))]
+                entry.origin.run_id in run_ids]
         else:
-            sources = select(Evidence.memory_id).where(Evidence.message_id.in_(message_ids))
             rows = transaction.exec(select(Record.record_json).where(Record.managed_by == "model", Record.status == "active",
-                or_(Record.origin_run_id.in_(run_ids), Record.id.in_(sources)))).all()
+                Record.origin_run_id.in_(run_ids))).all()
             affected = [MemoryEntry.model_validate_json(value) for value in rows]
         for entry in affected:
-            revised = entry.model_copy(update={"revision": entry.revision + 1, "status": "needs_review", "updated_at": utc_now()})
-            self.save(revised, entry.revision, transaction=transaction)
+            self.save(forget(entry), entry.revision, transaction=transaction)
 
     def remove_session_dependencies(self, session_id, *, transaction):
         if self.engine is None:

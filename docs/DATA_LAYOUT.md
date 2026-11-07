@@ -37,7 +37,7 @@ the maintained README, run guide and docs rather than embedding another guide.
 
 ## Database revisions
 
-Alembic head is `0053_durable_memory`; current tables follow the SQLModel schema.
+Alembic head is `0054_memory_controls`; current tables follow the SQLModel schema.
 Empty databases upgrade to head. Nonempty unversioned databases are rejected
 instead of auto-stamped. Health reports schema_revision; there is no separate
 schema_version authority. Destructive test revisions do not support downgrade.
@@ -56,8 +56,13 @@ Persona binding. It removes their messages, Runs/steps/events, working checkpoin
 associations, preserving Character/Persona configuration, QQ state and all data directories. Session
 columns store bound Persona, directional memory policy and view revision. durable_memories owns
 current content/version and body-free deleted markers; durable_memory_terms is a derived local index;
-evidence and dependency relations invalidate facts/checkpoints. Publication copies and original IDs
+Run origins drive model-memory removal; dependency relations invalidate checkpoints. Publication copies and original IDs
 survive deleted origins. No mixed-Persona conversion, file deletion or embedding installation occurs.
+
+Revision `0054_memory_controls` removes retired learning keys from saved configurations and Run configuration metadata,
+discards review-only memories and their indexes, and drops the unused message-evidence index table.
+Memory status is active/deleted. Normal Session memory versions advance and derived checkpoints are discarded;
+other memories, configuration, QQ state and all data files remain. No old learning mode is converted.
 
 The default `data/cogita.db` is initialized independently, with fresh settings,
 model/provider profiles and runtime registration. Other database files are not

@@ -21,7 +21,7 @@ for (const locale of ['en', 'zh-CN']) {
         const persona = await (await request.post('/api/personas', { data: { name: 'Index user', background: 'Persona 中文😀' } })).json();
         const owner = await (await request.post('/api/characters', { data: { kind: 'normal', name: 'Index character',
           system_prompt: 'Character 😀', persona_id: persona.id, harness_enabled: true,
-          tools_allowed: ['web_search'], memory_learning: 'automatic' } })).json();
+          tools_allowed: ['web_search'] } })).json();
         const session = await (await request.post(`/api/characters/${owner.id}/sessions`, { data: {} })).json();
         for (const [pool, summary] of [['character', 'Own summary 中文😀'], ['general', 'General summary']]) {
           expect((await request.post('/api/memories', { data: { character_id: owner.id, persona_id: persona.id,
@@ -47,12 +47,16 @@ for (const locale of ['en', 'zh-CN']) {
         expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
         await page.screenshot({ path: info.outputPath('memory-index-context.png'), animations: 'disabled' });
         await page.keyboard.press('Escape');
-        expect((await request.patch(`/api/sessions/${session.session_id}`, { data: { overrides: { memory_learning: 'manual' } } })).ok()).toBe(true);
+        expect((await request.patch(`/api/sessions/${session.session_id}`, { data: { overrides: { memory_enabled: false } } })).ok()).toBe(true);
         expect((await request.post(`/api/sessions/${session.session_id}/messages`, { data: { content: 'memory tools disabled' } })).ok()).toBe(true);
         await page.reload();
         await page.getByRole('button', { name: title, exact: true }).last().click();
         await expect(index).toBeVisible();
         await expect(instruction).toHaveCount(0);
+        await index.click();
+        await expect(dialog.locator('.context-text')).toContainText('General summary');
+        await expect(dialog.locator('.context-text')).not.toContainText('Own summary');
+        await expect(dialog.locator('.context-text')).not.toContainText('Your own:');
       });
 
       test('captures calls lazily, keeps exact request data and restores focus', async ({ page, request }, info) => {

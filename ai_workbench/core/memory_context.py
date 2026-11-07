@@ -29,6 +29,8 @@ def remove_memory(request, trace, units):
         messages[root.message_index] = message.model_copy(update={"content": content})
     result, positions = [], {}
     for index, message in enumerate(messages):
+        if message.role == "system" and not (message.content or "").strip():
+            continue
         if message.tool_call_id in calls:
             continue
         if message.tool_calls and any(call.id in calls for call in message.tool_calls):

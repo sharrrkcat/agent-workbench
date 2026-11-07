@@ -245,6 +245,8 @@ def test_duplicate_id_in_compacted_prefix_still_fails(harness_client):
 def test_failed_summary_does_not_replace_memory(harness_client, failure):
     client, upstream, _ = harness_client
     session, state, executed = setup(client)
+    # This case budgets exactly two business-tool rounds, without memory tools.
+    session = ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'memory_enabled': False}}))
     def fail(request):
         if failure == "empty":
             return completion(content=" ")

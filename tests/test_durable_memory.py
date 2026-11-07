@@ -3,8 +3,6 @@
 import pytest
 import json
 
-from ai_workbench.core.schema.memory import MemoryEvidence
-from ai_workbench.core.memory_service import message_digest
 from tests.test_characters import client_pair, character, child
 from tests.model_fixtures import configure_model
 from tests.tool_fixtures import ok, completion, tool_call, register_approval_tool
@@ -169,27 +167,6 @@ def test_character_publish_keeps_selected_local_version_when_existing_copy_is_de
     assert state.memory.store.get(published['id']).status == 'deleted'
 
 
-def test_source_edit_invalidates_only_model_managed_dependents(client_pair):
-    client, _, state = client_pair
-    configure_model(client)
-    owner = character(client)
-    source = bound(client, owner)
-    message = next(m for m in state.messages.list_messages(source["session_id"]) if m.role == "user")
-    dependent = add(client, owner, owner["persona_id"], source)
-    manual = add(client, owner, owner["persona_id"], source)
-    unrelated = add(client, owner, owner["persona_id"])
-    record = state.memory.store.get(dependent["id"])
-    record.managed_by = "model"
-    record.origin.evidence = [MemoryEvidence(message_id=message.message_id, digest=message_digest(message))]
-    record.revision += 1
-    with state.memory.store.transaction() as db:
-        state.memory.store.save(record, 1, transaction=db)
-    ok(client.post(f"/api/messages/{message.message_id}/edit", json={"content": "Changed user statement", "attachment_ids": []}))
-    assert ok(client.get(f"/api/memories/{dependent['id']}"))["status"] == "needs_review"
-    assert ok(client.get(f"/api/memories/{manual['id']}"))["status"] == "active"
-    assert ok(client.get(f"/api/memories/{unrelated['id']}"))["status"] == "active"
-
-
 def write_turn(request):
     return completion(tool_call("memory_write", {"summary": "Prefers oolong tea", "body": "The user prefers oolong tea."}, "remember"))
 
@@ -197,7 +174,7 @@ def write_turn(request):
 def test_harness_stages_then_commits_and_cross_session_recalls(client_pair):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning="automatic")
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     def finish(request):
         assert state.memory.list().total == 0
@@ -220,30 +197,30 @@ def test_harness_stages_then_commits_and_cross_session_recalls(client_pair):
     assert "The user prefers oolong tea." not in json.dumps(upstream.calls[-1])
 
 
-def test_memory_tools_switch_as_one_group_without_disabling_recall(client_pair):
+def test_memory_switch_controls_tools_and_character_recall(client_pair):
     from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=['test_echo'], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=['test_echo'])
     session = child(client, owner)
     path = f"/api/sessions/{session['session_id']}"
     upstream.turns = [write_turn, completion(content='Remembered.')]
     assert ok(client.post(path + '/messages', json={'content': 'I prefer oolong tea.'}))['success']
     entry = state.memory.list().items[0]
     assert {tool['function']['name'] for tool in upstream.calls[-1]['tools']} == MEMORY_TOOL_NAMES | {'test_echo'}
-    settings = ok(client.patch(path, json={'overrides': {'memory_learning': 'manual'}}))
-    assert settings['effective']['memory_enabled'] is True
+    settings = ok(client.patch(path, json={'overrides': {'memory_enabled': False}}))
+    assert settings['effective']['memory_enabled'] is False
     upstream.turns = [completion(tool_call('memory_write', {'summary': 'Wrong', 'body': 'Wrong'}, 'write'),
         tool_call('memory_forget', {'id': entry.id}, 'forget')), completion(content='Oolong tea.')]
     result = ok(client.post(path + '/messages', json={'content': 'Which tea do I prefer?'}))
     assert result['success'] and state.memory.get(entry.id).revision == 1
     assert {tool['function']['name'] for tool in upstream.calls[-1]['tools']} == {'test_echo'}
-    assert f'{entry.id}: Prefers oolong tea' in upstream.calls[-1]['messages'][0]['content']
+    assert not any(entry.id in m.get('content', '') for m in upstream.calls[-1]['messages'] if m['role'] == 'system')
     assert 'The user prefers oolong tea.' not in upstream.calls[-1]['messages'][0]['content']
     errors = [part['error_code'] for message in result['messages'] for part in message['parts'] if part['type'] == 'tool_result']
     assert errors == ['TOOL_NOT_ALLOWED', 'TOOL_NOT_ALLOWED']
     # Restoring inheritance enables the whole group again without changing ordinary tools.
-    ok(client.patch(path, json={'overrides': {'memory_learning': None}}))
+    ok(client.patch(path, json={'overrides': {'memory_enabled': None}}))
     upstream.turns = [completion(tool_call('memory_write', {'id': entry.id, 'summary': 'Coffee', 'body': 'Prefers coffee.'})), completion(content='Updated.')]
     assert ok(client.post(path + '/messages', json={'content': 'I now prefer coffee.'}))['success']
     assert state.memory.get(entry.id).body == 'Prefers coffee.'
@@ -255,7 +232,7 @@ def test_unsuccessful_or_unsupported_capture_never_commits(client_pair, finish):
     client, upstream, state = client_pair
     configure_model(client)
     register_approval_tool(state.tool_registry)
-    owner = character(client, harness_enabled=True, tools_allowed=["test_approval"], memory_learning="automatic")
+    owner = character(client, harness_enabled=True, tools_allowed=["test_approval"])
     session = child(client, owner)
     if finish == "removed_parameter":
         upstream.turns = [completion(tool_call("memory_write", {"summary": "Guess", "body": "Assistant guess.",
@@ -275,7 +252,7 @@ def test_unsuccessful_or_unsupported_capture_never_commits(client_pair, finish):
 def test_memory_conflict_preserves_answer_and_discards_entire_batch(client_pair):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning="automatic")
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     upstream.turns = [write_turn, completion(content="Saved.")]
     first = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={"content": "I prefer oolong tea."}))
@@ -298,7 +275,7 @@ def test_memory_conflict_preserves_answer_and_discards_entire_batch(client_pair)
 def test_same_fact_staged_twice_commits_once(client_pair):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     def repeat(request):
         response = write_turn(request)
@@ -349,7 +326,7 @@ def test_acceptance_failure_rolls_back_binding_message_and_run(client_pair, monk
 def test_commit_storage_failure_rolls_back_whole_batch_and_terminal_event(client_pair, monkeypatch):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     original = state.memory.store.save
     count = 0
@@ -375,7 +352,7 @@ def test_approval_continuation_commits_staged_memory_once(client_pair):
     client, upstream, state = client_pair
     configure_model(client)
     register_approval_tool(state.tool_registry)
-    owner = character(client, harness_enabled=True, tools_allowed=['test_approval'], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=['test_approval'])
     session = child(client, owner)
     upstream.turns = [write_turn, completion(tool_call('test_approval')), completion(content='Confirmed.')]
     result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'I prefer oolong tea.'}))
@@ -439,7 +416,7 @@ def test_restart_preserves_approval_candidates_and_discards_interrupted_work(tmp
     register_approval_tool(app.state.runtime_state.tool_registry)
     with TestClient(app) as client:
         configure_model(client)
-        owner = character(client, harness_enabled=True, tools_allowed=['test_approval'], memory_learning='automatic')
+        owner = character(client, harness_enabled=True, tools_allowed=['test_approval'])
         sessions = [child(client, owner), child(client, owner)]
         upstream.turns = [write_turn, completion(tool_call('test_approval')),
             write_turn, completion(tool_call('test_approval')), completion(content='Done.')]
@@ -522,7 +499,7 @@ def test_memory_api_boundaries_and_large_collection_pages(client_pair):
         assert client.post(f'/api/tools/{name}/call', json={'session_id': session['session_id'], 'arguments': {}}).status_code == 400
         assert client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'tools_allowed': [name]}}).status_code == 422
     assert MEMORY_TOOL_NAMES == {tool['name'] for tool in ok(client.get('/api/tools')) if tool['scope'] == 'memory'}
-    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'harness_enabled': False, 'memory_learning': 'automatic'}}))
+    ok(client.patch(f"/api/sessions/{session['session_id']}", json={'overrides': {'harness_enabled': False}}))
     result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'Recall oolong'}))
     assert result['success'] and 'tools' not in upstream.calls[-1]
     assert '<memory_index>' in upstream.calls[-1]['messages'][0]['content']
@@ -557,7 +534,7 @@ def test_forgetting_invalidates_both_checkpoints_and_rejects_stale_resave(client
 def test_forgotten_id_and_user_adoption_cannot_be_overwritten(client_pair):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     upstream.turns = [write_turn, completion(content='Confirmed.')]
     ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'I prefer oolong tea.'}))
@@ -618,7 +595,7 @@ def test_repeated_memory_reads_are_bounded_before_history_maintenance(client_pai
     client, upstream, state = client_pair
     profile = configure_model(client)
     ok(client.patch(f"/api/models/profiles/{profile['id']}", json={'context_window_tokens': 4096, 'parameters': {'max_tokens': 512}}))
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic', context_policy={'strategy': strategy,
+    owner = character(client, harness_enabled=True, tools_allowed=[], context_policy={'strategy': strategy,
         'compaction': {'trigger_percent': 70, 'target_percent': 45}, 'retrieval': {'trigger_percent': 70, 'target_percent': 45}})
     entry = add(client, owner, owner['persona_id'], summary='Large fact', body='detail ' * 280)
     session = child(client, owner)

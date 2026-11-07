@@ -32,8 +32,7 @@ def test_index_order_pools_and_explicit_body_reads(client_pair, strategy, histor
     client, upstream, _ = client_pair
     configure_model(client)
     owner = character(client, system_prompt='  Character 😀  ', harness_enabled=True,
-        tools_allowed=['web_search'], memory_learning='automatic',
-        context_policy={'strategy': strategy, 'history_enabled': history_enabled})
+        tools_allowed=['web_search'], context_policy={'strategy': strategy, 'history_enabled': history_enabled})
     ok(client.patch(f"/api/personas/{owner['persona_id']}", json={'background': '  Persona 😀  '}))
     own = add(client, owner, owner['persona_id'], summary='Tea preference 😀\n  concise', body='BODY-ONLY-ORCHID-842')
     other = character(client)
@@ -74,43 +73,33 @@ def test_index_order_pools_and_explicit_body_reads(client_pair, strategy, histor
     assert json.loads(read['content'])['data']['items'][0]['body'] == own['body']
 
 
-@pytest.mark.parametrize('enabled,harness,learning,populated', [
-    (True, True, 'automatic', False), (True, True, 'manual', True),
-    (True, False, 'automatic', True), (False, True, 'automatic', True),
-])
-def test_memory_switches_preserve_the_index_shell(client_pair, monkeypatch, enabled, harness, learning, populated):
-    client, upstream, state = client_pair
+@pytest.mark.parametrize('enabled,harness,populated', [(True, True, False), (True, True, True),
+    (True, False, True), (False, True, True), (False, False, False)])
+def test_memory_switch_controls_tools_and_empty_sections(client_pair, enabled, harness, populated):
+    client, upstream, _ = client_pair
     configure_model(client)
-    owner = character(client, system_prompt=' \n ', harness_enabled=harness, tools_allowed=[],
-        memory_enabled=enabled, memory_learning=learning)
+    owner = character(client, system_prompt=' ', harness_enabled=harness, tools_allowed=[], memory_enabled=enabled)
     entry = add(client, owner, owner['persona_id'], summary='A concise summary', body='BODY-ONLY') if populated else None
-    if not enabled:
-        def forbidden_query(*args, **kwargs):
-            pytest.fail('Disabled memory must not query entries')
-        monkeypatch.setattr(state.memory.store, 'query', forbidden_query)
     session = child(client, owner)
     result = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'Hello'}))
     assert result['success'], result
     request = upstream.calls[-1]
-    system = request['messages'][0]['content']
-    assert system.startswith('# MEMORY\n') and system.count('<memory_index>') == 1
-    assert '<character>' not in system and '<user_persona>' not in system
-    assert ('<memory_instruction>' in system) == (enabled and harness and learning == 'automatic')
-    assert bool(request.get('tools')) == (enabled and harness and learning == 'automatic')
+    system = '\n'.join(m['content'] for m in request['messages'] if m['role'] == 'system')
+    assert ('<memory_instruction>' in system) == (enabled and harness)
+    assert bool(request.get('tools')) == (enabled and harness)
     if not enabled:
-        assert 'Memory is disabled.' in system and entry['id'] not in system
+        assert '# MEMORY' not in system and '<memory_index>' not in system
+        assert all(m['role'] != 'system' for m in request['messages'])
     elif entry:
         assert f"{entry['id']}: A concise summary" in system and entry['body'] not in system
     else:
         assert 'Memory index is empty.' in system
-    assert 'General:\n  (empty)' in system
-    assert [message['role'] for message in request['messages']] == ['system', 'user']
 
 
 def test_unsupported_tools_omit_memory_instructions_but_keep_index(client_pair, monkeypatch):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     entry = add(client, owner, owner['persona_id'], summary='Usable summary', body='BODY-ONLY')
     @asynccontextmanager
     async def unsupported(*args, **kwargs):
@@ -191,3 +180,33 @@ def test_removing_one_index_entry_keeps_tool_pairs_and_other_pool_entries():
     for source in provenance.sources:
         if source.memory:
             assert actual.messages[0].content[source.start:source.end] == f'  - {source.reference_id}: {source.name}'
+
+
+@pytest.mark.parametrize('other_instructions', [False, True])
+def test_budget_removes_the_entire_general_only_section(other_instructions):
+    config = SimpleNamespace(session_kind='normal', memory_enabled=False)
+    trace = ContextTrace(sources=[ContextSource(id='current', kind='current_input', message_index=0, role='user')])
+    messages = [{'role': 'user', 'content': 'Question'}]
+    if other_instructions:
+        messages, _ = append_system_block(messages, trace, '# CHARACTER\nKeep 😀', 'character')
+    messages = add_memory_section(config, messages, trace, [])
+    if other_instructions:
+        messages, _ = append_system_block(messages, trace, '# HISTORY\nKeep history', 'instruction')
+    source = ContextSource(id='memory:general', kind='durable_memory', role='system', name='General summary',
+        reference_id='general', memory=MemoryContextReference(id='general', revision=1, character_id='owner',
+            persona_id='user', session_id=None, pool='general', reason='recent'))
+    messages[0]['content'] = replace_memory_index(messages[0]['content'], trace, [source])
+    request = ChatRequest(model='local', messages=messages)
+    trimmed, provenance = remove_memory(request, trace, memory_units(request, trace)[0])
+    assert '# MEMORY' not in json.dumps(trimmed.model_dump())
+    assert not any(item.kind in {'memory_index', 'durable_memory'} for item in provenance.sources)
+    if other_instructions:
+        assert trimmed.messages[0].content == '# CHARACTER\nKeep 😀\n\n# HISTORY\nKeep history'
+        for item in provenance.sources:
+            if item.kind == 'character':
+                assert trimmed.messages[0].content[item.start:item.end] == '# CHARACTER\nKeep 😀'
+            if item.kind == 'instruction':
+                assert trimmed.messages[0].content[item.start:item.end] == '# HISTORY\nKeep history'
+    else:
+        assert [m.role for m in trimmed.messages] == ['user']
+        assert next(item.message_index for item in provenance.sources if item.id == 'current') == 0

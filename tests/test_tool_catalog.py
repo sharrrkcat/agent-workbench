@@ -61,7 +61,7 @@ def test_removed_tools_are_unavailable_to_direct_and_model_calls(catalog_client,
     response = ok(client.post(path + "/messages", json={"content": "use a tool"}))
     result = next(part for message in response["messages"] for part in message["parts"] if part["type"] == "tool_result")
     assert result["status"] == "error" and result["error_code"] == "TOOL_NOT_FOUND"
-    assert all({tool["function"]["name"] for tool in call["tools"]} == GENERAL_TOOLS for call in upstream.calls)
+    assert all({tool["function"]["name"] for tool in call["tools"]} == GENERAL_TOOLS | MEMORY_TOOL_NAMES for call in upstream.calls)
     slash = f"/{name} example"
     response = ok(client.post(path + "/messages", json={"content": slash}))
     assert response["messages"][0]["parts"][0]["text"] == slash

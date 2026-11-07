@@ -12,7 +12,7 @@ from ai_workbench.core.time import utc_now
 from ai_workbench.db.qq_models import QQBinding, QQMessage, QQBatch, QQDelivery
 from ai_workbench.db.web_models import WebPageRecord, WebSessionPageRecord
 from ai_workbench.db.web_filter_models import WebFilterSettingsRecord, WebSubscriptionRecord
-from ai_workbench.db.memory_models import DurableMemoryRecord, DurableMemoryTerm, DurableMemoryDependency, DurableMemoryEvidence
+from ai_workbench.db.memory_models import DurableMemoryRecord, DurableMemoryTerm, DurableMemoryDependency
 
 
 class SessionRecord(SQLModel, table=True):

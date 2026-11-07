@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from ai_workbench.core.chat_service import ChatError
 from ai_workbench.core.harness.schema import ToolExecutionError, ToolSpec
 from ai_workbench.core.retrieval_tools import clip_text
-from ai_workbench.core.memory_service import forget
+from ai_workbench.core.memory_store import forget
 from ai_workbench.core.memory_prompt import render_memory_index, replace_memory_index
 from ai_workbench.core.schema.memory import (MemoryRunState, MemoryMutation, MemoryEntry,
     MemoryOrigin, MemoryWrite, MemoryContextReference)
@@ -25,7 +25,7 @@ class DurableMemory:
         self.service, self.runs, self.models = service, runs, models
 
     def start(self, run, config):
-        if config.session_kind != "normal" or not config.memory_enabled:
+        if config.session_kind != "normal":
             return None
         session = self.service.chat.sessions.get_session(run.session_id)
         return MemoryRunState(view=self.service.view(run.session_id), history_version=session.history_version)
@@ -135,11 +135,12 @@ class DurableMemory:
         result, provenance = deepcopy(context), trace.model_copy(deep=True)
         sources = []
         count = self.models.reference_tokens.count_text
-        empty_cost = count(render_memory_index()[0])
+        empty_cost = count(render_memory_index(character_enabled=work.view.enabled)[0])
         for reason, entry in selected:
             source = ContextSource(id="memory:" + entry.id, kind="durable_memory", role="system",
                 reference_id=entry.id, name=" ".join(entry.summary.split()), memory=reference(entry, reason))
-            text, _ = render_memory_index([*sources, source], limited=total > len(sources) + 1)
+            text, _ = render_memory_index([*sources, source], character_enabled=work.view.enabled,
+                limited=total > len(sources) + 1)
             if count(text) - empty_cost > work.allowance:
                 provenance.exclusions.append(ContextExclusion(kind="durable_memory", reason="token_limit", reference_id=entry.id))
                 continue
@@ -148,6 +149,12 @@ class DurableMemory:
         root = next(source for source in provenance.sources if source.kind == "memory_index")
         result[root.message_index]["content"] = replace_memory_index(result[root.message_index]["content"],
             provenance, sources, limited=total > len(sources))
+        if not result[root.message_index]["content"].strip():
+            del result[root.message_index]
+            provenance.sources = [source for source in provenance.sources if source.message_index != root.message_index]
+            for source in provenance.sources:
+                if source.message_index is not None and source.message_index > root.message_index:
+                    source.message_index -= 1
         # Record dependencies before dispatch; later edits invalidate the Run view,
         # including an approval continuation whose context is already materialized.
         self.service.store.track(work.view.session_id, work.references)
@@ -159,8 +166,8 @@ class DurableMemory:
         self.check(work)
         run = self.runs.get_run(context.run_id)
         config = self.runs.get_config_snapshot(run.run_id)
-        if config.get("memory_learning") != "automatic":
-            raise ToolExecutionError("MEMORY_LEARNING_DISABLED", "Automatic memory learning is disabled.")
+        if not config["memory_enabled"]:
+            raise ToolExecutionError("MEMORY_DISABLED", "Memory tools are disabled.")
         prior = next((item for item in work.mutations if item.tool_call_id == context.tool_call_id), None)
         if prior:
             return {"id": prior.entry.id}
@@ -216,8 +223,8 @@ class DurableMemory:
         session = self.service.chat.sessions.get_session(run.session_id)
         settings = self.service.chat.settings(session)
         if (session.history_version != work.history_version or session.bound_persona_id != run.persona_id
-            or not settings.memory_enabled or settings.memory_learning != "automatic"):
-            raise ToolExecutionError("MEMORY_SOURCE_CHANGED", "Memory inputs or learning settings changed before commit.")
+            or not settings.memory_enabled):
+            raise ToolExecutionError("MEMORY_SOURCE_CHANGED", "Memory inputs or settings changed before commit.")
         versions = {}
         for mutation in work.mutations:
             entry = mutation.entry

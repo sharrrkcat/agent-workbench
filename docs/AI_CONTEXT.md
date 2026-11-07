@@ -43,7 +43,7 @@ history checkpoints and bounded retrieval. Harness can summarize completed tool 
 `/compact` produces a cancellable Checkpoint event. Independent durable facts belong to a Character and Persona,
 optionally a Session; current Session isolation controls sharing. General publication is manual and still Persona-specific.
 Normal Sessions bind Persona at first accepted input. Memory supports manual management, bounded literal recall
-and opt-in main-model Harness writes staged until success, without auxiliary inference or embeddings. QQ memory is deferred.
+and main-model Harness writes staged until success under one default-on memory switch. Disabled memory retains eligible General summaries; no auxiliary inference or embeddings are used. QQ memory is deferred.
 Built-in tools share direct/model invocation, bounded execution and durable approvals; `/v1` forwards
 tool data without execution. AnySearch search/fetch retain filters, budgets, guarded extraction,
 cached pagination, dates, citations, Sources and dedicated web steps.

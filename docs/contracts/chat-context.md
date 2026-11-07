@@ -16,7 +16,7 @@ the regular creation service. Neither default implies a personality. Protocol an
 remain application-owned. Persona avatars and Character avatars reference local attachments.
 
 Normal Characters own defaults for persona_id, model_profile_id, temperature, reasoning,
-context_policy, harness_enabled, tools_allowed, memory_enabled, memory_learning, knowledge_base_ids and worldbook_ids. Sessions save
+context_policy, harness_enabled, tools_allowed, memory_enabled, knowledge_base_ids and worldbook_ids. Sessions save
 sparse overrides of those fields. PATCH omission preserves a field; null removes its override;
 false, zero and [] are explicit values. Lists and context policies replace whole values. Parent edits
 immediately affect inheriting Sessions, preserving explicit overrides. Responses expose effective
@@ -89,29 +89,28 @@ Each fact belongs to one Character and one Persona, optionally a Session. Charac
 General retains a source Character and crosses Characters only for the same Persona. There is no
 all-Persona audience. Manual records can omit Session; model records cannot.
 Original attribution is preserved separately from current ownership when records are transferred.
-Defaults are memory_enabled=true, memory_learning=manual, external isolation off and shared Sessions.
-Read/learning preferences follow Character defaults and sparse overrides; all memory-tool switches share memory_learning, with manual preserving recall but disabling the tools. memory_isolation is Session state.
+Defaults are memory_enabled=true, external isolation off and shared Sessions.
+One memory switch controls Character recall and all memory tools, following Character defaults and sparse Session overrides. General recall is independent of this switch; memory_isolation is Session state.
 Session modes shared/block_outgoing/block_incoming/isolated independently permit imports/exports.
-Own records remain eligible; incoming blocks exclude General. Character memory_external_isolation
+Enabled own records remain eligible; incoming blocks exclude General. Character memory_external_isolation
 blocks General without blocking same-Character records. All existing active records follow current
 origin policy dynamically. Every read filters Persona, status and scope before scoring, counts and paging.
-History-off can still read enabled durable memory. Memory-off disables recall/model capture but keeps
-facts and manual management. Persona filters are context boundaries, not authenticated user accounts.
+History-off can still read durable memory. Memory-off disables Character recall and all memory tools,
+while eligible General summaries and manual management remain available. Persona filters are context boundaries, not authenticated user accounts.
 Administrative /api/memories supports CRUD, origin_session_id filtering and selected-revision /{id}/publish; Session list/search
 and ID reads use /api/sessions/{id}/memories. Unknown/inaccessible IDs return the same unavailable error.
 Manual edits create user-managed records protected from model writes. General publication creates an
 independent version copy; local edits/isolation/deletion do not synchronize it. Repeating a live
 publication of the same source revision reuses it. Summary/body limits are 160/2,000 characters.
-Model writes retain the producing Run and no message evidence; pruning that Run makes them needs-review.
-Existing message-linked facts still follow source edit/delete; user-managed facts are independent. Forget removes content/indexes, retaining body-free tombstones.
+Model writes retain the latest producing Run and no message evidence. Reply deletion, user-message deletion/edit and retry immediately forget model-managed facts whose current Run is pruned, in the history transaction. User-managed facts and independent General copies survive. Forget removes content/indexes, retaining body-free tombstones; there is no review state.
 Deleting normal owners uses memory-deletion-preview and explicit revision-checked choices. Session
 keep detaches Session ownership and makes all kept facts user-managed Character-shared records for
 the same Persona. Character keep requires transfer to another normal Character or publication to
 General. Existing General copies independently require keep/delete. Original IDs survive deleted
-sources; needs-review survives transfer. Memory and owner removal share the persistence transaction.
+sources. Owner deletion uses its explicit choices, independently of Run pruning. Memory and owner removal share the persistence transaction.
 Recall prefers pins, literal matches, then bounded recent facts; SQLite-local Latin words/CJK character
 n-grams share normalization with the in-memory store. No embedding or auxiliary extraction is required.
-Automatic recall supplies only IDs and single-line summaries in the system Memory index, grouped as Your own (Character pool) then General; bodies require memory_read. Empty groups say (empty), and an empty index is explicit. A bounded selection reports that more entries may exist.
+Automatic recall supplies only IDs and single-line summaries in the system Memory index, grouped as Your own (Character pool) then General; bodies require memory_read. With memory enabled, empty groups/indexes remain explicit. With memory off, only eligible General summaries appear; no Memory heading, instructions, index or empty markers remain when no entries survive recall/budgeting. A bounded selection reports that more entries may exist.
 Index entries and retained memory-tool content share min(1,024 tokens, 10% of input budget, remaining
 capacity); model counting removes complete index entries/tool pairs before history maintenance and dispatch, preserving system blocks and source offsets. Recalled text is contextual evidence, not instructions.
 [Harness](harness-tools.md#durable-memory-tools) owns model capture; [Runs](runs-streaming.md) owns commit outcomes.

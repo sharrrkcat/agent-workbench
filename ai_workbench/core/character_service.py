@@ -63,7 +63,7 @@ class CharacterService:
         current = self.get(character_id)
         memory_changed = current.kind == "normal" and any(
             key in values and values[key] != getattr(current, key)
-            for key in ("memory_external_isolation", "memory_enabled", "memory_learning"))
+            for key in ("memory_external_isolation", "memory_enabled"))
         if memory_changed and self.chat.memory:
             self.chat.memory.assert_character_idle(character_id)
         if current.kind == "qqbot" and values.get("bot_account", current.bot_account) != current.bot_account and any(

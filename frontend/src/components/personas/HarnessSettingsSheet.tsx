@@ -26,8 +26,6 @@ export function HarnessSettingsSheet({ session, onClose, finalFocus, onBusyChang
   const owner = character?.kind === 'normal' ? character : null;
   const [initialTools] = useState(() => session.overrides.tools_allowed ?? null);
   const [selectedTools, setSelectedTools] = useState(initialTools);
-  const [initialLearning] = useState(() => session.overrides.memory_learning ?? null);
-  const [selectedLearning, setSelectedLearning] = useState(initialLearning);
   const [restoreHarness, setRestoreHarness] = useState(false);
   const [tools, setTools] = useState<HarnessTool[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,9 +34,8 @@ export function HarnessSettingsSheet({ session, onClose, finalFocus, onBusyChang
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const toolsChanged = JSON.stringify(selectedTools) !== JSON.stringify(initialTools);
-  const learningChanged = selectedLearning !== initialLearning;
-  const inheritedTools = selectedTools === null && selectedLearning === null;
-  const dirty = toolsChanged || learningChanged || restoreHarness;
+  const inheritedTools = selectedTools === null;
+  const dirty = toolsChanged || restoreHarness;
   const inheritedHarness = session.kind === 'normal' && (restoreHarness || session.overrides.harness_enabled == null);
 
   useEffect(() => { setOpen(true); }, []);
@@ -69,7 +66,6 @@ export function HarnessSettingsSheet({ session, onClose, finalFocus, onBusyChang
     const saved = await updateSession({ overrides: {
       ...(restoreHarness ? { harness_enabled: null } : {}),
       ...(toolsChanged ? { tools_allowed: selectedTools } : {}),
-      ...(learningChanged ? { memory_learning: selectedLearning } : {}),
     } });
     if (useCogitaStore.getState().sessionEpoch !== sessionEpoch) return;
     setBusy(false); onBusyChange(false);
@@ -103,13 +99,12 @@ export function HarnessSettingsSheet({ session, onClose, finalFocus, onBusyChang
                   <p className="settings-note">{t(inheritedTools ? 'inheritedFromCharacter' : 'sessionOverride')}</p>
                   <Button type="button" variant="ghost" size="sm" disabled={inheritedTools}
                     aria-label={t('restoreInheritanceFor', { field: t('tools') })}
-                    onClick={() => { setSelectedTools(null); setSelectedLearning(null); }}>
+                    onClick={() => { setSelectedTools(null); }}>
                     <Undo2 data-icon="inline-start" />{t('restoreInheritance')}
                   </Button>
                 </> : null}
                 <ToolsField tools={tools} value={selectedTools ?? owner!.tools_allowed}
-                  onChange={setSelectedTools} memoryLearning={selectedLearning ?? owner!.memory_learning}
-                  onMemoryLearningChange={setSelectedLearning} />
+                  onChange={setSelectedTools} />
               </FieldSet>
             </FieldGroup>}
         </div>

@@ -6,12 +6,12 @@ sparse Session overrides. Characters start off and capture the general-purpose t
 do not rewrite saved lists. Session overrides may choose any available general tool.
 
 The composer's model menu toggles Harness immediately and preserves confirmed state on failure.
-Its independent action opens a right Sheet for general and memory tool selection, with Save, discard confirmation,
-mobile full width and focus restoration. Tools reset submits null for tools_allowed and memory_learning to follow Character defaults.
+Its independent action opens a right Sheet for general tool selection, with Save, discard confirmation,
+mobile full width and focus restoration. Tools reset submits null for tools_allowed to follow Character defaults.
 Draft edits remain local until first send. Session changes close the Sheet and ignore late saves.
 Character tools are defaults, not a permission ceiling; running/approval snapshots keep their tool
 selection despite later edits. Registry permissions, approvals and scope checks still apply.
-Normal Character settings autosave the Harness switch in Model & execution; its adjacent settings icon opens a separate tool Drawer with explicit Save. The shared memory-learning field stays synchronized with the autosaving Memory settings card. [Settings](settings.md) owns layout, partial saves and discard behavior.
+Normal Character settings autosave the Harness switch in Model & execution; its adjacent settings icon opens a separate tool Drawer with explicit Save. The Memory settings switch separately controls memory tools; ordinary tool panels contain no memory checkboxes. [Settings](settings.md) owns layout, partial saves and discard behavior.
 Ordinary chat sends no tools
 and rejects unexpected calls with `UNEXPECTED_TOOL_CALL`. An enabled harness
 with no business, context or memory tools uses ordinary chat. Before the first model round, explicit local lack of tool support (unless its request_options skip is enabled) falls back to ordinary chat without sending or executing tools. The current user message gets a tools_ignored warning; saved Harness/allowlist settings do not change. Unknown support and providers pass through. Direct tool execution is independent of model checks. Public native-tool requests and incompatible approval continuations fail with UNSUPPORTED_CAPABILITY; existing tool results are never discarded to restart ordinary chat.
@@ -42,10 +42,9 @@ model loop. Invalid direct requests fail before creating a run.
 ## Durable memory tools
 
 The catalog exposes memory_list, memory_search, memory_read, memory_write and memory_forget with scope=memory.
-All five switches in Character, Session and composer tool settings share memory_learning: automatic enables
-the group; manual disables it. Memory settings edit the same setting. Ordinary tools remain independent.
-Memory reads enabled plus automatic learning and Harness are required to provide the complete group,
-including with an empty business allowlist. Disabling the group preserves the summary-only Memory index.
+The single memory_enabled setting permits the complete group when Harness and model tools are available,
+including with an empty business allowlist. Character, Session and composer ordinary-tool panels do not expose memory switches.
+Disabling memory removes Character recall and all five tools, while independently eligible General summaries remain available.
 Memory tools remain unavailable to direct/slash calls, QQ and public inference. Enabling the group never enables Harness.
 They consume existing business-round/time limits; no separate execution budget or auxiliary call is added.
 List/search return at most 20 summaries; read accepts at most eight IDs. Complete request counting

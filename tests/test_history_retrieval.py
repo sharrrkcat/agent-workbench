@@ -7,6 +7,7 @@ import pytest
 
 from ai_workbench.core.message_parts import make_text_part
 from ai_workbench.core.schema.retrieval import CONTEXT_TOOL_NAMES
+from ai_workbench.core.schema.memory import MEMORY_TOOL_NAMES
 from ai_workbench.core.schema.retrieval import SessionRetrievalState, RetrievalCheckpoint
 from ai_workbench.core.harness.schema import HarnessState
 from tests.test_phase4_harness import harness_client, configure, send
@@ -37,7 +38,7 @@ def test_empty_business_tools_support_checkpoint_and_private_history(harness_cli
     result = send(client, session, 'The budget is 47 EUR')
     assert result['success'], result
     assert len(seen) == 2
-    assert {tool['function']['name'] for tool in seen[0]['tools']} == CONTEXT_TOOL_NAMES
+    assert {tool['function']['name'] for tool in seen[0]['tools']} == CONTEXT_TOOL_NAMES | MEMORY_TOOL_NAMES
     saved = state.sessions.get_retrieval_state(session['session_id'])
     assert saved.memory.text == 'SECRET_MEMORY: budget 47 EUR'
     assert state.runs.get_harness_state(result['run']['run_id']) == {}

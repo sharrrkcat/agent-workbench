@@ -94,8 +94,6 @@ export function MemoryManager({ characterId, session, addButtonContainer }: {
         onChange={(value) => change({ persona_id: value || undefined })} />
       <MemorySelect compact label={t('pool')} value={filters.pool ?? ''} options={[{ value: '', label: t('all') }, { value: 'character', label: t('characterPool') }, { value: 'general', label: t('general') }]}
         onChange={(value) => change({ pool: value as MemoryQuery['pool'] || undefined })} />
-      <MemorySelect compact label={t('status')} value={filters.status ?? ''} options={[{ value: '', label: t('all') }, { value: 'active', label: t('active') }, { value: 'needs_review', label: t('needs_review') }]}
-        onChange={(value) => change({ status: value as MemoryQuery['status'] || undefined })} />
       <MemorySelect compact label={t('session')} value={filters.origin_session_id ?? ''}
         options={[{ value: '', label: t('all') }, ...sourceSessions.map((source) => ({ value: source.session_id, label: source.title || t('personas:newSession') }))]}
         onChange={(value) => change({ origin_session_id: value || undefined })} />
@@ -157,7 +155,7 @@ function MemoryRow({ entry, sessionId, editable, onChanged }: { entry: MemoryPre
           <span className="min-w-0 break-words">{entry.summary}</span>
           <span className="flex shrink-0 items-center gap-2">
             <Badge variant="secondary" className="max-w-28 truncate" title={persona}>{persona}</Badge>
-            {entry.pinned ? <Pin /> : null}{entry.status === 'needs_review' ? <Badge variant="outline">{t('needs_review')}</Badge> : null}
+            {entry.pinned ? <Pin /> : null}
             <ChevronDown className={open ? 'rotate-180' : undefined} />
           </span>
         </CollapsibleTrigger>

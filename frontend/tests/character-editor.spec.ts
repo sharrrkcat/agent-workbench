@@ -4,6 +4,7 @@ import { openSidebar } from './controls';
 
 for (const locale of ['en', 'zh-CN']) {
   const labels = JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/personas.json`, import.meta.url), 'utf8'));
+  const memory = JSON.parse(readFileSync(new URL(`../src/i18n/resources/${locale}/memory.json`, import.meta.url), 'utf8'));
   for (const width of [1366, 390]) {
     test.describe(`Character editor ${locale} ${width}`, () => {
       test.use({ viewport: { width, height: width === 390 ? 844 : 900 }, hasTouch: width === 390 });
@@ -28,11 +29,19 @@ for (const locale of ['en', 'zh-CN']) {
           await expect(dialog.getByLabel(labels.defaultPersona, { exact: true })).toBeVisible();
           await dialog.getByRole('tab', { name: labels.resources, exact: true }).click();
           await expect(dialog.getByText(labels.mountsInactive, { exact: true })).toBeVisible();
+          await dialog.getByRole('tab', { name: memory.title, exact: true }).click();
+          const enabled = dialog.getByRole('switch', { name: memory.enabled, exact: true });
+          await expect(enabled).toBeChecked();
+          await enabled.uncheck();
           const created = page.waitForResponse((response) => response.url().endsWith('/api/characters') && response.request().method() === 'POST');
           await dialog.getByRole('button', { name: labels.save, exact: true }).click();
           const response = await created;
           expect(response.ok()).toBe(true);
-          characterId = (await response.json()).id;
+          const saved = await response.json();
+          characterId = saved.id;
+          expect(saved.memory_enabled).toBe(false);
+          expect(saved.memory_external_isolation).toBe(false);
+          expect(saved).not.toHaveProperty('memory_learning');
           await expect(dialog).toBeHidden();
           await expect(page.locator('.composer textarea')).toBeVisible();
 

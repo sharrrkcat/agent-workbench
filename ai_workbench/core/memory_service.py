@@ -4,7 +4,7 @@ import hashlib
 import json
 
 from ai_workbench.core.chat_service import ChatError
-from ai_workbench.core.memory_store import conflict
+from ai_workbench.core.memory_store import conflict, forget
 from ai_workbench.core.schema.memory import (
     MemoryCreate, MemoryEdit, MemoryEntry, MemoryOrigin, MemoryPublication, MemoryEvidence,
     MemoryView, MemoryPage, MemoryPreview, MemoryDeletionPreview, MemoryDeletionChoice,
@@ -16,13 +16,6 @@ def message_digest(message):
     value = {"parts": message.parts, "speaker_id": message.speaker_id,
         "attachments": message.metadata.get("attachments", [])}
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-
-
-def forget(entry):
-    # No old text is kept in revisions, lexical terms or nominal audit fields.
-    return entry.model_copy(deep=True, update={"revision": entry.revision + 1, "summary": "", "body": "",
-        "status": "deleted", "pinned": False, "origin": entry.origin.model_copy(update={"evidence": []}),
-        "updated_at": utc_now()})
 
 
 class MemoryService:

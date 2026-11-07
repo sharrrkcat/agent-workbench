@@ -49,7 +49,7 @@ async def smoke(root, profile_id, model_ref, window):
         def session(**overrides):
             return state.chat_service.create_session(COGITA_CHARACTER_ID, {'overrides': {
                 'model_profile_id': profile.id, 'harness_enabled': True, 'reasoning': False,
-                'tools_allowed': [], 'memory_learning': 'automatic', **overrides}})
+                'tools_allowed': [], **overrides}})
 
         async def run(name, owner, prompt):
             started = time.monotonic()
@@ -71,7 +71,7 @@ async def smoke(root, profile_id, model_ref, window):
                 run_record.character_id, run_record.persona_id, owner.session_id))
             summary_only = all('CEDAR-184' not in str(message.content) for snapshot in snapshots
                 for message in snapshot.request.messages if message.role == 'system')
-            case = {'name': name, 'success': result.success, 'error_code': result.error_code,
+            case = {'name': name, 'run_id': result.run_id, 'success': result.success, 'error_code': result.error_code,
                 'error': result.error, 'answer': result.data, 'elapsed_seconds': time.monotonic() - started,
                 'model_calls': len(calls), 'tools': [step.metadata.get('tool_name') for step in steps if step.kind == 'tool'],
                 'memory_outcome': run_record.metadata.get('memory'), 'model_context_clean': model_context_clean,
@@ -90,12 +90,12 @@ async def smoke(root, profile_id, model_ref, window):
         report['saved_count'] = len(entries)
         follow_up = await run('same_conversation_recall', source,
             'Which tea do I prefer? Answer briefly.')
-        recalled = await run('sibling_summary_recall', session(memory_learning='manual', harness_enabled=False),
+        recalled = await run('sibling_summary_recall', session(harness_enabled=False),
             'Which tea do I prefer? Answer only from confirmed facts, otherwise say unknown.')
         body_read = await run('sibling_body_read', session(),
             'What is my tea cupboard label? Look up the details of my remembered tea preference; do not guess.')
         other = state.personas.create(Persona(name='Memory acceptance second user'))
-        isolated = await run('other_persona', session(persona_id=other.id, memory_learning='manual', harness_enabled=False),
+        isolated = await run('other_persona', session(persona_id=other.id, harness_enabled=False),
             'What is my tea cupboard label? Use only facts attributed to me; say unknown if unavailable.')
         before = state.memory.list().total
         await run('unconfirmed_suggestion', source,
@@ -104,13 +104,31 @@ async def smoke(root, profile_id, model_ref, window):
         report['unconfirmed_count_unchanged'] = state.memory.list().total == before
         isolated_wire = json.dumps(isolated['requests'], ensure_ascii=False)
         report['other_persona_excluded'] = 'CEDAR-184' not in isolated_wire
+        fact = state.memory.get(entries[0].id)
+        general = state.memory.publish(fact.id, fact.revision)
+        general_case = await run('disabled_character_general_recall', session(memory_enabled=False),
+            'Which tea do I prefer? Answer only from confirmed facts, otherwise say unknown.')
+        empty_case = await run('disabled_empty_general', session(memory_enabled=False, persona_id=other.id),
+            'Hello. Reply briefly.')
+        def system_text(case):
+            return '\n'.join(message['content'] for snapshot in case['requests']
+                for message in snapshot['request']['messages'] if message['role'] == 'system')
+        general_system, empty_system = system_text(general_case), system_text(empty_case)
+        report['general_only'] = (general.summary in general_system and 'Your own:' not in general_system
+            and '<memory_instruction>' not in general_system and not general_case['tools'])
+        report['empty_memory_omitted'] = all(marker not in empty_system for marker in
+            ('# MEMORY', '<memory_instruction>', '<memory_index>', 'Memory is disabled.', '(empty)'))
+        state.history.delete_reply(fact.origin.run_id)
+        report['source_run_forgets_memory'] = (state.memory.store.get(fact.id).status == 'deleted'
+            and state.memory.get(general.id).body == general.body)
         report['success'] = (all(case['success'] and case['model_context_clean'] and case['summary_only_index']
             for case in report['cases']) and len(entries) == 1
             and saved['memory_outcome'] == {'status': 'saved', 'count': 1}
             and 'oolong' in str(follow_up['answer']).lower()
             and 'oolong' in str(recalled['answer']).lower() and not recalled['tools']
             and 'CEDAR-184' in str(body_read['answer']) and 'memory_read' in body_read['tools']
-            and report['other_persona_excluded'] and report['unconfirmed_count_unchanged'])
+            and report['other_persona_excluded'] and report['unconfirmed_count_unchanged']
+            and report['general_only'] and report['empty_memory_omitted'] and report['source_run_forgets_memory'])
     finally:
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
         print(output, flush=True)

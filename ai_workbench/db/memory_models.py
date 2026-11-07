@@ -11,7 +11,7 @@ class DurableMemoryRecord(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint("pool IN ('character', 'general')", name="ck_memory_pool"),
         CheckConstraint("pool != 'general' OR session_id IS NULL", name="ck_general_memory_session"),
-        CheckConstraint("status IN ('active', 'needs_review', 'deleted')", name="ck_memory_status"),
+        CheckConstraint("status IN ('active', 'deleted')", name="ck_memory_status"),
         Index("ix_memory_audience", "persona_id", "pool", "character_id", "status"),
     )
     id: str = Field(primary_key=True)
@@ -41,9 +41,3 @@ class DurableMemoryDependency(SQLModel, table=True):
     __tablename__ = "durable_memory_dependencies"
     memory_id: str = Field(primary_key=True)
     session_id: str = Field(primary_key=True, index=True)
-
-
-class DurableMemoryEvidence(SQLModel, table=True):
-    __tablename__ = "durable_memory_evidence"
-    memory_id: str = Field(primary_key=True)
-    message_id: str = Field(primary_key=True, index=True)

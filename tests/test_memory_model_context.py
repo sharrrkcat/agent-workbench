@@ -27,8 +27,7 @@ def clean_request(request, owner, session):
 def test_clean_memory_protocol_and_sequential_candidate_changes(client_pair, strategy):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic',
-        context_policy={'strategy': strategy})
+    owner = character(client, harness_enabled=True, tools_allowed=[], context_policy={'strategy': strategy})
     ok(client.patch(f"/api/personas/{owner['persona_id']}", json={'background': '用户喜欢简短回答😀'}))
     session = child(client, owner)
     baseline = add(client, owner, owner['persona_id'], summary='Known preference', body='Prefers quiet rooms.')
@@ -85,7 +84,7 @@ def test_clean_memory_protocol_and_sequential_candidate_changes(client_pair, str
 def test_existing_updates_use_internal_read_versions(client_pair, monkeypatch, known_via):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     path = f"/api/sessions/{session['session_id']}/messages"
     upstream.turns = [write_turn, completion(content='Understood.')]
@@ -126,7 +125,7 @@ def test_existing_updates_use_internal_read_versions(client_pair, monkeypatch, k
 def test_removed_model_parameters_are_rejected(client_pair, operation, extra):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     arguments = {'summary': 'Tea', 'body': 'Prefers tea.'} if operation == 'memory_write' else {'id': 'unknown'}
     upstream.turns = [completion(tool_call(operation, {**arguments, **extra}, 'invalid')), completion(content='Understood.')]
@@ -138,16 +137,15 @@ def test_removed_model_parameters_are_rejected(client_pair, operation, extra):
 def test_run_provenance_invalidates_memory_without_message_evidence(client_pair):
     client, upstream, state = client_pair
     configure_model(client)
-    owner = character(client, harness_enabled=True, tools_allowed=[], memory_learning='automatic')
+    owner = character(client, harness_enabled=True, tools_allowed=[])
     session = child(client, owner)
     upstream.turns = [write_turn, completion(content='Understood.')]
     response = ok(client.post(f"/api/sessions/{session['session_id']}/messages", json={'content': 'I prefer oolong tea.'}))
     entry = state.memory.get(state.memory.list().items[0].id)
-    with state.memory.store.transaction() as db:
-        state.memory.store.invalidate_history([response['run']['metadata']['input_message_id']], [], transaction=db)
     assert state.memory.get(entry.id).status == 'active' and entry.origin.evidence == []
     ok(client.delete(f"/api/runs/{response['run']['run_id']}"))
-    assert state.memory.get(entry.id).status == 'needs_review'
+    assert state.memory.store.get(entry.id).status == 'deleted'
+    assert client.get(f'/api/memories/{entry.id}').status_code == 404
 
 
 def test_user_authored_markers_are_preserved(client_pair):

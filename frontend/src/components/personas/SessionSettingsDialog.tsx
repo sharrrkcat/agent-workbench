@@ -20,7 +20,7 @@ import type { ChatDraft, SessionOverrides, NormalSession } from '../../types/cha
 import type { HarnessTool } from '../../types/tools';
 import { BindingsField, ContextFields, GenerationFields, ModelField, PersonaField, ToolsField } from './ConfigurationFields';
 import { Feedback, ResourceLoading, errorText } from '../settings/resources/ResourceUI';
-import { MemoryReadField, MemoryLearningField, MemorySelect } from '../memory/MemoryFields';
+import { MemoryEnabledField, MemorySelect } from '../memory/MemoryFields';
 import { MemoryManager } from '../memory/MemoryManager';
 import { memoriesApi } from '../../api/memories';
 import type { MemoryIsolation } from '../../types/memory';
@@ -138,20 +138,17 @@ export function SessionSettingsDialog({ session, onClose, onManagePersonas }: {
                 checked={overrides.reasoning ?? character.reasoning} onCheckedChange={(value) => change('reasoning', value)} /><FieldLabel htmlFor={formId + '-reasoning'}>{t('reasoning')}</FieldLabel></Field>)}
               {inheritance('harness_enabled', t('harness'), <Field orientation="horizontal"><Switch id={formId + '-harness'}
                 checked={overrides.harness_enabled ?? character.harness_enabled} onCheckedChange={(value) => change('harness_enabled', value)} /><FieldLabel htmlFor={formId + '-harness'}>{t('harness')}</FieldLabel></Field>)}
-              <Inheritance label={t('tools')} inherited={overrides.tools_allowed == null && overrides.memory_learning == null}
-                onReset={() => setChanges((current) => ({ ...current, tools_allowed: null, memory_learning: null }))}>
+              <Inheritance label={t('tools')} inherited={overrides.tools_allowed == null}
+                onReset={() => setChanges((current) => ({ ...current, tools_allowed: null }))}>
                 <ToolsField tools={tools} value={overrides.tools_allowed ?? character.tools_allowed}
-                  onChange={(value) => change('tools_allowed', value)} memoryLearning={overrides.memory_learning ?? character.memory_learning}
-                  onMemoryLearningChange={(value) => change('memory_learning', value)} />
+                  onChange={(value) => change('tools_allowed', value)} />
               </Inheritance>
               {inheritance('context_policy', t('context'), <ContextFields harnessEnabled={overrides.harness_enabled ?? character.harness_enabled}
                 value={overrides.context_policy ?? character.context_policy} onChange={(value) => change('context_policy', value)} />)}
             </FieldGroup></TabsContent>
             <TabsContent value="memory"><FieldGroup>
-              {inheritance('memory_enabled', t('memory:readEnabled'), <MemoryReadField hideLabel value={overrides.memory_enabled ?? character.memory_enabled}
+              {inheritance('memory_enabled', t('memory:enabled'), <MemoryEnabledField hideLabel value={overrides.memory_enabled ?? character.memory_enabled}
                 onChange={(value) => change('memory_enabled', value)} />)}
-              {inheritance('memory_learning', t('memory:learning'), <MemoryLearningField hideLabel value={overrides.memory_learning ?? character.memory_learning}
-                harness={overrides.harness_enabled ?? character.harness_enabled} onChange={(value) => change('memory_learning', value)} />)}
               <MemorySelect label={t('memory:isolation')} value={isolation}
                 options={(['shared', 'block_outgoing', 'block_incoming', 'isolated'] as const).map((value) => ({ value, label: t(`memory:modes.${value}`) }))}
                 onChange={(value) => setIsolation(value as MemoryIsolation)} />
